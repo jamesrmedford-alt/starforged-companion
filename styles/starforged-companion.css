@@ -107,3 +107,14 @@
   color:       var(--color-text-dark-secondary, #555);
   font-size:   0.88em;
 }
+
+/* Mischief aside — the Trickster's footnote. Subdued, not shouty. */
+.sf-move-aside {
+  margin-top:   6px;
+  padding-top:  5px;
+  border-top:   1px dashed var(--color-border-dark, #bbb);
+  font-size:    0.82em;
+  font-style:   italic;
+  color:        var(--color-text-dark-secondary, #777);
+  opacity:      0.85;
+}

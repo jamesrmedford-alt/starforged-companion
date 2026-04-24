@@ -6,11 +6,14 @@
  * The framing is injected into the user message — it shapes how Claude reads
  * the player narration without changing the move reference or rules.
  *
- * Mischief is invisible to the player:
- * - The interpretationRationale field records what happened internally
- * - The mischiefApplied flag is set to true when reframing occurs
- * - Neither is shown in the chat card or confirmation UI
- * - The player sees only the move result, which reads as a straightforward outcome
+ * When mischiefApplied is true, a wry aside is shown in the move confirmation card.
+ * The player sees the aside before accepting the interpretation — it acknowledges
+ * the reframe with personality rather than hiding it. The aside is flavor only;
+ * the player can still override the move choice regardless.
+ *
+ * The aside is generated deterministically from the narration and chosen move —
+ * no extra API call. It's built from templates that surface the gap between what
+ * the player said and what the Trickster decided.
  *
  * Settings:
  *   serious  — literal interpretation, no reframing
@@ -130,4 +133,254 @@ export function shouldApplyMischief(mischiefLevel) {
     case "chaotic":  return true;
     default:         return false;
   }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WIRY ASIDE — shown in the confirmation card when mischiefApplied is true
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the wry aside shown in the move confirmation card.
+ * Only called when mischiefApplied is true.
+ *
+ * Generated deterministically — no API call. Uses the gap between the player's
+ * narration surface (what they said) and the chosen move (what the Trickster
+ * decided) to pick a template that acknowledges the reframe with personality.
+ *
+ * The aside is always one line. It's flavor, not an explanation — the Trickster
+ * is smug about it, not apologetic.
+ *
+ * @param {string} narration      — raw player narration
+ * @param {string} moveId         — chosen move ID
+ * @param {string} statUsed       — stat chosen
+ * @param {string} mischiefLevel  — "balanced" | "chaotic"
+ * @returns {string}
+ */
+export function buildMischiefAside(narration, moveId, statUsed, mischiefLevel) {
+  const lower    = narration.toLowerCase();
+  const category = getMoveCategory(moveId);
+
+  // Chaotic gets more aggressive asides
+  if (mischiefLevel === "chaotic") {
+    return pickChaoticAside(lower, moveId, statUsed, category);
+  }
+
+  return pickBalancedAside(lower, moveId, statUsed, category);
+}
+
+/**
+ * Balanced asides — a gentle nudge, slightly knowing.
+ * The Trickster noticed something the player didn't say out loud.
+ */
+function pickBalancedAside(narration, moveId, statUsed, category) {
+  // Stat-specific commentary
+  const statAsides = {
+    heart: [
+      "This one's about nerve, not cleverness.",
+      "Resolve will carry you further than a plan right now.",
+      "Turns out the real challenge here is keeping it together.",
+    ],
+    iron: [
+      "Sometimes you just have to push through.",
+      "This is a test of endurance, not tactics.",
+      "The elegant solution left on an earlier ship.",
+    ],
+    shadow: [
+      "The indirect approach has a certain appeal.",
+      "What you don't say matters more than what you do.",
+      "Subtlety, noted.",
+    ],
+    edge: [
+      "Speed is the variable that matters here.",
+      "The window is narrow — good thing you're fast.",
+      "Commit or don't. No half measures.",
+    ],
+    wits: [
+      "Observation first, action second.",
+      "There's more going on here than you've accounted for.",
+      "Read the situation before you commit.",
+    ],
+  };
+
+  // Category-based commentary when the move category surprises
+  const categoryAsides = {
+    suffer:      ["Ah. This is going to cost something.",
+                  "The damage was already done before you acted."],
+    connection:  ["This moment is really about the relationship, isn't it.",
+                  "Whatever you do next, it will change how they see you."],
+    quest:       ["A vow hangs over this. You feel it.",
+                  "What you're doing here matters more than it looks."],
+    exploration: ["You're further into the unknown than you intended to be.",
+                  "The place itself is the obstacle."],
+    threshold:   ["This is a threshold moment. Choose carefully.",
+                  "Not every challenge has a clean outcome."],
+  };
+
+  // Try a stat aside first (50% of the time if stat matches)
+  if (statAsides[statUsed] && Math.random() < 0.5) {
+    return pick(statAsides[statUsed]);
+  }
+
+  // Then try a category aside
+  if (categoryAsides[category]) {
+    return pick(categoryAsides[category]);
+  }
+
+  // Generic balanced fallbacks
+  return pick([
+    "There's more going on here than the obvious move.",
+    "Interesting. Not the approach I'd have predicted.",
+    "The situation has its own ideas about how this goes.",
+    "The Forge has opinions about what kind of problem this is.",
+    "You said one thing. The moment is asking for another.",
+  ]);
+}
+
+/**
+ * Chaotic asides — the Trickster is openly smug.
+ * It knows exactly what it's doing and wants credit.
+ */
+function pickChaoticAside(narration, moveId, statUsed, category) {
+  // Move-specific roasts
+  const moveAsides = {
+    endure_harm:    ["You walked into that.",
+                     "The harm was always going to happen. You just didn't know yet."],
+    endure_stress:  ["Turns out the Forge gets inside your head.",
+                     "The scariest thing in this scene is your own reaction to it."],
+    swear_an_iron_vow: ["Congratulations. You have a new obligation.",
+                        "Nothing like a vow to make a bad situation load-bearing."],
+    face_death:     ["I'm sure this will be fine.",
+                     "The good news is: you're still rolling dice."],
+    test_your_relationship: ["You had to bring feelings into this.",
+                             "The connection you needed is the one you put at risk."],
+    fulfill_your_vow: ["Done? Let's find out.",
+                       "Progress tracks are optimistic. Challenge dice are honest."],
+    compel:         ["They're not going to like what you're about to say.",
+                     "Persuasion has consequences. Even when it works."],
+    repair:         ["The machine has opinions about being fixed.",
+                     "Nothing fixes cleanly in the Forge."],
+  };
+
+  if (moveAsides[moveId]) {
+    return pick(moveAsides[moveId]);
+  }
+
+  // Surface reading vs actual move
+  if (/fight|attack|shoot|punch|strike/.test(narration) && category !== "combat") {
+    return pick([
+      "That was never going to be a clean fight.",
+      "You brought fists to a feelings problem.",
+      "The real threat here isn't something you can shoot.",
+      "Bold. Tactically irrelevant, but bold.",
+    ]);
+  }
+
+  if (/talk|ask|convince|persuade/.test(narration) && category !== "adventure") {
+    return pick([
+      "Words are doing a lot of work here. Watch them strain.",
+      "This negotiation has a mechanical undercarriage.",
+      "Diplomacy is just momentum with better manners.",
+      "What you're actually testing is whether they trust you.",
+    ]);
+  }
+
+  if (/fix|repair|hack|system/.test(narration) && category !== "recover") {
+    return pick([
+      "The problem isn't the equipment. The equipment is a symptom.",
+      "Technical competence: necessary, insufficient.",
+      "The machine will cooperate. Whether you survive is another matter.",
+      "You can fix the panel. You cannot fix what broke the panel.",
+    ]);
+  }
+
+  if (/careful|slowly|quietly|sneak/.test(narration)) {
+    return pick([
+      "Caution is a mood, not a plan.",
+      "You were quiet. The situation was not.",
+      "The slow approach. Admirable. Irrelevant.",
+      "Sneaking implies there's somewhere to sneak to.",
+    ]);
+  }
+
+  // Stat-specific chaos commentary
+  const chaoticStatAsides = {
+    heart: ["The Forge wants your feelings about this.",
+            "Resolve is the variable. Everything else is set dressing.",
+            "Your morale is on the line, not your skill."],
+    iron:  ["Brute endurance. The Forge respects the commitment.",
+            "No clever solution available. Just pushing through.",
+            "Your body is the instrument. Hope it's tuned."],
+    shadow:["The interesting move is the one nobody sees coming.",
+            "Deception is just a different kind of honesty.",
+            "What you're concealing matters more than what you're doing."],
+    edge:  ["Fast is the only kind of right available here.",
+            "Commitment. Now. No revisions.",
+            "The hesitation already happened. This is the aftermath."],
+    wits:  ["You need to understand the situation before you survive it.",
+            "Information is the resource you actually need.",
+            "The Forge is a puzzle. You're inside it."],
+  };
+
+  if (chaoticStatAsides[statUsed]) {
+    return pick(chaoticStatAsides[statUsed]);
+  }
+
+  // Absolute fallbacks — generic chaos
+  return pick([
+    "You asked for an interpretation. I gave you one.",
+    "The obvious move was right there. You're welcome.",
+    "This is what happens when you narrate ambiguously.",
+    "The Trickster Layer has no notes. The Trickster Layer has opinions.",
+    "Consider this a reframe. Mechanically sound, narratively spicy.",
+    "I see your intent and raise you a complication.",
+    "The dice don't care what you meant to do.",
+    "Technically correct. The best kind.",
+  ]);
+}
+
+/**
+ * Get the move category for a given moveId.
+ * Used to pick contextually appropriate asides.
+ */
+function getMoveCategory(moveId) {
+  const categoryMap = {
+    // Session
+    begin_a_session: "session", end_a_session: "session",
+    // Adventure
+    face_danger: "adventure", secure_an_advantage: "adventure",
+    gather_information: "adventure", compel: "adventure",
+    aid_your_ally: "adventure", check_your_gear: "adventure",
+    // Quest
+    swear_an_iron_vow: "quest", reach_a_milestone: "quest",
+    fulfill_your_vow: "quest", forsake_your_vow: "quest",
+    // Connection
+    make_a_connection: "connection", develop_your_relationship: "connection",
+    test_your_relationship: "connection", forge_a_bond: "connection",
+    // Exploration
+    undertake_an_expedition: "exploration", explore_a_waypoint: "exploration",
+    finish_an_expedition: "exploration", set_a_course: "exploration",
+    // Combat
+    enter_the_fray: "combat", gain_ground: "combat", strike: "combat",
+    clash: "combat", react_under_fire: "combat", take_decisive_action: "combat",
+    battle: "combat",
+    // Suffer
+    endure_harm: "suffer", endure_stress: "suffer", withstand_damage: "suffer",
+    companion_takes_a_hit: "suffer", lose_momentum: "suffer", sacrifice_resources: "suffer",
+    // Recover
+    sojourn: "recover", heal: "recover", hearten: "recover",
+    resupply: "recover", repair: "recover",
+    // Threshold
+    face_death: "threshold", face_desolation: "threshold", overcome_destruction: "threshold",
+    // Legacy
+    earn_experience: "legacy", advance: "legacy", continue_a_legacy: "legacy",
+    // Fate
+    ask_the_oracle: "fate", pay_the_price: "fate",
+  };
+  return categoryMap[moveId] ?? "adventure";
+}
+
+/** Pick a random element from an array. */
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }

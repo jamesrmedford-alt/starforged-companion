@@ -16,6 +16,7 @@ import { CampaignStateSchema }   from "./schemas.js";
 import { assembleContextPacket } from "./context/assembler.js";
 import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
+import { buildMischiefAside }    from "./moves/mischief.js";
 import { ProgressTrackPanel }    from "./ui/progressTracks.js";
 import { EntityPanel }           from "./ui/entityPanel.js";
 import { initSpeechInput }       from "./input/speechInput.js";
@@ -197,7 +198,7 @@ function registerChatHook() {
       const resolution = await resolveMove(confirmed, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      await postMoveResult(resolution, packet);
+      await postMoveResult(resolution, packet, confirmed._mischiefAside ?? null);
       await persistResolution(resolution, campaignState);
 
     } catch (err) {
@@ -244,6 +245,19 @@ function isPlayerNarration(message) {
  */
 async function confirmInterpretation(interpretation) {
   // TODO: Replace with ApplicationV2 confirmation dialog (ui/settingsPanel.js)
+
+  if (interpretation.mischiefApplied) {
+    const aside = buildMischiefAside(
+      interpretation.playerNarration,
+      interpretation.moveId,
+      interpretation.statUsed,
+      interpretation.mischiefLevel
+    );
+    // Store on the interpretation so formatMoveResult can render it
+    interpretation._mischiefAside = aside;
+    console.log(`${MODULE_ID} | Mischief aside: "${aside}"`);
+  }
+
   console.log(`${MODULE_ID} | Move interpreted:`, interpretation);
   return interpretation;
 }
@@ -251,11 +265,12 @@ async function confirmInterpretation(interpretation) {
 /**
  * Post the resolved move result to chat.
  * The Loremaster context packet is attached as a flag — Loremaster reads it from there.
- * Mischief is not signalled in the card; the result reads as a straightforward outcome.
+ * When mischief was applied, the wry aside appears at the bottom of the card
+ * in a subdued style — present, but not dominating the result.
  */
-async function postMoveResult(resolution, packet) {
+async function postMoveResult(resolution, packet, aside = null) {
   await ChatMessage.create({
-    content: formatMoveResult(resolution),
+    content: formatMoveResult(resolution, aside),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
@@ -270,15 +285,17 @@ async function postMoveResult(resolution, packet) {
 /**
  * Format a move resolution as an HTML chat card.
  * Shows: move name, stat used, dice values, outcome label, narrative consequence.
+ * When a mischief aside is present, it appears at the bottom in a subdued style —
+ * the Trickster gets a footnote, not a headline.
  */
-function formatMoveResult(resolution) {
+function formatMoveResult(resolution, aside = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
     miss:       "sf-miss",
   }[resolution.outcome] ?? "";
 
-  const addsStr = resolution.adds ? ` + ${resolution.adds}` : "";
+  const addsStr  = resolution.adds ? ` + ${resolution.adds}` : "";
   const matchStr = resolution.isMatch ? " ✦ Match" : "";
 
   return `
@@ -294,6 +311,9 @@ function formatMoveResult(resolution) {
       <div class="sf-move-outcome">${resolution.outcomeLabel}</div>
       ${resolution.consequences.otherEffect
         ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
+        : ""}
+      ${aside
+        ? `<div class="sf-move-aside">🎲 ${aside}</div>`
         : ""}
     </div>
   `.trim();
