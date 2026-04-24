@@ -1,0 +1,48 @@
+{
+  "id": "starforged-companion",
+  "title": "Starforged Companion",
+  "description": "A companion module for Ironsworn: Starforged. Handles move interpretation, oracle integration, progress tracking, NPC/Connection management, and Loremaster context injection. Designed to work alongside the Loremaster AI module.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "Campaign Author",
+      "discord": ""
+    }
+  ],
+  "esmodules": [
+    "src/index.js"
+  ],
+  "styles": [
+    "styles/starforged-companion.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "flags": {
+    "starforged-companion": {}
+  },
+  "socket": true,
+  "url": "",
+  "manifest": "",
+  "download": "",
+
+  "relationships": {
+    "systems": [],
+    "requires": [],
+    "recommends": [
+      {
+        "id": "foundry-ironsworn",
+        "type": "system",
+        "reason": "The Starforged system by Ben Straub. Integration with its data structures is optional but improves compatibility."
+      }
+    ]
+  }
+}
