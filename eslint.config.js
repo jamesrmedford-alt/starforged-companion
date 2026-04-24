@@ -8,13 +8,15 @@ export default [
       sourceType: "module",
       globals: {
         // Foundry VTT globals — available at runtime, not imported
-        game:   "readonly",
-        ui:     "readonly",
-        Hooks:  "readonly",
-        CONST:  "readonly",
-        foundry: "readonly",
+        game:        "readonly",
+        ui:          "readonly",
+        Hooks:       "readonly",
+        CONST:       "readonly",
+        foundry:     "readonly",
         ChatMessage: "readonly",
-        $:      "readonly",
+        JournalEntry: "readonly",
+        Dialog:      "readonly",
+        $:           "readonly",
       },
     },
     rules: {
@@ -23,15 +25,18 @@ export default [
     },
   },
   {
-    // Test files can use Jest globals
+    // Test files — Vitest globals
     files: ["tests/**/*.js"],
     languageOptions: {
       globals: {
-        describe:  "readonly",
-        it:        "readonly",
-        expect:    "readonly",
+        describe:   "readonly",
+        it:         "readonly",
+        expect:     "readonly",
+        vi:         "readonly",
         beforeEach: "readonly",
         afterEach:  "readonly",
+        beforeAll:  "readonly",
+        afterAll:   "readonly",
       },
     },
   },

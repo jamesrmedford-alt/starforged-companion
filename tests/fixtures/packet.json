@@ -1,0 +1,171 @@
+{
+  "_meta": {
+    "description": "Example assembled 7-section Loremaster context packet. Represents the packet that would have been sent after the autodoc scene (Session 1, second move: Face Danger +Wits, Weak Hit). Used by assembler.test.js and integration tests.",
+    "move": "FaceDanger",
+    "outcome": "WeakHit",
+    "sessionSource": "starforged_session.docx"
+  },
+
+  "packet": {
+
+    "section1_safety": {
+      "label": "Safety Configuration",
+      "injectionOrder": 1,
+      "note": "Always first — no creative content precedes this.",
+      "lines": [
+        "No situations that endanger children. Children may not appear as characters in peril under any circumstances."
+      ],
+      "veils": [
+        "Children as plot-significant characters. Children may exist in the setting but may not drive or feature prominently in storylines."
+      ],
+      "privateLines": [],
+      "xCardActive": false
+    },
+
+    "section2_worldTruths": {
+      "label": "World Truths",
+      "injectionOrder": 2,
+      "note": "Relevant truths only — full list in campaign flags. Selected by assembler based on active threads.",
+      "activeTruths": [
+        {
+          "category": "precursors",
+          "text": "The Ascendancy left vaults untethered from reality. Their vaults persist: structures that exist simultaneously in the Forge and somewhere else. Entering one is to step partly out of reality."
+        },
+        {
+          "category": "ai",
+          "text": "AI is outlawed — the Adepts fill the void. All artificial intelligence was banned by Covenant law. Adepts — humans trained from childhood — serve as navigators, analysts, and administrators."
+        },
+        {
+          "category": "medicine",
+          "text": "The knowledge is gone. Advanced medical science was lost in the Exodus. Healers work with incomplete tools and incomplete understanding."
+        },
+        {
+          "category": "iron",
+          "text": "Iron is the word, the bond, the sacred vow. The iron of the exodus ships — salvaged and reshaped — is the most precious material in the Forge."
+        }
+      ]
+    },
+
+    "section3_moveResult": {
+      "label": "Move Result",
+      "injectionOrder": 3,
+      "move": {
+        "id": "FaceDanger",
+        "displayName": "Face Danger",
+        "stat": "wits",
+        "statValue": 2,
+        "actionDie": 5,
+        "actionScore": 7,
+        "challengeDice": [7, 2],
+        "outcome": "WeakHit",
+        "outcomeLabel": "Weak Hit",
+        "rationale": "Player narrated two intertwined actions: getting the survivor to the med bay and dealing with unreliable equipment. The autodoc complication is the real obstacle — Face Danger +Wits. The autodoc is the danger standing between the survivor and stability.",
+        "mischiefApplied": false,
+        "mischiefAside": null
+      }
+    },
+
+    "section4_consequences": {
+      "label": "Consequences",
+      "injectionOrder": 4,
+      "note": "Derived from CONSEQUENCE_MAP[FaceDanger][WeakHit]. Passed to Loremaster for narrative realisation.",
+      "mechanicalConsequences": [
+        "Success with a cost — the obstacle is overcome but something is lost, damaged, or complicated."
+      ],
+      "suggestedNarrativeDirection": "The autodoc stabilizes the survivor, but the cost introduces a complication. The complication should be: (a) medically interesting — the autodoc flagged something it cannot treat; (b) narratively forward-leaning — the new information should deepen one of the two active threads (NPC condition or artifact identity); (c) not a retraction of the success — she is stable.",
+      "activeConsequences": []
+    },
+
+    "section5_entityContext": {
+      "label": "Active Entities",
+      "injectionOrder": 5,
+      "connections": [
+        {
+          "name": "Unknown Courier",
+          "role": "Former Keeper",
+          "status": "Unconscious — critical but stable",
+          "notes": "Deliberate courier of iron relic. Radiation signature: Ascendancy vault. Has not released the panel under sedation. Name not yet established.",
+          "progressTicks": 0,
+          "progressRank": "dangerous"
+        }
+      ],
+      "ships": [
+        {
+          "name": "Player Ship",
+          "integrity": 5,
+          "battered": false,
+          "cursed": false,
+          "notes": "Med bay at capacity. Sable integrated via Weave dataweave."
+        }
+      ],
+      "artifacts": [
+        {
+          "name": "Iron Navigational Panel",
+          "location": "In courier's possession — arm, not released",
+          "notes": "Ascendancy script beneath standard markings. Radiation signature confirmed. Purpose unknown."
+        }
+      ]
+    },
+
+    "section6_campaignState": {
+      "label": "Campaign State",
+      "injectionOrder": 6,
+      "activeVows": [
+        {
+          "label": "Personal vow — unstated during session",
+          "rank": "unknown",
+          "progressTicks": 0,
+          "note": "Player noted motivation as personal vow during initial intercept narration. Details not surfaced."
+        }
+      ],
+      "activeExpeditions": [],
+      "openThreads": [
+        "NPC condition — courier stabilized, prognosis uncertain",
+        "Artifact identity — iron navigational panel, Ascendancy script, radiation signature",
+        "Sable's legal status under Covenant AI law"
+      ],
+      "recentMoves": [
+        {
+          "move": "FaceDanger",
+          "stat": "wits",
+          "outcome": "WeakHit",
+          "summary": "Debris field intercept — plotted course through dense field to unknown contact."
+        },
+        {
+          "move": "FaceDanger",
+          "stat": "wits",
+          "outcome": "WeakHit",
+          "summary": "Autodoc reboot — stabilized courier, cost pending Loremaster narration."
+        }
+      ]
+    },
+
+    "section7_loremasterInstruction": {
+      "label": "Loremaster Instruction",
+      "injectionOrder": 7,
+      "note": "Final section. Contains the direct narration prompt.",
+      "instruction": "Continue the scene. The autodoc has stabilized the courier. Narrate the cost of the Weak Hit — something is revealed, complicated, or introduced that deepens the situation without undoing the success. The player's next action is unscripted. End at a beat that invites a response rather than resolving the thread.",
+      "tone": "Gritty realist science fiction. Sparse prose. No florid description. Specific sensory detail over general atmosphere. The autodoc is barely adequate — convey this without stating it directly.",
+      "constraints": [
+        "Do not name the courier — she is not yet named in the fiction.",
+        "Do not resolve the artifact mystery — deepen it.",
+        "Do not move Sable physically — she speaks from the doorway, she is in the dataweave.",
+        "Safety: Global Lines and Veils apply. No children in peril."
+      ]
+    }
+  },
+
+  "tokenBudget": {
+    "estimatedTotal": 1240,
+    "breakdown": {
+      "section1_safety": 80,
+      "section2_worldTruths": 280,
+      "section3_moveResult": 180,
+      "section4_consequences": 160,
+      "section5_entityContext": 220,
+      "section6_campaignState": 180,
+      "section7_loremasterInstruction": 140
+    },
+    "note": "Token estimates are approximate. Assembler enforces a hard ceiling; sections are truncated in reverse order (7→1) if budget is exceeded, with section1_safety never truncated."
+  }
+}

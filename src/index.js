@@ -2,14 +2,14 @@
  * STARFORGED COMPANION
  * src/index.js — Module entry point
  *
- * Responsibilities:
- * - Register all Foundry settings
- * - Register all hooks
- * - Check for Loremaster at runtime and warn if absent
- * - Wire up the chat input listener and push-to-talk button
- *
- * Foundry v13: uses ApplicationV2 for all UI panels.
- * All other document/settings APIs are stable from v12.
+ * Session 3 changes:
+ *   — confirmInterpretation() stub removed; real dialog imported from ui/settingsPanel.js
+ *   — persistResolution() stub removed; full implementation imported from moves/persistResolution.js
+ *   — checkLoremaster() removed; configurable version imported from loremaster.js
+ *   — Loremaster flag attachment now via attachLoremasterContext() from loremaster.js
+ *   — mischiefLevel setting removed; now mischiefDial registered by ui/settingsPanel.js
+ *   — UI panels (progressTracks, entityPanel, settingsPanel) wired via toolbar buttons
+ *   — All three UI hook registrations called from ready hook
  */
 
 import { CampaignStateSchema }   from "./schemas.js";
@@ -17,9 +17,34 @@ import { assembleContextPacket } from "./context/assembler.js";
 import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
-import { ProgressTrackPanel }    from "./ui/progressTracks.js";
-import { EntityPanel }           from "./ui/entityPanel.js";
+import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
+
+// Loremaster integration (replaces hardcoded placeholder + inline checkLoremaster)
+import {
+  registerLoremasterSettings,
+  checkLoremaster,
+  attachLoremasterContext,
+} from "./loremaster.js";
+
+// UI panels — Session 3
+import {
+  openProgressTracks,
+  registerProgressTrackHooks,
+} from "./ui/progressTracks.js";
+
+import {
+  openEntityPanel,
+  registerEntityPanelHooks,
+} from "./ui/entityPanel.js";
+
+import {
+  confirmInterpretation,
+  registerSettings    as registerUISettings,
+  registerSettingsHooks,
+  openSettingsPanel,
+  getMischiefDial,
+} from "./ui/settingsPanel.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -29,28 +54,30 @@ const MODULE_ID = "starforged-companion";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Register all module settings.
- * Called on the "init" hook before any game data is available.
+ * Register core module settings.
+ * Safety config, mischief dial, and Loremaster settings are registered by
+ * their respective modules (called below). Only campaign-infrastructure
+ * settings live here.
  */
-function registerSettings() {
+function registerCoreSettings() {
 
   // Campaign state — world-scoped, persists across sessions
   game.settings.register(MODULE_ID, "campaignState", {
     name: "Campaign State",
     hint: "Persistent campaign data including World Truths, safety config, and entity records.",
-    scope: "world",
+    scope:  "world",
     config: false,
-    type: Object,
+    type:   Object,
     default: { ...CampaignStateSchema },
   });
 
-  // Claude API key — client-scoped so it never touches the server
+  // Claude API key — client-scoped so it never touches Foundry's server
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name: "Claude API Key",
     hint: "Your Anthropic API key. Stored locally in your browser — never sent to Foundry's server.",
-    scope: "client",
+    scope:  "client",
     config: true,
-    type: String,
+    type:   String,
     default: "",
   });
 
@@ -58,34 +85,34 @@ function registerSettings() {
   game.settings.register(MODULE_ID, "artApiKey", {
     name: "Art Generation API Key",
     hint: "API key for your chosen art generation backend (Replicate, fal.ai, or DALL-E).",
-    scope: "client",
+    scope:  "client",
     config: true,
-    type: String,
+    type:   String,
     default: "",
   });
 
-  // Mischief dial — world-scoped default, overridable per session
-  game.settings.register(MODULE_ID, "mischiefLevel", {
-    name: "Mischief Dial",
-    hint: "Controls how liberally the module interprets player narration. Serious / Balanced / Chaotic.",
-    scope: "world",
+  // Art backend selection
+  game.settings.register(MODULE_ID, "artBackend", {
+    name: "Art Generation Backend",
+    hint: "External API used for generating entity portraits.",
+    scope:  "world",
     config: true,
-    type: String,
+    type:   String,
     choices: {
-      serious:  "Serious — literal interpretation",
-      balanced: "Balanced — occasional organic misreads",
-      chaotic:  "Chaotic — deliberate misinterpretation for comic effect",
+      replicate: "Replicate",
+      fal:       "fal.ai",
+      dalle:     "DALL-E (OpenAI)",
     },
-    default: "balanced",
+    default: "dalle",
   });
 
   // Speech input toggle
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name: "Push-to-Talk",
     hint: "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
-    scope: "client",
+    scope:  "client",
     config: true,
-    type: Boolean,
+    type:   Boolean,
     default: false,
     onChange: (value) => {
       if (value) initSpeechInput();
@@ -96,65 +123,11 @@ function registerSettings() {
   game.settings.register(MODULE_ID, "speechLanguage", {
     name: "Speech Input Language",
     hint: "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
-    scope: "client",
+    scope:  "client",
     config: true,
-    type: String,
+    type:   String,
     default: "en-US",
   });
-
-  // Art backend selection
-  game.settings.register(MODULE_ID, "artBackend", {
-    name: "Art Generation Backend",
-    hint: "External API used for generating entity portraits.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      replicate: "Replicate",
-      fal:       "fal.ai",
-      dalle:     "DALL-E (OpenAI)",
-    },
-    default: "replicate",
-  });
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LOREMASTER RUNTIME CHECK
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Check that Loremaster is installed and active.
- * Called on the "ready" hook when game.modules is populated.
- *
- * Loremaster is distributed via Patreon and is not in the Foundry package registry,
- * so it cannot be declared as a manifest dependency. This runtime check surfaces
- * a clear, actionable warning to the GM instead.
- *
- * Replace "loremaster" below with Loremaster's actual module ID once confirmed.
- */
-function checkLoremaster() {
-  if (!game.user.isGM) return;
-
-  const loremaster = game.modules.get("loremaster");
-
-  if (!loremaster) {
-    ui.notifications.warn(
-      "Starforged Companion: Loremaster is not installed. " +
-      "This module requires Loremaster to handle narration. " +
-      "Install it via the Loremaster Patreon before running a session.",
-      { permanent: true }
-    );
-    return;
-  }
-
-  if (!loremaster.active) {
-    ui.notifications.warn(
-      "Starforged Companion: Loremaster is installed but not active. " +
-      "Enable it in your module list.",
-      { permanent: true }
-    );
-  }
 }
 
 
@@ -169,36 +142,51 @@ function checkLoremaster() {
  * Pipeline:
  *   1. Player narration arrives (typed or speech-transcribed)
  *   2. interpretMove() calls Claude API → returns identified move + stat + rationale
- *   3. Confirmation UI shown — player may override the interpretation
- *   4. resolveMove() rolls dice, calculates outcome, applies consequences
- *   5. assembleContextPacket() builds the Loremaster context packet
- *   6. Context packet is posted to chat as a flagged message for Loremaster to consume
+ *   3. Mischief aside generated (if mischiefApplied) and stored on interpretation
+ *   4. MoveConfirmDialog shown — player accepts or re-interprets
+ *   5. resolveMove() rolls dice, calculates outcome, applies consequences
+ *   6. assembleContextPacket() builds the 7-section Loremaster context packet
+ *   7. postMoveResult() posts HTML chat card + attaches context via attachLoremasterContext()
+ *   8. persistResolution() applies meter/track changes to character and campaign state
  */
 function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
     if (!isPlayerNarration(message)) return;
 
-    const narration      = message.content;
-    const campaignState  = game.settings.get(MODULE_ID, "campaignState");
-    const mischiefLevel  = game.settings.get(MODULE_ID, "mischiefLevel");
-    const apiKey         = game.settings.get(MODULE_ID, "claudeApiKey");
+    const narration     = message.content;
+    const campaignState = game.settings.get(MODULE_ID, "campaignState");
+    const apiKey        = game.settings.get(MODULE_ID, "claudeApiKey");
+    const dial          = getMischiefDial();  // 'lawful' | 'balanced' | 'chaotic'
 
     try {
+      // Step 2: interpret
       const interpretation = await interpretMove(narration, {
         campaignState,
-        mischiefLevel,
+        mischiefLevel: dial,
         apiKey,
       });
 
-      // Show confirmation UI; player may override stat or move choice.
-      // Returns the (possibly modified) interpretation, or null if cancelled.
-      const confirmed = await confirmInterpretation(interpretation);
-      if (!confirmed) return;
+      // Step 3: generate aside before showing dialog so the player sees it
+      if (interpretation.mischiefApplied) {
+        interpretation._mischiefAside = buildMischiefAside(interpretation, dial);
+      }
 
-      const resolution = await resolveMove(confirmed, campaignState);
+      // Step 4: show confirmation dialog — returns true (accept) or false (reject)
+      const accepted = await confirmInterpretation(interpretation);
+      if (!accepted) return;
+
+      // Step 5–6: resolve + assemble
+      const resolution = resolveMove(interpretation, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      await postMoveResult(resolution, packet, confirmed._mischiefAside ?? null);
+      // Step 7: post result + attach Loremaster context
+      const chatMessage = await postMoveResult(
+        resolution,
+        interpretation._mischiefAside ?? null
+      );
+      await attachLoremasterContext(chatMessage, packet.assembled);
+
+      // Step 8: persist meter/track changes
       await persistResolution(resolution, campaignState);
 
     } catch (err) {
@@ -237,45 +225,22 @@ function isPlayerNarration(message) {
 }
 
 /**
- * Show the move confirmation UI.
- * Returns the confirmed (possibly player-modified) interpretation, or null if cancelled.
- *
- * Stub — replaced by ApplicationV2 dialog once UI panels are built.
- * Auto-confirms for now so the full pipeline can be tested end-to-end.
- */
-async function confirmInterpretation(interpretation) {
-  // TODO: Replace with ApplicationV2 confirmation dialog (ui/settingsPanel.js)
-
-  if (interpretation.mischiefApplied) {
-    const aside = buildMischiefAside(
-      interpretation.playerNarration,
-      interpretation.moveId,
-      interpretation.statUsed,
-      interpretation.mischiefLevel
-    );
-    // Store on the interpretation so formatMoveResult can render it
-    interpretation._mischiefAside = aside;
-    console.log(`${MODULE_ID} | Mischief aside: "${aside}"`);
-  }
-
-  console.log(`${MODULE_ID} | Move interpreted:`, interpretation);
-  return interpretation;
-}
-
-/**
  * Post the resolved move result to chat.
- * The Loremaster context packet is attached as a flag — Loremaster reads it from there.
- * When mischief was applied, the wry aside appears at the bottom of the card
- * in a subdued style — present, but not dominating the result.
+ * Returns the created ChatMessage so the caller can attach Loremaster context to it.
+ *
+ * @param {Object}      resolution
+ * @param {string|null} aside        — mischief aside text, or null
+ * @returns {Promise<ChatMessage>}
  */
-async function postMoveResult(resolution, packet, aside = null) {
-  await ChatMessage.create({
+async function postMoveResult(resolution, aside = null) {
+  return ChatMessage.create({
     content: formatMoveResult(resolution, aside),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
-        resolutionId:      resolution._id,
-        loremasterContext: packet.assembled,
+        resolutionId:   resolution._id,
+        // loremasterContext is attached separately via attachLoremasterContext()
+        // so the flag path is controlled by loremaster.js, not hardcoded here.
       },
     },
     type: CONST.CHAT_MESSAGE_TYPES.OTHER,
@@ -285,8 +250,8 @@ async function postMoveResult(resolution, packet, aside = null) {
 /**
  * Format a move resolution as an HTML chat card.
  * Shows: move name, stat used, dice values, outcome label, narrative consequence.
- * When a mischief aside is present, it appears at the bottom in a subdued style —
- * the Trickster gets a footnote, not a headline.
+ * Mischief aside, when present, appears at the bottom in a subdued dashed-border
+ * block — a footnote, not a headline.
  */
 function formatMoveResult(resolution, aside = null) {
   const outcomeClass = {
@@ -320,31 +285,9 @@ function formatMoveResult(resolution, aside = null) {
 }
 
 /**
- * Persist the move resolution to the campaign state.
- * Updates the current session's resolution list and any affected meters/tracks.
- * Full implementation deferred until entity management layer is built.
- */
-async function persistResolution(resolution, campaignState) {
-  const updated = foundry.utils.deepClone(campaignState);
-  updated.updatedAt = new Date().toISOString();
-  // TODO: append resolution._id to current session, apply meter/track changes
-  await game.settings.set(MODULE_ID, "campaignState", updated);
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PUSH-TO-TALK BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
  * Inject the push-to-talk button into the Foundry chat controls bar.
- *
- * Uses both mouse and touch events — The Forge is accessible on mobile/tablet
- * and the button must be a comfortable hold target, not a small icon.
- *
- * Capture policy: audio is only captured while the button is physically held.
- * On release, recognition ends and the transcription is auto-injected into chat.
- * No audio is captured outside of an active button hold.
+ * Uses both mouse and touch events for The Forge mobile/tablet compatibility.
+ * Audio is captured only while the button is physically held.
  */
 function injectPushToTalkButton(html) {
   const controls = html.find("#chat-controls");
@@ -382,11 +325,19 @@ function injectPushToTalkButton(html) {
 
 /**
  * "init" — earliest safe point. Game data not yet available.
- * Settings must be registered here so they exist before "ready".
+ * All settings must be registered here so they exist before "ready".
  */
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
-  registerSettings();
+
+  // Core campaign settings (campaignState, API keys, art backend, speech)
+  registerCoreSettings();
+
+  // Safety config, mischief dial (ui/settingsPanel.js)
+  registerUISettings();
+
+  // Loremaster module ID and flag path (loremaster.js)
+  registerLoremasterSettings();
 });
 
 /**
@@ -394,17 +345,59 @@ Hooks.once("init", () => {
  */
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
+
+  // Check Loremaster presence using configured module ID
   checkLoremaster();
+
+  // Register move pipeline chat hook
   registerChatHook();
 
+  // Register UI panel live-refresh hooks
+  registerProgressTrackHooks();
+  registerEntityPanelHooks();
+
+  // Register X-Card /x chat hook
+  registerSettingsHooks();
+
+  // Start speech input if enabled
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
+});
 
-  if (game.user.isGM) {
-    ProgressTrackPanel.render(true);
-    EntityPanel.render(true);
-  }
+/**
+ * "getSceneControlButtons" — add toolbar buttons for the three UI panels.
+ * Appended to the token controls group. Adjust group name if your Foundry
+ * layout uses a different control set.
+ */
+Hooks.on("getSceneControlButtons", (controls) => {
+  const group = controls.find(c => c.name === "token");
+  if (!group) return;
+
+  group.tools.push(
+    {
+      name:    "progressTracks",
+      title:   "Progress Tracks",
+      icon:    "fas fa-tasks",
+      button:  true,
+      onClick: () => openProgressTracks(),
+    },
+    {
+      name:    "entityPanel",
+      title:   "Entities",
+      icon:    "fas fa-users",
+      button:  true,
+      onClick: () => openEntityPanel(),
+    },
+    {
+      name:    "sfSettings",
+      title:   "Companion Settings",
+      icon:    "fas fa-shield-alt",
+      button:  true,
+      visible: game.user.isGM,
+      onClick: () => openSettingsPanel(),
+    },
+  );
 });
 
 /**

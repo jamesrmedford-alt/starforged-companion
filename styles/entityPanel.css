@@ -1,0 +1,397 @@
+/* ==========================================================================
+   Entity Panel — starforged-companion.css (append after progress tracks block)
+   ========================================================================== */
+
+/* --- Panel shell --- */
+
+.sf-entity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-family: var(--font-primary, sans-serif);
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* -----------------------------------------------------------------------
+   LIST VIEW
+   ----------------------------------------------------------------------- */
+
+.sf-entity-list {
+  padding: 0.5rem 0;
+}
+
+/* Section heading */
+
+.entity-section {
+  margin-bottom: 0.25rem;
+}
+
+.entity-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-size-12, 12px);
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-light-secondary, #777);
+  padding: 0.4rem 0.75rem 0.2rem;
+  margin: 0;
+  border-bottom: 1px solid var(--color-border-light, #e0e0e0);
+}
+
+.entity-type-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.entity-count {
+  margin-left: auto;
+  background: var(--color-bg-option, #eee);
+  border-radius: 10px;
+  padding: 0 0.4rem;
+  font-size: var(--font-size-11, 11px);
+  color: var(--color-text-light-secondary, #888);
+}
+
+/* Entity list rows */
+
+.entity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-light, #eee);
+  transition: background 0.1s;
+}
+
+.entity-row:hover,
+.entity-row:focus-visible {
+  background: var(--color-bg-option, rgba(0,0,0,0.04));
+  outline: none;
+}
+
+/* Thumbnail */
+
+.entity-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+}
+
+.entity-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-light, #ccc);
+  display: block;
+}
+
+.entity-thumb-placeholder {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 1px dashed var(--color-border-light, #ccc);
+  background: var(--color-bg-option, #f5f5f5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--color-text-light-secondary, #aaa);
+}
+
+.art-lock-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 0.65rem;
+  background: var(--color-bg-option, #fff);
+  border-radius: 50%;
+  line-height: 1;
+  padding: 1px;
+}
+
+/* Row info */
+
+.entity-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.entity-row-name {
+  font-size: var(--font-size-14, 14px);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entity-row-subtitle {
+  font-size: var(--font-size-11, 11px);
+  color: var(--color-text-light-secondary, #777);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entity-row-chevron {
+  flex-shrink: 0;
+  color: var(--color-text-light-secondary, #bbb);
+  font-size: 1.1rem;
+}
+
+/* Empty state */
+
+.entity-empty-state {
+  text-align: center;
+  font-style: italic;
+  color: var(--color-text-light-secondary, #888);
+  font-size: var(--font-size-13, 13px);
+  padding: 2rem 1rem;
+  line-height: 1.6;
+}
+
+/* -----------------------------------------------------------------------
+   DETAIL VIEW
+   ----------------------------------------------------------------------- */
+
+.sf-entity-detail {
+  padding: 0;
+}
+
+/* Back button bar */
+
+.detail-back {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-light, #eee);
+}
+
+/* Detail header */
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+}
+
+.detail-type-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.detail-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.detail-name {
+  font-size: var(--font-size-18, 18px);
+  font-weight: bold;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-type-label {
+  font-size: var(--font-size-11, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-light-secondary, #888);
+}
+
+/* Portrait */
+
+.portrait-wrap {
+  position: relative;
+  width: 100%;
+  background: var(--color-bg-option, #111);
+  overflow: hidden;
+  /* Landscape portraits (1792×1024) render letterboxed; square fills naturally */
+  max-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.entity-portrait {
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
+.portrait-placeholder {
+  height: 160px;
+  border: 2px dashed var(--color-border-light, #555);
+  gap: 0.75rem;
+}
+
+.portrait-placeholder-icon {
+  font-size: 3rem;
+  color: var(--color-text-light-secondary, #666);
+}
+
+.portrait-lock-badge {
+  position: absolute;
+  bottom: 0.4rem;
+  right: 0.5rem;
+  font-size: var(--font-size-11, 11px);
+  background: rgba(0,0,0,0.6);
+  color: #ccc;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.portrait-actions {
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0,0,0,0.25);
+}
+
+/* Entity action buttons */
+
+.entity-btn {
+  appearance: none;
+  border: 1px solid var(--color-border-light, #bbb);
+  border-radius: 3px;
+  background: var(--color-bg-btn, #f0f0f0);
+  cursor: pointer;
+  font-size: var(--font-size-12, 12px);
+  padding: 0.2rem 0.55rem;
+  transition: background 0.15s;
+}
+
+.entity-btn:hover:not(:disabled) {
+  background: var(--color-bg-btn-hover, #dde);
+  border-color: var(--color-border-dark, #888);
+}
+
+.entity-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-back {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-hyperlink, #4a6fa5);
+  padding-left: 0;
+}
+
+.btn-back:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.btn-generate,
+.btn-regen {
+  background: rgba(255,255,255,0.15);
+  color: #eee;
+  border-color: rgba(255,255,255,0.3);
+  font-size: var(--font-size-12, 12px);
+}
+
+.btn-generate:hover:not(:disabled),
+.btn-regen:hover:not(:disabled) {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* Fields */
+
+.detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+}
+
+.detail-field {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-border-light, #f0f0f0);
+  align-items: baseline;
+}
+
+.detail-label {
+  flex-shrink: 0;
+  width: 90px;
+  font-size: var(--font-size-11, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-light-secondary, #888);
+}
+
+.detail-value {
+  flex: 1;
+  font-size: var(--font-size-13, 13px);
+  word-break: break-word;
+  margin: 0;
+}
+
+/* Progress (connection-specific) */
+
+.detail-progress {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  align-items: baseline;
+  border-bottom: 1px solid var(--color-border-light, #f0f0f0);
+}
+
+/* History */
+
+.detail-history {
+  margin: 0.5rem 0.75rem;
+  font-size: var(--font-size-12, 12px);
+}
+
+.detail-history summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--color-text-light-secondary, #777);
+  font-size: var(--font-size-12, 12px);
+  padding: 0.2rem 0;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.history-item {
+  font-size: var(--font-size-12, 12px);
+  padding: 0.25rem 0.5rem;
+  border-left: 2px solid var(--color-border-light, #ccc);
+  color: var(--color-text-light-secondary, #666);
+}

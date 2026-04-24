@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "description": "Example entity fixtures derived from Session 1 play. Used by unit and integration tests that need realistic entity data without live Foundry.",
+    "sessionSource": "starforged_session.docx"
+  },
+
+  "connections": [
+    {
+      "journalId": "fixture-connection-001",
+      "name": "Unknown Courier",
+      "type": "connection",
+      "data": {
+        "name": "Unknown Courier",
+        "role": "Former Keeper",
+        "goal": "Deliver the iron navigational panel to an unknown recipient",
+        "disposition": "Unconscious — condition critical",
+        "location": "Med bay, Player Ship",
+        "notes": "Female, adult. Radiation exposure consistent with Ascendancy vault contact. Has not released the iron panel even under sedation. Deliberate courier — Sable's assessment: she was not escaping, she was delivering. Name not yet established — formalize Connection when she regains consciousness.",
+        "history": [
+          "Found alive in debris field during intercept — unusual; player noted this was a first.",
+          "Stabilized by autodoc under duress (Face Danger +Wits, Weak Hit). Three treatable conditions, two monitorable, one flagged with Ascendancy vault radiation signature.",
+          "Sable identified her as a courier, not a refugee."
+        ],
+        "progress": {
+          "ticks": 0,
+          "rank": "dangerous"
+        },
+        "artPrompt": "weathered older woman, former military insignia scratched off armor, unconscious in medical bay, science fiction setting, gritty realistic",
+        "artStatus": "queued",
+        "flaggedTruths": ["precursors", "ai"],
+        "pendingActions": [
+          "Name NPC when she regains consciousness to formalize Connection",
+          "Investigate Ascendancy vault radiation signature",
+          "Identify the script on the iron panel"
+        ]
+      },
+      "art": null
+    }
+  ],
+
+  "ships": [
+    {
+      "journalId": "fixture-ship-001",
+      "name": "Player Ship",
+      "type": "ship",
+      "data": {
+        "name": "Player Ship",
+        "type": "Light Exploration Vessel",
+        "integrity": 5,
+        "battered": false,
+        "cursed": false,
+        "notes": "Sable is the ship AI — present via Weave dataweave, voice from doorways. Med bay described as 'maybe up to the task' — limited capability confirmed by autodoc weak hit result.",
+        "crew": ["Player Character", "Sable (AI — Adept-adjacent status unclear under Covenant law)"],
+        "currentLocation": "Debris field — intercept coordinates",
+        "history": [
+          "Successfully navigated dense debris field (Face Danger +Wits, Weak Hit — success with cost).",
+          "Med bay pushed to capacity stabilizing the courier."
+        ]
+      },
+      "art": null
+    }
+  ],
+
+  "artifacts": [
+    {
+      "journalId": "fixture-artifact-001",
+      "name": "Iron Navigational Panel",
+      "type": "artifact",
+      "data": {
+        "name": "Iron Navigational Panel",
+        "description": "Salvaged iron — Exodus ship remnant repurposed as a navigational instrument. Ascendancy script beneath standard navigational markings, partially worn away. Radiation signature matches Ascendancy vault contact.",
+        "origin": "Ascendancy vault",
+        "radiationSignature": "Ascendancy vault — autodoc database identified with 'uncomfortable confidence'",
+        "script": "Ascendancy script — unrecognized, finer than surface markings, partially worn",
+        "custody": "Courier — not released even under sedation",
+        "flaggedTruths": ["precursors", "iron"],
+        "openThreads": [
+          "Identify the Ascendancy script",
+          "Determine the intended recipient of the delivery",
+          "Assess whether the panel is a navigational instrument, a key, or something else"
+        ],
+        "notes": "Two active threads: NPC condition and artifact identity (per module behind-the-scenes notes). Do not conflate — resolve NPC arc first."
+      }
+    }
+  ],
+
+  "npcs": [
+    {
+      "journalId": "fixture-npc-sable",
+      "name": "Sable",
+      "type": "npc",
+      "data": {
+        "name": "Sable",
+        "role": "Ship intelligence — Weave-integrated",
+        "notes": "Speaks from doorways, half in the dataweave. Legal status under Covenant AI law unclear — functions as an Adept-equivalent but is not human. Key line delivered: 'She wasn't escaping from something. She was delivering it.' Treat as trusted crew member for now.",
+        "flaggedTruths": ["ai", "communication"]
+      }
+    }
+  ]
+}

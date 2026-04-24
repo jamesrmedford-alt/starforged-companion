@@ -1,0 +1,265 @@
+/* ==========================================================================
+   Progress Tracks panel — starforged-companion.css (append to existing file)
+   ========================================================================== */
+
+/* --- Panel shell --- */
+
+.sf-progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  font-family: var(--font-primary, sans-serif);
+  min-width: 420px;
+}
+
+/* --- Add-track row --- */
+
+.add-track-section {
+  border-bottom: 1px solid var(--color-border-light, #ccc);
+  padding-bottom: 0.75rem;
+}
+
+.add-track-fields {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.track-input {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--color-border-light, #ccc);
+  border-radius: 3px;
+  font-size: var(--font-size-13, 13px);
+}
+
+.track-select {
+  flex: 0 1 auto;
+  padding: 0.25rem 0.3rem;
+  border: 1px solid var(--color-border-light, #ccc);
+  border-radius: 3px;
+  font-size: var(--font-size-13, 13px);
+}
+
+/* --- Individual track row --- */
+
+.track-row {
+  background: var(--color-bg-option, rgba(0,0,0,0.03));
+  border: 1px solid var(--color-border-light, #ddd);
+  border-left: 4px solid var(--rank-color, #888);
+  border-radius: 4px;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  transition: opacity 0.2s;
+}
+
+.track-row.is-completed {
+  opacity: 0.55;
+  border-left-color: var(--color-border-light, #aaa);
+}
+
+/* Rank accent colours via CSS custom property */
+.rank-troublesome { --rank-color: #5a9e5a; }
+.rank-dangerous   { --rank-color: #b0a030; }
+.rank-formidable  { --rank-color: #c07830; }
+.rank-extreme     { --rank-color: #b04020; }
+.rank-epic        { --rank-color: #901818; }
+
+/* --- Track header row --- */
+
+.track-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.track-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.track-name {
+  font-weight: bold;
+  font-size: var(--font-size-14, 14px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-meta {
+  font-size: var(--font-size-11, 11px);
+  color: var(--color-text-light-secondary, #666);
+}
+
+/* --- Action buttons --- */
+
+.track-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.track-btn {
+  appearance: none;
+  border: 1px solid var(--color-border-light, #bbb);
+  border-radius: 3px;
+  background: var(--color-bg-btn, #f0f0f0);
+  cursor: pointer;
+  font-size: var(--font-size-13, 13px);
+  line-height: 1;
+  padding: 0.2rem 0.45rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.track-btn:hover:not(:disabled) {
+  background: var(--color-bg-btn-hover, #dde);
+  border-color: var(--color-border-dark, #888);
+}
+
+.track-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-mark     { color: #2a7a2a; border-color: #5a9e5a; font-weight: bold; }
+.btn-clear    { color: #7a4a2a; border-color: #c07830; }
+.btn-roll     { color: #2a4a9a; border-color: #5070c0; font-size: 1rem; }
+.btn-complete { color: #2a7a5a; border-color: #4a9a7a; }
+.btn-remove   { color: #8a2a2a; border-color: #c04040; }
+.btn-add      { color: #fff;    background: #4a7a4a; border-color: #3a6a3a; font-weight: bold; }
+.btn-add:hover { background: #3a6a3a; }
+
+/* --- 10-box track display --- */
+
+.track-boxes {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.track-box {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-border-dark, #666);
+  border-radius: 2px;
+  background: var(--color-bg-option, #fafafa);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* fully filled box */
+.track-box.box-4 {
+  background: var(--rank-color, #888);
+  border-color: var(--rank-color, #888);
+}
+
+/* --- Tick SVG --- */
+
+.tick-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.tick-svg line {
+  stroke: var(--rank-color, #444);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.tick-svg .box-fill {
+  fill: var(--rank-color, #888);
+  stroke: none;
+}
+
+/* When box is fully filled, lines are white for contrast */
+.track-box.box-4 .tick-svg line {
+  stroke: rgba(255,255,255,0.6);
+}
+
+/* --- Track footer --- */
+
+.track-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-11, 11px);
+  color: var(--color-text-light-secondary, #666);
+}
+
+/* --- Section headings & empty state --- */
+
+.tracks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.empty-state {
+  font-style: italic;
+  color: var(--color-text-light-secondary, #777);
+  font-size: var(--font-size-13, 13px);
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+.completed-section {
+  border-top: 1px solid var(--color-border-light, #ccc);
+  padding-top: 0.5rem;
+}
+
+.completed-section summary {
+  font-size: var(--font-size-13, 13px);
+  color: var(--color-text-light-secondary, #666);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0.5rem;
+}
+
+/* --- Progress roll chat card --- */
+
+.progress-roll-card {
+  /* Inherits .starforged-move-card base styles */
+}
+
+.progress-roll-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: var(--font-size-14, 14px);
+}
+
+.roll-label {
+  color: var(--color-text-light-secondary, #666);
+  font-size: var(--font-size-12, 12px);
+}
+
+.roll-value {
+  font-size: 1.4rem;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.roll-value.challenge {
+  color: var(--color-text-dark-secondary, #444);
+}
+
+.roll-sep {
+  color: var(--color-text-light-secondary, #aaa);
+}
+
+.roll-meta {
+  font-size: var(--font-size-12, 12px);
+  color: var(--color-text-light-secondary, #666);
+  margin-top: 0.25rem;
+}

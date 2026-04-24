@@ -1,0 +1,123 @@
+[
+  {
+    "category": "cataclysm",
+    "roll": 82,
+    "subRoll": 15,
+    "band": "68–100",
+    "text": "Catastrophic war. Our ancestors waged war against a relentless artificial intelligence. Countless worlds were transformed into battlegrounds. We could not defeat it — we could only flee.",
+    "subTable": "foe",
+    "subTableLabel": "Foe",
+    "subTableText": "Artificial intelligence",
+    "questStarter": "A derelict warship from the ancient war is discovered adrift in the Forge. Those aboard were not soldiers — they were something else. What were they fleeing?"
+  },
+  {
+    "category": "exodus",
+    "roll": 4,
+    "subRoll": null,
+    "band": "1–20",
+    "text": "The exodus was a long, perilous journey across the stars. The Ironhomes — the great ships of the exodus — still sail the Forge. Their crews are the descendants of original passengers, and they consider themselves the true heirs of the old worlds.",
+    "questStarter": "One of the Ironhomes carries a cargo it has never revealed. What secret does it guard, and what will you do when you discover the truth?"
+  },
+  {
+    "category": "communities",
+    "roll": 36,
+    "subRoll": null,
+    "band": "34–67",
+    "text": "Dangers abound, but there is safety in numbers — the Founder Clans. Many ships and settlements are united under the banner of one of the five Founder Clans. Each honors the name of a leader who guided their people in the chaotic time after the Exodus. Territorial skirmishes are common.",
+    "questStarter": "A forsaken people, sworn to no clan, live on an orbital station. A recent illness left many sick or dead. Which clan stands against you?"
+  },
+  {
+    "category": "iron",
+    "roll": 29,
+    "subRoll": null,
+    "band": "1–33",
+    "text": "Iron is the word, the bond, the sacred vow. The iron of the exodus ships — salvaged and reshaped — is the most precious material in the Forge. Vows are sworn upon it, and breaking such a vow is the gravest of dishonors.",
+    "questStarter": "A fragment of an Exodus ship is being auctioned to the highest bidder. Who else wants it, and why is their claim a threat to everything you hold dear?"
+  },
+  {
+    "category": "laws",
+    "roll": 95,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "Order is maintained — at great cost. A network of Keepers upholds a strict Covenant across the settled domains. Their authority is absolute in the settlements they govern. But their reach does not extend everywhere, and where the Covenant does not apply, old cruelties flourish.",
+    "questStarter": "A Keeper has been corrupted. The evidence is undeniable. The Covenant's own laws make them nearly untouchable. What will you sacrifice to bring them to justice?"
+  },
+  {
+    "category": "religion",
+    "roll": 87,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "Three competing religious orders vie for the souls of the Forge — the Triumvirate. Each traces its origins to the time of the Exodus. Each claims to hold the true faith. Their conflicts are rarely violent, but the wounds they inflict cut deep.",
+    "questStarter": "A relic sacred to all three orders has been stolen. Each blames the others. The real thief has a very different agenda. What do they want, and what will happen if they get it?"
+  },
+  {
+    "category": "magic",
+    "roll": 70,
+    "subRoll": 12,
+    "band": "68–100",
+    "text": "Paragons walk among us. Through careful genetic engineering across generations, some individuals manifest abilities beyond ordinary human capacity. These Paragons are rare, often sought by factions who want to control or exploit their gifts.",
+    "subTable": "source",
+    "subTableLabel": "Source",
+    "subTableText": "Genetic engineering",
+    "questStarter": "A child has been identified as a potential Paragon. Three factions are already moving to claim her. She has not yet manifested. What happens when she does?"
+  },
+  {
+    "category": "communication",
+    "roll": 76,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "The Weave connects us. A network of data hubs — the Weave — spans the settled domains, enabling near-instant communication between nodes. But the Weave is maintained by a guild who charge dearly for access, and who guard its architecture as a state secret.",
+    "questStarter": "A message has arrived through a Weave node that has been dead for fifty years. It is addressed to someone who died in the Exodus. What does it say?"
+  },
+  {
+    "category": "medicine",
+    "roll": 5,
+    "subRoll": null,
+    "band": "1–20",
+    "text": "The knowledge is gone. Advanced medical science was lost in the chaos of the Exodus. Healers work with incomplete tools and incomplete understanding. Diseases that once had cures now kill. Surgery is as likely to harm as heal without significant skill and luck.",
+    "questStarter": "A survivor of the ancient war has been found in cryo. She carries medical knowledge that could save thousands — but also secrets that powerful people want buried. Who will you protect?"
+  },
+  {
+    "category": "ai",
+    "roll": 12,
+    "subRoll": 28,
+    "band": "1–33",
+    "text": "AI is outlawed — the Adepts fill the void. After the war, all artificial intelligence was banned by Covenant law. In their place, Adepts — humans trained from childhood to perform the cognitive work once done by machines — serve as navigators, analysts, and administrators. They are indispensable and highly controlled.",
+    "subTable": "resolution",
+    "subTableLabel": "Human solution",
+    "subTableText": "Adepts — humans trained to replace AI functions",
+    "questStarter": "An Adept has gone rogue — or perhaps simply free. She knows things that Covenant law says no single mind should hold. Is she a threat or a salvation?"
+  },
+  {
+    "category": "war",
+    "roll": 30,
+    "subRoll": null,
+    "band": "1–33",
+    "text": "There are no armies — only raiders and conscripts. Organised military forces do not exist in the Forge. Violence is carried out by raiders, hired blades, and reluctant conscripts levied by desperate settlements. War is brutal, local, and unending.",
+    "questStarter": "A warlord is conscripting the population of an outpost settlement. The people have nowhere to go. They have sent for help. Will you answer?"
+  },
+  {
+    "category": "lifeforms",
+    "roll": 78,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "The Forgespawn are a plague. Strange, hostile lifeforms — the Forgespawn — have infested many sites across the Forge. Their origins are unknown. They are not animals. They are not machines. They are something else, and they are spreading.",
+    "questStarter": "A settlement has gone silent. The last message mentioned something in the walls. What do you find when you arrive, and what do you do when it finds you?"
+  },
+  {
+    "category": "precursors",
+    "roll": 72,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "The Ascendancy left vaults untethered from reality. The Precursors who built across the Forge were the Ascendancy — a civilisation so advanced they ceased to occupy physical space entirely. Their vaults persist: structures that exist simultaneously in the Forge and somewhere else. Entering one is to step partly out of reality.",
+    "questStarter": "An Ascendancy vault has opened — not been opened. Opened itself. Something came out. What is it, and what does it want?"
+  },
+  {
+    "category": "horrors",
+    "roll": 92,
+    "subRoll": null,
+    "band": "68–100",
+    "text": "The Forge gives unnatural life to the dead — the Soulbinders stand against them. The woken dead are a plague within the Forge. Most are hollowed and corrupted by death, driven by hate and hunger for the warmth of life forever lost to them. The Soulbinders are dedicated to putting them to rest.",
+    "questStarter": "Rumors persist of a fleet of ghost ships bound for settled domains. Who leads this corrupted armada, and why do they seek revenge against the living?"
+  }
+]
