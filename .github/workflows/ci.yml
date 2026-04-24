@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags:     ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 1 — Lint and unit tests
+  # No Foundry required — Vitest runs in Node with stubbed globals via tests/setup.js
+  # ────────────────────────────────────────────────────────────────────────────
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Coverage report
+        run: npm run test:coverage
+        # Coverage thresholds enforced in vitest.config.js (lines 80%, functions 80%, branches 75%)
+        # Job fails if thresholds are not met.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 2 — Manifest validation
+  # Validates module.json structure and compatibility fields.
+  # ────────────────────────────────────────────────────────────────────────────
+  validate-manifest:
+    name: Validate Manifest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate module.json is valid JSON
+        run: |
+          python3 -c "import json, sys; json.load(open('module.json'))" \
+            && echo "module.json is valid JSON" \
+            || (echo "module.json is not valid JSON" && exit 1)
+
+      - name: Check required manifest fields
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+
+          with open("module.json") as f:
+            m = json.load(f)
+
+          required = ["id", "title", "version", "compatibility", "esmodules", "languages"]
+          missing = [k for k in required if k not in m]
+
+          if missing:
+            print(f"Missing required fields: {missing}")
+            sys.exit(1)
+
+          compat = m.get("compatibility", {})
+          if "minimum" not in compat:
+            print("compatibility.minimum is required")
+            sys.exit(1)
+
+          print(f"Manifest OK — id: {m['id']}, version: {m['version']}")
+          EOF
+
+      - name: Check language file exists
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+
+          with open("module.json") as f:
+            m = json.load(f)
+
+          for lang in m.get("languages", []):
+            path = lang.get("path", "")
+            if not os.path.exists(path):
+              print(f"Language file not found: {path}")
+              sys.exit(1)
+            print(f"Language file OK: {path}")
+          EOF
+
+      - name: Validate en.json is valid JSON
+        run: |
+          python3 -c "import json; json.load(open('lang/en.json'))" \
+            && echo "lang/en.json is valid JSON" \
+            || (echo "lang/en.json is not valid JSON" && exit 1)
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 3 — Release packaging
+  # Only runs on version tags (v*). Creates a zip and GitHub release.
+  # ────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, validate-manifest]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build release zip
+        run: |
+          mkdir -p dist
+
+          zip -r dist/starforged-companion-${{ steps.version.outputs.version }}.zip \
+            module.json \
+            README.md \
+            lang/ \
+            styles/ \
+            src/ \
+            --exclude "src/foundry-shim.js" \
+            --exclude "*.test.js"
+
+          echo "Release zip contents:"
+          unzip -l dist/starforged-companion-${{ steps.version.outputs.version }}.zip
+
+      - name: Update module.json download URL
+        run: |
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/starforged-companion-${{ steps.version.outputs.version }}.zip"
+          MANIFEST_URL="https://github.com/${{ github.repository }}/releases/latest/download/module.json"
+
+          python3 - <<EOF
+          import json
+
+          with open("module.json") as f:
+            m = json.load(f)
+
+          m["download"] = "${DOWNLOAD_URL}"
+          m["manifest"] = "${MANIFEST_URL}"
+          m["url"]      = "https://github.com/${{ github.repository }}"
+
+          with open("module.json", "w") as f:
+            json.dump(m, f, indent=2)
+
+          print(f"Updated module.json: download={m['download']}")
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Starforged Companion v${{ steps.version.outputs.version }}
+          body: |
+            ## Starforged Companion v${{ steps.version.outputs.version }}
+
+            ### Installation
+            Paste this manifest URL into Foundry's **Install Module** dialog:
+            ```
+            https://github.com/${{ github.repository }}/releases/latest/download/module.json
+            ```
+
+            Or download the zip below and extract it into your `Data/modules/` folder.
+          files: |
+            dist/starforged-companion-${{ steps.version.outputs.version }}.zip
+            module.json
+          draft: false
+          prerelease: false
