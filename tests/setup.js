@@ -111,6 +111,8 @@ global.JournalEntry = {
       name: data.name,
       getFlag: (mod, key) => flags[`${mod}.${key}`],
       setFlag: async (mod, key, val) => { flags[`${mod}.${key}`] = val; },
+      createEmbeddedDocuments: async () => [],
+      pages: { contents: [] },
     };
   },
 };
