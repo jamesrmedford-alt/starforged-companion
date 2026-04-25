@@ -18,8 +18,6 @@
  * Source: Starforged Reference Guide p.121 / Rulebook pp.55-65
  */
 
-import { foundry } from "../foundry-shim.js";
-
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
 

@@ -23,8 +23,6 @@
  */
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
-import { foundry } from "../foundry-shim.js";
-
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 

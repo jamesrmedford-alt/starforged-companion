@@ -15,8 +15,6 @@
  * or when the player has a relevant open vow.
  */
 
-import { foundry } from "../foundry-shim.js";
-
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
 

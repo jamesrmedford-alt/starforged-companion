@@ -13,8 +13,6 @@
  * They're primarily narrative and context-injection entities.
  */
 
-import { foundry } from "../foundry-shim.js";
-
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "planet";
 

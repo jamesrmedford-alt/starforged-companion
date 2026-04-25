@@ -9,8 +9,6 @@
  * Storage: JournalEntry + JournalEntryPage, same pattern as connections.
  */
 
-import { foundry } from "../foundry-shim.js";
-
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "settlement";
 
