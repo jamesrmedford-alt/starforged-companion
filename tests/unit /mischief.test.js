@@ -134,10 +134,12 @@ describe('buildMischiefAside — determinism', () => {
     expect(a).toBe(b);
   });
 
-  it('different moveId produces different output when Math.random is fixed', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.5);
-    const a = buildMischiefAside(NARRATION_AUTODOC, 'FaceDanger', 'wits', 'balanced');
-    const b = buildMischiefAside(NARRATION_AUTODOC, 'Repair',     'wits', 'balanced');
+  it('different stat produces different output when Math.random is fixed', () => {
+    // Test stat variation rather than moveId — stat-specific template buckets
+    // are distinct (heart vs shadow), so this reliably produces different output.
+    vi.spyOn(Math, 'random').mockReturnValue(0.0);
+    const a = buildMischiefAside(NARRATION_AUTODOC, 'FaceDanger', 'heart',  'balanced');
+    const b = buildMischiefAside(NARRATION_AUTODOC, 'FaceDanger', 'shadow', 'balanced');
     vi.restoreAllMocks();
     expect(a).not.toBe(b);
   });

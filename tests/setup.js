@@ -19,7 +19,12 @@ global.game = {
     };
   })(),
   user: { isGM: true, id: 'test-user-gm' },
-  journal: { find: () => null, get: () => null, [Symbol.iterator]: function* () {} },
+  journal: {
+    find: () => null,
+    get: () => null,
+    getName: () => null,
+    [Symbol.iterator]: function* () {},
+  },
   modules: { get: () => null },
 };
 
