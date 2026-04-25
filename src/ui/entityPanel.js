@@ -6,18 +6,17 @@
 //
 // Storage:
 //   Entity data  — JournalEntry flags[MODULE_ID][entityType]
-//   Art          — JournalEntryPage flags[MODULE_ID].art  (b64 via art/storage.js)
+//   Art          — ArtAsset records via art/storage.js, indexed by entity.portraitId
 //
 // Portrait lock (per session decisions):
-//   State 0: no portrait      → Generate button shown
+//   State 0: no portrait        → Generate button shown
 //   State 1: portrait, unlocked → Regenerate button shown (one permitted)
 //   State 2: portrait, locked   → lock indicator only; no further generation
 //
 // Output path (Foundry): modules/starforged-companion/src/ui/entityPanel.js
 
-import { buildPrompt }    from '../art/promptBuilder.js';
-import { generateArt }    from '../art/generator.js';
-import { loadArt, saveArt } from '../art/storage.js';
+import { generatePortrait, regeneratePortrait } from '../art/generator.js';
+import { loadArtAsset, getDataUri }             from '../art/storage.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,16 +24,14 @@ import { loadArt, saveArt } from '../art/storage.js';
 
 const MODULE_ID = 'starforged-companion';
 
-/** Map of entity type key → display config */
 const ENTITY_TYPES = {
-  connection:  { label: 'Connections',  flag: 'connection',  icon: '⬡', artSize: '1024x1024' },
-  ship:        { label: 'Ships',        flag: 'ship',        icon: '◈', artSize: '1792x1024' },
-  settlement:  { label: 'Settlements',  flag: 'settlement',  icon: '⬟', artSize: '1024x1024' },
-  faction:     { label: 'Factions',     flag: 'faction',     icon: '⬢', artSize: '1024x1024' },
-  planet:      { label: 'Planets',      flag: 'planet',      icon: '◉', artSize: '1792x1024' },
+  connection:  { label: 'Connections',  flag: 'connection',  icon: '⬡' },
+  ship:        { label: 'Ships',        flag: 'ship',        icon: '◈' },
+  settlement:  { label: 'Settlements',  flag: 'settlement',  icon: '⬟' },
+  faction:     { label: 'Factions',     flag: 'faction',     icon: '⬢' },
+  planet:      { label: 'Planets',      flag: 'planet',      icon: '◉' },
 };
 
-/** Fields rendered in the detail view per entity type. */
 const DETAIL_FIELDS = {
   connection: [
     { key: 'role',        label: 'Role'        },
@@ -51,11 +48,11 @@ const DETAIL_FIELDS = {
     { key: 'notes',     label: 'Notes'     },
   ],
   settlement: [
-    { key: 'location',  label: 'Location'  },
+    { key: 'location',   label: 'Location'   },
     { key: 'population', label: 'Population' },
-    { key: 'authority', label: 'Authority' },
-    { key: 'projects',  label: 'Projects'  },
-    { key: 'notes',     label: 'Notes'     },
+    { key: 'authority',  label: 'Authority'  },
+    { key: 'projects',   label: 'Projects'   },
+    { key: 'notes',      label: 'Notes'      },
   ],
   faction: [
     { key: 'type',     label: 'Type'     },
@@ -78,13 +75,11 @@ const DETAIL_FIELDS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Load all entities of every type from the journal.
- * Returns a map: { connection: [...], ship: [...], ... }
- * Each entry is: { journalId, name, data, art }
- *   data — raw flag object from the entity module
- *   art  — { dataUri, locked, superseded } | null
+ * Load all entities of every type from the journal, with their art assets.
+ * Art is looked up via entity.data.portraitId → loadArtAsset().
  */
 async function loadAllEntities() {
+  const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
   const result = {};
 
   for (const [typeKey, config] of Object.entries(ENTITY_TYPES)) {
@@ -94,18 +89,22 @@ async function loadAllEntities() {
       const data = journal.getFlag(MODULE_ID, config.flag);
       if (!data) continue;
 
-      const art = await loadArt(journal.id).catch(() => null);
+      // Load art asset via entity's portraitId
+      const art = data.portraitId
+        ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
+        : null;
+
+      const dataUri = art ? getDataUri(art) : null;
 
       result[typeKey].push({
         journalId: journal.id,
-        name: data.name ?? journal.name,
+        name:      data.name ?? journal.name,
         typeKey,
         data,
-        art,
+        art:    art   ? { ...art, dataUri } : null,
       });
     }
 
-    // Sort alphabetically within each type
     result[typeKey].sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -114,17 +113,29 @@ async function loadAllEntities() {
 
 /**
  * Find a single entity record across all types.
- * @param {string} journalId
- * @returns {Promise<object|null>}
  */
 async function findEntity(journalId) {
+  const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+
   for (const [typeKey, config] of Object.entries(ENTITY_TYPES)) {
     const journal = game.journal.get(journalId);
     if (!journal) continue;
     const data = journal.getFlag(MODULE_ID, config.flag);
     if (!data) continue;
-    const art = await loadArt(journalId).catch(() => null);
-    return { journalId, name: data.name ?? journal.name, typeKey, data, art };
+
+    const art = data.portraitId
+      ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
+      : null;
+
+    const dataUri = art ? getDataUri(art) : null;
+
+    return {
+      journalId,
+      name: data.name ?? journal.name,
+      typeKey,
+      data,
+      art: art ? { ...art, dataUri } : null,
+    };
   }
   return null;
 }
@@ -139,10 +150,7 @@ export class EntityPanelApp extends ApplicationV2 {
 
   static #instance = null;
 
-  /** journalId of the currently selected entity, or null for list view. */
   #selectedId = null;
-
-  /** Track in-progress art generation to prevent double-clicks. */
   #generatingIds = new Set();
 
   static DEFAULT_OPTIONS = {
@@ -154,14 +162,11 @@ export class EntityPanelApp extends ApplicationV2 {
       resizable: true,
       minimizable: true,
     },
-    position: {
-      width: 380,
-      height: 600,
-    },
+    position: { width: 380, height: 600 },
     actions: {
-      selectEntity:      EntityPanelApp.#onSelectEntity,
-      backToList:        EntityPanelApp.#onBackToList,
-      generatePortrait:  EntityPanelApp.#onGeneratePortrait,
+      selectEntity:       EntityPanelApp.#onSelectEntity,
+      backToList:         EntityPanelApp.#onBackToList,
+      generatePortrait:   EntityPanelApp.#onGeneratePortrait,
       regeneratePortrait: EntityPanelApp.#onRegeneratePortrait,
     },
   };
@@ -178,30 +183,25 @@ export class EntityPanelApp extends ApplicationV2 {
   // Lifecycle
   // -----------------------------------------------------------------------
 
-  /** @override */
-  async _prepareContext(options) {
+  async _prepareContext(_options) {
     if (this.#selectedId) {
       const entity = await findEntity(this.#selectedId);
       return { view: 'detail', entity };
     }
 
     const groups = await loadAllEntities();
-
-    // Flatten to sections for template
     const sections = Object.entries(ENTITY_TYPES).map(([typeKey, config]) => ({
       typeKey,
-      label: config.label,
-      icon: config.icon,
+      label:    config.label,
+      icon:     config.icon,
       entities: groups[typeKey] ?? [],
     })).filter(s => s.entities.length > 0);
 
     const totalCount = Object.values(groups).reduce((n, arr) => n + arr.length, 0);
-
     return { view: 'list', sections, totalCount };
   }
 
-  /** @override */
-  async _renderHTML(context, options) {
+  async _renderHTML(context, _options) {
     const html = context.view === 'detail'
       ? this.#renderDetail(context.entity)
       : this.#renderList(context.sections, context.totalCount);
@@ -211,8 +211,7 @@ export class EntityPanelApp extends ApplicationV2 {
     return tmp.firstElementChild;
   }
 
-  /** @override */
-  _replaceHTML(result, content, options) {
+  _replaceHTML(result, content, _options) {
     content.innerHTML = '';
     content.append(result);
   }
@@ -229,8 +228,7 @@ export class EntityPanelApp extends ApplicationV2 {
             No entities tracked yet.<br>
             They appear here when created via the entity modules.
           </p>
-        </div>
-      `;
+        </div>`;
     }
 
     const sectionHtml = sections.map(s => `
@@ -243,8 +241,7 @@ export class EntityPanelApp extends ApplicationV2 {
         <ul class="entity-list">
           ${s.entities.map(e => this.#renderEntityRow(e)).join('')}
         </ul>
-      </section>
-    `).join('');
+      </section>`).join('');
 
     return `<div class="sf-entity-panel sf-entity-list">${sectionHtml}</div>`;
   }
@@ -261,20 +258,15 @@ export class EntityPanelApp extends ApplicationV2 {
     return `
       <li class="entity-row" data-action="selectEntity" data-journal-id="${entity.journalId}"
           role="button" tabindex="0">
-        <div class="entity-thumb-wrap">
-          ${thumb}
-          ${lockBadge}
-        </div>
+        <div class="entity-thumb-wrap">${thumb}${lockBadge}</div>
         <div class="entity-row-info">
           <span class="entity-row-name">${entity.name}</span>
           ${this.#renderRowSubtitle(entity)}
         </div>
         <span class="entity-row-chevron">›</span>
-      </li>
-    `;
+      </li>`;
   }
 
-  /** One-line subtitle per entity type, pulled from the most useful field. */
   #renderRowSubtitle(entity) {
     const d = entity.data;
     let text = '';
@@ -300,20 +292,18 @@ export class EntityPanelApp extends ApplicationV2 {
             <button class="entity-btn btn-back" data-action="backToList">← Back</button>
           </div>
           <p class="entity-empty-state">Entity not found.</p>
-        </div>
-      `;
+        </div>`;
     }
 
     const config = ENTITY_TYPES[entity.typeKey];
     const isGenerating = this.#generatingIds.has(entity.journalId);
 
-    // Portrait section
     let portraitHtml;
     if (entity.art?.dataUri) {
       const lockBadge = entity.art.locked
         ? '<div class="portrait-lock-badge">🔒 Portrait locked</div>'
         : '';
-      const regenBtn = (!entity.art.locked && !isGenerating)
+      const regenBtn = (!entity.art.locked && !entity.art.regenerationUsed && !isGenerating)
         ? `<button class="entity-btn btn-regen" data-action="regeneratePortrait"
                    data-journal-id="${entity.journalId}">
              Regenerate portrait
@@ -324,40 +314,39 @@ export class EntityPanelApp extends ApplicationV2 {
           <img class="entity-portrait" src="${entity.art.dataUri}" alt="${entity.name} portrait">
           ${lockBadge}
           <div class="portrait-actions">${regenBtn}</div>
-        </div>
-      `;
+        </div>`;
     } else {
+      const canGenerate = !!entity.data.portraitSourceDescription;
       const genBtn = isGenerating
         ? `<button class="entity-btn btn-generate" disabled>Generating…</button>`
-        : `<button class="entity-btn btn-generate" data-action="generatePortrait"
-                   data-journal-id="${entity.journalId}">
-             Generate portrait
-           </button>`;
+        : canGenerate
+          ? `<button class="entity-btn btn-generate" data-action="generatePortrait"
+                     data-journal-id="${entity.journalId}">
+               Generate portrait
+             </button>`
+          : `<button class="entity-btn btn-generate" disabled
+                     title="No source description yet — portrait will generate after Loremaster's first description">
+               Awaiting description
+             </button>`;
       portraitHtml = `
         <div class="portrait-wrap portrait-placeholder">
           <div class="portrait-placeholder-icon">${config.icon}</div>
           <div class="portrait-actions">${genBtn}</div>
-        </div>
-      `;
+        </div>`;
     }
 
-    // Entity fields
     const fields = DETAIL_FIELDS[entity.typeKey] ?? [];
     const fieldsHtml = fields
       .filter(f => entity.data[f.key] !== undefined && entity.data[f.key] !== null && entity.data[f.key] !== '')
       .map(f => {
-        const val = f.bool
-          ? (entity.data[f.key] ? 'Yes' : 'No')
-          : String(entity.data[f.key]);
+        const val = f.bool ? (entity.data[f.key] ? 'Yes' : 'No') : String(entity.data[f.key]);
         return `
           <div class="detail-field">
             <dt class="detail-label">${f.label}</dt>
             <dd class="detail-value">${val}</dd>
-          </div>
-        `;
+          </div>`;
       }).join('');
 
-    // Connection-specific: progress track link
     const progressHtml = entity.typeKey === 'connection' && entity.data.progress
       ? `<div class="detail-progress">
            <span class="detail-label">Progress</span>
@@ -368,7 +357,6 @@ export class EntityPanelApp extends ApplicationV2 {
          </div>`
       : '';
 
-    // History (connections)
     const historyHtml = entity.typeKey === 'connection' && entity.data.history?.length
       ? `<details class="detail-history">
            <summary>History (${entity.data.history.length})</summary>
@@ -383,7 +371,6 @@ export class EntityPanelApp extends ApplicationV2 {
         <div class="detail-back">
           <button class="entity-btn btn-back" data-action="backToList">← All Entities</button>
         </div>
-
         <div class="detail-header">
           <span class="detail-type-icon">${config.icon}</span>
           <div class="detail-titles">
@@ -391,17 +378,13 @@ export class EntityPanelApp extends ApplicationV2 {
             <span class="detail-type-label">${config.label.replace(/s$/, '')}</span>
           </div>
         </div>
-
         ${portraitHtml}
-
         <dl class="detail-fields">
           ${fieldsHtml}
           ${progressHtml}
         </dl>
-
         ${historyHtml}
-      </div>
-    `;
+      </div>`;
   }
 
   // -----------------------------------------------------------------------
@@ -419,31 +402,37 @@ export class EntityPanelApp extends ApplicationV2 {
   }
 
   /**
-   * Generate a portrait for an entity that has none yet.
-   * Calls art/promptBuilder → art/generator → art/storage.
-   * On success, marks the entity's art as unlocked (state 1).
+   * Generate a portrait using the real generator.js API.
+   * generator.js handles prompt building, DALL-E call, storage, and entity linking.
    */
   static async #onGeneratePortrait(event, target) {
     const journalId = target.dataset.journalId;
     if (this.#generatingIds.has(journalId)) return;
 
     this.#generatingIds.add(journalId);
-    this.render(); // show "Generating…" state immediately
+    this.render();
 
     try {
-      const entity = await findEntity(journalId);
+      const entity       = await findEntity(journalId);
       if (!entity) throw new Error(`Entity not found: ${journalId}`);
 
-      const config = ENTITY_TYPES[entity.typeKey];
-      const prompt = buildPrompt(entity.typeKey, entity.data);
-      const b64 = await generateArt({ prompt, size: config.artSize });
+      const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
 
-      await saveArt(journalId, { b64, locked: false, superseded: false });
+      const asset = await generatePortrait(
+        journalId,
+        entity.typeKey,
+        entity.data,
+        campaignState,
+      );
 
-      ui.notifications.info(`Portrait generated for ${entity.name}.`);
+      if (asset) {
+        ui.notifications.info(`Portrait generated for ${entity.name}.`);
+      } else {
+        ui.notifications.warn(`Portrait generation failed for ${entity.name}. Check console for details.`);
+      }
     } catch (err) {
       console.error(`${MODULE_ID} | Portrait generation failed:`, err);
-      ui.notifications.warn(`Portrait generation failed for this entity. Check console for details.`);
+      ui.notifications.warn(`Portrait generation failed. Check console for details.`);
     } finally {
       this.#generatingIds.delete(journalId);
       this.render();
@@ -451,15 +440,15 @@ export class EntityPanelApp extends ApplicationV2 {
   }
 
   /**
-   * Regenerate a portrait (permitted once; immediately locks after).
-   * Marks the previous asset as superseded, stores the new one as locked.
+   * Regenerate a portrait using the real generator.js API.
+   * generator.js enforces the one-regeneration policy and locks immediately.
    */
   static async #onRegeneratePortrait(event, target) {
     const journalId = target.dataset.journalId;
     if (this.#generatingIds.has(journalId)) return;
 
     const confirmed = await Dialog.confirm({
-      title: 'Regenerate Portrait',
+      title:   'Regenerate Portrait',
       content: `<p>This is your one permitted regeneration. The new portrait will be <strong>permanently locked</strong>. Continue?</p>`,
     });
     if (!confirmed) return;
@@ -471,21 +460,20 @@ export class EntityPanelApp extends ApplicationV2 {
       const entity = await findEntity(journalId);
       if (!entity) throw new Error(`Entity not found: ${journalId}`);
 
-      const config = ENTITY_TYPES[entity.typeKey];
+      const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
 
-      // Mark old asset superseded
-      if (entity.art?.dataUri) {
-        await saveArt(journalId, { ...entity.art, superseded: true });
+      const asset = await regeneratePortrait(
+        journalId,
+        entity.typeKey,
+        entity.data,
+        campaignState,
+      );
+
+      if (asset) {
+        ui.notifications.info(`Portrait regenerated and locked for ${entity.name}.`);
+      } else {
+        ui.notifications.warn(`Portrait regeneration failed for ${entity.name}. Check console for details.`);
       }
-
-      // Build prompt with 'alternative composition' instruction (per session decisions)
-      const prompt = buildPrompt(entity.typeKey, entity.data, { alternativeComposition: true });
-      const b64 = await generateArt({ prompt, size: config.artSize });
-
-      // Save new asset as locked immediately
-      await saveArt(journalId, { b64, locked: true, superseded: false });
-
-      ui.notifications.info(`Portrait regenerated and locked for ${entity.name}.`);
     } catch (err) {
       console.error(`${MODULE_ID} | Portrait regeneration failed:`, err);
       ui.notifications.warn(`Portrait regeneration failed. Check console for details.`);
@@ -496,30 +484,22 @@ export class EntityPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
-  // Foundry hooks — live refresh
+  // Foundry hooks
   // -----------------------------------------------------------------------
 
-  /**
-   * Register hooks to refresh the panel when entity journals update.
-   * Called once from index.js init.
-   */
   static registerHooks() {
-    // Re-render when any journal entry's flags change — entity data or art.
     Hooks.on('updateJournalEntry', (doc, change) => {
       const instance = EntityPanelApp.#instance;
       if (!instance?.rendered) return;
-      const hasModuleFlags = foundry.utils.hasProperty(change, `flags.${MODULE_ID}`);
-      if (!hasModuleFlags) return;
+      if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}`)) return;
       instance.render();
     });
 
-    // Re-render when a journal is created (new entity added from connection.js etc.)
     Hooks.on('createJournalEntry', () => {
       const instance = EntityPanelApp.#instance;
       if (instance?.rendered) instance.render();
     });
 
-    // Re-render (back to list) when a journal is deleted
     Hooks.on('deleteJournalEntry', (doc) => {
       const instance = EntityPanelApp.#instance;
       if (!instance?.rendered) return;
@@ -533,11 +513,6 @@ export class EntityPanelApp extends ApplicationV2 {
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Open the entity panel, optionally jumping straight to a specific entity.
- * @param {string} [journalId]  If provided, opens in detail view for that entity.
- * @returns {EntityPanelApp}
- */
 export function openEntityPanel(journalId = null) {
   const app = EntityPanelApp.open();
   if (journalId) {
@@ -547,9 +522,6 @@ export function openEntityPanel(journalId = null) {
   return app;
 }
 
-/**
- * Register Foundry hooks. Called once from index.js init.
- */
 export function registerEntityPanelHooks() {
   EntityPanelApp.registerHooks();
 }
