@@ -6,13 +6,9 @@
 //   shouldApplyMischief(mischiefLevel) → boolean
 //   buildMischiefFraming(mischiefLevel, narration) → string | null
 //
-// NOTE — dial naming mismatch (tracked bug):
-//   mischief.js uses "serious" | "balanced" | "chaotic"
-//   settingsPanel.js stores "lawful" | "balanced" | "chaotic"
-//   index.js passes getMischiefDial() → "lawful" to mischief.js which
-//   does not recognise it and falls through to default (null / no framing).
-//   Tests here use mischief.js actual values until mischief.js is updated
-//   to accept "lawful" as an alias for "serious".
+// Dial value "lawful" (used by settingsPanel.js / getMischiefDial()) is
+// accepted as an alias for "serious" via normalizeDial() in mischief.js.
+// Both values are tested below.
 
 import { describe, it, expect, vi } from 'vitest';
 import {
@@ -84,6 +80,13 @@ describe('buildMischiefAside — dial gating', () => {
 
   it('returns a non-empty string even for serious dial (caller gates, not this function)', () => {
     const aside = buildMischiefAside(NARRATION_AUTODOC, 'FaceDanger', 'wits', 'serious');
+    expect(typeof aside).toBe('string');
+  });
+
+  it('"lawful" alias behaves identically to "serious"', () => {
+    // normalizeDial maps "lawful" → "serious" — both should return a string
+    // (buildMischiefAside doesn't gate on dial; that's shouldApplyMischief's job)
+    const aside = buildMischiefAside(NARRATION_AUTODOC, 'FaceDanger', 'wits', 'lawful');
     expect(typeof aside).toBe('string');
   });
 });
@@ -215,6 +218,10 @@ describe('shouldApplyMischief', () => {
     expect(shouldApplyMischief('balanced')).toBe(false);
     vi.restoreAllMocks();
   });
+
+  it('"lawful" is treated identically to "serious" — returns false', () => {
+    expect(shouldApplyMischief('lawful')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -240,5 +247,9 @@ describe('buildMischiefFraming', () => {
 
   it('returns null for unrecognised dial value', () => {
     expect(buildMischiefFraming('unknown', NARRATION_AUTODOC)).toBeNull();
+  });
+
+  it('"lawful" is treated identically to "serious" — returns null', () => {
+    expect(buildMischiefFraming('lawful', NARRATION_AUTODOC)).toBeNull();
   });
 });

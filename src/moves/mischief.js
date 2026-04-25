@@ -15,23 +15,49 @@
  * no extra API call. It's built from templates that surface the gap between what
  * the player said and what the Trickster decided.
  *
- * Settings:
- *   serious  — literal interpretation, no reframing
- *   balanced — occasional organic misreads that create emergent story moments
- *   chaotic  — deliberate misinterpretation for comic or dramatic effect
+ * Dial values (internal / UI alias):
+ *   "serious" / "lawful"  — literal interpretation, no reframing
+ *   "balanced"            — occasional organic misreads that create emergent story moments
+ *   "chaotic"             — deliberate misinterpretation for comic or dramatic effect
+ *
+ * "lawful" is the value stored by settingsPanel.js and returned by getMischiefDial().
+ * normalizeDial() maps it to "serious" so both spellings work throughout.
  */
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DIAL NORMALISATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalise the dial value before any logic sees it.
+ *
+ * settingsPanel.js stores "lawful" | "balanced" | "chaotic".
+ * mischief.js uses "serious" | "balanced" | "chaotic" internally.
+ * Both spellings are accepted so the two modules stay decoupled.
+ *
+ * @param {string} level
+ * @returns {"serious"|"balanced"|"chaotic"}
+ */
+function normalizeDial(level) {
+  return level === "lawful" ? "serious" : (level ?? "serious");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FRAMING — injected into interpreter user message
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Build the mischief framing string injected into the interpreter's user message.
- * Returns null for serious setting (no framing needed).
+ * Returns null for serious/lawful setting (no framing needed).
  *
- * @param {string} mischiefLevel  — "serious" | "balanced" | "chaotic"
+ * @param {string} mischiefLevel  — "serious"|"lawful"|"balanced"|"chaotic"
  * @param {string} narration      — player's raw narration (used for chaotic heuristics)
  * @returns {string|null}
  */
 export function buildMischiefFraming(mischiefLevel, narration) {
-  switch (mischiefLevel) {
+  switch (normalizeDial(mischiefLevel)) {
     case "serious":
       return null;   // No framing — pure literal interpretation
 
@@ -110,6 +136,10 @@ function selectChaoticHeuristics(narration) {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GATING — should mischief be applied at all?
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Determine whether mischief should be applied on this call.
  * Used externally if the pipeline wants to gate mischief by probability
@@ -117,17 +147,17 @@ function selectChaoticHeuristics(narration) {
  *
  * For balanced: roughly 1 in 5 chance of active reframing
  * For chaotic: always
- * For serious: never
+ * For serious/lawful: never
  *
  * Note: this is advisory — the model still decides in the framing above.
  * This function can be used to suppress framing entirely on some calls
  * for a lighter-touch balanced experience.
  *
- * @param {string} mischiefLevel
+ * @param {string} mischiefLevel  — "serious"|"lawful"|"balanced"|"chaotic"
  * @returns {boolean}
  */
 export function shouldApplyMischief(mischiefLevel) {
-  switch (mischiefLevel) {
+  switch (normalizeDial(mischiefLevel)) {
     case "serious":  return false;
     case "balanced": return Math.random() < 0.20;   // ~20% of calls get mischief framing
     case "chaotic":  return true;
@@ -137,14 +167,14 @@ export function shouldApplyMischief(mischiefLevel) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WIRY ASIDE — shown in the confirmation card when mischiefApplied is true
+// WRY ASIDE — shown in the confirmation card when mischiefApplied is true
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Build the wry aside shown in the move confirmation card.
  * Only called when mischiefApplied is true.
  *
- * Generated deterministically — no API call. Uses the gap between the player's
+ * Generated without an extra API call. Uses the gap between the player's
  * narration surface (what they said) and the chosen move (what the Trickster
  * decided) to pick a template that acknowledges the reframe with personality.
  *
@@ -154,7 +184,7 @@ export function shouldApplyMischief(mischiefLevel) {
  * @param {string} narration      — raw player narration
  * @param {string} moveId         — chosen move ID
  * @param {string} statUsed       — stat chosen
- * @param {string} mischiefLevel  — "balanced" | "chaotic"
+ * @param {string} mischiefLevel  — "serious"|"lawful"|"balanced"|"chaotic"
  * @returns {string}
  */
 export function buildMischiefAside(narration, moveId, statUsed, mischiefLevel) {
@@ -162,7 +192,7 @@ export function buildMischiefAside(narration, moveId, statUsed, mischiefLevel) {
   const category = getMoveCategory(moveId);
 
   // Chaotic gets more aggressive asides
-  if (mischiefLevel === "chaotic") {
+  if (normalizeDial(mischiefLevel) === "chaotic") {
     return pickChaoticAside(lower, moveId, statUsed, category);
   }
 
@@ -305,21 +335,21 @@ function pickChaoticAside(narration, moveId, statUsed, category) {
 
   // Stat-specific chaos commentary
   const chaoticStatAsides = {
-    heart: ["The Forge wants your feelings about this.",
-            "Resolve is the variable. Everything else is set dressing.",
-            "Your morale is on the line, not your skill."],
-    iron:  ["Brute endurance. The Forge respects the commitment.",
-            "No clever solution available. Just pushing through.",
-            "Your body is the instrument. Hope it's tuned."],
-    shadow:["The interesting move is the one nobody sees coming.",
-            "Deception is just a different kind of honesty.",
-            "What you're concealing matters more than what you're doing."],
-    edge:  ["Fast is the only kind of right available here.",
-            "Commitment. Now. No revisions.",
-            "The hesitation already happened. This is the aftermath."],
-    wits:  ["You need to understand the situation before you survive it.",
-            "Information is the resource you actually need.",
-            "The Forge is a puzzle. You're inside it."],
+    heart:  ["The Forge wants your feelings about this.",
+             "Resolve is the variable. Everything else is set dressing.",
+             "Your morale is on the line, not your skill."],
+    iron:   ["Brute endurance. The Forge respects the commitment.",
+             "No clever solution available. Just pushing through.",
+             "Your body is the instrument. Hope it's tuned."],
+    shadow: ["The interesting move is the one nobody sees coming.",
+             "Deception is just a different kind of honesty.",
+             "What you're concealing matters more than what you're doing."],
+    edge:   ["Fast is the only kind of right available here.",
+             "Commitment. Now. No revisions.",
+             "The hesitation already happened. This is the aftermath."],
+    wits:   ["You need to understand the situation before you survive it.",
+             "Information is the resource you actually need.",
+             "The Forge is a puzzle. You're inside it."],
   };
 
   if (chaoticStatAsides[statUsed]) {
@@ -338,6 +368,11 @@ function pickChaoticAside(narration, moveId, statUsed, category) {
     "Technically correct. The best kind.",
   ]);
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Get the move category for a given moveId.
