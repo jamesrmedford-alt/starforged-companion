@@ -376,8 +376,16 @@ Hooks.once("ready", () => {
  * layout uses a different control set.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
-  const group = controls.find(c => c.name === "token");
+  // Foundry v13 changed this hook — controls is now an Object keyed by group
+  // name rather than an Array. Handle both formats for compatibility.
+  const controlsArray = Array.isArray(controls)
+    ? controls
+    : Object.values(controls);
+
+  const group = controlsArray.find(c => c.name === "token" || c.name === "tokens");
   if (!group) return;
+
+  if (!Array.isArray(group.tools)) group.tools = [];
 
   group.tools.push(
     {
