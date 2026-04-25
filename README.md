@@ -2,7 +2,7 @@
 
 A Foundry VTT companion module for [Ironsworn: Starforged](https://ironswornrpg.com).
 
-Handles move interpretation, oracle integration, progress tracking, Connection/NPC management, and Loremaster context injection. Designed to work alongside the [Loremaster](https://www.patreon.com/theloremaster) AI narration module.
+Handles move interpretation, oracle integration, progress tracking, Connection/NPC management, and Loremaster context injection. Designed to work alongside the [Loremaster](https://www.patreon.com/theloremaster) AI narration module. Pushing Tag
 
 ---
 
