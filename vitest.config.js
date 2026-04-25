@@ -11,6 +11,10 @@ export default defineConfig({
     // run inside live Foundry and are excluded here.
     environment: 'node',
 
+    // Make describe/it/expect available globally — matches Jest behaviour.
+    // Required for resolver.test.js and assembler.test.js written in Session 2.
+    globals: true,
+
     // Use Vitest's default include pattern rather than a custom one —
     // Vitest 2.x glob resolution against custom paths proved unreliable.
     // Default pattern: **/*.{test,spec}.?(c|m)[jt]s?(x)
