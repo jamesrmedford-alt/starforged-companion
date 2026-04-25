@@ -635,11 +635,6 @@ export async function confirmInterpretation(interpretation) {
 }
 
 /**
- * Register game.settings. Call from the Foundry `init` hook in index.js.
- */
-export { registerSettings };
-
-/**
  * Wire the X-Card hook and any other event listeners.
  * Call from the Foundry `ready` hook in index.js.
  */
