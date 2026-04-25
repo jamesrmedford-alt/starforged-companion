@@ -1,0 +1,243 @@
+{
+  "STARFORGED": {
+
+    "AppTitle": {
+      "ProgressTracks": "Progress Tracks",
+      "EntityPanel": "Entities",
+      "SettingsPanel": "Starforged Companion — Settings"
+    },
+
+    "ProgressTrack": {
+      "AddButton": "Add",
+      "AddPlaceholder": "Track name…",
+      "TypeLabel": {
+        "vow": "Vow",
+        "expedition": "Expedition",
+        "connection": "Connection",
+        "combat": "Combat"
+      },
+      "RankLabel": {
+        "troublesome": "Troublesome",
+        "dangerous": "Dangerous",
+        "formidable": "Formidable",
+        "extreme": "Extreme",
+        "epic": "Epic"
+      },
+      "Buttons": {
+        "Mark": "Mark Progress",
+        "Clear": "Clear One Box",
+        "Roll": "Progress Roll",
+        "Complete": "Mark Complete",
+        "Remove": "Remove Track"
+      },
+      "CompletedSection": "Completed ({count})",
+      "EmptyState": "No active tracks. Swear a vow to begin.",
+      "RemoveDialog": {
+        "Title": "Remove Track",
+        "Body": "Permanently remove <strong>{label}</strong>? This cannot be undone."
+      },
+      "Notification": {
+        "Generated": "Portrait generated for {name}.",
+        "GenerateFailed": "Portrait generation failed for this entity. Check console for details.",
+        "RegenerateFailed": "Portrait regeneration failed. Check console for details.",
+        "Regenerated": "Portrait regenerated and locked for {name}."
+      }
+    },
+
+    "ProgressRoll": {
+      "CardType": "Progress Roll",
+      "ScoreLabel": "Score",
+      "VsLabel": "vs",
+      "StrongHit": "Strong Hit",
+      "WeakHit": "Weak Hit",
+      "Miss": "Miss",
+      "BoxesLabel": "{score} of {boxes} boxes filled"
+    },
+
+    "EntityPanel": {
+      "EntityTypes": {
+        "connection": "Connections",
+        "ship": "Ships",
+        "settlement": "Settlements",
+        "faction": "Factions",
+        "planet": "Planets"
+      },
+      "TypeSingular": {
+        "connection": "Connection",
+        "ship": "Ship",
+        "settlement": "Settlement",
+        "faction": "Faction",
+        "planet": "Planet"
+      },
+      "EmptyState": "No entities tracked yet.\nThey appear here when created via the entity modules.",
+      "BackButton": "← All Entities",
+      "BackButtonDetail": "← Back",
+      "EntityNotFound": "Entity not found.",
+      "PortraitLocked": "Portrait locked",
+      "PortraitLockBadge": "🔒 Portrait locked",
+      "GenerateButton": "Generate portrait",
+      "GeneratingButton": "Generating…",
+      "RegenerateButton": "Regenerate portrait",
+      "RegenDialog": {
+        "Title": "Regenerate Portrait",
+        "Body": "This is your one permitted regeneration. The new portrait will be <strong>permanently locked</strong>. Continue?"
+      },
+      "ProgressLabel": "Progress",
+      "ProgressValue": "{boxes} / 10 boxes ({rank})",
+      "HistoryLabel": "History ({count})",
+      "Fields": {
+        "connection": {
+          "role": "Role",
+          "goal": "Goal",
+          "disposition": "Disposition",
+          "location": "Location",
+          "notes": "Notes"
+        },
+        "ship": {
+          "type": "Type",
+          "integrity": "Integrity",
+          "battered": "Battered",
+          "cursed": "Cursed",
+          "notes": "Notes"
+        },
+        "settlement": {
+          "location": "Location",
+          "population": "Population",
+          "authority": "Authority",
+          "projects": "Projects",
+          "notes": "Notes"
+        },
+        "faction": {
+          "type": "Type",
+          "goal": "Goal",
+          "identity": "Identity",
+          "quirks": "Quirks",
+          "notes": "Notes"
+        },
+        "planet": {
+          "type": "Type",
+          "biomes": "Biomes",
+          "peril": "Peril",
+          "feature": "Feature",
+          "notes": "Notes"
+        }
+      },
+      "BoolYes": "Yes",
+      "BoolNo": "No"
+    },
+
+    "Settings": {
+      "Tabs": {
+        "Safety": "Safety",
+        "Mischief": "Mischief",
+        "About": "About"
+      },
+      "Safety": {
+        "GMNote": "Global Lines and Veils are set by the GM. Your private Lines are visible only to you.",
+        "ReadonlyNote": "Set by GM.",
+        "PlayerNote": "Mischief dial is controlled by the GM.",
+        "Lines": {
+          "Label": "Lines — Hard Limits",
+          "Description": "Absolute. Content matching a Line will never appear regardless of other settings.",
+          "Placeholder": "No situations that endanger…"
+        },
+        "Veils": {
+          "Label": "Veils — Soft Limits",
+          "Description": "Present in context packets. Content will be redirected, not strictly excluded.",
+          "Placeholder": "Children as plot-significant characters…"
+        },
+        "PrivateLines": {
+          "Label": "Private Lines — Visible only to you",
+          "Description": "Stored on this client. Never shared with GM or other players.",
+          "Placeholder": "My personal hard limit…"
+        },
+        "EmptyList": "None set.",
+        "AddButton": "Add",
+        "XCardNote": "Type <code>/x</code> in chat at any time to immediately suppress the current scene.",
+        "XCardNoteLabel": "X-Card:"
+      },
+      "Mischief": {
+        "CeilingNote": "Safety configuration is always a hard ceiling on the mischief layer. Active Lines and Veils are injected before any mischief is applied, regardless of dial setting.",
+        "CeilingNoteLabel": "Note:",
+        "Dial": {
+          "lawful": {
+            "Label": "Lawful",
+            "Description": "Always interprets the most rules-literal reading of player narration. No misdirection. Confirmations are plain."
+          },
+          "balanced": {
+            "Label": "Balanced",
+            "Description": "Default. Interprets with context and intent. Occasional wry asides when interpretation is ambiguous. No mechanical misdirection."
+          },
+          "chaotic": {
+            "Label": "Chaotic",
+            "Description": "May read subtext over surface text. Asides are openly smug. May choose a mechanically distinct but narratively fitting move when interpretation is genuinely ambiguous."
+          }
+        },
+        "CurrentBadge": "Current"
+      },
+      "About": {
+        "ModuleName": "Starforged Companion",
+        "Description": "Move interpretation, narration, entity tracking, and art generation for Ironsworn: Starforged.",
+        "Fields": {
+          "MoveAI": "Move AI",
+          "MoveAIValue": "claude-haiku-4-5-20251001 · system prompt cached",
+          "NarrationAI": "Narration AI",
+          "NarrationAIValue": "Loremaster (hosted proxy)",
+          "ArtGen": "Art generation",
+          "ArtGenValue": "DALL-E 3 · standard quality · natural style",
+          "FoundryTarget": "Foundry target",
+          "FoundryTargetValue": "v12 minimum · v13 verified"
+        },
+        "OpenIssues": {
+          "Label": "Open items requiring manual resolution:",
+          "LoremasterID": "Confirm Loremaster module ID (replace \"loremaster\" placeholder in index.js)",
+          "LoremasterFlag": "Confirm Loremaster flag path for context consumption",
+          "PersistStub": "Implement persistResolution() (currently stubbed in index.js)",
+          "GitHub": "Create GitHub repository"
+        }
+      }
+    },
+
+    "MoveConfirm": {
+      "Title": "Confirm Move Interpretation",
+      "Fields": {
+        "Move": "Move",
+        "Stat": "Stat",
+        "Interpretation": "Interpretation"
+      },
+      "MischiefLabel": "Mischief ({dial})",
+      "AcceptButton": "Accept — Roll",
+      "RejectButton": "Re-interpret"
+    },
+
+    "XCard": {
+      "CardType": "X-Card",
+      "Message": "Scene paused. Current content is suppressed.\nThe story will redirect at the next narration beat."
+    },
+
+    "MoveCard": {
+      "Outcome": {
+        "StrongHit": "Strong Hit",
+        "WeakHit": "Weak Hit",
+        "Miss": "Miss",
+        "Opportunity": "Opportunity"
+      }
+    },
+
+    "Notifications": {
+      "PortraitGenerated": "Portrait generated for {name}.",
+      "PortraitGenerateFailed": "Portrait generation failed for this entity. Check console for details.",
+      "PortraitRegenerateFailed": "Portrait regeneration failed. Check console for details.",
+      "PortraitRegenerated": "Portrait regenerated and locked for {name}."
+    },
+
+    "Settings.Dial.Name": "Mischief Dial",
+    "Settings.Dial.Hint": "Controls how aggressively the module interprets ambiguous player narration.",
+    "Settings.GlobalLines.Name": "Global Lines (Hard)",
+    "Settings.GlobalLines.Hint": "Hard content limits. Always injected first in every Loremaster context packet.",
+    "Settings.GlobalVeils.Name": "Global Veils (Soft)",
+    "Settings.GlobalVeils.Hint": "Soft content limits. Present in context packet but may be acknowledged rather than strictly excluded.",
+    "Settings.PrivateLines.Name": "Private Lines",
+    "Settings.PrivateLines.Hint": "Personal hard limits visible only to you. Injected into your context packets."
+  }
+}
