@@ -12,6 +12,13 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Job 1 — Lint and unit tests
   # No Foundry required — Vitest runs in Node with stubbed globals via tests/setup.js
+  #
+  # NOTE: Using `npm install` rather than `npm ci` because package-lock.json
+  # has not yet been committed. To restore reproducible installs:
+  #   1. Run `npm install` locally
+  #   2. Commit the generated package-lock.json
+  #   3. Change `npm install` back to `npm ci` here
+  #   4. Re-add `cache: 'npm'` to the setup-node step
   # ────────────────────────────────────────────────────────────────────────────
   lint-and-test:
     name: Lint & Test
@@ -25,10 +32,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # cache: 'npm'   ← re-enable once package-lock.json is committed
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint
