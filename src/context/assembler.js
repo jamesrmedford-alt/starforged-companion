@@ -22,7 +22,6 @@
  */
 
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
-import { foundry } from "../foundry-shim.js";  // Shim for non-Foundry test contexts
 
 
 // ─────────────────────────────────────────────────────────────────────────────
