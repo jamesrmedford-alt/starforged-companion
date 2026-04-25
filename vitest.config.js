@@ -11,14 +11,10 @@ export default defineConfig({
     // run inside live Foundry and are excluded here.
     environment: 'node',
 
-    // Match test files directly in tests/unit/ AND in any subdirectories.
-    // Both patterns are needed: Vitest 2.x's glob does not match zero
-    // intermediate directories with **, so tests/unit/**/*.test.js alone
-    // misses files sitting directly in tests/unit/.
-    include: [
-      'tests/unit/*.test.js',
-      'tests/unit/**/*.test.js',
-    ],
+    // Use Vitest's default include pattern rather than a custom one —
+    // Vitest 2.x glob resolution against custom paths proved unreliable.
+    // Default pattern: **/*.{test,spec}.?(c|m)[jt]s?(x)
+    // We only need to exclude integration tests explicitly.
     exclude: [
       'tests/integration/**',
       'node_modules/**',
