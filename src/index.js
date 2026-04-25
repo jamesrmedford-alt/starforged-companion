@@ -168,7 +168,12 @@ function registerChatHook() {
 
       // Step 3: generate aside before showing dialog so the player sees it
       if (interpretation.mischiefApplied) {
-        interpretation._mischiefAside = buildMischiefAside(interpretation, dial);
+        interpretation._mischiefAside = buildMischiefAside(
+          interpretation.rationale ?? '',
+          interpretation.moveId,
+          interpretation.statUsed,
+          dial
+        );
       }
 
       // Step 4: show confirmation dialog — returns true (accept) or false (reject)
