@@ -35,7 +35,6 @@
 
 import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
-import { setPortraitId, setPortraitSourceDescription } from "../entities/connection.js";
 
 const MODULE_ID   = "starforged-companion";
 const DALLE_URL   = "https://api.openai.com/v1/images/generations";
@@ -283,30 +282,31 @@ async function handleDallEError(error, apiKey, prompt, size, entityId, entityTyp
  * Routes to the correct entity module based on entityType.
  */
 async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
-  // Dynamic import to avoid circular dependencies at module load time
   try {
-    let module;
-    switch (entityType) {
-      case "connection":
-        module = await import("../entities/connection.js");
-        break;
-      case "settlement":
-        module = await import("../entities/settlement.js");
-        break;
-      case "ship":
-        module = await import("../entities/ship.js");
-        break;
-      case "faction":
-        module = await import("../entities/faction.js");
-        break;
-      case "planet":
-        module = await import("../entities/planet.js");
-        break;
-      default:
-        console.warn(`${MODULE_ID} | Art: unknown entity type ${entityType} — cannot link portrait`);
-        return;
+    const entry = game.journal?.get(journalEntryId);
+    if (!entry) {
+      console.warn(`${MODULE_ID} | Art: journal entry not found for portrait link: ${journalEntryId}`);
+      return;
     }
-    await module.setPortraitId(journalEntryId, artAssetId);
+
+    const page = entry.pages?.contents?.[0];
+    if (!page) {
+      console.warn(`${MODULE_ID} | Art: no page found in entry: ${journalEntryId}`);
+      return;
+    }
+
+    // Write portraitId directly to the entity's flag object.
+    // All entity types (connection, ship, settlement, faction, planet) store
+    // their data under page.flags[MODULE_ID][entityType] — this approach works
+    // for all of them without depending on each module's specific export names.
+    const existing = page.flags?.[MODULE_ID]?.[entityType] ?? {};
+    await page.setFlag(MODULE_ID, entityType, {
+      ...existing,
+      portraitId: artAssetId,
+      updatedAt:  new Date().toISOString(),
+    });
+
+    console.log(`${MODULE_ID} | Art: linked portrait ${artAssetId} to ${entityType} ${journalEntryId}`);
   } catch (err) {
     console.error(`${MODULE_ID} | Art: failed to link portrait to entity:`, err.message);
   }
