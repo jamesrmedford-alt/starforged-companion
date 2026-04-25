@@ -11,9 +11,12 @@ export default defineConfig({
     // run inside live Foundry and are excluded here.
     environment: 'node',
 
-    // Only run unit tests and fixture validation. Integration tests
-    // live in tests/integration/ and require a live Foundry + Quench.
+    // Match test files directly in tests/unit/ AND in any subdirectories.
+    // Both patterns are needed: Vitest 2.x's glob does not match zero
+    // intermediate directories with **, so tests/unit/**/*.test.js alone
+    // misses files sitting directly in tests/unit/.
     include: [
+      'tests/unit/*.test.js',
       'tests/unit/**/*.test.js',
     ],
     exclude: [
