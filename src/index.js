@@ -185,12 +185,22 @@ function registerChatHook() {
       const resolution = resolveMove(interpretation, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      // Step 7: post move result card, then trigger Loremaster with context inline
+      // Step 7: post move result card, then trigger Loremaster
       await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
-      await triggerLoremaster(packet.assembled);
+
+      // Loremaster only responds to the GM account. If the current user is GM,
+      // trigger directly. Otherwise emit a socket request for the GM's client to handle.
+      if (game.user.isGM) {
+        await triggerLoremaster(packet.assembled);
+      } else {
+        game.socket.emit(`module.${MODULE_ID}`, {
+          type:          "loremasterTrigger",
+          contextPacket: packet.assembled,
+        });
+      }
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -384,6 +394,14 @@ Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
   checkLoremaster();
+
+  // Register socket handler — GM's client listens for loremaster trigger requests
+  // from player clients and posts the @lm message as the GM account.
+  game.socket.on(`module.${MODULE_ID}`, (data) => {
+    if (data?.type !== "loremasterTrigger") return;
+    if (!game.user.isGM) return;
+    triggerLoremaster(data.contextPacket);
+  });
 
   // Check proxy health — warn GM if local proxy is not running
   // (On The Forge this always returns true and no warning is shown)
