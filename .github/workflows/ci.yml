@@ -6,12 +6,12 @@ on:
     tags:     ['v*']
   pull_request:
     branches: [main]
-    
+
 env:
   # Force GitHub Actions' own tooling (checkout, setup-node) to use Node 24
   # rather than their bundled Node 20, suppressing the deprecation warnings.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  
+
 jobs:
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -37,10 +37,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          # cache: 'npm'   ← re-enable once package-lock.json is committed
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint
@@ -137,10 +137,36 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Update module.json version and URLs
+        run: |
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/starforged-companion-${{ steps.version.outputs.version }}.zip"
+          MANIFEST_URL="https://github.com/${{ github.repository }}/releases/latest/download/module.json"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          python3 - <<PYEOF
+          import json
+
+          with open("module.json") as f:
+            m = json.load(f)
+
+          # Update version to match the git tag — required for Foundry update detection
+          m["version"]  = "${VERSION}"
+          m["download"] = "${DOWNLOAD_URL}"
+          m["manifest"] = "${MANIFEST_URL}"
+          m["url"]      = "https://github.com/${{ github.repository }}"
+
+          with open("module.json", "w") as f:
+            json.dump(m, f, indent=2)
+
+          print(f"Updated module.json: version={m['version']}, download={m['download']}")
+          PYEOF
+
       - name: Build release zip
         run: |
           mkdir -p dist
 
+          # Zip is built AFTER module.json is updated so the correct version,
+          # manifest URL, and download URL are all inside the installed package.
           zip -r dist/starforged-companion-${{ steps.version.outputs.version }}.zip \
             module.json \
             README.md \
@@ -152,27 +178,6 @@ jobs:
 
           echo "Release zip contents:"
           unzip -l dist/starforged-companion-${{ steps.version.outputs.version }}.zip
-
-      - name: Update module.json download URL
-        run: |
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/starforged-companion-${{ steps.version.outputs.version }}.zip"
-          MANIFEST_URL="https://github.com/${{ github.repository }}/releases/latest/download/module.json"
-
-          python3 - <<EOF
-          import json
-
-          with open("module.json") as f:
-            m = json.load(f)
-
-          m["download"] = "${DOWNLOAD_URL}"
-          m["manifest"] = "${MANIFEST_URL}"
-          m["url"]      = "https://github.com/${{ github.repository }}"
-
-          with open("module.json", "w") as f:
-            json.dump(m, f, indent=2)
-
-          print(f"Updated module.json: download={m['download']}")
-          EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
