@@ -231,15 +231,26 @@ function isPlayerNarration(message) {
   const type = message.type;
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
 
-  if (message.flags?.[MODULE_ID]?.moveResolution) return false;
+  // Skip messages already processed by this module
+  if (message.flags?.[MODULE_ID]?.moveResolution)   return false;
+  if (message.flags?.[MODULE_ID]?.loremasterTrigger) return false;
 
   // message.author is correct for both v12 and v13.
   // message.user was the old name — accessing it in v13 logs a deprecation warning.
   const user = message.author ?? game.users?.get(message.user);
   if (user?.isGM) return false;
 
-  if (message.content?.startsWith("/")) return false;
-  if (message.content?.startsWith("@")) return false;
+  const text = message.content?.trim() ?? "";
+
+  // Escape character — prefix with \ to bypass the pipeline entirely
+  // e.g. "\This is a note not meant for move interpretation"
+  if (text.startsWith("\\")) return false;
+
+  // @lm and other @ commands go directly to Loremaster — never intercept
+  if (text.startsWith("@")) return false;
+
+  // / commands are Foundry/Loremaster slash commands — never intercept
+  if (text.startsWith("/")) return false;
 
   return true;
 }
@@ -277,18 +288,15 @@ async function postMoveResult(resolution, aside = null) {
  * @param {string} contextPacket — assembled string from assembleContextPacket()
  */
 async function triggerLoremaster(contextPacket) {
-  // Escape the context for safe HTML embedding
-  const escaped = contextPacket
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
+  // Post the context as plain text after @lm.
+  // Loremaster passes the full message content to Claude, so the context
+  // packet travels inline. The message is flagged so isPlayerNarration()
+  // skips it on the createChatMessage hook re-fire.
   await ChatMessage.create({
-    content: `@lm <span style="display:none">${escaped}</span>`,
+    content: `@lm\n\n${contextPacket}`,
     flags: {
       [MODULE_ID]: {
         loremasterTrigger: true,
-        loremasterContext: contextPacket,
       },
     },
   });
