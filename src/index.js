@@ -10,6 +10,13 @@
  *   — mischiefLevel setting removed; now mischiefDial registered by ui/settingsPanel.js
  *   — UI panels (progressTracks, entityPanel, settingsPanel) wired via toolbar buttons
  *   — All three UI hook registrations called from ready hook
+ *
+ * Post-session 3 fixes:
+ *   — buildMischiefAside called with correct four-argument signature
+ *   — getSceneControlButtons updated for Foundry v13 (controls is Object, not Array)
+ *   — message.author → message.user (Foundry v13 rename)
+ *   — CONST.CHAT_MESSAGE_TYPES replaced with string literals (v13 compatibility)
+ *   — injectPushToTalkButton rewritten without jQuery (removed in v13)
  */
 
 import { CampaignStateSchema }   from "./schemas.js";
@@ -20,14 +27,12 @@ import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 
-// Loremaster integration (replaces hardcoded placeholder + inline checkLoremaster)
 import {
   registerLoremasterSettings,
   checkLoremaster,
   attachLoremasterContext,
 } from "./loremaster.js";
 
-// UI panels — Session 3
 import {
   openProgressTracks,
   registerProgressTrackHooks,
@@ -53,51 +58,40 @@ const MODULE_ID = "starforged-companion";
 // SETTINGS REGISTRATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Register core module settings.
- * Safety config, mischief dial, and Loremaster settings are registered by
- * their respective modules (called below). Only campaign-infrastructure
- * settings live here.
- */
 function registerCoreSettings() {
-
-  // Campaign state — world-scoped, persists across sessions
   game.settings.register(MODULE_ID, "campaignState", {
-    name: "Campaign State",
-    hint: "Persistent campaign data including World Truths, safety config, and entity records.",
-    scope:  "world",
-    config: false,
-    type:   Object,
+    name:    "Campaign State",
+    hint:    "Persistent campaign data including World Truths, safety config, and entity records.",
+    scope:   "world",
+    config:  false,
+    type:    Object,
     default: { ...CampaignStateSchema },
   });
 
-  // Claude API key — client-scoped so it never touches Foundry's server
   game.settings.register(MODULE_ID, "claudeApiKey", {
-    name: "Claude API Key",
-    hint: "Your Anthropic API key. Stored locally in your browser — never sent to Foundry's server.",
-    scope:  "client",
-    config: true,
-    type:   String,
+    name:    "Claude API Key",
+    hint:    "Your Anthropic API key. Stored locally in your browser — never sent to Foundry's server.",
+    scope:   "client",
+    config:  true,
+    type:    String,
     default: "",
   });
 
-  // Art generation API key — client-scoped for the same reason
   game.settings.register(MODULE_ID, "artApiKey", {
-    name: "Art Generation API Key",
-    hint: "API key for your chosen art generation backend (Replicate, fal.ai, or DALL-E).",
-    scope:  "client",
-    config: true,
-    type:   String,
+    name:    "Art Generation API Key",
+    hint:    "API key for your chosen art generation backend (Replicate, fal.ai, or DALL-E).",
+    scope:   "client",
+    config:  true,
+    type:    String,
     default: "",
   });
 
-  // Art backend selection
   game.settings.register(MODULE_ID, "artBackend", {
-    name: "Art Generation Backend",
-    hint: "External API used for generating entity portraits.",
-    scope:  "world",
-    config: true,
-    type:   String,
+    name:    "Art Generation Backend",
+    hint:    "External API used for generating entity portraits.",
+    scope:   "world",
+    config:  true,
+    type:    String,
     choices: {
       replicate: "Replicate",
       fal:       "fal.ai",
@@ -106,26 +100,24 @@ function registerCoreSettings() {
     default: "dalle",
   });
 
-  // Speech input toggle
   game.settings.register(MODULE_ID, "speechInputEnabled", {
-    name: "Push-to-Talk",
-    hint: "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
-    scope:  "client",
-    config: true,
-    type:   Boolean,
-    default: false,
+    name:     "Push-to-Talk",
+    hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
+    scope:    "client",
+    config:   true,
+    type:     Boolean,
+    default:  false,
     onChange: (value) => {
       if (value) initSpeechInput();
     },
   });
 
-  // Speech input language
   game.settings.register(MODULE_ID, "speechLanguage", {
-    name: "Speech Input Language",
-    hint: "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
-    scope:  "client",
-    config: true,
-    type:   String,
+    name:    "Speech Input Language",
+    hint:    "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
+    scope:   "client",
+    config:  true,
+    type:    String,
     default: "en-US",
   });
 }
@@ -156,42 +148,36 @@ function registerChatHook() {
     const narration     = message.content;
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
     const apiKey        = game.settings.get(MODULE_ID, "claudeApiKey");
-    const dial          = getMischiefDial();  // 'lawful' | 'balanced' | 'chaotic'
+    const dial          = getMischiefDial();
 
     try {
-      // Step 2: interpret
       const interpretation = await interpretMove(narration, {
         campaignState,
         mischiefLevel: dial,
         apiKey,
       });
 
-      // Step 3: generate aside before showing dialog so the player sees it
       if (interpretation.mischiefApplied) {
         interpretation._mischiefAside = buildMischiefAside(
-          interpretation.rationale ?? '',
+          interpretation.rationale ?? "",
           interpretation.moveId,
           interpretation.statUsed,
           dial
         );
       }
 
-      // Step 4: show confirmation dialog — returns true (accept) or false (reject)
       const accepted = await confirmInterpretation(interpretation);
       if (!accepted) return;
 
-      // Step 5–6: resolve + assemble
       const resolution = resolveMove(interpretation, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      // Step 7: post result + attach Loremaster context
       const chatMessage = await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
       await attachLoremasterContext(chatMessage, packet.assembled);
 
-      // Step 8: persist meter/track changes
       await persistResolution(resolution, campaignState);
 
     } catch (err) {
@@ -213,29 +199,35 @@ function registerChatHook() {
  * Determine whether a chat message is player narration that should be
  * routed through the move interpretation pipeline.
  *
+ * Uses string literals for message types — CONST.CHAT_MESSAGE_TYPES was
+ * restructured in Foundry v13 and the constants can no longer be relied on.
+ *
  * Excluded:
- * - Roll and OOC message types
+ * - OOC and roll message types
  * - Messages already containing move resolution markup (avoids re-processing)
  * - GM messages (GM narrates through Loremaster directly)
  * - Messages starting with "/" (commands) or "@" (direct Loremaster calls)
  */
 function isPlayerNarration(message) {
-  if (message.type === CONST.CHAT_MESSAGE_TYPES.OOC)  return false;
-  if (message.type === CONST.CHAT_MESSAGE_TYPES.ROLL)  return false;
-  if (message.flags?.[MODULE_ID]?.moveResolution)      return false;
-  if (game.users.get(message.author)?.isGM)            return false;
-  if (message.content?.startsWith("/"))                return false;
-  if (message.content?.startsWith("@"))                return false;
+  // String literal type checks — v13 compatible
+  const type = message.type;
+  if (type === "ooc" || type === "roll" || type === "whisper") return false;
+
+  if (message.flags?.[MODULE_ID]?.moveResolution) return false;
+
+  // message.user is the v13 name; message.author is the v12 name — support both
+  const user = message.user ?? game.users?.get(message.author);
+  if (user?.isGM) return false;
+
+  if (message.content?.startsWith("/")) return false;
+  if (message.content?.startsWith("@")) return false;
+
   return true;
 }
 
 /**
  * Post the resolved move result to chat.
- * Returns the created ChatMessage so the caller can attach Loremaster context to it.
- *
- * @param {Object}      resolution
- * @param {string|null} aside        — mischief aside text, or null
- * @returns {Promise<ChatMessage>}
+ * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
 async function postMoveResult(resolution, aside = null) {
   return ChatMessage.create({
@@ -244,19 +236,15 @@ async function postMoveResult(resolution, aside = null) {
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
-        // loremasterContext is attached separately via attachLoremasterContext()
-        // so the flag path is controlled by loremaster.js, not hardcoded here.
       },
     },
-    type: CONST.CHAT_MESSAGE_TYPES.OTHER,
+    // "other" string literal — avoids CONST.CHAT_MESSAGE_TYPES.OTHER (v13 compat)
+    type: "other",
   });
 }
 
 /**
  * Format a move resolution as an HTML chat card.
- * Shows: move name, stat used, dice values, outcome label, narrative consequence.
- * Mischief aside, when present, appears at the bottom in a subdued dashed-border
- * block — a footnote, not a headline.
  */
 function formatMoveResult(resolution, aside = null) {
   const outcomeClass = {
@@ -265,8 +253,8 @@ function formatMoveResult(resolution, aside = null) {
     miss:       "sf-miss",
   }[resolution.outcome] ?? "";
 
-  const addsStr  = resolution.adds ? ` + ${resolution.adds}` : "";
-  const matchStr = resolution.isMatch ? " ✦ Match" : "";
+  const addsStr  = resolution.adds    ? ` + ${resolution.adds}` : "";
+  const matchStr = resolution.isMatch ? " ✦ Match"              : "";
 
   return `
     <div class="sf-move-result ${outcomeClass}">
@@ -291,36 +279,34 @@ function formatMoveResult(resolution, aside = null) {
 
 /**
  * Inject the push-to-talk button into the Foundry chat controls bar.
- * Uses both mouse and touch events for The Forge mobile/tablet compatibility.
- * Audio is captured only while the button is physically held.
+ *
+ * Rewritten without jQuery — Foundry v13 removed jQuery from the global scope.
+ * The renderChatLog hook now passes a plain HTMLElement, not a jQuery object.
+ * Uses the standard DOM API throughout.
  */
 function injectPushToTalkButton(html) {
-  const controls = html.find("#chat-controls");
-  if (!controls.length) return;
+  // html may be an HTMLElement (v13) or jQuery object (v12) — normalise to Element
+  const root = html instanceof HTMLElement ? html : html[0] ?? html;
+  if (!root) return;
 
-  const button = $(`
-    <button
-      type="button"
-      id="sf-ptt-button"
-      class="sf-ptt-button"
-      title="Push to Talk — hold to speak"
-      aria-label="Push to Talk"
-    >🎙</button>
-  `);
+  const controls = root.querySelector("#chat-controls");
+  if (!controls) return;
+
+  const button = document.createElement("button");
+  button.type        = "button";
+  button.id          = "sf-ptt-button";
+  button.className   = "sf-ptt-button";
+  button.title       = "Push to Talk — hold to speak";
+  button.setAttribute("aria-label", "Push to Talk");
+  button.textContent = "🎙";
+
+  button.addEventListener("mousedown",  (e) => { e.preventDefault(); window._sfSpeechInput?.start(); });
+  button.addEventListener("touchstart", (e) => { e.preventDefault(); window._sfSpeechInput?.start(); }, { passive: false });
+  button.addEventListener("mouseup",    (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
+  button.addEventListener("touchend",   (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
+  button.addEventListener("mouseleave", (e) => { window._sfSpeechInput?.stop(); });
 
   controls.prepend(button);
-
-  button.on("mousedown touchstart", (e) => {
-    e.preventDefault();
-    window._sfSpeechInput?.start();
-    button.addClass("sf-ptt-active");
-  });
-
-  button.on("mouseup touchend mouseleave", (e) => {
-    e.preventDefault();
-    window._sfSpeechInput?.stop();
-    button.removeClass("sf-ptt-active");
-  });
 }
 
 
@@ -328,60 +314,39 @@ function injectPushToTalkButton(html) {
 // HOOKS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * "init" — earliest safe point. Game data not yet available.
- * All settings must be registered here so they exist before "ready".
- */
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
-
-  // Core campaign settings (campaignState, API keys, art backend, speech)
   registerCoreSettings();
-
-  // Safety config, mischief dial (ui/settingsPanel.js)
   registerUISettings();
-
-  // Loremaster module ID and flag path (loremaster.js)
   registerLoremasterSettings();
 });
 
-/**
- * "ready" — all modules loaded, game data available.
- */
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
-  // Check Loremaster presence using configured module ID
   checkLoremaster();
-
-  // Register move pipeline chat hook
   registerChatHook();
-
-  // Register UI panel live-refresh hooks
   registerProgressTrackHooks();
   registerEntityPanelHooks();
-
-  // Register X-Card /x chat hook
   registerSettingsHooks();
 
-  // Start speech input if enabled
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
 });
 
 /**
- * "getSceneControlButtons" — add toolbar buttons for the three UI panels.
- * Appended to the token controls group. Adjust group name if your Foundry
- * layout uses a different control set.
+ * getSceneControlButtons — add toolbar buttons for the three UI panels.
+ *
+ * Foundry v13 changed this hook: controls is now a plain Object keyed by
+ * group name rather than an Array. Both formats are handled here.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
-  // Foundry v13 changed this hook — controls is now an Object keyed by group
-  // name rather than an Array. Handle both formats for compatibility.
   const controlsArray = Array.isArray(controls)
     ? controls
     : Object.values(controls);
 
+  // v12 uses "token", v13 may use "tokens" — check both
   const group = controlsArray.find(c => c.name === "token" || c.name === "tokens");
   if (!group) return;
 
@@ -414,8 +379,8 @@ Hooks.on("getSceneControlButtons", (controls) => {
 });
 
 /**
- * "renderChatLog" — chat UI is available.
- * Inject the push-to-talk button if speech input is enabled.
+ * renderChatLog — inject PTT button when speech is enabled.
+ * html is HTMLElement in v13, jQuery object in v12 — injectPushToTalkButton handles both.
  */
 Hooks.on("renderChatLog", (_chatLog, html, _data) => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {

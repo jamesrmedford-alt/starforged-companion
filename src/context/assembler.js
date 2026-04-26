@@ -19,9 +19,21 @@
  *
  * Token budget default: 400 tokens (~1600 characters).
  * Safety and move outcome sections are exempt — they are never dropped.
+ *
+ * Post-session-3 fixes applied here:
+ *   — buildWorldTruthsSection: reads v.title ?? v.result (TruthResult shape,
+ *     backwards-compatible with old test fixture format)
+ *   — buildProgressTracksSection: loads the dedicated "Starforged Progress
+ *     Tracks" journal directly rather than per-ID lookup (matches actual storage)
+ *   — X-Card check: also checks campaignState.xCardActive so suppressScene()
+ *     actually suppresses the packet
  */
 
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
+
+const MODULE_ID         = "starforged-companion";
+const TRACKS_JOURNAL    = "Starforged Progress Tracks";
+const TRACKS_FLAG_KEY   = "tracks";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,8 +58,10 @@ export async function assembleContextPacket(resolution, campaignState, options =
     tokenBudget   = 400,
   } = options;
 
-  // X-Card check — if scene is suppressed, return a minimal packet
-  if (isSceneSuppressed(sessionState)) {
+  // FIX 3: Check both sessionState.xCardActive (session-scoped) and
+  // campaignState.xCardActive (written by suppressScene() in safety.js).
+  // Previously only checked sessionState which was always null in the pipeline.
+  if (isSceneSuppressed(sessionState) || campaignState?.xCardActive) {
     return buildSuppressedPacket(resolution, campaignState);
   }
 
@@ -65,7 +79,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
 
   // ── 4. Progress tracks ────────────────────────────────────────────────────
   const { content: tracksContent, trackIds } =
-    await buildProgressTracksSection(campaignState);
+    await buildProgressTracksSection();
 
   // ── 5. Recent oracle results ──────────────────────────────────────────────
   const { content: oraclesContent, oracleIds } =
@@ -85,7 +99,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
       connections:    { content: connectionsContent,    priority: 1 },
       progressTracks: { content: tracksContent,         priority: 1 },
       recentOracles:  { content: oraclesContent,        priority: 3 },
-      sessionNotes:   { content: sessionNotesContent,   priority: 4 },  // Dropped first
+      sessionNotes:   { content: sessionNotesContent,   priority: 4 },
     },
   });
 
@@ -139,9 +153,9 @@ export async function assembleContextPacket(resolution, campaignState, options =
         tokenEstimate:  estimateTokens(sessionNotesContent),
       },
       moveOutcome: {
-        content:           moveOutcomeContent,
-        tokenEstimate:     estimateTokens(moveOutcomeContent),
-        moveResolutionId:  resolution?._id ?? "",
+        content:          moveOutcomeContent,
+        tokenEstimate:    estimateTokens(moveOutcomeContent),
+        moveResolutionId: resolution?._id ?? "",
       },
     },
 
@@ -161,14 +175,25 @@ export async function assembleContextPacket(resolution, campaignState, options =
 
 /**
  * World Truths summary.
- * Full version: all 14 categories listed.
- * Summarised version: only non-default results included (shorter).
+ *
+ * FIX 1: Previously read v.result, but TruthResult (from generator.js) uses
+ * v.title and v.description. Now reads v.title ?? v.result to handle both
+ * the current TruthResult shape and the old test fixture format gracefully.
+ *
+ * Full version: all 14 categories listed as one line each.
+ * Summarised version: first 6 when full version exceeds token limit.
  */
 function buildWorldTruthsSection(campaignState) {
-  const truths = campaignState.worldTruths ?? {};
+  const truths  = campaignState.worldTruths ?? {};
   const entries = Object.entries(truths)
-    .filter(([, v]) => v.result)
-    .map(([key, v]) => `${toLabel(key)}: ${v.result}${v.subResult ? ` (${v.subResult})` : ""}`);
+    .map(([key, v]) => {
+      // Accept both TruthResult shape (v.title) and old fixture shape (v.result)
+      const text = v.title ?? v.result;
+      if (!text) return null;
+      const sub = v.subResult ? ` (${v.subResult})` : "";
+      return `${toLabel(key)}: ${text}${sub}`;
+    })
+    .filter(Boolean);
 
   if (!entries.length) {
     return { content: "", summarized: false };
@@ -176,9 +201,10 @@ function buildWorldTruthsSection(campaignState) {
 
   const full = "## WORLD TRUTHS\n\n" + entries.join("\n");
 
-  // If full version is too long, produce a shorter summary
   if (estimateTokens(full) > 120) {
-    const summary = "## WORLD TRUTHS (summary)\n\n" + entries.slice(0, 6).join("\n") +
+    const summary =
+      "## WORLD TRUTHS (summary)\n\n" +
+      entries.slice(0, 6).join("\n") +
       `\n…and ${entries.length - 6} more truths established.`;
     return { content: summary, summarized: true };
   }
@@ -195,60 +221,73 @@ async function buildConnectionsSection(campaignState) {
   const ids = campaignState.connectionIds ?? [];
   if (!ids.length) return { content: "", connectionIds: [] };
 
-  // Load connection records from Foundry journal entries
   const connections = await loadConnections(ids);
   if (!connections.length) return { content: "", connectionIds: [] };
 
-  // Sort: scene-relevant first, then allies, then by update recency
   const sorted = connections.sort((a, b) => {
     if (a.sceneRelevant && !b.sceneRelevant) return -1;
-    if (!a.sceneRelevant && b.sceneRelevant)  return 1;
-    if (a.allyFlag && !b.allyFlag)             return -1;
-    if (!a.allyFlag && b.allyFlag)             return 1;
+    if (!a.sceneRelevant && b.sceneRelevant) return  1;
+    if (a.allyFlag && !b.allyFlag)           return -1;
+    if (!a.allyFlag && b.allyFlag)           return  1;
     return new Date(b.updatedAt) - new Date(a.updatedAt);
   });
 
   const included = sorted.slice(0, 3);
-  const lines = included.map(c => formatConnection(c));
-  const content = "## ACTIVE CONNECTIONS\n\n" + lines.join("\n\n");
+  const lines    = included.map(c => formatConnection(c));
+  const content  = "## ACTIVE CONNECTIONS\n\n" + lines.join("\n\n");
 
   return { content, connectionIds: included.map(c => c._id) };
 }
 
 /**
  * Progress tracks section.
- * Active vows, expeditions, and combats. Maximum 4 tracks.
+ *
+ * FIX 2: The old implementation tried to load tracks by scanning
+ * campaignState.progressTrackIds as individual journal entries with a
+ * `progressTrack` flag. That was never how progressTracks.js stored data.
+ *
+ * progressTracks.js stores ALL tracks as a single array in a dedicated
+ * JournalEntry named "Starforged Progress Tracks", under
+ * page.flags["starforged-companion"].tracks.
+ *
+ * This function now loads that journal directly, reads the tracks array,
+ * filters to active non-completed tracks, and formats the top 4.
  */
-async function buildProgressTracksSection(campaignState) {
-  const ids = campaignState.progressTrackIds ?? [];
-  if (!ids.length) return { content: "", trackIds: [] };
+async function buildProgressTracksSection() {
+  try {
+    const journal = game.journal?.getName(TRACKS_JOURNAL);
+    if (!journal) return { content: "", trackIds: [] };
 
-  const tracks = await loadProgressTracks(ids);
-  const active  = tracks.filter(t => t.active);
-  if (!active.length) return { content: "", trackIds: [] };
+    const page   = journal.pages?.contents?.[0];
+    const tracks = page?.flags?.[MODULE_ID]?.[TRACKS_FLAG_KEY];
+    if (!Array.isArray(tracks) || !tracks.length) {
+      return { content: "", trackIds: [] };
+    }
 
-  const included = active.slice(0, 4);
-  const lines = included.map(t => formatProgressTrack(t));
-  const content = "## PROGRESS TRACKS\n\n" + lines.join("\n");
+    const active   = tracks.filter(t => !t.completed);
+    if (!active.length) return { content: "", trackIds: [] };
 
-  return { content, trackIds: included.map(t => t._id) };
+    const included = active.slice(0, 4);
+    const lines    = included.map(t => formatProgressTrack(t));
+    const content  = "## PROGRESS TRACKS\n\n" + lines.join("\n");
+
+    return { content, trackIds: included.map(t => t.id) };
+  } catch {
+    return { content: "", trackIds: [] };
+  }
 }
 
 /**
  * Recent oracle results section.
- * Last 3 oracle results from the current session.
+ * Last 3 oracle result IDs from the current session.
  */
 function buildOraclesSection(campaignState) {
   const ids = campaignState.oracleResultIds ?? [];
   if (!ids.length) return { content: "", oracleIds: [] };
 
-  // Oracle results are stored in campaignState directly (lightweight)
-  // Full persistence via journal is handled by oracles/roller.js
   const recent = ids.slice(-3);
   if (!recent.length) return { content: "", oracleIds: [] };
 
-  // IDs only — full content loaded lazily if needed
-  // For now, note that oracles were recently rolled
   const content = `## RECENT ORACLES\n\n${recent.length} oracle result(s) this session.`;
   return { content, oracleIds: recent };
 }
@@ -271,24 +310,18 @@ function buildSessionNotesSection(sessionState) {
  * Enforce the token budget across the variable sections.
  * Safety and move outcome are exempt — they are never in this pool.
  *
- * Priority (higher number = dropped first):
- *   1 = connections, progressTracks (core scene context — keep if possible)
- *   2 = worldTruths (important but compressible)
- *   3 = recentOracles (useful but not critical)
- *   4 = sessionNotes (nice to have — first to go)
- *
- * @param {Object} params
- * @param {number} params.tokenBudget
- * @param {Object} params.sections  — { sectionName: { content, priority } }
- * @returns {{ included: Object, omitted: string[], exceeded: boolean }}
+ * Priority (lower = keep first):
+ *   1 = connections, progressTracks
+ *   2 = worldTruths
+ *   3 = recentOracles
+ *   4 = sessionNotes (dropped first)
  */
 function enforceBudget({ tokenBudget, sections }) {
-  const included  = {};
-  const omitted   = [];
-  let totalTokens = 0;
-  let exceeded    = false;
+  const included = {};
+  const omitted  = [];
+  let   total    = 0;
+  let   exceeded = false;
 
-  // Sort sections by priority ascending (lower = keep first)
   const sorted = Object.entries(sections).sort(([, a], [, b]) => a.priority - b.priority);
 
   for (const [name, { content }] of sorted) {
@@ -299,15 +332,14 @@ function enforceBudget({ tokenBudget, sections }) {
 
     const tokens = estimateTokens(content);
 
-    if (totalTokens + tokens <= tokenBudget) {
+    if (total + tokens <= tokenBudget) {
       included[name] = content;
-      totalTokens += tokens;
+      total += tokens;
     } else {
-      // Try a truncated version before dropping entirely
-      const truncated = truncateToTokens(content, tokenBudget - totalTokens);
+      const truncated = truncateToTokens(content, tokenBudget - total);
       if (truncated) {
         included[name] = truncated;
-        totalTokens += estimateTokens(truncated);
+        total += estimateTokens(truncated);
         exceeded = true;
       } else {
         included[name] = "";
@@ -320,12 +352,8 @@ function enforceBudget({ tokenBudget, sections }) {
   return { included, omitted, exceeded };
 }
 
-/**
- * Truncate a content string to approximately fit within a token limit.
- * Returns null if the content cannot be meaningfully truncated.
- */
 function truncateToTokens(content, maxTokens) {
-  if (maxTokens <= 10) return null;   // Not worth truncating
+  if (maxTokens <= 10) return null;
   const maxChars = maxTokens * 4;
   if (content.length <= maxChars) return content;
   return content.slice(0, maxChars).replace(/\s+\S*$/, "") + "\n…(truncated)";
@@ -336,10 +364,6 @@ function truncateToTokens(content, maxTokens) {
 // FORMATTERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Format a connection record for context injection.
- * Progressive disclosure — only populated fields are included.
- */
 function formatConnection(c) {
   const parts = [`**${c.name ?? "Unknown"}**`];
   if (c.role)             parts.push(`Role: ${c.role}`);
@@ -354,12 +378,14 @@ function formatConnection(c) {
 
 /**
  * Format a progress track for context injection.
+ * Track records from progressTracks.js use `id` (not `_id`) and `label` (not `name`).
  */
 function formatProgressTrack(t) {
-  const boxes     = Math.floor(t.ticks / 4);
-  const progress  = `${boxes}/10 boxes`;
-  const rankLabel = t.rank ? ` [${t.rank}]` : "";
-  return `- **${t.name}** (${t.type}${rankLabel}): ${progress}`;
+  const boxes    = Math.floor((t.ticks ?? 0) / 4);
+  const progress = `${boxes}/10 boxes`;
+  const rank     = t.rank ? ` [${t.rank}]` : "";
+  const name     = t.label ?? t.name ?? "Unnamed Track";
+  return `- **${name}** (${t.type ?? "vow"}${rank}): ${progress}`;
 }
 
 /**
@@ -380,10 +406,6 @@ function toLabel(key) {
 // DATA LOADERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Load Connection records from Foundry journal entries.
- * Returns an empty array in non-Foundry contexts (unit tests).
- */
 async function loadConnections(ids) {
   try {
     const results = [];
@@ -391,27 +413,8 @@ async function loadConnections(ids) {
       const entry = game.journal?.get(id);
       if (!entry) continue;
       const page = entry.pages?.contents?.[0];
-      if (!page?.flags?.["starforged-companion"]?.connection) continue;
-      results.push(page.flags["starforged-companion"].connection);
-    }
-    return results;
-  } catch {
-    return [];   // Non-Foundry context or missing data — degrade gracefully
-  }
-}
-
-/**
- * Load ProgressTrack records from Foundry journal entries.
- */
-async function loadProgressTracks(ids) {
-  try {
-    const results = [];
-    for (const id of ids) {
-      const entry = game.journal?.get(id);
-      if (!entry) continue;
-      const page = entry.pages?.contents?.[0];
-      if (!page?.flags?.["starforged-companion"]?.progressTrack) continue;
-      results.push(page.flags["starforged-companion"].progressTrack);
+      const data = page?.flags?.[MODULE_ID]?.connection;
+      if (data) results.push(data);
     }
     return results;
   } catch {
@@ -424,24 +427,27 @@ async function loadProgressTracks(ids) {
 // SUPPRESSED PACKET
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Return a minimal packet when the X-Card has been triggered.
- * Contains only the safety section — no creative content.
- * Loremaster receives a clear instruction to pause.
- */
 function buildSuppressedPacket(resolution, campaignState) {
-  const content = "## SCENE PAUSED\n\nThe X-Card has been activated. Do not continue the current scene. Acknowledge the pause and wait for the players to signal they are ready to resume or redirect.";
+  const content =
+    "## SCENE PAUSED\n\n" +
+    "The X-Card has been activated. Do not continue the current scene. " +
+    "Acknowledge the pause and wait for the players to signal they are ready to resume or redirect.";
   return {
     _id:             generateId(),
     timestamp:       new Date().toISOString(),
     sessionId:       campaignState.currentSessionId ?? "",
     triggeredBy:     "x_card",
-    sections:        { safety: { content, tokenEstimate: estimateTokens(content), alwaysInclude: true } },
+    sections:        {
+      safety: { content, tokenEstimate: estimateTokens(content), alwaysInclude: true },
+    },
     totalTokenEstimate: estimateTokens(content),
     tokenBudget:     400,
     budgetExceeded:  false,
-    omittedSections: ["worldTruths", "activeConnections", "progressTracks", "recentOracles", "sessionNotes", "moveOutcome"],
-    assembled:       content,
+    omittedSections: [
+      "worldTruths", "activeConnections", "progressTracks",
+      "recentOracles", "sessionNotes", "moveOutcome",
+    ],
+    assembled: content,
   };
 }
 
@@ -450,17 +456,12 @@ function buildSuppressedPacket(resolution, campaignState) {
 // UTILITIES
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Rough token estimate: ~4 characters per token. */
 function estimateTokens(str) {
   if (!str) return 0;
   return Math.ceil(str.length / 4);
 }
 
-/** Generate a short unique ID without Foundry dependency. */
 function generateId() {
-  try {
-    return foundry.utils.randomID();
-  } catch {
-    return Math.random().toString(36).slice(2, 10);
-  }
+  try   { return foundry.utils.randomID(); }
+  catch { return Math.random().toString(36).slice(2, 10); }
 }

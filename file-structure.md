@@ -72,7 +72,7 @@ starforged-companion/
 │   │   │                               Deterministic (no API call). Three dial positions:
 │   │   │                               lawful / balanced / chaotic.
 │   │   │                               Exports: buildMischiefAside(), shouldApplyMischief(),
-│   │   │                               getMischiefTone()
+│   │   │                               buildMischiefFraming(), normalizeDial() (internal)
 │   │   └── persistResolution.js       NEW Session 3 — replaces stub in index.js.
 │   │                                   Appends move to session log; applies meter changes
 │   │                                   (momentum, health, spirit, supply) with rules clamping;
@@ -130,8 +130,9 @@ starforged-companion/
 │   │   ├── generator.js               Roll/choose across all 14 World Truth categories.
 │   │   │                               Resolves nested sub-tables automatically.
 │   │   │                               Saves to JournalEntryPage. Exports: rollCategory(),
-│   │   │                               resolveSubTable(), formatTruth(), storeTruths(),
-│   │   │                               loadTruths(), loadSessionZeroPreset()
+│   │   │                               applyRoll(), buildSessionZeroTruths(),
+│   │   │                               storeWorldTruths(), loadWorldTruths(),
+│   │   │                               formatForContext(), formatSingleTruth(), hasTruths()
 │   │   └── tables.js                  All 14 truth categories with sub-table references
 │   │                                   (5 sub-tables: cataclysm foe, magic source,
 │   │                                   AI resolution, + 2 others)
