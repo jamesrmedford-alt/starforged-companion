@@ -191,7 +191,11 @@ function registerChatHook() {
       );
       await attachLoremasterContext(chatMessage, packet.assembled);
 
-      await persistResolution(resolution, campaignState);
+      // Only the GM can write world-scoped settings (campaignState).
+      // Players trigger the pipeline but defer persistence to the GM's client.
+      if (game.user.isGM) {
+        await persistResolution(resolution, campaignState);
+      }
 
     } catch (err) {
       console.error(`${MODULE_ID} | Move interpretation failed:`, err);
@@ -228,8 +232,9 @@ function isPlayerNarration(message) {
 
   if (message.flags?.[MODULE_ID]?.moveResolution) return false;
 
-  // message.user is the v13 name; message.author is the v12 name — support both
-  const user = message.user ?? game.users?.get(message.author);
+  // message.author is correct for both v12 and v13.
+  // message.user was the old name — accessing it in v13 logs a deprecation warning.
+  const user = message.author ?? game.users?.get(message.user);
   if (user?.isGM) return false;
 
   if (message.content?.startsWith("/")) return false;
@@ -251,8 +256,8 @@ async function postMoveResult(resolution, aside = null) {
         resolutionId:   resolution._id,
       },
     },
-    // "other" string literal — avoids CONST.CHAT_MESSAGE_TYPES.OTHER (v13 compat)
-    type: "other",
+    // No type field — defaults to "base", which is valid in both v12 and v13.
+    // "other" was removed as a valid type in v13 and must not be used.
   });
 }
 
