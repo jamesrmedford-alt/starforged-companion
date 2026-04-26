@@ -16,6 +16,7 @@
 
 import { MOVES, STATS } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
+import { apiPost } from "../api-proxy.js";
 
 // API calls are routed through the local proxy (proxy/claude-proxy.mjs)
 // to bypass Electron renderer CORS restrictions.
@@ -248,6 +249,7 @@ export async function interpretMove(narration, { campaignState, mischiefLevel, a
  * @param {Object} params
  * @returns {Promise<string>}  — raw text content from the API response
  */
+
 async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, promptCachingEnabled }) {
   const systemBlock = promptCachingEnabled
     ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
@@ -256,37 +258,24 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
   const body = {
     model,
     max_tokens: maxTokens,
-    system: systemBlock,
-    messages: [
-      { role: "user", content: userMessage },
-    ],
+    system:     systemBlock,
+    messages:   [{ role: "user", content: userMessage }],
   };
 
   const headers = {
-    "Content-Type": "application/json",
-    "x-api-key": apiKey,
+    "Content-Type":      "application/json",
+    "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
+    ...(promptCachingEnabled ? { "anthropic-beta": "prompt-caching-2024-07-31" } : {}),
   };
 
-  // Add beta header for prompt caching if enabled
-  if (promptCachingEnabled) {
-    headers["anthropic-beta"] = "prompt-caching-2024-07-31";
-  }
-
-  const res = await fetch(getApiUrl(), {
-    method: "POST",
+  // Route through api-proxy.js — handles Forge vs local proxy detection
+  const data = await apiPost(
+    "https://api.anthropic.com/v1/messages",
     headers,
-    body: JSON.stringify(body),
-  });
+    body
+  );
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Claude API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-
-  // Extract text content from response (handle mixed content blocks)
   const text = (data.content ?? [])
     .filter(block => block.type === "text")
     .map(block => block.text)
@@ -295,7 +284,6 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
   if (!text) throw new Error("Claude API returned no text content.");
   return text;
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESPONSE PARSING

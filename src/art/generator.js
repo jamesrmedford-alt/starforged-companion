@@ -35,6 +35,7 @@
 
 import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
+import { apiPost } from "../api-proxy.js";
 
 const MODULE_ID   = "starforged-companion";
 const DALLE_URL   = "https://api.openai.com/v1/images/generations";
@@ -182,43 +183,39 @@ async function callDallE(apiKey, prompt, size, entityId, entityType) {
 
 async function attemptDallECall(apiKey, prompt, size, entityId, entityType, isRetry) {
   try {
-    const response = await fetch(DALLE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model:           DALLE_MODEL,
-        prompt,
-        n:               1,
-        size,
-        quality:         "standard",
-        style:           "natural",     // Fits Starforged aesthetic; "vivid" is too saturated
-        response_format: "b64_json",    // Store base64 — URL expires after 1 hour
-      }),
-    });
+    const body = {
+      model:           DALLE_MODEL,
+      prompt,
+      n:               1,
+      size,
+      quality:         "standard",
+      style:           "natural",
+      response_format: "b64_json",
+    };
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return handleDallEError(error, apiKey, prompt, size, entityId, entityType, isRetry);
-    }
+    const headers = {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    };
 
-    const data  = await response.json();
-    const b64   = data.data?.[0]?.b64_json;
-    const revised = data.data?.[0]?.revised_prompt ?? prompt;
+    // Route through api-proxy.js — handles Forge vs local proxy detection
+    const data = await apiPost(
+      "https://api.openai.com/v1/images/generations",
+      headers,
+      body
+    );
 
-    if (!b64) {
-      console.error(`${MODULE_ID} | Art: DALL-E returned no image data`);
-      return null;
-    }
+    const b64      = data.data?.[0]?.b64_json;
+    const revised  = data.data?.[0]?.revised_prompt ?? prompt;
+
+    if (!b64) throw new Error("DALL-E returned no image data.");
 
     return {
       _id:              generateId(),
       entityId,
       entityType,
       prompt,
-      revisedPrompt:    revised,       // DALL-E 3 sometimes revises the prompt — log it
+      revisedPrompt:    revised,
       b64,
       size,
       generatedAt:      new Date().toISOString(),
@@ -226,9 +223,20 @@ async function attemptDallECall(apiKey, prompt, size, entityId, entityType, isRe
       locked:           false,
       superseded:       false,
     };
-
   } catch (err) {
-    console.error(`${MODULE_ID} | Art: DALL-E network error:`, err.message);
+    // Retry once on rate limit
+    if (!isRetry && err.message?.includes("429")) {
+      console.warn(`${MODULE_ID} | Art: rate limited, retrying in 10s...`);
+      await delay(10000);
+      return attemptDallECall(apiKey, prompt, size, entityId, entityType, true);
+    }
+
+    // Auth / billing errors — surface immediately
+    if (err.message?.includes("401") || err.message?.includes("403")) {
+      notifyBillingError(err.message);
+    } else {
+      console.error(`${MODULE_ID} | Art: DALL-E call failed:`, err.message);
+    }
     return null;
   }
 }

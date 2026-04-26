@@ -26,6 +26,7 @@ import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
+import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
 
 import {
   registerLoremasterSettings,
@@ -337,6 +338,22 @@ Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
   checkLoremaster();
+
+  // Check proxy health — warn GM if local proxy is not running
+  // (On The Forge this always returns true and no warning is shown)
+  isLocalProxyReachable().then(reachable => {
+    if (!reachable) {
+      ui.notifications.warn(
+        "Starforged Companion: Claude proxy is not running. " +
+        "Run 'npm run proxy' (or proxy/start.sh) in the module folder before interpreting moves. " +
+        `Proxy mode: ${proxyModeDescription()}`,
+        { permanent: true }
+      );
+    } else {
+      console.log(`${MODULE_ID} | Proxy reachable: ${proxyModeDescription()}`);
+    }
+  });
+
   registerChatHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();

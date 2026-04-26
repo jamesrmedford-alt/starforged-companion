@@ -33,6 +33,10 @@ export default [
         JournalEntry: "readonly",
         Dialog:       "readonly",
         $:            "readonly",
+
+        // ── The Forge globals ────────────────────────────────────────────
+        ForgeVTT:  "readonly",
+        ForgeAPI:  "readonly",
       },
     },
     rules: {
