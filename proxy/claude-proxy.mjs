@@ -111,14 +111,27 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     const body = Buffer.concat(chunks);
 
-    // Forward headers — strip hop-by-hop headers, set correct host
+    // Forward headers — strip hop-by-hop headers and browser-specific headers.
+    // Critically: strip accept-encoding so the upstream returns plain text/JSON.
+    // The proxy does NOT decompress responses — if accept-encoding is forwarded,
+    // the upstream returns gzip/brotli and the client receives binary garbage.
+    const STRIP_HEADERS = new Set([
+      "host",
+      "connection",
+      "content-length",
+      "accept-encoding",  // Must strip — proxy doesn't decompress
+      "origin",           // Prevents unexpected CORS rejections from some APIs
+      "referer",
+    ]);
+
     const forwardHeaders = {};
     for (const [key, value] of Object.entries(req.headers)) {
-      if (["host", "connection", "content-length"].includes(key.toLowerCase())) continue;
+      if (STRIP_HEADERS.has(key.toLowerCase())) continue;
       forwardHeaders[key] = value;
     }
-    forwardHeaders["host"]           = route.upstream.host;
-    forwardHeaders["content-length"] = Buffer.byteLength(body).toString();
+    forwardHeaders["host"]            = route.upstream.host;
+    forwardHeaders["content-length"]  = Buffer.byteLength(body).toString();
+    forwardHeaders["accept-encoding"] = "identity";  // Explicitly request uncompressed
 
     const options = {
       hostname: route.upstream.host,
