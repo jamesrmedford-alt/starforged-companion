@@ -120,6 +120,18 @@ function registerCoreSettings() {
     type:    String,
     default: "en-US",
   });
+
+  // Claude proxy base URL — required to route API calls through the local
+  // proxy (proxy/claude-proxy.mjs) which bypasses Electron renderer CORS.
+  // Default assumes the proxy is running on the same machine as Foundry.
+  game.settings.register(MODULE_ID, "claudeProxyUrl", {
+    name:    "Claude Proxy URL",
+    hint:    "Base URL of the local Claude proxy server. Run 'npm run proxy' in the module folder before starting a session. Default: http://127.0.0.1:3001",
+    scope:   "world",
+    config:  true,
+    type:    String,
+    default: "http://127.0.0.1:3001",
+  });
 }
 
 

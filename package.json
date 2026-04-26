@@ -4,17 +4,18 @@
   "description": "Foundry VTT companion module for Ironsworn: Starforged",
   "type": "module",
   "scripts": {
-    "test":          "vitest run",
-    "test:watch":    "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint":          "eslint src/**/*.js",
-    "lint:fix":      "eslint src/**/*.js --fix"
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix",
+    "proxy": "node proxy/claude-proxy.mjs"
   },
   "devDependencies": {
-    "@eslint/js":          "^9.0.0",
+    "@eslint/js": "^9.0.0",
     "@vitest/coverage-v8": "^3.0.0",
-    "eslint":              "^9.0.0",
-    "vitest":              "^3.0.0"
+    "eslint": "^9.0.0",
+    "vitest": "^3.0.0"
   },
   "overrides": {
     "glob": "^11.0.0"
