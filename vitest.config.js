@@ -46,6 +46,8 @@ export default defineConfig({
         'src/moves/interpreter.js',
         // JournalEntry + game.settings writes — requires live Foundry
         'src/moves/persistResolution.js',
+        // External API proxy — Forge/Electron environment detection, integration only
+        'src/api-proxy.js',
         // Pure data tables and roller — no logic branches, integration only
         'src/oracles/**',
         // ApplicationV2 UI panels — require live Foundry rendering

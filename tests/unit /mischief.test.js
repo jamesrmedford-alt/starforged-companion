@@ -6,9 +6,10 @@
 //   shouldApplyMischief(mischiefLevel) → boolean
 //   buildMischiefFraming(mischiefLevel, narration) → string | null
 //
-// Dial value "lawful" (used by settingsPanel.js / getMischiefDial()) is
-// accepted as an alias for "serious" via normalizeDial() in mischief.js.
-// Both values are tested below.
+// Dial value "lawful" (stored by settingsPanel.js / returned by getMischiefDial())
+// is normalised to "serious" by normalizeDial() in mischief.js before any
+// switch statement sees it. Fix applied in post-session-3 hardening.
+// Both values are tested below to confirm the alias is working.
 
 import { describe, it, expect, vi } from 'vitest';
 import {

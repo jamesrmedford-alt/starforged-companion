@@ -128,3 +128,12 @@ global.ui = {
     error: () => {},
   },
 };
+
+// ---------------------------------------------------------------------------
+// ForgeVTT / ForgeAPI — stub as undefined to simulate desktop (non-Forge) context.
+// api-proxy.js checks typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge.
+// Setting to undefined means the local proxy path is always taken in tests.
+// ---------------------------------------------------------------------------
+
+global.ForgeVTT = undefined;
+global.ForgeAPI = undefined;
