@@ -185,11 +185,12 @@ function registerChatHook() {
       const resolution = resolveMove(interpretation, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      const chatMessage = await postMoveResult(
+      // Step 7: post move result card, then trigger Loremaster with context inline
+      await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
-      await attachLoremasterContext(chatMessage, packet.assembled);
+      await triggerLoremaster(packet.assembled);
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -258,6 +259,38 @@ async function postMoveResult(resolution, aside = null) {
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
     // "other" was removed as a valid type in v13 and must not be used.
+  });
+}
+
+/**
+ * Post an @lm message with the assembled context packet embedded inline.
+ *
+ * Loremaster only responds to messages beginning with @lm — it does not
+ * monitor other messages or read flags on arbitrary chat cards. Embedding
+ * the context directly in the message content is the most reliable approach
+ * and avoids any dependency on flag path configuration.
+ *
+ * The context is appended as a hidden div so it reaches Loremaster's parser
+ * but is not visually cluttered in the chat log. If Loremaster ignores HTML,
+ * the plain-text fallback in the message content is enough to orient it.
+ *
+ * @param {string} contextPacket — assembled string from assembleContextPacket()
+ */
+async function triggerLoremaster(contextPacket) {
+  // Escape the context for safe HTML embedding
+  const escaped = contextPacket
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  await ChatMessage.create({
+    content: `@lm <span style="display:none">${escaped}</span>`,
+    flags: {
+      [MODULE_ID]: {
+        loremasterTrigger: true,
+        loremasterContext: contextPacket,
+      },
+    },
   });
 }
 
