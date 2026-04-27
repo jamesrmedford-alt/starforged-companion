@@ -153,7 +153,7 @@ Current state: Health {h}/5, Spirit {s}/5, Supply {sup}/5, Momentum {m}
 
 | Setting | Key | Scope | Type | Default |
 |---------|-----|-------|------|---------|
-| Narration Model | `narrationModel` | world | String (choices) | `claude-sonnet-4-5-20251001` |
+| Narration Model | `narrationModel` | world | String (choices) | `claude-sonnet-4-5-20250929` |
 | Perspective | `narrationPerspective` | world | String (choices) | `auto` |
 | Tone | `narrationTone` | world | String (choices) | `wry` |
 | Length (sentences) | `narrationLength` | world | Number (1–6) | `3` |
@@ -165,7 +165,7 @@ Current state: Health {h}/5, Spirit {s}/5, Supply {sup}/5, Momentum {m}
 ```js
 {
   "claude-haiku-4-5-20251001":   "Haiku 4.5 (fast, economical)",
-  "claude-sonnet-4-5-20251001":  "Sonnet 4.5 (richer narration, recommended)",
+  "claude-sonnet-4-5-20250929":  "Sonnet 4.5 (richer narration, recommended)",
 }
 ```
 

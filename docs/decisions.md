@@ -179,7 +179,7 @@ the order fixed both the update detection and the version display.
 structured JSON output. System prompt cached with `cache_control: ephemeral`.
 Prompt caching makes interpretation nearly free per call.
 
-**Narration:** `claude-sonnet-4-5-20251001` default, `claude-haiku-4-5-20251001`
+**Narration:** `claude-sonnet-4-5-20250929` default, `claude-haiku-4-5-20251001`
 available. Sonnet produces noticeably richer prose. System prompt cached. Cost per
 session at Sonnet: ~$0.05. Configurable per campaign in module settings.
 
