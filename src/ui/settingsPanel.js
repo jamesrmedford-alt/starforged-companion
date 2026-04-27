@@ -2,7 +2,7 @@
 // Settings Panel + Move Confirmation Dialog — Starforged Companion module
 //
 // Exports:
-//   SettingsPanelApp        — tabbed ApplicationV2: Safety | Mischief | About
+//   SettingsPanelApp        — tabbed ApplicationV2: Safety | Mischief | Narrator | About
 //   MoveConfirmDialog       — ApplicationV2 dialog replacing confirmInterpretation() stub
 //   registerSettings()      — register game.settings (call from init hook)
 //   registerSettingsHooks() — wire X-Card chat hook + initial safety sync (call from ready hook)
@@ -43,10 +43,36 @@ const DIAL_POSITIONS = [
 ];
 
 const SETTING = {
-  DIAL:          'mischiefDial',
-  GLOBAL_LINES:  'globalSafetyLines',
-  GLOBAL_VEILS:  'globalSafetyVeils',
-  PRIVATE_LINES: 'privateLines',   // client-scoped
+  DIAL:                   'mischiefDial',
+  GLOBAL_LINES:           'globalSafetyLines',
+  GLOBAL_VEILS:           'globalSafetyVeils',
+  PRIVATE_LINES:          'privateLines',         // client-scoped
+  NARRATION_ENABLED:      'narrationEnabled',
+  NARRATION_MODEL:        'narrationModel',
+  NARRATION_PERSPECTIVE:  'narrationPerspective',
+  NARRATION_TONE:         'narrationTone',
+  NARRATION_LENGTH:       'narrationLength',
+  NARRATION_INSTRUCTIONS: 'narrationInstructions',
+  NARRATION_MAX_TOKENS:   'narrationMaxTokens',
+};
+
+const NARRATION_MODELS = {
+  'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
+  'claude-sonnet-4-5-20251001': 'Sonnet 4.5 (richer narration, recommended)',
+};
+
+const NARRATION_PERSPECTIVES = {
+  auto:          'Auto — second person for solo, third person for multiplayer (recommended)',
+  second_person: 'Second person — always "you" regardless of party size',
+  third_person:  'Third person — always character names regardless of party size',
+};
+
+const NARRATION_TONES = {
+  wry:              'Wry — knowing, slightly sardonic, aware of the fiction\'s weight (default)',
+  grim_and_grounded:'Grim and grounded — sparse, consequential, Ironsworn-canonical',
+  operatic:         'Operatic — heightened stakes, vivid imagery',
+  noir:             'Noir — world-weary, shadowed, dry',
+  matter_of_fact:   'Matter of fact — mechanical, precise, minimal flourish',
 };
 
 // ---------------------------------------------------------------------------
@@ -94,6 +120,74 @@ export function registerSettings() {
     type:    Array,
     default: [],
   });
+
+  // ── Narrator settings ────────────────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_ENABLED, {
+    name:    'Narration Enabled',
+    hint:    'When enabled, Claude narrates the consequence of each move result as atmospheric prose.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_MODEL, {
+    name:    'Narration Model',
+    hint:    'Claude model used for narration. Sonnet produces richer prose; Haiku is faster and cheaper.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: NARRATION_MODELS,
+    default: 'claude-sonnet-4-5-20251001',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_PERSPECTIVE, {
+    name:    'Narration Perspective',
+    hint:    'Whether the narrator addresses the player as "you" (solo) or by character name (multiplayer).',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: NARRATION_PERSPECTIVES,
+    default: 'auto',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_TONE, {
+    name:    'Narration Tone',
+    hint:    'Narrative voice and style of the narrator.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: NARRATION_TONES,
+    default: 'wry',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_LENGTH, {
+    name:    'Narration Length (sentences)',
+    hint:    'Target number of sentences per narration. Range: 1–6.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 3,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, {
+    name:    'Custom Narrator Instructions',
+    hint:    'Additional instructions injected into the narrator system prompt. Leave blank for defaults.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    default: '',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_MAX_TOKENS, {
+    name:    'Narration Max Tokens',
+    hint:    'Maximum tokens for each narration response. Default 300 (~3 sentences).',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 300,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +198,18 @@ function getDial()         { return game.settings.get(MODULE_ID, SETTING.DIAL); 
 function getGlobalLines()  { return game.settings.get(MODULE_ID, SETTING.GLOBAL_LINES) ?? []; }
 function getGlobalVeils()  { return game.settings.get(MODULE_ID, SETTING.GLOBAL_VEILS) ?? []; }
 function getPrivateLines() { return game.settings.get(MODULE_ID, SETTING.PRIVATE_LINES) ?? []; }
+
+// ---------------------------------------------------------------------------
+// Narrator settings helpers — read
+// ---------------------------------------------------------------------------
+
+function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTING.NARRATION_ENABLED)      ?? true; }
+function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20251001'; }
+function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
+function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
+function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
+function getNarrationInstructions() { return game.settings.get(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS) ?? ''; }
+function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 300; }
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -227,14 +333,15 @@ export class SettingsPanelApp extends ApplicationV2 {
     },
     position: { width: 520, height: 'auto' },
     actions: {
-      switchTab:         SettingsPanelApp.#onSwitchTab,
-      addLine:           SettingsPanelApp.#onAddLine,
-      removeLine:        SettingsPanelApp.#onRemoveLine,
-      addVeil:           SettingsPanelApp.#onAddVeil,
-      removeVeil:        SettingsPanelApp.#onRemoveVeil,
-      addPrivateLine:    SettingsPanelApp.#onAddPrivateLine,
-      removePrivateLine: SettingsPanelApp.#onRemovePrivateLine,
-      setDial:           SettingsPanelApp.#onSetDial,
+      switchTab:              SettingsPanelApp.#onSwitchTab,
+      addLine:                SettingsPanelApp.#onAddLine,
+      removeLine:             SettingsPanelApp.#onRemoveLine,
+      addVeil:                SettingsPanelApp.#onAddVeil,
+      removeVeil:             SettingsPanelApp.#onRemoveVeil,
+      addPrivateLine:         SettingsPanelApp.#onAddPrivateLine,
+      removePrivateLine:      SettingsPanelApp.#onRemovePrivateLine,
+      setDial:                SettingsPanelApp.#onSetDial,
+      saveNarratorSettings:   SettingsPanelApp.#onSaveNarratorSettings,
     },
   };
 
@@ -252,13 +359,23 @@ export class SettingsPanelApp extends ApplicationV2 {
 
   async _prepareContext(_options) {
     return {
-      activeTab:     this.#activeTab,
-      isGM:          game.user.isGM,
-      dial:          getDial(),
-      dialPositions: DIAL_POSITIONS,
-      globalLines:   getGlobalLines(),
-      globalVeils:   getGlobalVeils(),
-      privateLines:  getPrivateLines(),
+      activeTab:             this.#activeTab,
+      isGM:                  game.user.isGM,
+      dial:                  getDial(),
+      dialPositions:         DIAL_POSITIONS,
+      globalLines:           getGlobalLines(),
+      globalVeils:           getGlobalVeils(),
+      privateLines:          getPrivateLines(),
+      narrationEnabled:      getNarrationEnabled(),
+      narrationModel:        getNarrationModel(),
+      narrationPerspective:  getNarrationPerspective(),
+      narrationTone:         getNarrationTone(),
+      narrationLength:       getNarrationLength(),
+      narrationInstructions: getNarrationInstructions(),
+      narrationMaxTokens:    getNarrationMaxTokens(),
+      narrationModels:       NARRATION_MODELS,
+      narrationPerspectives: NARRATION_PERSPECTIVES,
+      narrationTones:        NARRATION_TONES,
     };
   }
 
@@ -266,6 +383,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     const tabs = [
       { id: 'safety',   label: 'Safety'   },
       { id: 'mischief', label: 'Mischief' },
+      { id: 'narrator', label: 'Narrator' },
       { id: 'about',    label: 'About'    },
     ];
 
@@ -280,7 +398,8 @@ export class SettingsPanelApp extends ApplicationV2 {
     switch (context.activeTab) {
       case 'safety':   paneHtml = this.#renderSafetyPane(context);   break;
       case 'mischief': paneHtml = this.#renderMischiefPane(context); break;
-      case 'about':    paneHtml = this.#renderAboutPane();            break;
+      case 'narrator': paneHtml = this.#renderNarratorPane(context); break;
+      case 'about':    paneHtml = this.#renderAboutPane();           break;
     }
 
     const html = `
@@ -401,6 +520,59 @@ export class SettingsPanelApp extends ApplicationV2 {
     `;
   }
 
+  #renderNarratorPane(ctx) {
+    const renderSelect = (name, value, options, disabled = false) => {
+      const opts = Object.entries(options)
+        .map(([v, label]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`)
+        .join('');
+      return `<select class="settings-input" name="${name}" ${disabled ? 'disabled' : ''}>${opts}</select>`;
+    };
+
+    const gmOnly = !ctx.isGM;
+    const dis    = gmOnly ? 'disabled' : '';
+
+    return `
+      <div class="narrator-pane">
+        ${gmOnly ? '<p class="safety-gm-note">Narrator settings are controlled by the GM.</p>' : ''}
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narrationEnabled" ${ctx.narrationEnabled ? 'checked' : ''} ${dis}>
+            Enable narration
+          </label>
+          <span class="narrator-field-hint">When enabled, Claude narrates the consequence of each move as atmospheric prose.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Model</label>
+          ${renderSelect('narrationModel', ctx.narrationModel, ctx.narrationModels, gmOnly)}
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Perspective</label>
+          ${renderSelect('narrationPerspective', ctx.narrationPerspective, ctx.narrationPerspectives, gmOnly)}
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Tone</label>
+          ${renderSelect('narrationTone', ctx.narrationTone, ctx.narrationTones, gmOnly)}
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Length (sentences)</label>
+          <input class="settings-input narrator-number-input" name="narrationLength"
+                 type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Custom instructions</label>
+          <textarea class="settings-input narrator-instructions" name="narrationInstructions"
+                    rows="3" maxlength="500" placeholder="Additional instructions for the narrator…"
+                    ${dis}>${ctx.narrationInstructions}</textarea>
+        </div>
+        ${ctx.isGM ? `
+          <div class="narrator-actions">
+            <button class="settings-btn btn-save-narrator" data-action="saveNarratorSettings">Save Narrator Settings</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   #renderAboutPane() {
     return `
       <div class="about-pane">
@@ -415,7 +587,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
-            <dd>Loremaster (hosted proxy)</dd>
+            <dd>claude-sonnet-4-5-20251001 default · configurable in Narrator tab · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
@@ -426,12 +598,6 @@ export class SettingsPanelApp extends ApplicationV2 {
             <dd>v12 minimum · v13 verified</dd>
           </div>
         </dl>
-        <div class="about-open-issues">
-          <strong>Open items requiring manual resolution:</strong>
-          <ul>
-            <li>Confirm Loremaster flag path for context consumption</li>
-          </ul>
-        </div>
       </div>
     `;
   }
@@ -506,6 +672,31 @@ export class SettingsPanelApp extends ApplicationV2 {
     const lines = getPrivateLines();
     lines.splice(idx, 1);
     await setPrivateLines(lines);  // sync included
+    this.render();
+  }
+
+  static async #onSaveNarratorSettings(event, target) {
+    if (!game.user.isGM) return;
+    const el = this.element;
+
+    const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
+    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20251001';
+    const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
+    const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
+    const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
+    const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
+    const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
+
+    await Promise.all([
+      game.settings.set(MODULE_ID, SETTING.NARRATION_ENABLED,      enabled),
+      game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
+      game.settings.set(MODULE_ID, SETTING.NARRATION_PERSPECTIVE,  perspective),
+      game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
+      game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
+      game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
+    ]);
+
+    ui.notifications?.info('Starforged Companion: Narrator settings saved.');
     this.render();
   }
 }
