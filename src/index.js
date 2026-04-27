@@ -5,8 +5,6 @@
  * Session 3 changes:
  *   — confirmInterpretation() stub removed; real dialog imported from ui/settingsPanel.js
  *   — persistResolution() stub removed; full implementation imported from moves/persistResolution.js
- *   — checkLoremaster() removed; configurable version imported from loremaster.js
- *   — Loremaster flag attachment now via attachLoremasterContext() from loremaster.js
  *   — mischiefLevel setting removed; now mischiefDial registered by ui/settingsPanel.js
  *   — UI panels (progressTracks, entityPanel, settingsPanel) wired via toolbar buttons
  *   — All three UI hook registrations called from ready hook
@@ -17,6 +15,11 @@
  *   — message.author → message.user (Foundry v13 rename)
  *   — CONST.CHAT_MESSAGE_TYPES replaced with string literals (v13 compatibility)
  *   — injectPushToTalkButton rewritten without jQuery (removed in v13)
+ *
+ * Narrator feature (replaces Loremaster):
+ *   — loremaster.js deleted; no more @lm socket relay or GM-account dependency
+ *   — narrateResolution() from narration/narrator.js replaces triggerLoremaster()
+ *   — Narration runs on whichever client triggered the move
  */
 
 import { CampaignStateSchema }   from "./schemas.js";
@@ -27,12 +30,7 @@ import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
-
-import {
-  registerLoremasterSettings,
-  checkLoremaster,
-  attachLoremasterContext,
-} from "./loremaster.js";
+import { narrateResolution } from "./narration/narrator.js";
 
 import {
   openProgressTracks,
@@ -142,7 +140,7 @@ function registerCoreSettings() {
 
 /**
  * Intercept outgoing chat messages and route player narration through
- * the move interpretation pipeline before passing context to Loremaster.
+ * the move interpretation pipeline.
  *
  * Pipeline:
  *   1. Player narration arrives (typed or speech-transcribed)
@@ -150,9 +148,10 @@ function registerCoreSettings() {
  *   3. Mischief aside generated (if mischiefApplied) and stored on interpretation
  *   4. MoveConfirmDialog shown — player accepts or re-interprets
  *   5. resolveMove() rolls dice, calculates outcome, applies consequences
- *   6. assembleContextPacket() builds the 7-section Loremaster context packet
- *   7. postMoveResult() posts HTML chat card + attaches context via attachLoremasterContext()
- *   8. persistResolution() applies meter/track changes to character and campaign state
+ *   6. assembleContextPacket() builds the 7-section context packet
+ *   7. postMoveResult() posts HTML move result card
+ *   8. narrateResolution() calls Claude directly, posts narration card
+ *   9. persistResolution() applies meter/track changes to character and campaign state
  */
 function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
@@ -185,22 +184,14 @@ function registerChatHook() {
       const resolution = resolveMove(interpretation, campaignState);
       const packet     = await assembleContextPacket(resolution, campaignState);
 
-      // Step 7: post move result card, then trigger Loremaster
+      // Step 7: post move result card
       await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
 
-      // Loremaster only responds to the GM account. If the current user is GM,
-      // trigger directly. Otherwise emit a socket request for the GM's client to handle.
-      if (game.user.isGM) {
-        await triggerLoremaster(packet.assembled);
-      } else {
-        game.socket.emit(`module.${MODULE_ID}`, {
-          type:          "loremasterTrigger",
-          contextPacket: packet.assembled,
-        });
-      }
+      // Step 8: narrate the consequence directly via Claude — no GM dependency
+      await narrateResolution(resolution, packet, campaignState);
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -231,10 +222,10 @@ function registerChatHook() {
  * restructured in Foundry v13 and the constants can no longer be relied on.
  *
  * Excluded:
- * - OOC and roll message types
- * - Messages already containing move resolution markup (avoids re-processing)
- * - GM messages (GM narrates through Loremaster directly)
- * - Messages starting with "/" (commands) or "@" (direct Loremaster calls)
+ * - OOC, roll, and whisper message types
+ * - Messages already processed by this module (move result cards, narration cards)
+ * - GM messages
+ * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
  */
 function isPlayerNarration(message) {
   // String literal type checks — v13 compatible
@@ -242,8 +233,8 @@ function isPlayerNarration(message) {
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
 
   // Skip messages already processed by this module
-  if (message.flags?.[MODULE_ID]?.moveResolution)   return false;
-  if (message.flags?.[MODULE_ID]?.loremasterTrigger) return false;
+  if (message.flags?.[MODULE_ID]?.moveResolution) return false;
+  if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
 
   // message.author is correct for both v12 and v13.
   // message.user was the old name — accessing it in v13 logs a deprecation warning.
@@ -253,13 +244,10 @@ function isPlayerNarration(message) {
   const text = message.content?.trim() ?? "";
 
   // Escape character — prefix with \ to bypass the pipeline entirely
-  // e.g. "\This is a note not meant for move interpretation"
   if (text.startsWith("\\")) return false;
 
-  // @lm and other @ commands go directly to Loremaster — never intercept
+  // @ and / commands are not player narration
   if (text.startsWith("@")) return false;
-
-  // / commands are Foundry/Loremaster slash commands — never intercept
   if (text.startsWith("/")) return false;
 
   return true;
@@ -280,35 +268,6 @@ async function postMoveResult(resolution, aside = null) {
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
     // "other" was removed as a valid type in v13 and must not be used.
-  });
-}
-
-/**
- * Post an @lm message with the assembled context packet embedded inline.
- *
- * Loremaster only responds to messages beginning with @lm — it does not
- * monitor other messages or read flags on arbitrary chat cards. Embedding
- * the context directly in the message content is the most reliable approach
- * and avoids any dependency on flag path configuration.
- *
- * The context is appended as a hidden div so it reaches Loremaster's parser
- * but is not visually cluttered in the chat log. If Loremaster ignores HTML,
- * the plain-text fallback in the message content is enough to orient it.
- *
- * @param {string} contextPacket — assembled string from assembleContextPacket()
- */
-async function triggerLoremaster(contextPacket) {
-  // Post the context as plain text after @lm.
-  // Loremaster passes the full message content to Claude, so the context
-  // packet travels inline. The message is flagged so isPlayerNarration()
-  // skips it on the createChatMessage hook re-fire.
-  await ChatMessage.create({
-    content: `@lm\n\n${contextPacket}`,
-    flags: {
-      [MODULE_ID]: {
-        loremasterTrigger: true,
-      },
-    },
   });
 }
 
@@ -387,21 +346,10 @@ Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
   registerCoreSettings();
   registerUISettings();
-  registerLoremasterSettings();
 });
 
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
-
-  checkLoremaster();
-
-  // Register socket handler — GM's client listens for loremaster trigger requests
-  // from player clients and posts the @lm message as the GM account.
-  game.socket.on(`module.${MODULE_ID}`, (data) => {
-    if (data?.type !== "loremasterTrigger") return;
-    if (!game.user.isGM) return;
-    triggerLoremaster(data.contextPacket);
-  });
 
   // Check proxy health — warn GM if local proxy is not running
   // (On The Forge this always returns true and no warning is shown)
