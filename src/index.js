@@ -137,6 +137,40 @@ function registerCoreSettings() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SESSION ID MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generate or restore a session ID on world load.
+ * Reuses the existing ID when the last session was < 4 hours ago (handles
+ * page reloads mid-session). Otherwise starts a new session, incrementing
+ * sessionNumber and recording the start timestamp.
+ *
+ * Exported for unit testing; called from the ready hook (GM only).
+ */
+export function initSessionId(campaignState) {
+  const last   = campaignState.lastSessionTimestamp;
+  const recent = last && (Date.now() - new Date(last)) < 4 * 3_600_000;
+
+  if (campaignState.currentSessionId && recent) {
+    console.log(`${MODULE_ID} | Resuming session: ${campaignState.currentSessionId}`);
+    return campaignState;
+  }
+
+  campaignState.currentSessionId    = foundry.utils.randomID();
+  campaignState.sessionNumber       = (campaignState.sessionNumber ?? 0) + 1;
+  campaignState.lastSessionTimestamp = new Date().toISOString();
+
+  console.log(
+    `${MODULE_ID} | New session: ${campaignState.currentSessionId} ` +
+    `(#${campaignState.sessionNumber})`
+  );
+
+  return campaignState;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CHAT MESSAGE HOOK — MOVE INTERPRETATION PIPELINE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -385,6 +419,15 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
+  // Session ID — GM writes to world-scoped settings; players read from state
+  if (game.user.isGM) {
+    const campaignState = game.settings.get(MODULE_ID, "campaignState");
+    const updated = initSessionId(campaignState);
+    game.settings.set(MODULE_ID, "campaignState", updated).catch(err => {
+      console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
+    });
+  }
+
   // Check proxy health — warn GM if local proxy is not running
   // (On The Forge this always returns true and no warning is shown)
   isLocalProxyReachable().then(reachable => {
@@ -409,6 +452,13 @@ Hooks.once("ready", () => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
+});
+
+Hooks.once("closeWorld", async () => {
+  if (!game.user.isGM) return;
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  campaignState.lastSessionTimestamp = new Date().toISOString();
+  await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
 /**

@@ -401,6 +401,11 @@ export class SettingsPanelApp extends ApplicationV2 {
   // -----------------------------------------------------------------------
 
   async _prepareContext(_options) {
+    const campaignState = (() => {
+      try { return game.settings.get(MODULE_ID, 'campaignState') ?? {}; }
+      catch { return {}; }
+    })();
+
     return {
       activeTab:             this.#activeTab,
       isGM:                  game.user.isGM,
@@ -419,6 +424,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
+      sessionNumber:         campaignState.sessionNumber         ?? 0,
+      currentSessionId:      campaignState.currentSessionId      ?? '',
+      lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
     };
   }
 
@@ -442,7 +450,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       case 'safety':   paneHtml = this.#renderSafetyPane(context);   break;
       case 'mischief': paneHtml = this.#renderMischiefPane(context); break;
       case 'narrator': paneHtml = this.#renderNarratorPane(context); break;
-      case 'about':    paneHtml = this.#renderAboutPane();           break;
+      case 'about':    paneHtml = this.#renderAboutPane(context);    break;
     }
 
     const html = `
@@ -616,7 +624,15 @@ export class SettingsPanelApp extends ApplicationV2 {
     `;
   }
 
-  #renderAboutPane() {
+  #renderAboutPane(ctx = {}) {
+    const sessionLabel = ctx.sessionNumber
+      ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
+      : 'not started';
+
+    const sessionStarted = ctx.lastSessionTimestamp
+      ? new Date(ctx.lastSessionTimestamp).toLocaleString()
+      : '—';
+
     return `
       <div class="about-pane">
         <h3 class="about-module-name">Starforged Companion</h3>
@@ -624,6 +640,14 @@ export class SettingsPanelApp extends ApplicationV2 {
           Move interpretation, narration, entity tracking, and art generation for Ironsworn: Starforged.
         </p>
         <dl class="about-fields">
+          <div class="about-field">
+            <dt>Current session</dt>
+            <dd>${sessionLabel}</dd>
+          </div>
+          <div class="about-field">
+            <dt>Session started</dt>
+            <dd>${sessionStarted}</dd>
+          </div>
           <div class="about-field">
             <dt>Move AI</dt>
             <dd>claude-haiku-4-5-20251001 · system prompt cached</dd>
