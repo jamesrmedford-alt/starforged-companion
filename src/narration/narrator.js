@@ -173,7 +173,7 @@ function getNarratorSettings() {
   try {
     return {
       narrationEnabled:      game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
-      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20251001',
+      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
       narrationPerspective:  game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
       narrationTone:         game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
       narrationLength:       game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
@@ -183,7 +183,7 @@ function getNarratorSettings() {
   } catch {
     return {
       narrationEnabled:      true,
-      narrationModel:        'claude-sonnet-4-5-20251001',
+      narrationModel:        'claude-sonnet-4-5-20250929',
       narrationPerspective:  'auto',
       narrationTone:         'wry',
       narrationLength:       3,

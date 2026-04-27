@@ -58,7 +58,7 @@ const SETTING = {
 
 const NARRATION_MODELS = {
   'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
-  'claude-sonnet-4-5-20251001': 'Sonnet 4.5 (richer narration, recommended)',
+  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
 };
 
 const NARRATION_PERSPECTIVES = {
@@ -139,7 +139,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: NARRATION_MODELS,
-    default: 'claude-sonnet-4-5-20251001',
+    default: 'claude-sonnet-4-5-20250929',
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_PERSPECTIVE, {
@@ -204,7 +204,7 @@ function getPrivateLines() { return game.settings.get(MODULE_ID, SETTING.PRIVATE
 // ---------------------------------------------------------------------------
 
 function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTING.NARRATION_ENABLED)      ?? true; }
-function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20251001'; }
+function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20250929'; }
 function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
@@ -587,7 +587,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
-            <dd>claude-sonnet-4-5-20251001 default · configurable in Narrator tab · system prompt cached</dd>
+            <dd>claude-sonnet-4-5-20250929 default · configurable in Narrator tab · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
@@ -680,7 +680,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     const el = this.element;
 
     const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
-    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20251001';
+    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
     const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
     const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
     const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
