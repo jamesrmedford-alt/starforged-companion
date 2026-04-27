@@ -122,8 +122,10 @@ narrate the mechanical consequences of move outcomes as vivid, atmospheric prose
 that serves the story.
 
 [STYLE BLOCK — from narratorSettings]
-  Perspective: second person ("you") / third person ("the character")
-  Tone: grim and grounded / operatic / noir / matter-of-fact
+  Perspective: {resolved perspective — "you" for solo, character names for multiplayer}
+  Tone: wry — knowing and slightly sardonic, aware of consequence without
+        wallowing in it. The narrator has seen this before. It notices the
+        irony. It does not editorialize, but it does not pretend not to notice.
   Length: {sentenceTarget} sentences
   Custom instructions: {GM text}
 
@@ -152,8 +154,8 @@ Current state: Health {h}/5, Spirit {s}/5, Supply {sup}/5, Momentum {m}
 | Setting | Key | Scope | Type | Default |
 |---------|-----|-------|------|---------|
 | Narration Model | `narrationModel` | world | String (choices) | `claude-sonnet-4-5-20251001` |
-| Perspective | `narrationPerspective` | world | String (choices) | `second_person` |
-| Tone | `narrationTone` | world | String (choices) | `grim_and_grounded` |
+| Perspective | `narrationPerspective` | world | String (choices) | `auto` |
+| Tone | `narrationTone` | world | String (choices) | `wry` |
 | Length (sentences) | `narrationLength` | world | Number (1–6) | `3` |
 | Custom instructions | `narrationInstructions` | world | String | `""` |
 | Narration enabled | `narrationEnabled` | world | Boolean | `true` |
@@ -167,13 +169,33 @@ Current state: Health {h}/5, Spirit {s}/5, Supply {sup}/5, Momentum {m}
 }
 ```
 
+**Perspective choices:**
+```js
+{
+  "auto":         "Auto — second person for solo, third person for multiplayer (recommended)",
+  "second_person": "Second person — always 'you' regardless of party size",
+  "third_person":  "Third person — always character names regardless of party size",
+}
+```
+
 **Tone choices:**
 ```js
 {
+  "wry":            "Wry — knowing, slightly sardonic, aware of the fiction's weight (default)",
   "grim_and_grounded": "Grim and grounded — sparse, consequential, Ironsworn-canonical",
-  "operatic":          "Operatic — heightened stakes, vivid imagery",
-  "noir":              "Noir — world-weary, shadowed, dry",
-  "matter_of_fact":    "Matter of fact — mechanical, precise, minimal flourish",
+  "operatic":       "Operatic — heightened stakes, vivid imagery",
+  "noir":           "Noir — world-weary, shadowed, dry",
+  "matter_of_fact": "Matter of fact — mechanical, precise, minimal flourish",
+}
+```
+
+**Auto perspective logic:**
+```js
+// Resolved at narration time, not stored — always reflects current party size
+function resolveNarrationPerspective(setting) {
+  if (setting !== "auto") return setting;
+  const playerCount = game.users.filter(u => u.active && !u.isGM).length;
+  return playerCount === 1 ? "second_person" : "third_person";
 }
 ```
 
@@ -228,8 +250,16 @@ buildNarratorSystemPrompt
   ✓ includes world truths when present
   ✓ includes character name when present
   ✓ custom instructions appear in output
-  ✓ perspective setting affects wording (second vs third person)
+  ✓ wry tone description appears in style block
+  ✓ second_person perspective uses "you" in style block
+  ✓ third_person perspective uses character name in style block
   ✓ does not call fetch (pure string building)
+
+resolveNarrationPerspective
+  ✓ returns "second_person" for auto with 1 active player
+  ✓ returns "third_person" for auto with 2+ active players
+  ✓ returns "second_person" when explicitly set regardless of player count
+  ✓ returns "third_person" when explicitly set regardless of player count
 
 buildNarratorUserMessage
   ✓ includes move name

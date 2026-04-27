@@ -186,3 +186,25 @@ session at Sonnet: ~$0.05. Configurable per campaign in module settings.
 **Why not Opus:** Overkill for both tasks. Haiku handles structured output well.
 Sonnet handles atmospheric prose well. Opus is for complex reasoning tasks neither
 of these require.
+
+---
+
+## Narrator tone and perspective
+
+**Tone: wry** — knowing and slightly sardonic, aware of consequence without
+wallowing in it. The narrator has seen this before. It notices the irony. It
+does not editorialize, but it does not pretend not to notice. This is the
+default and the recommended setting for Ironsworn: Starforged, which has an
+existing tradition of spare, consequential prose with occasional dark wit.
+
+**Perspective: auto** — second person ("you") for solo campaigns, third person
+(character names) for multiplayer. Resolved at narration time from the count of
+active non-GM users. Can be overridden to a fixed value per campaign.
+
+**Why auto rather than a fixed default:** Second person creates intimacy in solo
+play — the narrator is addressing the player directly, which suits the journaling
+nature of Ironsworn solo. Third person is more natural for multiplayer where
+multiple characters are present and "you" becomes ambiguous.
+
+**Both are configurable** in the Narrator tab of module settings. The auto
+logic lives in `resolveNarrationPerspective()` in `src/narration/narrator.js`.
