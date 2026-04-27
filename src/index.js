@@ -31,6 +31,8 @@ import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
 import { narrateResolution } from "./narration/narrator.js";
+import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
+import { openChroniclePanel } from "./character/chroniclePanel.js";
 
 import {
   openProgressTracks,
@@ -215,6 +217,38 @@ function registerChatHook() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Register the updateActor hook.
+ * Fires when any Actor document is updated — including by other clients.
+ *
+ * Responsibilities:
+ * - Invalidate the cached character snapshot so the next context packet build
+ *   reads fresh state from the Actor document.
+ * - If the change touches condition debilities, recalculate momentum bounds so
+ *   the Actor's momentum stays within the new valid range.
+ *
+ * Ignores updates made by this client (userId === game.user.id) because
+ * actorBridge already invalidates the cache after its own writes.
+ */
+function registerActorHook() {
+  Hooks.on("updateActor", (actor, changes, _options, userId) => {
+    if (!actor.hasPlayerOwner) return;
+
+    // Invalidate the cached snapshot so the next context build reads fresh data
+    invalidateActorCache(actor.id);
+
+    // Skip if this is our own write — actorBridge already handled the cache
+    if (userId === game.user.id) return;
+
+    // If condition debilities changed, recalculate momentum bounds
+    if (foundry.utils.hasProperty(changes, "system.debilities")) {
+      recalculateMomentumBounds(actor).catch(err => {
+        console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
+      });
+    }
+  });
+}
+
+/**
  * Determine whether a chat message is player narration that should be
  * routed through the move interpretation pipeline.
  *
@@ -367,6 +401,7 @@ Hooks.once("ready", () => {
   });
 
   registerChatHook();
+  registerActorHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerSettingsHooks();
@@ -407,6 +442,13 @@ Hooks.on("getSceneControlButtons", (controls) => {
       icon:    "fas fa-users",
       button:  true,
       onClick: () => openEntityPanel(),
+    },
+    {
+      name:    "chronicle",
+      title:   "Character Chronicle",
+      icon:    "fas fa-book-open",
+      button:  true,
+      onClick: () => openChroniclePanel(),
     },
     {
       name:    "sfSettings",

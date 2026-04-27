@@ -43,17 +43,22 @@ const DIAL_POSITIONS = [
 ];
 
 const SETTING = {
-  DIAL:                   'mischiefDial',
-  GLOBAL_LINES:           'globalSafetyLines',
-  GLOBAL_VEILS:           'globalSafetyVeils',
-  PRIVATE_LINES:          'privateLines',         // client-scoped
-  NARRATION_ENABLED:      'narrationEnabled',
-  NARRATION_MODEL:        'narrationModel',
-  NARRATION_PERSPECTIVE:  'narrationPerspective',
-  NARRATION_TONE:         'narrationTone',
-  NARRATION_LENGTH:       'narrationLength',
-  NARRATION_INSTRUCTIONS: 'narrationInstructions',
-  NARRATION_MAX_TOKENS:   'narrationMaxTokens',
+  DIAL:                     'mischiefDial',
+  GLOBAL_LINES:             'globalSafetyLines',
+  GLOBAL_VEILS:             'globalSafetyVeils',
+  PRIVATE_LINES:            'privateLines',         // client-scoped
+  NARRATION_ENABLED:        'narrationEnabled',
+  NARRATION_MODEL:          'narrationModel',
+  NARRATION_PERSPECTIVE:    'narrationPerspective',
+  NARRATION_TONE:           'narrationTone',
+  NARRATION_LENGTH:         'narrationLength',
+  NARRATION_INSTRUCTIONS:   'narrationInstructions',
+  NARRATION_MAX_TOKENS:     'narrationMaxTokens',
+  // ── Character management ─────────────────────────────────────────────────
+  ACTIVE_CHARACTER_ID:      'activeCharacterId',
+  CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
+  CHRONICLE_CONTEXT_COUNT:  'chronicleContextCount',
+  CHARACTER_CONTEXT_ENABLED:'characterContextEnabled',
 };
 
 const NARRATION_MODELS = {
@@ -187,6 +192,44 @@ export function registerSettings() {
     config:  false,
     type:    Number,
     default: 300,
+  });
+
+  // ── Character management settings ─────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.ACTIVE_CHARACTER_ID, {
+    name:    'Active Character Actor ID',
+    hint:    'The Foundry Actor ID of the active player character. Defaults to game.user.character when blank.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    default: '',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY, {
+    name:    'Chronicle Auto-Entry',
+    hint:    'Automatically add a chronicle entry after each narration call.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHRONICLE_CONTEXT_COUNT, {
+    name:    'Chronicle Entries in Context',
+    hint:    'Number of recent chronicle entries included in each context packet. Range: 1–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 5,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHARACTER_CONTEXT_ENABLED, {
+    name:    'Character Context in Packet',
+    hint:    'Include character state (stats, meters, chronicle) in context packets sent to the narrator.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
   });
 }
 
