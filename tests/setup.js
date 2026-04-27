@@ -137,3 +137,91 @@ global.ui = {
 
 global.ForgeVTT = undefined;
 global.ForgeAPI = undefined;
+
+// ---------------------------------------------------------------------------
+// foundry.utils.deepClone — used in persistResolution.js and actorBridge.js
+// ---------------------------------------------------------------------------
+
+global.foundry.utils.deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
+// ---------------------------------------------------------------------------
+// game.actors — Ironsworn Actor collection stub
+//
+// Tests that exercise actorBridge.js should set up their own mock actors via
+// game.actors._set(id, actor) or game.actors._setAll(actorArray).
+// ---------------------------------------------------------------------------
+
+global.game.actors = (() => {
+  let _actors = [];
+  return {
+    get: (id) => _actors.find(a => a.id === id) ?? null,
+    find: (fn) => _actors.find(fn) ?? null,
+    filter: (fn) => _actors.filter(fn),
+    contents: _actors,
+    // Test helpers — not part of the Foundry API
+    _set: (id, actor) => {
+      const idx = _actors.findIndex(a => a.id === id);
+      if (idx >= 0) _actors[idx] = actor;
+      else _actors.push(actor);
+    },
+    _setAll: (actors) => { _actors = actors; },
+    _reset: () => { _actors = []; },
+  };
+})();
+
+// game.user.character — the actor owned by the current user
+global.game.user.character = null;
+
+// ---------------------------------------------------------------------------
+// makeTestActor — factory for mock Ironsworn Actor documents
+//
+// Usage in tests:
+//   const actor = makeTestActor({ id: 'a1', name: 'Kira', system: { ... } });
+//   game.actors._set('a1', actor);
+// ---------------------------------------------------------------------------
+
+global.makeTestActor = (overrides = {}) => {
+  const updateHistory = [];
+  const actor = {
+    id: overrides.id ?? foundry.utils.randomID(),
+    name: overrides.name ?? 'Test Character',
+    type: overrides.type ?? 'character',
+    hasPlayerOwner: overrides.hasPlayerOwner ?? true,
+    system: {
+      stats: {
+        edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+        ...(overrides.system?.stats ?? {}),
+      },
+      meters: {
+        health:   { value: 5, max: 5,  ...(overrides.system?.meters?.health   ?? {}) },
+        spirit:   { value: 5, max: 5,  ...(overrides.system?.meters?.spirit   ?? {}) },
+        supply:   { value: 3, max: 5,  ...(overrides.system?.meters?.supply   ?? {}) },
+        momentum: { value: 2, max: 10, reset: 2, ...(overrides.system?.meters?.momentum ?? {}) },
+      },
+      debilities: {
+        corrupted: false, cursed: false, tormented: false,
+        wounded: false, shaken: false, unprepared: false,
+        encumbered: false, maimed: false, haunted: false,
+        ...(overrides.system?.debilities ?? {}),
+      },
+      xp: { value: 0, max: 30, ...(overrides.system?.xp ?? {}) },
+    },
+    items: {
+      find: (fn) => null,
+      contents: [],
+      ...(overrides.items ?? {}),
+    },
+    update: async (changes) => {
+      updateHistory.push(changes);
+      // Apply flat dot-notation changes to actor.system for test assertions
+      for (const [path, val] of Object.entries(changes)) {
+        const parts = path.split('.');
+        let target = actor;
+        for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+        target[parts[parts.length - 1]] = val;
+      }
+    },
+    _updateHistory: updateHistory,
+  };
+  return actor;
+};

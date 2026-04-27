@@ -30,6 +30,8 @@
  */
 
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
+import { getPlayerActors, readCharacterSnapshot } from "../character/actorBridge.js";
+import { getChronicleForContext } from "../character/chronicle.js";
 
 const MODULE_ID         = "starforged-companion";
 const TRACKS_JOURNAL    = "Starforged Progress Tracks";
@@ -77,6 +79,10 @@ export async function assembleContextPacket(resolution, campaignState, options =
   const { content: connectionsContent, connectionIds } =
     await buildConnectionsSection(campaignState);
 
+  // ── 3a. Character state ───────────────────────────────────────────────────
+  const { content: characterContent, characterIds } =
+    await buildCharacterStateSection(campaignState);
+
   // ── 4. Progress tracks ────────────────────────────────────────────────────
   const { content: tracksContent, trackIds } =
     await buildProgressTracksSection();
@@ -97,6 +103,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     sections: {
       worldTruths:    { content: worldTruthsContent,   priority: 2 },
       connections:    { content: connectionsContent,    priority: 1 },
+      characterState: { content: characterContent,      priority: 1 },
       progressTracks: { content: tracksContent,         priority: 1 },
       recentOracles:  { content: oraclesContent,        priority: 3 },
       sessionNotes:   { content: sessionNotesContent,   priority: 4 },
@@ -108,6 +115,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     safetyContent,
     budgetResult.included.worldTruths    ?? "",
     budgetResult.included.connections    ?? "",
+    budgetResult.included.characterState ?? "",
     budgetResult.included.progressTracks ?? "",
     budgetResult.included.recentOracles  ?? "",
     budgetResult.included.sessionNotes   ?? "",
@@ -137,6 +145,11 @@ export async function assembleContextPacket(resolution, campaignState, options =
         content:        connectionsContent,
         tokenEstimate:  estimateTokens(connectionsContent),
         connectionIds,
+      },
+      characterState: {
+        content:        characterContent,
+        tokenEstimate:  estimateTokens(characterContent),
+        characterIds,
       },
       progressTracks: {
         content:        tracksContent,
@@ -237,6 +250,41 @@ async function buildConnectionsSection(campaignState) {
   const content  = "## ACTIVE CONNECTIONS\n\n" + lines.join("\n\n");
 
   return { content, connectionIds: included.map(c => c._id) };
+}
+
+/**
+ * Character state section (3a) — inserted between connections and progress tracks.
+ * Reads all player-owned character Actors from actorBridge and formats a summary
+ * of stats, meters, debilities, and chronicle context per character.
+ * Token budget: ~150 tokens per character.
+ */
+async function buildCharacterStateSection(_campaignState) {
+  try {
+    const enabled = (() => {
+      try { return game.settings?.get(MODULE_ID, "characterContextEnabled") !== false; }
+      catch { return true; }
+    })();
+    if (!enabled) return { content: "", characterIds: [] };
+
+    const actors = getPlayerActors();
+    if (!actors.length) return { content: "", characterIds: [] };
+
+    const blocks = [];
+    for (const actor of actors) {
+      const snap    = readCharacterSnapshot(actor);
+      if (!snap) continue;
+
+      const { summary, recent } = await getChronicleForContext(actor.id).catch(() => ({ summary: "", recent: [] }));
+      blocks.push(formatCharacterBlock(snap, summary, recent));
+    }
+
+    if (!blocks.length) return { content: "", characterIds: [] };
+
+    const content = "## CHARACTER STATE\n\n" + blocks.join("\n\n");
+    return { content, characterIds: actors.map(a => a.id) };
+  } catch {
+    return { content: "", characterIds: [] };
+  }
 }
 
 /**
@@ -363,6 +411,38 @@ function truncateToTokens(content, maxTokens) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FORMATTERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+function formatCharacterBlock(snap, summary, recentEntries) {
+  const { name, stats, meters, momentumMax, debilities } = snap;
+  const s = stats;
+  const m = meters;
+
+  const debList = formatDebilitiesList(debilities);
+  const lines   = [
+    `**${name}**`,
+    `Stats: Edge ${s.edge} | Heart ${s.heart} | Iron ${s.iron} | Shadow ${s.shadow} | Wits ${s.wits}`,
+    `Meters: Health ${m.health}/5 | Spirit ${m.spirit}/5 | Supply ${m.supply}/5 | Momentum ${m.momentum}/${momentumMax}`,
+    `Debilities: ${debList}`,
+  ];
+
+  if (summary) {
+    lines.push(`Chronicle summary: ${summary}`);
+  }
+
+  if (recentEntries?.length) {
+    const recentText = recentEntries.slice(0, 3).map(e => `- (${e.type}) ${e.text}`).join("\n");
+    lines.push(`Recent:\n${recentText}`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatDebilitiesList(debilities) {
+  const active = Object.entries(debilities)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  return active.length ? active.join(", ") : "None";
+}
 
 function formatConnection(c) {
   const parts = [`**${c.name ?? "Unknown"}**`];
