@@ -2,7 +2,7 @@
 
 A Foundry VTT companion module for [Ironsworn: Starforged](https://ironswornrpg.com).
 
-Handles move interpretation, oracle integration, progress tracking, Connection/NPC management, and Loremaster context injection. Designed to work alongside the [Loremaster](https://www.patreon.com/theloremaster) AI narration module. Pushing Tag
+Handles move interpretation, oracle integration, progress tracking, Connection/NPC management, and Narration. 
 
 ---
 
@@ -23,8 +23,6 @@ Journal-based records for each Connection: name, rank, relationship history, vow
 **Progress track management**
 Visual progress tracks for vows, expeditions, connections, fights, and scene challenges. Rank-aware tick calculation. Accessible from chat and the UI sidebar.
 
-**Loremaster context injection**
-Before every Loremaster call, the module assembles a context packet containing: safety configuration, World Truths summary, active Connections, open vows and progress track states, recent oracle results, session notes, and the fully resolved move outcome. Safety configuration is always injected first and is never omitted.
 
 **Art asset generation**
 On-demand portrait generation for named Connections, settlements, ships, factions, and planets via an external API (Replicate, fal.ai, or DALL-E). Generation triggers after Loremaster's first description of the entity — not at name appearance — so the prompt is rich. Images are generated once and stored permanently.
@@ -37,13 +35,13 @@ Hold the microphone button in the chat bar to speak. Transcription is injected d
 ## Requirements
 
 - **Foundry VTT** v12 or v13
-- **[Loremaster](https://www.patreon.com/theloremaster)** — AI narration module (Patreon, hosted proxy mode). Required. This module handles mechanics; Loremaster handles story.
+- **[Foundry Ironsworn](https://github.com/ben/foundryvtt-ironsworn)** — the Starforged system by Ben Straub. Integration is optional but improves compatibility.
 - **[Anthropic API key](https://console.anthropic.com)** — for move interpretation and oracle calls. Usage is low; see cost notes below.
 - **Art generation API key** — optional. Replicate, fal.ai, or DALL-E. Required only if art generation is enabled.
 
 ### Recommended
 
-- **[Foundry Ironsworn](https://github.com/ben/foundryvtt-ironsworn)** — the Starforged system by Ben Straub. Integration is optional but improves compatibility.
+
 
 ---
 
