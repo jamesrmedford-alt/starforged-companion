@@ -170,6 +170,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   }
 
   if (Object.keys(updates).length) {
+    console.log(`actorBridge | applyMeterChanges update:`, updates);
     await actor.update(updates);
     invalidateActorCache(actor.id);
   }

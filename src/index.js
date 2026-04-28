@@ -304,12 +304,19 @@ function isPlayerNarration(message) {
   if (message.flags?.[MODULE_ID]?.moveResolution) return false;
   if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
 
+  // Ironsworn system messages posted by sendToChat() in chat-alert.ts
+  if (message.flags?.['foundry-ironsworn']) return false;
+  if (message.speaker?.alias === 'Ironsworn') return false;
+
   // message.author is correct for both v12 and v13.
   // message.user was the old name — accessing it in v13 logs a deprecation warning.
   const user = message.author ?? game.users?.get(message.user);
   if (user?.isGM) return false;
 
   const text = message.content?.trim() ?? "";
+
+  // No meaningful text content — system-generated empty or near-empty messages
+  if (text.length < 10) return false;
 
   // Escape character — prefix with \ to bypass the pipeline entirely
   if (text.startsWith("\\")) return false;
