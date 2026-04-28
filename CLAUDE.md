@@ -43,6 +43,33 @@ Before doing any work, read these files in order:
 
 ---
 
+## External system reference — foundry-ironsworn
+
+The foundry-ironsworn system source is public. Before writing any code that
+reads or writes Actor, Item, or system data, fetch the relevant source file
+directly rather than assuming field paths.
+
+Repository: https://github.com/ben/foundryvtt-ironsworn
+Raw file base URL: https://raw.githubusercontent.com/ben/foundryvtt-ironsworn/main/
+
+Key files to check before any actor bridge work:
+  src/module/actor/actor.ts
+  src/module/actor/actorsheets/characters/starforged-charactersheet.ts  
+  src/module/dataforged/index.ts
+  src/module/item/itemtypes/
+
+Fetch pattern Claude Code should use:
+  curl https://raw.githubusercontent.com/ben/foundryvtt-ironsworn/main/src/module/actor/actor.ts
+
+When implementing any feature that touches the ironsworn Actor schema:
+1. Fetch the current actor.ts and relevant model files first
+2. Confirm field paths from source before writing actorBridge.js code
+3. Never assume schema paths — they have changed between versions and will
+   change again. The confirmed live schema from April 2025 is in
+   docs/decisions.md under "Ironsworn Actor schema v1.27.0" but may be stale.
+
+--   
+
 ## Before every commit
 
 Run these in order and confirm they pass:
