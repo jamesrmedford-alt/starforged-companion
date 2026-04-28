@@ -182,29 +182,32 @@ global.game.user.character = null;
 
 global.makeTestActor = (overrides = {}) => {
   const updateHistory = [];
+  const sys = overrides.system ?? {};
   const actor = {
     id: overrides.id ?? foundry.utils.randomID(),
     name: overrides.name ?? 'Test Character',
     type: overrides.type ?? 'character',
     hasPlayerOwner: overrides.hasPlayerOwner ?? true,
     system: {
-      stats: {
-        edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
-        ...(overrides.system?.stats ?? {}),
-      },
-      meters: {
-        health:   { value: 5, max: 5,  ...(overrides.system?.meters?.health   ?? {}) },
-        spirit:   { value: 5, max: 5,  ...(overrides.system?.meters?.spirit   ?? {}) },
-        supply:   { value: 3, max: 5,  ...(overrides.system?.meters?.supply   ?? {}) },
-        momentum: { value: 2, max: 10, reset: 2, ...(overrides.system?.meters?.momentum ?? {}) },
-      },
-      debilities: {
+      edge:   sys.edge   ?? 2,
+      heart:  sys.heart  ?? 2,
+      iron:   sys.iron   ?? 3,
+      shadow: sys.shadow ?? 1,
+      wits:   sys.wits   ?? 2,
+      health:   { value: 5, max: 5,  min: 0,  ...(sys.health   ?? {}) },
+      spirit:   { value: 5, max: 5,  min: 0,  ...(sys.spirit   ?? {}) },
+      supply:   { value: 3, max: 5,  min: 0,  ...(sys.supply   ?? {}) },
+      momentum: { value: 2, max: 10, min: -6, resetValue: 2, ...(sys.momentum ?? {}) },
+      debility: {
         corrupted: false, cursed: false, tormented: false,
         wounded: false, shaken: false, unprepared: false,
-        encumbered: false, maimed: false, haunted: false,
-        ...(overrides.system?.debilities ?? {}),
+        encumbered: false, maimed: false,
+        permanentlyharmed: false, traumatized: false,
+        doomed: false, indebted: false, battered: false,
+        custom1: false, custom2: false,
+        ...(sys.debility ?? {}),
       },
-      xp: { value: 0, max: 30, ...(overrides.system?.xp ?? {}) },
+      xp: sys.xp ?? 0,
     },
     items: {
       find: (fn) => null,

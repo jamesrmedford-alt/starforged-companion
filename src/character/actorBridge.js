@@ -63,24 +63,24 @@ export function readCharacterSnapshot(actor) {
     name:    actor.name,
     actorId: actor.id,
     stats: {
-      edge:   sys.stats?.edge   ?? 0,
-      heart:  sys.stats?.heart  ?? 0,
-      iron:   sys.stats?.iron   ?? 0,
-      shadow: sys.stats?.shadow ?? 0,
-      wits:   sys.stats?.wits   ?? 0,
+      edge:   sys.edge   ?? 0,
+      heart:  sys.heart  ?? 0,
+      iron:   sys.iron   ?? 0,
+      shadow: sys.shadow ?? 0,
+      wits:   sys.wits   ?? 0,
     },
     meters: {
-      health:   meterValue(sys.meters?.health),
-      spirit:   meterValue(sys.meters?.spirit),
-      supply:   meterValue(sys.meters?.supply),
-      momentum: meterValue(sys.meters?.momentum),
+      health:   meterValue(sys.health),
+      spirit:   meterValue(sys.spirit),
+      supply:   meterValue(sys.supply),
+      momentum: meterValue(sys.momentum),
     },
     momentumMax:   Math.max(0, 10 - condCount),
     momentumReset: condCount === 0 ? 0 : Math.max(-2, -condCount),
     debilities: debs,
     xp: {
-      value: sys.xp?.value ?? 0,
-      max:   sys.xp?.max   ?? 0,
+      value: sys.xp ?? 0,
+      max:   30,
     },
   };
 
@@ -94,17 +94,23 @@ export function readCharacterSnapshot(actor) {
  * @returns {Object}
  */
 export function readDebilities(actor) {
-  const d = actor?.system?.debilities ?? {};
+  const d = actor?.system?.debility ?? {};
   return {
-    corrupted:  !!d.corrupted,
-    cursed:     !!d.cursed,
-    tormented:  !!d.tormented,
-    wounded:    !!d.wounded,
-    shaken:     !!d.shaken,
-    unprepared: !!d.unprepared,
-    encumbered: !!d.encumbered,
-    maimed:     !!d.maimed,
-    haunted:    !!d.haunted,
+    corrupted:         !!d.corrupted,
+    cursed:            !!d.cursed,
+    tormented:         !!d.tormented,
+    wounded:           !!d.wounded,
+    shaken:            !!d.shaken,
+    unprepared:        !!d.unprepared,
+    encumbered:        !!d.encumbered,
+    maimed:            !!d.maimed,
+    permanentlyharmed: !!d.permanentlyharmed,
+    traumatized:       !!d.traumatized,
+    doomed:            !!d.doomed,
+    indebted:          !!d.indebted,
+    battered:          !!d.battered,
+    custom1:           !!d.custom1,
+    custom2:           !!d.custom2,
   };
 }
 
@@ -134,33 +140,33 @@ export async function applyMeterChanges(actor, meterChanges) {
   const healthMax  = debs.wounded ? 4 : 5;
   const spiritMax  = debs.shaken  ? 3 : 5;
 
-  const currentHealth   = meterValue(sys.meters?.health);
-  const currentSpirit   = meterValue(sys.meters?.spirit);
-  const currentSupply   = meterValue(sys.meters?.supply);
-  const currentMomentum = meterValue(sys.meters?.momentum);
+  const currentHealth   = meterValue(sys.health);
+  const currentSpirit   = meterValue(sys.spirit);
+  const currentSupply   = meterValue(sys.supply);
+  const currentMomentum = meterValue(sys.momentum);
 
   const updates = {};
 
   if (meterChanges.health !== undefined && meterChanges.health !== 0) {
     const next = clamp(currentHealth + meterChanges.health, 0, healthMax);
-    updates['system.meters.health.value'] = next;
+    updates['system.health.value'] = next;
   }
 
   if (meterChanges.spirit !== undefined && meterChanges.spirit !== 0) {
     const next = clamp(currentSpirit + meterChanges.spirit, 0, spiritMax);
-    updates['system.meters.spirit.value'] = next;
+    updates['system.spirit.value'] = next;
   }
 
   if (meterChanges.supply !== undefined && meterChanges.supply !== 0) {
     const next = clamp(currentSupply + meterChanges.supply, 0, 5);
-    updates['system.meters.supply.value'] = next;
+    updates['system.supply.value'] = next;
   }
 
   if (meterChanges.momentum !== undefined && meterChanges.momentum !== 0) {
     const next = clamp(currentMomentum + meterChanges.momentum, momentumReset, momentumMax);
-    updates['system.meters.momentum.value']  = next;
-    updates['system.meters.momentum.max']    = momentumMax;
-    updates['system.meters.momentum.reset']  = momentumReset;
+    updates['system.momentum.value']      = next;
+    updates['system.momentum.max']        = momentumMax;
+    updates['system.momentum.resetValue'] = momentumReset;
   }
 
   if (Object.keys(updates).length) {
@@ -180,7 +186,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 export async function setDebility(actor, debilityKey, value) {
   if (!actor) return;
 
-  await actor.update({ [`system.debilities.${debilityKey}`]: value });
+  await actor.update({ [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
   if (CONDITION_DEBILITIES.includes(debilityKey)) {
@@ -198,12 +204,12 @@ export async function awardXP(actor, amount) {
   if (!actor || amount <= 0) return;
 
   const sys    = actor.system ?? {};
-  const current = sys.xp?.value ?? 0;
-  const max     = sys.xp?.max   ?? 30;
+  const current = sys.xp ?? 0;
+  const max     = 30;
   const next    = Math.min(current + amount, max);
 
   if (next !== current) {
-    await actor.update({ 'system.xp.value': next });
+    await actor.update({ 'system.xp': next });
     invalidateActorCache(actor.id);
   }
 }
@@ -281,15 +287,15 @@ export async function recalculateMomentumBounds(actor) {
   const condCount = countConditionDebilities(debs);
   const maxMom    = Math.max(0, 10 - condCount);
   const resetMom  = condCount === 0 ? 0 : Math.max(-2, -condCount);
-  const current   = meterValue(actor.system?.meters?.momentum);
+  const current   = meterValue(actor.system?.momentum);
   const clamped   = clamp(current, resetMom, maxMom);
 
   const updates = {
-    'system.meters.momentum.max':   maxMom,
-    'system.meters.momentum.reset': resetMom,
+    'system.momentum.max':        maxMom,
+    'system.momentum.resetValue': resetMom,
   };
   if (clamped !== current) {
-    updates['system.meters.momentum.value'] = clamped;
+    updates['system.momentum.value'] = clamped;
   }
 
   await actor.update(updates);
