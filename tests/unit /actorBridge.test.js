@@ -105,13 +105,11 @@ describe('readCharacterSnapshot', () => {
   it('returns all stats and meters', () => {
     const actor = freshActor({
       system: {
-        stats: { edge: 1, heart: 2, iron: 3, shadow: 4, wits: 2 },
-        meters: {
-          health:   { value: 4, max: 5 },
-          spirit:   { value: 3, max: 5 },
-          supply:   { value: 2, max: 5 },
-          momentum: { value: 5, max: 10, reset: 2 },
-        },
+        edge: 1, heart: 2, iron: 3, shadow: 4, wits: 2,
+        health:   { value: 4, max: 5 },
+        spirit:   { value: 3, max: 5 },
+        supply:   { value: 2, max: 5 },
+        momentum: { value: 5, max: 10, resetValue: 2 },
       },
     });
 
@@ -125,7 +123,7 @@ describe('readCharacterSnapshot', () => {
 
   it('returns debilities as flat boolean map', () => {
     const actor = freshActor({
-      system: { debilities: { wounded: true, shaken: false } },
+      system: { debility: { wounded: true, shaken: false } },
     });
     const snap = readCharacterSnapshot(actor);
     expect(snap.debilities.wounded).toBe(true);
@@ -146,7 +144,7 @@ describe('readCharacterSnapshot', () => {
 
   it('calculates momentumMax from condition debility count', () => {
     const actor = freshActor({
-      system: { debilities: { wounded: true, shaken: true } },
+      system: { debility: { wounded: true, shaken: true } },
     });
     const snap = readCharacterSnapshot(actor);
     expect(snap.momentumMax).toBe(8); // 10 - 2
@@ -154,7 +152,7 @@ describe('readCharacterSnapshot', () => {
 
   it('calculates momentumReset correctly (0 - debility count, min -2)', () => {
     const actor = freshActor({
-      system: { debilities: { wounded: true, shaken: true, unprepared: true } },
+      system: { debility: { wounded: true, shaken: true, unprepared: true } },
     });
     const snap = readCharacterSnapshot(actor);
     expect(snap.momentumReset).toBe(-2); // max(-2, -3) = -2
@@ -174,7 +172,7 @@ describe('readCharacterSnapshot', () => {
 
 describe('readDebilities', () => {
   it('returns all debility keys as booleans', () => {
-    const actor = freshActor({ system: { debilities: { wounded: true, cursed: true } } });
+    const actor = freshActor({ system: { debility: { wounded: true, cursed: true } } });
     const debs  = readDebilities(actor);
 
     expect(debs.wounded).toBe(true);
@@ -185,7 +183,7 @@ describe('readDebilities', () => {
 
   it('coerces truthy values to boolean', () => {
     const actor = { id: 'coerce', name: 'X', type: 'character', hasPlayerOwner: true,
-      system: { debilities: { wounded: 1, shaken: 0 } } };
+      system: { debility: { wounded: 1, shaken: 0 } } };
     invalidateActorCache('coerce');
     const debs = readDebilities(actor);
     expect(debs.wounded).toBe(true);
@@ -200,23 +198,23 @@ describe('readDebilities', () => {
 
 describe('applyMeterChanges', () => {
   it('clamps health to 0–5 for undebilitated actor', async () => {
-    const actor = freshActor({ system: { meters: { health: { value: 5, max: 5 } } } });
+    const actor = freshActor({ system: { health: { value: 5, max: 5 } } });
     await applyMeterChanges(actor, { health: 3 });
     const update = actor._updateHistory[0];
-    expect(update['system.meters.health.value']).toBe(5); // capped at 5
+    expect(update['system.health.value']).toBe(5); // capped at 5
   });
 
   it('applies negative health change', async () => {
-    const actor = freshActor({ system: { meters: { health: { value: 5, max: 5 } } } });
+    const actor = freshActor({ system: { health: { value: 5, max: 5 } } });
     await applyMeterChanges(actor, { health: -2 });
-    expect(actor._updateHistory[0]['system.meters.health.value']).toBe(3);
+    expect(actor._updateHistory[0]['system.health.value']).toBe(3);
   });
 
   it('clamps health to 4 max when wounded is active', async () => {
     const actor = freshActor({
       system: {
-        meters: { health: { value: 5, max: 5 } },
-        debilities: { wounded: true },
+        health: { value: 5, max: 5 },
+        debility: { wounded: true },
       },
     });
     await applyMeterChanges(actor, { health: 0 }); // no change, but clamp applied
@@ -224,57 +222,57 @@ describe('applyMeterChanges', () => {
     // Apply +1 to a wounded character at health 4 — should stay at 4
     const actor2 = freshActor({
       system: {
-        meters: { health: { value: 4, max: 5 } },
-        debilities: { wounded: true },
+        health: { value: 4, max: 5 },
+        debility: { wounded: true },
       },
     });
     await applyMeterChanges(actor2, { health: 2 });
-    expect(actor2._updateHistory[0]['system.meters.health.value']).toBe(4);
+    expect(actor2._updateHistory[0]['system.health.value']).toBe(4);
   });
 
   it('clamps spirit to 3 max when shaken', async () => {
     const actor = freshActor({
       system: {
-        meters: { spirit: { value: 3, max: 5 } },
-        debilities: { shaken: true },
+        spirit: { value: 3, max: 5 },
+        debility: { shaken: true },
       },
     });
     await applyMeterChanges(actor, { spirit: 3 });
-    expect(actor._updateHistory[0]['system.meters.spirit.value']).toBe(3);
+    expect(actor._updateHistory[0]['system.spirit.value']).toBe(3);
   });
 
   it('clamps supply to 0–5', async () => {
-    const actor = freshActor({ system: { meters: { supply: { value: 1, max: 5 } } } });
+    const actor = freshActor({ system: { supply: { value: 1, max: 5 } } });
     await applyMeterChanges(actor, { supply: -5 });
-    expect(actor._updateHistory[0]['system.meters.supply.value']).toBe(0);
+    expect(actor._updateHistory[0]['system.supply.value']).toBe(0);
   });
 
   it('clamps momentum to momentumReset–momentumMax', async () => {
     // With 2 condition debilities: max = 8, reset = -2
     const actor = freshActor({
       system: {
-        meters: { momentum: { value: 2, max: 10, reset: 2 } },
-        debilities: { wounded: true, shaken: true },
+        momentum: { value: 2, max: 10, resetValue: 2 },
+        debility: { wounded: true, shaken: true },
       },
     });
     // Try to set momentum to +20 (above max)
     await applyMeterChanges(actor, { momentum: 20 });
-    expect(actor._updateHistory[0]['system.meters.momentum.value']).toBe(8);
+    expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
   });
 
   it('reduces momentumMax by 1 per active condition debility', async () => {
     const actor = freshActor({
       system: {
-        meters: { momentum: { value: 2, max: 10, reset: 2 } },
-        debilities: { wounded: true, shaken: true, unprepared: true },
+        momentum: { value: 2, max: 10, resetValue: 2 },
+        debility: { wounded: true, shaken: true, unprepared: true },
       },
     });
     await applyMeterChanges(actor, { momentum: 1 });
-    expect(actor._updateHistory[0]['system.meters.momentum.max']).toBe(7);
+    expect(actor._updateHistory[0]['system.momentum.max']).toBe(7);
   });
 
   it('does not call actor.update() if no changes', async () => {
-    const actor = freshActor({ system: { meters: { health: { value: 5, max: 5 } } } });
+    const actor = freshActor({ system: { health: { value: 5, max: 5 } } });
     await applyMeterChanges(actor, { health: 0 });
     expect(actor._updateHistory).toHaveLength(0);
   });
@@ -293,13 +291,13 @@ describe('setDebility', () => {
   it('sets debility flag on actor', async () => {
     const actor = freshActor();
     await setDebility(actor, 'wounded', true);
-    expect(actor._updateHistory[0]['system.debilities.wounded']).toBe(true);
+    expect(actor._updateHistory[0]['system.debility.wounded']).toBe(true);
   });
 
   it('triggers momentum recalculation for condition debilities', async () => {
     const actor = freshActor({
       system: {
-        meters: { momentum: { value: 9, max: 10, reset: 2 } },
+        momentum: { value: 9, max: 10, resetValue: 2 },
       },
     });
     await setDebility(actor, 'wounded', true);
@@ -318,16 +316,16 @@ describe('setDebility', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('awardXP', () => {
-  it('increments xp.value on actor', async () => {
-    const actor = freshActor({ system: { xp: { value: 4, max: 30 } } });
+  it('increments xp on actor', async () => {
+    const actor = freshActor({ system: { xp: 4 } });
     await awardXP(actor, 2);
-    expect(actor._updateHistory[0]['system.xp.value']).toBe(6);
+    expect(actor._updateHistory[0]['system.xp']).toBe(6);
   });
 
-  it('does not exceed xp.max', async () => {
-    const actor = freshActor({ system: { xp: { value: 28, max: 30 } } });
+  it('does not exceed xp max (30)', async () => {
+    const actor = freshActor({ system: { xp: 28 } });
     await awardXP(actor, 5);
-    expect(actor._updateHistory[0]['system.xp.value']).toBe(30);
+    expect(actor._updateHistory[0]['system.xp']).toBe(30);
   });
 
   it('does not call update if amount is zero or negative', async () => {
