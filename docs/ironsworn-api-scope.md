@@ -5,7 +5,7 @@
 ## Correct actorBridge.js based on foundry-ironsworn v1.27.0 source
 
 **Priority:** Immediate — fixes broken character persistence  
-**Source:** https://github.com/ben/foundryvtt-ironsworn  
+**Source:** https://github.com/ben/foundry-ironsworn  
 **Key files:**
 - `src/module/actor/subtypes/character.ts` — CharacterModel and CharacterDataSourceData
 - `src/module/actor/subtypes/starship.ts` — StarshipModel
