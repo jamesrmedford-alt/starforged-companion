@@ -6,6 +6,14 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] — Scene Interrogation
+
+- Added: `@scene` prefix routes free-form questions to the narrator without triggering a move or rolling dice
+- Added: Scene card posts to chat with the player's question visible and narrator response below, styled distinctly from move narration cards
+- Added: Scene queries are suppressed when the X-Card is active
+- Added: Recent narration cards from the current session are included as context so the narrator stays grounded in the immediate scene
+- Added: Three new settings in Companion Settings: Scene Interrogation Enabled, Scene Response Length (sentences), Scene Context Cards (context window)
+
 ## [0.4.0] — Foundations
 
 - Added: Session ID management — each world load generates or restores a session ID (resumes if last session was < 4 hours ago)

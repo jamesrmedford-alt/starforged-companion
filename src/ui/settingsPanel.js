@@ -59,6 +59,10 @@ const SETTING = {
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_CONTEXT_COUNT:  'chronicleContextCount',
   CHARACTER_CONTEXT_ENABLED:'characterContextEnabled',
+  // ── Scene interrogation ──────────────────────────────────────────────────
+  SCENE_QUERY_ENABLED:      'sceneQueryEnabled',
+  SCENE_RESPONSE_LENGTH:    'sceneResponseLength',
+  SCENE_CONTEXT_CARDS:      'sceneContextCards',
 };
 
 const NARRATION_MODELS = {
@@ -230,6 +234,35 @@ export function registerSettings() {
     config:  false,
     type:    Boolean,
     default: true,
+  });
+
+  // ── Scene interrogation settings ──────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.SCENE_QUERY_ENABLED, {
+    name:    'Scene Interrogation Enabled',
+    hint:    'When enabled, messages starting with @scene are routed to the narrator as free-form scene questions.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH, {
+    name:    'Scene Response Length (sentences)',
+    hint:    'Target number of sentences for scene interrogation responses. Range: 1–4.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 2,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.SCENE_CONTEXT_CARDS, {
+    name:    'Scene Context Cards',
+    hint:    'Number of recent narration cards included as context for scene interrogation. Range: 1–6.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 3,
   });
 }
 
