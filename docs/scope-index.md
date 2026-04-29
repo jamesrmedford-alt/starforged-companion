@@ -27,6 +27,7 @@ For detail on any scope, open the linked document.
 | [Scene Interrogation](scene-interrogation-scope.md) | 📋 PLANNED | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
 | [Previously On](previously-on-scope.md) | 📋 PLANNED | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
 | [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
+| [API Key Privacy](api-key-privacy-scope.md) | 📋 PLANNED | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
 
 ---
 
