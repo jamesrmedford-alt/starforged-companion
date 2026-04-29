@@ -57,18 +57,13 @@ Lines before players connect for the session.
 
 ---
 
-### DIALOG-001 — Dialog.confirm deprecated in v13
+### DIALOG-001 — Dialog.confirm deprecated in v13 ✓
 
-**Status:** Non-breaking — backwards compat until v16
+**Status:** Resolved
 
-**Symptom:** Console deprecation warning when portrait regeneration confirmation
-dialog appears in `entityPanel.js`.
-
-**Cause:** `Dialog.confirm()` is deprecated in Foundry v13. The v2 replacement
-is `DialogV2.confirm()`.
-
-**Fix:** Replace `Dialog.confirm(...)` with `DialogV2.confirm(...)` in
-`entityPanel.js`. Non-urgent — works until v16.
+**Fix:** Replaced `Dialog.confirm(...)` with `DialogV2.confirm(...)` (with
+updated option shape `{ window: { title }, content }`) in both `entityPanel.js`
+and `progressTracks.js`.
 
 ---
 

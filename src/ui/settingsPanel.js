@@ -328,6 +328,13 @@ async function setPrivateLines(arr) {
  * This matches the shape that safety.js's resolvePrivateLines() expects.
  */
 async function syncSafetyToCampaignState() {
+  // campaignState is world-scoped — only the GM can write it.
+  // Non-GM players store their Private Lines in client-scoped game.settings;
+  // the assembler reads safety config from campaignState which the GM client
+  // keeps up to date. Private lines for non-GM players reach the assembler via
+  // the client-scoped read in getSafetyConfig() when narration runs locally.
+  if (!game.user?.isGM) return;
+
   try {
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
     if (!campaignState.safety) campaignState.safety = {};

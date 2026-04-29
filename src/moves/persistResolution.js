@@ -119,7 +119,7 @@ async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
   // Auto-mark unprepared if supply just hit 0
   if (appliedMeters.supply < 0) {
     const sys = actor.system ?? {};
-    const currentSupply = sys.meters?.supply?.value ?? sys.meters?.supply ?? 0;
+    const currentSupply = sys.supply?.value ?? sys.supply ?? 0;
     if (currentSupply === 0) {
       await setDebility(actor, 'unprepared', true);
     }
@@ -127,15 +127,15 @@ async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
 
   switch (sufferMoveTriggered) {
     case 'endure_harm': {
-      const health = actor.system?.meters?.health?.value ?? actor.system?.meters?.health ?? 0;
-      if (health === 0 && !actor.system?.debilities?.wounded) {
+      const health = actor.system?.health?.value ?? actor.system?.health ?? 0;
+      if (health === 0 && !actor.system?.debility?.wounded) {
         await setDebility(actor, 'wounded', true);
       }
       break;
     }
     case 'endure_stress': {
-      const spirit = actor.system?.meters?.spirit?.value ?? actor.system?.meters?.spirit ?? 0;
-      if (spirit === 0 && !actor.system?.debilities?.shaken) {
+      const spirit = actor.system?.spirit?.value ?? actor.system?.spirit ?? 0;
+      if (spirit === 0 && !actor.system?.debility?.shaken) {
         await setDebility(actor, 'shaken', true);
       }
       break;

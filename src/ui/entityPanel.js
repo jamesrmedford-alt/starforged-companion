@@ -144,7 +144,7 @@ async function findEntity(journalId) {
 // ApplicationV2 panel
 // ---------------------------------------------------------------------------
 
-const { ApplicationV2 } = foundry.applications.api;
+const { ApplicationV2, DialogV2 } = foundry.applications.api;
 
 export class EntityPanelApp extends ApplicationV2 {
 
@@ -447,8 +447,8 @@ export class EntityPanelApp extends ApplicationV2 {
     const journalId = target.dataset.journalId;
     if (this.#generatingIds.has(journalId)) return;
 
-    const confirmed = await Dialog.confirm({
-      title:   'Regenerate Portrait',
+    const confirmed = await DialogV2.confirm({
+      window:  { title: 'Regenerate Portrait' },
       content: `<p>This is your one permitted regeneration. The new portrait will be <strong>permanently locked</strong>. Continue?</p>`,
     });
     if (!confirmed) return;

@@ -6,6 +6,13 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: Confirmation dialogs now use `DialogV2` instead of the deprecated `Dialog` (entityPanel, progressTracks)
+- Fixed: Chronicle panel rebuilt to correct ApplicationV2 patterns — window title, position, `DEFAULT_OPTIONS`, HTMLElement rendering, and `render({ force: true })` calls
+- Fixed: Momentum recalculation now fires correctly when another client applies a debility change (`system.debility` path corrected in `updateActor` hook)
+- Fixed: Suffer-move auto-debility logic now reads correct ironsworn schema paths (`system.health`, `system.spirit`, `system.supply`, `system.debility`)
+- Fixed: Safety sync no longer attempts a world-scoped settings write from non-GM clients (silently failed before; now correctly skipped)
+- Fixed: Removed dead `getApiUrl()` function from move interpreter; API routing already used the canonical Anthropic URL via `api-proxy.js`
+
 ## [0.5.0] — Scene Interrogation
 
 - Added: `@scene` prefix routes free-form questions to the narrator without triggering a move or rolling dice

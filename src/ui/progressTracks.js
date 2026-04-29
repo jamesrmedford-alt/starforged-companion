@@ -185,7 +185,7 @@ async function rollProgress(track) {
 // ApplicationV2 panel
 // ---------------------------------------------------------------------------
 
-const { ApplicationV2 } = foundry.applications.api;
+const { ApplicationV2, DialogV2 } = foundry.applications.api;
 
 export class ProgressTrackApp extends ApplicationV2 {
 
@@ -452,8 +452,8 @@ export class ProgressTrackApp extends ApplicationV2 {
     const track = tracks.find(t => t.id === trackId);
     if (!track) return;
 
-    const confirmed = await Dialog.confirm({
-      title: 'Remove Track',
+    const confirmed = await DialogV2.confirm({
+      window:  { title: 'Remove Track' },
       content: `<p>Permanently remove <strong>${track.label}</strong>? This cannot be undone.</p>`,
     });
     if (!confirmed) return;

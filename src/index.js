@@ -286,7 +286,7 @@ function registerActorHook() {
     if (userId === game.user.id) return;
 
     // If condition debilities changed, recalculate momentum bounds
-    if (foundry.utils.hasProperty(changes, "system.debilities")) {
+    if (foundry.utils.hasProperty(changes, "system.debility")) {
       recalculateMomentumBounds(actor).catch(err => {
         console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
       });
