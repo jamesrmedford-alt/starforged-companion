@@ -1,6 +1,6 @@
 # Starforged Companion — "Previously On" Scope Document
 
-📋 **PLANNED** — specified, not yet started
+✅ **COMPLETE** — session recap, campaign recap, auto-recap, and session-start context injection all implemented
 
 ## Session and campaign recap features
 

@@ -1349,3 +1349,117 @@
   line-height: 1.5;
   color:       var(--color-text-dark-primary, #222);
 }
+
+
+/* ============================================================================
+   7. RECAP CARDS (Previously On)
+   ============================================================================ */
+
+.sf-recap-session-card,
+.sf-recap-campaign-card {
+  padding:      8px 10px;
+  border-radius: 2px;
+  margin:       4px 0;
+  font-size:    0.9em;
+}
+
+/* Session recap — warm amber accent */
+.sf-recap-session-card {
+  border-left: 3px solid var(--color-warm-2, #b8860b);
+  background:  rgba(184, 134, 11, 0.05);
+}
+
+/* Campaign recap — deep purple accent */
+.sf-recap-campaign-card {
+  border-left: 3px solid var(--color-accent, #7c5cbf);
+  background:  rgba(124, 92, 191, 0.05);
+}
+
+.sf-recap-label {
+  font-size:      0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight:    600;
+  margin-bottom:  4px;
+}
+
+.sf-recap-session-card .sf-recap-label {
+  color: var(--color-warm-2, #b8860b);
+}
+
+.sf-recap-campaign-card .sf-recap-label {
+  color: var(--color-accent, #7c5cbf);
+}
+
+.sf-recap-session-title {
+  font-size:     0.85em;
+  font-style:    italic;
+  color:         var(--color-text-dark-secondary, #666);
+  margin-bottom: 6px;
+}
+
+.sf-recap-moves {
+  line-height:   1.6;
+  color:         var(--color-text-dark-primary, #222);
+  margin-bottom: 6px;
+  font-size:     0.88em;
+}
+
+.sf-recap-summary {
+  font-size:   0.82em;
+  color:       var(--color-text-dark-secondary, #555);
+  margin-top:  4px;
+  border-top:  1px solid rgba(184, 134, 11, 0.2);
+  padding-top: 4px;
+}
+
+.sf-recap-prose p {
+  line-height:  1.6;
+  color:        var(--color-text-dark-primary, #222);
+  margin:       0 0 0.6em;
+}
+
+.sf-recap-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.sf-recap-empty {
+  font-style: italic;
+  color:      var(--color-text-dark-secondary, #888);
+  font-size:  0.88em;
+}
+
+.sf-recap-actions {
+  margin-top: 6px;
+  text-align: right;
+}
+
+.sf-recap-refresh {
+  font-size:     0.78em;
+  background:    transparent;
+  border:        1px solid var(--color-accent, #7c5cbf);
+  border-radius: 3px;
+  color:         var(--color-accent, #7c5cbf);
+  padding:       2px 8px;
+  cursor:        pointer;
+}
+
+.sf-recap-refresh:hover {
+  background: rgba(124, 92, 191, 0.1);
+}
+
+/* ── Narrator pane — recap section divider ── */
+.narrator-divider {
+  border:     none;
+  border-top: 1px solid var(--color-border-light, #ddd);
+  margin:     1rem 0 0.75rem;
+}
+
+.narrator-section-heading {
+  font-size:     0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color:         var(--color-text-dark-secondary, #666);
+  margin:        0 0 0.5rem;
+  font-weight:   600;
+}

@@ -24,8 +24,8 @@ For detail on any scope, open the linked document.
 | [Ironsworn API](ironsworn-api-scope.md) | ✅ COMPLETE | Corrected `actorBridge.js` field paths for foundry-ironsworn v1.27.0 | — | Character Management |
 | [Character Management](character-management-scope.md) | ✅ COMPLETE | Actor bridge, character chronicle, and chronicle UI panel | Narrator, Ironsworn API | Previously On, World Journal |
 | [Foundations](foundations-scope.md) | ✅ COMPLETE | Session ID management, narrator card metadata, README, help compendium, CHANGELOG | Narrator | Scene Interrogation, Previously On, Character Management, World Journal |
-| [Scene Interrogation](scene-interrogation-scope.md) | 📋 PLANNED | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
-| [Previously On](previously-on-scope.md) | 📋 PLANNED | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
+| [Scene Interrogation](scene-interrogation-scope.md) | ✅ COMPLETE | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
+| [Previously On](previously-on-scope.md) | ✅ COMPLETE | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
 | [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
 | [API Key Privacy](api-key-privacy-scope.md) | 📋 PLANNED | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
 
@@ -35,12 +35,12 @@ For detail on any scope, open the linked document.
 
 ```
 Narrator (✅)
-  └─► Foundations (🔄)
-        ├─► Scene Interrogation (📋)
-        │     └─► Previously On (📋)
+  └─► Foundations (✅)
+        ├─► Scene Interrogation (✅)
+        │     └─► Previously On (✅)
         │               └─► World Journal (📋)
         └─► Character Management (✅) ◄── Ironsworn API (✅)
-                    └─► Previously On (📋)
+                    └─► Previously On (✅)
                               └─► World Journal (📋)
 ```
 
@@ -48,6 +48,5 @@ Narrator (✅)
 
 ## What to work on next
 
-1. **Complete Foundations** — README rewrite and `packs/help.json` are the remaining pieces; nothing else is blocked on them but they should ship before v1.0.
-2. **Scene Interrogation** — first planned scope; self-contained, depends only on Foundations infrastructure that is already implemented.
-3. **Previously On (session recap)** — no API call required; can be implemented independently of campaign recap.
+1. **World Journal** — all dependencies (Character Management, Previously On) are now complete. Automatic faction/location/lore/threat documentation in Foundry journal entries.
+2. **API Key Privacy** — hide API keys from player view; self-contained, no blocking dependencies.

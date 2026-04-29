@@ -30,7 +30,12 @@ import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
-import { narrateResolution, interrogateScene } from "./narration/narrator.js";
+import {
+  narrateResolution,
+  interrogateScene,
+  postSessionRecap,
+  postCampaignRecap,
+} from "./narration/narrator.js";
 import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 
@@ -50,6 +55,9 @@ import {
   registerSettingsHooks,
   openSettingsPanel,
   getMischiefDial,
+  getAutoRecapEnabled,
+  getSessionGapHours,
+  getRecapGmOnly,
 } from "./ui/settingsPanel.js";
 
 const MODULE_ID = "starforged-companion";
@@ -170,9 +178,33 @@ export function initSessionId(campaignState) {
 }
 
 
+// ────────────────────────────────────────────���────────────────────────────────
+// SESSION START DETECTION
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Return true when a world load should be treated as the start of a new session
+ * for auto-recap purposes — i.e. the lastSessionTimestamp gap exceeds the
+ * configured threshold.
+ *
+ * Exported for unit testing.
+ *
+ * @param {Object} campaignState
+ * @param {number} [gapHours]  — override the setting (for tests)
+ * @returns {boolean}
+ */
+export function isNewSessionStart(campaignState, gapHours) {
+  const last = campaignState?.lastSessionTimestamp;
+  if (!last) return false;
+  const threshold = gapHours ?? getSessionGapHours();
+  const hoursSince = (Date.now() - new Date(last)) / 3_600_000;
+  return hoursSince > threshold;
+}
+
+
+// ──────────────────────────────────────────���─────────────────────────────────���
 // CHAT MESSAGE HOOK — MOVE INTERPRETATION PIPELINE
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────���────────────────────────
 
 /**
  * Intercept outgoing chat messages and route player narration through
@@ -200,6 +232,22 @@ function registerChatHook() {
       await interrogateScene(question, campaignState, {
         actorId: message.author?.character?.id,
       });
+      return;
+    }
+
+    // /recap command — intercept before move pipeline
+    if (isRecapCommand(message)) {
+      const text = message.content?.trim() ?? "";
+      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+      const sessionMatch = text.match(/^\/recap\s+session(?:\s+(\d+))?/i);
+      if (sessionMatch) {
+        // /recap session or /recap session N
+        await postSessionRecap(campaignState, null);
+      } else {
+        // /recap or /recap campaign
+        await postCampaignRecap(campaignState);
+      }
       return;
     }
 
@@ -354,6 +402,22 @@ export function isSceneQuery(message) {
 }
 
 /**
+ * Determine whether a chat message is a /recap command.
+ * Recap commands start with "/recap" (case-insensitive).
+ * When recapGmOnly is true, only GM users can trigger them.
+ */
+export function isRecapCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (!text.toLowerCase().startsWith("/recap")) return false;
+  if (message.flags?.[MODULE_ID]?.recapCard) return false;
+  if (getRecapGmOnly()) {
+    const user = message.author ?? game.users?.get(message.user);
+    return user?.isGM ?? false;
+  }
+  return true;
+}
+
+/**
  * Post the resolved move result to chat.
  * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
@@ -453,9 +517,18 @@ Hooks.once("ready", () => {
 
   // Session ID — GM writes to world-scoped settings; players read from state
   if (game.user.isGM) {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    const updated = initSessionId(campaignState);
-    game.settings.set(MODULE_ID, "campaignState", updated).catch(err => {
+    const prevState = game.settings.get(MODULE_ID, "campaignState");
+    const wasNewSession = isNewSessionStart(prevState);
+    const updated = initSessionId(prevState);
+    game.settings.set(MODULE_ID, "campaignState", updated).then(async () => {
+      // Auto-recap: post campaign recap when a new session is detected
+      if (wasNewSession && getAutoRecapEnabled()) {
+        const freshState = game.settings.get(MODULE_ID, "campaignState");
+        await postCampaignRecap(freshState, { silent: false }).catch(err => {
+          console.error(`${MODULE_ID} | Auto-recap failed:`, err);
+        });
+      }
+    }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
   }
