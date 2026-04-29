@@ -1,4 +1,7 @@
 # Starforged Companion — Scene Interrogation Scope Document
+
+📋 **PLANNED** — specified, not yet started
+
 ## "Tell me more" — Free-form narrator queries
 
 **Priority:** After narrator implementation is stable  

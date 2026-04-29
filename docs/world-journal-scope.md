@@ -1,4 +1,7 @@
 # Starforged Companion — World Journal Scope Document
+
+📋 **PLANNED** — specified, not yet started
+
 ## Automatic documentation of world state in Foundry journals
 
 **Priority:** After character management  

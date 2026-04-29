@@ -1,4 +1,7 @@
 # Starforged Companion — "Previously On" Scope Document
+
+📋 **PLANNED** — specified, not yet started
+
 ## Session and campaign recap features
 
 **Priority:** After scene interrogation  

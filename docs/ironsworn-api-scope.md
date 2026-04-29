@@ -1,4 +1,7 @@
 # Starforged Companion — Ironsworn System API Scope
+
+✅ **COMPLETE** — field path corrections applied to `actorBridge.js` and `tests/setup.js`
+
 ## Correct actorBridge.js based on foundry-ironsworn v1.27.0 source
 
 **Priority:** Immediate — fixes broken character persistence  
