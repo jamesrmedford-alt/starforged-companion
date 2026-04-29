@@ -1,0 +1,3 @@
+[submodule "vendor/foundry-ironsworn"]
+	path = vendor/foundry-ironsworn
+	url = https://github.com/ben/foundry-ironsworn
