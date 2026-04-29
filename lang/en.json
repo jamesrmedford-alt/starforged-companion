@@ -182,7 +182,7 @@
           "MoveAI": "Move AI",
           "MoveAIValue": "claude-haiku-4-5-20251001 · system prompt cached",
           "NarrationAI": "Narration AI",
-          "NarrationAIValue": "Loremaster (hosted proxy)",
+          "NarrationAIValue": "Claude Sonnet 4.5 · prompt cached · wry tone",
           "ArtGen": "Art generation",
           "ArtGenValue": "DALL-E 3 · standard quality · natural style",
           "FoundryTarget": "Foundry target",
@@ -190,8 +190,6 @@
         },
         "OpenIssues": {
           "Label": "Open items requiring manual resolution:",
-          "LoremasterID": "Confirm Loremaster module ID (replace \"loremaster\" placeholder in index.js)",
-          "LoremasterFlag": "Confirm Loremaster flag path for context consumption",
           "PersistStub": "Implement persistResolution() (currently stubbed in index.js)",
           "GitHub": "Create GitHub repository"
         }
@@ -234,7 +232,7 @@
     "Settings.Dial.Name": "Mischief Dial",
     "Settings.Dial.Hint": "Controls how aggressively the module interprets ambiguous player narration.",
     "Settings.GlobalLines.Name": "Global Lines (Hard)",
-    "Settings.GlobalLines.Hint": "Hard content limits. Always injected first in every Loremaster context packet.",
+    "Settings.GlobalLines.Hint": "Hard content limits. Always injected first in every narrator context packet.",
     "Settings.GlobalVeils.Name": "Global Veils (Soft)",
     "Settings.GlobalVeils.Hint": "Soft content limits. Present in context packet but may be acknowledged rather than strictly excluded.",
     "Settings.PrivateLines.Name": "Private Lines",
