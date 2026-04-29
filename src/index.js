@@ -30,7 +30,7 @@ import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
-import { narrateResolution } from "./narration/narrator.js";
+import { narrateResolution, interrogateScene } from "./narration/narrator.js";
 import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 
@@ -191,6 +191,18 @@ export function initSessionId(campaignState) {
  */
 function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
+    // Scene query — intercept before move pipeline
+    if (isSceneQuery(message)) {
+      const text     = message.content?.trim() ?? "";
+      const question = text.replace(/^@scene\s*/i, "").trim();
+      if (!question) return;
+      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      await interrogateScene(question, campaignState, {
+        actorId: message.author?.character?.id,
+      });
+      return;
+    }
+
     if (!isPlayerNarration(message)) return;
 
     const narration     = message.content;
@@ -326,6 +338,19 @@ function isPlayerNarration(message) {
   if (text.startsWith("/")) return false;
 
   return true;
+}
+
+/**
+ * Determine whether a chat message is a scene interrogation query.
+ * Scene queries start with "@scene" (case-insensitive), come from non-GM players,
+ * and are not themselves scene response cards.
+ */
+export function isSceneQuery(message) {
+  const text = message.content?.trim() ?? "";
+  if (!text.toLowerCase().startsWith("@scene")) return false;
+  if (message.flags?.[MODULE_ID]?.sceneResponse) return false;
+  const user = message.author ?? game.users?.get(message.user);
+  return !user?.isGM;
 }
 
 /**
