@@ -47,12 +47,13 @@ export function resolveNarrationPerspective(setting) {
  * Build the full narrator system prompt.
  * This is the cached portion — rebuild only when campaign state or settings change.
  *
- * @param {Object} campaignState     — CampaignStateSchema
- * @param {Object} narratorSettings  — narrator game.settings values
- * @param {Object|null} character    — CharacterSchema (active character, may be null)
+ * @param {Object} campaignState      — CampaignStateSchema
+ * @param {Object} narratorSettings   — narrator game.settings values
+ * @param {Object|null} character     — CharacterSchema (active character, may be null)
+ * @param {string} [campaignRecap]    — injected at session start only (first narration)
  * @returns {string}
  */
-export function buildNarratorSystemPrompt(campaignState, narratorSettings, character) {
+export function buildNarratorSystemPrompt(campaignState, narratorSettings, character, campaignRecap = '') {
   const {
     narrationTone         = 'wry',
     narrationPerspective  = 'auto',
@@ -87,6 +88,11 @@ export function buildNarratorSystemPrompt(campaignState, narratorSettings, chara
     styleLines.join('\n')
   );
 
+  // [1b] Campaign recap — injected at session start only
+  if (campaignRecap?.trim()) {
+    parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${campaignRecap.trim()}`);
+  }
+
   // [2] Safety configuration
   const safetyContent = formatSafetyContext(campaignState);
   if (safetyContent) parts.push(safetyContent);
@@ -108,6 +114,28 @@ export function buildNarratorSystemPrompt(campaignState, narratorSettings, chara
 // ---------------------------------------------------------------------------
 // User message builders
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the user message for the campaign recap generation call.
+ * This is passed to Claude (Sonnet) to produce a 3–5 paragraph campaign summary.
+ *
+ * @param {string[]} chronicleEntries — formatted chronicle entries, oldest first
+ * @returns {string}
+ */
+export function buildCampaignRecapUserMessage(chronicleEntries) {
+  const entriesText = chronicleEntries.join('\n\n');
+  return [
+    `## CAMPAIGN CHRONICLE\n\n${entriesText}`,
+    `Write a campaign recap of 3–5 paragraphs covering:\n` +
+    `- How the campaign began and what the inciting situation was\n` +
+    `- The key relationships that have developed\n` +
+    `- The vows sworn and their current status\n` +
+    `- The most significant revelations\n` +
+    `- Where things stand now\n\n` +
+    `Write in second person for solo campaigns, third person for multiplayer. ` +
+    `Be wry but respectful of what the player has accomplished.`,
+  ].join('\n\n');
+}
 
 /**
  * Build the user message for a scene interrogation call.

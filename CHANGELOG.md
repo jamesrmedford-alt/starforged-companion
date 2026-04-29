@@ -13,6 +13,15 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: Safety sync no longer attempts a world-scoped settings write from non-GM clients (silently failed before; now correctly skipped)
 - Fixed: Removed dead `getApiUrl()` function from move interpreter; API routing already used the canonical Anthropic URL via `api-proxy.js`
 
+## [0.6.0] — Previously On
+
+- Added: `/recap session` posts a session recap card summarising all narrated moves in the current session — no API call required
+- Added: `/recap` or `/recap campaign` generates a 3–5 paragraph campaign arc summary via Claude and posts it as a styled chat card
+- Added: Campaign recap is cached; regenerates only when new chronicle entries are added
+- Added: Campaign recap is automatically posted to chat when a new session begins (configurable; enabled by default)
+- Added: Campaign recap text is injected into the narrator's context on the first narration of each session
+- Added: Three new settings in Companion Settings: Auto Recap at Session Start, Session Gap Threshold, and Recap GM-Only
+
 ## [0.5.0] — Scene Interrogation
 
 - Added: `@scene` prefix routes free-form questions to the narrator without triggering a move or rolling dice
