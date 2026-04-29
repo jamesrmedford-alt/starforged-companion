@@ -1312,3 +1312,40 @@
   text-align: center;
   color: var(--color-text-dark-secondary, #444);
 }
+
+
+/* ============================================================================
+   6. SCENE INTERROGATION CARD
+   ============================================================================ */
+
+.sf-scene-card {
+  padding:      8px 10px;
+  border-left:  3px solid var(--color-border-highlight, #4a6fa5);
+  border-radius: 2px;
+  margin:       4px 0;
+  font-size:    0.9em;
+  background:   rgba(74, 111, 165, 0.05);
+}
+
+.sf-scene-label {
+  font-size:      0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color:          var(--color-border-highlight, #4a6fa5);
+  margin-bottom:  4px;
+  font-weight:    600;
+}
+
+.sf-scene-question {
+  font-style:   italic;
+  color:        var(--color-text-dark-secondary, #666);
+  font-size:    0.88em;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(74, 111, 165, 0.2);
+}
+
+.sf-scene-prose {
+  line-height: 1.5;
+  color:       var(--color-text-dark-primary, #222);
+}

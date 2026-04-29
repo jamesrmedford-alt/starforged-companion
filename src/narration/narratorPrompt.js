@@ -106,8 +106,35 @@ export function buildNarratorSystemPrompt(campaignState, narratorSettings, chara
 }
 
 // ---------------------------------------------------------------------------
-// User message builder
+// User message builders
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the user message for a scene interrogation call.
+ * This is uncached — it changes every call with the player's question.
+ *
+ * @param {string} question        — player's question (stripped of @scene prefix)
+ * @param {string} recentContext   — recent narration cards joined as text (may be empty)
+ * @param {number} sentenceTarget  — how many sentences to produce
+ * @returns {string}
+ */
+export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
+  const parts = [];
+
+  if (recentContext?.trim()) {
+    parts.push(`## RECENT SCENE\n\n${recentContext.trim()}`);
+  }
+
+  parts.push(`## PLAYER QUESTION\n\n"${question.trim()}"`);
+
+  parts.push(
+    `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
+    `description. Do not introduce new plot elements. Stay grounded in what has already been ` +
+    `established. The narrator is a camera, not a writer, in this mode.`
+  );
+
+  return parts.join('\n\n');
+}
 
 /**
  * Build the user message for a single narration call.

@@ -1,6 +1,6 @@
 # Starforged Companion — Foundations Scope
 
-🔄 **IN PROGRESS** — session ID management and narrator card flags implemented; README rewrite, help compendium, and `docs/file-structure.md` pending
+✅ **COMPLETE** — session ID management, narrator card flags, README rewrite, help compendium, CHANGELOG, and scope docs all shipped
 
 ## Infrastructure required before scene interrogation, recap, and character management
 

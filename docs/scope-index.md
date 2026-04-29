@@ -23,7 +23,7 @@ For detail on any scope, open the linked document.
 | [Narrator](narrator-scope.md) | ✅ COMPLETE | Direct Claude narration replacing Loremaster; configurable tone, perspective, model | — | Foundations, Scene Interrogation, Previously On |
 | [Ironsworn API](ironsworn-api-scope.md) | ✅ COMPLETE | Corrected `actorBridge.js` field paths for foundry-ironsworn v1.27.0 | — | Character Management |
 | [Character Management](character-management-scope.md) | ✅ COMPLETE | Actor bridge, character chronicle, and chronicle UI panel | Narrator, Ironsworn API | Previously On, World Journal |
-| [Foundations](foundations-scope.md) | 🔄 IN PROGRESS | Session ID management and narrator card metadata; README and help compendium pending | Narrator | Scene Interrogation, Previously On, Character Management, World Journal |
+| [Foundations](foundations-scope.md) | ✅ COMPLETE | Session ID management, narrator card metadata, README, help compendium, CHANGELOG | Narrator | Scene Interrogation, Previously On, Character Management, World Journal |
 | [Scene Interrogation](scene-interrogation-scope.md) | 📋 PLANNED | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
 | [Previously On](previously-on-scope.md) | 📋 PLANNED | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
 | [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
