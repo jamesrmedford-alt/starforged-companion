@@ -1,7 +1,7 @@
 {
   "id": "starforged-companion",
   "title": "Starforged Companion",
-  "description": "A companion module for Ironsworn: Starforged. Handles move interpretation, oracle integration, progress tracking, NPC/Connection management, and Loremaster context injection. Designed to work alongside the Loremaster AI module.",
+  "description": "A companion module for Ironsworn: Starforged supporting solo and multiplayer campaigns. Handles move interpretation, dice resolution, AI narration, oracle integration, progress tracking, entity management with AI portrait generation, and safety configuration.",
   "version": "0.1.0",
   "compatibility": {
     "minimum": "12",
@@ -26,14 +26,24 @@
       "path": "lang/en.json"
     }
   ],
+  "packs": [
+    {
+      "name": "starforged-help",
+      "label": "Starforged Companion \u2014 Help & Reference",
+      "path": "packs/help.json",
+      "type": "JournalEntry",
+      "system": ""
+    }
+  ],
   "flags": {
-    "starforged-companion": {}
+    "starforged-companion": {
+      "attribution": "Ironsworn: Starforged by Shawn Tomkin (CC BY-NC-SA 4.0)"
+    }
   },
   "socket": true,
   "url": "",
   "manifest": "",
   "download": "",
-
   "relationships": {
     "systems": [],
     "requires": [],
@@ -41,8 +51,9 @@
       {
         "id": "foundry-ironsworn",
         "type": "system",
-        "reason": "The Starforged system by Ben Straub. Integration with its data structures is optional but improves compatibility."
+        "reason": "Character sheet integration \u2014 health, spirit, momentum, debilities, and XP are read from and written to the Ironsworn Actor. The module works without it but character persistence requires it."
       }
     ]
-  }
+  },
+  "license": "LICENSE.md"
 }
