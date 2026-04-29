@@ -17,13 +17,6 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Job 1 — Lint and unit tests
   # No Foundry required — Vitest runs in Node with stubbed globals via tests/setup.js
-  #
-  # NOTE: Using `npm install` rather than `npm ci` because package-lock.json
-  # has not yet been committed. To restore reproducible installs:
-  #   1. Run `npm install` locally
-  #   2. Commit the generated package-lock.json
-  #   3. Change `npm install` back to `npm ci` here
-  #   4. Re-add `cache: 'npm'` to the setup-node step
   # ────────────────────────────────────────────────────────────────────────────
   lint-and-test:
     name: Lint & Test
@@ -32,30 +25,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          # cache: 'npm'   ← re-enable once package-lock.json is committed
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
-        run: npm test
-
-      - name: Coverage report
+      - name: Unit tests with coverage
         run: npm run test:coverage
-        # Coverage thresholds enforced in vitest.config.js (lines 80%, functions 80%, branches 75%)
+        # Coverage thresholds enforced in vitest.config.js:
+        #   lines 80%, functions 50%, branches 75%
         # Job fails if thresholds are not met.
 
   # ────────────────────────────────────────────────────────────────────────────
   # Job 2 — Manifest validation
-  # Validates module.json structure and compatibility fields.
+  # Validates module.json structure, compatibility fields, and pack files.
   # ────────────────────────────────────────────────────────────────────────────
   validate-manifest:
     name: Validate Manifest
@@ -64,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Validate module.json is valid JSON
         run: |
@@ -94,7 +89,7 @@ jobs:
           print(f"Manifest OK — id: {m['id']}, version: {m['version']}")
           EOF
 
-      - name: Check language file exists
+      - name: Check language file exists and is valid JSON
         run: |
           python3 - <<'EOF'
           import json, os, sys
@@ -107,18 +102,43 @@ jobs:
             if not os.path.exists(path):
               print(f"Language file not found: {path}")
               sys.exit(1)
-            print(f"Language file OK: {path}")
+            try:
+              with open(path) as f:
+                json.load(f)
+              print(f"Language file OK: {path}")
+            except json.JSONDecodeError as e:
+              print(f"Language file invalid JSON: {path} — {e}")
+              sys.exit(1)
           EOF
 
-      - name: Validate en.json is valid JSON
+      - name: Validate compendium pack files exist and are valid JSON
         run: |
-          python3 -c "import json; json.load(open('lang/en.json'))" \
-            && echo "lang/en.json is valid JSON" \
-            || (echo "lang/en.json is not valid JSON" && exit 1)
+          python3 - <<'EOF'
+          import json, os, sys
+
+          with open("module.json") as f:
+            m = json.load(f)
+
+          for pack in m.get("packs", []):
+            path = pack.get("path", "")
+            if not os.path.exists(path):
+              print(f"Pack file not found: {path}")
+              sys.exit(1)
+            try:
+              with open(path) as f:
+                json.load(f)
+              print(f"Pack file OK: {path}")
+            except json.JSONDecodeError as e:
+              print(f"Pack file invalid JSON: {path} — {e}")
+              sys.exit(1)
+          EOF
 
   # ────────────────────────────────────────────────────────────────────────────
   # Job 3 — Release packaging
   # Only runs on version tags (v*). Creates a zip and GitHub release.
+  # IMPORTANT: module.json version and URLs are updated BEFORE building the zip
+  # so both the zip contents and the loose manifest attachment are consistent.
+  # Foundry update detection requires the version field to change between releases.
   # ────────────────────────────────────────────────────────────────────────────
   release:
     name: Release
@@ -132,6 +152,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Get version from tag
         id: version
@@ -167,14 +189,22 @@ jobs:
 
           # Zip is built AFTER module.json is updated so the correct version,
           # manifest URL, and download URL are all inside the installed package.
+          # vendor/ is excluded — it is a submodule reference only, not module content.
+          # docs/ is excluded — developer documentation, not needed by end users.
           zip -r dist/starforged-companion-${{ steps.version.outputs.version }}.zip \
             module.json \
             README.md \
+            CHANGELOG.md \
+            LICENSE.md \
             lang/ \
             styles/ \
             src/ \
+            packs/ \
+            proxy/ \
             --exclude "src/foundry-shim.js" \
-            --exclude "*.test.js"
+            --exclude "*.test.js" \
+            --exclude "vendor/*" \
+            --exclude ".git*"
 
           echo "Release zip contents:"
           unzip -l dist/starforged-companion-${{ steps.version.outputs.version }}.zip
@@ -187,13 +217,21 @@ jobs:
           body: |
             ## Starforged Companion v${{ steps.version.outputs.version }}
 
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new.
+
             ### Installation
-            Paste this manifest URL into Foundry's **Install Module** dialog:
+            Paste this manifest URL into Foundry's **Add-on Modules → Install Module** dialog:
             ```
             https://github.com/${{ github.repository }}/releases/latest/download/module.json
             ```
 
-            Or download the zip below and extract it into your `Data/modules/` folder.
+            ### Existing installs
+            Use **Add-on Modules → Update** — Foundry will detect the new version automatically.
+
+            ### Requirements
+            - Foundry VTT v12+
+            - Node.js 18+ (for the local API proxy — not needed on The Forge)
+            - Anthropic API key (console.anthropic.com)
           files: |
             dist/starforged-companion-${{ steps.version.outputs.version }}.zip
             module.json
