@@ -31,6 +31,8 @@ import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
 import { narrateResolution } from "./narration/narrator.js";
+import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
+import { openChroniclePanel } from "./character/chroniclePanel.js";
 
 import {
   openProgressTracks,
@@ -135,6 +137,40 @@ function registerCoreSettings() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SESSION ID MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generate or restore a session ID on world load.
+ * Reuses the existing ID when the last session was < 4 hours ago (handles
+ * page reloads mid-session). Otherwise starts a new session, incrementing
+ * sessionNumber and recording the start timestamp.
+ *
+ * Exported for unit testing; called from the ready hook (GM only).
+ */
+export function initSessionId(campaignState) {
+  const last   = campaignState.lastSessionTimestamp;
+  const recent = last && (Date.now() - new Date(last)) < 4 * 3_600_000;
+
+  if (campaignState.currentSessionId && recent) {
+    console.log(`${MODULE_ID} | Resuming session: ${campaignState.currentSessionId}`);
+    return campaignState;
+  }
+
+  campaignState.currentSessionId    = foundry.utils.randomID();
+  campaignState.sessionNumber       = (campaignState.sessionNumber ?? 0) + 1;
+  campaignState.lastSessionTimestamp = new Date().toISOString();
+
+  console.log(
+    `${MODULE_ID} | New session: ${campaignState.currentSessionId} ` +
+    `(#${campaignState.sessionNumber})`
+  );
+
+  return campaignState;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CHAT MESSAGE HOOK — MOVE INTERPRETATION PIPELINE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -215,6 +251,38 @@ function registerChatHook() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Register the updateActor hook.
+ * Fires when any Actor document is updated — including by other clients.
+ *
+ * Responsibilities:
+ * - Invalidate the cached character snapshot so the next context packet build
+ *   reads fresh state from the Actor document.
+ * - If the change touches condition debilities, recalculate momentum bounds so
+ *   the Actor's momentum stays within the new valid range.
+ *
+ * Ignores updates made by this client (userId === game.user.id) because
+ * actorBridge already invalidates the cache after its own writes.
+ */
+function registerActorHook() {
+  Hooks.on("updateActor", (actor, changes, _options, userId) => {
+    if (!actor.hasPlayerOwner) return;
+
+    // Invalidate the cached snapshot so the next context build reads fresh data
+    invalidateActorCache(actor.id);
+
+    // Skip if this is our own write — actorBridge already handled the cache
+    if (userId === game.user.id) return;
+
+    // If condition debilities changed, recalculate momentum bounds
+    if (foundry.utils.hasProperty(changes, "system.debilities")) {
+      recalculateMomentumBounds(actor).catch(err => {
+        console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
+      });
+    }
+  });
+}
+
+/**
  * Determine whether a chat message is player narration that should be
  * routed through the move interpretation pipeline.
  *
@@ -236,12 +304,19 @@ function isPlayerNarration(message) {
   if (message.flags?.[MODULE_ID]?.moveResolution) return false;
   if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
 
+  // Ironsworn system messages posted by sendToChat() in chat-alert.ts
+  if (message.flags?.['foundry-ironsworn']) return false;
+  if (message.speaker?.alias === 'Ironsworn') return false;
+
   // message.author is correct for both v12 and v13.
   // message.user was the old name — accessing it in v13 logs a deprecation warning.
   const user = message.author ?? game.users?.get(message.user);
   if (user?.isGM) return false;
 
   const text = message.content?.trim() ?? "";
+
+  // No meaningful text content — system-generated empty or near-empty messages
+  if (text.length < 10) return false;
 
   // Escape character — prefix with \ to bypass the pipeline entirely
   if (text.startsWith("\\")) return false;
@@ -351,6 +426,15 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
+  // Session ID — GM writes to world-scoped settings; players read from state
+  if (game.user.isGM) {
+    const campaignState = game.settings.get(MODULE_ID, "campaignState");
+    const updated = initSessionId(campaignState);
+    game.settings.set(MODULE_ID, "campaignState", updated).catch(err => {
+      console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
+    });
+  }
+
   // Check proxy health — warn GM if local proxy is not running
   // (On The Forge this always returns true and no warning is shown)
   isLocalProxyReachable().then(reachable => {
@@ -367,6 +451,7 @@ Hooks.once("ready", () => {
   });
 
   registerChatHook();
+  registerActorHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerSettingsHooks();
@@ -374,6 +459,13 @@ Hooks.once("ready", () => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
+});
+
+Hooks.once("closeWorld", async () => {
+  if (!game.user.isGM) return;
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  campaignState.lastSessionTimestamp = new Date().toISOString();
+  await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
 /**
@@ -407,6 +499,13 @@ Hooks.on("getSceneControlButtons", (controls) => {
       icon:    "fas fa-users",
       button:  true,
       onClick: () => openEntityPanel(),
+    },
+    {
+      name:    "chronicle",
+      title:   "Character Chronicle",
+      icon:    "fas fa-book-open",
+      button:  true,
+      onClick: () => openChroniclePanel(),
     },
     {
       name:    "sfSettings",

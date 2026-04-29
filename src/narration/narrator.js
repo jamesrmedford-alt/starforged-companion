@@ -61,7 +61,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       return null;
     }
 
-    await postNarrationCard(narration, resolution);
+    await postNarrationCard(narration, resolution, campaignState);
     return narration;
 
   } catch (err) {
@@ -75,7 +75,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
           maxTokens: settings.narrationMaxTokens,
         });
         if (narration?.trim()) {
-          await postNarrationCard(narration, resolution);
+          await postNarrationCard(narration, resolution, campaignState);
           return narration;
         }
       } catch {
@@ -94,10 +94,11 @@ export async function narrateResolution(resolution, contextPacket, campaignState
  * Separated from narrateResolution so integration tests can call it directly.
  *
  * @param {string} narrationText
- * @param {Object} resolution — MoveResolutionSchema
+ * @param {Object} resolution     — MoveResolutionSchema
+ * @param {Object} [campaignState] — CampaignStateSchema (provides session fields)
  * @returns {Promise<ChatMessage>}
  */
-export async function postNarrationCard(narrationText, resolution) {
+export async function postNarrationCard(narrationText, resolution, campaignState) {
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card">
@@ -107,8 +108,15 @@ export async function postNarrationCard(narrationText, resolution) {
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        narrationCard: true,
-        resolutionId:  resolution?._id ?? '',
+        narratorCard:  true,
+        narrationCard: true,                              // kept for backwards compat
+        narrationText: narrationText,
+        sessionId:     campaignState?.currentSessionId ?? null,
+        sessionNumber: campaignState?.sessionNumber     ?? null,
+        moveId:        resolution?.moveId               ?? null,
+        outcome:       resolution?.outcome              ?? null,
+        resolutionId:  resolution?._id                  ?? '',
+        timestamp:     new Date().toISOString(),
       },
     },
   });
@@ -173,7 +181,7 @@ function getNarratorSettings() {
   try {
     return {
       narrationEnabled:      game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
-      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20251001',
+      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
       narrationPerspective:  game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
       narrationTone:         game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
       narrationLength:       game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
@@ -183,7 +191,7 @@ function getNarratorSettings() {
   } catch {
     return {
       narrationEnabled:      true,
-      narrationModel:        'claude-sonnet-4-5-20251001',
+      narrationModel:        'claude-sonnet-4-5-20250929',
       narrationPerspective:  'auto',
       narrationTone:         'wry',
       narrationLength:       3,

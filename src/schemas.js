@@ -645,8 +645,16 @@ export const CampaignStateSchema = {
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID
   worldTruthsPageId: null,      // JournalEntryPage Foundry ID
 
-  currentSessionId: null,
-  sessionCount: 0,
+  currentSessionId:     "",    // managed by initSessionId() on ready hook
+  sessionNumber:        0,     // increments each new session
+  lastSessionTimestamp: null,  // ISO string, updated on ready and closeWorld
+  sessionCount:         0,
+
+  campaignRecapCache: {
+    text:            "",
+    generatedAt:     null,
+    chronicleLength: 0,
+  },
 
   createdAt: null,
   updatedAt: null,

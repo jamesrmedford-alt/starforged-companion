@@ -43,22 +43,27 @@ const DIAL_POSITIONS = [
 ];
 
 const SETTING = {
-  DIAL:                   'mischiefDial',
-  GLOBAL_LINES:           'globalSafetyLines',
-  GLOBAL_VEILS:           'globalSafetyVeils',
-  PRIVATE_LINES:          'privateLines',         // client-scoped
-  NARRATION_ENABLED:      'narrationEnabled',
-  NARRATION_MODEL:        'narrationModel',
-  NARRATION_PERSPECTIVE:  'narrationPerspective',
-  NARRATION_TONE:         'narrationTone',
-  NARRATION_LENGTH:       'narrationLength',
-  NARRATION_INSTRUCTIONS: 'narrationInstructions',
-  NARRATION_MAX_TOKENS:   'narrationMaxTokens',
+  DIAL:                     'mischiefDial',
+  GLOBAL_LINES:             'globalSafetyLines',
+  GLOBAL_VEILS:             'globalSafetyVeils',
+  PRIVATE_LINES:            'privateLines',         // client-scoped
+  NARRATION_ENABLED:        'narrationEnabled',
+  NARRATION_MODEL:          'narrationModel',
+  NARRATION_PERSPECTIVE:    'narrationPerspective',
+  NARRATION_TONE:           'narrationTone',
+  NARRATION_LENGTH:         'narrationLength',
+  NARRATION_INSTRUCTIONS:   'narrationInstructions',
+  NARRATION_MAX_TOKENS:     'narrationMaxTokens',
+  // ── Character management ─────────────────────────────────────────────────
+  ACTIVE_CHARACTER_ID:      'activeCharacterId',
+  CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
+  CHRONICLE_CONTEXT_COUNT:  'chronicleContextCount',
+  CHARACTER_CONTEXT_ENABLED:'characterContextEnabled',
 };
 
 const NARRATION_MODELS = {
   'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
-  'claude-sonnet-4-5-20251001': 'Sonnet 4.5 (richer narration, recommended)',
+  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
 };
 
 const NARRATION_PERSPECTIVES = {
@@ -139,7 +144,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: NARRATION_MODELS,
-    default: 'claude-sonnet-4-5-20251001',
+    default: 'claude-sonnet-4-5-20250929',
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_PERSPECTIVE, {
@@ -188,6 +193,44 @@ export function registerSettings() {
     type:    Number,
     default: 300,
   });
+
+  // ── Character management settings ─────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.ACTIVE_CHARACTER_ID, {
+    name:    'Active Character Actor ID',
+    hint:    'The Foundry Actor ID of the active player character. Defaults to game.user.character when blank.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    default: '',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY, {
+    name:    'Chronicle Auto-Entry',
+    hint:    'Automatically add a chronicle entry after each narration call.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHRONICLE_CONTEXT_COUNT, {
+    name:    'Chronicle Entries in Context',
+    hint:    'Number of recent chronicle entries included in each context packet. Range: 1–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 5,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.CHARACTER_CONTEXT_ENABLED, {
+    name:    'Character Context in Packet',
+    hint:    'Include character state (stats, meters, chronicle) in context packets sent to the narrator.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +247,7 @@ function getPrivateLines() { return game.settings.get(MODULE_ID, SETTING.PRIVATE
 // ---------------------------------------------------------------------------
 
 function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTING.NARRATION_ENABLED)      ?? true; }
-function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20251001'; }
+function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20250929'; }
 function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
@@ -358,6 +401,11 @@ export class SettingsPanelApp extends ApplicationV2 {
   // -----------------------------------------------------------------------
 
   async _prepareContext(_options) {
+    const campaignState = (() => {
+      try { return game.settings.get(MODULE_ID, 'campaignState') ?? {}; }
+      catch { return {}; }
+    })();
+
     return {
       activeTab:             this.#activeTab,
       isGM:                  game.user.isGM,
@@ -376,6 +424,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
+      sessionNumber:         campaignState.sessionNumber         ?? 0,
+      currentSessionId:      campaignState.currentSessionId      ?? '',
+      lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
     };
   }
 
@@ -399,7 +450,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       case 'safety':   paneHtml = this.#renderSafetyPane(context);   break;
       case 'mischief': paneHtml = this.#renderMischiefPane(context); break;
       case 'narrator': paneHtml = this.#renderNarratorPane(context); break;
-      case 'about':    paneHtml = this.#renderAboutPane();           break;
+      case 'about':    paneHtml = this.#renderAboutPane(context);    break;
     }
 
     const html = `
@@ -573,7 +624,15 @@ export class SettingsPanelApp extends ApplicationV2 {
     `;
   }
 
-  #renderAboutPane() {
+  #renderAboutPane(ctx = {}) {
+    const sessionLabel = ctx.sessionNumber
+      ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
+      : 'not started';
+
+    const sessionStarted = ctx.lastSessionTimestamp
+      ? new Date(ctx.lastSessionTimestamp).toLocaleString()
+      : '—';
+
     return `
       <div class="about-pane">
         <h3 class="about-module-name">Starforged Companion</h3>
@@ -582,12 +641,20 @@ export class SettingsPanelApp extends ApplicationV2 {
         </p>
         <dl class="about-fields">
           <div class="about-field">
+            <dt>Current session</dt>
+            <dd>${sessionLabel}</dd>
+          </div>
+          <div class="about-field">
+            <dt>Session started</dt>
+            <dd>${sessionStarted}</dd>
+          </div>
+          <div class="about-field">
             <dt>Move AI</dt>
             <dd>claude-haiku-4-5-20251001 · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
-            <dd>claude-sonnet-4-5-20251001 default · configurable in Narrator tab · system prompt cached</dd>
+            <dd>claude-sonnet-4-5-20250929 default · configurable in Narrator tab · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
@@ -680,7 +747,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     const el = this.element;
 
     const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
-    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20251001';
+    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
     const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
     const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
     const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;

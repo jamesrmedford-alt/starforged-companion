@@ -208,3 +208,22 @@ multiple characters are present and "you" becomes ambiguous.
 
 **Both are configurable** in the Narrator tab of module settings. The auto
 logic lives in `resolveNarrationPerspective()` in `src/narration/narrator.js`.
+
+---
+## Ironsworn Actor schema — confirmed v1.27.0 (April 2025)
+
+Confirmed by live inspection of `game.user.character.system`. Always re-fetch
+from the ironsworn repo to confirm before writing actorBridge.js code.
+
+Stats: system.edge, system.heart, system.iron, system.shadow, system.wits
+Meters: system.health.value, system.spirit.value, system.supply.value,
+        system.momentum.value / .max / .min / .resetValue
+Debilities: system.debility.wounded / .shaken / .unprepared / .encumbered /
+            .maimed / .corrupted / .cursed / .tormented / .permanentlyharmed /
+            .traumatized / .doomed / .indebted / .battered / .custom1 / .custom2
+XP: system.xp (flat number)
+Legacies: system.legacies.quests / .bonds / .discoveries (+ xpSpent variants)
+Items: one bondset embedded item — no ship/companion items in this version
+
+Actor update pattern:
+  await actor.update({ "system.health.value": newValue });

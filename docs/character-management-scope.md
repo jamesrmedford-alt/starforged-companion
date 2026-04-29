@@ -1,4 +1,7 @@
 # Starforged Companion — Character Management Scope Document
+
+✅ **COMPLETE** — `actorBridge.js`, `chronicle.js`, `chroniclePanel.js`, and tests implemented. Note: field paths in §2 of this document are outdated; corrected schema is in `ironsworn-api-scope.md`.
+
 ## Priority: After narrator implementation
 
 **Dependency:** Narrator feature must be complete before this work begins.

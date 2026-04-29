@@ -1,7 +1,10 @@
 # Starforged Companion — Narrator Scope Document
+
+✅ **COMPLETE** — implemented, tested, in production
+
 ## Remove Loremaster, implement direct Claude narration
 
-**Status:** Pre-implementation planning  
+**Status:** Successful Completion  
 **Supersedes:** Loremaster integration approach  
 **Reason:** Loremaster responds only to GM-account messages; cannot be triggered 
 from player clients without a socket relay that is unreliable in single-browser 
