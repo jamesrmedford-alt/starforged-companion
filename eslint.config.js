@@ -37,6 +37,9 @@ export default [
         // ── The Forge globals ────────────────────────────────────────────
         ForgeVTT:  "readonly",
         ForgeAPI:  "readonly",
+
+        // ── Quench integration testing ───────────────────────────────────
+        quench:    "readonly",
       },
     },
     rules: {
