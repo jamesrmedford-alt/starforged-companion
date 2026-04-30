@@ -29,7 +29,8 @@ For detail on any scope, open the linked document.
 | [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
 | [Quench Integration Tests](quench-integration-scope.md) | ✅ COMPLETE | Live Foundry integration tests via Quench covering safety, actor bridge, progress tracks, assembler, narrator, and pipeline | Foundations, Character Management | — |
 | [API Key Privacy](api-key-privacy-scope.md) | 📋 PLANNED | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
-
+| [Sector Creator](sector-creator-scope.md) | 📋 PLANNED | 11-step guided sector generation following Starforged rulebook (pp. 114–127); SECTOR_TROUBLE table, settlement/planet/connection/map generation | — | Sector Creator Enhanced |
+| [Sector Creator Enhanced](sector-creator-enhanced-scope.md) | 📋 PLANNED | DALL-E 3 background art per region, Foundry Scene creation with Note pins and Drawing passages, narrator journal stubs | Sector Creator | — |
 ---
 
 ## Dependency graph
