@@ -1,3 +1,6 @@
 [submodule "vendor/foundry-ironsworn"]
 	path = vendor/foundry-ironsworn
 	url = https://github.com/ben/foundry-ironsworn
+[submodule "vendor/fvtt-quench"]
+	path = vendor/fvtt-quench
+	url = https://github.com/Ethaks/FVTT-Quench
