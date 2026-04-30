@@ -219,563 +219,74 @@ findings report so the file can be updated before you implement.
 
 ---
 
-## External system reference — foundry-ironsworn
+## External system reference — Quench (integration testing)
 
-The foundry-ironsworn system source is public and attached to this project.
-Before writing ANY code that reads or writes Actor documents, Item documents,
-or any `actor.system.*` field, you MUST read the relevant source file first.
-Never guess at schema paths — they have changed between versions and cost
-significant debugging time when wrong.
+**Repository:** https://github.com/Ethaks/FVTT-Quench
+**Local path:** `vendor/fvtt-quench/`
+**Current version:** v0.10.0 (April 2025) — verified Foundry v13, uses ApplicationV2
+**npm types:** `@ethaks/fvtt-quench`
 
-**Repository:** https://github.com/ben/foundry-ironsworn  
-**Confirmed schema doc:** `docs/ironsworn-api-scope.md` — read this first,
-then verify against live source if the version may have changed.
+Before writing any integration tests, read the Quench source to confirm
+the current API. The API shown below is confirmed from v0.10.0.
 
-**Key source files — read from vendor submodule (preferred) or fetch:**
-
+**Key source files:**
 ```bash
-# If vendor submodule is initialised (preferred — no network required):
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts
-cat vendor/foundry-ironsworn/src/module/fields/MeterField.ts
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts
-cat vendor/foundry-ironsworn/src/module/actor/config.ts
-
-# If vendor submodule is not initialised, fetch from GitHub:
-# Character schema — all stat, meter, debility, legacy field paths
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/character.ts
-
-# Momentum field — MAX, MIN, INITIAL, RESET_MIN constants, burnMomentum()
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/fields/MeterField.ts
-
-# Starship schema — debility.battered, debility.cursed
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/starship.ts
-
-# All actor types — character, shared, treasury, foe, site, starship, location
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/config.ts
+cat vendor/fvtt-quench/src/module/quench.ts          # Quench class, registerBatch, runBatches
+cat vendor/fvtt-quench/src/module/quench-tests/nonsense-tests.ts  # example tests
 ```
 
-**Rules for ironsworn actor work — non-negotiable:**
+**Confirmed Quench API (v0.10.0):**
 
-1. Read `docs/ironsworn-api-scope.md` before touching `actorBridge.js`
-2. If the system version may have changed, fetch the source files above
-3. Never assume field paths from memory or documentation — verify from source
-4. Use computed getters on the system model when available:
-   - `actor.system.momentumMax` — not manual calculation
-   - `actor.system.momentumReset` — not manual calculation
-   - `actor.system.burnMomentum()` — not `actor.update({ momentum.value: x })`
-5. All debilities are under `system.debility` (singular) — never `system.debilities`
-6. Stats are flat on system: `system.edge`, not `system.stats.edge`
-7. XP is a flat number: `system.xp`, not `system.xp.value`
-8. Starship is a separate Actor (`type: "starship"`), not an embedded item
+```js
+// Registration — use the quenchReady hook, not init or ready
+Hooks.on("quenchReady", (quench) => {
 
-**When updating `tests/setup.js` actor mock:**
-The `makeTestActor` factory must match the real schema exactly.
-After any schema correction, run `npm test` and confirm the mock
-produces the same paths that live Foundry does.
+  quench.registerBatch(
+    "starforged-companion.batchName",  // unique key — prefix with module ID
+    (context) => {
+      // Destructure from context — do NOT use globals
+      const { describe, it, assert, expect, before, after, beforeEach, afterEach } = context;
 
----
+      describe("Suite name", function () {
+        it("test name", async function () {
+          // Use assert (Chai assert) or expect (Chai expect)
+          assert.isTrue(true);
+          expect(1).to.equal(1);
 
-## Help file and changelog maintenance
+          // Skip a test conditionally
+          if (!game.user.character) { this.skip(); return; }
+        });
+      });
+    },
+    {
+      displayName: "STARFORGED: Batch Display Name",  // shown in UI
+    }
+  );
+});
 
-After completing any feature implementation or bug fix, always update both:
-
-1. **`packs/help.json`** — the Foundry in-game help journal:
-   - Add new commands to the "Chat Commands" page table
-   - Add new settings to the "Settings Reference" page table
-   - Add new features to the relevant page (or create a new page if substantial)
-   - Update the "Troubleshooting" page if the fix changes error behaviour
-   - Update the "Changelog" page with the new version entry
-
-2. **`CHANGELOG.md`** — the GitHub changelog:
-   - Add an entry under `[Unreleased]` for the change
-
-**Help file changelog format** (in `packs/help.json`, "Changelog" page):
-```html
-<h3>v{version}</h3>
-<ul>
-  <li>Added: ...</li>
-  <li>Fixed: ...</li>
-</ul>
+// Running tests programmatically (from Foundry console)
+quench.runBatches("**");                                    // all batches
+quench.runBatches("starforged-companion.**");               // all module batches
+quench.runBatches(["starforged-companion.actorBridge"]);    // specific batch
 ```
 
-User-facing language only — no file names or internal architecture references.
+**Critical differences from Vitest:**
+- `describe`, `it`, `assert`, `expect` come from `context`, NOT from imports
+- Tests are async-friendly but Hooks are synchronous — use `async function`
+- `this.skip()` skips the test (Mocha pattern) — Vitest uses different API
+- Chai assert/expect, NOT Vitest's expect — different assertion API
+- No `vi.spyOn` — use vanilla JS patterns for spying if needed
+- No `beforeAll`/`afterAll` — use `before`/`after` (Mocha naming)
 
----
+**Guard pattern — only register when Quench is active:**
+```js
+// At top of tests/integration/quench.js
+if (!game.modules.get("quench")?.active) return;
 
-## Never do without explicit instruction
-
-- Push tags or trigger CI releases
-- Close, comment on, or modify GitHub Issues
-- Delete any file not explicitly listed in the current task
-- Change `module.json` compatibility range (`minimum`, `verified`)
-- Modify `tests/fixtures/` files without discussing the impact first
-- Change coverage thresholds in `vitest.config.js`
-- Add new npm dependencies without discussing the choice first
-- Modify `proxy/claude-proxy.mjs` routing logic without confirming
-- Rename exported functions (breaks callers across the codebase)
-- Update `vendor/foundry-ironsworn` without explicit instruction
-
----
-
-## Architecture constraints
-
-These are deliberate decisions — do not change without reading
-`docs/decisions.md` and confirming with the user:
-
-- All external API calls must go through `src/api-proxy.js`. Never add direct
-  `fetch()` calls to `api.anthropic.com` or `api.openai.com` in module source.
-- All UI panels must use `foundry.applications.api.ApplicationV2`. Do not use
-  the v1 `Application` class.
-- No jQuery. DOM API only (`querySelector`, `createElement`, `addEventListener`).
-- `game.settings` world-scoped writes require GM permissions. Player-triggered
-  actions that need to persist state must use a GM-check gate.
-- `src/foundry-shim.js` does not exist and must not be recreated.
-- Chat message type must not be `"other"` — not valid in Foundry v13.
-- All actor reads and writes go through `src/character/actorBridge.js`.
-  Never access Actor fields directly from other modules.
-
----
-
-## Project context
-
-**What this is:** A Foundry VTT companion module for Ironsworn: Starforged
-supporting solo and multiplayer campaigns. Handles move interpretation via
-Claude API, dice resolution, narrator (Claude Sonnet), oracle integration,
-progress tracking, entity management, art generation, and safety configuration.
-
-**Target:** Foundry v13 (v12 minimum). ES modules throughout. Vitest for
-unit tests. Quench for integration tests (require live Foundry).
-
-**Proxy:** Foundry Electron renderer enforces CORS. All external API calls
-route through `src/api-proxy.js` → local Node proxy (desktop) or Forge
-server-side proxy. Start `npm run proxy` before testing in Foundry.
-
-**System dependency:** foundry-ironsworn v1.27.0. Actor schema confirmed:
-stats flat on `system` (not nested), meters at `system.health.value` etc,
-debilities at `system.debility` (singular), xp flat at `system.xp`.
-See `vendor/foundry-ironsworn/` for authoritative source.
-
-**Current work in progress:** See `docs/known-issues.md` for open items.
-Check `docs/` for scope documents before starting any feature work.  for confirmation before making the change
-- **Implement only when asked:** a user describing a problem is not the same as
-  a user asking you to fix it
-
-When in doubt about whether something is in scope for the current session,
-ask rather than proceed.
-
----
-
-## Session startup checklist
-
-Before doing any work, read these files in order:
-
-1. `docs/scope-index.md` — single-glance status of all features; what is done,
-   in progress, and planned. Start here every session to orient quickly.
-2. `docs/decisions.md` — why things are the way they are; prevents re-introducing
-   resolved issues or reversing deliberate choices
-3. `docs/known-issues.md` — open bugs and their status; don't duplicate work
-   or re-open closed issues
-4. `docs/file-structure.md` — what each file exports and does
-5. The relevant scope document for the current task — find it via scope-index.md:
-   - Character/actor work: always read `docs/ironsworn-api-scope.md` first,
-     then fetch live source from the ironsworn repo before writing any code
-6. Before writing any Foundry API code — fetch the relevant page from
-   https://foundryvtt.com/api/v13/ to confirm current method signatures,
-   valid values, and deprecation status. Never rely on memory for Foundry APIs.
-   - Any Foundry API usage: fetch the relevant page from
-     https://foundryvtt.com/api/v13/ before writing code (see External API
-     reference section below)
-
----
-
-## Third-party schema references
-
-The foundry-ironsworn system source is available at `vendor/foundry-ironsworn/`.
-This is a git submodule pinned to the currently installed system version.
-
-**Before writing any code that reads from or writes to a foundry-ironsworn
-Actor, Item, or other document**, read the DataModel definitions in:
+Hooks.on("quenchReady", (quench) => {
+  // register batches
+});
 ```
-vendor/foundry-ironsworn/src/module/model/actor/
-vendor/foundry-ironsworn/src/module/model/item/
-```
-
-Never assume field paths for third-party documents. Always verify against
-the vendor source. If the vendor folder is empty (submodule not initialised),
-run:
-```bash
-git submodule update --init --recursive
-```
-
-When the ironsworn system is updated in Foundry, update the submodule:
-```bash
-cd vendor/foundry-ironsworn && git pull origin main && cd ../..
-git add vendor/foundry-ironsworn
-git commit -m "chore: update ironsworn vendor to v{new version}"
-```
-
----
-
-## Before every commit
-
-Run these in order and confirm they pass:
-
-```bash
-npm test           # all tests must pass
-npm run lint       # errors must be zero; warnings are acceptable
-```
-
-Never commit with failing tests. Never commit with lint errors.
-
-Commit message format:
-```
-type: short description
-
-Longer explanation if needed. Reference the decision or known issue
-this addresses if applicable.
-```
-
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
-
----
-
-## External API reference — Foundry VTT
-
-Before writing any code that uses Foundry VTT APIs, check the live API
-documentation for the target Foundry version (currently v13). Never rely
-on memory or training data for Foundry API signatures — they change between
-versions and have been the source of multiple bugs in this project.
-
-**Base URL:** https://foundryvtt.com/api/v13/
-
-**Rule:** If you are about to write a Hooks.on(), ChatMessage.create(),
-actor.update(), game.settings.register(), or any ApplicationV2 method —
-fetch the relevant docs page first. This takes seconds and prevents hours
-of debugging.
-
-**Key pages to fetch before common tasks:**
-
-```bash
-# ApplicationV2 — before ANY UI panel work
-# Covers: _prepareContext, _renderHTML, _replaceHTML, DEFAULT_OPTIONS,
-#         actions, lifecycle hooks, render/close
-curl https://foundryvtt.com/api/v13/classes/foundry.applications.api.ApplicationV2.html
-
-# ChatMessage — before creating or reading chat messages
-# Covers: type values, flags, create(), speaker, content
-curl https://foundryvtt.com/api/v13/classes/ChatMessage.html
-
-# Hooks — before registering any hook
-# Covers: on(), once(), off(), callAll(), hook names and signatures
-curl https://foundryvtt.com/api/v13/classes/Hooks.html
-
-# Actor — before any actor read/write (supplement with ironsworn source)
-# Covers: update(), getFlag(), setFlag(), items, effects
-curl https://foundryvtt.com/api/v13/classes/Actor.html
-
-# ClientSettings — before registering or reading settings
-# Covers: register(), get(), set(), scope, config, type
-curl https://foundryvtt.com/api/v13/classes/ClientSettings.html
-
-# JournalEntry / JournalEntryPage — before journal operations
-curl https://foundryvtt.com/api/v13/classes/JournalEntry.html
-curl https://foundryvtt.com/api/v13/classes/JournalEntryPage.html
-
-# SceneControls — before toolbar button registration
-curl https://foundryvtt.com/api/v13/classes/SceneControls.html
-
-# DialogV2 — for confirmation dialogs (Dialog is deprecated in v13)
-curl https://foundryvtt.com/api/v13/classes/foundry.applications.api.DialogV2.html
-```
-
-**Known v12 → v13 breaking changes (already fixed in this codebase):**
-- `Application` → `ApplicationV2` (v1 deprecated, removed v16)
-- `Dialog` → `DialogV2` (deprecated, DIALOG-001 still open in entityPanel.js)
-- `message.user` → `message.author`
-- `CONST.CHAT_MESSAGE_TYPES` → string literals (`"ooc"`, `"roll"` etc)
-- `ChatMessage.type = "other"` → removed, use `"base"` or omit
-- `getSceneControlButtons` hook: `controls` is now Object not Array
-- jQuery (`$`) removed — use DOM API throughout
-
-**When the docs are insufficient:**
-The Foundry source is on GitHub at https://github.com/foundryvtt/foundryvtt
-but it is not public for the core codebase. Use the API docs + the error
-messages in the Foundry console as your source of truth.
-
----
-
-## External API reference — Foundry VTT
-
-The Foundry VTT API documentation is the authoritative source for all Foundry
-classes, hooks, methods, and properties. Before writing ANY code that uses
-Foundry APIs, fetch the relevant documentation page first.
-
-**Base URL:** https://foundryvtt.com/api/v13/
-
-**Rule:** If you are about to write code that calls a Foundry method, registers
-a hook, creates a document, or uses any Foundry class — look it up first.
-Do not rely on training data for Foundry API details. The API changes between
-versions and training data reflects a snapshot that may be stale.
-
-**Key pages to fetch before common tasks:**
-
-```bash
-# ApplicationV2 — before ANY UI panel work (lifecycle, actions, rendering)
-curl "https://foundryvtt.com/api/v13/classes/foundry.applications.api.ApplicationV2.html" |   python3 -c "import sys; from html.parser import HTMLParser;   class P(HTMLParser):     def handle_data(self,d): print(d) if d.strip() else None   P().feed(sys.stdin.read())" 2>/dev/null | head -200
-
-# ChatMessage — before creating or filtering chat messages
-# Confirms valid types, flags structure, author vs user, speaker
-curl "https://foundryvtt.com/api/v13/classes/ChatMessage.html"
-
-# Hooks — before registering any hook; confirms signature and arguments
-curl "https://foundryvtt.com/api/v13/classes/Hooks.html"
-
-# Actor — before any actor reads/writes
-curl "https://foundryvtt.com/api/v13/classes/Actor.html"
-
-# ClientSettings — before registering settings; confirms scope, config, type
-curl "https://foundryvtt.com/api/v13/classes/ClientSettings.html"
-
-# JournalEntry / JournalEntryPage — before journal reads/writes
-curl "https://foundryvtt.com/api/v13/classes/JournalEntry.html"
-curl "https://foundryvtt.com/api/v13/classes/JournalEntryPage.html"
-
-# DialogV2 — use this, not the deprecated Dialog
-curl "https://foundryvtt.com/api/v13/classes/foundry.applications.api.DialogV2.html"
-```
-
-**Specific things confirmed to have changed in v13 — always verify:**
-
-| API | v12 | v13 | Status in this codebase |
-|-----|-----|-----|------------------------|
-| `message.user` | valid | deprecated → use `message.author` | ✅ Fixed |
-| `message.type = "other"` | valid | invalid — use no type or `"base"` | ✅ Fixed |
-| `CONST.CHAT_MESSAGE_TYPES` | valid | restructured — use string literals | ✅ Fixed |
-| `getSceneControlButtons` | Array | Object keyed by group name | ✅ Fixed |
-| `Dialog.confirm()` | valid | deprecated → use `DialogV2.confirm()` | ⚠️ Not yet fixed |
-| jQuery `$` / `.find()` | available | removed — use DOM API | ✅ Fixed |
-| `Application` (v1) | valid | deprecated → use `ApplicationV2` | ✅ Fixed in our code |
-
-**Before implementing any new Foundry hook or API:**
-1. Fetch the relevant docs page above
-2. Confirm the method/hook/class exists in v13
-3. Check the method signature — argument order and types change between versions
-4. Check for deprecation notices — if deprecated, use the replacement
-5. Note whether the API is available in both renderer and server contexts
-
----
-
-## External system reference — foundry-ironsworn
-
-The foundry-ironsworn system source is public and attached to this project.
-Before writing ANY code that reads or writes Actor documents, Item documents,
-or any `actor.system.*` field, you MUST read the relevant source file first.
-Never guess at schema paths — they have changed between versions and cost
-significant debugging time when wrong.
-
-**Repository:** https://github.com/ben/foundry-ironsworn  
-**Confirmed schema doc:** `docs/ironsworn-api-scope.md` — read this first,
-then verify against live source if the version may have changed.
-
-**Key source files — read from vendor submodule (preferred) or fetch:**
-
-```bash
-# If vendor submodule is initialised (preferred — no network required):
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts
-cat vendor/foundry-ironsworn/src/module/fields/MeterField.ts
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts
-cat vendor/foundry-ironsworn/src/module/actor/config.ts
-
-# If vendor submodule is not initialised, fetch from GitHub:
-# Character schema — all stat, meter, debility, legacy field paths
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/character.ts
-
-# Momentum field — MAX, MIN, INITIAL, RESET_MIN constants, burnMomentum()
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/fields/MeterField.ts
-
-# Starship schema — debility.battered, debility.cursed
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/starship.ts
-
-# All actor types — character, shared, treasury, foe, site, starship, location
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/config.ts
-```
-
-**Rules for ironsworn actor work — non-negotiable:**
-
-1. Read `docs/ironsworn-api-scope.md` before touching `actorBridge.js`
-2. If the system version may have changed, fetch the source files above
-3. Never assume field paths from memory or documentation — verify from source
-4. Use computed getters on the system model when available:
-   - `actor.system.momentumMax` — not manual calculation
-   - `actor.system.momentumReset` — not manual calculation
-   - `actor.system.burnMomentum()` — not `actor.update({ momentum.value: x })`
-5. All debilities are under `system.debility` (singular) — never `system.debilities`
-6. Stats are flat on system: `system.edge`, not `system.stats.edge`
-7. XP is a flat number: `system.xp`, not `system.xp.value`
-8. Starship is a separate Actor (`type: "starship"`), not an embedded item
-
-**When updating `tests/setup.js` actor mock:**
-The `makeTestActor` factory must match the real schema exactly.
-After any schema correction, run `npm test` and confirm the mock
-produces the same paths that live Foundry does.
-
----
-
-## Help file and changelog maintenance
-
-After completing any feature implementation or bug fix, always update both:
-
-1. **`packs/help.json`** — the Foundry in-game help journal:
-   - Add new commands to the "Chat Commands" page table
-   - Add new settings to the "Settings Reference" page table
-   - Add new features to the relevant page (or create a new page if substantial)
-   - Update the "Troubleshooting" page if the fix changes error behaviour
-   - Update the "Changelog" page with the new version entry
-
-2. **`CHANGELOG.md`** — the GitHub changelog:
-   - Add an entry under `[Unreleased]` for the change
-
-**Help file changelog format** (in `packs/help.json`, "Changelog" page):
-```html
-<h3>v{version}</h3>
-<ul>
-  <li>Added: ...</li>
-  <li>Fixed: ...</li>
-</ul>
-```
-
-User-facing language only — no file names or internal architecture references.
-
----
-
-## Never do without explicit instruction
-
-- Push tags or trigger CI releases
-- Close, comment on, or modify GitHub Issues
-- Delete any file not explicitly listed in the current task
-- Change `module.json` compatibility range (`minimum`, `verified`)
-- Modify `tests/fixtures/` files without discussing the impact first
-- Change coverage thresholds in `vitest.config.js`
-- Add new npm dependencies without discussing the choice first
-- Modify `proxy/claude-proxy.mjs` routing logic without confirming
-- Rename exported functions (breaks callers across the codebase)
-- Update `vendor/foundry-ironsworn` without explicit instruction
-
----
-
-## Architecture constraints
-
-These are deliberate decisions — do not change without reading
-`docs/decisions.md` and confirming with the user:
-
-- All external API calls must go through `src/api-proxy.js`. Never add direct
-  `fetch()` calls to `api.anthropic.com` or `api.openai.com` in module source.
-- All UI panels must use `foundry.applications.api.ApplicationV2`. Do not use
-  the v1 `Application` class.
-- No jQuery. DOM API only (`querySelector`, `createElement`, `addEventListener`).
-- `game.settings` world-scoped writes require GM permissions. Player-triggered
-  actions that need to persist state must use a GM-check gate.
-- `src/foundry-shim.js` does not exist and must not be recreated.
-- Chat message type must not be `"other"` — not valid in Foundry v13.
-- All actor reads and writes go through `src/character/actorBridge.js`.
-  Never access Actor fields directly from other modules.
-
----
-
-## Project context
-
-**What this is:** A Foundry VTT companion module for Ironsworn: Starforged
-supporting solo and multiplayer campaigns. Handles move interpretation via
-Claude API, dice resolution, narrator (Claude Sonnet), oracle integration,
-progress tracking, entity management, art generation, and safety configuration.
-
-**Target:** Foundry v13 (v12 minimum). ES modules throughout. Vitest for
-unit tests. Quench for integration tests (require live Foundry).
-
-**Proxy:** Foundry Electron renderer enforces CORS. All external API calls
-route through `src/api-proxy.js` → local Node proxy (desktop) or Forge
-server-side proxy. Start `npm run proxy` before testing in Foundry.
-
-**System dependency:** foundry-ironsworn v1.27.0. Actor schema confirmed:
-stats flat on `system` (not nested), meters at `system.health.value` etc,
-debilities at `system.debility` (singular), xp flat at `system.xp`.
-See `vendor/foundry-ironsworn/` for authoritative source.
-
-**Current work in progress:** See `docs/known-issues.md` for open items.
-Check `docs/` for scope documents before starting any feature work.  for confirmation before making the change
-- **Implement only when asked:** a user describing a problem is not the same as
-  a user asking you to fix it
-
-When in doubt about whether something is in scope for the current session,
-ask rather than proceed.
-
----
-
-## Session startup checklist
-
-Before doing any work, read these files in order:
-
-1. `docs/scope-index.md` — single-glance status of all features; what is done,
-   in progress, and planned. Start here every session to orient quickly.
-2. `docs/decisions.md` — why things are the way they are; prevents re-introducing
-   resolved issues or reversing deliberate choices
-3. `docs/known-issues.md` — open bugs and their status; don't duplicate work
-   or re-open closed issues
-4. `docs/file-structure.md` — what each file exports and does
-5. The relevant scope document for the current task — find it via scope-index.md:
-   - Character/actor work: always read `docs/ironsworn-api-scope.md` first,
-     then fetch live source from the ironsworn repo before writing any code
-
----
-
-## Third-party schema references
-
-The foundry-ironsworn system source is available at `vendor/foundry-ironsworn/`.
-This is a git submodule pinned to the currently installed system version.
-
-**Before writing any code that reads from or writes to a foundry-ironsworn
-Actor, Item, or other document**, read the DataModel definitions in:
-```
-vendor/foundry-ironsworn/src/module/model/actor/
-vendor/foundry-ironsworn/src/module/model/item/
-```
-
-Never assume field paths for third-party documents. Always verify against
-the vendor source. If the vendor folder is empty (submodule not initialised),
-run:
-```bash
-git submodule update --init --recursive
-```
-
-When the ironsworn system is updated in Foundry, update the submodule:
-```bash
-cd vendor/foundry-ironsworn && git pull origin main && cd ../..
-git add vendor/foundry-ironsworn
-git commit -m "chore: update ironsworn vendor to v{new version}"
-```
-
----
-
-## Before every commit
-
-Run these in order and confirm they pass:
-
-```bash
-npm test           # all tests must pass
-npm run lint       # errors must be zero; warnings are acceptable
-```
-
-Never commit with failing tests. Never commit with lint errors.
-
-Commit message format:
-```
-type: short description
-
-Longer explanation if needed. Reference the decision or known issue
-this addresses if applicable.
-```
-
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 
 ---
 

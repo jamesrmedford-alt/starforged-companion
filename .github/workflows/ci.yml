@@ -189,7 +189,7 @@ jobs:
 
           # Zip is built AFTER module.json is updated so the correct version,
           # manifest URL, and download URL are all inside the installed package.
-          # vendor/ is excluded — it is a submodule reference only, not module content.
+          # vendor/ is excluded — submodule references only (foundry-ironsworn, fvtt-quench), not module content.
           # docs/ is excluded — developer documentation, not needed by end users.
           zip -r dist/starforged-companion-${{ steps.version.outputs.version }}.zip \
             module.json \
