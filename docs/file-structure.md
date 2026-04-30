@@ -24,3 +24,4 @@ For the full source tree (src/, tests/, proxy/, styles/, etc.) see the root
 | [`world-journal-scope.md`](world-journal-scope.md) | 📋 Automatic world-state documentation in Foundry journals |
 | [`session-01.md`](session-01.md) | Example campaign session illustrating the full move pipeline |
 | [`claude-code-quickstart.md`](claude-code-quickstart.md) | Claude Code usage guide for this project |
+| [`quench-integration-scope.md`](quench-integration-scope.md) | ?? Quench integration test suite covering all implemented features |

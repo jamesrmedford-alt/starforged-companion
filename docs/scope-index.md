@@ -27,6 +27,7 @@ For detail on any scope, open the linked document.
 | [Scene Interrogation](scene-interrogation-scope.md) | ✅ COMPLETE | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
 | [Previously On](previously-on-scope.md) | ✅ COMPLETE | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
 | [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
+| [Quench Integration Tests](quench-integration-scope.md) | 📋 PLANNED | Live Foundry integration tests via Quench covering safety, actor bridge, progress tracks, assembler, narrator, and pipeline | Foundations, Character Management | — |
 | [API Key Privacy](api-key-privacy-scope.md) | 📋 PLANNED | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
 
 ---
@@ -41,7 +42,8 @@ Narrator (✅)
         │               └─► World Journal (📋)
         └─► Character Management (✅) ◄── Ironsworn API (✅)
                     └─► Previously On (✅)
-                              └─► World Journal (📋)
+                    |          └─► World Journal (📋)
+              	    └─► Quench Integration Tests (📋)
 ```
 
 ---
@@ -50,3 +52,5 @@ Narrator (✅)
 
 1. **World Journal** — all dependencies (Character Management, Previously On) are now complete. Automatic faction/location/lore/threat documentation in Foundry journal entries.
 2. **API Key Privacy** — hide API keys from player view; self-contained, no blocking dependencies.
+3. **Quench Integration Tests** — can be implemented any time after Foundations;
+   confirms all live Foundry behaviour works correctly before adding more features.
