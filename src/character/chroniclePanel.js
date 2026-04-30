@@ -39,144 +39,131 @@ const TYPE_LABELS = {
 
 export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
+  #actorId;
+  #entries = [];
+
   constructor(actorId, options = {}) {
     super(options);
-    this._actorId = actorId;
-    this._entries = [];
+    this.#actorId = actorId;
   }
 
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions ?? {}, {
-      id:      'sf-chronicle-panel',
-      title:   'Chronicle',
-      classes: ['starforged-companion', 'sf-chronicle'],
-      width:   520,
-      height:  640,
-      resizable: true,
-    });
-  }
+  static DEFAULT_OPTIONS = {
+    id:      'sf-chronicle-panel',
+    classes: ['starforged-companion', 'sf-chronicle'],
+    tag:     'div',
+    window: {
+      title:       'Chronicle',
+      resizable:   true,
+      minimizable: true,
+    },
+    position: { width: 520, height: 640 },
+    actions: {
+      addAnnotation: ChroniclePanelApp.#onAddAnnotation,
+      deleteEntry:   ChroniclePanelApp.#onDeleteEntry,
+      togglePin:     ChroniclePanelApp.#onTogglePin,
+    },
+  };
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
-  async _prepareContext() {
-    this._entries = await getChronicleEntries(this._actorId);
-    const actor   = getActor(this._actorId);
+  async _prepareContext(_options) {
+    this.#entries = await getChronicleEntries(this.#actorId);
+    const actor   = getActor(this.#actorId);
 
     return {
-      actorName: actor?.name ?? 'Unknown Character',
-      entries:   [...this._entries].reverse(), // reverse-chron
-      isGM:      game.user?.isGM ?? false,
+      actorName:  actor?.name ?? 'Unknown Character',
+      entries:    [...this.#entries].reverse(), // reverse-chron
+      isGM:       game.user?.isGM ?? false,
       typeLabels: TYPE_LABELS,
       entryTypes: ENTRY_TYPES,
     };
   }
 
-  async _renderHTML(context) {
-    return buildChronicleHTML(context);
+  async _renderHTML(context, _options) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = buildChronicleHTML(context).trim();
+    return tmp.firstElementChild;
   }
 
-  _replaceHTML(result, content) {
-    content.innerHTML = result;
-    this._activateListeners(content);
-  }
-
-  // ── Event listeners ───────────────────────────────────────────────────────
-
-  _activateListeners(html) {
-    // Save edits on blur of any editable text area
-    html.querySelectorAll('.sf-chronicle-text[contenteditable]').forEach(el => {
-      el.addEventListener('blur', (e) => this._onTextBlur(e));
+  _replaceHTML(result, content, _options) {
+    content.innerHTML = '';
+    content.append(result);
+    // Wire non-click events that cannot use data-action
+    content.querySelectorAll('.sf-chronicle-text[contenteditable]').forEach(el => {
+      el.addEventListener('blur', e => this.#onTextBlur(e));
     });
-
-    // Add annotation button
-    const addBtn = html.querySelector('.sf-chronicle-add-btn');
-    if (addBtn) addBtn.addEventListener('click', () => this._onAddAnnotation());
-
-    // Delete buttons (GM only)
-    html.querySelectorAll('.sf-chronicle-delete-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => this._onDeleteEntry(e));
-    });
-
-    // Pin toggle
-    html.querySelectorAll('.sf-chronicle-pin-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => this._onTogglePin(e));
-    });
-
-    // Type selector (GM only)
-    html.querySelectorAll('.sf-chronicle-type-select').forEach(sel => {
-      sel.addEventListener('change', (e) => this._onTypeChange(e));
+    content.querySelectorAll('.sf-chronicle-type-select').forEach(sel => {
+      sel.addEventListener('change', e => this.#onTypeChange(e));
     });
   }
 
-  async _onTextBlur(e) {
+  // ── Instance event handlers (blur, change) ────────────────────────────────
+
+  async #onTextBlur(e) {
     const el      = e.currentTarget;
     const entryId = el.closest('[data-entry-id]')?.dataset?.entryId;
     const newText = el.textContent?.trim() ?? '';
     if (!entryId || !newText) return;
 
-    const entry = this._entries.find(en => en.id === entryId);
+    const entry = this.#entries.find(en => en.id === entryId);
     if (entry && entry.text !== newText) {
-      await updateChronicleEntry(this._actorId, entryId, newText);
-      this._entries = await getChronicleEntries(this._actorId);
+      await updateChronicleEntry(this.#actorId, entryId, newText);
+      this.#entries = await getChronicleEntries(this.#actorId);
     }
   }
 
-  async _onAddAnnotation() {
-    const actorId    = this._actorId;
-    const sessionId  = game.settings?.get(MODULE_ID, 'campaignState')?.currentSessionId ?? '';
-
-    await addChronicleEntry(actorId, {
-      type:      'annotation',
-      text:      'New annotation — click to edit.',
-      sessionId,
-      automated: false,
-    });
-
-    await this.render(true);
-  }
-
-  async _onDeleteEntry(e) {
-    if (!game.user?.isGM) return;
-    const entryId = e.currentTarget.closest('[data-entry-id]')?.dataset?.entryId;
-    if (!entryId) return;
-
-    // Remove from entry list and persist via setFlag directly on the journal page
-    const entries = this._entries.filter(en => en.id !== entryId);
-    await this._saveEntries(entries);
-    await this.render(true);
-  }
-
-  async _onTogglePin(e) {
-    const entryId = e.currentTarget.closest('[data-entry-id]')?.dataset?.entryId;
-    if (!entryId) return;
-
-    const entry = this._entries.find(en => en.id === entryId);
-    if (!entry) return;
-
-    const updated = this._entries.map(en =>
-      en.id === entryId ? { ...en, pinned: !en.pinned } : en
-    );
-    await this._saveEntries(updated);
-    await this.render(true);
-  }
-
-  async _onTypeChange(e) {
+  async #onTypeChange(e) {
     if (!game.user?.isGM) return;
     const entryId = e.currentTarget.closest('[data-entry-id]')?.dataset?.entryId;
     const newType = e.currentTarget.value;
     if (!entryId || !newType) return;
 
-    const updated = this._entries.map(en =>
+    const updated = this.#entries.map(en =>
       en.id === entryId ? { ...en, type: newType } : en
     );
-    await this._saveEntries(updated);
-    await this.render(true);
+    await this.#saveEntries(updated);
+    this.render();
   }
 
-  // Write the full entries array back to the chronicle journal page.
-  async _saveEntries(entries) {
+  // ── Static action handlers (click via data-action) ─────────────────────────
+
+  static async #onAddAnnotation(_event, _target) {
+    const sessionId = game.settings?.get(MODULE_ID, 'campaignState')?.currentSessionId ?? '';
+    await addChronicleEntry(this.#actorId, {
+      type:      'annotation',
+      text:      'New annotation — click to edit.',
+      sessionId,
+      automated: false,
+    });
+    this.render();
+  }
+
+  static async #onDeleteEntry(_event, target) {
+    if (!game.user?.isGM) return;
+    const entryId = target.dataset.entryId;
+    if (!entryId) return;
+
+    const entries = this.#entries.filter(en => en.id !== entryId);
+    await this.#saveEntries(entries);
+    this.render();
+  }
+
+  static async #onTogglePin(_event, target) {
+    const entryId = target.dataset.entryId;
+    if (!entryId) return;
+
+    const updated = this.#entries.map(en =>
+      en.id === entryId ? { ...en, pinned: !en.pinned } : en
+    );
+    await this.#saveEntries(updated);
+    this.render();
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────────────
+
+  async #saveEntries(entries) {
     try {
-      const actor = getActor(this._actorId);
+      const actor = getActor(this.#actorId);
       if (!actor) return;
 
       const journalName = `Chronicle — ${actor.name}`;
@@ -187,7 +174,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
       if (!page) return;
 
       await page.setFlag(MODULE_ID, 'chronicle', entries);
-      this._entries = entries;
+      this.#entries = entries;
     } catch (err) {
       console.error(`${MODULE_ID} | chroniclePanel: failed to save entries`, err);
     }
@@ -210,7 +197,8 @@ function buildChronicleHTML(ctx) {
 <div class="sf-chronicle-panel">
   <header class="sf-chronicle-header">
     <h2>${escapeHtml(actorName)}</h2>
-    <button type="button" class="sf-chronicle-add-btn" title="Add annotation">
+    <button type="button" class="sf-chronicle-add-btn" data-action="addAnnotation"
+            title="Add annotation">
       + Add Note
     </button>
   </header>
@@ -236,7 +224,9 @@ function buildEntryRow(entry, isGM, typeLabels, entryTypes) {
     : `<span class="sf-type-badge sf-type-${escapeHtml(entry.type)}">${escapeHtml(typeLabel)}</span>`;
 
   const deleteBtn = isGM
-    ? `<button type="button" class="sf-chronicle-delete-btn" title="Delete entry">✕</button>`
+    ? `<button type="button" class="sf-chronicle-delete-btn"
+               data-action="deleteEntry" data-entry-id="${escapeHtml(entry.id)}"
+               title="Delete entry">✕</button>`
     : '';
 
   return `
@@ -244,7 +234,9 @@ function buildEntryRow(entry, isGM, typeLabels, entryTypes) {
   <div class="sf-entry-meta">
     ${typeCell}
     <span class="sf-entry-date">${escapeHtml(dateStr)}</span>
-    <button type="button" class="sf-chronicle-pin-btn" title="${entry.pinned ? 'Unpin' : 'Pin'} entry">
+    <button type="button" class="sf-chronicle-pin-btn"
+            data-action="togglePin" data-entry-id="${escapeHtml(entry.id)}"
+            title="${entry.pinned ? 'Unpin' : 'Pin'} entry">
       ${pinIcon}
     </button>
     ${deleteBtn}
@@ -289,7 +281,7 @@ export function openChroniclePanel(actorId) {
   }
 
   _chroniclePanelInstance = new ChroniclePanelApp(resolvedId);
-  _chroniclePanelInstance.render(true);
+  _chroniclePanelInstance.render({ force: true });
 }
 
 /**

@@ -63,6 +63,10 @@ const SETTING = {
   SCENE_QUERY_ENABLED:      'sceneQueryEnabled',
   SCENE_RESPONSE_LENGTH:    'sceneResponseLength',
   SCENE_CONTEXT_CARDS:      'sceneContextCards',
+  // ── Previously On / recap ────────────────────────────────────────────────
+  AUTO_RECAP_ENABLED:       'autoRecapEnabled',
+  SESSION_GAP_HOURS:        'sessionGapHours',
+  RECAP_GM_ONLY:            'recapGmOnly',
 };
 
 const NARRATION_MODELS = {
@@ -264,6 +268,35 @@ export function registerSettings() {
     type:    Number,
     default: 3,
   });
+
+  // ── Previously On / recap ────────────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.AUTO_RECAP_ENABLED, {
+    name:    'Auto Recap at Session Start',
+    hint:    'When enabled, a campaign recap is automatically posted to chat when a new session begins (after a gap longer than the threshold).',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.SESSION_GAP_HOURS, {
+    name:    'Session Gap Threshold (hours)',
+    hint:    'Hours of inactivity that define the start of a new session for auto-recap purposes.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 4,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.RECAP_GM_ONLY, {
+    name:    'Recap GM-Only',
+    hint:    'When enabled, only the GM can trigger recap generation via /recap commands.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +319,11 @@ function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTIN
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
 function getNarrationInstructions() { return game.settings.get(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS) ?? ''; }
 function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 300; }
+
+// ── Previously On / recap ────────────────────────────────────────────────
+function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
+function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
+function getRecapGmOnly()      { return game.settings.get(MODULE_ID, SETTING.RECAP_GM_ONLY)      ?? true; }
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -328,6 +366,13 @@ async function setPrivateLines(arr) {
  * This matches the shape that safety.js's resolvePrivateLines() expects.
  */
 async function syncSafetyToCampaignState() {
+  // campaignState is world-scoped — only the GM can write it.
+  // Non-GM players store their Private Lines in client-scoped game.settings;
+  // the assembler reads safety config from campaignState which the GM client
+  // keeps up to date. Private lines for non-GM players reach the assembler via
+  // the client-scoped read in getSafetyConfig() when narration runs locally.
+  if (!game.user?.isGM) return;
+
   try {
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
     if (!campaignState.safety) campaignState.safety = {};
@@ -457,6 +502,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
+      autoRecapEnabled:      getAutoRecapEnabled(),
+      sessionGapHours:       getSessionGapHours(),
+      recapGmOnly:           getRecapGmOnly(),
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
@@ -648,6 +696,28 @@ export class SettingsPanelApp extends ApplicationV2 {
                     rows="3" maxlength="500" placeholder="Additional instructions for the narrator…"
                     ${dis}>${ctx.narrationInstructions}</textarea>
         </div>
+        <hr class="narrator-divider">
+        <h4 class="narrator-section-heading">Previously On / Recap</h4>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="autoRecapEnabled" ${ctx.autoRecapEnabled ? 'checked' : ''} ${dis}>
+            Auto recap at session start
+          </label>
+          <span class="narrator-field-hint">Post a campaign recap to chat automatically when a new session begins.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Session gap (hours)</label>
+          <input class="settings-input narrator-number-input" name="sessionGapHours"
+                 type="number" min="1" max="48" value="${ctx.sessionGapHours}" ${dis}>
+          <span class="narrator-field-hint">Hours of inactivity before a world load is treated as a new session.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="recapGmOnly" ${ctx.recapGmOnly ? 'checked' : ''} ${dis}>
+            GM-only recap commands
+          </label>
+          <span class="narrator-field-hint">Restrict /recap commands to the GM to prevent API call spam in multiplayer.</span>
+        </div>
         ${ctx.isGM ? `
           <div class="narrator-actions">
             <button class="settings-btn btn-save-narrator" data-action="saveNarratorSettings">Save Narrator Settings</button>
@@ -787,6 +857,11 @@ export class SettingsPanelApp extends ApplicationV2 {
     const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
     const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
+    const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
+    const sessionGapRaw    = el.querySelector('[name="sessionGapHours"]')?.value;
+    const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
+    const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
+
     await Promise.all([
       game.settings.set(MODULE_ID, SETTING.NARRATION_ENABLED,      enabled),
       game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
@@ -794,6 +869,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
       game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
       game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
+      game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
+      game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
+      game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
     ]);
 
     ui.notifications?.info('Starforged Companion: Narrator settings saved.');
@@ -954,3 +1032,4 @@ export function getSafetyConfig() {
 }
 
 export { getDial as getMischiefDial };
+export { getAutoRecapEnabled, getSessionGapHours, getRecapGmOnly };

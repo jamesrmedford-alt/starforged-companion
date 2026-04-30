@@ -18,22 +18,8 @@ import { MOVES, STATS } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 
-// API calls are routed through the local proxy (proxy/claude-proxy.mjs)
-// to bypass Electron renderer CORS restrictions.
-// The proxy URL is configured in module settings (claudeProxyUrl).
-// Falls back to direct Anthropic URL if the setting is unavailable (tests).
-function getApiUrl() {
-  try {
-    const proxyUrl = game.settings.get("starforged-companion", "claudeProxyUrl");
-    return proxyUrl?.trim()
-      ? `${proxyUrl.replace(/\/$/, "")}/v1/messages`
-      : "https://api.anthropic.com/v1/messages";
-  } catch {
-    return "https://api.anthropic.com/v1/messages";
-  }
-}
-
-const MODEL   = "claude-haiku-4-5-20251001";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const MODEL         = "claude-haiku-4-5-20251001";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,12 +255,7 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
     ...(promptCachingEnabled ? { "anthropic-beta": "prompt-caching-2024-07-31" } : {}),
   };
 
-  // Route through api-proxy.js — handles Forge vs local proxy detection
-  const data = await apiPost(
-    "https://api.anthropic.com/v1/messages",
-    headers,
-    body
-  );
+  const data = await apiPost(ANTHROPIC_URL, headers, body);
 
   const text = (data.content ?? [])
     .filter(block => block.type === "text")
