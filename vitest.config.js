@@ -14,6 +14,7 @@ export default defineConfig({
     // Exclude integration tests which require live Foundry + Quench.
     exclude: [
       'tests/integration/**',
+      'src/integration/**',
       'node_modules/**',
     ],
 

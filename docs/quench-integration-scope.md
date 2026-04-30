@@ -74,7 +74,7 @@ quench.runBatches("starforged-companion.**");
 
 ## 2. Files to create/modify
 
-### 2.1 Create `tests/integration/quench.js`
+### 2.1 Create `src/integration/quench.js`
 
 Single file registering all integration test batches. See Section 3 for
 the full content.
@@ -87,7 +87,7 @@ since it depends on module globals being registered first:
 ```json
 "esmodules": [
   "src/index.js",
-  "tests/integration/quench.js"
+  "src/integration/quench.js"
 ],
 ```
 
@@ -119,7 +119,7 @@ how to run Quench tests.
 ```js
 /**
  * STARFORGED COMPANION
- * tests/integration/quench.js — Live Foundry integration tests via Quench
+ * src/integration/quench.js — Live Foundry integration tests via Quench
  *
  * Requires: Quench module installed and active in the world.
  * Run from the Quench toolbar button, or from the Foundry console:
@@ -597,10 +597,10 @@ before writing any test code.
 
 Then implement:
 
-1. Create tests/integration/quench.js with the full content from
+1. Create src/integration/quench.js with the full content from
    docs/quench-integration-scope.md Section 3
 
-2. Update module.json esmodules to include "tests/integration/quench.js"
+2. Update module.json esmodules to include "src/integration/quench.js"
    after "src/index.js"
 
 3. Update eslint.config.js — add quench as a readonly global in the

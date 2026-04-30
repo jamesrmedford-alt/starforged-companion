@@ -15,7 +15,7 @@
   ],
   "esmodules": [
     "src/index.js",
-    "tests/integration/quench.js"
+    "src/integration/quench.js"
   ],
   "styles": [
     "styles/starforged-companion.css"

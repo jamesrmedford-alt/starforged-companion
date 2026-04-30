@@ -280,7 +280,7 @@ quench.runBatches(["starforged-companion.actorBridge"]);    // specific batch
 
 **Guard pattern — only register when Quench is active:**
 ```js
-// At top of tests/integration/quench.js
+// At top of src/integration/quench.js
 if (!game.modules.get("quench")?.active) return;
 
 Hooks.on("quenchReady", (quench) => {
