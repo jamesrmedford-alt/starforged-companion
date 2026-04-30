@@ -3,7 +3,7 @@
 
 **Source:** https://foundryvtt.wiki/en/development/api (verified v13)  
 **Official docs:** https://foundryvtt.com/api/v13/  
-**Last updated:** April 2025  
+**Last updated:** April 2025 — added Scene, NoteDocument, DrawingDocument, FilePicker, CSS Layers  
 
 This document exists because Claude Code's network access does not include
 foundryvtt.com. Update this file when the Foundry version changes or when
@@ -21,6 +21,11 @@ new API surface is needed.
 6. [Sockets](#sockets)
 7. [DialogV2](#dialogv2)
 8. [v12 → v13 Breaking Changes](#breaking-changes)
+9. [Scene](#scene)
+10. [NoteDocument (Journal Pins)](#notedocument-journal-pins)
+11. [DrawingDocument (Canvas Drawings)](#drawingdocument-canvas-drawings)
+12. [FilePicker.upload](#filepickerupload)
+13. [CSS Layers (v13)](#css-layers-v13)
 
 ---
 
@@ -552,3 +557,329 @@ async function postCard(content, flags = {}) {
   });
 }
 ```
+
+---
+
+## Scene
+
+**Official:** https://foundryvtt.com/api/v13/classes/foundry.documents.Scene.html  
+**Article:** https://foundryvtt.com/article/scenes/
+
+### Create a scene
+
+```js
+const scene = await Scene.create({
+  name:            "Devil's Maw",
+  img:             "modules/starforged-companion/art/sector-abc123.png",  // path, not base64
+  width:           1400,   // scene pixel width — should match image dimensions
+  height:          1000,   // scene pixel height
+  backgroundColor: "#000000",
+
+  // Grid configuration
+  grid: {
+    type:  1,       // 1 = square, 0 = gridless, 2–5 = hex variants
+    size:  100,     // pixels per grid cell (default 100; minimum 50)
+    color: "#333333",
+    alpha: 0.1,     // grid line opacity (0–1)
+  },
+
+  // Disable features not needed for a sector map
+  tokenVision:    false,
+  fogExploration: false,
+  globalLight:    false,
+  padding:        0.1,    // border padding as fraction of scene size
+
+  flags: {
+    "starforged-companion": {
+      sectorScene: true,
+      sectorId:    sector.id,
+    },
+  },
+});
+```
+
+### Activate (make it the current scene)
+
+```js
+await scene.activate();
+// or from scene ID:
+await game.scenes.get(sceneId).activate();
+```
+
+### Embedded documents on a scene
+
+```js
+// Notes (journal pins)
+await scene.createEmbeddedDocuments("Note", [ noteData, ... ]);
+
+// Drawings (lines, shapes)
+await scene.createEmbeddedDocuments("Drawing", [ drawingData, ... ]);
+
+// Tiles (images placed on the canvas)
+await scene.createEmbeddedDocuments("Tile", [ tileData, ... ]);
+```
+
+### Find a scene
+
+```js
+game.scenes.getName("Devil's Maw")
+game.scenes.get(sceneId)
+game.scenes.active   // currently active scene
+```
+
+### Notes from Foundry docs
+
+- `width` and `height` are auto-detected from the background image when set
+  via the UI, but must be set explicitly via the API
+- `grid.size` defaults to 100 — changing it after placing notes will shift them
+- Set `tokenVision: false` and `fogExploration: false` for maps where exploration
+  tracking is not needed (sector maps, world maps)
+
+---
+
+## NoteDocument (Journal Pins)
+
+**Official:** https://foundryvtt.com/api/v13/classes/foundry.documents.NoteDocument.html
+
+Journal Notes are pins placed on a scene canvas that link to a JournalEntry.
+
+### Create notes on a scene
+
+```js
+await scene.createEmbeddedDocuments("Note", [
+  {
+    entryId:    journalEntry.id,   // links to the JournalEntry
+    pageId:     page?.id ?? null,  // optional: link to a specific page within the entry
+    x:          500,               // canvas pixel x position
+    y:          300,               // canvas pixel y position
+
+    // Icon
+    icon:       "icons/svg/circle.svg",   // path to icon image
+    iconSize:   40,                        // icon size in pixels (default 40)
+    iconTint:   "#ffffff",                 // CSS color or null for no tint
+
+    // Label text shown below/above the pin
+    text:       "Bleakhold Station",
+    fontSize:   18,
+    fontFamily: "Signika",
+    textColor:  "#ffffff",
+    textAnchor: CONST.TEXT_ANCHOR_POINTS.BOTTOM,  // or integer 1 (BOTTOM)
+
+    // Visibility
+    global:     true,   // visible to all players regardless of fog (true for sector maps)
+
+    flags: {
+      "starforged-companion": {
+        settlementId: settlement.id,
+        type:         "orbital",
+      },
+    },
+  },
+]);
+```
+
+### `CONST.TEXT_ANCHOR_POINTS` values
+
+```js
+CONST.TEXT_ANCHOR_POINTS = {
+  CENTER: 0,
+  BOTTOM: 1,
+  TOP:    2,
+  LEFT:   3,
+  RIGHT:  4,
+}
+// Use integer 1 for BOTTOM to be safe if CONST is unavailable
+```
+
+### Notes
+
+- `entryId` must be the ID of a JournalEntry that exists in `game.journal`
+- If `entryId` is null, the note renders as an unlinked pin (still shows icon and label)
+- `global: true` makes the note visible even in unexplored fog — use for sector maps
+- `x` and `y` are canvas pixel coordinates, not grid coordinates:
+  `gridX * gridSize` = canvas pixel position
+
+---
+
+## DrawingDocument (Canvas Drawings)
+
+**Official:** https://foundryvtt.com/api/v13/classes/foundry.documents.DrawingDocument.html  
+**Article:** https://foundryvtt.com/article/drawings/
+
+Drawings are shapes placed on a scene canvas. For sector passage lines, use
+polygon type with two points.
+
+### Create drawings on a scene
+
+```js
+await scene.createEmbeddedDocuments("Drawing", [
+  {
+    // Position — top-left corner of the drawing's bounding box
+    x: 200,
+    y: 150,
+
+    // Shape — determines the visual form
+    shape: {
+      type:   "p",                  // "r" rectangle, "e" ellipse, "p" polygon, "f" freehand, "t" text
+      width:  0,                    // bounding box width (0 for polygon — computed from points)
+      height: 0,                    // bounding box height (0 for polygon)
+      points: [0, 0, 300, 200],    // polygon/freehand: flat [x1,y1, x2,y2, ...] relative to x,y
+      // For a line from (x,y) to (x+300, y+200): points: [0, 0, 300, 200]
+    },
+
+    // Stroke (line)
+    strokeWidth: 3,
+    strokeColor: "#88aacc",
+    strokeAlpha: 0.7,
+
+    // Fill
+    fillType:  0,         // 0 = none, 1 = solid, 2 = pattern
+    fillColor: "#000000",
+    fillAlpha: 0,
+
+    // Visibility
+    hidden: false,
+
+    flags: {
+      "starforged-companion": {
+        passage: true,
+        fromId:  settlement1.id,
+        toId:    settlement2.id,
+      },
+    },
+  },
+]);
+```
+
+### Shape type values
+
+```js
+// shape.type values (confirmed for v13):
+"r"  // rectangle
+"e"  // ellipse
+"p"  // polygon (use for lines — supply flat points array)
+"f"  // freehand
+"t"  // text
+```
+
+### Drawing a line between two points
+
+```js
+// Line from canvas position (x1,y1) to (x2,y2):
+{
+  x: x1,           // drawing origin
+  y: y1,
+  shape: {
+    type:   "p",
+    points: [0, 0, x2 - x1, y2 - y1],   // relative offsets from origin
+  },
+  strokeWidth: 3,
+  strokeColor: "#88aacc",
+  strokeAlpha: 0.8,
+  fillType:    0,   // no fill
+}
+```
+
+### Notes
+
+- `points` are relative to the drawing's `x, y` position, not absolute canvas coords
+- Polygon drawings auto-close if the first and last points are the same; for a line,
+  leave them different
+- `fillType: 0` (no fill) is important for line drawings — otherwise a filled polygon
+  is drawn between the points
+- `hidden: false` makes the drawing visible to all players
+
+---
+
+## FilePicker.upload
+
+**Official:** https://foundryvtt.com/api/classes/foundry.applications.apps.FilePicker.html  
+**Confirmed signature (stable across v9–v13):**
+
+```js
+FilePicker.upload(
+  source,    // string: "data" | "public" | "s3"
+  path,      // string: directory path to upload into
+  file,      // File object
+  body,      // object: additional request body (optional, usually {})
+  options    // object: { notify: boolean } (optional)
+): Promise<{ path: string }>
+```
+
+### Upload a base64 image to Foundry data
+
+```js
+async function uploadBase64Image(b64Data, filename, targetDir) {
+  // Convert base64 string to Blob
+  const byteString = atob(b64Data);
+  const bytes = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i++) {
+    bytes[i] = byteString.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "image/png" });
+  const file  = new File([blob], filename, { type: "image/png" });
+
+  // Ensure target directory exists
+  try {
+    await FilePicker.createDirectory("data", targetDir, {});
+  } catch {
+    // Directory already exists — not an error
+  }
+
+  // Upload and return the resulting file path
+  const result = await FilePicker.upload("data", targetDir, file, {});
+  return result.path;  // e.g. "modules/starforged-companion/art/sector-abc123.png"
+}
+
+// Usage:
+const path = await uploadBase64Image(
+  b64Data,
+  `sector-${sectorId}.png`,
+  "modules/starforged-companion/art"
+);
+```
+
+### Notes
+
+- `source: "data"` uploads to the Foundry user data folder — correct for module assets
+- `source: "public"` uploads to the public folder — not needed for module assets
+- `FilePicker.createDirectory()` throws if the directory already exists — always wrap in try/catch
+- The returned `result.path` is what goes into `scene.img` or `actor.img`
+- **Requires GM permissions** — only call from contexts where `game.user.isGM` is true
+- The upload is a server-side operation; the Electron renderer makes an HTTP POST to
+  the local Foundry server (not an external API — no proxy needed)
+- On The Forge, `source: "data"` still works but paths may differ — test on Forge
+  if Forge support is needed
+
+### Error handling
+
+```js
+try {
+  const result = await FilePicker.upload("data", dir, file, {}, { notify: false });
+  return result.path;
+} catch (err) {
+  // Common causes:
+  // - Insufficient permissions (player attempting upload)
+  // - Invalid file type
+  // - Storage quota exceeded (on hosted services)
+  console.error("Upload failed:", err);
+  return null;
+}
+```
+
+---
+
+## CSS Layers (v13)
+
+Version 13 fully implemented CSS Layers. All system and module defined styles are automatically opted in. This means module CSS may need to use `@layer` to properly override Foundry core styles.
+
+```css
+/* In starforged-companion.css — wrap module styles in a layer */
+@layer starforged-companion {
+  .sf-move-result { /* ... */ }
+  .sf-narration-card { /* ... */ }
+}
+```
+
+If existing styles are being overridden by Foundry core unexpectedly after a v13
+update, wrapping them in a named `@layer` gives explicit precedence control.
