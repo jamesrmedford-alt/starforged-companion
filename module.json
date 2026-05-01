@@ -27,15 +27,6 @@
       "path": "lang/en.json"
     }
   ],
-  "packs": [
-    {
-      "name": "starforged-help",
-      "label": "Starforged Companion \u2014 Help & Reference",
-      "path": "packs/help.json",
-      "type": "JournalEntry",
-      "system": ""
-    }
-  ],
   "flags": {
     "starforged-companion": {
       "attribution": "Ironsworn: Starforged by Shawn Tomkin (CC BY-NC-SA 4.0)"

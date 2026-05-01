@@ -955,7 +955,10 @@ the `@foundryvtt/foundryvtt-cli` package) containing LevelDB files.
 **For this module**, the help compendium has been removed from `module.json` to
 avoid this error. Help content is delivered via:
 - The `docs/` folder (developer reference)
-- A programmatically-created JournalEntry on first world load (planned)
+- A programmatically-created JournalEntry on first GM world load via
+  `src/help/helpJournal.js` — idempotent, never recreates if the journal exists.
+  Content source: `packs/help.json` (kept in repo as source of truth, not declared
+  as a Foundry compendium).
 
 If a compendium is needed in future, use the Foundry CLI to create it:
 ```bash

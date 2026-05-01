@@ -38,6 +38,7 @@ import {
 } from "./narration/narrator.js";
 import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
+import { ensureHelpJournal } from "./help/helpJournal.js";
 
 import {
   openProgressTracks,
@@ -547,6 +548,12 @@ Hooks.once("ready", () => {
       console.log(`${MODULE_ID} | Proxy reachable: ${proxyModeDescription()}`);
     }
   });
+
+  if (game.user.isGM) {
+    ensureHelpJournal().catch(err =>
+      console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
+    );
+  }
 
   registerChatHook();
   registerActorHook();

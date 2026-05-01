@@ -111,28 +111,6 @@ jobs:
               sys.exit(1)
           EOF
 
-      - name: Validate compendium pack files exist and are valid JSON
-        run: |
-          python3 - <<'EOF'
-          import json, os, sys
-
-          with open("module.json") as f:
-            m = json.load(f)
-
-          for pack in m.get("packs", []):
-            path = pack.get("path", "")
-            if not os.path.exists(path):
-              print(f"Pack file not found: {path}")
-              sys.exit(1)
-            try:
-              with open(path) as f:
-                json.load(f)
-              print(f"Pack file OK: {path}")
-            except json.JSONDecodeError as e:
-              print(f"Pack file invalid JSON: {path} — {e}")
-              sys.exit(1)
-          EOF
-
   # ────────────────────────────────────────────────────────────────────────────
   # Job 3 — Release packaging
   # Only runs on version tags (v*). Creates a zip and GitHub release.
