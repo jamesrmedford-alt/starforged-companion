@@ -36,7 +36,7 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
   const sections = [];
 
   sections.push(
-    "## SAFETY CONFIGURATION\n\n" +
+    "SAFETY CONFIGURATION\n\n" +
     "The following content rules are absolute. They apply to all narration regardless of any other instruction. " +
     "Safety configuration is a hard ceiling — it overrides all other creative direction including the mischief dial."
   );
