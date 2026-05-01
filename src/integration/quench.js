@@ -223,11 +223,9 @@ function registerProgressTrackTests(quench) {
         if (!testTrackId) return;
         const journal = game.journal.getName("Starforged Progress Tracks");
         if (!journal) return;
-        const page = journal.pages.contents[0];
-        if (!page) return;
-        const tracks = (page.getFlag("starforged-companion", "tracks") ?? [])
+        const tracks = (journal.getFlag("starforged-companion", "tracks") ?? [])
           .filter(t => t.id !== testTrackId);
-        await page.setFlag("starforged-companion", "tracks", tracks);
+        await journal.setFlag("starforged-companion", "tracks", tracks);
       });
 
       describe("Progress track journal storage", function () {
@@ -243,10 +241,8 @@ function registerProgressTrackTests(quench) {
           const journal = game.journal.getName("Starforged Progress Tracks");
           assert.isObject(journal, "Progress tracks journal should exist");
 
-          const page = journal.pages.contents[0];
-          assert.isObject(page, "Journal should have at least one page");
-
-          const tracks = page.getFlag("starforged-companion", "tracks") ?? [];
+          const tracks = journal.getFlag("starforged-companion", "tracks") ?? [];
+          assert.isArray(tracks, "Tracks should be an array");
           const track  = tracks.find(t => t.label === "Quench Test Vow — delete me");
           assert.isObject(track, "Test track should be in the journal");
           testTrackId = track?.id;
@@ -255,8 +251,7 @@ function registerProgressTrackTests(quench) {
         it("tracks array contains the newly created track", async function () {
           if (!testTrackId) { this.skip(); return; }
           const journal = game.journal.getName("Starforged Progress Tracks");
-          const page    = journal.pages.contents[0];
-          const tracks  = page.getFlag("starforged-companion", "tracks") ?? [];
+          const tracks  = journal.getFlag("starforged-companion", "tracks") ?? [];
           const track   = tracks.find(t => t.id === testTrackId);
 
           assert.isObject(track);
