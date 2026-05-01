@@ -120,7 +120,8 @@ Lines are preserved when any one player's client syncs.
 ## Progress tracks: single dedicated journal
 
 **Decision:** All progress tracks stored in ONE JournalEntry named "Starforged
-Progress Tracks", under `page.flags["starforged-companion"].tracks` as an array.
+Progress Tracks", under `journal.flags["starforged-companion"].tracks` as an array
+(a flag on the JournalEntry itself, not on any embedded page).
 
 **Reason:** Initially designed with per-track journal entries. Changed because
 individual journal entries created UI clutter and made bulk operations (list all
