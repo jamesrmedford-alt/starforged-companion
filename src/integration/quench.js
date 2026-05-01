@@ -1,6 +1,6 @@
 /**
  * STARFORGED COMPANION
- * tests/integration/quench.js — Live Foundry integration tests via Quench
+ * src/integration/quench.js — Live Foundry integration tests via Quench
  *
  * Requires: Quench module installed and active in the world.
  * Run from the Quench toolbar button, or from the Foundry console:
@@ -40,19 +40,19 @@ function registerSafetyTests(quench) {
       describe("X-Card — suppressScene / clearXCard", function () {
         after(async function () {
           // Always restore xCardActive to false after safety tests
-          const { clearXCard } = await import("../src/context/safety.js");
+          const { clearXCard } = await import("./context/safety.js");
           await clearXCard().catch(() => {});
         });
 
         it("suppressScene sets campaignState.xCardActive to true", async function () {
-          const { suppressScene } = await import("../src/context/safety.js");
+          const { suppressScene } = await import("./context/safety.js");
           await suppressScene();
           const state = game.settings.get("starforged-companion", "campaignState");
           assert.isTrue(state.xCardActive, "xCardActive should be true after suppressScene");
         });
 
         it("clearXCard sets campaignState.xCardActive to false", async function () {
-          const { suppressScene, clearXCard } = await import("../src/context/safety.js");
+          const { suppressScene, clearXCard } = await import("./context/safety.js");
           await suppressScene();
           await clearXCard();
           const state = game.settings.get("starforged-companion", "campaignState");
@@ -62,7 +62,7 @@ function registerSafetyTests(quench) {
 
       describe("formatSafetyContext", function () {
         it("returns a non-empty string", async function () {
-          const { formatSafetyContext } = await import("../src/context/safety.js");
+          const { formatSafetyContext } = await import("./context/safety.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const result = formatSafetyContext(campaignState);
           assert.isString(result);
@@ -70,7 +70,7 @@ function registerSafetyTests(quench) {
         });
 
         it("includes SAFETY CONFIGURATION header", async function () {
-          const { formatSafetyContext } = await import("../src/context/safety.js");
+          const { formatSafetyContext } = await import("./context/safety.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const result = formatSafetyContext(campaignState);
           assert.include(result, "SAFETY CONFIGURATION");
@@ -102,7 +102,7 @@ function registerActorBridgeTests(quench) {
       describe("readCharacterSnapshot — confirms correct schema paths", function () {
         it("returns stats from correct flat paths (not system.stats.edge)", async function () {
           if (!actor) { this.skip(); return; }
-          const { readCharacterSnapshot } = await import("../src/character/actorBridge.js");
+          const { readCharacterSnapshot } = await import("./character/actorBridge.js");
           const snap = readCharacterSnapshot(actor);
 
           assert.isNumber(snap.stats.edge,   "edge should be a number");
@@ -114,7 +114,7 @@ function registerActorBridgeTests(quench) {
 
         it("returns meters from correct nested paths (not system.meters.health)", async function () {
           if (!actor) { this.skip(); return; }
-          const { readCharacterSnapshot } = await import("../src/character/actorBridge.js");
+          const { readCharacterSnapshot } = await import("./character/actorBridge.js");
           const snap = readCharacterSnapshot(actor);
 
           assert.isNumber(snap.meters.health,   "health should be a number");
@@ -125,7 +125,7 @@ function registerActorBridgeTests(quench) {
 
         it("uses computed momentumMax and momentumReset getters", async function () {
           if (!actor) { this.skip(); return; }
-          const { readCharacterSnapshot } = await import("../src/character/actorBridge.js");
+          const { readCharacterSnapshot } = await import("./character/actorBridge.js");
           const snap = readCharacterSnapshot(actor);
 
           assert.isNumber(snap.momentumMax,   "momentumMax should be a number");
@@ -138,7 +138,7 @@ function registerActorBridgeTests(quench) {
       describe("applyMeterChanges — live actor writes", function () {
         it("correctly decrements and restores momentum", async function () {
           if (!actor) { this.skip(); return; }
-          const { applyMeterChanges } = await import("../src/character/actorBridge.js");
+          const { applyMeterChanges } = await import("./character/actorBridge.js");
           const before = actor.system.momentum.value;
 
           await applyMeterChanges(actor, { momentum: -1 });
@@ -153,7 +153,7 @@ function registerActorBridgeTests(quench) {
 
         it("respects momentum minimum (does not go below momentumReset)", async function () {
           if (!actor) { this.skip(); return; }
-          const { applyMeterChanges } = await import("../src/character/actorBridge.js");
+          const { applyMeterChanges } = await import("./character/actorBridge.js");
           const resetValue = actor.system.momentumReset;
 
           // Try to set momentum way below the minimum
@@ -167,7 +167,7 @@ function registerActorBridgeTests(quench) {
 
         it("batches multiple meter changes in one update call", async function () {
           if (!actor) { this.skip(); return; }
-          const { applyMeterChanges } = await import("../src/character/actorBridge.js");
+          const { applyMeterChanges } = await import("./character/actorBridge.js");
 
           const beforeHealth   = actor.system.health.value;
           const beforeMomentum = actor.system.momentum.value;
@@ -190,7 +190,7 @@ function registerActorBridgeTests(quench) {
       describe("readDebilities — confirms singular key (system.debility)", function () {
         it("reads from system.debility not system.debilities", async function () {
           if (!actor) { this.skip(); return; }
-          const { readDebilities } = await import("../src/character/actorBridge.js");
+          const { readDebilities } = await import("./character/actorBridge.js");
           const debilities = readDebilities(actor);
 
           assert.isObject(debilities, "debilities should be an object");
@@ -230,7 +230,7 @@ function registerProgressTrackTests(quench) {
 
       describe("Progress track journal storage", function () {
         it("'Starforged Progress Tracks' journal exists after first track is created", async function () {
-          const { addProgressTrack } = await import("../src/ui/progressTracks.js");
+          const { addProgressTrack } = await import("./ui/progressTracks.js");
 
           await addProgressTrack({
             label: "Quench Test Vow — delete me",
@@ -280,10 +280,10 @@ function registerAssemblerTests(quench) {
 
       describe("assembleContextPacket — live world", function () {
         it("returns a packet with a non-empty assembled string", async function () {
-          const { assembleContextPacket } = await import("../src/context/assembler.js");
+          const { assembleContextPacket } = await import("./context/assembler.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
 
-          const packet = await assembleContextPacket(null, campaignState);
+          const packet = await assembleContextPacket({}, campaignState);
 
           assert.isObject(packet, "packet should be an object");
           assert.isString(packet.assembled, "assembled should be a string");
@@ -291,10 +291,10 @@ function registerAssemblerTests(quench) {
         });
 
         it("safety section is always first", async function () {
-          const { assembleContextPacket } = await import("../src/context/assembler.js");
+          const { assembleContextPacket } = await import("./context/assembler.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
 
-          const packet = await assembleContextPacket(null, campaignState);
+          const packet = await assembleContextPacket({}, campaignState);
           const safetyIdx = packet.assembled.indexOf("SAFETY CONFIGURATION");
 
           assert.isAbove(safetyIdx, -1, "SAFETY CONFIGURATION header should be present");
@@ -303,12 +303,12 @@ function registerAssemblerTests(quench) {
         });
 
         it("X-Card suppresses the packet when campaignState.xCardActive is true", async function () {
-          const { assembleContextPacket } = await import("../src/context/assembler.js");
-          const { suppressScene, clearXCard } = await import("../src/context/safety.js");
+          const { assembleContextPacket } = await import("./context/assembler.js");
+          const { suppressScene, clearXCard } = await import("./context/safety.js");
 
           await suppressScene();
           const campaignState = game.settings.get("starforged-companion", "campaignState");
-          const packet = await assembleContextPacket(null, campaignState);
+          const packet = await assembleContextPacket({}, campaignState);
           await clearXCard();
 
           assert.include(packet.assembled, "SCENE PAUSED", "X-Card should produce SCENE PAUSED packet");
@@ -350,7 +350,7 @@ function registerNarratorTests(quench) {
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
-          const { narrateResolution } = await import("../src/narration/narrator.js");
+          const { narrateResolution } = await import("./narration/narrator.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
@@ -382,11 +382,12 @@ function registerNarratorTests(quench) {
 
       describe("narrateResolution — fallback on missing key", function () {
         it("posts a fallback card when no API key is configured", async function () {
+          if (!game.user.isGM) { this.skip(); return; }
           // Temporarily clear the API key
           const realKey = game.settings.get("starforged-companion", "claudeApiKey");
           await game.settings.set("starforged-companion", "claudeApiKey", "");
 
-          const { narrateResolution } = await import("../src/narration/narrator.js");
+          const { narrateResolution } = await import("./narration/narrator.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
@@ -419,7 +420,7 @@ function registerPipelineTests(quench) {
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
-          const { interpretMove } = await import("../src/moves/interpreter.js");
+          const { interpretMove } = await import("./moves/interpreter.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
 
           const result = await interpretMove(
@@ -435,7 +436,7 @@ function registerPipelineTests(quench) {
         });
 
         it("resolveMove produces a valid resolution from an interpretation", async function () {
-          const { resolveMove } = await import("../src/moves/resolver.js");
+          const { resolveMove } = await import("./moves/resolver.js");
           const campaignState = game.settings.get("starforged-companion", "campaignState");
 
           // Use a fixed interpretation so this test doesn't require an API call
