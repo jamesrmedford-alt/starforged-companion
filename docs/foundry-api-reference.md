@@ -408,6 +408,39 @@ existing.push(newTrack);
 await doc.setFlag("starforged-companion", "tracks", existing);
 ```
 
+### JournalEntry flags vs JournalEntryPage flags — CONFIRMED DISTINCTION
+
+**IMPORTANT:** Flags can be set on either a `JournalEntry` or a `JournalEntryPage`.
+These are two different documents and their flags are completely separate.
+
+```js
+// Flag on the JOURNAL ENTRY itself (top-level document)
+await journal.setFlag("starforged-companion", "tracks", tracksArray);
+const tracks = journal.getFlag("starforged-companion", "tracks");
+
+// Flag on a JOURNAL ENTRY PAGE (embedded document within the journal)
+const page = journal.pages.contents[0];
+await page.setFlag("starforged-companion", "entityData", data);
+const data = page.getFlag("starforged-companion", "entityData");
+```
+
+**Confirmed storage locations in this module (from live testing):**
+
+| Data | Storage | Access pattern |
+|------|---------|----------------|
+| Progress tracks array | JournalEntry flag | `journal.getFlag(MODULE_ID, "tracks")` |
+| Entity records (connection, settlement etc) | JournalEntryPage flag | `page.getFlag(MODULE_ID, entityType)` |
+| Art assets | JournalEntryPage flag | `page.getFlag(MODULE_ID, "artAssets")` |
+| Sector records | JournalEntry flag | `journal.getFlag(MODULE_ID, sectorId)` |
+
+**Do NOT assume tracks or other arrays are on a page** — `progressTracks.js`
+stores the tracks array directly on the JournalEntry, confirmed by:
+```js
+game.journal.getName("Starforged Progress Tracks")
+  .getFlag("starforged-companion", "tracks")  // → array of track objects
+// NOT: journal.pages.contents[0].getFlag(...)
+```
+
 ---
 
 ## Sockets
@@ -865,6 +898,68 @@ try {
   console.error("Upload failed:", err);
   return null;
 }
+```
+
+---
+
+## Dynamic imports in browser ES modules
+
+**CRITICAL GOTCHA — confirmed by live testing (v0.1.23 debugging)**
+
+In browser ES modules, `import()` paths resolve relative to the **document root**,
+NOT relative to the importing file's location. This is different from Node.js.
+
+```js
+// File location: /modules/starforged-companion/src/integration/quench.js
+
+// WRONG — resolves to http://localhost:30000/context/safety.js (404)
+await import("./context/safety.js")
+
+// WRONG — resolves to http://localhost:30000/src/context/safety.js (404)  
+await import("../src/context/safety.js")
+
+// CORRECT — absolute path from the server root
+await import("/modules/starforged-companion/src/context/safety.js")
+```
+
+**The pattern to use in any file that needs dynamic imports:**
+
+```js
+// Define once at the top of the file
+const MODULE_PATH = "/modules/starforged-companion/src";
+
+// Use throughout
+const { myExport } = await import(`${MODULE_PATH}/context/safety.js`);
+const { otherExport } = await import(`${MODULE_PATH}/moves/resolver.js`);
+```
+
+This applies to all files loaded as Foundry ES modules, including
+`src/integration/quench.js`. Static imports (`import ... from "..."` at
+the top of the file) resolve correctly relative to the file — only
+dynamic `import()` calls have this behaviour.
+
+---
+
+## Compendium packs in v13
+
+**Foundry v13 requires compendium packs to be LevelDB directories**, not JSON files.
+
+A flat JSON file at `packs/help.json` declared in `module.json` will cause:
+```
+IO error: /path/to/packs/help.json: Not a directory
+```
+
+**The correct format** is a directory (created by Foundry's compendium tools or
+the `@foundryvtt/foundryvtt-cli` package) containing LevelDB files.
+
+**For this module**, the help compendium has been removed from `module.json` to
+avoid this error. Help content is delivered via:
+- The `docs/` folder (developer reference)
+- A programmatically-created JournalEntry on first world load (planned)
+
+If a compendium is needed in future, use the Foundry CLI to create it:
+```bash
+npx @foundryvtt/foundryvtt-cli package workerExtract --type Module   --id starforged-companion --inputDirectory packs/help/
 ```
 
 ---

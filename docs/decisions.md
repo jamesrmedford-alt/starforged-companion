@@ -120,17 +120,29 @@ Lines are preserved when any one player's client syncs.
 ## Progress tracks: single dedicated journal
 
 **Decision:** All progress tracks stored in ONE JournalEntry named "Starforged
-Progress Tracks", under `journal.flags["starforged-companion"].tracks` as an array
-(a flag on the JournalEntry itself, not on any embedded page).
+Progress Tracks", as a flag directly on the JournalEntry (not on a page).
+
+**Confirmed storage (from live testing and progressTracks.js source):**
+```js
+// Write
+await journal.setFlag("starforged-companion", "tracks", tracksArray);
+
+// Read
+const tracks = journal.getFlag("starforged-companion", "tracks") ?? [];
+```
+
+**Not:** `journal.pages.contents[0].getFlag(...)` — the journal has no pages.
+This distinction matters: JournalEntry flags and JournalEntryPage flags are
+completely separate. The tracks journal creates no pages.
 
 **Reason:** Initially designed with per-track journal entries. Changed because
-individual journal entries created UI clutter and made bulk operations (list all
-tracks, find by ID) require scanning the entire journal collection. Single journal
-with a flag array is simpler, faster, and matches how the assembler needs to consume
-the data.
+individual journal entries created UI clutter and made bulk operations require
+scanning the entire journal collection. Single journal with a flag array is
+simpler and faster.
 
-**Impact:** `assembler.js` calls `game.journal.getName("Starforged Progress Tracks")`
-directly. `campaignState.progressTrackIds` is unused for this purpose.
+**Impact:** `assembler.js` `buildProgressTracksSection()` must call
+`journal.getFlag(MODULE_ID, "tracks")` directly — NOT read from a page.
+`campaignState.progressTrackIds` is unused for this purpose.
 
 ---
 
@@ -209,22 +221,3 @@ multiple characters are present and "you" becomes ambiguous.
 
 **Both are configurable** in the Narrator tab of module settings. The auto
 logic lives in `resolveNarrationPerspective()` in `src/narration/narrator.js`.
-
----
-## Ironsworn Actor schema — confirmed v1.27.0 (April 2025)
-
-Confirmed by live inspection of `game.user.character.system`. Always re-fetch
-from the ironsworn repo to confirm before writing actorBridge.js code.
-
-Stats: system.edge, system.heart, system.iron, system.shadow, system.wits
-Meters: system.health.value, system.spirit.value, system.supply.value,
-        system.momentum.value / .max / .min / .resetValue
-Debilities: system.debility.wounded / .shaken / .unprepared / .encumbered /
-            .maimed / .corrupted / .cursed / .tormented / .permanentlyharmed /
-            .traumatized / .doomed / .indebted / .battered / .custom1 / .custom2
-XP: system.xp (flat number)
-Legacies: system.legacies.quests / .bonds / .discoveries (+ xpSpent variants)
-Items: one bondset embedded item — no ship/companion items in this version
-
-Actor update pattern:
-  await actor.update({ "system.health.value": newValue });

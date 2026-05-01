@@ -278,15 +278,30 @@ quench.runBatches(["starforged-companion.actorBridge"]);    // specific batch
 - No `vi.spyOn` — use vanilla JS patterns for spying if needed
 - No `beforeAll`/`afterAll` — use `before`/`after` (Mocha naming)
 
-**Guard pattern — only register when Quench is active:**
+**Guard pattern — confirmed correct approach (from live testing):**
 ```js
-// At top of src/integration/quench.js
+// WRONG — game.modules.get("quench")?.active is unreliable at module load time
 if (!game.modules.get("quench")?.active) return;
+Hooks.on("quenchReady", (quench) => { ... });
 
+// CORRECT — quenchReady only fires when Quench is active; no guard needed
 Hooks.on("quenchReady", (quench) => {
-  // register batches
+  // register batches here — this hook only fires if Quench is installed and active
+  registerMyTests(quench);
 });
 ```
+
+**Dynamic import paths — CRITICAL (confirmed by live testing):**
+```js
+// WRONG — relative paths resolve from document root, not the file location
+await import("./context/safety.js")      // 404
+await import("../src/context/safety.js") // 404
+
+// CORRECT — use absolute paths from the server root
+const MODULE_PATH = "/modules/starforged-companion/src";
+await import(`${MODULE_PATH}/context/safety.js`)  // works
+```
+Static imports at file top resolve correctly. Only dynamic import() has this behaviour.
 
 ---
 
