@@ -14,19 +14,18 @@
  * Assertions use Chai (assert/expect), not Vitest's expect.
  */
 
-// Guard — silently no-op if Quench is not installed or not active
-if (!game.modules.get("quench")?.active) {
-  console.log("starforged-companion | Quench not active — integration tests not registered");
-} else {
-  Hooks.on("quenchReady", (quench) => {
-    registerSafetyTests(quench);
-    registerActorBridgeTests(quench);
-    registerProgressTrackTests(quench);
-    registerAssemblerTests(quench);
-    registerNarratorTests(quench);
-    registerPipelineTests(quench);
-  });
-}
+// Registering Quench if it is ready to go
+// quenchReady only fires when Quench is installed and active
+// no guard needed here
+Hooks.on("quenchReady", (quench) => {
+  registerSafetyTests(quench);
+  registerActorBridgeTests(quench);
+  registerProgressTrackTests(quench);
+  registerAssemblerTests(quench);
+  registerNarratorTests(quench);
+  registerPipelineTests(quench);
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SAFETY
