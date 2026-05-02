@@ -139,7 +139,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "adds": 0,
   "isProgressMove": false,
   "progressTicks": 0,
-  "interpretationRationale": "Player is threading their ship through a debris field — risky navigation requiring focus and observation.",
+  "rationale": "Player is threading their ship through a debris field — risky navigation requiring focus and observation.",
   "mischiefApplied": false,
   "confidence": "high"
 }
@@ -318,7 +318,7 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
     adds:                   parsed.adds ?? 0,
     isProgressMove:         moveData.progressMove === true,
     progressTicks:          parsed.progressTicks ?? 0,
-    interpretationRationale: parsed.interpretationRationale ?? "",
+    rationale:               parsed.rationale ?? parsed.interpretationRationale ?? "",
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",
     playerConfirmed:        false,                       // Set to true after confirmation UI
@@ -342,7 +342,7 @@ function fallbackInterpretation(narration, mischiefLevel) {
     adds:                    0,
     isProgressMove:          false,
     progressTicks:           0,
-    interpretationRationale: "Fallback — API response could not be parsed.",
+    rationale:               "Fallback — API response could not be parsed.",
     mischiefApplied:         false,
     confidence:              "low",
     playerConfirmed:         false,

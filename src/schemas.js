@@ -433,7 +433,7 @@ export const ClockSchema = {
  * not just a dice number.
  *
  * Mischief is not signalled to the player — interpretation plays it straight.
- * The interpretationRationale field is populated for internal debugging only.
+ * The rationale field is populated for internal debugging only.
  */
 export const MoveResolutionSchema = {
   _id: "",
@@ -450,7 +450,7 @@ export const MoveResolutionSchema = {
   statUsed: "",                 // e.g. "wits"
   statValue: 0,
   adds: 0,                      // Any bonus adds from assets or move context
-  interpretationRationale: "",  // Internal only — why this move was chosen. Not surfaced to player.
+  rationale: "",                 // Internal only — why this move was chosen. Not surfaced to player.
   mischiefApplied: false,       // Whether mischief reframing occurred. Internal only.
   playerConfirmed: true,        // Did player accept the interpretation in the confirmation UI?
 

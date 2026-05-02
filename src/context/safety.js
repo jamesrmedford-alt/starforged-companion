@@ -139,13 +139,15 @@ export async function clearXCard() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function mergeLines(campaignState, sessionState) {
-  const base    = campaignState.safety?.lines ?? [];
+  const safety  = campaignState?.safety ?? {};
+  const base    = safety.lines ?? [];
   const session = sessionState?.safetyOverrides?.additionalLines ?? [];
   return deduplicate([...base, ...session]);
 }
 
 function mergeVeils(campaignState, sessionState) {
-  const base    = campaignState.safety?.veils ?? [];
+  const safety  = campaignState?.safety ?? {};
+  const base    = safety.veils ?? [];
   const session = sessionState?.safetyOverrides?.additionalVeils ?? [];
   return deduplicate([...base, ...session]);
 }
@@ -159,7 +161,8 @@ function mergeVeils(campaignState, sessionState) {
 function resolvePrivateLines(campaignState, currentUserId) {
   if (!currentUserId) return [];
 
-  const privateLines = campaignState.safety?.privateLines ?? [];
+  const safety       = campaignState?.safety ?? {};
+  const privateLines = safety.privateLines ?? [];
 
   if (currentUserId === "gm") {
     return privateLines.flatMap(entry => entry.lines ?? []);
