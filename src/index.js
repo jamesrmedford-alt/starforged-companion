@@ -580,50 +580,45 @@ Hooks.once("closeWorld", async () => {
 });
 
 /**
- * getSceneControlButtons — add toolbar buttons for the three UI panels.
+ * getSceneControlButtons — add toolbar buttons for the four UI panels.
  *
- * v13: controls is an Object keyed by group name; tools is an Object keyed
- * by tool name. Access controls.tokens directly and assign tools as properties.
+ * Confirmed v13 pattern from vendor/foundry-ironsworn/src/module/features/sceneButtons.ts:
+ * controls is an Object keyed by group name; tools is an Object keyed by tool name.
+ * Assign directly: controls.tokens.tools[name] = tool. No order field — not part of
+ * the confirmed SceneControlTool shape in v13.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
-  // v13: controls is an object keyed by group name
-  const tokenControls = controls.tokens ?? controls.token;
-  if (!tokenControls) return;
+  if (!controls.tokens) return;
 
-  tokenControls.tools ??= {};
-  const order = Object.keys(tokenControls.tools).length;
+  controls.tokens.tools ||= {};
 
-  tokenControls.tools.progressTracks = {
+  controls.tokens.tools.progressTracks = {
     name:     "progressTracks",
     title:    "Progress Tracks",
     icon:     "fas fa-tasks",
     button:   true,
-    order:    order,
     onChange: () => openProgressTracks(),
   };
-  tokenControls.tools.entityPanel = {
+  controls.tokens.tools.entityPanel = {
     name:     "entityPanel",
     title:    "Entities",
     icon:     "fas fa-users",
     button:   true,
-    order:    order + 1,
     onChange: () => openEntityPanel(),
   };
-  tokenControls.tools.chronicle = {
+  controls.tokens.tools.chronicle = {
     name:     "chronicle",
     title:    "Character Chronicle",
     icon:     "fas fa-book-open",
     button:   true,
-    order:    order + 2,
     onChange: () => openChroniclePanel(),
   };
-  tokenControls.tools.sfSettings = {
+  controls.tokens.tools.sfSettings = {
     name:     "sfSettings",
     title:    "Companion Settings",
     icon:     "fas fa-shield-alt",
     button:   true,
     visible:  game.user.isGM,
-    order:    order + 3,
     onChange: () => openSettingsPanel(),
   };
 });
