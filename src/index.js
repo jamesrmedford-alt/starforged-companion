@@ -630,6 +630,33 @@ Hooks.on("getSceneControlButtons", (controls) => {
   };
 });
 
+// Foundry v13 does not invoke onChange for `button: true` tools registered via
+// getSceneControlButtons. Attach click listeners directly after the toolbar
+// renders so the buttons actually do something.
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  const buttonMap = {
+    progressTracks: () => openProgressTracks(),
+    entityPanel:    () => openEntityPanel(),
+    chronicle:      () => openChroniclePanel(),
+    sfSettings:     () => openSettingsPanel(),
+  };
+
+  for (const [name, handler] of Object.entries(buttonMap)) {
+    const btn = root.querySelector(`[data-tool="${name}"]`);
+    if (!btn) continue;
+    // Replace the node to drop any listeners attached on a previous render.
+    btn.replaceWith(btn.cloneNode(true));
+    const freshBtn = root.querySelector(`[data-tool="${name}"]`);
+    freshBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handler();
+    });
+  }
+});
+
 /**
  * renderChatLog — inject PTT button when speech is enabled.
  * html is HTMLElement in v13, jQuery object in v12 — injectPushToTalkButton handles both.

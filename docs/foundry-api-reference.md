@@ -221,7 +221,28 @@ Hooks.on("createChatMessage", (message, options, userId) => { });
 // Scene controls toolbar
 // IMPORTANT: in v13, `controls` is an Object keyed by group name, NOT an Array
 // Always handle both: Array.isArray(controls) ? controls : Object.values(controls)
+//
+// IMPORTANT: in v13, `button: true` tools registered here do NOT have their
+// `onChange` (or `onClick`) callback invoked when the button is clicked. The
+// onChange mechanism is broken for button tools. Use `getSceneControlButtons`
+// solely for tool registration (so the button appears in the toolbar) and
+// attach the actual click handler via the `renderSceneControls` hook below.
 Hooks.on("getSceneControlButtons", (controls) => { });
+
+// Scene controls rendered — attach click listeners to button tools here, since
+// `onChange` does not fire for `button: true` tools in v13. The `html` argument
+// is a plain HTMLElement (not jQuery). Buttons are queried via [data-tool="<name>"].
+//
+// Replace each button with a clone before adding the listener so re-renders do
+// not stack duplicate handlers.
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  const btn = root?.querySelector(`[data-tool="myTool"]`);
+  if (!btn) return;
+  btn.replaceWith(btn.cloneNode(true));
+  root.querySelector(`[data-tool="myTool"]`)
+      ?.addEventListener("click", (e) => { e.stopPropagation(); /* handler */ });
+});
 
 // Actor updated (any client)
 Hooks.on("updateActor", (actor, changes, options, userId) => { });
@@ -523,6 +544,7 @@ Confirmed changes that have already caused bugs in this codebase.
 | `getSceneControlButtons` hook | `controls` is an Array | `controls` is an Object keyed by group name | ✅ Fixed |
 | `getSceneControlButtons` tools | `onClick` handler | `onChange` handler | ✅ Fixed |
 | `getSceneControlButtons` format | Array push | Object (`controls.tokens.tools.name = {}`) | ✅ Fixed |
+| `getSceneControlButtons` `button: true` tools | `onClick` invoked on click | **Neither `onClick` nor `onChange` fires** — attach listener via `renderSceneControls` after render | ✅ Fixed |
 | jQuery in render hooks | `html` is jQuery object | `html` is plain HTMLElement | ✅ Fixed |
 | `Dialog.confirm()` | Valid | **Deprecated** — use `DialogV2.confirm()`. Works until v16 | ⚠️ Open |
 | `Application` class | Valid | **Deprecated** — use `ApplicationV2`. Works until v16 | ✅ Fixed in our code |
