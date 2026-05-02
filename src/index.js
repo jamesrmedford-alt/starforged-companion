@@ -580,10 +580,19 @@ Hooks.once("closeWorld", async () => {
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
+  console.log(`${MODULE_ID} | getSceneControlButtons fired, keys:`,
+    Object.keys(controls ?? {}));
+
   // v13: controls is an object keyed by group name
   // Access tokens group directly — do not use Object.values or find()
   const tokenControls = controls?.tokens ?? controls?.token;
-  if (!tokenControls) return;
+  console.log(`${MODULE_ID} | tokenControls:`, tokenControls?.name,
+    "tools:", Object.keys(tokenControls?.tools ?? {}));
+
+  if (!tokenControls) {
+    console.warn(`${MODULE_ID} | No token controls found — buttons not registered`);
+    return;
+  }
 
   // v13: tools is an object keyed by tool name
   // Do NOT reassign tokenControls.tools — add keys to whatever is there
