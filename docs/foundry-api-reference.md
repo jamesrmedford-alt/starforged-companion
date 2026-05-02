@@ -904,6 +904,23 @@ try {
 
 ---
 
+## Chat command prefixes
+
+Foundry v13 intercepts all `/`-prefixed messages against its known command list before
+`createChatMessage` fires. Any unrecognised `/command` matches the invalid pattern
+`/^(\/\S+)/` and is rejected with an error — the message is never created.
+
+**ALL module commands use `!` prefix: `!x`, `!recap`, `!journal`, `!sector`.**
+
+Native Foundry commands (`/roll`, `/ooc`, `/whisper`, etc.) still use `/`.
+
+The `chatMessage` hook fires before message creation and is used for `!x` (returns
+`false` to suppress the message). The `createChatMessage` hook is used for `!recap`.
+In `isPlayerNarration()`, messages starting with `!` are excluded so unrecognised
+module commands are not accidentally routed through the move pipeline.
+
+---
+
 ## Dynamic imports in browser ES modules
 
 **CRITICAL GOTCHA — confirmed by live testing (v0.1.23 debugging)**
