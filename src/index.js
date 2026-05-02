@@ -576,41 +576,39 @@ Hooks.once("closeWorld", async () => {
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
-/**
- * getSceneControlButtons — add toolbar buttons for the four UI panels.
- *
- * Confirmed v13 pattern from vendor/foundry-ironsworn/src/module/features/sceneButtons.ts:
- * controls is an Object keyed by group name; tools is an Object keyed by tool name.
- * Assign directly: controls.tokens.tools[name] = tool. No order field — not part of
- * the confirmed SceneControlTool shape in v13.
- */
 Hooks.on("getSceneControlButtons", (controls) => {
-  if (!controls.tokens) return;
+  // v13: controls is an object keyed by group name
+  // Access tokens group directly — do not use Object.values or find()
+  const tokenControls = controls?.tokens ?? controls?.token;
+  if (!tokenControls) return;
 
-  controls.tokens.tools ||= {};
+  // v13: tools is an object keyed by tool name
+  // Do NOT reassign tokenControls.tools — add keys to whatever is there
+  tokenControls.tools ??= {};
 
-  controls.tokens.tools.progressTracks = {
+  // v13: use onChange not onClick — confirmed from official API docs
+  tokenControls.tools.progressTracks = {
     name:     "progressTracks",
     title:    "Progress Tracks",
     icon:     "fas fa-tasks",
     button:   true,
     onChange: () => openProgressTracks(),
   };
-  controls.tokens.tools.entityPanel = {
+  tokenControls.tools.entityPanel = {
     name:     "entityPanel",
     title:    "Entities",
     icon:     "fas fa-users",
     button:   true,
     onChange: () => openEntityPanel(),
   };
-  controls.tokens.tools.chronicle = {
+  tokenControls.tools.chronicle = {
     name:     "chronicle",
     title:    "Character Chronicle",
     icon:     "fas fa-book-open",
     button:   true,
     onChange: () => openChroniclePanel(),
   };
-  controls.tokens.tools.sfSettings = {
+  tokenControls.tools.sfSettings = {
     name:     "sfSettings",
     title:    "Companion Settings",
     icon:     "fas fa-shield-alt",
