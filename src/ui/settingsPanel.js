@@ -407,7 +407,7 @@ async function syncSafetyToCampaignState() {
 
 function registerXCardHook() {
   Hooks.on('chatMessage', (chatLog, message, chatData) => {
-    if (message.trim().toLowerCase() !== '/x') return true;
+    if (message.trim().toLowerCase() !== '!x') return true;
 
     suppressScene();
 
@@ -614,7 +614,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           'Stored on this client. Never shared with GM or other players.',
         )}
         <div class="safety-xcard-note">
-          <strong>X-Card:</strong> Type <code>/x</code> in chat at any time to immediately suppress the current scene.
+          <strong>X-Card:</strong> Type <code>!x</code> in chat at any time to immediately suppress the current scene.
         </div>
       </div>
     `;
@@ -716,7 +716,7 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="recapGmOnly" ${ctx.recapGmOnly ? 'checked' : ''} ${dis}>
             GM-only recap commands
           </label>
-          <span class="narrator-field-hint">Restrict /recap commands to the GM to prevent API call spam in multiplayer.</span>
+          <span class="narrator-field-hint">Restrict !recap commands to the GM to prevent API call spam in multiplayer.</span>
         </div>
         ${ctx.isGM ? `
           <div class="narrator-actions">

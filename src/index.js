@@ -236,17 +236,17 @@ function registerChatHook() {
       return;
     }
 
-    // /recap command — intercept before move pipeline
+    // !recap command — intercept before move pipeline
     if (isRecapCommand(message)) {
       const text = message.content?.trim() ?? "";
       const campaignState = game.settings.get(MODULE_ID, "campaignState");
 
-      const sessionMatch = text.match(/^\/recap\s+session(?:\s+(\d+))?/i);
+      const sessionMatch = text.match(/^!recap\s+session(?:\s+(\d+))?/i);
       if (sessionMatch) {
-        // /recap session or /recap session N
+        // !recap session or !recap session N
         await postSessionRecap(campaignState, null);
       } else {
-        // /recap or /recap campaign
+        // !recap or !recap campaign
         await postCampaignRecap(campaignState);
       }
       return;
@@ -386,6 +386,9 @@ function isPlayerNarration(message) {
   if (text.startsWith("@")) return false;
   if (text.startsWith("/")) return false;
 
+  // Module commands (! prefix) are not player narration
+  if (text.startsWith("!")) return false;
+
   return true;
 }
 
@@ -409,7 +412,7 @@ export function isSceneQuery(message) {
  */
 export function isRecapCommand(message) {
   const text = message.content?.trim() ?? "";
-  if (!text.toLowerCase().startsWith("/recap")) return false;
+  if (!text.toLowerCase().startsWith("!recap")) return false;
   if (message.flags?.[MODULE_ID]?.recapCard) return false;
   if (getRecapGmOnly()) {
     const user = message.author ?? game.users?.get(message.user);

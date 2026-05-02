@@ -6,6 +6,22 @@ rejected.
 
 ---
 
+## Chat command prefix: `!` not `/`
+
+**Decision:** All module commands use `!` prefix (`!x`, `!recap`, `!journal`, `!sector`).
+
+**Reason:** Foundry v13 validates all `/`-prefixed chat messages against `MESSAGE_PATTERNS`
+before `createChatMessage` fires. Any unrecognised `/word` matches the invalid pattern
+`/^(\/\S+)/` and is rejected with an error — the message is never created and the
+module hook never sees it. Native Foundry commands (`/roll`, `/ooc`, `/whisper`, etc.)
+still use `/`; module commands must not conflict with this validation.
+
+**What changed:** `registerXCardHook()` checks for `!x`. `isRecapCommand()` checks for
+`!recap`. Regexes in `registerChatHook()` updated to `!recap`. `isPlayerNarration()`
+excludes messages starting with `!`. All user-facing help text updated.
+
+---
+
 ## Testing framework: Vitest (not Jest)
 
 **Decision:** Replace Jest with Vitest.
