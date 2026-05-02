@@ -364,6 +364,9 @@ function isPlayerNarration(message) {
   // Skip messages already processed by this module
   if (message.flags?.[MODULE_ID]?.moveResolution) return false;
   if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
+  if (message.flags?.[MODULE_ID]?.sceneResponse)  return false;
+  if (message.flags?.[MODULE_ID]?.recapCard)       return false;
+  if (message.flags?.[MODULE_ID]?.xcardCard)       return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
