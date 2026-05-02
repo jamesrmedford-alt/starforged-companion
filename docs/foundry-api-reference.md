@@ -521,6 +521,8 @@ Confirmed changes that have already caused bugs in this codebase.
 | `message.type = "other"` | Valid chat type | **Removed** — throws validation error. Use no type or `"base"` | ✅ Fixed |
 | `CONST.CHAT_MESSAGE_TYPES` | Enum with OOC, ROLL etc | **Restructured** — use string literals `"ooc"`, `"roll"`, `"whisper"` | ✅ Fixed |
 | `getSceneControlButtons` hook | `controls` is an Array | `controls` is an Object keyed by group name | ✅ Fixed |
+| `getSceneControlButtons` tools | `onClick` handler | `onChange` handler | ✅ Fixed |
+| `getSceneControlButtons` format | Array push | Object (`controls.tokens.tools.name = {}`) | ✅ Fixed |
 | jQuery in render hooks | `html` is jQuery object | `html` is plain HTMLElement | ✅ Fixed |
 | `Dialog.confirm()` | Valid | **Deprecated** — use `DialogV2.confirm()`. Works until v16 | ⚠️ Open |
 | `Application` class | Valid | **Deprecated** — use `ApplicationV2`. Works until v16 | ✅ Fixed in our code |

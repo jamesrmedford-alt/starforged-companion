@@ -576,60 +576,50 @@ Hooks.once("closeWorld", async () => {
 /**
  * getSceneControlButtons — add toolbar buttons for the three UI panels.
  *
- * Foundry v13 changed this hook: controls is now a plain Object keyed by
- * group name rather than an Array, and group.tools is an object keyed by
- * tool name rather than an Array. Both formats are handled here.
+ * v13: controls is an Object keyed by group name; tools is an Object keyed
+ * by tool name. Access controls.tokens directly and assign tools as properties.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
-  const controlsArray = Array.isArray(controls)
-    ? controls
-    : Object.values(controls);
+  // v13: controls is an object keyed by group name
+  const tokenControls = controls.tokens ?? controls.token;
+  if (!tokenControls) return;
 
-  const group = controlsArray.find(
-    c => c.name === "token" || c.name === "tokens"
-  );
-  if (!group) return;
+  tokenControls.tools ??= {};
+  const order = Object.keys(tokenControls.tools).length;
 
-  // v13: tools is an object keyed by name (initialise if absent)
-  // v12: tools is an array (use push)
-  function addTool(tool) {
-    if (Array.isArray(group.tools)) {
-      group.tools.push(tool);
-    } else {
-      group.tools ??= {};
-      group.tools[tool.name] = tool;
-    }
-  }
-
-  addTool({
-    name:    "progressTracks",
-    title:   "Progress Tracks",
-    icon:    "fas fa-tasks",
-    button:  true,
-    onClick: () => openProgressTracks(),
-  });
-  addTool({
-    name:    "entityPanel",
-    title:   "Entities",
-    icon:    "fas fa-users",
-    button:  true,
-    onClick: () => openEntityPanel(),
-  });
-  addTool({
-    name:    "chronicle",
-    title:   "Character Chronicle",
-    icon:    "fas fa-book-open",
-    button:  true,
-    onClick: () => openChroniclePanel(),
-  });
-  addTool({
-    name:    "sfSettings",
-    title:   "Companion Settings",
-    icon:    "fas fa-shield-alt",
-    button:  true,
-    visible: game.user.isGM,
-    onClick: () => openSettingsPanel(),
-  });
+  tokenControls.tools.progressTracks = {
+    name:     "progressTracks",
+    title:    "Progress Tracks",
+    icon:     "fas fa-tasks",
+    button:   true,
+    order:    order,
+    onChange: () => openProgressTracks(),
+  };
+  tokenControls.tools.entityPanel = {
+    name:     "entityPanel",
+    title:    "Entities",
+    icon:     "fas fa-users",
+    button:   true,
+    order:    order + 1,
+    onChange: () => openEntityPanel(),
+  };
+  tokenControls.tools.chronicle = {
+    name:     "chronicle",
+    title:    "Character Chronicle",
+    icon:     "fas fa-book-open",
+    button:   true,
+    order:    order + 2,
+    onChange: () => openChroniclePanel(),
+  };
+  tokenControls.tools.sfSettings = {
+    name:     "sfSettings",
+    title:    "Companion Settings",
+    icon:     "fas fa-shield-alt",
+    button:   true,
+    visible:  game.user.isGM,
+    order:    order + 3,
+    onChange: () => openSettingsPanel(),
+  };
 });
 
 /**
