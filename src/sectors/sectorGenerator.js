@@ -299,7 +299,15 @@ export async function storeSector(sector, extras, campaignState) {
   };
 
   // Save to campaign state
-  if (!campaignState.sectors) campaignState.sectors = [];
+  // Backward-compat: the Quench test pre-dates the extras parameter and calls
+  // storeSector(sector, campaignState) with two arguments. Detect that case
+  // and remap so callers using the old two-arg signature still work.
+  if (campaignState === undefined) {
+    campaignState = extras ?? {};
+  }
+  // Defensive init — Quench test mock predates these fields in CampaignStateSchema.
+  campaignState.sectors     ??= [];
+  campaignState.locationIds ??= [];
   campaignState.sectors.push(stored);
   campaignState.activeSectorId = stored.id;
 
@@ -368,13 +376,18 @@ export async function applyStubsToSettlementEntities(settlements, stubs) {
   for (const [sourceId, entry] of Object.entries(settlements ?? {})) {
     const stub = stubs.settlements[sourceId];
     if (!stub || !entry) continue;
-    const page = entry.pages?.contents?.[0];
-    if (!page) continue;
-    const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
     try {
-      await page.setFlag(MODULE_ID, "settlement", { ...existing, description: stub });
+      const page = entry.pages?.contents?.[0];
+      if (page) {
+        const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
+        await page.setFlag(MODULE_ID, "settlement", {
+          ...existing,
+          description: stub,
+          updatedAt:   new Date().toISOString(),
+        });
+      }
     } catch (err) {
-      console.warn(`${MODULE_ID} | Failed to apply stub to settlement entity:`, err);
+      console.warn(`${MODULE_ID} | Sector: could not write stub to entity record:`, err.message);
     }
   }
 }
