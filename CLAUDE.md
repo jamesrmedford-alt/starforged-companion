@@ -198,6 +198,53 @@ grep -A 50 "^## ApplicationV2" docs/foundry-api-reference.md
 If the required API is not covered in the local reference, note it in your
 findings report so the file can be updated before you implement.
 
+**Two-hook pattern for toolbar buttons — confirmed v13 requirement:**
+
+```js
+// Hook 1: getSceneControlButtons — register metadata ONLY
+// Controls.tokens.tools is populated AFTER this hook fires.
+// onChange is NEVER called for button:true tools in v13.
+// This hook makes buttons appear — nothing more.
+Hooks.on("getSceneControlButtons", (controls) => {
+  controls.tokens.tools ??= {};
+  controls.tokens.tools.myTool = {
+    name:    "myTool",
+    title:   "My Tool",
+    icon:    "fas fa-wrench",
+    button:  true,
+    onChange: () => {},  // required to exist but never called for button tools
+  };
+});
+
+// Hook 2: renderSceneControls — attach click handlers via DOM
+// Fires after controls are fully rendered with real buttons in the DOM.
+// Use replaceWith(cloneNode) to prevent duplicate listeners on re-renders.
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  const btn = root.querySelector('[data-tool="myTool"]');
+  if (!btn) return;
+
+  // Clone to remove any previously attached listeners
+  btn.replaceWith(btn.cloneNode(true));
+  const freshBtn = root.querySelector('[data-tool="myTool"]');
+  freshBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    myHandler();
+  });
+});
+```
+
+**Never** rely on `onChange` for `button: true` tools.
+**Never** use `onClick` — not a valid v13 SceneControlTool property.
+**Never** use `Array.isArray(controls)` — controls is always an Object in v13.
+**Never** use `.push()` on `tools` — tools is an Object, not an Array.
+
+**`Hooks._hooks` does not exist in v13:**
+Cannot introspect registered hooks via `Hooks._hooks` — undefined in v13.
+Use `CONFIG.debug.hooks = true` in the console to trace hook firing.
+
 **Specific things confirmed to have changed in v13 — always verify:**
 
 | API | v12 | v13 | Status in this codebase |

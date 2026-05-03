@@ -218,10 +218,11 @@ Hooks.once("ready", () => { /* access game.*, start processes */ });
 // message = ChatMessage instance (use message.author, not message.user)
 Hooks.on("createChatMessage", (message, options, userId) => { });
 
-// Scene controls toolbar
-// IMPORTANT: in v13, `controls` is an Object keyed by group name, NOT an Array
-// Always handle both: Array.isArray(controls) ? controls : Object.values(controls)
+// Scene controls toolbar — TWO hooks required (see SceneControls section below)
+// Hook 1: register metadata (button appears but onChange never fires for button tools)
 Hooks.on("getSceneControlButtons", (controls) => { });
+// Hook 2: attach click handlers via DOM after render
+Hooks.on("renderSceneControls", (app, html) => { });
 
 // Actor updated (any client)
 Hooks.on("updateActor", (actor, changes, options, userId) => { });
@@ -526,6 +527,10 @@ Confirmed changes that have already caused bugs in this codebase.
 | `Application` class | Valid | **Deprecated** — use `ApplicationV2`. Works until v16 | ✅ Fixed in our code |
 | `renderChatLog` hook | `html` is jQuery | `html` is HTMLElement | ✅ Fixed |
 | `Hooks.on("getSceneControlButtons")` | Array argument | Object argument | ✅ Fixed |
+| `SceneControlTool.onClick` | Valid | **Removed** — use `onChange` for registration, `renderSceneControls` for click handling | ✅ Fixed |
+| `button: true` tool `onChange` | Called on click | **Never called** — attach handlers via `renderSceneControls` DOM | ✅ Fixed |
+| `Hooks._hooks` | Object of registered hooks | **Undefined** — does not exist in v13 | ⚠️ Do not use |
+| `SceneControls.initialize()` | Valid | **Deprecated** — use `render({ controls, tool })` | Non-blocking |
 
 ### Things NOT changed (common misconceptions)
 
@@ -902,6 +907,104 @@ try {
 
 ---
 
+## SceneControls and toolbar buttons
+
+**Confirmed behaviour from live testing (v0.1.33–v0.1.34):**
+
+### Two-hook pattern — required for working toolbar buttons in v13
+
+`getSceneControlButtons` and `renderSceneControls` must be used together.
+Using only `getSceneControlButtons` produces buttons that appear but do nothing.
+
+```js
+// HOOK 1 — Register tool metadata (makes button appear in toolbar)
+// controls.tokens.tools is EMPTY when this hook fires — Foundry fills it after.
+// onChange is registered here but is NEVER called for button:true tools.
+Hooks.on("getSceneControlButtons", (controls) => {
+  // v13: controls is an Object keyed by group name
+  // Access tokens group directly — never use Object.values() or find()
+  controls.tokens.tools ??= {};
+  controls.tokens.tools.myTool = {
+    name:     "myTool",
+    title:    "My Tool Title",
+    icon:     "fas fa-wrench",
+    button:   true,
+    visible:  game.user.isGM,   // optional visibility
+    order:    Object.keys(controls.tokens.tools).length,
+    onChange: () => {},   // must exist but is never called for button tools
+  };
+});
+
+// HOOK 2 — Attach click handlers after render (makes button work)
+// html is HTMLElement in v13
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  // Use replaceWith(cloneNode) to prevent duplicate listeners on re-renders
+  const btn = root.querySelector('[data-tool="myTool"]');
+  if (!btn) return;
+  btn.replaceWith(btn.cloneNode(true));
+
+  const freshBtn = root.querySelector('[data-tool="myTool"]');
+  freshBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    myHandler();
+  });
+});
+```
+
+### Why onChange doesn't work for button tools
+
+Foundry's SceneControls ApplicationV2 calls `onChange` only for **toggle tools**
+(tools that track an active/inactive state). Button tools (`button: true`) are
+rendered with `data-action="tool"` but Foundry's action handler does not
+call `onChange` for them — confirmed by monkey-patching `onChange` and
+observing no call on click.
+
+### Confirmed tool HTML structure (v13)
+
+```html
+<!-- button: true tool — rendered by Foundry -->
+<button type="button"
+  class="control ui-control tool icon button fas fa-tasks"
+  data-action="tool"
+  data-tool="progressTracks"
+  aria-label="Progress Tracks"
+  aria-pressed="false">
+</button>
+
+<!-- toggle tool with onChange (e.g. unconstrainedMovement) -->
+<button type="button"
+  class="control ui-control tool icon toggle fa-solid fa-ghost"
+  data-action="tool"
+  data-tool="unconstrainedMovement"
+  aria-pressed="false">
+</button>
+```
+
+### `Hooks._hooks` is undefined in v13
+
+Cannot introspect registered hooks via `Hooks._hooks` — the property does
+not exist in v13. Use this instead for debugging:
+```js
+CONFIG.debug.hooks = true;  // logs every hook event to console
+```
+
+### `SceneControls.initialize()` is deprecated in v13
+
+```js
+// WRONG (deprecated, warning logged)
+canvas.controls.initialize();
+
+// CORRECT
+ui.controls.render(true);
+// or with options:
+ui.controls.render({ controls: "tokens", tool: "progressTracks" });
+```
+
+---
+
 ## Dynamic imports in browser ES modules
 
 **CRITICAL GOTCHA — confirmed by live testing (v0.1.23 debugging)**
@@ -955,10 +1058,7 @@ the `@foundryvtt/foundryvtt-cli` package) containing LevelDB files.
 **For this module**, the help compendium has been removed from `module.json` to
 avoid this error. Help content is delivered via:
 - The `docs/` folder (developer reference)
-- A programmatically-created JournalEntry on first GM world load via
-  `src/help/helpJournal.js` — idempotent, never recreates if the journal exists.
-  Content source: `packs/help.json` (kept in repo as source of truth, not declared
-  as a Foundry compendium).
+- A programmatically-created JournalEntry on first world load (planned)
 
 If a compendium is needed in future, use the Foundry CLI to create it:
 ```bash
