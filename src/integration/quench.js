@@ -353,7 +353,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
-          await narrateResolution(sampleResolution, campaignState);
+          await narrateResolution(sampleResolution, {}, campaignState);
 
           assert.isAbove(game.messages.size, before,
             "A narration card should have been posted to chat");
@@ -394,7 +394,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
-          await narrateResolution(sampleResolution, campaignState);
+          await narrateResolution(sampleResolution, {}, campaignState);
 
           // Restore key
           await game.settings.set("starforged-companion", "claudeApiKey", realKey);

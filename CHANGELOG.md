@@ -6,6 +6,7 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: Quench narrator integration tests now pass `campaignState` in the correct argument position so the `sessionId` flag on narrator chat cards is verified against a real session ID
 - Changed: Claude API Key and Art Generation API Key are no longer shown in the standard Configure Settings dialog. They are now configured in Companion Settings → About tab and are only visible to the GM.
 - Fixed: All module commands changed to `!` prefix (`!x`, `!recap`) — Foundry v13 rejects unrecognised `/command` patterns before `createChatMessage` fires
 - Fixed: Confirmation dialogs now use `DialogV2` instead of the deprecated `Dialog` (entityPanel, progressTracks)
