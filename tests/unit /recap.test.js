@@ -107,24 +107,24 @@ describe('isRecapCommand()', () => {
     };
   }
 
-  it('returns true for "/recap" from GM', () => {
-    expect(isRecapCommand(makeMessage('/recap'))).toBe(true);
+  it('returns true for "!recap" from GM', () => {
+    expect(isRecapCommand(makeMessage('!recap'))).toBe(true);
   });
 
-  it('returns true for "/recap campaign" from GM', () => {
-    expect(isRecapCommand(makeMessage('/recap campaign'))).toBe(true);
+  it('returns true for "!recap campaign" from GM', () => {
+    expect(isRecapCommand(makeMessage('!recap campaign'))).toBe(true);
   });
 
-  it('returns true for "/recap session" from GM', () => {
-    expect(isRecapCommand(makeMessage('/recap session'))).toBe(true);
+  it('returns true for "!recap session" from GM', () => {
+    expect(isRecapCommand(makeMessage('!recap session'))).toBe(true);
   });
 
-  it('returns true for "/recap session 3" from GM', () => {
-    expect(isRecapCommand(makeMessage('/recap session 3'))).toBe(true);
+  it('returns true for "!recap session 3" from GM', () => {
+    expect(isRecapCommand(makeMessage('!recap session 3'))).toBe(true);
   });
 
-  it('returns false for "/recap" from non-GM when recapGmOnly is true', () => {
-    expect(isRecapCommand(makeMessage('/recap', false))).toBe(false);
+  it('returns false for "!recap" from non-GM when recapGmOnly is true', () => {
+    expect(isRecapCommand(makeMessage('!recap', false))).toBe(false);
   });
 
   it('returns false for plain narration', () => {
@@ -132,7 +132,7 @@ describe('isRecapCommand()', () => {
   });
 
   it('returns false for already-flagged recap cards', () => {
-    const msg = { content: '/recap', flags: { [MODULE_ID]: { recapCard: true } }, author: { isGM: true } };
+    const msg = { content: '!recap', flags: { [MODULE_ID]: { recapCard: true } }, author: { isGM: true } };
     expect(isRecapCommand(msg)).toBe(false);
   });
 });

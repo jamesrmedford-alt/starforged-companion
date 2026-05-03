@@ -236,17 +236,17 @@ function registerChatHook() {
       return;
     }
 
-    // /recap command — intercept before move pipeline
+    // !recap command — intercept before move pipeline
     if (isRecapCommand(message)) {
       const text = message.content?.trim() ?? "";
       const campaignState = game.settings.get(MODULE_ID, "campaignState");
 
-      const sessionMatch = text.match(/^\/recap\s+session(?:\s+(\d+))?/i);
+      const sessionMatch = text.match(/^!recap\s+session(?:\s+(\d+))?/i);
       if (sessionMatch) {
-        // /recap session or /recap session N
+        // !recap session or !recap session N
         await postSessionRecap(campaignState, null);
       } else {
-        // /recap or /recap campaign
+        // !recap or !recap campaign
         await postCampaignRecap(campaignState);
       }
       return;
@@ -364,6 +364,9 @@ function isPlayerNarration(message) {
   // Skip messages already processed by this module
   if (message.flags?.[MODULE_ID]?.moveResolution) return false;
   if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
+  if (message.flags?.[MODULE_ID]?.sceneResponse)  return false;
+  if (message.flags?.[MODULE_ID]?.recapCard)       return false;
+  if (message.flags?.[MODULE_ID]?.xcardCard)       return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
@@ -385,6 +388,9 @@ function isPlayerNarration(message) {
   // @ and / commands are not player narration
   if (text.startsWith("@")) return false;
   if (text.startsWith("/")) return false;
+
+  // Module commands (! prefix) are not player narration
+  if (text.startsWith("!")) return false;
 
   return true;
 }
@@ -409,7 +415,7 @@ export function isSceneQuery(message) {
  */
 export function isRecapCommand(message) {
   const text = message.content?.trim() ?? "";
-  if (!text.toLowerCase().startsWith("/recap")) return false;
+  if (!text.toLowerCase().startsWith("!recap")) return false;
   if (message.flags?.[MODULE_ID]?.recapCard) return false;
   if (getRecapGmOnly()) {
     const user = message.author ?? game.users?.get(message.user);
@@ -573,63 +579,82 @@ Hooks.once("closeWorld", async () => {
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
-/**
- * getSceneControlButtons — add toolbar buttons for the three UI panels.
- *
- * Foundry v13 changed this hook: controls is now a plain Object keyed by
- * group name rather than an Array, and group.tools is an object keyed by
- * tool name rather than an Array. Both formats are handled here.
- */
 Hooks.on("getSceneControlButtons", (controls) => {
-  const controlsArray = Array.isArray(controls)
-    ? controls
-    : Object.values(controls);
+  console.log(`${MODULE_ID} | getSceneControlButtons fired, keys:`,
+    Object.keys(controls ?? {}));
 
-  const group = controlsArray.find(
-    c => c.name === "token" || c.name === "tokens"
-  );
-  if (!group) return;
+  // v13: controls is an object keyed by group name
+  // Access tokens group directly — do not use Object.values or find()
+  const tokenControls = controls?.tokens ?? controls?.token;
+  console.log(`${MODULE_ID} | tokenControls:`, tokenControls?.name,
+    "tools:", Object.keys(tokenControls?.tools ?? {}));
 
-  // v13: tools is an object keyed by name (initialise if absent)
-  // v12: tools is an array (use push)
-  function addTool(tool) {
-    if (Array.isArray(group.tools)) {
-      group.tools.push(tool);
-    } else {
-      group.tools ??= {};
-      group.tools[tool.name] = tool;
-    }
+  if (!tokenControls) {
+    console.warn(`${MODULE_ID} | No token controls found — buttons not registered`);
+    return;
   }
 
-  addTool({
-    name:    "progressTracks",
-    title:   "Progress Tracks",
-    icon:    "fas fa-tasks",
-    button:  true,
-    onClick: () => openProgressTracks(),
-  });
-  addTool({
-    name:    "entityPanel",
-    title:   "Entities",
-    icon:    "fas fa-users",
-    button:  true,
-    onClick: () => openEntityPanel(),
-  });
-  addTool({
-    name:    "chronicle",
-    title:   "Character Chronicle",
-    icon:    "fas fa-book-open",
-    button:  true,
-    onClick: () => openChroniclePanel(),
-  });
-  addTool({
-    name:    "sfSettings",
-    title:   "Companion Settings",
-    icon:    "fas fa-shield-alt",
-    button:  true,
-    visible: game.user.isGM,
-    onClick: () => openSettingsPanel(),
-  });
+  // v13: tools is an object keyed by tool name
+  // Do NOT reassign tokenControls.tools — add keys to whatever is there
+  tokenControls.tools ??= {};
+
+  // v13: use onChange not onClick — confirmed from official API docs
+  tokenControls.tools.progressTracks = {
+    name:     "progressTracks",
+    title:    "Progress Tracks",
+    icon:     "fas fa-tasks",
+    button:   true,
+    onChange: () => openProgressTracks(),
+  };
+  tokenControls.tools.entityPanel = {
+    name:     "entityPanel",
+    title:    "Entities",
+    icon:     "fas fa-users",
+    button:   true,
+    onChange: () => openEntityPanel(),
+  };
+  tokenControls.tools.chronicle = {
+    name:     "chronicle",
+    title:    "Character Chronicle",
+    icon:     "fas fa-book-open",
+    button:   true,
+    onChange: () => openChroniclePanel(),
+  };
+  tokenControls.tools.sfSettings = {
+    name:     "sfSettings",
+    title:    "Companion Settings",
+    icon:     "fas fa-shield-alt",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => openSettingsPanel(),
+  };
+});
+
+// Foundry v13 does not invoke onChange for `button: true` tools registered via
+// getSceneControlButtons. Attach click listeners directly after the toolbar
+// renders so the buttons actually do something.
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  const buttonMap = {
+    progressTracks: () => openProgressTracks(),
+    entityPanel:    () => openEntityPanel(),
+    chronicle:      () => openChroniclePanel(),
+    sfSettings:     () => openSettingsPanel(),
+  };
+
+  for (const [name, handler] of Object.entries(buttonMap)) {
+    const btn = root.querySelector(`[data-tool="${name}"]`);
+    if (!btn) continue;
+    // Replace the node to drop any listeners attached on a previous render.
+    btn.replaceWith(btn.cloneNode(true));
+    const freshBtn = root.querySelector(`[data-tool="${name}"]`);
+    freshBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handler();
+    });
+  }
 });
 
 /**
