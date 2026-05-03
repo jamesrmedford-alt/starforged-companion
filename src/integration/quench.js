@@ -338,12 +338,14 @@ function registerNarratorTests(quench) {
         challengeDice: [3, 8],
         outcome:       "weak_hit",
         outcomeLabel:  "Weak Hit",
+        narration:     "I scan the anomaly with my sensors, trying to make sense of the gravitational distortion.",
         consequences:  { momentumChange: -1, otherEffect: "Success with a cost." },
-        loremasterContext: "[MOVE: Face Danger +wits] [OUTCOME: Weak Hit]",
+        loremasterContext: "[MOVE: Face Danger +wits] [OUTCOME: Weak Hit] [CONSEQUENCE: Success with a cost. Take -1 momentum.]",
       };
 
       describe("narrateResolution — live API call", function () {
         it("posts a narrator card to chat", async function () {
+          this.timeout(30000);
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
@@ -351,7 +353,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
-          await narrateResolution(sampleResolution, campaignState);
+          await narrateResolution(sampleResolution, {}, campaignState);
 
           assert.isAbove(game.messages.size, before,
             "A narration card should have been posted to chat");
@@ -361,9 +363,12 @@ function registerNarratorTests(quench) {
             !!last.flags?.["starforged-companion"]?.narratorCard,
             "Narrator card should have narratorCard flag"
           );
+          // Accept both real narration and fallback cards — the test
+          // validates the pipeline, not the Claude output quality.
         });
 
         it("narrator card has sessionId flag", async function () {
+          this.timeout(30000);
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
@@ -379,6 +384,7 @@ function registerNarratorTests(quench) {
 
       describe("narrateResolution — fallback on missing key", function () {
         it("posts a fallback card when no API key is configured", async function () {
+          this.timeout(30000);
           if (!game.user.isGM) { this.skip(); return; }
           // Temporarily clear the API key
           const realKey = game.settings.get("starforged-companion", "claudeApiKey");
@@ -388,7 +394,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const before = game.messages.size;
 
-          await narrateResolution(sampleResolution, campaignState);
+          await narrateResolution(sampleResolution, {}, campaignState);
 
           // Restore key
           await game.settings.set("starforged-companion", "claudeApiKey", realKey);
@@ -398,7 +404,7 @@ function registerNarratorTests(quench) {
         });
       });
     },
-    { displayName: "STARFORGED: Narrator" }
+    { displayName: "STARFORGED: Narrator", timeout: 30000 }
   );
 }
 

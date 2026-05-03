@@ -7,8 +7,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { initSessionId } from '../../src/index.js';
+import { initSessionId, isNewSessionStart } from '../../src/index.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+
+const MODULE_ID = 'starforged-companion';
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +100,51 @@ describe('initSessionId()', () => {
     const state  = makeState();
     const result = initSessionId(state);
     expect(result).toBe(state);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// isNewSessionStart()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('isNewSessionStart()', () => {
+  beforeEach(() => {
+    game.settings._store.delete(`${MODULE_ID}.sessionGapHours`);
+  });
+
+  it('returns false when lastSessionTimestamp is null', () => {
+    const state = makeState({ lastSessionTimestamp: null });
+    expect(isNewSessionStart(state)).toBe(false);
+  });
+
+  it('returns false when gap is less than sessionGapHours', () => {
+    const state = makeState({ lastSessionTimestamp: hoursAgo(2) });
+    expect(isNewSessionStart(state, 4)).toBe(false);
+  });
+
+  it('returns true when gap exceeds sessionGapHours', () => {
+    const state = makeState({ lastSessionTimestamp: hoursAgo(6) });
+    expect(isNewSessionStart(state, 4)).toBe(true);
+  });
+
+  it('uses sessionGapHours from settings when no override is passed', () => {
+    game.settings._store.set(`${MODULE_ID}.sessionGapHours`, 10);
+    // Gap of 8 hours; threshold 10 → should be false
+    const state = makeState({ lastSessionTimestamp: hoursAgo(8) });
+    expect(isNewSessionStart(state)).toBe(false);
+    // Gap of 12 hours; threshold 10 → should be true
+    const state2 = makeState({ lastSessionTimestamp: hoursAgo(12) });
+    expect(isNewSessionStart(state2)).toBe(true);
+  });
+
+  it('defaults to 4 hours when sessionGapHours not set', () => {
+    // Gap of 5 hours, default threshold 4 → true
+    const state = makeState({ lastSessionTimestamp: hoursAgo(5) });
+    expect(isNewSessionStart(state)).toBe(true);
+    // Gap of 3 hours, default threshold 4 → false
+    const state2 = makeState({ lastSessionTimestamp: hoursAgo(3) });
+    expect(isNewSessionStart(state2)).toBe(false);
   });
 });
 

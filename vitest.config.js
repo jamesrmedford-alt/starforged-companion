@@ -31,6 +31,8 @@ export default defineConfig({
         'src/moves/resolver.js',
         'src/truths/**',
         'src/schemas.js',
+        'src/narration/narratorPrompt.js',
+        'src/character/chronicle.js',
       ],
       exclude: [
         // Foundry entry point — hooks, settings registration, UI wiring

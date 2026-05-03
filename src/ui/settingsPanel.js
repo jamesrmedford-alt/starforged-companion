@@ -463,6 +463,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       removePrivateLine:      SettingsPanelApp.#onRemovePrivateLine,
       setDial:                SettingsPanelApp.#onSetDial,
       saveNarratorSettings:   SettingsPanelApp.#onSaveNarratorSettings,
+      saveApiKeys:            SettingsPanelApp.#onSaveApiKeys,
     },
   };
 
@@ -508,6 +509,10 @@ export class SettingsPanelApp extends ApplicationV2 {
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
+      apiKeys: game.user.isGM ? {
+        claudeKeySet: !!game.settings.get(MODULE_ID, 'claudeApiKey'),
+        artKeySet:    !!game.settings.get(MODULE_ID, 'artApiKey'),
+      } : null,
     };
   }
 
@@ -768,6 +773,47 @@ export class SettingsPanelApp extends ApplicationV2 {
             <dd>v12 minimum · v13 verified</dd>
           </div>
         </dl>
+        ${ctx.isGM ? `
+          <div class="about-api-keys">
+            <h3 class="about-section-title">API Keys</h3>
+            <p class="about-api-note">
+              These keys are stored in your browser only and are never sent to
+              Foundry's server or visible to other players.
+            </p>
+            <div class="api-key-field">
+              <label class="api-key-label" for="sf-claude-key">
+                Claude API Key
+                ${ctx.apiKeys.claudeKeySet
+                  ? '<span class="api-key-status api-key-set">● Set</span>'
+                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+              </label>
+              <input class="settings-input api-key-input" type="password"
+                     id="sf-claude-key" name="claudeApiKey"
+                     placeholder="sk-ant-..."
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <div class="api-key-field">
+              <label class="api-key-label" for="sf-art-key">
+                Art Generation API Key (OpenAI)
+                ${ctx.apiKeys.artKeySet
+                  ? '<span class="api-key-status api-key-set">● Set</span>'
+                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+              </label>
+              <input class="settings-input api-key-input" type="password"
+                     id="sf-art-key" name="artApiKey"
+                     placeholder="sk-..."
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <div class="api-key-actions">
+              <button class="settings-btn btn-save-keys" data-action="saveApiKeys">
+                Save Keys
+              </button>
+              <span class="api-key-save-note">
+                Leave a field blank to keep the existing value.
+              </span>
+            </div>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -875,6 +921,27 @@ export class SettingsPanelApp extends ApplicationV2 {
     ]);
 
     ui.notifications?.info('Starforged Companion: Narrator settings saved.');
+    this.render();
+  }
+
+  static async #onSaveApiKeys(event, target) {
+    if (!game.user.isGM) return;
+
+    const panel      = this.element;
+    const claudeKey  = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
+    const artKey     = panel.querySelector('[name="artApiKey"]')?.value?.trim();
+
+    if (claudeKey) {
+      await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
+    }
+    if (artKey) {
+      await game.settings.set(MODULE_ID, 'artApiKey', artKey);
+    }
+
+    if (claudeKey || artKey) {
+      ui.notifications.info('Starforged Companion: API keys saved.');
+    }
+
     this.render();
   }
 }
