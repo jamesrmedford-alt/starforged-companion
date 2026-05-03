@@ -31,8 +31,15 @@ export default [
         foundry:      "readonly",
         ChatMessage:  "readonly",
         JournalEntry: "readonly",
+        Scene:        "readonly",
+        FilePicker:   "readonly",
         Dialog:       "readonly",
         $:            "readonly",
+
+        // ── Browser globals used in Foundry renderer context ─────────────
+        atob: "readonly",
+        Blob: "readonly",
+        File: "readonly",
 
         // ── The Forge globals ────────────────────────────────────────────
         ForgeVTT:  "readonly",

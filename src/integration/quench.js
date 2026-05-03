@@ -26,6 +26,7 @@ Hooks.on("quenchReady", (quench) => {
   registerAssemblerTests(quench);
   registerNarratorTests(quench);
   registerPipelineTests(quench);
+  registerSectorCreatorTests(quench);
 });
 
 
@@ -467,5 +468,208 @@ function registerPipelineTests(quench) {
       });
     },
     { displayName: "STARFORGED: Full Pipeline" }
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR CREATOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSectorCreatorTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorCreator",
+    (context) => {
+      const { describe, it, assert, after } = context;
+
+      describe("storeSector — live journal", function () {
+        let createdSectorId = null;
+
+        after(async function () {
+          // Clean up: remove sector from campaignState
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (createdSectorId) {
+            state.sectors = (state.sectors ?? []).filter(s => s.id !== createdSectorId);
+            if (state.activeSectorId === createdSectorId) state.activeSectorId = null;
+            await game.settings.set("starforged-companion", "campaignState", state);
+          }
+        });
+
+        it("creates a 'Starforged Sectors' journal if none exists", async function () {
+          const { generateSector, storeSector } = await import(
+            `${MODULE_PATH}/sectors/sectorGenerator.js`
+          );
+          const state  = game.settings.get("starforged-companion", "campaignState");
+          const sector = generateSector("expanse");
+          createdSectorId = sector.id;
+          await storeSector(sector, state);
+          const journal = game.journal.getName("Starforged Sectors");
+          assert.isNotNull(journal, "Starforged Sectors journal should exist");
+        });
+
+        it("stores sector data in journal flags", async function () {
+          const journal = game.journal.getName("Starforged Sectors");
+          if (!journal || !createdSectorId) { this.skip(); return; }
+          const stored = journal.getFlag("starforged-companion", createdSectorId);
+          assert.isObject(stored,        "sector flag should be an object");
+          assert.isString(stored.name,   "sector should have a name");
+          assert.isString(stored.trouble,"sector should have a trouble string");
+        });
+
+        it("sets activeSectorId in campaignState", async function () {
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!createdSectorId) { this.skip(); return; }
+          assert.equal(state.activeSectorId, createdSectorId,
+            "activeSectorId should match the created sector");
+        });
+
+        it("creates settlement entity journals", async function () {
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!createdSectorId) { this.skip(); return; }
+          const sector = (state.sectors ?? []).find(s => s.id === createdSectorId);
+          assert.isArray(sector?.settlementIds, "settlementIds should be an array");
+          assert.isAbove(sector.settlementIds.length, 0, "should have at least one settlement");
+        });
+
+        it("creates connection entity journal", async function () {
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!createdSectorId) { this.skip(); return; }
+          const sector = (state.sectors ?? []).find(s => s.id === createdSectorId);
+          assert.isString(sector?.connectionId, "connectionId should be a string");
+          assert.isNotEmpty(sector.connectionId, "connectionId should not be empty");
+        });
+      });
+
+      describe("assembler includes sector context", function () {
+        it("assembled packet contains 'ACTIVE SECTOR' when a sector is active", async function () {
+          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!state.activeSectorId) { this.skip(); return; }
+
+          const packet = await assembleContextPacket(null, state);
+          assert.include(packet.assembled, "ACTIVE SECTOR",
+            "assembled packet should contain ACTIVE SECTOR section");
+        });
+
+        it("assembled packet omits sector section when no active sector", async function () {
+          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
+          const state = game.settings.get("starforged-companion", "campaignState");
+          const savedId = state.activeSectorId;
+          state.activeSectorId = null;
+
+          const packet = await assembleContextPacket(null, state);
+          assert.notInclude(packet.assembled, "ACTIVE SECTOR",
+            "assembled packet should not contain ACTIVE SECTOR when no sector is active");
+
+          state.activeSectorId = savedId;
+        });
+      });
+
+      describe("createSectorScene", function () {
+        let testScene = null;
+
+        after(async function () {
+          if (testScene) {
+            await testScene.delete().catch(() => {});
+            testScene = null;
+          }
+        });
+
+        it("creates a Foundry Scene with the sector name", async function () {
+          const { generateSector } = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
+          const { createSectorScene } = await import(`${MODULE_PATH}/sectors/sceneBuilder.js`);
+          const sector = generateSector("expanse");
+          testScene = await createSectorScene(sector, null, {});
+          assert.isObject(testScene,               "scene should be an object");
+          assert.equal(testScene.name, sector.name, "scene name should match sector name");
+        });
+
+        it("scene has the correct number of notes — one per settlement", async function () {
+          if (!testScene) { this.skip(); return; }
+          const notes = testScene.notes?.size ?? testScene.notes?.contents?.length ?? 0;
+          // expanse has 2 settlements → 2 notes
+          assert.equal(notes, 2, "should have one note per settlement");
+        });
+
+        it("scene has the correct number of drawings — one per passage", async function () {
+          if (!testScene) { this.skip(); return; }
+          const drawings = testScene.drawings?.size ?? testScene.drawings?.contents?.length ?? 0;
+          // expanse has 1 passage → 1 drawing
+          assert.equal(drawings, 1, "should have one drawing per passage");
+        });
+
+        it("scene is NOT activated after creation", async function () {
+          if (!testScene) { this.skip(); return; }
+          // The currently active scene should NOT be our freshly-created sector scene
+          const activeScene = game.scenes?.active;
+          if (!activeScene) { this.skip(); return; }
+          assert.notEqual(activeScene.id, testScene.id,
+            "sector scene should not be auto-activated");
+        });
+      });
+
+      describe("createSectorJournal", function () {
+        let testJournal = null;
+
+        after(async function () {
+          if (testJournal) {
+            await testJournal.delete().catch(() => {});
+            testJournal = null;
+          }
+        });
+
+        it("creates a JournalEntry with the sector record name", async function () {
+          const { generateSector, createSectorJournal } = await import(
+            `${MODULE_PATH}/sectors/sectorGenerator.js`
+          );
+          const sector = generateSector("terminus");
+          testJournal  = await createSectorJournal(sector, {
+            sector:      "Test sector stub.",
+            settlements: {},
+          });
+          assert.isObject(testJournal,                      "journal should be an object");
+          assert.include(testJournal.name, sector.name,      "journal name should include sector name");
+        });
+
+        it("journal has pages for sector overview and each settlement", async function () {
+          if (!testJournal) { this.skip(); return; }
+          // Confirm page count > 1 (overview + at least one settlement page)
+          const pages = testJournal.pages?.size ?? testJournal.pages?.contents?.length ?? 0;
+          assert.isAbove(pages, 1, "journal should have more than one page");
+        });
+
+        it("narrator stub text appears in the sector overview page", async function () {
+          if (!testJournal) { this.skip(); return; }
+          const overviewPage = testJournal.pages?.contents?.[0];
+          if (!overviewPage) { this.skip(); return; }
+          assert.include(overviewPage.text?.content ?? "", "Test sector stub.",
+            "sector overview page should contain the stub text");
+        });
+      });
+
+      describe("generateNarratorStubs (requires Claude API key)", function () {
+        it("returns a sector stub string when API key is configured", async function () {
+          const apiKey = (() => {
+            try { return game.settings.get("starforged-companion", "claudeApiKey"); }
+            catch { return null; }
+          })();
+          if (!apiKey) { this.skip(); return; }
+
+          const { generateSector, generateNarratorStubs } = await import(
+            `${MODULE_PATH}/sectors/sectorGenerator.js`
+          );
+          const sector = generateSector("expanse");
+          const stubs  = await generateNarratorStubs(sector, { perspective: "second" });
+
+          assert.isString(stubs.sector,              "sector stub should be a string");
+          assert.isNotEmpty(stubs.sector,             "sector stub should not be empty");
+          assert.isObject(stubs.settlements,          "settlements stubs should be an object");
+          for (const s of sector.settlements) {
+            assert.isString(stubs.settlements[s.id],  `stub for ${s.name} should be a string`);
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Creator" }
   );
 }
