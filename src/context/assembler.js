@@ -87,6 +87,9 @@ export async function assembleContextPacket(resolution, campaignState, options =
   const { content: tracksContent, trackIds } =
     await buildProgressTracksSection();
 
+  // ── 4a. Active sector ─────────────────────────────────────────────────────
+  const { content: sectorContent } = buildSectorSection(campaignState);
+
   // ── 5. Recent oracle results ──────────────────────────────────────────────
   const { content: oraclesContent, oracleIds } =
     buildOraclesSection(campaignState);
@@ -105,6 +108,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
       connections:    { content: connectionsContent,    priority: 1 },
       characterState: { content: characterContent,      priority: 1 },
       progressTracks: { content: tracksContent,         priority: 1 },
+      activeSector:   { content: sectorContent,         priority: 2 },
       recentOracles:  { content: oraclesContent,        priority: 3 },
       sessionNotes:   { content: sessionNotesContent,   priority: 4 },
     },
@@ -117,6 +121,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     budgetResult.included.connections    ?? "",
     budgetResult.included.characterState ?? "",
     budgetResult.included.progressTracks ?? "",
+    budgetResult.included.activeSector   ?? "",
     budgetResult.included.recentOracles  ?? "",
     budgetResult.included.sessionNotes   ?? "",
     moveOutcomeContent,
@@ -155,6 +160,10 @@ export async function assembleContextPacket(resolution, campaignState, options =
         content:        tracksContent,
         tokenEstimate:  estimateTokens(tracksContent),
         trackIds,
+      },
+      activeSector: {
+        content:       sectorContent,
+        tokenEstimate: estimateTokens(sectorContent),
       },
       recentOracles: {
         content:        oraclesContent,
@@ -323,6 +332,29 @@ async function buildProgressTracksSection() {
   } catch {
     return { content: "", trackIds: [] };
   }
+}
+
+/**
+ * Active sector section.
+ * Injected between progress tracks and recent oracles. ~50 tokens.
+ * Dropped before connections if budget is tight (priority: 2).
+ */
+function buildSectorSection(campaignState) {
+  const id     = campaignState.activeSectorId;
+  const sector = id && (campaignState.sectors ?? []).find(s => s.id === id);
+  if (!sector) return { content: "" };
+
+  const regionLabel = sector.regionLabel ?? sector.region ?? "Unknown";
+  const settlements = (sector.mapData?.settlements ?? []).map(s => s.name).join(", ");
+  const passages    = sector.mapData?.passages?.length ?? 0;
+
+  let content = `## ACTIVE SECTOR\n\nName: ${sector.name}  Region: ${regionLabel}\n`;
+  content    += `Trouble: ${sector.trouble}\n`;
+  if (sector.faction) content += `Control: ${sector.faction}\n`;
+  if (settlements)    content += `Settlements: ${settlements}\n`;
+  content    += `Passages: ${passages} charted route${passages !== 1 ? "s" : ""}`;
+
+  return { content };
 }
 
 /**

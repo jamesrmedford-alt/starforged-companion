@@ -155,6 +155,7 @@ export const ORACLE_TABLES = {
   story_clue:         { name: "Story Clue",         table: MISC.STORY_CLUE,         category: "misc" },
   anomaly_effect:     { name: "Anomaly Effect",     table: MISC.ANOMALY_EFFECT,     category: "misc" },
   combat_action:      { name: "Combat Action",      table: MISC.COMBAT_ACTION,      category: "misc" },
+  sector_trouble:     { name: "Sector Trouble",     table: MISC.SECTOR_TROUBLE,     category: "sectors" },
 };
 
 

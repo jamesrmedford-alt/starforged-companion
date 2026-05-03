@@ -39,6 +39,7 @@ import {
 import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
+import { openSectorCreator } from "./sectors/sectorPanel.js";
 
 import {
   openProgressTracks,
@@ -236,6 +237,12 @@ function registerChatHook() {
       return;
     }
 
+    // !sector command — intercept before move pipeline
+    if (isSectorCommand(message)) {
+      await handleSectorCommand(message);
+      return;
+    }
+
     // !recap command — intercept before move pipeline
     if (isRecapCommand(message)) {
       const text = message.content?.trim() ?? "";
@@ -422,6 +429,72 @@ export function isRecapCommand(message) {
     return user?.isGM ?? false;
   }
   return true;
+}
+
+/**
+ * Determine whether a chat message is a !sector command.
+ */
+export function isSectorCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return text.toLowerCase().startsWith("!sector");
+}
+
+/**
+ * Handle !sector chat commands.
+ *   !sector new        — open the sector creator (GM only)
+ *   !sector list       — list all created sectors
+ *   !sector {name}     — switch active sector
+ */
+async function handleSectorCommand(message) {
+  const text  = message.content?.trim() ?? "";
+  const parts = text.slice("!sector".length).trim().split(/\s+/);
+  const sub   = parts[0]?.toLowerCase() ?? "";
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  if (sub === "new") {
+    if (!game.user.isGM) {
+      ui.notifications.warn("!sector new is available to GMs only.");
+      return;
+    }
+    openSectorCreator();
+    return;
+  }
+
+  if (sub === "list") {
+    const sectors = campaignState.sectors ?? [];
+    if (!sectors.length) {
+      await ChatMessage.create({ content: "<p>No sectors created yet. Type <code>!sector new</code> to create one.</p>" });
+      return;
+    }
+    const lines = sectors.map(s =>
+      `<li>${s.name} (${s.regionLabel})${campaignState.activeSectorId === s.id ? " <em>[active]</em>" : ""}</li>`
+    ).join("");
+    await ChatMessage.create({
+      content: `<p><strong>Sectors:</strong></p><ul>${lines}</ul>`,
+      flags: { [MODULE_ID]: { sectorList: true } },
+    });
+    return;
+  }
+
+  // !sector {name} — switch active sector
+  if (sub && game.user.isGM) {
+    const name   = parts.join(" ");
+    const match  = (campaignState.sectors ?? []).find(
+      s => s.name.toLowerCase() === name.toLowerCase()
+    );
+    if (!match) {
+      ui.notifications.warn(`Sector "${name}" not found. Use !sector list to see all sectors.`);
+      return;
+    }
+    campaignState.activeSectorId = match.id;
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await ChatMessage.create({
+      content: `<p>Active sector switched to <strong>${match.name}</strong>.</p>`,
+      flags: { [MODULE_ID]: { sectorSwitch: true } },
+    });
+    return;
+  }
 }
 
 /**
@@ -628,6 +701,14 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => openSettingsPanel(),
   };
+  tokenControls.tools.sectorCreator = {
+    name:     "sectorCreator",
+    title:    "Sector Creator",
+    icon:     "fas fa-map",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -642,6 +723,7 @@ Hooks.on("renderSceneControls", (app, html) => {
     entityPanel:    () => openEntityPanel(),
     chronicle:      () => openChroniclePanel(),
     sfSettings:     () => openSettingsPanel(),
+    sectorCreator:  () => openSectorCreator(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {

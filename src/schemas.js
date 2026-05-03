@@ -604,9 +604,14 @@ export const CampaignStateSchema = {
     privateLines: [],
   },
 
+  // Sector records — created by the Sector Creator
+  sectors:       [],            // Array of StoredSector objects
+  activeSectorId: null,         // The sector the party is currently in
+
   // Active entity ID collections
   characterIds:     [],
   connectionIds:    [],
+  settlementIds:    [],
   progressTrackIds: [],
   clockIds:         [],
   oracleResultIds:  [],         // Recent results for context injection
