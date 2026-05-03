@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Starforged Companion — Module Architecture</title>
+<style>
+:root {
+  --bg:        #f7f6f2;
+  --surface:   #ffffff;
+  --surface2:  #f0ede6;
+  --border:    rgba(0,0,0,0.10);
+  --border2:   rgba(0,0,0,0.18);
+  --text:      #1c1b18;
+  --text2:     #56544e;
+  --text3:     #8a8880;
+  --mono:      'Courier New', monospace;
+  --sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --radius:    8px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:       #181816;
+    --surface:  #222220;
+    --surface2: #2c2c2a;
+    --border:   rgba(255,255,255,0.10);
+    --border2:  rgba(255,255,255,0.18);
+    --text:     #e8e6df;
+    --text2:    #a8a69e;
+    --text3:    #6a6860;
+  }
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  padding:0 0 48px;
+}
+
+header{
+  border-bottom:1px solid var(--border);
+  padding:20px 32px 16px;
+  display:flex;
+  align-items:baseline;
+  gap:16px;
+  background:var(--surface);
+}
+.header-title{
+  font-size:15px;
+  font-weight:600;
+  letter-spacing:-.01em;
+  color:var(--text);
+}
+.header-sub{
+  font-size:12px;
+  color:var(--text3);
+}
+.header-badge{
+  margin-left:auto;
+  font-size:10px;
+  font-family:var(--mono);
+  color:var(--text3);
+  letter-spacing:.04em;
+  padding:3px 8px;
+  border:1px solid var(--border2);
+  border-radius:4px;
+}
+
+main{
+  max-width:760px;
+  margin:0 auto;
+  padding:28px 24px 0;
+}
+
+.intro{
+  font-size:13px;
+  color:var(--text2);
+  line-height:1.7;
+  margin-bottom:24px;
+  padding-bottom:20px;
+  border-bottom:1px solid var(--border);
+}
+
+/* ── diagram ─────────────────────────────── */
+.row{
+  display:flex;
+  align-items:stretch;
+  margin-bottom:4px;
+  min-height:42px;
+}
+.row-label{
+  width:76px;
+  min-width:76px;
+  font-size:10px;
+  color:var(--text3);
+  display:flex;
+  align-items:center;
+  padding-right:8px;
+  line-height:1.3;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.nodes{
+  display:flex;
+  gap:6px;
+  flex:1;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.node{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:5px 9px;
+  border-radius:6px;
+  border:1.5px solid;
+  cursor:pointer;
+  transition:opacity .15s, transform .1s, box-shadow .1s;
+  font-size:11px;
+  font-weight:500;
+  line-height:1.2;
+  text-align:center;
+  min-width:82px;
+  flex:1;
+  min-height:38px;
+  user-select:none;
+}
+.node:hover{opacity:.82;transform:translateY(-1px)}
+.node.active{transform:translateY(-1px);box-shadow:0 2px 10px rgba(0,0,0,.14)}
+.node.planned{border-style:dashed}
+.badge{
+  font-size:8px;
+  font-weight:400;
+  margin-top:2px;
+  opacity:.65;
+  letter-spacing:.05em;
+}
+
+.connector{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:14px;
+  padding-left:76px;
+}
+.connector svg{ opacity:.3 }
+
+/* node colour classes — light */
+.n-blue  {background:#E6F1FB;border-color:#185FA5;color:#0C447C}
+.n-purple{background:#EEEDFE;border-color:#534AB7;color:#3C3489}
+.n-teal  {background:#E1F5EE;border-color:#0F6E56;color:#085041}
+.n-amber {background:#FAEEDA;border-color:#854F0B;color:#633806}
+.n-coral {background:#FAECE7;border-color:#993C1D;color:#712B13}
+.n-green {background:#EAF3DE;border-color:#3B6D11;color:#27500A}
+.n-gray  {background:#F1EFE8;border-color:#5F5E5A;color:#444441}
+
+@media(prefers-color-scheme:dark){
+  .n-blue  {background:#042C53;border-color:#378ADD;color:#B5D4F4}
+  .n-purple{background:#26215C;border-color:#7F77DD;color:#CECBF6}
+  .n-teal  {background:#04342C;border-color:#1D9E75;color:#9FE1CB}
+  .n-amber {background:#412402;border-color:#BA7517;color:#FAC775}
+  .n-coral {background:#4A1B0C;border-color:#D85A30;color:#F5C4B3}
+  .n-green {background:#173404;border-color:#639922;color:#C0DD97}
+  .n-gray  {background:#2C2C2A;border-color:#888780;color:#D3D1C7}
+  .node.active{box-shadow:0 2px 12px rgba(0,0,0,.45)}
+}
+
+/* ── detail panel ────────────────────────── */
+.detail{
+  margin-top:14px;
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  background:var(--surface);
+  padding:14px 16px;
+  min-height:72px;
+  transition:opacity .15s;
+}
+.detail-name{
+  font-size:13px;
+  font-weight:600;
+  color:var(--text);
+  margin-bottom:5px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.detail-dot{
+  width:10px;height:10px;
+  border-radius:3px;
+  flex-shrink:0;
+}
+.detail-desc{
+  font-size:12.5px;
+  color:var(--text2);
+  line-height:1.65;
+  margin-bottom:7px;
+}
+.detail-file{
+  font-size:10.5px;
+  color:var(--text3);
+  font-family:var(--mono);
+  line-height:1.6;
+}
+.detail-empty{
+  font-size:12px;
+  color:var(--text3);
+  display:flex;
+  align-items:center;
+  height:44px;
+}
+.planned-pill{
+  font-size:9px;
+  padding:1px 6px;
+  border-radius:10px;
+  font-weight:500;
+  letter-spacing:.04em;
+}
+
+/* ── legend ──────────────────────────────── */
+.legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 16px;
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.leg{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font-size:11px;
+  color:var(--text2);
+}
+.leg-dot{
+  width:10px;height:10px;
+  border-radius:3px;
+  flex-shrink:0;
+  opacity:.8;
+}
+
+/* ── footer ──────────────────────────────── */
+footer{
+  max-width:760px;
+  margin:28px auto 0;
+  padding:0 24px;
+  font-size:11px;
+  color:var(--text3);
+  display:flex;
+  gap:20px;
+  flex-wrap:wrap;
+}
+footer a{color:var(--text3);text-decoration:none;border-bottom:1px solid var(--border2)}
+footer a:hover{color:var(--text2)}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="header-title">Starforged Companion</span>
+  <span class="header-sub">Module architecture — systems and interactions</span>
+  <span class="header-badge">docs/architecture.html</span>
+</header>
+
+<main>
+  <p class="intro">
+    All 20 module systems across 9 logical layers. Click any node to see its
+    responsibilities, data flow, and source files. Dashed borders indicate
+    planned features not yet implemented. The primary pipeline runs top to
+    bottom; supporting systems feed into it horizontally.
+  </p>
+
+  <div id="diagram"></div>
+  <div class="detail" id="detail"><div class="detail-empty">Click any system to see what it does</div></div>
+  <div class="legend" id="legend"></div>
+</main>
+
+<footer>
+  <span>Starforged Companion — CC BY-NC-SA 4.0</span>
+  <a href="https://github.com/jamesrmedford-alt/starforged-companion">GitHub repository</a>
+  <a href="scope-index.md">Scope index</a>
+  <a href="decisions.md">Design decisions</a>
+</footer>
+
+<script>
+const LAYERS = [
+  {label:"Interface", nodes:["playerNarration","chatCommands","chatOutput"]},
+  {label:"Gate",      nodes:["narrationFilter","safetySystem"]},
+  {label:"Pipeline",  nodes:["interpreter","moveConfirm","clarifyDialog","resolver"]},
+  {label:"Context",   nodes:["oracleTables","relevanceResolver","assembler"]},
+  {label:"Narrator",  nodes:["narrator"]},
+  {label:"Post-narr.",nodes:["entityExtractor","generativeTier","worldJournal"]},
+  {label:"State",     nodes:["campaignState","actorBridge","progressTracks","entityRecords"]},
+  {label:"Tools",     nodes:["sectorCreator","artGenerator","recapSystem"]},
+  {label:"Infra",     nodes:["apiProxy"]},
+];
+
+const NODES = {
+  playerNarration:{label:"Player narration",color:"blue",
+    desc:"Free-text player input. Intercepted by the createChatMessage hook in index.js. Passed to isPlayerNarration() to decide whether it should trigger the move pipeline. Module-generated cards are excluded via MODULE_ID flags.",
+    files:["src/index.js"]},
+  chatCommands:{label:"Chat commands",color:"blue",
+    desc:"!x, !recap, !at, !sector, !journal — all use ! prefix (Foundry v13 intercepts /word commands). Parsed in createChatMessage before the move pipeline. Each command routes to its own handler without touching the interpreter.",
+    files:["src/index.js"]},
+  chatOutput:{label:"Chat output",color:"blue",
+    desc:"Module-generated chat cards: move resolution, narration, recap, draft entities, sector progress, X-Card. All flagged with MODULE_ID flags to exclude from isPlayerNarration(). GM-only cards use socket relay for visibility control across clients.",
+    files:["src/ui/cards.js"]},
+  narrationFilter:{label:"Narration filter",color:"gray",
+    desc:"isPlayerNarration() returns false for all module-generated cards, ! commands, @scene queries, and /native Foundry commands. This gate prevents the pipeline from triggering on its own output or on command messages.",
+    files:["src/pipeline/isPlayerNarration.js"]},
+  safetySystem:{label:"Safety system",color:"gray",
+    desc:"Lines, Veils, Private Lines, X-Card (!x). Checks active content boundaries before every narration. X-Card clears the current move and posts a visual card to all clients. Socket relay ensures X-Card fires on every connected client, not just the GM.",
+    files:["src/context/safety.js","src/safety/"]},
+  interpreter:{label:"Interpreter",color:"purple",
+    desc:"Claude Haiku API call. Reads player narration and identifies the applicable Ironsworn move and relevant stat. Returns move ID. Result is shown in the confirmation dialog before any dice are rolled. Cached per move type.",
+    files:["src/pipeline/interpreter.js"]},
+  moveConfirm:{label:"Move confirm",color:"purple",
+    desc:"Blocking dialog shown to the player after interpretation. Displays the identified move and stat. The player can accept or select a different move. The pipeline does not proceed until a selection is made.",
+    files:["src/ui/moveConfirmDialog.js"]},
+  clarifyDialog:{label:"Clarification",color:"purple",planned:true,
+    desc:"PLANNED. Blocking dialog for hybrid-class moves when the entity reference in player narration is ambiguous (pronoun, role noun, possessive). Player picks the known entity they meant, or confirms someone new. Only fires when Haiku classification detects an implicit reference with no name match.",
+    files:["src/ui/clarificationDialog.js (planned)"]},
+  resolver:{label:"Resolver",color:"purple",
+    desc:"Rolls challenge dice and action die. Applies stat, momentum burn, and adds. Determines strong hit / weak hit / miss. Applies mechanical outcome to the Actor (health, spirit, momentum, debilities, XP). Seeds oracle rolls for applicable moves (make_a_connection, explore_a_waypoint, make_a_discovery, etc.).",
+    files:["src/pipeline/resolver.js"]},
+  oracleTables:{label:"Oracle tables",color:"teal",
+    desc:"All published Starforged oracle tables across 12 files. SECTOR_TROUBLE table added for the sector creator. Roller utility for weighted d100 lookups. Results passed as oracle seeds to the narrator prompt for applicable moves, and as oracle history to the assembler.",
+    files:["src/oracles/tables/","src/oracles/roller.js"]},
+  relevanceResolver:{label:"Rel. resolver",color:"teal",planned:true,
+    desc:"PLANNED. Phase 1: string matching against entity names in player narration. Phase 2: Haiku classification for implicit references on hybrid moves. Returns scene-relevant entity IDs, resolved narrator class (discovery / interaction / embellishment), and whether a clarification dialog is needed.",
+    files:["src/context/relevanceResolver.js (planned)"]},
+  assembler:{label:"Assembler",color:"teal",
+    desc:"Builds the 1,200-token context packet sent to the narrator. Sections in priority order: safety, narrator permissions, oracle seeds, world truths, current location card, matched entity cards, progress tracks, oracle history, session notes, move outcome. Lower-priority sections are dropped under budget pressure. Safety and permissions are never dropped.",
+    files:["src/context/assembler.js"]},
+  narrator:{label:"Narrator",color:"amber",
+    desc:"Claude Sonnet API call via api-proxy.js. Wry tone, auto perspective (solo=2nd person, multi=3rd). System prompt cached for token efficiency. Three permission modes (discovery / interaction / embellishment) injected based on move class (planned). Posts narration card to chat. Fallback card posted if API is unavailable.",
+    files:["src/narration/narrator.js","src/narration/narratorPrompt.js"]},
+  entityExtractor:{label:"Entity extractor",color:"coral",planned:true,
+    desc:"PLANNED. Post-narration Haiku pass. Synchronous for make_a_connection and other explicit creation moves — draft card appears alongside narration. Async (~2s) for other discovery-class moves. Identifies new named entities not in the established record. Posts GM-only draft cards for confirmation, edit, or dismissal.",
+    files:["src/entities/entityExtractor.js (planned)"]},
+  generativeTier:{label:"Generative tier",color:"coral",planned:true,
+    desc:"PLANNED. Async Haiku pass after interaction-class moves with matched entities. Identifies narrator-added details about known entities and appends them to their generative tier with session number and source. Pinned entries always appear in the narrator prompt regardless of age.",
+    files:["src/entities/entityExtractor.js (planned)"]},
+  worldJournal:{label:"World Journal",color:"coral",planned:true,
+    desc:"PLANNED. Async Haiku pass after narration. Detects factions, locations, lore, and threats. Creates or updates World Journal pages under a dedicated Foundry folder. Session log written at session end. Manual !journal commands for direct entry. Open question: overlap with entity records (see world-journal-scope.md).",
+    files:["src/world/worldJournal.js (planned)"]},
+  campaignState:{label:"Campaign state",color:"gray",
+    desc:"Central store in Foundry world settings. Holds: session IDs, entity ID arrays, active sector, current location, world truth selections, narrator settings, dismissed entities, safety config, pending clarification state. Persisted via persistCampaignState(). Read by almost every system.",
+    files:["src/schemas.js","Foundry world settings"]},
+  actorBridge:{label:"Actor bridge",color:"gray",
+    desc:"Reads from and writes to the foundry-ironsworn Actor (v1.27.0 schema confirmed). Stats: edge/heart/iron/shadow/wits. Meters: health.value, spirit.value, momentum.value. system.debility (singular). system.xp (flat). system.burnMomentum() method. Always use dot-notation for updates. Confirmed schema in docs/ironsworn-api-scope.md.",
+    files:["src/integration/actorBridge.js","vendor/foundry-ironsworn/"]},
+  progressTracks:{label:"Progress tracks",color:"gray",
+    desc:"Vows, expeditions, combat, connection, and legacy tracks. Stored as flags on a dedicated JournalEntry — not on pages. All tracks in one journal named 'Starforged Progress Tracks'. Progress Roll resolution. Rank controls ticks per mark. Injected into assembler as Section 6.",
+    files:["src/progressTracks/"]},
+  entityRecords:{label:"Entity records",color:"coral",
+    desc:"Seven entity types: connection, ship, settlement, faction, planet, location (planned), creature (planned). Each stored as a JournalEntry with data in page flags. Two-tier schema: canonical fields (GM-owned, optionally locked) and generative tier (narrator-added, session-stamped, pinnable). Sector-creator entities arrive canonicalLocked: true.",
+    files:["src/entities/","src/ui/entityPanel.js"]},
+  sectorCreator:{label:"Sector creator",color:"green",
+    desc:"11-step wizard following Starforged rulebook pp.114–127. Generates settlements, planets, connection, and sector trouble from oracle tables. Creates a Foundry Scene with settlement Note markers and Drawing passage lines. DALL-E sector background art uploaded to Foundry data folder. Narrator stubs written to entity description fields. All created entities arrive canonicalLocked: true.",
+    files:["src/sectors/"]},
+  artGenerator:{label:"Art generator",color:"green",
+    desc:"DALL-E 3 portraits for all entity types plus 1792x1024 sector backgrounds. Portrait lifecycle: no portrait → unlocked (one regeneration permitted) → permanently locked. Style anchor ensures visual consistency across all portraits in a campaign. All calls via api-proxy.js. Images stored as base64 art assets indexed by portraitId.",
+    files:["src/art/generator.js","src/art/promptBuilder.js","src/art/storage.js"]},
+  recapSystem:{label:"Previously On",color:"green",
+    desc:"!recap session: no API call — renders from the in-memory session move log. !recap campaign: Claude Sonnet call, cached after first call per session. Auto-posts at session start. Character Chronicle panel records story arc and significant moments. Chronicle summary injected into narrator system prompt.",
+    files:["src/recap/","src/chronicle/"]},
+  apiProxy:{label:"API proxy",color:"gray",
+    desc:"All external API calls route through apiPost() — never direct fetch() to api.anthropic.com or api.openai.com. Local Node proxy on port 3001 for development; Forge server-side proxy for hosted play. API keys stored config:false (hidden from Configure Settings). GM-only input in Companion Settings → About tab.",
+    files:["src/api-proxy.js","proxy/"]},
+};
+
+const LIGHT_DOTS = {blue:"#185FA5",purple:"#534AB7",teal:"#0F6E56",amber:"#854F0B",coral:"#993C1D",green:"#3B6D11",gray:"#5F5E5A"};
+const DARK_DOTS  = {blue:"#378ADD",purple:"#7F77DD",teal:"#1D9E75",amber:"#BA7517",coral:"#D85A30",green:"#639922",gray:"#888780"};
+const COLOR_LABELS = {blue:"Interface",purple:"Pipeline",teal:"Context / assembly",amber:"Narrator",coral:"Entities",green:"Tools",gray:"State / infra"};
+
+let active = null;
+
+function isDark(){ return window.matchMedia('(prefers-color-scheme:dark)').matches; }
+function dotColor(c){ return (isDark()?DARK_DOTS:LIGHT_DOTS)[c]; }
+
+function render(){
+  const diag = document.getElementById('diagram');
+  diag.innerHTML = '';
+  LAYERS.forEach((layer, li) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lbl = document.createElement('div');
+    lbl.className = 'row-label';
+    lbl.textContent = layer.label;
+    row.appendChild(lbl);
+    const nodes = document.createElement('div');
+    nodes.className = 'nodes';
+    layer.nodes.forEach(id => {
+      const n = NODES[id];
+      const el = document.createElement('div');
+      el.className = `node n-${n.color}${n.planned?' planned':''}${active===id?' active':''}`;
+      el.innerHTML = n.label + (n.planned ? '<span class="badge">PLANNED</span>' : '');
+      el.title = n.label + (n.planned ? ' (planned)' : '');
+      el.onclick = () => { active = active === id ? null : id; render(); showDetail(active); };
+      nodes.appendChild(el);
+    });
+    row.appendChild(nodes);
+    diag.appendChild(row);
+    if(li < LAYERS.length - 1){
+      const conn = document.createElement('div');
+      conn.className = 'connector';
+      conn.innerHTML = `<svg width="12" height="14" viewBox="0 0 12 14"><path d="M6 0 L6 8 M3 5 L6 10 L9 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      diag.appendChild(conn);
+    }
+  });
+
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  Object.entries(COLOR_LABELS).forEach(([c, label]) => {
+    const d = document.createElement('div');
+    d.className = 'leg';
+    d.innerHTML = `<div class="leg-dot" style="background:${dotColor(c)}"></div><span>${label}</span>`;
+    leg.appendChild(d);
+  });
+}
+
+function showDetail(id){
+  const el = document.getElementById('detail');
+  if(!id){
+    el.innerHTML = '<div class="detail-empty">Click any system to see what it does</div>';
+    return;
+  }
+  const n = NODES[id];
+  const dc = dotColor(n.color);
+  const plannedPill = n.planned
+    ? `<span class="planned-pill" style="background:${dc}18;color:${dc};border:1px solid ${dc}44">PLANNED</span>`
+    : '';
+  el.innerHTML = `
+    <div class="detail-name">
+      <div class="detail-dot" style="background:${dc}"></div>
+      ${n.label}
+      ${plannedPill}
+    </div>
+    <div class="detail-desc">${n.desc}</div>
+    <div class="detail-file">${n.files.join(' &nbsp;·&nbsp; ')}</div>
+  `;
+}
+
+render();
+window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', render);
+</script>
+</body>
+</html>
