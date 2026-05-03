@@ -14,8 +14,10 @@ import {
   generateConnection,
   generateSector,
   rollTableResult,
+  buildSettlementStubPrompt,
 } from "../../src/sectors/sectorGenerator.js";
 
+import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
 import { SECTOR_TROUBLE } from "../../src/oracles/tables/misc.js";
 
 
@@ -270,5 +272,127 @@ describe("generateSector mapData", () => {
 describe("generateSector — throws on unknown region", () => {
   it("throws for unknown region", () => {
     expect(() => generateSector("void")).toThrow();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildSectorBackgroundPrompt
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildSectorBackgroundPrompt — terminus", () => {
+  const sector = { region: "terminus", trouble: "Piracy is rampant", settlements: [] };
+
+  it("includes 1792x1024 size", () => {
+    const { size } = buildSectorBackgroundPrompt(sector);
+    expect(size).toBe("1792x1024");
+  });
+
+  it("includes warm/amber/dense tone words in the prompt", () => {
+    const { prompt } = buildSectorBackgroundPrompt(sector);
+    expect(prompt.toLowerCase()).toMatch(/amber|warm|dense/);
+  });
+});
+
+describe("buildSectorBackgroundPrompt — expanse", () => {
+  const sector = { region: "expanse", trouble: "Piracy is rampant", settlements: [] };
+
+  it("includes sparse/dark/lonely tone words in the prompt", () => {
+    const { prompt } = buildSectorBackgroundPrompt(sector);
+    expect(prompt.toLowerCase()).toMatch(/sparse|dark|desolate|empty/);
+  });
+});
+
+describe("buildSectorBackgroundPrompt — trouble visual modifiers", () => {
+  it("adds storm modifier for 'Energy storms are rampant'", () => {
+    const sector = { region: "terminus", trouble: "Energy storms are rampant", settlements: [] };
+    const { prompt } = buildSectorBackgroundPrompt(sector);
+    expect(prompt.toLowerCase()).toMatch(/storm|lightning/);
+  });
+
+  it("adds dying star modifier for 'Supernova is imminent'", () => {
+    const sector = { region: "expanse", trouble: "Supernova is imminent", settlements: [] };
+    const { prompt } = buildSectorBackgroundPrompt(sector);
+    expect(prompt.toLowerCase()).toMatch(/supernova|dying star|star/);
+  });
+
+  it("does not append modifier for unrecognised trouble", () => {
+    const sector = { region: "outlands", trouble: "Taxes are high", settlements: [] };
+    const { prompt: withoutModifier } = buildSectorBackgroundPrompt(sector);
+    const basePrompt = buildSectorBackgroundPrompt({ region: "outlands", trouble: "ignored", settlements: [] }).prompt;
+    // Both prompts should be the same length (no modifier appended)
+    expect(withoutModifier).toBe(basePrompt);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildSettlementStubPrompt
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildSettlementStubPrompt", () => {
+  const sector = {
+    name:   "Devil's Maw",
+    region: "terminus",
+    regionLabel: "Terminus",
+  };
+
+  const settlement = {
+    name:         "Ironhold",
+    locationType: "orbital",
+    population:   "Hundreds",
+    authority:    "Guild",
+    projects:     ["Mining", "Trade"],
+    trouble:      null,
+    planet:       null,
+  };
+
+  it("includes the settlement name", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus");
+    expect(prompt).toContain("Ironhold");
+  });
+
+  it("includes population and authority", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus");
+    expect(prompt).toContain("Hundreds");
+    expect(prompt).toContain("Guild");
+  });
+
+  it("includes the projects list", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus");
+    expect(prompt).toContain("Mining");
+    expect(prompt).toContain("Trade");
+  });
+
+  it("includes the sector name and region label", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus");
+    expect(prompt).toContain("Devil's Maw");
+    expect(prompt).toContain("Terminus");
+  });
+
+  it("omits the trouble line when trouble is null", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus");
+    expect(prompt).not.toContain("Current trouble:");
+  });
+
+  it("includes the trouble line when trouble is present", () => {
+    const s = { ...settlement, trouble: "Riots are breaking out" };
+    const prompt = buildSettlementStubPrompt(s, sector, "Terminus");
+    expect(prompt).toContain("Riots are breaking out");
+  });
+
+  it("includes planet details when planet is present", () => {
+    const s = {
+      ...settlement,
+      planet: { type: "Ice World", name: "Caul Prime" },
+    };
+    const prompt = buildSettlementStubPrompt(s, sector, "Terminus");
+    expect(prompt).toContain("Ice World");
+    expect(prompt).toContain("Caul Prime");
+  });
+
+  it("uses provided perspective note", () => {
+    const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus", "Narrate in first person");
+    expect(prompt).toContain("Narrate in first person");
   });
 });

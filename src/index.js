@@ -111,6 +111,24 @@ function registerCoreSettings() {
     default: "dalle",
   });
 
+  game.settings.register(MODULE_ID, "sectorArtEnabled", {
+    name:    "Generate Sector Background Art",
+    hint:    "Generate a DALL-E 3 background image for each new sector. Requires Art API Key.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "sectorNarratorStubsEnabled", {
+    name:    "Generate Sector Narrator Stubs",
+    hint:    "Generate atmospheric descriptions for new sectors and settlements. Requires Claude API Key.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
     hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",

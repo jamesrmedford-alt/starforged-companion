@@ -9,8 +9,16 @@
  * Foundry v13: uses ApplicationV2, no jQuery, DOM API only.
  */
 
-import { generateSector, storeSector } from "./sectorGenerator.js";
-import { renderSectorMap }             from "./sectorMap.js";
+import {
+  generateSector,
+  storeSector,
+  createEntityJournals,
+  generateNarratorStubs,
+  createSectorJournal,
+} from "./sectorGenerator.js";
+import { renderSectorMap }         from "./sectorMap.js";
+import { generateSectorBackground } from "./sectorArt.js";
+import { createSectorScene }       from "./sceneBuilder.js";
 
 const MODULE_ID = "starforged-companion";
 const { ApplicationV2 } = foundry.applications.api;
@@ -205,8 +213,37 @@ export class SectorCreatorApp extends ApplicationV2 {
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
 
     try {
-      ui.notifications.info("Sector Creator: Saving sector…");
-      const stored = await storeSector(this.#sector, campaignState);
+      const artEnabled   = getSetting("sectorArtEnabled",            true);
+      const stubsEnabled = getSetting("sectorNarratorStubsEnabled",  true);
+      const narratorSettings = getNarratorSettings();
+
+      await postProgressCard(`◈ Sector Creator — Generating ${this.#sector.name}…`);
+
+      // Run entity creation + art + narrator stubs in parallel
+      const [entityData, backgroundPath, stubs] = await Promise.all([
+        createEntityJournals(this.#sector, campaignState),
+        artEnabled
+          ? generateSectorBackground(this.#sector, campaignState).catch(() => null)
+          : Promise.resolve(null),
+        stubsEnabled
+          ? generateNarratorStubs(this.#sector, narratorSettings).catch(() => ({ sector: null, settlements: {} }))
+          : Promise.resolve({ sector: null, settlements: {} }),
+      ]);
+
+      // Sector journal (needs stubs); scene (needs background + entity journals)
+      const [sectorJournal, scene] = await Promise.all([
+        createSectorJournal(this.#sector, stubs),
+        createSectorScene(this.#sector, backgroundPath, entityData.settlements),
+      ]);
+
+      const stored = await storeSector(this.#sector, {
+        settlements:         entityData.settlements,
+        connectionJournalId: entityData.connectionJournalId,
+        backgroundPath,
+        sceneId:             scene?.id     ?? null,
+        sectorJournalId:     sectorJournal?.id ?? null,
+        stubs,
+      }, campaignState);
 
       await ChatMessage.create({
         content: formatSectorCard(stored),
@@ -249,6 +286,29 @@ function labelLocationType(t) {
     case "orbital":    return "Orbital";
     case "planetside": return "Planetside";
     default:           return "Deep Space";
+  }
+}
+
+function getSetting(key, fallback) {
+  try { return game.settings.get(MODULE_ID, key) ?? fallback; }
+  catch { return fallback; }
+}
+
+function getNarratorSettings() {
+  return {
+    perspective: getSetting("narrationPerspective", "second"),
+    tone:        getSetting("narrationTone",        "wry"),
+  };
+}
+
+async function postProgressCard(text) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-sector-progress-card"><span>◈</span> ${text}</div>`,
+      flags: { [MODULE_ID]: { sectorProgress: true } },
+    });
+  } catch {
+    // Non-critical
   }
 }
 

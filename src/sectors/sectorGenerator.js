@@ -12,11 +12,22 @@
 // rollOracle is imported for potential future use by panel overrides
 import { createSettlement }    from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
+import { apiPost }             from "../api-proxy.js";
 import * as SETTLEMENTS        from "../oracles/tables/settlements.js";
 import * as SPACE              from "../oracles/tables/space.js";
 import * as PLANETS            from "../oracles/tables/planets.js";
 import * as CHARACTERS         from "../oracles/tables/characters.js";
 import * as MISC               from "../oracles/tables/misc.js";
+
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const STUB_MODEL    = "claude-haiku-4-5-20251001";
+
+const REGION_LABELS = {
+  terminus: "Terminus (the settled core)",
+  outlands: "Outlands (the frontier)",
+  expanse:  "Expanse (the far reaches)",
+  void:     "Void (beyond the Forge)",
+};
 
 const MODULE_ID = "starforged-companion";
 
@@ -199,17 +210,19 @@ export function generateSectorName() {
 }
 
 /**
- * Store a completed sector to campaign state and create entity records.
+ * Create entity journal records for all settlements and the connection.
+ * Returns settlement JournalEntry objects (needed for Scene Note pins).
  *
  * @param {SectorResult} sector
  * @param {Object} campaignState
- * @returns {Promise<StoredSector>}
+ * @returns {Promise<{ settlements: Object, connectionJournalId: string|null }>}
  */
-export async function storeSector(sector, campaignState) {
-  // Create settlement entity records
-  const settlementJournalIds = {};
+export async function createEntityJournals(sector, campaignState) {
+  const settlements = {};
+
   for (const s of sector.settlements) {
-    const created = await createSettlement({
+    const beforeLen = campaignState.settlementIds?.length ?? 0;
+    await createSettlement({
       name:       s.name,
       location:   locationTypeToLabel(s.locationType),
       population: s.population,
@@ -218,29 +231,63 @@ export async function storeSector(sector, campaignState) {
       trouble:    s.trouble ?? null,
       planet:     s.planet ?? null,
     }, campaignState);
-    settlementJournalIds[s.id] = created._id;
+    const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
+    settlements[s.id] = journalId
+      ? ((() => { try { return game.journal?.get(journalId) ?? null; } catch { return null; } })())
+      : null;
   }
 
-  // Create connection entity record
-  const conn = await createConnection({
+  const connBeforeLen = campaignState.connectionIds?.length ?? 0;
+  await createConnection({
     name:     sector.connection.name,
     role:     sector.connection.role,
     goal:     sector.connection.goal,
     rank:     "dangerous",
     location: sector.connection.homeSettlement,
   }, campaignState);
+  const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
+
+  return { settlements, connectionJournalId };
+}
+
+/**
+ * Store a completed sector to campaign state with all enhanced IDs.
+ *
+ * @param {SectorResult} sector
+ * @param {Object} extras — { settlements, connectionJournalId, backgroundPath, sceneId, sectorJournalId, stubs }
+ * @param {Object} campaignState
+ * @returns {Promise<StoredSector>}
+ */
+export async function storeSector(sector, extras, campaignState) {
+  const {
+    settlements      = {},
+    connectionJournalId = null,
+    backgroundPath   = null,
+    sceneId          = null,
+    sectorJournalId  = null,
+    stubs            = { sector: null, settlements: {} },
+  } = extras ?? {};
 
   const stored = {
-    id:            sector.id,
-    name:          sector.name,
-    region:        sector.region,
-    regionLabel:   sector.regionLabel,
-    trouble:       sector.trouble,
-    faction:       sector.faction,
-    createdAt:     sector.createdAt,
-    mapData:       sector.mapData,
-    settlementIds: Object.values(settlementJournalIds),
-    connectionId:  conn._id,
+    id:                 sector.id,
+    name:               sector.name,
+    region:             sector.region,
+    regionLabel:        sector.regionLabel,
+    trouble:            sector.trouble,
+    faction:            sector.faction,
+    createdAt:          sector.createdAt,
+    mapData:            sector.mapData,
+    settlementIds:      Object.values(settlements).map(j => j?.id ?? null).filter(Boolean),
+    connectionId:       connectionJournalId,
+    // Enhanced fields
+    backgroundPath,
+    sceneId,
+    sectorJournalId,
+    entityJournalIds:   Object.fromEntries(
+      Object.entries(settlements).map(([id, j]) => [id, j?.id ?? null])
+    ),
+    backgroundGenerated: !!backgroundPath,
+    stubs,
   };
 
   // Save to campaign state
@@ -257,6 +304,124 @@ export async function storeSector(sector, campaignState) {
   await persistCampaignState(campaignState);
 
   return stored;
+}
+
+/**
+ * Generate atmospheric narrator stubs for a sector and all its settlements.
+ * Uses claude-haiku — brief, fast, uncached. Returns empty stubs on failure.
+ *
+ * @param {SectorResult} sector
+ * @param {Object} [narratorSettings] — { perspective, tone }
+ * @returns {Promise<{ sector: string|null, settlements: Object }>}
+ */
+export async function generateNarratorStubs(sector, narratorSettings = {}) {
+  const apiKey = getClaudeApiKey();
+  if (!apiKey) return { sector: null, settlements: {} };
+
+  const perspective = narratorSettings.perspective ?? "second";
+  const perspectiveNote = perspective === "first"
+    ? "Narrate in first person (the protagonist's voice)"
+    : "Narrate in second person (address the protagonist as 'you')";
+
+  const regionLabel   = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
+  const settlementList = sector.settlements
+    .map(s => `${s.name} (${locationTypeToLabel(s.locationType)})`)
+    .join(", ");
+
+  const sectorStubText = await callStubApi(
+    buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote),
+    150,
+    apiKey
+  ).catch(() => null);
+
+  const settlements = {};
+  for (const s of sector.settlements) {
+    settlements[s.id] = await callStubApi(
+      buildSettlementStubPrompt(s, sector, regionLabel, perspectiveNote),
+      100,
+      apiKey
+    ).catch(() => null);
+  }
+
+  return { sector: sectorStubText, settlements };
+}
+
+/**
+ * Create a Foundry journal entry for a sector with narrator stubs as pages.
+ *
+ * @param {SectorResult} sector
+ * @param {{ sector: string|null, settlements: Object }} stubs
+ * @returns {Promise<JournalEntry|null>}
+ */
+export async function createSectorJournal(sector, stubs = {}) {
+  try {
+    const regionLabel = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
+
+    const journal = await JournalEntry.create({
+      name:  `${sector.name} — Sector Record`,
+      flags: {
+        [MODULE_ID]: {
+          sectorRecord: true,
+          sectorId:     sector.id,
+        },
+      },
+    });
+
+    const settlementListHtml = sector.settlements.map(s =>
+      `<li>${escapeHtml(s.name)} — ${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
+      `Pop: ${escapeHtml(s.population)}, Authority: ${escapeHtml(s.authority)}</li>`
+    ).join("");
+
+    const passageCount = sector.passages?.length ?? 0;
+    const passageSummary = passageCount === 1 ? "1 passage" : `${passageCount} passages`;
+
+    await journal.createEmbeddedDocuments("JournalEntryPage", [{
+      name: sector.name,
+      type: "text",
+      text: {
+        content: `<h2>${escapeHtml(sector.name)}</h2>
+<p><strong>Region:</strong> ${escapeHtml(regionLabel)}</p>
+<p><strong>Trouble:</strong> ${escapeHtml(sector.trouble)}</p>
+${sector.faction ? `<p><strong>Control:</strong> ${escapeHtml(sector.faction)}</p>` : ""}
+<hr>
+<p class="narrator-stub">${escapeHtml(stubs.sector ?? "")||"<em>No narrator text generated.</em>"}</p>
+<hr>
+<h3>Settlements</h3>
+<ul>${settlementListHtml}</ul>
+<h3>Passages</h3>
+<p>${escapeHtml(passageSummary)} charted.</p>`,
+        format: 1,
+      },
+    }]);
+
+    for (const s of sector.settlements) {
+      const stubText = stubs.settlements?.[s.id] ?? null;
+      await journal.createEmbeddedDocuments("JournalEntryPage", [{
+        name: s.name,
+        type: "text",
+        text: {
+          content: `<h2>${escapeHtml(s.name)}</h2>
+<p><strong>Type:</strong> ${escapeHtml(locationTypeToLabel(s.locationType))}</p>
+<p><strong>Population:</strong> ${escapeHtml(s.population)}</p>
+<p><strong>Authority:</strong> ${escapeHtml(s.authority)}</p>
+<p><strong>Projects:</strong> ${escapeHtml(s.projects?.join(", ") ?? "")}</p>
+${s.trouble ? `<p><strong>Trouble:</strong> ${escapeHtml(s.trouble)}</p>` : ""}
+${s.planet ? `<p><strong>Planet:</strong> ${escapeHtml(s.planet.name)} (${escapeHtml(s.planet.type)})</p>` : ""}
+<hr>
+<p class="narrator-stub">${escapeHtml(stubText ?? "")||"<em>No narrator text generated.</em>"}</p>
+<hr>
+<h3>Notes</h3>
+<p><em>Record discoveries and plot threads here.</em></p>`,
+          format: 1,
+        },
+      }]);
+    }
+
+    return journal;
+  } catch (err) {
+    console.error(`${MODULE_ID} | createSectorJournal failed:`, err);
+    return null;
+  }
 }
 
 
@@ -351,4 +516,74 @@ function generateId() {
 async function persistCampaignState(campaignState) {
   try { await game.settings.set(MODULE_ID, "campaignState", campaignState); }
   catch { /* non-Foundry context */ }
+}
+
+function getClaudeApiKey() {
+  try { return game.settings.get(MODULE_ID, "claudeApiKey") || null; }
+  catch { return null; }
+}
+
+function buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote) {
+  return `You are the narrator for an Ironsworn: Starforged campaign.
+Write ONE paragraph (2–3 sentences) describing this sector of space.
+Be atmospheric and evocative. ${perspectiveNote}. Wry tone.
+Do not introduce plot elements not present in the description.
+
+Sector: ${sector.name}
+Region: ${regionLabel}
+Current trouble: ${sector.trouble}
+${sector.faction ? `Controlling power: ${sector.faction}` : ""}
+Settlements: ${settlementList}
+
+Write the paragraph now. No preamble.`;
+}
+
+export function buildSettlementStubPrompt(settlement, sector, regionLabel, perspectiveNote = "") {
+  const perspective = perspectiveNote || "Narrate in second person (address the protagonist as 'you')";
+  const planetLine  = settlement.planet
+    ? `Planet: ${settlement.planet.type} (${settlement.planet.name})`
+    : "";
+  return `You are the narrator for an Ironsworn: Starforged campaign.
+Write ONE paragraph (2–3 sentences) describing this settlement.
+Be atmospheric. ${perspective}. Wry tone.
+Do not introduce plot elements not present in the description.
+
+Settlement: ${settlement.name}
+Type: ${locationTypeToLabel(settlement.locationType)}
+Population: ${settlement.population}
+Authority: ${settlement.authority}
+Projects: ${(settlement.projects ?? []).join(", ")}
+${settlement.trouble ? `Current trouble: ${settlement.trouble}` : ""}
+${planetLine}
+Sector: ${sector.name} (${regionLabel})
+
+Write the paragraph now. No preamble.`;
+}
+
+async function callStubApi(prompt, maxTokens, apiKey) {
+  const body = {
+    model:      STUB_MODEL,
+    max_tokens: maxTokens,
+    messages:   [{ role: "user", content: prompt }],
+  };
+  const headers = {
+    "Content-Type":      "application/json",
+    "x-api-key":         apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const text = (data.content ?? [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("");
+  if (!text) throw new Error("Stub API returned no text");
+  return text.trim();
+}
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

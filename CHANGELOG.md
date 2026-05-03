@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: DALL-E 3 sector background art — each sector gets a generated 1792×1024 landscape image matching its region (Terminus, Outlands, Expanse, Void), with visual modifiers for notable troubles (energy storms, supernova, spatial rifts)
+- Added: Foundry Scene created on sector finalization — background image, Journal Note pins per settlement, Drawing lines for passages; scene is created but not auto-activated
+- Added: Narrator journal stubs — atmospheric one-paragraph descriptions for sector and each settlement generated via Claude Haiku, stored as annotatable journal pages in a sector record JournalEntry
+- Added: `sectorArtEnabled` and `sectorNarratorStubsEnabled` world settings to control optional generation steps
 - Fixed: Quench narrator integration tests now pass `campaignState` in the correct argument position so the `sessionId` flag on narrator chat cards is verified against a real session ID
 - Changed: Claude API Key and Art Generation API Key are no longer shown in the standard Configure Settings dialog. They are now configured in Companion Settings → About tab and are only visible to the GM.
 - Fixed: All module commands changed to `!` prefix (`!x`, `!recap`) — Foundry v13 rejects unrecognised `/command` patterns before `createChatMessage` fires
