@@ -117,6 +117,14 @@ uploaded to Foundry's data folder before creating the scene.
 
 ```js
 async function uploadSectorImage(b64, sectorId) {
+  // Ensure the upload directory exists before uploading
+  const uploadDir = "modules/starforged-companion/art";
+  try {
+    await FilePicker.createDirectory("data", uploadDir, {});
+  } catch (e) {
+    // Directory already exists — ignore the error
+  }
+
   // Convert base64 to Blob
   const byteString = atob(b64);
   const bytes      = new Uint8Array(byteString.length);
@@ -126,8 +134,6 @@ async function uploadSectorImage(b64, sectorId) {
   const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], `sector-${sectorId}.png`, { type: "image/png" });
 
-  // Upload to module art folder within Foundry data
-  const uploadDir = "modules/starforged-companion/art";
   await FilePicker.upload("data", uploadDir, file, {});
 
   return `${uploadDir}/sector-${sectorId}.png`;
@@ -189,129 +195,24 @@ function autoLayoutSettlements(settlements, gridWidth, gridHeight) {
 ### 3.3 Scene creation
 
 ```js
-// Create the scene
 const scene = await Scene.create({
   name:        sector.name,
   img:         backgroundPath ?? null,
   width:       SCENE_CONFIG.sceneWidth,
   height:      SCENE_CONFIG.sceneHeight,
-  grid: {
-    type:  1,         // square grid
-    size:  SCENE_CONFIG.gridCellSize,
-    color: "#333333",
-    alpha: 0.1,       // subtle grid
-  },
-  backgroundColor: "#000000",
-  tokenVision:     false,
-  fogExploration:  false,
-  padding:         SCENE_CONFIG.padding,
+  grid:        { type: 1, size: SCENE_CONFIG.gridCellSize },
+  padding:     SCENE_CONFIG.padding,
   flags: {
-    "starforged-companion": {
-      sectorScene: true,
-      sectorId:    sector.id,
-    },
+    "starforged-companion": { sectorId: sector.id, sectorScene: true },
   },
 });
 ```
 
-### 3.4 Settlement notes (Journal Note pins)
-
-**Before creating notes**, check the Foundry v13 Note document schema.
-The schema may have changed from v12. Read:
-```bash
-cat docs/foundry-api-reference.md
-# Then fetch if needed:
-# curl https://foundryvtt.com/api/v13/classes/NoteDocument.html
-```
-
-```js
-// Create a Journal Note for each settlement
-const noteData = settlements.map((s, i) => {
-  const journalEntry = entityJournals[s.id];
-
-  // Icon based on settlement type
-  const icon = {
-    orbital:    "icons/svg/circle.svg",
-    planetside: "icons/svg/anchor.svg",
-    deep_space: "icons/svg/mountain.svg",
-  }[s.locationType] ?? "icons/svg/circle.svg";
-
-  return {
-    entryId:    journalEntry?.id ?? null,
-    x:          s.mapX * SCENE_CONFIG.gridCellSize,
-    y:          s.mapY * SCENE_CONFIG.gridCellSize,
-    icon,
-    iconSize:   40,
-    iconTint:   null,
-    text:       s.name,
-    fontSize:   18,
-    fontFamily: "Signika",
-    textColor:  "#ffffff",
-    textAnchor: 2,   // BOTTOM (v13 constant — verify before use)
-    global:     true,
-  };
-});
-
-await scene.createEmbeddedDocuments("Note", noteData);
-```
-
-### 3.5 Passage lines (Drawings)
-
-**Check Drawing schema in Foundry v13 before implementing.** The `type`
-and `shape` fields changed between versions.
-
-```js
-// Create a Drawing line for each passage
-const drawingData = sector.passages.map(p => {
-  const from = settlements.find(s => s.id === p.fromId);
-  const to   = p.toEdge
-    ? null
-    : settlements.find(s => s.id === p.toId);
-
-  // Passage to sector edge: draw toward the nearest edge
-  const toX = to
-    ? to.mapX * SCENE_CONFIG.gridCellSize
-    : edgeExitPoint(from, p.edgeDirection, SCENE_CONFIG).x;
-  const toY = to
-    ? to.mapY * SCENE_CONFIG.gridCellSize
-    : edgeExitPoint(from, p.edgeDirection, SCENE_CONFIG).y;
-
-  return {
-    // NOTE: verify shape format for Foundry v13 before implementing
-    // v12 used { type: "l", x, y, points: [...] }
-    // v13 Drawing schema may differ — check docs/foundry-api-reference.md
-    x:           from.mapX * SCENE_CONFIG.gridCellSize,
-    y:           from.mapY * SCENE_CONFIG.gridCellSize,
-    shape: {
-      type:   "l",
-      points: [0, 0, toX - from.mapX * SCENE_CONFIG.gridCellSize,
-                     toY - from.mapY * SCENE_CONFIG.gridCellSize],
-    },
-    strokeWidth: 3,
-    strokeColor: "#88aacc",
-    strokeAlpha: 0.7,
-    fillColor:   "#000000",
-    fillAlpha:   0,
-    flags: {
-      "starforged-companion": {
-        passage:  true,
-        fromId:   p.fromId,
-        toId:     p.toId ?? null,
-        toEdge:   p.toEdge,
-      },
-    },
-  };
-});
-
-await scene.createEmbeddedDocuments("Drawing", drawingData);
-```
-
-### 3.6 Activate the scene
-
-```js
-// Set the newly created scene as the active scene
-await scene.activate();
-```
+**Note on scene activation:** Scene creation does NOT automatically activate
+the scene (i.e., does not call `scene.activate()`). This prevents disrupting
+a GM who is mid-session. The progress card notifies the GM the scene is ready;
+they can navigate to it manually. See Section 11 for the integration test
+correction on this point.
 
 ---
 
@@ -321,14 +222,12 @@ await scene.activate();
 
 ```js
 /**
- * Generate narrator text stubs for the sector and all settlements.
- * Makes Claude API calls (Sonnet, brief, uncached — context is unique per sector).
- * Each call produces one short atmospheric paragraph.
- * Failures are non-blocking — journal is created without text if API fails.
+ * Generate atmospheric narrator stubs for a sector and all its settlements.
+ * Uses Haiku — brief, fast, uncached.
  *
  * @param {SectorResult} sector
- * @param {Object} narratorSettings  — from game.settings
- * @returns {Promise<SectorNarratorStubs>}
+ * @param {Object} narratorSettings  — { perspective, tone }
+ * @returns {Promise<{ sector: string, settlements: { [id]: string } }>}
  */
 export async function generateNarratorStubs(sector, narratorSettings)
 ```
@@ -337,7 +236,7 @@ export async function generateNarratorStubs(sector, narratorSettings)
 
 ```
 You are the narrator for an Ironsworn: Starforged campaign.
-Write ONE paragraph (3–4 sentences) describing this sector of space.
+Write ONE paragraph (2–3 sentences) describing this sector of space.
 Be atmospheric and evocative. {perspective instruction}. Wry tone.
 Do not introduce plot elements not present in the description.
 
@@ -352,8 +251,7 @@ Settlements: {comma-separated settlement names with type}
 Write the paragraph now. No preamble.
 ```
 
-**Model:** `claude-haiku-4-5-20251001` — this is a brief atmospheric description,
-not a complex narration. Haiku is fast and appropriate here.  
+**Model:** `claude-haiku-4-5-20251001`  
 **Max tokens:** 150  
 **No caching** — each sector is unique.
 
@@ -378,7 +276,7 @@ Sector: {sector.name} ({region label})
 Write the paragraph now. No preamble.
 ```
 
-**Model:** Haiku  
+**Model:** `claude-haiku-4-5-20251001`  
 **Max tokens:** 100
 
 ### 4.4 Journal creation
@@ -405,7 +303,8 @@ await sectorJournal.createEmbeddedDocuments("JournalEntryPage", [{
       <h2>${sector.name}</h2>
       <p><strong>Region:</strong> ${regionLabel}</p>
       <p><strong>Trouble:</strong> ${sector.trouble}</p>
-      ${sector.faction ? `<p><strong>Control:</strong> ${sector.faction}</p>` : ""}
+      ${sector.faction
+        ? `<p><strong>Control:</strong> ${sector.faction}</p>` : ""}
       <hr>
       <p class="narrator-stub">${stubs.sector || "<em>No narrator text generated.</em>"}</p>
       <hr>
@@ -465,20 +364,21 @@ async function finalizeSector(sector, campaignState) {
   const progressCard = postProgressCard("Finalizing sector...");
 
   // Run in parallel: art generation and narrator stubs
+  // Entity journal creation can also run in parallel with these
   // Scene creation must wait for art path
   const [backgroundPath, stubs, entityJournals] = await Promise.all([
     generateSectorBackground(sector, campaignState).catch(() => null),
     generateNarratorStubs(sector, narratorSettings).catch(() => ({})),
-    createEntityJournals(sector, campaignState),   // settlements + connection
+    createEntityJournals(sector, campaignState),   // settlements + connection entity records
   ]);
 
-  // Create journal stubs (needs narrator text)
+  // Create narrator journal (needs stub text)
   const sectorJournal = await createSectorJournal(sector, stubs);
 
-  // Create Foundry scene (needs background path and entity journals)
+  // Create Foundry scene (needs background path and entity journals for Note pins)
   const scene = await createSectorScene(sector, backgroundPath, entityJournals);
 
-  // Store sector to campaign state
+  // Store sector to campaign state with all IDs
   await storeSector(sector, {
     backgroundPath,
     sectorJournalId: sectorJournal.id,
@@ -492,6 +392,10 @@ async function finalizeSector(sector, campaignState) {
   return { scene, sectorJournal };
 }
 ```
+
+**Note:** `createEntityJournals` has no `.catch()` in the `Promise.all`. If it
+fails, the entire pipeline rejects. This is intentional — entity creation is
+structural and non-optional. Art and stubs fail gracefully; entity records do not.
 
 ---
 
@@ -552,7 +456,6 @@ Add to the `StoredSector` record in `src/schemas.js`:
 ## 9. Settings additions
 
 ```js
-// In registerCoreSettings() in index.js:
 game.settings.register(MODULE_ID, "sectorArtEnabled", {
   name:    "Generate Sector Background Art",
   hint:    "Generate a DALL-E 3 background image for each new sector. Requires Art API Key.",
@@ -581,23 +484,27 @@ game.settings.register(MODULE_ID, "sectorNarratorStubsEnabled", {
 grep -A 40 "^## Documents" docs/foundry-api-reference.md
 ```
 
-Then verify these specific APIs which are not in the current reference:
+**First**, verify the Scene/Note/Drawing/FilePicker sections are present and
+committed — they were added after session 3 but may not have been committed
+(see session handoff). If they are missing from the committed reference, fetch
+them fresh before writing any Scene code:
 
 ```bash
-# Scene creation and configuration
-curl "https://foundryvtt.com/api/v13/classes/Scene.html"
-
-# Note (journal pin) document schema
-curl "https://foundryvtt.com/api/v13/classes/NoteDocument.html"
-
-# Drawing document schema  
-curl "https://foundryvtt.com/api/v13/classes/DrawingDocument.html"
-
-# FilePicker.upload signature
-curl "https://foundryvtt.com/api/v13/classes/FilePicker.html"
+# Verify what's committed
+git log --oneline -5 docs/foundry-api-reference.md
+grep "FilePicker" docs/foundry-api-reference.md | head -5
 ```
 
-Add any new findings to `docs/foundry-api-reference.md`.
+If the sections are absent, fetch from the Foundry API docs:
+```
+https://foundryvtt.com/api/v13/classes/Scene.html
+https://foundryvtt.com/api/v13/classes/NoteDocument.html
+https://foundryvtt.com/api/v13/classes/DrawingDocument.html
+https://foundryvtt.com/api/v13/classes/FilePicker.html
+```
+
+Add findings to `docs/foundry-api-reference.md` and commit before
+writing `sceneBuilder.js`.
 
 ---
 
@@ -637,7 +544,7 @@ createSectorScene
   ✓ creates a scene with the sector name
   ✓ scene has the correct number of notes (one per settlement)
   ✓ scene has the correct number of drawings (one per passage)
-  ✓ scene is activated after creation
+  ✓ scene is NOT activated after creation (GM navigates manually)
 
 generateNarratorStubs (requires Claude API key)
   ✓ returns a non-empty sector stub string
@@ -653,18 +560,84 @@ createSectorJournal
 
 ## 12. Implementation order
 
-1. Write `src/sectors/sectorArt.js` — prompt builder + upload function
-2. Add region visual profiles and trouble modifiers
-3. Fetch and verify Foundry Scene/Note/Drawing/FilePicker API from docs
-4. Update `docs/foundry-api-reference.md` with Scene, Note, Drawing, FilePicker
-5. Write `src/sectors/sceneBuilder.js` — scene + notes + drawings
-6. Add narrator stub generation to `src/sectors/sectorGenerator.js`
-7. Add journal creation to `src/sectors/sectorGenerator.js`
-8. Wire all three into `finalizeSector()` in `src/sectors/sectorPanel.js`
-9. Add progress chat card feedback
-10. Add `sectorArtEnabled` and `sectorNarratorStubsEnabled` settings
-11. Add schema fields to `src/schemas.js`
-12. Write unit tests
-13. Add Quench integration batch entries
-14. Update `packs/help.json` — add art/scene/journal notes to Sector Creator page
-15. Update changelog and scope-index
+1. Verify `docs/foundry-api-reference.md` contains Scene/Note/Drawing/FilePicker
+   sections — commit them if missing (see Section 10)
+2. Write `src/sectors/sectorArt.js` — prompt builder + `uploadSectorImage` with
+   directory creation guard
+3. Add region visual profiles and trouble modifiers
+4. Write `src/sectors/sceneBuilder.js` — scene + notes + drawings, no auto-activate
+5. Add narrator stub generation to `src/sectors/sectorGenerator.js`
+6. Add `createSectorJournal()` to `src/sectors/sectorGenerator.js`
+7. Wire all three into `finalizeSector()` in `src/sectors/sectorPanel.js`
+8. Add progress chat card feedback
+9. Add `sectorArtEnabled` and `sectorNarratorStubsEnabled` settings
+10. Add schema fields to `src/schemas.js`
+11. Write unit tests
+12. Add Quench integration batch entries
+13. Update `packs/help.json` — add art/scene/journal notes to Sector Creator page
+14. Update changelog and scope-index
+
+---
+
+## 13. Pre-implementation review notes (Session 4, v0.1.39)
+
+These issues were identified in a scope review before implementation.
+
+### 🔴 CRITICAL — Upload directory not guaranteed to exist
+
+The original `uploadSectorImage` called `FilePicker.upload()` directly without
+ensuring the upload directory exists. `FilePicker.upload()` will fail silently
+or throw if `modules/starforged-companion/art` does not exist in Foundry's data
+folder — this directory is not created by the module install.
+
+**Fix applied in Section 2.4:** `FilePicker.createDirectory("data", uploadDir, {})`
+is called before upload, wrapped in a try/catch to ignore the "already exists"
+error. Verify the exact error string Foundry returns for an existing directory and
+adjust the catch guard if needed.
+
+### 🔴 CRITICAL — Scene auto-activation removed
+
+The original integration test included:
+```
+✓ scene is activated after creation
+```
+
+Automatically activating a Foundry scene during `finalizeSector()` would navigate
+all connected clients to the new scene immediately — including mid-session. This
+is disruptive. **The auto-activate behavior has been removed.** The scene is
+created but the GM navigates to it manually. The integration test has been
+updated to assert the scene is NOT activated.
+
+If intentional activation is desired for a specific workflow (e.g., always open
+sector at campaign start), this should be an explicit setting, not a default.
+
+### 🟡 AMBIGUITY — `createEntityJournals` vs entity system records
+
+The `finalizeSector` pipeline calls `createEntityJournals(sector, campaignState)`,
+which returns `{ settlementId: JournalEntry }`. However, Section 5 of the base
+scope (`sector-creator-scope.md`) uses `createSettlement()` and `createConnection()`
+from the entity system, which also create JournalEntry records.
+
+These appear to be the same operation. Claude Code should clarify:
+- Does `createEntityJournals` call `createSettlement()` / `createConnection()` internally?
+- Or is this a separate set of journals distinct from the entity records?
+
+**Recommended resolution:** `createEntityJournals` is simply a wrapper that calls
+the existing entity creation functions and returns the resulting journal references.
+It is not a second pass of journal creation. Confirm this interpretation before
+implementing.
+
+### 🟡 OPEN — Foundry API reference commit status
+
+The session handoff notes the Scene/Note/Drawing/FilePicker sections "were added
+to the output file but may not be committed." Implementation order step 1 now
+explicitly requires verifying commit status before writing any Scene code.
+Do not rely on memory for these APIs — verify against the reference or fetch fresh.
+
+### 🟢 MINOR — Art directory persistence across module updates
+
+Images uploaded to `modules/starforged-companion/art/` are stored in Foundry's
+data folder alongside the module files. A clean module reinstall would delete
+this directory. Consider documenting this limitation in the help page, or use a
+world-scoped path (`worlds/{worldName}/starforged/art/`) for better durability.
+Not a blocking issue for initial implementation.

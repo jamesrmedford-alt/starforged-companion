@@ -20,7 +20,7 @@ party enters a new region of space.
 
 **Trigger:**
 - Toolbar button (new sector icon, GM only)
-- Chat command: `/sector new`
+- Chat command: `!sector new`
 - From the World Journal panel once implemented
 
 ---
@@ -346,25 +346,42 @@ if budget is tight.
 ## 8. New chat command
 
 ```
-/sector new          — open the sector creator wizard (GM only)
-/sector list         — list all created sectors
-/sector {name}       — switch active sector
+!sector new          — open the sector creator wizard (GM only)
+!sector list         — list all created sectors
+!sector {name}       — switch active sector
 ```
 
 ---
 
 ## 9. Toolbar integration
 
-Add a fourth toolbar button in `index.js` `getSceneControlButtons`:
+Add a fourth toolbar button using the two-hook pattern (see CLAUDE.md
+architectural notes). The `onClick` property is NOT supported for `button: true`
+tools in Foundry v13 — click handlers must be attached via `renderSceneControls`.
+
 ```js
-{
-  name:    "sectorCreator",
-  title:   "Sector Creator",
-  icon:    "fas fa-map",
-  button:  true,
-  visible: game.user.isGM,
-  onClick: () => openSectorCreator(),
-}
+// Hook 1: register metadata
+Hooks.on("getSceneControlButtons", (controls) => {
+  controls.tokens.tools ??= {};
+  controls.tokens.tools.sectorCreator = {
+    name:    "sectorCreator",
+    title:   "Sector Creator",
+    icon:    "fas fa-map",
+    button:  true,
+    visible: game.user.isGM,
+    onChange: () => {},  // required placeholder
+  };
+});
+
+// Hook 2: attach click handler
+Hooks.on("renderSceneControls", (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  const btn  = root?.querySelector('[data-tool="sectorCreator"]');
+  if (!btn) return;
+  btn.replaceWith(btn.cloneNode(true));
+  root.querySelector('[data-tool="sectorCreator"]')
+    ?.addEventListener("click", (e) => { e.stopPropagation(); openSectorCreator(); });
+});
 ```
 
 ---
@@ -439,7 +456,7 @@ Add a new page "Sector Creator" (sort 250, between Toolbar Buttons and Settings)
 ```html
 <h2>Sector Creator</h2>
 <p>Open the Sector Creator via the toolbar (🗺 button in Token Controls, GM only),
-or type <code>/sector new</code> in chat.</p>
+or type <code>!sector new</code> in chat.</p>
 
 <h3>The 11 steps</h3>
 <ol>
@@ -463,9 +480,9 @@ edge arrow to create an outgoing passage to another sector.</p>
 
 <h3>Chat commands</h3>
 <table>
-  <tr><td><code>/sector new</code></td><td>Open the sector creator (GM only)</td></tr>
-  <tr><td><code>/sector list</code></td><td>List all created sectors</td></tr>
-  <tr><td><code>/sector [name]</code></td><td>Switch the active sector</td></tr>
+  <tr><td><code>!sector new</code></td><td>Open the sector creator (GM only)</td></tr>
+  <tr><td><code>!sector list</code></td><td>List all created sectors</td></tr>
+  <tr><td><code>!sector [name]</code></td><td>Switch the active sector</td></tr>
 </table>
 ```
 
@@ -480,13 +497,14 @@ edge arrow to create an outgoing passage to another sector.</p>
 5. Write `tests/unit/sectorGenerator.test.js` — run `npm test` after
 6. Write `src/sectors/sectorMap.js` — SVG map renderer
 7. Write `src/sectors/sectorPanel.js` — ApplicationV2 11-step wizard
-8. Wire `openSectorCreator()` into `src/index.js` toolbar + `/sector` command
-9. Update `src/context/assembler.js` — add sector context section
-10. Wire `storeSector()` to create settlement and connection entities
-11. Add Quench integration batch to `src/integration/quench.js`
-12. Update `packs/help.json` — add Sector Creator page and changelog entry
-13. Update `docs/scope-index.md` — mark status
-14. Run full test suite and lint
+8. Wire toolbar button using two-hook pattern in `src/index.js` (see Section 9)
+9. Add `!sector` command parsing to `createChatMessage` hook in `src/index.js`
+10. Update `src/context/assembler.js` — add sector context section
+11. Wire `storeSector()` to create settlement and connection entities
+12. Add Quench integration batch to `src/integration/quench.js`
+13. Update `packs/help.json` — add Sector Creator page and changelog entry
+14. Update `docs/scope-index.md` — mark status
+15. Run full test suite and lint
 
 ---
 
@@ -513,5 +531,60 @@ edit them via the Entity Panel immediately.
 which sector context is injected into narration packets.
 
 **Sector trouble is world-scoped:** The trouble is stored on the sector record
-and also added to the World Journal (threats section) automatically if the
-world journal feature is implemented.
+and also added to the World Journal (threats section) automatically — but only
+if the world journal feature is implemented. Do not add World Journal integration
+in this scope; leave a clearly commented stub:
+```js
+// TODO: World Journal integration — add sector trouble as threat when WJ ships
+// await recordThreat(sector.trouble, { type: "environmental", severity: "looming", ... })
+```
+
+---
+
+## 14. Pre-implementation review notes (Session 4, v0.1.39)
+
+These issues were identified in a scope review before implementation. All
+corrections have been applied above where possible.
+
+### 🔴 CRITICAL — Command prefix conflict
+
+The scope originally specified `/sector` commands. Foundry v13 intercepts
+all `/word` commands. The correct prefix is `!`.
+
+**Changes applied above:**
+- Section 1 trigger: updated to `!sector new`
+- Section 8: all commands updated to `!sector`
+- Section 11 (`packs/help.json`): all `<code>` examples updated to `!sector`
+- Section 12 step 9: updated to reference `!sector`
+
+Also applies to the `isPlayerNarration()` exclusion — `!sector` messages already
+start with `!` so they are excluded by the existing `if (text.startsWith("!")) return false`
+guard. No additional exclusion needed.
+
+### 🔴 CRITICAL — Toolbar button two-hook pattern missing
+
+The original Section 9 used `onClick: () => openSectorCreator()` directly on
+the toolbar button definition. This does not fire in Foundry v13 — `button: true`
+tools never invoke `onChange`, and there is no `onClick` property in the API.
+
+**Section 9 has been rewritten** to use the correct two-hook pattern
+(`getSceneControlButtons` + `renderSceneControls`). Implementation order
+step 8 updated accordingly.
+
+### 🟡 OPEN QUESTION — World Journal coupling at sector creation
+
+Section 13 design decisions states the sector trouble "is also added to the
+World Journal (threats section) automatically if the world journal feature is
+implemented." World Journal is still PLANNED and has its own unresolved open
+questions (entity overlap). 
+
+**Decision applied:** Do not implement World Journal integration in this scope.
+A clearly commented stub has been added in Section 13 so the hook point is not
+forgotten. Wire it when World Journal ships.
+
+### 🟢 MINOR — `campaignState.sectors` array size
+
+Sectors are stored as an array of `StoredSector` objects directly in
+`campaignState`, each carrying full `mapData`. For a typical campaign of 3–5
+sectors this is negligible. If a campaign generates 20+ sectors over time, the
+setting payload grows. Acceptable for now; revisit if it becomes an issue.
