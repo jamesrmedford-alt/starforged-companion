@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: Sector-created settlements and connections are now flagged `canonicalLocked` so future narrator-driven entity discovery will not overwrite them
+- Fixed: Sector creator now mirrors each settlement's narrator stub onto the settlement entity record's description, keeping the canonical entity in sync with the sector journal page
 - Added: DALL-E 3 sector background art — each sector gets a generated 1792×1024 landscape image matching its region (Terminus, Outlands, Expanse, Void), with visual modifiers for notable troubles (energy storms, supernova, spatial rifts)
 - Added: Foundry Scene created on sector finalization — background image, Journal Note pins per settlement, Drawing lines for passages; scene is created but not auto-activated
 - Added: Narrator journal stubs — atmospheric one-paragraph descriptions for sector and each settlement generated via Claude Haiku, stored as annotatable journal pages in a sector record JournalEntry

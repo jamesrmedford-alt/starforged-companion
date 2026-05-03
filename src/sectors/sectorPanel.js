@@ -15,6 +15,7 @@ import {
   createEntityJournals,
   generateNarratorStubs,
   createSectorJournal,
+  applyStubsToSettlementEntities,
 } from "./sectorGenerator.js";
 import { renderSectorMap }         from "./sectorMap.js";
 import { generateSectorBackground } from "./sectorArt.js";
@@ -229,6 +230,10 @@ export class SectorCreatorApp extends ApplicationV2 {
           ? generateNarratorStubs(this.#sector, narratorSettings).catch(() => ({ sector: null, settlements: {} }))
           : Promise.resolve({ sector: null, settlements: {} }),
       ]);
+
+      // Mirror settlement stubs onto the entity records so the canonical
+      // entity description matches what the sector journal page shows.
+      await applyStubsToSettlementEntities(entityData.settlements, stubs);
 
       // Sector journal (needs stubs); scene (needs background + entity journals)
       const [sectorJournal, scene] = await Promise.all([
