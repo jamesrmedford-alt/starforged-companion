@@ -223,13 +223,14 @@ export async function createEntityJournals(sector, campaignState) {
   for (const s of sector.settlements) {
     const beforeLen = campaignState.settlementIds?.length ?? 0;
     await createSettlement({
-      name:       s.name,
-      location:   locationTypeToLabel(s.locationType),
-      population: s.population,
-      authority:  s.authority,
-      projects:   s.projects,
-      trouble:    s.trouble ?? null,
-      planet:     s.planet ?? null,
+      name:            s.name,
+      location:        locationTypeToLabel(s.locationType),
+      population:      s.population,
+      authority:       s.authority,
+      projects:        s.projects,
+      trouble:         s.trouble ?? null,
+      planet:          s.planet ?? null,
+      canonicalLocked: true,
     }, campaignState);
     const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
     settlements[s.id] = journalId
@@ -239,11 +240,12 @@ export async function createEntityJournals(sector, campaignState) {
 
   const connBeforeLen = campaignState.connectionIds?.length ?? 0;
   await createConnection({
-    name:     sector.connection.name,
-    role:     sector.connection.role,
-    goal:     sector.connection.goal,
-    rank:     "dangerous",
-    location: sector.connection.homeSettlement,
+    name:            sector.connection.name,
+    role:            sector.connection.role,
+    goal:            sector.connection.goal,
+    rank:            "dangerous",
+    location:        sector.connection.homeSettlement,
+    canonicalLocked: true,
   }, campaignState);
   const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
 
@@ -268,6 +270,12 @@ export async function storeSector(sector, extras, campaignState) {
     stubs            = { sector: null, settlements: {} },
   } = extras ?? {};
 
+  // Single source of truth: the global lists campaignState.settlementIds and
+  // campaignState.connectionIds are authoritative. Each sector record below
+  // holds a *reference subset* of those same JournalEntry IDs — never a copy
+  // or a parallel ID space. createSettlement()/createConnection() are
+  // responsible for pushing IDs to the global lists; we read the same IDs
+  // back here via `settlements`/`connectionJournalId`.
   const stored = {
     id:                 sector.id,
     name:               sector.name,
@@ -344,6 +352,31 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
   }
 
   return { sector: sectorStubText, settlements };
+}
+
+/**
+ * Write each settlement narrator stub into its entity record's `description`
+ * field, so the canonical entity carries the same prose as the sector journal
+ * page. Safe to call when stubs are missing — fields stay untouched.
+ *
+ * @param {Object} settlements — { sourceSettlementId: JournalEntry|null }
+ * @param {{ settlements?: Object }} stubs — output from generateNarratorStubs()
+ * @returns {Promise<void>}
+ */
+export async function applyStubsToSettlementEntities(settlements, stubs) {
+  if (!stubs?.settlements) return;
+  for (const [sourceId, entry] of Object.entries(settlements ?? {})) {
+    const stub = stubs.settlements[sourceId];
+    if (!stub || !entry) continue;
+    const page = entry.pages?.contents?.[0];
+    if (!page) continue;
+    const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
+    try {
+      await page.setFlag(MODULE_ID, "settlement", { ...existing, description: stub });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Failed to apply stub to settlement entity:`, err);
+    }
+  }
 }
 
 /**

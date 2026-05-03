@@ -42,6 +42,11 @@ export const SettlementSchema = {
   // Linked entities
   connectionIds: [],     // Connection _ids of notable inhabitants
 
+  // Set true when this entity was authored by the sector creator (or any other
+  // canonical source) and should not be overwritten by narrator entity discovery.
+  // No-op until the entity discovery system reads it.
+  canonicalLocked: false,
+
   createdAt: null,
   updatedAt: null,
 };

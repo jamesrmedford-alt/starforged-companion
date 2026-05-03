@@ -389,6 +389,11 @@ export const ConnectionSchema = {
   // Privacy — per Brief §3: individual player Lines must not be visible to other players
   playerVisible: true,          // false = GM-only record (hidden antagonists, secret NPCs)
 
+  // Set true when this connection was authored by the sector creator (or any
+  // other canonical source) and should not be overwritten by narrator entity
+  // discovery. No-op until the entity discovery system reads it.
+  canonicalLocked: false,
+
   createdAt: null,
   updatedAt: null,
 };
