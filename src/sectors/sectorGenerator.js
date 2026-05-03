@@ -82,9 +82,9 @@ export function generateSector(region, _overrides = {}) {
   const passages = [];
   for (let i = 0; i < cfg.passages; i++) {
     if (settlements[i] && settlements[i + 1]) {
-      passages.push({ fromId: i, toId: i + 1, toEdge: false });
+      passages.push({ fromId: settlements[i].id, toId: settlements[i + 1].id, toEdge: false });
     } else {
-      passages.push({ fromId: i, toId: null, toEdge: true, edgeDirection: "right" });
+      passages.push({ fromId: settlements[i].id, toId: null, toEdge: true, edgeDirection: "right" });
     }
   }
 
@@ -223,31 +223,55 @@ export async function createEntityJournals(sector, campaignState) {
   for (const s of sector.settlements) {
     const beforeLen = campaignState.settlementIds?.length ?? 0;
     await createSettlement({
-      name:            s.name,
-      location:        locationTypeToLabel(s.locationType),
-      population:      s.population,
-      authority:       s.authority,
-      projects:        s.projects,
-      trouble:         s.trouble ?? null,
-      planet:          s.planet ?? null,
-      canonicalLocked: true,
+      name:       s.name,
+      location:   locationTypeToLabel(s.locationType),
+      population: s.population,
+      authority:  s.authority,
+      projects:   s.projects,
+      trouble:    s.trouble ?? null,
+      planet:     s.planet ?? null,
     }, campaignState);
     const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
-    settlements[s.id] = journalId
+    const journalEntry = journalId
       ? ((() => { try { return game.journal?.get(journalId) ?? null; } catch { return null; } })())
       : null;
+    settlements[s.id] = journalEntry;
+    if (journalEntry) {
+      const page = journalEntry.pages?.contents?.[0];
+      if (page) {
+        const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
+        await page.setFlag(MODULE_ID, "settlement", {
+          ...existing,
+          canonicalLocked: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
   }
 
   const connBeforeLen = campaignState.connectionIds?.length ?? 0;
   await createConnection({
-    name:            sector.connection.name,
-    role:            sector.connection.role,
-    goal:            sector.connection.goal,
-    rank:            "dangerous",
-    location:        sector.connection.homeSettlement,
-    canonicalLocked: true,
+    name:     sector.connection.name,
+    role:     sector.connection.role,
+    goal:     sector.connection.goal,
+    rank:     "dangerous",
+    location: sector.connection.homeSettlement,
   }, campaignState);
   const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
+  if (connectionJournalId) {
+    try {
+      const connEntry = game.journal?.get(connectionJournalId) ?? null;
+      const connPage  = connEntry?.pages?.contents?.[0];
+      if (connPage) {
+        const existing = connPage.flags?.[MODULE_ID]?.["connection"] ?? {};
+        await connPage.setFlag(MODULE_ID, "connection", {
+          ...existing,
+          canonicalLocked: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch { /* non-Foundry context */ }
+  }
 
   return { settlements, connectionJournalId };
 }
