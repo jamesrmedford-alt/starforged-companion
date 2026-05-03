@@ -356,7 +356,7 @@ function registerActorHook() {
  * - GM messages
  * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
  */
-function isPlayerNarration(message) {
+export function isPlayerNarration(message) {
   // String literal type checks — v13 compatible
   const type = message.type;
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
