@@ -107,6 +107,29 @@ export const ANOMALY_EFFECT = [
   { min: 97,  max: 100, result: "Roll twice" },
 ];
 
+export const SECTOR_TROUBLE = [
+  { min: 1,   max: 5,   result: "Blockade prevents trade with other sectors" },
+  { min: 6,   max: 10,  result: "Bounty hunters search for an infamous fugitive" },
+  { min: 11,  max: 15,  result: "Chaotic breaches in spacetime spread like wildfire" },
+  { min: 16,  max: 20,  result: "Criminal faction corrupts local authorities" },
+  { min: 21,  max: 25,  result: "Devastating superweapon has fallen into the wrong hands" },
+  { min: 26,  max: 30,  result: "Energy storms are rampant" },
+  { min: 31,  max: 35,  result: "Magnetic disturbances disrupt communication" },
+  { min: 36,  max: 40,  result: "Newly found resource lures greedy fortune hunters" },
+  { min: 41,  max: 45,  result: "Notorious pirate clan preys on starships" },
+  { min: 46,  max: 50,  result: "Parasitic lifeforms spread like a plague" },
+  { min: 51,  max: 55,  result: "Precursor sites throughout the sector emit strange signals" },
+  { min: 56,  max: 60,  result: "Prophecies foretell an imminent awakening of a dreadful power" },
+  { min: 61,  max: 65,  result: "Raider clan emerges as a dominant threat under a new leader" },
+  { min: 66,  max: 70,  result: "Religious zealots overrun the sector" },
+  { min: 71,  max: 75,  result: "Rogue AI infiltrates systems throughout the sector" },
+  { min: 76,  max: 80,  result: "Settlements or factions are on the brink of war" },
+  { min: 81,  max: 85,  result: "Ships regularly go missing" },
+  { min: 86,  max: 90,  result: "Sickness spreads among ships and settlements" },
+  { min: 91,  max: 95,  result: "Supernova is imminent" },
+  { min: 96,  max: 100, result: "Titanic spaceborne lifeform stalks the spaceways" },
+];
+
 export const COMBAT_ACTION = [
   { min: 1,   max: 3,   result: "Block a path or cut off an objective" },
   { min: 4,   max: 6,   result: "Cause reckless damage" },

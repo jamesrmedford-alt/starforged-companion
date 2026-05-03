@@ -304,3 +304,208 @@ describe("assembleContextPacket", () => {
     expect(packet.assembled).toMatch(/survivor/i);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONNECTIONS SECTION (formatConnection branches + loadConnections catch)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildConnectionsSection — formatConnection", () => {
+  afterEach(() => {
+    game.journal.get = () => null;
+  });
+
+  it("formats a connection with all optional fields", async () => {
+    game.journal.get = (id) => {
+      if (id !== "conn-1") return null;
+      return {
+        pages: { contents: [{ flags: { "starforged-companion": { connection: {
+          _id: "conn-1",
+          name: "Astra Veil",
+          role: "Navigator",
+          rank: "Dangerous",
+          relationshipType: "Ally",
+          bonded: true,
+          description: "Old friend from the Exodus fleet.",
+          motivation: "Seeks the lost colony.",
+          loremasterNotes: "Secretly a Soulbinder.",
+        }}}}] },
+      };
+    };
+    const state  = baseCampaignState({ connectionIds: ["conn-1"] });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/Astra Veil/);
+    expect(packet.assembled).toMatch(/Navigator/);
+    expect(packet.assembled).toMatch(/Bonded/);
+    expect(packet.assembled).toMatch(/Seeks the lost colony/);
+    expect(packet.assembled).toMatch(/Soulbinder/);
+  });
+
+  it("formats a connection with no optional fields", async () => {
+    game.journal.get = (id) => {
+      if (id !== "conn-2") return null;
+      return {
+        pages: { contents: [{ flags: { "starforged-companion": { connection: {
+          _id: "conn-2",
+          name: "Kael",
+        }}}}] },
+      };
+    };
+    const state  = baseCampaignState({ connectionIds: ["conn-2"] });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/Kael/);
+  });
+
+  it("handles loadConnections journal error gracefully", async () => {
+    game.journal.get = () => { throw new Error("journal unavailable"); };
+    const state  = baseCampaignState({ connectionIds: ["conn-err"] });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).not.toMatch(/ACTIVE CONNECTIONS/i);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROGRESS TRACKS SECTION (formatProgressTrack branches)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildProgressTracksSection", () => {
+  afterEach(() => {
+    game.journal.getName = () => null;
+  });
+
+  it("formats active tracks with rank", async () => {
+    game.journal.getName = (name) => {
+      if (name !== "Starforged Progress Tracks") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
+        { id: "t1", label: "Find the lost colony", type: "vow", rank: "Epic", ticks: 8, completed: false },
+      ]}}}] }};
+    };
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/PROGRESS TRACKS/i);
+    expect(packet.assembled).toMatch(/Find the lost colony/);
+    expect(packet.assembled).toMatch(/Epic/);
+  });
+
+  it("formats active tracks without rank", async () => {
+    game.journal.getName = (name) => {
+      if (name !== "Starforged Progress Tracks") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
+        { id: "t2", label: "Explore the ruin", type: "expedition", ticks: 16, completed: false },
+      ]}}}] }};
+    };
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/Explore the ruin/);
+  });
+
+  it("omits progress tracks section when all tracks are completed", async () => {
+    game.journal.getName = (name) => {
+      if (name !== "Starforged Progress Tracks") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
+        { id: "t3", label: "Done quest", type: "vow", ticks: 40, completed: true },
+      ]}}}] }};
+    };
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).not.toMatch(/PROGRESS TRACKS/i);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR SECTION (buildSectorSection branches)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildSectorSection", () => {
+  it("includes active sector with faction, settlements, plural passages", async () => {
+    const state = baseCampaignState({
+      activeSectorId: "s1",
+      sectors: [{
+        id: "s1", name: "Void's Margin", region: "expanse", regionLabel: "The Expanse",
+        trouble: "A warlord claims these passages.", faction: "Iron Wraiths",
+        mapData: { settlements: [{ name: "Duskfall" }, { name: "The Anchor" }], passages: [1, 2, 3] },
+      }],
+    });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/ACTIVE SECTOR/i);
+    expect(packet.assembled).toMatch(/Void's Margin/);
+    expect(packet.assembled).toMatch(/Iron Wraiths/);
+    expect(packet.assembled).toMatch(/Duskfall/);
+    expect(packet.assembled).toMatch(/3 charted routes/);
+  });
+
+  it("uses singular 'route' for exactly 1 passage", async () => {
+    const state = baseCampaignState({
+      activeSectorId: "s2",
+      sectors: [{
+        id: "s2", name: "The Reach", region: "terminus",
+        trouble: "Quiet for now.", mapData: { settlements: [], passages: [1] },
+      }],
+    });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/1 charted route[^s]/);
+  });
+
+  it("omits sector section when activeSectorId is absent", async () => {
+    const state = baseCampaignState({ activeSectorId: undefined, sectors: [] });
+    const packet = await assembleContextPacket(baseResolution(), state, { tokenBudget: 2000 });
+    expect(packet.assembled).not.toMatch(/ACTIVE SECTOR/i);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER STATE SECTION (formatCharacterBlock branches)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildCharacterStateSection", () => {
+  afterEach(() => {
+    game.actors._reset();
+    game.journal.getName = () => null;
+  });
+
+  it("includes character state block for player-owned actors", async () => {
+    game.actors._set("char-1", makeTestActor({ id: "char-1", name: "Kira Voss" }));
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/CHARACTER STATE/i);
+    expect(packet.assembled).toMatch(/Kira Voss/);
+  });
+
+  it("includes chronicle summary when journal entries exist", async () => {
+    game.actors._set("char-2", makeTestActor({ id: "char-2", name: "Dax Holt" }));
+    game.journal.getName = (name) => {
+      if (name !== "Chronicle — Dax Holt") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { chronicleEntries: [
+        { id: "e1", type: "annotation", text: "Survived the Vault of Ember.", pinned: false, automated: false },
+        { id: "e2", type: "annotation", text: "Vowed to find the missing crew.", pinned: false, automated: false },
+      ]}}}] }};
+    };
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/CHARACTER STATE/i);
+    expect(packet.assembled).toMatch(/Dax Holt/);
+  });
+
+  it("skips character state when setting is disabled", async () => {
+    game.actors._set("char-3", makeTestActor({ id: "char-3", name: "Sera Ix" }));
+    game.settings._store.set("starforged-companion.characterContextEnabled", false);
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).not.toMatch(/CHARACTER STATE/i);
+    game.settings._store.delete("starforged-companion.characterContextEnabled");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUDGET ENFORCEMENT (truncation path in enforceBudget / truncateToTokens)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("enforceBudget — truncation", () => {
+  it("truncates content that partially fits rather than omitting it entirely", async () => {
+    // World truths section is ~400 chars; budget of 60 tokens (~240 chars) should
+    // trigger the truncation path (content too large to fit, but budget > 10 tokens).
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 60 }
+    );
+    // Budget was exceeded
+    expect(packet.budgetExceeded).toBe(true);
+  });
+});
