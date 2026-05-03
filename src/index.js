@@ -82,7 +82,7 @@ function registerCoreSettings() {
     name:    "Claude API Key",
     hint:    "Your Anthropic API key. Stored locally in your browser — never sent to Foundry's server.",
     scope:   "client",
-    config:  true,
+    config:  false,
     type:    String,
     default: "",
   });
@@ -91,7 +91,7 @@ function registerCoreSettings() {
     name:    "Art Generation API Key",
     hint:    "API key for your chosen art generation backend (Replicate, fal.ai, or DALL-E).",
     scope:   "client",
-    config:  true,
+    config:  false,
     type:    String,
     default: "",
   });
