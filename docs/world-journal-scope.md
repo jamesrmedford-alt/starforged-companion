@@ -259,10 +259,10 @@ extract what is explicitly in the narration, not infer or embellish.
 Players and GM can add world journal entries directly:
 
 ```
-/journal faction "The Keeper's Covenant" hostile — they burned the relay station
-/journal location "Derelict Station Kovash" derelict — abandoned, radiation warning
-/journal lore "The iron panel navigates to Ascendancy space" confirmed
-/journal threat "Ascendancy AI fragment" immediate — pursuing the panel
+!journal faction "The Keeper's Covenant" hostile — they burned the relay station
+!journal location "Derelict Station Kovash" derelict — abandoned, radiation warning
+!journal lore "The iron panel navigates to Ascendancy space" confirmed
+!journal threat "Ascendancy AI fragment" immediate — pursuing the panel
 ```
 
 These are parsed in the `createChatMessage` handler, validated, and passed
@@ -350,8 +350,8 @@ detectAndRecordWorldEvents — detection prompt parsing
   ✓ confirmed=false entries are marked as rumour
 
 parseJournalCommand
-  ✓ parses /journal faction correctly
-  ✓ parses /journal threat with severity
+  ✓ parses !journal faction correctly
+  ✓ parses !journal threat with severity
   ✓ rejects unknown journal types
   ✓ handles quoted names with spaces
 
@@ -365,7 +365,7 @@ isNewSessionStart (shared with recap)
 World journal (live Foundry)
   ✓ initWorldJournals() creates folder and category journals
   ✓ narration detection creates faction entry in journal
-  ✓ /journal command creates entry immediately
+  ✓ !journal command creates entry immediately
   ✓ annotation is visible after annotateEntry()
   ✓ writeSessionLog() produces a readable session page
   ✓ world knowledge section appears in context packet
@@ -400,11 +400,99 @@ This is negligible. The detection call is Haiku and very short.
 3. Add `initWorldJournals()` to ready hook in `index.js`
 4. Write detection prompt and `detectAndRecordWorldEvents()` in `narrator.js`
 5. Wire detection call after `postNarrationCard()` in `narrateResolution()`
-6. Add `/journal` command parsing to `createChatMessage` hook in `index.js`
-7. Write `src/world/worldJournalPanel.js` (ApplicationV2, tabbed)
+6. Add `!journal` command parsing to `createChatMessage` hook in `index.js`
+7. Write `src/world/worldJournalPanel.js` (ApplicationV2, tabbed) — use two-hook pattern for toolbar button (see architectural notes in CLAUDE.md)
 8. Add world knowledge section to `assembler.js`
 9. Add settings to `settingsPanel.js`
 10. Add CSS for world journal panel and threat/faction badges
 11. Write `tests/unit/worldJournal.test.js`
 12. Integration test in live Foundry
 13. Update `docs/file-structure.md`
+
+---
+
+## 13. Pre-implementation review notes (Session 4, v0.1.39)
+
+These issues were identified in a scope review before implementation. Resolve
+before handing to Claude Code.
+
+### 🔴 CRITICAL — Command prefix conflict
+
+The scope originally specified `/journal` commands. Foundry v13 intercepts
+all `/word` commands via `MESSAGE_PATTERNS.invalid`. The correct prefix is `!`.
+
+**Required changes throughout this document (now applied above):**
+- Section 6: all example commands updated from `/journal` to `!journal`
+- Section 10: `parseJournalCommand` test cases updated to `!journal`
+- Section 12 step 6: updated to reference `!journal`
+- The `packs/help.json` World Journal page also references `/journal` — Claude
+  Code must update it to `!journal` when implementing
+
+### 🟡 OPEN QUESTION — Overlap with entity tracking
+
+The entity panel (`entityPanel.js`) already tracks Factions, Connections,
+Settlements, and Planets as structured records with DALL-E portraits. The World
+Journal faction and location entries would be parallel structures covering the
+same real-world objects with different schemas and different storage (entity
+journals vs. world journal pages).
+
+**Decision needed before implementation:** When a faction or location is already
+tracked as an entity, should World Journal:
+
+A. **Create a parallel entry** — two separate records, different purposes
+   (entity = structured operational record; world journal = narrative intelligence
+   file). Simpler to implement, no coupling.
+
+B. **Link to the existing entity** — world journal faction entry stores the
+   entity ID and renders inline with it. More coherent UX, significantly more
+   complex.
+
+C. **Skip auto-detection for tracked entities** — if a faction is already in
+   the entity panel, suppress the world journal detection for it and rely on the
+   entity record instead.
+
+Current scope text is silent on this. **Option A is the path of least resistance**
+and consistent with the scope's stated distinction ("entity journals = structured
+records; world journal = learned information"). Flag for owner decision.
+
+### 🟡 OPEN QUESTION — Session log write reliability
+
+`writeSessionLog()` is triggered from `beforeunload` / `closeWorld`. Async
+Foundry document writes (`JournalEntry.create`, `page.update`) in a `beforeunload`
+handler may not complete before the browser tears down the page.
+
+**Claude Code must verify** whether `closeWorld` in v13 provides a reliable
+async context for Foundry document writes, or whether a different trigger is
+needed (e.g., writing the session log when a new session starts, using the
+previous session's recap data).
+
+Check `docs/decisions.md` for any existing note on this pattern before
+implementing.
+
+### 🟡 IMPLEMENTATION NOTE — Toolbar button two-hook pattern
+
+Section 12 step 7 says "write `worldJournalPanel.js` (ApplicationV2, tabbed)"
+without mentioning the toolbar button registration pattern. The world journal
+panel will need a toolbar button. Claude Code must use the two-hook pattern
+(see CLAUDE.md architectural notes):
+
+- Hook 1: `getSceneControlButtons` — register metadata
+- Hook 2: `renderSceneControls` — attach click handler
+
+This is not stated in the current implementation order. Add it explicitly when
+handing off to Claude Code.
+
+### 🟢 MINOR — `packs/help.json` stub already exists
+
+A World Journal page stub already exists in `packs/help.json` (page ID
+`page-world-journal`). Claude Code should **update** the existing page, not
+create a new one. The stub currently references `/journal` commands — this must
+be corrected to `!journal`.
+
+### 🟢 MINOR — Auto-detection opt-in consideration
+
+The `worldJournalAutoDetect` setting defaults to `true`, running a Haiku
+detection call after every narration. At ~$0.008/session this is negligible,
+but some GMs may find background API calls during narration undesirable.
+The default is acceptable; no change required. Document it clearly in the
+settings panel hint text so GMs know it's happening.
