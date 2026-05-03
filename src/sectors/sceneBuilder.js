@@ -94,7 +94,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
         },
       };
     });
-    await scene.createEmbeddedDocuments("Note", noteData);
+    await scene.createEmbeddedDocuments("Note", noteData, { render: false });
   }
 
   // Place Drawing lines for passages
@@ -124,7 +124,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
       .filter(Boolean);
 
     if (drawingData.length) {
-      await scene.createEmbeddedDocuments("Drawing", drawingData);
+      await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
     }
   }
 
