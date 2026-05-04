@@ -131,7 +131,13 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
       .filter(Boolean);
 
     if (drawingData.length) {
-      await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
+      // Passages are visual sugar — a sector without drawn passages is better
+      // than a sector that fails to finalise. Swallow validation errors.
+      try {
+        await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
+      } catch (err) {
+        console.warn(`${MODULE_ID} | createSectorScene: drawing creation failed:`, err.message);
+      }
     }
   }
 
@@ -161,6 +167,7 @@ function makePassageLine(x1, y1, x2, y2, passage, _dashed) {
     strokeColor: "#7EB8F7",
     strokeAlpha: 0.8,
     fillType:    0,   // no fill — important for line drawings
+    fillAlpha:   0,
     hidden:      false,
     flags: {
       [MODULE_ID]: {
