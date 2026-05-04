@@ -483,26 +483,45 @@ function registerSectorCreatorTests(quench) {
       const { describe, it, assert, after } = context;
 
       describe("storeSector — live journal", function () {
-        let createdSectorId = null;
+        let createdSectorId     = null;
+        let createdSettlementIds = [];
+        let createdConnectionId  = null;
 
         after(async function () {
-          // Clean up: remove sector from campaignState
+          // Clean up: remove sector and entity IDs from campaignState
           const state = game.settings.get("starforged-companion", "campaignState");
           if (createdSectorId) {
             state.sectors = (state.sectors ?? []).filter(s => s.id !== createdSectorId);
             if (state.activeSectorId === createdSectorId) state.activeSectorId = null;
+          }
+          if (createdSettlementIds.length) {
+            state.settlementIds = (state.settlementIds ?? [])
+              .filter(id => !createdSettlementIds.includes(id));
+          }
+          if (createdConnectionId) {
+            state.connectionIds = (state.connectionIds ?? [])
+              .filter(id => id !== createdConnectionId);
+          }
+          if (createdSectorId || createdSettlementIds.length || createdConnectionId) {
             await game.settings.set("starforged-companion", "campaignState", state);
           }
         });
 
         it("creates a 'Starforged Sectors' journal if none exists", async function () {
-          const { generateSector, storeSector } = await import(
+          const { generateSector, storeSector, createEntityJournals } = await import(
             `${MODULE_PATH}/sectors/sectorGenerator.js`
           );
           const state  = game.settings.get("starforged-companion", "campaignState");
           const sector = generateSector("expanse");
           createdSectorId = sector.id;
-          await storeSector(sector, state);
+          const entityData = await createEntityJournals(sector, state);
+          createdSettlementIds = Object.values(entityData.settlements)
+            .filter(Boolean).map(j => j.id);
+          createdConnectionId = entityData.connectionJournalId ?? null;
+          await storeSector(sector, {
+            settlements:         entityData.settlements,
+            connectionJournalId: entityData.connectionJournalId,
+          }, state);
           const journal = game.journal.getName("Starforged Sectors");
           assert.isNotNull(journal, "Starforged Sectors journal should exist");
         });
