@@ -9,7 +9,32 @@ import {
   buildSceneUserMessage,
   buildCampaignRecapUserMessage,
   resolveNarrationPerspective,
+  formatEntityCard,
 } from './narratorPrompt.js';
+import { resolveRelevance } from '../context/relevanceResolver.js';
+import { getConnection }  from '../entities/connection.js';
+import { getSettlement }  from '../entities/settlement.js';
+import { getFaction }     from '../entities/faction.js';
+import { getShip }        from '../entities/ship.js';
+import { getPlanet }      from '../entities/planet.js';
+import { getLocation }    from '../entities/location.js';
+import { getCreature }    from '../entities/creature.js';
+
+const ENTITY_GETTERS = {
+  connection: getConnection,
+  settlement: getSettlement,
+  faction:    getFaction,
+  ship:       getShip,
+  planet:     getPlanet,
+  location:   getLocation,
+  creature:   getCreature,
+};
+
+const LOCATION_GETTERS = {
+  settlement: getSettlement,
+  location:   getLocation,
+  planet:     getPlanet,
+};
 
 const MODULE_ID      = 'starforged-companion';
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
@@ -53,7 +78,49 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     recapContext = await getCampaignRecap(campaignState).catch(() => '');
   }
 
-  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, recapContext);
+  // Phase 2 — relevance resolver runs before the narrator call:
+  //   - Picks the narrator-permission block (discovery / interaction / embellishment)
+  //   - Identifies which entity records to inject as cards
+  // No clarification UI yet; needsClarification is logged but doesn't block.
+  let relevance;
+  try {
+    relevance = await resolveRelevance(
+      resolution.playerNarration ?? '',
+      resolution.moveId,
+      resolution.outcome,
+      campaignState,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: resolveRelevance failed; defaulting to embellishment:`, err);
+    relevance = {
+      resolvedClass: 'embellishment',
+      entityIds:     [],
+      entityTypes:   [],
+      matchedNames:  [],
+      needsClarification: false,
+      referenceType: 'none',
+    };
+  }
+
+  if (relevance.needsClarification) {
+    console.log(
+      `${MODULE_ID} | narrator: hybrid implicit reference detected (${relevance.referenceType}); ` +
+      `clarification card not yet implemented — proceeding as interaction.`
+    );
+  }
+
+  const entityCards = collectEntityCards(relevance.entityIds, relevance.entityTypes);
+  const currentLocationCard = formatCurrentLocation(campaignState);
+
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, recapContext,
+    {
+      narratorClass:       relevance.resolvedClass,
+      entityCards,
+      currentLocationCard,
+      oracleSeeds:         resolution.oracleSeeds ?? null,
+    },
+  );
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -441,6 +508,56 @@ export async function interrogateScene(question, campaignState, options = {}) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Build entity-card strings for the matched entities returned by the relevance
+ * resolver. Used to populate the "ENTITIES IN SCENE" section of the narrator
+ * system prompt.
+ */
+function collectEntityCards(ids, types) {
+  if (!Array.isArray(ids) || !ids.length) return [];
+  const cards = [];
+  for (let i = 0; i < ids.length; i++) {
+    const journalId = ids[i];
+    const type      = types?.[i];
+    if (!journalId || !type) continue;
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    let entity = null;
+    try {
+      entity = getter(journalId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: load entity (${type} ${journalId}) failed:`, err);
+      continue;
+    }
+    if (!entity) continue;
+    const card = formatEntityCard(entity, type);
+    if (card) cards.push(card);
+  }
+  return cards;
+}
+
+/**
+ * Build the current-location card from campaignState.currentLocationId.
+ * Returns empty string when no current location is set or the record cannot
+ * be resolved.
+ */
+function formatCurrentLocation(campaignState) {
+  const id   = campaignState?.currentLocationId;
+  const type = campaignState?.currentLocationType;
+  if (!id || !type) return '';
+  const getter = LOCATION_GETTERS[type];
+  if (!getter) return '';
+  let entity = null;
+  try {
+    entity = getter(id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: load currentLocation (${type} ${id}) failed:`, err);
+    return '';
+  }
+  if (!entity) return '';
+  return formatEntityCard(entity, type);
+}
 
 async function postSceneCard(question, responseText, sessionId) {
   return ChatMessage.create({

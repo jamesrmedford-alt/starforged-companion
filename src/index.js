@@ -261,6 +261,12 @@ function registerChatHook() {
       return;
     }
 
+    // !at command — set or clear the current location (intercept before move pipeline)
+    if (isAtCommand(message)) {
+      await handleAtCommand(message);
+      return;
+    }
+
     // !recap command — intercept before move pipeline
     if (isRecapCommand(message)) {
       const text = message.content?.trim() ?? "";
@@ -455,6 +461,104 @@ export function isRecapCommand(message) {
 export function isSectorCommand(message) {
   const text = message.content?.trim() ?? "";
   return text.toLowerCase().startsWith("!sector");
+}
+
+/**
+ * Determine whether a chat message is an !at command.
+ *   !at [name] — set current location by name (matches settlement/location/planet)
+ *   !at        — clear current location
+ */
+export function isAtCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (!text.toLowerCase().startsWith("!at")) return false;
+  // Must be exactly "!at" or "!at " — don't match "!atlas" etc.
+  return text.length === 3 || /^!at\s/i.test(text);
+}
+
+/**
+ * Resolve a name fragment to an entity record by scanning settlement, location,
+ * and planet collections in that priority order. Case-insensitive prefix match
+ * before falling back to substring match.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {{ id: string, type: string, entity: Object }|null}
+ */
+export function resolveCurrentLocationName(name, campaignState) {
+  const target = name?.trim().toLowerCase();
+  if (!target) return null;
+
+  const groups = [
+    ["settlement", campaignState?.settlementIds ?? [], "settlement"],
+    ["location",   campaignState?.locationIds   ?? [], "location"],
+    ["planet",     campaignState?.planetIds     ?? [], "planet"],
+  ];
+
+  // Two-pass match — exact name first, then prefix, then substring.
+  const candidates = [];
+  for (const [type, ids, flagKey] of groups) {
+    for (const journalId of ids) {
+      try {
+        const entry = game.journal?.get(journalId);
+        const page  = entry?.pages?.contents?.[0];
+        const data  = page?.flags?.[MODULE_ID]?.[flagKey];
+        if (data?.name) {
+          candidates.push({ id: journalId, type, entity: data, lc: data.name.toLowerCase() });
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | resolveCurrentLocationName: ${type} ${journalId} failed:`, err);
+      }
+    }
+  }
+
+  return candidates.find(c => c.lc === target)
+      ?? candidates.find(c => c.lc.startsWith(target))
+      ?? candidates.find(c => c.lc.includes(target))
+      ?? null;
+}
+
+/**
+ * Handle !at chat commands.
+ *   !at [name] — set currentLocationId / currentLocationType
+ *   !at        — clear currentLocationId / currentLocationType
+ *
+ * GM-only — world-scoped settings cannot be written by player clients.
+ */
+async function handleAtCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const arg  = text.slice("!at".length).trim();
+
+  if (!game.user.isGM) {
+    ui.notifications.warn("!at is GM-only (writes campaign state).");
+    return;
+  }
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  if (!arg) {
+    campaignState.currentLocationId   = null;
+    campaignState.currentLocationType = null;
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await ChatMessage.create({
+      content: "<p><strong>Current location cleared.</strong></p>",
+      flags:   { [MODULE_ID]: { atCommandCard: true } },
+    });
+    return;
+  }
+
+  const match = resolveCurrentLocationName(arg, campaignState);
+  if (!match) {
+    ui.notifications.warn(`No settlement, location, or planet named "${arg}" found.`);
+    return;
+  }
+
+  campaignState.currentLocationId   = match.id;
+  campaignState.currentLocationType = match.type;
+  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  await ChatMessage.create({
+    content: `<p>Current location set to <strong>${match.entity.name}</strong> (${match.type}).</p>`,
+    flags:   { [MODULE_ID]: { atCommandCard: true } },
+  });
 }
 
 /**
