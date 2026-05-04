@@ -102,6 +102,22 @@ Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 
 ---
 
+## Pull request descriptions
+
+Every PR you open must include the verbatim user prompt that initiated the
+work, under a heading `## Initiating prompt` near the top of the description.
+Quote the prompt as written — do not paraphrase. If the prompt referenced an
+attached screenshot, log excerpt, or other artefact that cannot be embedded,
+note the attachment and briefly describe its content (e.g. "screenshot of
+Foundry browser console showing three DrawingDocument validation errors").
+
+This gives reviewers — and future Claude Code sessions investigating the same
+area — the original framing without having to hunt through chat history.
+Skipping this section is treated the same as skipping the test/lint gate:
+do not open the PR until it is included.
+
+---
+
 ## External API reference — Foundry VTT
 
 Before writing any code that uses Foundry VTT APIs, check the live API

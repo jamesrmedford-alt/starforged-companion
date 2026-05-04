@@ -826,6 +826,15 @@ await scene.createEmbeddedDocuments("Drawing", [
 - `fillType: 0` (no fill) is important for line drawings — otherwise a filled polygon
   is drawn between the points
 - `hidden: false` makes the drawing visible to all players
+- **v13 quirk — shape.width/shape.height must be non-zero for polygons.** Despite
+  the field comments above suggesting `width: 0, height: 0` is acceptable for
+  polygon shapes "computed from points," v13's `BaseDrawing` joint visibility
+  validation rejects drawings whose bounding box is zero-by-zero with the error
+  `"Drawings must have visible text, a visible fill, or a visible line."` —
+  even when `strokeWidth` and `strokeAlpha` are both > 0. Always set
+  `shape.width = Math.abs(dx)` and `shape.height = Math.abs(dy)` (with a
+  `Math.max(..., 1)` guard for degenerate same-point segments). See
+  `src/sectors/sceneBuilder.js` `makePassageLine` for the working pattern.
 
 ---
 
