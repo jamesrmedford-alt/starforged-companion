@@ -55,6 +55,8 @@ const TYPE_STYLE = {
   ship:        "vessel profile, dramatic space backdrop, sense of weight and purpose",
   faction:     "symbolic or emblematic composition, faction insignia or representative figures",
   planet:      "orbital or surface view, planetary scale, atmospheric detail",
+  location:    "establishing shot, environmental detail, sense of place and atmosphere",
+  creature:    "creature profile, full form visible, alien biology, dark science fiction concept art",
 };
 
 

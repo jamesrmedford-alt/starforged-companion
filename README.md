@@ -160,16 +160,21 @@ Estimated per 3-hour session (~20 moves) with prompt caching:
 | Portrait generation (DALL-E 3, 1024×1024) | ~$0.04 each | Infrequent |
 | Sector background art (DALL-E 3, 1792×1024) | ~$0.08 per sector | ~3–5 sectors/campaign |
 
-Each narration call sends approximately **1,200 tokens** of context to Claude
-(safety configuration, world truths, entity cards, progress tracks, character
-state). At current Sonnet pricing this is roughly $0.004 per call in input
-tokens alone.
-
 Prompt caching significantly reduces interpretation and narration costs within
 a session. Both Haiku and Sonnet narration are practical for regular play.
 
-The context packet budget is defined in `src/schemas.js`
-(`ContextPacketSchema.tokenBudget`).
+### Context packet size
+
+Each narration call sends approximately **1,200 tokens** of context to the
+Claude API, regardless of move type. This covers safety configuration, narrator
+permissions, world truths, entity cards for entities present in the scene,
+active progress tracks, and character state.
+
+At current Sonnet pricing this is ~$0.004 per narration input. Output
+(the narration itself) adds ~$0.003–$0.006 depending on length setting.
+Total per move: ~$0.007–$0.010 on Sonnet. Haiku is approximately 10× cheaper.
+
+The budget is defined in `src/schemas.js` (`ContextPacketSchema.tokenBudget`).
 
 ---
 

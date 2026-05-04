@@ -80,79 +80,88 @@ export const MOVE_CATEGORIES = [
  */
 export const MOVES = {
   // SESSION
-  begin_a_session:           { category: "session",     stat: null },
-  set_a_flag:                { category: "session",     stat: null },
-  change_your_fate:          { category: "session",     stat: null },
-  take_a_break:              { category: "session",     stat: null },
-  end_a_session:             { category: "session",     stat: null },
+  begin_a_session:           { category: "session",     stat: null,                                                  narratorClass: "discovery"     },
+  set_a_flag:                { category: "session",     stat: null,                                                  narratorClass: "embellishment" },
+  change_your_fate:          { category: "session",     stat: null,                                                  narratorClass: "embellishment" },
+  take_a_break:              { category: "session",     stat: null,                                                  narratorClass: "embellishment" },
+  end_a_session:             { category: "session",     stat: null,                                                  narratorClass: "embellishment" },
 
   // ADVENTURE
-  face_danger:               { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"] },
-  secure_an_advantage:       { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"] },
-  gather_information:        { category: "adventure",   stat: ["wits"] },
-  compel:                    { category: "adventure",   stat: ["heart","iron","shadow"] },
-  aid_your_ally:             { category: "adventure",   stat: null },   // delegates to secure_an_advantage or gain_ground
-  check_your_gear:           { category: "adventure",   stat: ["supply"] },
+  face_danger:               { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "hybrid"         },
+  secure_an_advantage:       { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "hybrid"         },
+  gather_information:        { category: "adventure",   stat: ["wits"],                                              narratorClass: "discovery"      },
+  compel:                    { category: "adventure",   stat: ["heart","iron","shadow"],                             narratorClass: "interaction"    },
+  aid_your_ally:             { category: "adventure",   stat: null,                                                  narratorClass: "embellishment" },   // delegates to secure_an_advantage or gain_ground
+  check_your_gear:           { category: "adventure",   stat: ["supply"],                                            narratorClass: "embellishment" },
 
   // QUEST
-  swear_an_iron_vow:         { category: "quest",       stat: ["heart"] },
-  reach_a_milestone:         { category: "quest",       stat: null },
-  fulfill_your_vow:          { category: "quest",       stat: null,  progressMove: true },
-  forsake_your_vow:          { category: "quest",       stat: null },
+  swear_an_iron_vow:         { category: "quest",       stat: ["heart"],                                             narratorClass: "hybrid"         },
+  reach_a_milestone:         { category: "quest",       stat: null,                                                  narratorClass: "embellishment" },
+  fulfill_your_vow:          { category: "quest",       stat: null,  progressMove: true,                             narratorClass: "hybrid"         },
+  forsake_your_vow:          { category: "quest",       stat: null,                                                  narratorClass: "hybrid"         },
 
   // CONNECTION
-  make_a_connection:         { category: "connection",  stat: ["heart"] },
-  develop_your_relationship: { category: "connection",  stat: null },
-  test_your_relationship:    { category: "connection",  stat: ["heart"] },
-  forge_a_bond:              { category: "connection",  stat: null,  progressMove: true },
+  make_a_connection:         { category: "connection",  stat: ["heart"],                                             narratorClass: "discovery"      },
+  develop_your_relationship: { category: "connection",  stat: null,                                                  narratorClass: "interaction"    },
+  test_your_relationship:    { category: "connection",  stat: ["heart"],                                             narratorClass: "interaction"    },
+  forge_a_bond:              { category: "connection",  stat: null,  progressMove: true,                             narratorClass: "interaction"    },
 
   // EXPLORATION
-  undertake_an_expedition:   { category: "exploration", stat: ["edge","shadow","wits"] },
-  explore_a_waypoint:        { category: "exploration", stat: ["wits"] },
-  finish_an_expedition:      { category: "exploration", stat: null,  progressMove: true },
-  set_a_course:              { category: "exploration", stat: ["supply"] },
-  make_a_discovery:          { category: "exploration", stat: null },
-  confront_chaos:            { category: "exploration", stat: null },
+  undertake_an_expedition:   { category: "exploration", stat: ["edge","shadow","wits"],                              narratorClass: "hybrid"         },
+  explore_a_waypoint:        { category: "exploration", stat: ["wits"],                                              narratorClass: "discovery"      },
+  finish_an_expedition:      { category: "exploration", stat: null,  progressMove: true,                             narratorClass: "hybrid"         },
+  set_a_course:              { category: "exploration", stat: ["supply"],                                            narratorClass: "embellishment" },
+  make_a_discovery:          { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
+  confront_chaos:            { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
 
   // COMBAT
-  enter_the_fray:            { category: "combat",      stat: ["edge","heart","iron","shadow","wits"] },
-  gain_ground:               { category: "combat",      stat: ["edge","heart","iron","shadow","wits"] },
-  strike:                    { category: "combat",      stat: ["iron","edge"] },
-  clash:                     { category: "combat",      stat: ["iron","edge"] },
-  react_under_fire:          { category: "combat",      stat: ["edge","heart","iron","shadow","wits"] },
-  take_decisive_action:      { category: "combat",      stat: null,  progressMove: true },
-  face_defeat:               { category: "combat",      stat: null },
-  battle:                    { category: "combat",      stat: ["edge","heart","iron","shadow","wits"] },
+  enter_the_fray:            { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "interaction"    },
+  gain_ground:               { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "interaction"    },
+  strike:                    { category: "combat",      stat: ["iron","edge"],                                       narratorClass: "interaction"    },
+  clash:                     { category: "combat",      stat: ["iron","edge"],                                       narratorClass: "interaction"    },
+  react_under_fire:          { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "interaction"    },
+  take_decisive_action:      { category: "combat",      stat: null,  progressMove: true,                             narratorClass: "interaction"    },
+  face_defeat:               { category: "combat",      stat: null,                                                  narratorClass: "embellishment" },
+  battle:                    { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "hybrid"         },
 
   // SUFFER
-  lose_momentum:             { category: "suffer",      stat: null },
-  endure_harm:               { category: "suffer",      stat: ["health","iron"] },   // roll higher of the two
-  endure_stress:             { category: "suffer",      stat: ["spirit","heart"] },  // roll higher of the two
-  withstand_damage:          { category: "suffer",      stat: ["integrity"] },
-  companion_takes_a_hit:     { category: "suffer",      stat: ["companion_health"] },
-  sacrifice_resources:       { category: "suffer",      stat: null },
+  lose_momentum:             { category: "suffer",      stat: null,                                                  narratorClass: "embellishment" },
+  endure_harm:               { category: "suffer",      stat: ["health","iron"],                                     narratorClass: "embellishment" },   // roll higher of the two
+  endure_stress:             { category: "suffer",      stat: ["spirit","heart"],                                    narratorClass: "embellishment" },   // roll higher of the two
+  withstand_damage:          { category: "suffer",      stat: ["integrity"],                                         narratorClass: "embellishment" },
+  companion_takes_a_hit:     { category: "suffer",      stat: ["companion_health"],                                  narratorClass: "embellishment" },
+  sacrifice_resources:       { category: "suffer",      stat: null,                                                  narratorClass: "embellishment" },
 
   // RECOVER
-  sojourn:                   { category: "recover",     stat: ["heart"] },
-  heal:                      { category: "recover",     stat: ["iron","wits","heart"] },
-  hearten:                   { category: "recover",     stat: ["heart"] },
-  resupply:                  { category: "recover",     stat: ["heart","iron","shadow","wits"] },
-  repair:                    { category: "recover",     stat: ["wits","supply"] },
+  sojourn:                   { category: "recover",     stat: ["heart"],                                             narratorClass: "discovery"      },
+  heal:                      { category: "recover",     stat: ["iron","wits","heart"],                               narratorClass: "embellishment" },
+  hearten:                   { category: "recover",     stat: ["heart"],                                             narratorClass: "embellishment" },
+  resupply:                  { category: "recover",     stat: ["heart","iron","shadow","wits"],                      narratorClass: "hybrid"         },
+  repair:                    { category: "recover",     stat: ["wits","supply"],                                     narratorClass: "embellishment" },
 
   // THRESHOLD
-  face_death:                { category: "threshold",   stat: ["heart"] },
-  face_desolation:           { category: "threshold",   stat: ["heart"] },
-  overcome_destruction:      { category: "threshold",   stat: null,  progressMove: true },
+  face_death:                { category: "threshold",   stat: ["heart"],                                             narratorClass: "interaction"    },
+  face_desolation:           { category: "threshold",   stat: ["heart"],                                             narratorClass: "interaction"    },
+  overcome_destruction:      { category: "threshold",   stat: null,  progressMove: true,                             narratorClass: "interaction"    },
 
   // LEGACY
-  earn_experience:           { category: "legacy",      stat: null },
-  advance:                   { category: "legacy",      stat: null },
-  continue_a_legacy:         { category: "legacy",      stat: null,  progressMove: true },
+  earn_experience:           { category: "legacy",      stat: null,                                                  narratorClass: "embellishment" },
+  advance:                   { category: "legacy",      stat: null,                                                  narratorClass: "embellishment" },
+  continue_a_legacy:         { category: "legacy",      stat: null,  progressMove: true,                             narratorClass: "embellishment" },
 
   // FATE
-  ask_the_oracle:            { category: "fate",        stat: null },
-  pay_the_price:             { category: "fate",        stat: null },
+  ask_the_oracle:            { category: "fate",        stat: null,                                                  narratorClass: "discovery"      },
+  pay_the_price:             { category: "fate",        stat: null,                                                  narratorClass: "hybrid"         },
 };
+
+/**
+ * Valid narratorClass values for the MOVES taxonomy.
+ *   "discovery"     — narrator may introduce new named entities
+ *   "interaction"   — narrator must use established entities; may add generative detail
+ *   "embellishment" — sensory/atmospheric only; no entity introduction permitted
+ *   "hybrid"        — class resolved at runtime via the relevance resolver
+ */
+export const NARRATOR_CLASSES = ["discovery", "interaction", "embellishment", "hybrid"];
 
 /**
  * Mischief dial settings for the Trickster Layer move interpretation personality.
@@ -394,6 +403,10 @@ export const ConnectionSchema = {
   // discovery. No-op until the entity discovery system reads it.
   canonicalLocked: false,
 
+  // Narrator-added detail entries with session attribution. See
+  // narrator-entity-discovery scope §3 for shape and lifecycle.
+  generativeTier: [],
+
   createdAt: null,
   updatedAt: null,
 };
@@ -617,9 +630,24 @@ export const CampaignStateSchema = {
   characterIds:     [],
   connectionIds:    [],
   settlementIds:    [],
+  locationIds:      [],         // JournalEntry IDs for location records
+  creatureIds:      [],         // JournalEntry IDs for creature records
   progressTrackIds: [],
   clockIds:         [],
   oracleResultIds:  [],         // Recent results for context injection
+
+  // Current scene location — set via !at command. Populates the current
+  // location card in narrator context.
+  currentLocationId:   null,    // JournalEntry ID of current settlement/location/planet
+  currentLocationType: null,    // "settlement" | "location" | "planet"
+
+  // Entity names suppressed from narrator extraction. Populated by the
+  // entity panel's dismiss action.
+  dismissedEntities:   [],
+
+  // Set when a hybrid move with implicit reference is awaiting clarification.
+  // Pipeline pauses until the clarification card is resolved.
+  pendingClarification: null,
 
   // Claude API configuration
   api: {
@@ -787,7 +815,7 @@ export const ContextPacketSchema = {
   },
 
   totalTokenEstimate: 0,
-  tokenBudget: 400,             // Target token ceiling for the context packet
+  tokenBudget: 1200,            // Target token ceiling for the context packet
   budgetExceeded: false,
   omittedSections: [],          // Sections dropped to fit budget. Never includes "safety".
 

@@ -55,6 +55,10 @@ export const ShipSchema = {
   // Support vehicles nested under a command vehicle
   supportVehicleIds: [],
 
+  // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
+  canonicalLocked: false,
+  generativeTier:  [],
+
   createdAt: null,
   updatedAt: null,
 };

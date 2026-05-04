@@ -30,6 +30,8 @@ const ENTITY_TYPES = {
   settlement:  { label: 'Settlements',  flag: 'settlement',  icon: '⬟' },
   faction:     { label: 'Factions',     flag: 'faction',     icon: '⬢' },
   planet:      { label: 'Planets',      flag: 'planet',      icon: '◉' },
+  location:    { label: 'Locations',    flag: 'location',    icon: '◧' },
+  creature:    { label: 'Creatures',    flag: 'creature',    icon: '⬣' },
 };
 
 const DETAIL_FIELDS = {

@@ -17,7 +17,7 @@
  *   6. Session notes              — dropped first if budget exceeded
  *   7. Resolved move outcome      — always included (Loremaster needs this)
  *
- * Token budget default: 400 tokens (~1600 characters).
+ * Token budget default: 1200 tokens (~4800 characters).
  * Safety and move outcome sections are exempt — they are never dropped.
  *
  * Post-session-3 fixes applied here:
@@ -50,14 +50,14 @@ const TRACKS_FLAG_KEY   = "tracks";
  * @param {Object} [options]
  * @param {Object} [options.sessionState]  — SessionSchema for session-scoped safety
  * @param {string} [options.currentUserId] — For private Lines resolution
- * @param {number} [options.tokenBudget]   — Override default 400-token budget
+ * @param {number} [options.tokenBudget]   — Override default 1200-token budget
  * @returns {Object}               — ContextPacketSchema
  */
 export async function assembleContextPacket(resolution, campaignState, options = {}) {
   const {
     sessionState  = null,
     currentUserId = null,
-    tokenBudget   = 400,
+    tokenBudget   = 1200,
   } = options;
 
   // FIX 3: Check both sessionState.xCardActive (session-scoped) and
@@ -567,7 +567,7 @@ function buildSuppressedPacket(resolution, campaignState) {
       safety: { content, tokenEstimate: estimateTokens(content), alwaysInclude: true },
     },
     totalTokenEstimate: estimateTokens(content),
-    tokenBudget:     400,
+    tokenBudget:     1200,
     budgetExceeded:  false,
     omittedSections: [
       "worldTruths", "activeConnections", "progressTracks",

@@ -49,6 +49,10 @@ export const PlanetSchema = {
   sceneRelevant:   false,
   loremasterNotes: "",
 
+  // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
+  canonicalLocked: false,
+  generativeTier:  [],
+
   createdAt: null,
   updatedAt: null,
 };
