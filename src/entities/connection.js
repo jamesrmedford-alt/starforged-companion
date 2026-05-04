@@ -75,6 +75,7 @@ export async function createConnection(data, campaignState) {
   }]);
 
   // Register in campaign state
+  if (!campaignState.connectionIds) campaignState.connectionIds = [];
   if (!campaignState.connectionIds.includes(entry.id)) {
     campaignState.connectionIds.push(entry.id);
     await persistCampaignState(campaignState);
@@ -101,7 +102,8 @@ export function getConnection(journalEntryId) {
     if (!entry) return null;
     const page = entry.pages?.contents?.[0];
     return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
-  } catch {
+  } catch (err) {
+    console.error(`${MODULE_ID} | getConnection(${journalEntryId}) failed:`, err);
     return null;
   }
 }

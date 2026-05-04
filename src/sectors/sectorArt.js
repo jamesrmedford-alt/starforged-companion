@@ -162,9 +162,9 @@ async function uploadSectorImage(b64, sectorId) {
   const filename = `sector-${sectorId}.png`;
 
   // Ensure the upload directory exists before uploading.
-  // FilePicker.createDirectory() throws if the directory already exists — ignore that error.
+  // createDirectory() throws if the directory already exists — ignore that error.
   try {
-    await FilePicker.createDirectory("data", UPLOAD_DIR, {});
+    await foundry.applications.apps.FilePicker.implementation.createDirectory("data", UPLOAD_DIR, {});
   } catch {
     // Directory already exists — not an error
   }
@@ -178,6 +178,6 @@ async function uploadSectorImage(b64, sectorId) {
   const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], filename, { type: "image/png" });
 
-  const result = await FilePicker.upload("data", UPLOAD_DIR, file, {}, { notify: false });
+  const result = await foundry.applications.apps.FilePicker.implementation.upload("data", UPLOAD_DIR, file, {}, { notify: false });
   return result?.path ?? null;
 }

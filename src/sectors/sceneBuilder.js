@@ -43,9 +43,16 @@ const SCENE_CONFIG = {
 export async function createSectorScene(sector, backgroundPath, entityJournals) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
 
+  // Foundry v13 scene img requires a path from the server root.
+  // FilePicker.upload returns a relative path (no leading slash); add one.
+  const imgPath = backgroundPath
+    ? (backgroundPath.startsWith("/") ? backgroundPath : `/${backgroundPath}`)
+    : null;
+  console.log(`${MODULE_ID} | createSectorScene: backgroundPath = ${backgroundPath}, imgPath = ${imgPath}`);
+
   const scene = await Scene.create({
     name:            sector.name,
-    img:             backgroundPath ?? null,
+    img:             imgPath,
     width:           sceneWidth,
     height:          sceneHeight,
     backgroundColor: "#000000",
@@ -140,7 +147,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePassageLine(x1, y1, x2, y2, passage, dashed) {
+function makePassageLine(x1, y1, x2, y2, passage, _dashed) {
   return {
     x:           x1,
     y:           y1,
@@ -150,9 +157,9 @@ function makePassageLine(x1, y1, x2, y2, passage, dashed) {
       height: 0,
       points: [0, 0, x2 - x1, y2 - y1],
     },
-    strokeWidth: dashed ? 2 : 3,
-    strokeColor: "#4477aa",
-    strokeAlpha: dashed ? 0.5 : 0.8,
+    strokeWidth: 2,
+    strokeColor: "#7EB8F7",
+    strokeAlpha: 0.8,
     fillType:    0,   // no fill — important for line drawings
     hidden:      false,
     flags: {

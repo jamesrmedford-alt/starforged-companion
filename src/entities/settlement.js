@@ -90,7 +90,8 @@ export function getSettlement(journalEntryId) {
     const entry = game.journal?.get(journalEntryId);
     const page  = entry?.pages?.contents?.[0];
     return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
-  } catch {
+  } catch (err) {
+    console.error(`${MODULE_ID} | getSettlement(${journalEntryId}) failed:`, err);
     return null;
   }
 }
