@@ -71,25 +71,25 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
   const settlements = sector.mapData?.settlements ?? [];
   if (settlements.length) {
     const noteData = settlements.map(s => {
-      const journal = entityJournals?.[s.id] ?? null;
-      const x = (s.gridX + 0.5) * gridCellSize;
-      const y = (s.gridY + 0.5) * gridCellSize;
+      const journal      = entityJournals?.[s.id] ?? null;
+      const locationType = s.locationType ?? s.type;
       return {
         entryId:    journal?.id ?? null,
-        x,
-        y,
-        icon:       "icons/svg/circle.svg",
+        x:          s.gridX * gridCellSize,
+        y:          s.gridY * gridCellSize,
+        icon:       iconPathForLocationType(locationType),
         iconSize:   40,
-        iconTint:   settlementTint(s.type),
+        iconTint:   tintForLocationType(locationType),
         text:       s.name,
-        fontSize:   18,
-        textColor:  "#aabbdd",
+        fontSize:   24,
+        textColor:  "#FFFFFF",
         textAnchor: 1,   // BOTTOM (CONST.TEXT_ANCHOR_POINTS.BOTTOM)
         global:     true,
         flags: {
           [MODULE_ID]: {
+            sectorNote:   true,
             settlementId: s.id,
-            type:         s.type,
+            locationType,
           },
         },
       };
@@ -166,10 +166,18 @@ function makePassageLine(x1, y1, x2, y2, passage, dashed) {
   };
 }
 
-function settlementTint(type) {
-  switch (type) {
-    case "orbital":    return "#88aaff";
-    case "planetside": return "#88ffaa";
-    default:           return "#ffaa88";
+function iconPathForLocationType(locationType) {
+  switch (locationType) {
+    case "orbital":    return "icons/svg/circle.svg";
+    case "planetside": return "icons/svg/target.svg";
+    default:           return "icons/svg/aura.svg";   // deep_space
+  }
+}
+
+function tintForLocationType(locationType) {
+  switch (locationType) {
+    case "orbital":    return "#7EB8F7";   // cool blue — station lights
+    case "planetside": return "#8FCF7E";   // warm green — habitable world
+    default:           return "#C4A45A";   // amber — isolated outpost
   }
 }

@@ -72,25 +72,43 @@ const TROUBLE_VISUAL_MODIFIERS = {
  * @returns {Promise<string|null>} — Foundry data file path, or null on failure
  */
 export async function generateSectorBackground(sector, _campaignState) {
-  const artApiKey = (() => {
-    try { return game.settings.get(MODULE_ID, "artApiKey"); }
-    catch { return null; }
-  })();
+  const artApiKey = readApiKey();
 
   if (!artApiKey) {
-    console.log(`${MODULE_ID} | sectorArt: no art API key configured, skipping`);
+    console.warn(`${MODULE_ID} | sectorArt: no OpenAI art API key configured — scene will have no background`);
     return null;
   }
 
+  const { prompt, size } = buildSectorBackgroundPrompt(sector);
+
+  let b64;
   try {
-    const { prompt, size } = buildSectorBackgroundPrompt(sector);
-    const b64 = await requestDalleImage(prompt, size, artApiKey);
-    if (!b64) return null;
-    return await uploadSectorImage(b64, sector.id);
+    b64 = await requestDalleImage(prompt, size, artApiKey);
   } catch (err) {
-    console.error(`${MODULE_ID} | sectorArt: generation failed:`, err);
+    console.warn(`${MODULE_ID} | sectorArt: DALL-E API call failed:`, err?.message ?? err);
     return null;
   }
+
+  if (!b64) {
+    console.warn(`${MODULE_ID} | sectorArt: DALL-E returned no image data`);
+    return null;
+  }
+
+  let uploadedPath;
+  try {
+    uploadedPath = await uploadSectorImage(b64, sector.id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorArt: FilePicker.upload failed:`, err?.message ?? err);
+    return null;
+  }
+
+  if (!uploadedPath) {
+    console.warn(`${MODULE_ID} | sectorArt: upload returned no path`);
+    return null;
+  }
+
+  console.log(`${MODULE_ID} | sectorArt: uploaded background to ${uploadedPath}`);
+  return uploadedPath;
 }
 
 /**
@@ -113,6 +131,16 @@ export function buildSectorBackgroundPrompt(sector) {
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNALS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Mirror of readApiKey() in src/art/generator.js — keep these in sync so both
+// sector backgrounds and entity portraits resolve the OpenAI key the same way.
+function readApiKey() {
+  try {
+    return game.settings.get(MODULE_ID, "artApiKey") ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function requestDalleImage(prompt, size, apiKey) {
   const headers = {
@@ -151,5 +179,5 @@ async function uploadSectorImage(b64, sectorId) {
   const file = new File([blob], filename, { type: "image/png" });
 
   const result = await FilePicker.upload("data", UPLOAD_DIR, file, {}, { notify: false });
-  return result.path ?? `${UPLOAD_DIR}/${filename}`;
+  return result?.path ?? null;
 }
