@@ -313,8 +313,9 @@ function findEntry(entries, roll) {
 async function persistCampaignState(campaignState) {
   try {
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch {
-    // non-Foundry context — ignore
+  } catch (err) {
+    console.error(`${MODULE_ID} | truths: persistCampaignState failed:`, err);
+    throw err;
   }
 }
 

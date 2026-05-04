@@ -93,8 +93,8 @@ export async function narrateResolution(resolution, contextPacket, campaignState
           await postNarrationCard(narration, resolution, campaignState);
           return narration;
         }
-      } catch {
-        // Fall through to fallback card
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narrateResolution retry failed:`, retryErr);
       }
     }
 
@@ -156,7 +156,8 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
       .map(m => m.flags?.[MODULE_ID]?.narrationText)
       .filter(Boolean)
       .join('\n\n');
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: getRecentNarrationContext failed:`, err);
     return '';
   }
 }
@@ -428,8 +429,8 @@ export async function interrogateScene(question, campaignState, options = {}) {
           await postSceneCard(question, response, sessionId);
           return response;
         }
-      } catch {
-        // Fall through — no fallback card for scene queries
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | interrogateScene retry failed:`, retryErr);
       }
     }
     console.error(`${MODULE_ID} | interrogateScene failed:`, err);
@@ -523,7 +524,8 @@ function getNarratorSettings() {
       narrationInstructions: game.settings.get(MODULE_ID, 'narrationInstructions') ?? '',
       narrationMaxTokens:    game.settings.get(MODULE_ID, 'narrationMaxTokens')    ?? 300,
     };
-  } catch {
+  } catch (err) {
+    console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
     return {
       narrationEnabled:      true,
       narrationModel:        'claude-sonnet-4-5-20250929',
@@ -532,6 +534,7 @@ function getNarratorSettings() {
       narrationLength:       3,
       narrationInstructions: '',
       narrationMaxTokens:    300,
+      _error:                err,
     };
   }
 }
@@ -539,7 +542,8 @@ function getNarratorSettings() {
 function getApiKey() {
   try {
     return game.settings.get(MODULE_ID, 'claudeApiKey') || null;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: claudeApiKey settings read failed:`, err);
     return null;
   }
 }
@@ -552,7 +556,8 @@ function getActiveCharacter(campaignState) {
     if (!entry) return null;
     const page = entry.pages?.contents?.[0];
     return page?.flags?.[MODULE_ID]?.character ?? null;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: getActiveCharacter failed:`, err);
     return null;
   }
 }
@@ -560,7 +565,8 @@ function getActiveCharacter(campaignState) {
 function getSceneQueryEnabled() {
   try {
     return game.settings.get(MODULE_ID, 'sceneQueryEnabled') ?? true;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: sceneQueryEnabled settings read failed:`, err);
     return true;
   }
 }
@@ -568,7 +574,8 @@ function getSceneQueryEnabled() {
 function getSceneResponseLength() {
   try {
     return game.settings.get(MODULE_ID, 'sceneResponseLength') ?? 2;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: sceneResponseLength settings read failed:`, err);
     return 2;
   }
 }
@@ -576,7 +583,8 @@ function getSceneResponseLength() {
 function getSceneContextCards() {
   try {
     return game.settings.get(MODULE_ID, 'sceneContextCards') ?? 3;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: sceneContextCards settings read failed:`, err);
     return 3;
   }
 }
@@ -606,7 +614,8 @@ function _getChronicleLength(campaignState) {
     );
     const entries = page?.flags?.[MODULE_ID]?.entries ?? [];
     return entries.length;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: _getChronicleLength failed:`, err);
     return 0;
   }
 }
@@ -634,7 +643,8 @@ function _getChronicleEntries(campaignState) {
         return header ? `[${header}]\n${e.text ?? e.content ?? ''}` : (e.text ?? e.content ?? '');
       })
       .filter(Boolean);
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: _getChronicleEntries failed:`, err);
     return [];
   }
 }

@@ -232,9 +232,7 @@ export async function createEntityJournals(sector, campaignState) {
       planet:     s.planet ?? null,
     }, campaignState);
     const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
-    const journalEntry = journalId
-      ? ((() => { try { return game.journal?.get(journalId) ?? null; } catch { return null; } })())
-      : null;
+    const journalEntry = journalId ? (game.journal?.get(journalId) ?? null) : null;
     settlements[s.id] = journalEntry;
     if (journalEntry) {
       const page = journalEntry.pages?.contents?.[0];
@@ -270,7 +268,9 @@ export async function createEntityJournals(sector, campaignState) {
           updatedAt: new Date().toISOString(),
         });
       }
-    } catch { /* non-Foundry context */ }
+    } catch (err) {
+      console.error(`${MODULE_ID} | sectorGenerator: failed to lock connection ${connectionJournalId}:`, err);
+    }
   }
 
   return { settlements, connectionJournalId };
@@ -372,7 +372,10 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
     buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote),
     150,
     apiKey
-  ).catch(() => null);
+  ).catch(err => {
+    console.warn(`${MODULE_ID} | sectorGenerator: sector stub generation failed:`, err);
+    return null;
+  });
 
   const settlements = {};
   for (const s of sector.settlements) {
@@ -380,7 +383,10 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
       buildSettlementStubPrompt(s, sector, regionLabel, perspectiveNote),
       100,
       apiKey
-    ).catch(() => null);
+    ).catch(err => {
+      console.warn(`${MODULE_ID} | sectorGenerator: settlement stub generation failed for ${s.id}:`, err);
+      return null;
+    });
   }
 
   return { sector: sectorStubText, settlements };
@@ -490,7 +496,7 @@ ${s.planet ? `<p><strong>Planet:</strong> ${escapeHtml(s.planet.name)} (${escape
     return journal;
   } catch (err) {
     console.error(`${MODULE_ID} | createSectorJournal failed:`, err);
-    return null;
+    throw err;
   }
 }
 
@@ -509,8 +515,9 @@ async function saveSectorToJournal(sector) {
       });
     }
     await journal.setFlag(MODULE_ID, sector.id, sector);
-  } catch {
-    // Non-Foundry context — ignore
+  } catch (err) {
+    console.error(`${MODULE_ID} | sectorGenerator: saveSectorToJournal(${sector?.id}) failed:`, err);
+    throw err;
   }
 }
 
@@ -584,13 +591,21 @@ function generateId() {
 }
 
 async function persistCampaignState(campaignState) {
-  try { await game.settings.set(MODULE_ID, "campaignState", campaignState); }
-  catch { /* non-Foundry context */ }
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  } catch (err) {
+    console.error(`${MODULE_ID} | sectorGenerator: persistCampaignState failed:`, err);
+    throw err;
+  }
 }
 
 function getClaudeApiKey() {
-  try { return game.settings.get(MODULE_ID, "claudeApiKey") || null; }
-  catch { return null; }
+  try {
+    return game.settings.get(MODULE_ID, "claudeApiKey") || null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorGenerator: claudeApiKey settings read failed:`, err);
+    return null;
+  }
 }
 
 function buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote) {

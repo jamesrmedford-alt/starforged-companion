@@ -195,7 +195,8 @@ function selectRecentEntries(entries, count) {
 function getContextCount() {
   try {
     return game.settings?.get(MODULE_ID, 'chronicleContextCount') ?? 5;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | chronicle: chronicleContextCount settings read failed; defaulting to 5:`, err);
     return 5;
   }
 }

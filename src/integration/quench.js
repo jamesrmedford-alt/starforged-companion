@@ -44,7 +44,7 @@ function registerSafetyTests(quench) {
         after(async function () {
           // Always restore xCardActive to false after safety tests
           const { clearXCard } = await import(`${MODULE_PATH}/context/safety.js`);
-          await clearXCard().catch(() => {});
+          await clearXCard().catch(err => console.error("starforged-companion | quench: clearXCard teardown failed:", err));
         });
 
         it("suppressScene sets campaignState.xCardActive to true", async function () {
@@ -590,7 +590,8 @@ function registerSectorCreatorTests(quench) {
 
         after(async function () {
           if (testScene) {
-            await testScene.delete().catch(() => {});
+            await testScene.delete().catch(err =>
+              console.error(`starforged-companion | quench: testScene teardown failed (orphaned scene id ${testScene?.id ?? "?"}):`, err));
             testScene = null;
           }
         });
@@ -633,7 +634,8 @@ function registerSectorCreatorTests(quench) {
 
         after(async function () {
           if (testJournal) {
-            await testJournal.delete().catch(() => {});
+            await testJournal.delete().catch(err =>
+              console.error(`starforged-companion | quench: testJournal teardown failed (orphaned journal id ${testJournal?.id ?? "?"}):`, err));
             testJournal = null;
           }
         });
@@ -670,10 +672,14 @@ function registerSectorCreatorTests(quench) {
       describe("generateNarratorStubs (requires Claude API key)", function () {
         it("returns a sector stub string when API key is configured", async function () {
           this.timeout(30000);
-          const apiKey = (() => {
-            try { return game.settings.get("starforged-companion", "claudeApiKey"); }
-            catch { return null; }
-          })();
+          let apiKey;
+          try {
+            apiKey = game.settings.get("starforged-companion", "claudeApiKey");
+          } catch (err) {
+            console.error("starforged-companion | quench: claudeApiKey settings read failed:", err);
+            this.skip();
+            return;
+          }
           if (!apiKey) { this.skip(); return; }
 
           const { generateSector, generateNarratorStubs } = await import(
