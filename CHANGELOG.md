@@ -6,6 +6,7 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: Sector scene passage lines now actually render between settlements — v13 `BaseDrawing` joint validation rejects polygon shapes whose `shape.width`/`shape.height` are zero, so passage drawings were silently failing despite valid stroke properties; `makePassageLine` now sets non-zero bounding box dimensions and the previous error-suppressing try/catch has been removed so future regressions surface immediately
 - Added: Sector-created settlements and connections are now flagged `canonicalLocked` so future narrator-driven entity discovery will not overwrite them
 - Fixed: Sector creator now mirrors each settlement's narrator stub onto the settlement entity record's description, keeping the canonical entity in sync with the sector journal page
 - Added: DALL-E 3 sector background art — each sector gets a generated 1792×1024 landscape image matching its region (Terminus, Outlands, Expanse, Void), with visual modifiers for notable troubles (energy storms, supernova, spatial rifts)

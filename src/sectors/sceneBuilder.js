@@ -131,13 +131,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
       .filter(Boolean);
 
     if (drawingData.length) {
-      // Passages are visual sugar — a sector without drawn passages is better
-      // than a sector that fails to finalise. Swallow validation errors.
-      try {
-        await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
-      } catch (err) {
-        console.warn(`${MODULE_ID} | createSectorScene: drawing creation failed:`, err.message);
-      }
+      await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
     }
   }
 
@@ -154,19 +148,24 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makePassageLine(x1, y1, x2, y2, passage, _dashed) {
+  // v13 BaseDrawing rejects shapes whose bounding box has zero width AND height
+  // even when stroke is visible — so derive shape.width/shape.height from the
+  // segment deltas. Math.max(..., 1) guards against degenerate same-point pairs.
+  const dx = x2 - x1;
+  const dy = y2 - y1;
   return {
     x:           x1,
     y:           y1,
     shape: {
       type:   "p",
-      width:  0,
-      height: 0,
-      points: [0, 0, x2 - x1, y2 - y1],
+      width:  Math.max(Math.abs(dx), 1),
+      height: Math.max(Math.abs(dy), 1),
+      points: [0, 0, dx, dy],
     },
     strokeWidth: 2,
     strokeColor: "#7EB8F7",
     strokeAlpha: 0.8,
-    fillType:    0,   // no fill — important for line drawings
+    fillType:    0,
     fillAlpha:   0,
     hidden:      false,
     flags: {
