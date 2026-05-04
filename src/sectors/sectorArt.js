@@ -22,41 +22,50 @@ const UPLOAD_DIR = "modules/starforged-companion/art";
 // REGION VISUAL PROFILES
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Hard exclusion clause — appended to every region prompt, every trouble
+// modifier, and the base prompt template to keep DALL-E producing pure space
+// views with no planetary surfaces, terrain, or architecture.
+const PURE_SPACE_EXCLUSION =
+  "Pure deep space view only. No planets in foreground, no ground, no " +
+  "landscapes, no cityscapes, no architecture, no terrain, no horizon " +
+  "lines. Stars, nebulae, gas clouds, and distant celestial objects only.";
+
 const REGION_PROMPTS = {
   terminus: "Dense star field, warm amber and gold hues, colorful nebulae in the background, " +
     "distant station and settlement lights visible, active space lanes, inhabited and settled " +
     "feeling, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels",
+    "no text or labels. " + PURE_SPACE_EXCLUSION,
 
   outlands: "Sparse star field, cool blue and white tones, one or two distant nebulae, " +
     "scattered isolated settlement lights, frontier space feeling, recent expansion into the " +
     "unknown, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels",
+    "no text or labels. " + PURE_SPACE_EXCLUSION,
 
   expanse:  "Very sparse star field, deep cold blues and blacks, vast emptiness, a single " +
     "distant galaxy smear or lone nebula as the only color, almost no settlement lights, " +
     "desolate and beautiful, pioneer space at the edge of the known, cinematic science " +
-    "fiction space art, 1792x1024 wide landscape orientation, no text or labels",
+    "fiction space art, 1792x1024 wide landscape orientation, no text or labels. " +
+    PURE_SPACE_EXCLUSION,
 
   void:     "Near-total darkness, isolated stars barely visible, vast empty void, no " +
     "settlements, hostile and forbidding, the space beyond the Forge where travel is " +
     "impossible, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels",
+    "no text or labels. " + PURE_SPACE_EXCLUSION,
 };
 
 const TROUBLE_VISUAL_MODIFIERS = {
   "Energy storms are rampant":
-    "with visible crackling energy storms and lightning",
+    "with visible crackling energy storms and lightning. " + PURE_SPACE_EXCLUSION,
   "Magnetic disturbances disrupt communication":
-    "with aurora-like magnetic disturbances visible",
+    "with aurora-like magnetic disturbances visible. " + PURE_SPACE_EXCLUSION,
   "Supernova is imminent":
-    "with a bright dying star dominating the background",
+    "with a bright dying star dominating the background. " + PURE_SPACE_EXCLUSION,
   "Chaotic breaches in spacetime spread like wildfire":
-    "with strange spatial distortions and rifts visible",
+    "with strange spatial distortions and rifts visible. " + PURE_SPACE_EXCLUSION,
   "Dense nebula cloud":
-    "with a vast colorful nebula filling the background",
+    "with a vast colorful nebula filling the background. " + PURE_SPACE_EXCLUSION,
   "Fiery energy storm":
-    "with billowing plasma storms and solar flares",
+    "with billowing plasma storms and solar flares. " + PURE_SPACE_EXCLUSION,
 };
 
 
@@ -122,7 +131,15 @@ export function buildSectorBackgroundPrompt(sector) {
   const base    = REGION_PROMPTS[region] ?? REGION_PROMPTS.outlands;
 
   const modifier = TROUBLE_VISUAL_MODIFIERS[sector.trouble] ?? null;
-  const prompt   = modifier ? `${base}, ${modifier}` : base;
+  const body     = modifier ? `${base}, ${modifier}` : base;
+
+  // Append the exclusion clause once more at the template level so the
+  // restriction still applies if region or modifier strings change later.
+  const prompt = `${body} Wide cinematic space panorama, 1792x1024 landscape ` +
+    `orientation, no text or labels. Pure deep space view only — no planets ` +
+    `in foreground, no ground, no landscapes, no cityscapes, no architecture, ` +
+    `no terrain, no horizon lines. Stars, nebulae, gas clouds, and distant ` +
+    `celestial objects only.`;
 
   return { prompt, size: "1792x1024" };
 }

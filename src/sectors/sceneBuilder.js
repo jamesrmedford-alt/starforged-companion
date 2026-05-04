@@ -20,11 +20,11 @@ const MODULE_ID = "starforged-companion";
 
 const SCENE_CONFIG = {
   gridCellSize: 100,
-  gridWidth:     14,
-  gridHeight:    10,
-  get sceneWidth()  { return this.gridWidth  * this.gridCellSize; },
-  get sceneHeight() { return this.gridHeight * this.gridCellSize; },
-  padding: 0.1,
+  gridWidth:    17,    // ceil(1792 / 100) — covers full image width
+  gridHeight:   10,    // ceil(1024 / 100) — covers full image height
+  sceneWidth:   1792,
+  sceneHeight:  1024,
+  padding:      0,     // no padding — image fills the canvas edge to edge
 };
 
 
