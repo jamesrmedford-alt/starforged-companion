@@ -73,8 +73,13 @@ describe('isNewSessionStart()', () => {
   });
 
   it('returns false when gap equals the threshold exactly', () => {
-    const state = makeCampaignState({ lastSessionTimestamp: hoursAgo(4) });
+    vi.useFakeTimers();
+    const now = Date.now();
+    const state = makeCampaignState({
+      lastSessionTimestamp: new Date(now - 4 * 3_600_000).toISOString(),
+    });
     expect(isNewSessionStart(state, 4)).toBe(false);
+    vi.useRealTimers();
   });
 
   it('respects a custom threshold', () => {
