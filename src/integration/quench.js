@@ -421,6 +421,7 @@ function registerPipelineTests(quench) {
 
       describe("End-to-end: interpret → resolve → assemble", function () {
         it("interpretMove returns a valid interpretation", async function () {
+          this.timeout(30000);
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
