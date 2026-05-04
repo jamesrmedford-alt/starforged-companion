@@ -623,6 +623,67 @@ describe("assembler — matched entity cards (Section 7)", () => {
     );
     expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
   });
+
+  it("skips IDs whose getter throws and continues with the rest", async () => {
+    expectConsoleError(/getConnection.*failed/);
+    let calls = 0;
+    game.journal.get = (id) => {
+      calls++;
+      if (id === "throws") throw new Error("journal error");
+      if (id === "j-sable") return { pages: { contents: [{ flags: { "starforged-companion": { connection: {
+        _id: "c1", name: "Sable", role: "Navigator",
+        canonicalLocked: false, generativeTier: [],
+      }}}}] }};
+      return null;
+    };
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["throws", "j-sable"],
+        matchedEntityTypes: ["connection", "connection"],
+      }
+    );
+    expect(calls).toBeGreaterThan(0);
+    expect(packet.assembled).toMatch(/SABLE/);
+  });
+
+  it("skips IDs of unknown entity type", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["x"],
+        matchedEntityTypes: ["unknown_type"],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+
+  it("skips ID/type pairs where the type is missing", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["only-id"],
+        matchedEntityTypes: [],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+
+  it("omits ENTITIES IN SCENE when getter returns null for every id", async () => {
+    game.journal.get = () => null;
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["unknown"],
+        matchedEntityTypes: ["connection"],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
 });
 
 describe("assembler — current location card (Section 6)", () => {
@@ -652,6 +713,53 @@ describe("assembler — current location card (Section 6)", () => {
   it("omits CURRENT LOCATION when no currentLocationId is set", async () => {
     const packet = await assembleContextPacket(
       baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when only the type is set (no id)", async () => {
+    const state = baseCampaignState({
+      currentLocationId:   null,
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when type is unknown", async () => {
+    const state = baseCampaignState({
+      currentLocationId:   "j-bleak",
+      currentLocationType: "not_a_real_type",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when the getter throws", async () => {
+    expectConsoleError(/getSettlement.*failed/);
+    game.journal.get = () => { throw new Error("boom"); };
+    const state = baseCampaignState({
+      currentLocationId:   "j-bleak",
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when the entity record is missing", async () => {
+    game.journal.get = () => null;
+    const state = baseCampaignState({
+      currentLocationId:   "missing",
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
     );
     expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
   });

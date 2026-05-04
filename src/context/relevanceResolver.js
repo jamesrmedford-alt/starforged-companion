@@ -309,7 +309,15 @@ async function defaultClassifyImplicit(narration, moveId) {
   return parseClassificationJson(text);
 }
 
-function parseClassificationJson(text) {
+/**
+ * Parse the JSON object returned by the Phase 2 Haiku classifier. Handles
+ * extra prose around the JSON, missing fields, and malformed input. Exported
+ * for direct testing.
+ *
+ * @param {string} text
+ * @returns {{ impliedEntity: boolean, referenceType: string }}
+ */
+export function parseClassificationJson(text) {
   if (!text) return { impliedEntity: false, referenceType: "none" };
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   const slice = jsonMatch ? jsonMatch[0] : text;

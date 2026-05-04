@@ -7,11 +7,12 @@
  * injected via options so no API mocking is required.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   resolveRelevance,
   buildNameIndex,
   matchNamesInNarration,
+  parseClassificationJson,
 } from "../../src/context/relevanceResolver.js";
 
 
@@ -281,5 +282,145 @@ describe("resolveRelevance — hybrid moves", () => {
     );
     expect(result.resolvedClass).toBe("discovery");
     expect(result.needsClarification).toBe(false);
+  });
+
+  it("hybrid + classifier returns malformed object → falls back to non-implied", async () => {
+    const classify = vi.fn().mockResolvedValue(null);
+    const result = await resolveRelevance(
+      "I push through.",
+      "face_danger",
+      "strong_hit",
+      makeCampaign(),
+      { collectEntities: collectStub, classifyImplicit: classify },
+    );
+    expect(result.resolvedClass).toBe("discovery");
+    expect(result.needsClarification).toBe(false);
+    expect(result.referenceType).toBe("none");
+  });
+
+  it("unknown moveId → falls back to embellishment class", async () => {
+    const result = await resolveRelevance(
+      "Some narration with no entities.",
+      "this_move_does_not_exist",
+      "strong_hit",
+      makeCampaign(),
+      { collectEntities: collectStub },
+    );
+    expect(result.resolvedClass).toBe("embellishment");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// parseClassificationJson — Phase 2 helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseClassificationJson", () => {
+  it("returns the default when text is empty", () => {
+    expect(parseClassificationJson("")).toEqual({ impliedEntity: false, referenceType: "none" });
+  });
+
+  it("parses a valid JSON object", () => {
+    const r = parseClassificationJson('{"impliedEntity": true, "referenceType": "pronoun"}');
+    expect(r).toEqual({ impliedEntity: true, referenceType: "pronoun" });
+  });
+
+  it("extracts the JSON object when surrounded by prose", () => {
+    const r = parseClassificationJson(
+      'Sure, here is the answer: {"impliedEntity": false, "referenceType": "none"} thanks.'
+    );
+    expect(r).toEqual({ impliedEntity: false, referenceType: "none" });
+  });
+
+  it("treats truthy non-true impliedEntity as false", () => {
+    const r = parseClassificationJson('{"impliedEntity": "yes", "referenceType": "role"}');
+    expect(r.impliedEntity).toBe(false);
+    expect(r.referenceType).toBe("role");
+  });
+
+  it("defaults referenceType to 'none' when missing or non-string", () => {
+    const r = parseClassificationJson('{"impliedEntity": true, "referenceType": 99}');
+    expect(r.referenceType).toBe("none");
+  });
+
+  it("returns the default when JSON is malformed", () => {
+    const r = parseClassificationJson('{ this is not json');
+    expect(r).toEqual({ impliedEntity: false, referenceType: "none" });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveRelevance — default collectAllEntities path (no injection)
+// Exercises the live entity-getter scan via the test setup's game.journal stub.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveRelevance — default collectAllEntities path", () => {
+  const originalGet = global.game.journal.get;
+  afterEach(() => { global.game.journal.get = originalGet; });
+
+  function stubJournal(entries) {
+    global.game.journal.get = (id) => {
+      const e = entries[id];
+      if (!e) return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": e } }] } };
+    };
+  }
+
+  it("scans every configured entity collection in the campaign state", async () => {
+    stubJournal({
+      "j-conn":  { connection: { _id: "c1", name: "Sable" } },
+      "j-set":   { settlement: { _id: "s1", name: "Bleakhold" } },
+      "j-fac":   { faction:    { _id: "f1", name: "Pelican Confederacy" } },
+      "j-ship":  { ship:       { _id: "sh1", name: "Ironfold" } },
+      "j-plan":  { planet:     { _id: "p1", name: "Cinderworld" } },
+      "j-loc":   { location:   { _id: "l1", name: "Glasspike Ruin" } },
+      "j-creat": { creature:   { _id: "cr1", name: "Forgespawn Alpha" } },
+    });
+    const campaign = {
+      connectionIds: ["j-conn"],
+      settlementIds: ["j-set"],
+      factionIds:    ["j-fac"],
+      shipIds:       ["j-ship"],
+      planetIds:     ["j-plan"],
+      locationIds:   ["j-loc"],
+      creatureIds:   ["j-creat"],
+      dismissedEntities: [],
+    };
+    const result = await resolveRelevance(
+      "I dock the Ironfold at Bleakhold and meet Sable.",
+      "develop_your_relationship",
+      "strong_hit",
+      campaign,
+    );
+    // Three matches expected (Ironfold, Bleakhold, Sable)
+    expect(result.matchedNames.sort()).toEqual(["Bleakhold", "Ironfold", "Sable"]);
+    expect(result.entityIds).toContain("j-conn");
+    expect(result.entityIds).toContain("j-set");
+    expect(result.entityIds).toContain("j-ship");
+  });
+
+  it("ignores journal IDs that don't resolve to a record", async () => {
+    stubJournal({});
+    const campaign = {
+      connectionIds: ["missing-1", "missing-2"],
+      settlementIds: [], factionIds: [], shipIds: [],
+      planetIds: [], locationIds: [], creatureIds: [],
+    };
+    const result = await resolveRelevance(
+      "I look around the empty corridor.",
+      "develop_your_relationship",
+      "strong_hit",
+      campaign,
+    );
+    expect(result.entityIds).toEqual([]);
+    expect(result.matchedNames).toEqual([]);
+  });
+
+  it("returns empty when campaignState is null", async () => {
+    const result = await resolveRelevance(
+      "Whatever.", "develop_your_relationship", "miss", null,
+    );
+    expect(result.entityIds).toEqual([]);
   });
 });
