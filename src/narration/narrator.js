@@ -12,6 +12,12 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
+import {
+  runCombinedDetectionPass,
+  routeEntityDrafts,
+  routeWorldJournalResults,
+  appendGenerativeTierUpdates,
+} from '../entities/entityExtractor.js';
 import { getConnection }  from '../entities/connection.js';
 import { getSettlement }  from '../entities/settlement.js';
 import { getFaction }     from '../entities/faction.js';
@@ -57,6 +63,10 @@ let _lastRecapInjectedSessionId = null;
  * @param {Object} contextPacket — ContextPacketSchema from assembler.js
  * @param {Object} campaignState — CampaignStateSchema
  * @param {Object} [options]
+ * @param {Object} [options.relevance] — Pre-resolved RelevanceResult from
+ *   the createChatMessage pipeline (lets the caller insert a clarification
+ *   dialog between resolveRelevance and narration). If omitted, resolveRelevance
+ *   is called internally.
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
 export async function narrateResolution(resolution, contextPacket, campaignState, options = {}) {
@@ -81,31 +91,34 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   // Phase 2 — relevance resolver runs before the narrator call:
   //   - Picks the narrator-permission block (discovery / interaction / embellishment)
   //   - Identifies which entity records to inject as cards
-  // No clarification UI yet; needsClarification is logged but doesn't block.
-  let relevance;
-  try {
-    relevance = await resolveRelevance(
-      resolution.playerNarration ?? '',
-      resolution.moveId,
-      resolution.outcome,
-      campaignState,
-    );
-  } catch (err) {
-    console.warn(`${MODULE_ID} | narrator: resolveRelevance failed; defaulting to embellishment:`, err);
-    relevance = {
-      resolvedClass: 'embellishment',
-      entityIds:     [],
-      entityTypes:   [],
-      matchedNames:  [],
-      needsClarification: false,
-      referenceType: 'none',
-    };
+  // The pipeline (index.js) may pass in a pre-resolved relevance after a
+  // clarification dialog has run. Otherwise we resolve internally.
+  let relevance = options.relevance ?? null;
+  if (!relevance) {
+    try {
+      relevance = await resolveRelevance(
+        resolution.playerNarration ?? '',
+        resolution.moveId,
+        resolution.outcome,
+        campaignState,
+      );
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: resolveRelevance failed; defaulting to embellishment:`, err);
+      relevance = {
+        resolvedClass: 'embellishment',
+        entityIds:     [],
+        entityTypes:   [],
+        matchedNames:  [],
+        needsClarification: false,
+        referenceType: 'none',
+      };
+    }
   }
 
   if (relevance.needsClarification) {
     console.log(
-      `${MODULE_ID} | narrator: hybrid implicit reference detected (${relevance.referenceType}); ` +
-      `clarification card not yet implemented — proceeding as interaction.`
+      `${MODULE_ID} | narrator: needsClarification=true reached narrateResolution — ` +
+      `proceeding as ${relevance.resolvedClass} (caller did not run clarification dialog).`
     );
   }
 
@@ -143,6 +156,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
 
     if (recapContext) markRecapInjected(campaignState?.currentSessionId);
     await postNarrationCard(narration, resolution, campaignState);
+    runPostNarrationPasses(narration, resolution, relevance, campaignState);
     return narration;
 
   } catch (err) {
@@ -158,6 +172,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
         if (narration?.trim()) {
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState);
+          runPostNarrationPasses(narration, resolution, relevance, campaignState);
           return narration;
         }
       } catch (retryErr) {
@@ -168,6 +183,100 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
     await postFallbackCard(resolution);
     return null;
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Post-narration passes — combined detection + generative tier updates
+// ---------------------------------------------------------------------------
+
+const ASYNC_DETECTION_DELAY_MS = 2000;
+
+/**
+ * Schedule the post-narration passes specified in narrator-entity-discovery
+ * scope §14, step 9. Returns the dispatched promise so tests can await it.
+ *
+ * Routing:
+ *   - discovery + make_a_connection + (strong_hit|weak_hit)
+ *       → SYNCHRONOUS detection + auto-create connection
+ *   - discovery + any other move
+ *       → ASYNCHRONOUS detection (~2 s) + GM-only draft card
+ *   - interaction + matched entities
+ *       → ASYNCHRONOUS generative-tier update
+ *   - embellishment / no relevant outcome
+ *       → no pass
+ */
+export function runPostNarrationPasses(
+  narrationText, resolution, relevance, campaignState,
+) {
+  if (!resolution || !relevance) return Promise.resolve();
+  const cls = relevance.resolvedClass;
+
+  if (cls === 'embellishment') return Promise.resolve();
+
+  // Discovery class
+  if (cls === 'discovery') {
+    const isMakeAConnection = resolution.moveId === 'make_a_connection';
+    const isHit = resolution.outcome === 'strong_hit' || resolution.outcome === 'weak_hit';
+
+    if (isMakeAConnection && !isHit) {
+      // Per scope §9: no entity creation on a miss
+      return Promise.resolve();
+    }
+    if (isMakeAConnection) {
+      // Synchronous — driver awaits so the draft + auto-creation appear
+      // in chat at the same moment as the narration.
+      return runDiscoveryDetection(
+        narrationText, resolution, campaignState,
+        { autoCreateConnection: true },
+      );
+    }
+
+    // Other discovery-class moves — async ~2 s, fire and forget.
+    setTimeout(() => {
+      runDiscoveryDetection(narrationText, resolution, campaignState, {})
+        .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
+    }, ASYNC_DETECTION_DELAY_MS);
+    return Promise.resolve();
+  }
+
+  // Interaction class — generative tier update only
+  if (cls === 'interaction' && Array.isArray(relevance.entityIds) && relevance.entityIds.length) {
+    setTimeout(() => {
+      const refs = relevance.entityIds.map((id, i) => ({
+        journalId: id,
+        type:      relevance.entityTypes?.[i],
+      }));
+      appendGenerativeTierUpdates(
+        narrationText,
+        refs,
+        campaignState?.currentSessionId,
+        campaignState?.sessionNumber,
+      ).catch(err =>
+        console.error(`${MODULE_ID} | post-narration tier update failed:`, err),
+      );
+    }, ASYNC_DETECTION_DELAY_MS);
+  }
+
+  return Promise.resolve();
+}
+
+async function runDiscoveryDetection(narrationText, resolution, campaignState, options) {
+  try {
+    const detection = await runCombinedDetectionPass(
+      narrationText,
+      resolution.moveId,
+      resolution.outcome,
+      campaignState,
+    );
+    await routeWorldJournalResults(detection.worldJournal, campaignState);
+    await routeEntityDrafts(detection.entities, campaignState, {
+      autoCreateConnection: options.autoCreateConnection === true,
+      sessionId:            campaignState?.currentSessionId ?? '',
+    });
+  } catch (err) {
+    console.error(`${MODULE_ID} | runDiscoveryDetection failed:`, err);
   }
 }
 

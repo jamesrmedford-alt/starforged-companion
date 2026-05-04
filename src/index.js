@@ -72,6 +72,12 @@ import {
   openWorldJournalPanel,
 } from "./world/worldJournalPanel.js";
 
+import { resolveRelevance } from "./context/relevanceResolver.js";
+import {
+  ClarificationDialog,
+  applyClarificationSelection,
+} from "./world/clarificationDialog.js";
+
 const MODULE_ID = "starforged-companion";
 
 
@@ -326,16 +332,62 @@ function registerChatHook() {
       if (!accepted) return;
 
       const resolution = resolveMove(interpretation, campaignState);
-      const packet     = await assembleContextPacket(resolution, campaignState);
 
-      // Step 7: post move result card
+      // Step 7: relevance resolver — picks the narrator-permission block
+      // and identifies which entity records to inject as cards. For hybrid
+      // moves with implicit references, we pause the pipeline for a
+      // clarification dialog before continuing.
+      let relevance = await resolveRelevance(
+        resolution.playerNarration ?? narration,
+        resolution.moveId,
+        resolution.outcome,
+        campaignState,
+      ).catch(err => {
+        console.warn(`${MODULE_ID} | relevance resolver failed:`, err);
+        return {
+          resolvedClass: 'embellishment', entityIds: [], entityTypes: [],
+          matchedNames: [], needsClarification: false, referenceType: 'none',
+        };
+      });
+
+      if (relevance.needsClarification) {
+        // Mark pendingClarification on campaignState so other clients can
+        // observe a paused pipeline (GM can read state). Cleared before
+        // narration is requested.
+        if (game.user.isGM) {
+          campaignState.pendingClarification = {
+            resolutionId: resolution._id ?? null,
+            moveId:       resolution.moveId,
+            referenceType: relevance.referenceType,
+            postedAt:     new Date().toISOString(),
+          };
+          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
+        }
+
+        const selection = await ClarificationDialog.prompt(campaignState, relevance);
+        relevance = applyClarificationSelection(relevance, selection);
+
+        if (game.user.isGM) {
+          campaignState.pendingClarification = null;
+          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
+        }
+      }
+
+      // Step 8: build the context packet using the resolved class + matches
+      const packet = await assembleContextPacket(resolution, campaignState, {
+        narratorClass:      relevance.resolvedClass,
+        matchedEntityIds:   relevance.entityIds,
+        matchedEntityTypes: relevance.entityTypes,
+      });
+
+      // Step 9: post move result card
       await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
 
-      // Step 8: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, packet, campaignState);
+      // Step 10: narrate the consequence directly via Claude — no GM dependency
+      await narrateResolution(resolution, packet, campaignState, { relevance });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
