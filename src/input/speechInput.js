@@ -186,8 +186,10 @@ function createSpeechController(language) {
     destroy() {
       try {
         recognition.abort();
-      } catch {
-        // Already stopped — ignore
+      } catch (err) {
+        // Recognition already stopped or never started — common during teardown.
+        // Log at debug level via console.warn so it surfaces if it ever indicates a real issue.
+        console.warn("starforged-companion | speechInput: recognition.abort() failed (likely already stopped):", err);
       }
       setButtonState(null);
       window._sfSpeechInput = createNoOpController();
@@ -300,7 +302,8 @@ function isSpeechSupported() {
 function readLanguageSetting() {
   try {
     return game.settings.get(MODULE_ID, "speechLanguage") ?? "en-US";
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | speechInput: speechLanguage settings read failed; defaulting to en-US:`, err);
     return "en-US";
   }
 }

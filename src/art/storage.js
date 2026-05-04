@@ -92,7 +92,8 @@ export async function loadArtAsset(assetId, campaignState = null) {
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: loadArtAsset(${assetId}) failed:`, err);
     return null;
   }
 }
@@ -113,8 +114,8 @@ export async function loadEntityAssets(entityId, campaignState = null) {
       const asset = page?.flags?.[MODULE_ID]?.[FLAG_KEY];
       if (asset?.entityId === entityId) assets.push(asset);
     }
-  } catch {
-    // Scan failed — return what we have
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: loadEntityAssets(${entityId}) scan failed; returning ${assets.length} partial result(s):`, err);
   }
   return assets;
 }
@@ -189,7 +190,8 @@ function buildEntryName(asset) {
 async function persistCampaignState(campaignState) {
   try {
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch {
-    // non-Foundry context
+  } catch (err) {
+    console.error(`${MODULE_ID} | art/storage: persistCampaignState failed:`, err);
+    throw err;
   }
 }

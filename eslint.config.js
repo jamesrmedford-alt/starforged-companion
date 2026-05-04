@@ -52,6 +52,17 @@ export default [
     rules: {
       "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "no-console":     "off",
+
+      // Silent failures from empty catch blocks have repeatedly hidden bugs
+      // during unit and integration testing. Every catch must either rethrow,
+      // log via console.warn/error, or otherwise produce a discriminable
+      // result — never an empty body, never a comment-only body. See the
+      // silent-failure audit on branch claude/audit-silent-failures-LABiI.
+      "no-empty":              ["error", { allowEmptyCatch: false }],
+      "no-restricted-syntax":  ["error", {
+        selector: "CatchClause[body.body.length=0]",
+        message:  "Empty catch blocks are banned — log the error via console.warn/console.error or rethrow.",
+      }],
     },
   },
   {

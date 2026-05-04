@@ -270,8 +270,12 @@ async function buildConnectionsSection(campaignState) {
 async function buildCharacterStateSection(_campaignState) {
   try {
     const enabled = (() => {
-      try { return game.settings?.get(MODULE_ID, "characterContextEnabled") !== false; }
-      catch { return true; }
+      try {
+        return game.settings?.get(MODULE_ID, "characterContextEnabled") !== false;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | assembler: characterContextEnabled settings read failed; defaulting to enabled:`, err);
+        return true;
+      }
     })();
     if (!enabled) return { content: "", characterIds: [] };
 
@@ -280,10 +284,18 @@ async function buildCharacterStateSection(_campaignState) {
 
     const blocks = [];
     for (const actor of actors) {
-      const snap    = readCharacterSnapshot(actor);
+      const snap = readCharacterSnapshot(actor);
       if (!snap) continue;
 
-      const { summary, recent } = await getChronicleForContext(actor.id).catch(() => ({ summary: "", recent: [] }));
+      let summary = "";
+      let recent  = [];
+      try {
+        const chronicle = await getChronicleForContext(actor.id);
+        summary = chronicle?.summary ?? "";
+        recent  = chronicle?.recent  ?? [];
+      } catch (err) {
+        console.error(`${MODULE_ID} | assembler: getChronicleForContext(${actor.id}) failed:`, err);
+      }
       blocks.push(formatCharacterBlock(snap, summary, recent));
     }
 
@@ -291,8 +303,9 @@ async function buildCharacterStateSection(_campaignState) {
 
     const content = "## CHARACTER STATE\n\n" + blocks.join("\n\n");
     return { content, characterIds: actors.map(a => a.id) };
-  } catch {
-    return { content: "", characterIds: [] };
+  } catch (err) {
+    console.error(`${MODULE_ID} | assembler: buildCharacterStateSection failed:`, err);
+    return { content: "", characterIds: [], _error: err };
   }
 }
 
@@ -329,8 +342,9 @@ async function buildProgressTracksSection() {
     const content  = "## PROGRESS TRACKS\n\n" + lines.join("\n");
 
     return { content, trackIds: included.map(t => t.id) };
-  } catch {
-    return { content: "", trackIds: [] };
+  } catch (err) {
+    console.error(`${MODULE_ID} | assembler: buildProgressTracksSection failed:`, err);
+    return { content: "", trackIds: [], _error: err };
   }
 }
 

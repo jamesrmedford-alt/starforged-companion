@@ -453,7 +453,8 @@ function generateId() {
 async function persistCampaignState(campaignState) {
   try {
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch {
-    // Non-Foundry context — ignore
+  } catch (err) {
+    console.error(`${MODULE_ID} | connection: persistCampaignState failed:`, err);
+    throw err;
   }
 }

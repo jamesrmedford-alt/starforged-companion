@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: Silent-failure audit — production code paths that previously swallowed errors with empty `try/catch` now log via `console.error`/`console.warn` or rethrow. Settings-write functions across `sectors`, `entities/*`, `art/storage`, and `truths` now propagate persistence failures instead of no-opping. Actor-bridge reads (`getPlayerActors`, `getActor`) no longer mask Foundry errors with empty defaults that previously matched empty test fixtures by accident.
+- Added: Test-suite console-error guard — `tests/setup.js` now spies on `console.error`/`console.warn` and fails any test that emits an unexpected error log. Tests that exercise legitimate error-handling paths can opt in via the new `expectConsoleError(/pattern/)` and `silenceConsoleErrors()` helpers.
+- Added: ESLint rule banning empty catch blocks across the module (`no-empty` with `allowEmptyCatch: false`, plus a `no-restricted-syntax` rule that catches comment-only catch bodies).
+- Fixed: `tests/unit ` directory renamed to `tests/unit` (trailing space removed) — caused permission-prompt friction during automated tooling.
 - Fixed: Sector scene passage lines now actually render between settlements — v13 `BaseDrawing` joint validation rejects polygon shapes whose `shape.width`/`shape.height` are zero, so passage drawings were silently failing despite valid stroke properties; `makePassageLine` now sets non-zero bounding box dimensions and the previous error-suppressing try/catch has been removed so future regressions surface immediately
 - Added: Sector-created settlements and connections are now flagged `canonicalLocked` so future narrator-driven entity discovery will not overwrite them
 - Fixed: Sector creator now mirrors each settlement's narrator stub onto the settlement entity record's description, keeping the canonical entity in sync with the sector journal page

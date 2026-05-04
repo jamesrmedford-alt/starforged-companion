@@ -154,7 +154,8 @@ export function buildSectorBackgroundPrompt(sector) {
 function readApiKey() {
   try {
     return game.settings.get(MODULE_ID, "artApiKey") ?? null;
-  } catch {
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorArt: artApiKey settings read failed:`, err);
     return null;
   }
 }
@@ -179,11 +180,15 @@ async function uploadSectorImage(b64, sectorId) {
   const filename = `sector-${sectorId}.png`;
 
   // Ensure the upload directory exists before uploading.
-  // createDirectory() throws if the directory already exists — ignore that error.
+  // createDirectory() throws if the directory already exists; this is the
+  // expected case — but log it so a permissions/disk error is still visible.
   try {
     await foundry.applications.apps.FilePicker.implementation.createDirectory("data", UPLOAD_DIR, {});
-  } catch {
-    // Directory already exists — not an error
+  } catch (err) {
+    const msg = err?.message ?? String(err);
+    if (!/exists/i.test(msg)) {
+      console.warn(`${MODULE_ID} | sectorArt: createDirectory(${UPLOAD_DIR}) failed:`, err);
+    }
   }
 
   // Convert base64 to Blob

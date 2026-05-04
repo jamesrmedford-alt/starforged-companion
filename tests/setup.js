@@ -3,6 +3,17 @@
 // from the global scope. Loaded via vitest.config.js `setupFiles`.
 // Does NOT attempt to mock the Foundry canvas, pixi, or socket layers —
 // those require a live Foundry instance (integration tests only).
+//
+// Console-error guard: this file installs a per-test spy on console.error and
+// console.warn (see bottom). By default a test fails if module code emits
+// console.error during the test body. A test that legitimately exercises an
+// error-handling path can opt in via `expectConsoleError(/pattern/?)` or
+// `silenceConsoleErrors()`. The goal is to surface the silent-failure tier-1
+// findings (see plan on branch claude/audit-silent-failures-LABiI) so that a
+// swallowed error in production code causes the corresponding test to fail
+// loudly rather than passing with a default-shaped result.
+
+import { vi, beforeEach, afterEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // game.*
@@ -179,6 +190,75 @@ global.game.user.character = null;
 //   const actor = makeTestActor({ id: 'a1', name: 'Kira', system: { ... } });
 //   game.actors._set('a1', actor);
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Console error/warn guard
+//
+// Captures every console.error and console.warn call during a test. After the
+// test, asserts that none fired unless the test opted in via
+// expectConsoleError() or silenceConsoleErrors(). This is the cross-cutting
+// half of the silent-failure mitigation: production code is now expected to
+// log via console.error/warn when it hits an unexpected branch, and tests
+// must explicitly acknowledge those branches.
+// ---------------------------------------------------------------------------
+
+let _expectedErrorPatterns = null;     // null = strict (no errors allowed); array of RegExp = matched-only allowed
+let _silenceConsoleErrors  = false;    // true = no assertions, capture only
+
+const _capturedErrors = [];
+const _capturedWarns  = [];
+
+global.expectConsoleError = (pattern = null) => {
+  if (_expectedErrorPatterns === null) _expectedErrorPatterns = [];
+  if (pattern) _expectedErrorPatterns.push(pattern instanceof RegExp ? pattern : new RegExp(pattern));
+  // pattern === null → just allow any errors during this test
+  else _expectedErrorPatterns.push(/.*/);
+};
+
+global.silenceConsoleErrors = () => { _silenceConsoleErrors = true; };
+
+global.getCapturedErrors = () => _capturedErrors.slice();
+global.getCapturedWarns  = () => _capturedWarns.slice();
+
+const _formatArgs = (args) => args.map(a => {
+  if (a instanceof Error) return a.message;
+  if (typeof a === 'object') { try { return JSON.stringify(a); } catch { return String(a); } }
+  return String(a);
+}).join(' ');
+
+beforeEach(() => {
+  _expectedErrorPatterns = null;
+  _silenceConsoleErrors  = false;
+  _capturedErrors.length = 0;
+  _capturedWarns.length  = 0;
+  vi.spyOn(console, 'error').mockImplementation((...args) => { _capturedErrors.push(_formatArgs(args)); });
+  vi.spyOn(console, 'warn' ).mockImplementation((...args) => { _capturedWarns .push(_formatArgs(args)); });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+
+  if (_silenceConsoleErrors) return;
+
+  if (_capturedErrors.length === 0) return;
+
+  if (_expectedErrorPatterns === null) {
+    // Strict: any unexpected console.error fails the test.
+    throw new Error(
+      `Unexpected console.error during test (silent-failure guard):\n  ${_capturedErrors.join('\n  ')}\n` +
+      `If this error is intentional, call expectConsoleError(/pattern/) inside the test, or silenceConsoleErrors() to disable the guard.`
+    );
+  }
+
+  const unmatched = _capturedErrors.filter(msg =>
+    !_expectedErrorPatterns.some(pat => pat.test(msg))
+  );
+  if (unmatched.length > 0) {
+    throw new Error(
+      `Unexpected console.error not covered by expectConsoleError patterns:\n  ${unmatched.join('\n  ')}`
+    );
+  }
+});
 
 global.makeTestActor = (overrides = {}) => {
   const updateHistory = [];

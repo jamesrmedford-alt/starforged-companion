@@ -83,7 +83,8 @@ export async function isLocalProxyReachable() {
       signal: AbortSignal.timeout(2000),
     });
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.warn(`starforged-companion | api-proxy: local proxy health check failed:`, err);
     return false;
   }
 }

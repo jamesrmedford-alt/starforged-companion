@@ -295,8 +295,12 @@ function labelLocationType(t) {
 }
 
 function getSetting(key, fallback) {
-  try { return game.settings.get(MODULE_ID, key) ?? fallback; }
-  catch { return fallback; }
+  try {
+    return game.settings.get(MODULE_ID, key) ?? fallback;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorPanel: settings.get(${key}) failed; using fallback:`, err);
+    return fallback;
+  }
 }
 
 function getNarratorSettings() {
@@ -312,8 +316,8 @@ async function postProgressCard(text) {
       content: `<div class="sf-sector-progress-card"><span>◈</span> ${text}</div>`,
       flags: { [MODULE_ID]: { sectorProgress: true } },
     });
-  } catch {
-    // Non-critical
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorPanel: postProgressCard failed (non-critical):`, err);
   }
 }
 

@@ -21,11 +21,7 @@ const _snapshotCache = new Map();
  * @returns {Actor[]}
  */
 export function getPlayerActors() {
-  try {
-    return game.actors?.filter(a => a.type === 'character' && a.hasPlayerOwner) ?? [];
-  } catch {
-    return [];
-  }
+  return game.actors?.filter(a => a.type === 'character' && a.hasPlayerOwner) ?? [];
 }
 
 /**
@@ -35,12 +31,8 @@ export function getPlayerActors() {
  * @returns {Actor|null}
  */
 export function getActor(actorId) {
-  try {
-    if (actorId) return game.actors?.get(actorId) ?? null;
-    return game.user?.character ?? null;
-  } catch {
-    return null;
-  }
+  if (actorId) return game.actors?.get(actorId) ?? null;
+  return game.user?.character ?? null;
 }
 
 /**
