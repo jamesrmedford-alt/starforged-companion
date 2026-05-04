@@ -62,6 +62,16 @@ import {
   getRecapGmOnly,
 } from "./ui/settingsPanel.js";
 
+import {
+  initWorldJournals,
+  parseJournalCommand,
+  executeJournalCommand,
+} from "./world/worldJournal.js";
+
+import {
+  openWorldJournalPanel,
+} from "./world/worldJournalPanel.js";
+
 const MODULE_ID = "starforged-companion";
 
 
@@ -264,6 +274,12 @@ function registerChatHook() {
     // !at command — set or clear the current location (intercept before move pipeline)
     if (isAtCommand(message)) {
       await handleAtCommand(message);
+      return;
+    }
+
+    // !journal command — manual World Journal entry (intercept before move pipeline)
+    if (isJournalCommand(message)) {
+      await handleJournalCommand(message);
       return;
     }
 
@@ -473,6 +489,63 @@ export function isAtCommand(message) {
   if (!text.toLowerCase().startsWith("!at")) return false;
   // Must be exactly "!at" or "!at " — don't match "!atlas" etc.
   return text.length === 3 || /^!at\s/i.test(text);
+}
+
+/**
+ * Determine whether a chat message is a !journal command.
+ */
+export function isJournalCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return /^!journal\s/i.test(text);
+}
+
+/**
+ * Handle a !journal command. GM-only — World Journal writes require world-
+ * scoped permissions. Posts a confirmation card on success or a notification
+ * on rejection.
+ */
+async function handleJournalCommand(message) {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!journal is GM-only (writes campaign state).");
+    return;
+  }
+
+  const parsed = parseJournalCommand(message.content?.trim() ?? "");
+  if (!parsed) {
+    ui.notifications.warn(
+      'Invalid !journal command. Format: !journal <type> "Name" qualifier — text  ' +
+      '(types: faction, location, lore, threat).'
+    );
+    return;
+  }
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  try {
+    const result = await executeJournalCommand(parsed, campaignState);
+    if (!result) {
+      ui.notifications.warn(`!journal ${parsed.type} failed — see console for details.`);
+      return;
+    }
+    await ChatMessage.create({
+      content:
+        `<p><strong>World Journal updated:</strong> ${parsed.type} — ` +
+        `<em>${escapeChatHtml(parsed.name)}</em>` +
+        (parsed.qualifier ? ` (${escapeChatHtml(parsed.qualifier)})` : '') +
+        `</p>`,
+      flags:   { [MODULE_ID]: { worldJournalCard: true } },
+    });
+  } catch (err) {
+    console.error(`${MODULE_ID} | !journal command failed:`, err);
+    ui.notifications.error("!journal command failed. Check console for details.");
+  }
+}
+
+function escapeChatHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -754,6 +827,13 @@ Hooks.once("ready", () => {
     ensureHelpJournal().catch(err =>
       console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
     );
+
+    // World Journal — create the folder + four category journals if missing.
+    // Phase 3 only writes; the combined detection pass that auto-populates is
+    // Phase 4. Errors are logged and do not block the rest of the ready hook.
+    initWorldJournals().catch(err =>
+      console.warn(`${MODULE_ID} | World Journal init failed:`, err?.message ?? err)
+    );
   }
 
   registerChatHook();
@@ -831,6 +911,14 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => {},
   };
+  tokenControls.tools.worldJournal = {
+    name:     "worldJournal",
+    title:    "World Journal",
+    icon:     "fas fa-book",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -846,6 +934,7 @@ Hooks.on("renderSceneControls", (app, html) => {
     chronicle:      () => openChroniclePanel(),
     sfSettings:     () => openSettingsPanel(),
     sectorCreator:  () => openSectorCreator(),
+    worldJournal:   () => openWorldJournalPanel(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {
