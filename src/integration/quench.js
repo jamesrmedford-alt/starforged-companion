@@ -28,6 +28,7 @@ Hooks.on("quenchReady", (quench) => {
   registerPipelineTests(quench);
   registerSectorCreatorTests(quench);
   registerEntityWorldJournalTests(quench);
+  registerWorldJournalTests(quench);
 });
 
 
@@ -969,5 +970,222 @@ function registerEntityWorldJournalTests(quench) {
       });
     },
     { displayName: "STARFORGED: Entity × World Journal" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORLD JOURNAL — live CRUD + assembler injection
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerWorldJournalTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.worldJournal",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdJournalIds = [];
+
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState"),
+        ));
+      });
+
+      after(async function () {
+        if (!game.user.isGM) return;
+        if (stateAtStart) {
+          await game.settings.set(MODULE, "campaignState", stateAtStart);
+        }
+        for (const id of createdJournalIds) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench: cleanup failed for journal ${id}:`, err));
+          }
+        }
+      });
+
+      describe("WJ CRUD — live Foundry", function () {
+        it("initWorldJournals creates the folder and all category journals", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          await wj.initWorldJournals();
+          for (const name of Object.values(wj.JOURNAL_NAMES)) {
+            const j = game.journal?.getName?.(name);
+            assert.isObject(j, `journal "${name}" should exist after init`);
+          }
+        });
+
+        it("!journal lore confirmed creates an entry with confirmed: true", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `Quench confirmed lore — ${Date.now()}`;
+
+          const parsed = wj.parseJournalCommand(`!journal lore "${title}" confirmed — quench-test`);
+          await wj.executeJournalCommand(parsed, state);
+
+          const found = wj.getConfirmedLore(state).find(l => l.title === title);
+          assert.isObject(found, "confirmed lore entry should exist");
+          assert.equal(found.confirmed, true);
+        });
+
+        it("promoteLoreToConfirmed sets confirmed: true and stamps promotedAt", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `Soft fact ${Date.now()}`;
+
+          await wj.recordLoreDiscovery(title,
+            { text: "x", narratorAsserted: true, confirmed: false }, state);
+
+          const result = await wj.promoteLoreToConfirmed(title, state);
+          assert.isObject(result);
+          assert.equal(result.confirmed, true);
+          assert.isString(result.promotedAt);
+        });
+
+        it("applyStateTransition resolved → threat severity becomes 'resolved'", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const name = `AI fragment ${Date.now()}`;
+
+          await wj.recordThreat(name, { severity: "immediate", summary: "live" }, state);
+          await wj.applyStateTransition(
+            { entryType: "threat", name, change: "resolved" }, state,
+          );
+
+          const entries = wj.getActiveThreats(state);
+          const stillActive = entries.find(t => t.name === name);
+          assert.isUndefined(stillActive,
+            "resolved threats should not appear in getActiveThreats");
+        });
+
+        it("applyStateTransition contradicted → posts a GM whispered card, lore unchanged", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `Established ${Date.now()}`;
+
+          await wj.recordLoreDiscovery(title, { confirmed: true, text: "do not contradict" }, state);
+          const before = game.messages.size;
+
+          await wj.applyStateTransition(
+            { entryType: "lore", name: title, change: "contradicted",
+              summary: "narration described the opposite" }, state,
+          );
+
+          assert.isAbove(game.messages.size, before,
+            "a contradiction notification card should have been posted");
+          const last = game.messages.contents.at(-1);
+          assert.isTrue(
+            !!last.flags?.[MODULE]?.worldJournalContradiction,
+            "card should carry worldJournalContradiction flag",
+          );
+          // Lore unchanged
+          const found = wj.getConfirmedLore(state).find(l => l.title === title);
+          assert.equal(found.text, "do not contradict",
+            "the lore entry's text should not have been mutated");
+        });
+
+        it("annotateEntry surfaces in the entry's annotations array", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `Annotatable lore ${Date.now()}`;
+
+          await wj.recordLoreDiscovery(title, { confirmed: true, text: "x" }, state);
+          await wj.annotateEntry("lore", title, "GM note", "Quench Reviewer", state);
+
+          const journal = game.journal?.getName?.(wj.JOURNAL_NAMES.lore);
+          const page    = journal?.pages?.contents?.find(p => p.name === title);
+          const entry   = page?.flags?.[MODULE]?.[wj.FLAG_KEYS.lore];
+          const ann     = entry?.annotations ?? [];
+          assert.isAtLeast(ann.length, 1);
+          assert.equal(ann.at(-1).author, "Quench Reviewer");
+        });
+
+        it("writeSessionLog produces a session-log page", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const before = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
+          const page = await wj.writeSessionLog(state);
+          assert.isObject(page);
+          const after = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
+          assert.isAtLeast(after, before + 1);
+        });
+      });
+
+      describe("Assembler injection — Sections 3, 4, 9, 10", function () {
+        it("confirmed lore appears in Section 3 of the assembled context packet", async function () {
+          this.timeout(30000);
+          const wj   = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `Section 3 confirmed ${Date.now()}`;
+
+          await wj.recordLoreDiscovery(title, { confirmed: true, text: "section-3 test" }, state);
+
+          const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
+          assert.match(packet.assembled, /ESTABLISHED LORE/);
+          assert.include(packet.assembled, title);
+        });
+
+        it("immediate threats appear in Section 4 of the assembled context packet", async function () {
+          this.timeout(30000);
+          const wj  = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const asm = await import(`${MODULE_PATH}/context/assembler.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const name = `Section 4 immediate ${Date.now()}`;
+
+          await wj.recordThreat(name, { severity: "immediate", summary: "section-4 test" }, state);
+
+          const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
+          assert.match(packet.assembled, /ACTIVE THREATS/);
+          assert.match(packet.assembled, new RegExp(`IMMEDIATE: ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+        });
+
+        it("faction landscape (Section 9) includes WJ-only factions, excludes those with entity records", async function () {
+          this.timeout(30000);
+          const wj   = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
+          const { createFaction } = await import(`${MODULE_PATH}/entities/faction.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const wjOnlyName = `WJ-only Faction ${Date.now()}`;
+          const entityName = `Entity-backed Faction ${Date.now()}`;
+
+          // Faction with no entity record — should appear in Section 9
+          await wj.recordFactionIntelligence(wjOnlyName,
+            { attitude: "neutral", summary: "first contact" }, state);
+
+          // Faction WITH entity record — should NOT appear in Section 9
+          await createFaction({ name: entityName, relationship: "neutral" }, state);
+          await wj.recordFactionIntelligence(entityName,
+            { attitude: "neutral", summary: "via detection" }, state);
+          await game.settings.set(MODULE, "campaignState", state);
+
+          const fresh  = game.settings.get(MODULE, "campaignState");
+          const packet = await asm.assembleContextPacket(null, fresh, { tokenBudget: 4000 });
+          const factionBlock = packet.assembled.split("FACTION ATTITUDES")[1] ?? "";
+          assert.include(factionBlock, wjOnlyName,
+            "WJ-only faction should appear in Section 9");
+          assert.notInclude(factionBlock, entityName,
+            "Entity-backed faction should NOT appear in Section 9");
+
+          // Track the entity journal for cleanup
+          const entityJournal = (fresh.factionIds ?? [])
+            .map(id => game.journal?.get(id))
+            .find(j => j?.name === entityName);
+          if (entityJournal?.id) createdJournalIds.push(entityJournal.id);
+        });
+      });
+    },
+    { displayName: "STARFORGED: World Journal" },
   );
 }

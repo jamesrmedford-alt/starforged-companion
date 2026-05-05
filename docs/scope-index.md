@@ -26,8 +26,9 @@ For detail on any scope, open the linked document.
 | [Foundations](foundations-scope.md) | ✅ COMPLETE | Session ID management, narrator card metadata, README, help compendium, CHANGELOG | Narrator | Scene Interrogation, Previously On, Character Management, World Journal |
 | [Scene Interrogation](scene-interrogation-scope.md) | ✅ COMPLETE | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
 | [Previously On](previously-on-scope.md) | ✅ COMPLETE | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
-| [World Journal](world-journal-scope.md) | 📋 PLANNED | Automatic faction/location/lore/threat documentation in Foundry journal entries | Character Management, Previously On | — |
-| [Quench Integration Tests](quench-integration-scope.md) | ✅ COMPLETE | Live Foundry integration tests via Quench covering safety, actor bridge, progress tracks, assembler, narrator, and pipeline | Foundations, Character Management | — |
+| [Narrator Entity Discovery](narrator-entity-discovery-scope-v3.md) | ✅ COMPLETE | Per-move narrator permissions (discovery / interaction / embellishment / hybrid); relevance resolver with hybrid clarification dialog; combined detection pass (one Haiku call serves both entity extraction and World Journal); entity-panel generative-tier UI; current-location card; oracle seeds for the five seeded moves | Character Management | World Journal |
+| [World Journal](world-journal-scope-v2.md) | ✅ COMPLETE | Folder + four category journals (lore, threats, factions, locations) + session log; manual `!journal` chat commands; combined detection pass populates entries with routing rule (factions/locations only when no entity record exists); WJ panel with Confirm + severity dropdown + history accordion + entity-record links; assembler injects confirmed lore (never dropped), immediate threats (never dropped), faction landscape, and recent discoveries | Character Management, Previously On, Narrator Entity Discovery | — |
+| [Quench Integration Tests](quench-integration-scope.md) | ✅ COMPLETE | Live Foundry integration tests via Quench covering safety, actor bridge, progress tracks, assembler, narrator, pipeline, and entity × world journal cross-dependency routing | Foundations, Character Management | — |
 | [API Key Privacy](api-key-privacy-scope.md) | ✅ COMPLETE | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
 | [Sector Creator](sector-creator-scope.md) | ✅ COMPLETE | 11-step guided sector generation following Starforged rulebook (pp. 114–127); SECTOR_TROUBLE table, settlement/planet/connection/map generation | — | Sector Creator Enhanced |
 | [Sector Creator Enhanced](sector-creator-enhanced-scope.md) | ✅ COMPLETE | DALL-E 3 background art per region, Foundry Scene creation with Note pins and Drawing passages, narrator journal stubs | Sector Creator | — |
@@ -40,16 +41,21 @@ Narrator (✅)
   └─► Foundations (✅)
         ├─► Scene Interrogation (✅)
         │     └─► Previously On (✅)
-        │               └─► World Journal (📋)
+        │               └─► World Journal (✅)
         └─► Character Management (✅) ◄── Ironsworn API (✅)
                     └─► Previously On (✅)
-                    |          └─► World Journal (📋)
-              	    └─► Quench Integration Tests (✅)
+                    │          └─► Narrator Entity Discovery (✅)
+                    │                    └─► World Journal (✅)
+                    └─► Quench Integration Tests (✅)
 ```
 
 ---
 
 ## What to work on next
 
-1. **World Journal** — all dependencies (Character Management, Previously On) are now complete. Automatic faction/location/lore/threat documentation in Foundry journal entries.
-2. **Sector Creator** — self-contained, no blocking dependencies. 11-step guided sector generation.
+All current scopes are complete. Possible next directions:
+
+- **Speech input polish** — push-to-talk reliability, dictation accuracy improvements.
+- **Sector Creator iteration** — e.g. richer narrator stubs, additional region templates, post-generation editing.
+- **WJ Phase 6 polish** — surface contradiction notifications inside the WJ panel itself (not only the chat card), undo for accidental confirmations.
+- **Generative-tier learning** — feed pinned + promoted entries back into the entity-discovery prompt as positive exemplars.

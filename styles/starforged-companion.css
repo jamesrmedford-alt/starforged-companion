@@ -1754,3 +1754,269 @@
   font-weight: 700;
   color:       #b3261e;
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* ENTITY PANEL — top tabs (Entities / Dismissed)                              */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.sf-entity-toptabs {
+  display:        flex;
+  gap:            4px;
+  margin-bottom:  0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom:  1px solid var(--color-border-light, #ddd);
+}
+
+.sf-entity-toptab {
+  background:    transparent;
+  border:        1px solid var(--color-border-light, #ccc);
+  border-radius: 3px 3px 0 0;
+  border-bottom: none;
+  padding:       4px 12px;
+  font-size:     0.92em;
+  cursor:        pointer;
+  color:         var(--color-text-dark-secondary, #555);
+}
+
+.sf-entity-toptab:hover {
+  background: rgba(124, 92, 191, 0.08);
+}
+
+.sf-entity-toptab-active {
+  background:  var(--color-bg-option, #f6f4ee);
+  color:       var(--color-text-dark-primary, #111);
+  font-weight: 600;
+}
+
+.sf-entity-dismissed .entity-empty-state {
+  margin-top: 1rem;
+  font-style: italic;
+}
+
+.sf-dismissed-list {
+  list-style: none;
+  padding:    0;
+  margin:     0;
+}
+
+.sf-dismissed-row {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         6px 8px;
+  border-bottom:   1px solid var(--color-border-light, #eee);
+}
+
+.sf-dismissed-name {
+  font-weight: 500;
+}
+
+.sf-undismiss-btn {
+  font-size:     0.85em;
+  background:    transparent;
+  border:        1px solid var(--color-accent, #7c5cbf);
+  color:         var(--color-accent, #7c5cbf);
+  border-radius: 3px;
+  padding:       2px 8px;
+  cursor:        pointer;
+}
+
+.sf-undismiss-btn:hover {
+  background: rgba(124, 92, 191, 0.1);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* ENTITY PANEL — detail header actions                                        */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.detail-header-actions {
+  display:        flex;
+  gap:            0.5rem;
+  flex-wrap:      wrap;
+  margin:         0.5rem 0;
+  padding:        0.5rem 0;
+  border-bottom:  1px dashed var(--color-border-light, #ddd);
+}
+
+.sf-canonical-lock,
+.sf-set-current-location {
+  font-size:     0.85em;
+  background:    transparent;
+  border:        1px solid var(--color-border-light, #ccc);
+  border-radius: 3px;
+  padding:       3px 10px;
+  cursor:        pointer;
+  color:         var(--color-text-dark-secondary, #555);
+}
+
+.sf-canonical-locked {
+  background:   #2c5e2c;
+  border-color: #1f4520;
+  color:        #fff;
+}
+
+.sf-current-location-active {
+  background:   #2c5e8a;
+  border-color: #1d4264;
+  color:        #fff;
+}
+
+.sf-canonical-lock:hover,
+.sf-set-current-location:hover {
+  border-color: var(--color-accent, #7c5cbf);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* ENTITY PANEL — generative tier                                              */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.sf-generative-tier {
+  margin-top:    1rem;
+  border-top:    1px dashed var(--color-border-light, #ddd);
+  padding-top:   0.75rem;
+}
+
+.sf-generative-tier summary {
+  cursor:        pointer;
+  font-weight:   600;
+  font-size:     0.9em;
+  color:         var(--color-text-dark-secondary, #666);
+  padding:       4px 0;
+}
+
+.sf-tier-empty {
+  font-style:  italic;
+  color:       var(--color-text-dark-secondary, #888);
+  font-size:   0.85em;
+  padding:     6px 0;
+}
+
+.sf-tier-list {
+  list-style: none;
+  padding:    0;
+  margin:     0.25rem 0 0;
+}
+
+.sf-tier-row {
+  border:        1px solid var(--color-border-light, #e2dfd6);
+  border-radius: 3px;
+  padding:       6px 8px;
+  margin-bottom: 4px;
+  background:    var(--color-bg, #fffefb);
+}
+
+.sf-tier-pinned {
+  border-color: var(--color-accent, #7c5cbf);
+  background:   rgba(124, 92, 191, 0.05);
+}
+
+.sf-tier-meta {
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+  font-size:   0.78em;
+  color:       var(--color-text-dark-secondary, #888);
+  margin-bottom: 3px;
+}
+
+.sf-tier-session {
+  flex: 1;
+}
+
+.sf-tier-pin-btn,
+.sf-tier-promote-btn,
+.sf-tier-remove-btn {
+  background:    transparent;
+  border:        1px solid var(--color-border-light, #ccc);
+  border-radius: 3px;
+  padding:       1px 6px;
+  cursor:        pointer;
+  font-size:     0.95em;
+  line-height:   1;
+}
+
+.sf-tier-detail {
+  font-size: 0.9em;
+  color:     var(--color-text-dark-primary, #333);
+  line-height: 1.35;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* WORLD JOURNAL PANEL — Confirm / severity / entity link / history            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.sf-wj-confirm-btn {
+  margin-left:   auto;
+  background:    transparent;
+  border:        1px solid #2c5e2c;
+  color:         #2c5e2c;
+  border-radius: 3px;
+  padding:       2px 8px;
+  font-size:     0.78em;
+  cursor:        pointer;
+}
+
+.sf-wj-confirm-btn:hover {
+  background: rgba(44, 94, 44, 0.08);
+}
+
+.sf-wj-severity-select {
+  margin-left:   auto;
+  font-size:     0.78em;
+  background:    var(--color-bg, #fffefb);
+  border:        1px solid var(--color-border-light, #ccc);
+  border-radius: 3px;
+  padding:       1px 6px;
+}
+
+.sf-wj-history {
+  margin-top: 0.5rem;
+  font-size:  0.85em;
+}
+
+.sf-wj-history summary {
+  cursor:      pointer;
+  color:       var(--color-text-dark-secondary, #666);
+  font-weight: 600;
+}
+
+.sf-wj-history-list {
+  list-style: none;
+  padding:    0;
+  margin:     0.3rem 0 0;
+}
+
+.sf-wj-history-item {
+  display:       flex;
+  gap:           8px;
+  padding:       2px 0;
+  border-bottom: 1px dashed var(--color-border-light, #eee);
+}
+
+.sf-wj-history-severity {
+  font-weight:    600;
+  text-transform: uppercase;
+  font-size:      0.8em;
+}
+
+.sf-wj-history-session,
+.sf-wj-history-summary {
+  font-size: 0.85em;
+  color:     var(--color-text-dark-secondary, #666);
+}
+
+.sf-wj-entity-link-btn {
+  margin-left:   auto;
+  background:    transparent;
+  border:        1px solid var(--color-accent, #7c5cbf);
+  color:         var(--color-accent, #7c5cbf);
+  border-radius: 3px;
+  padding:       2px 8px;
+  font-size:     0.78em;
+  cursor:        pointer;
+}
+
+.sf-wj-entity-link-btn:hover {
+  background: rgba(124, 92, 191, 0.1);
+}

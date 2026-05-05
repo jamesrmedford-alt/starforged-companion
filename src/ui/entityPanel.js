@@ -70,6 +70,24 @@ const DETAIL_FIELDS = {
     { key: 'feature', label: 'Feature' },
     { key: 'notes',   label: 'Notes'   },
   ],
+  location: [
+    { key: 'type',        label: 'Type'        },
+    { key: 'region',      label: 'Region'      },
+    { key: 'status',      label: 'Status'      },
+    { key: 'firstLook',   label: 'First look'  },
+    { key: 'feature',     label: 'Feature'     },
+    { key: 'description', label: 'Description' },
+    { key: 'notes',       label: 'Notes'       },
+  ],
+  creature: [
+    { key: 'scale',       label: 'Scale'       },
+    { key: 'environment', label: 'Environment' },
+    { key: 'form',        label: 'Form'        },
+    { key: 'behavior',    label: 'Behavior'    },
+    { key: 'rank',        label: 'Rank'        },
+    { key: 'description', label: 'Description' },
+    { key: 'notes',       label: 'Notes'       },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -170,8 +188,17 @@ export class EntityPanelApp extends ApplicationV2 {
       backToList:         EntityPanelApp.#onBackToList,
       generatePortrait:   EntityPanelApp.#onGeneratePortrait,
       regeneratePortrait: EntityPanelApp.#onRegeneratePortrait,
+      pinTier:            EntityPanelApp.#onPinTier,
+      promoteTier:        EntityPanelApp.#onPromoteTier,
+      removeTier:         EntityPanelApp.#onRemoveTier,
+      toggleCanonicalLock:EntityPanelApp.#onToggleCanonicalLock,
+      setCurrentLocation: EntityPanelApp.#onSetCurrentLocation,
+      switchTopTab:       EntityPanelApp.#onSwitchTopTab,
+      undismiss:          EntityPanelApp.#onUndismiss,
     },
   };
+
+  #activeTopTab = 'entities';   // 'entities' | 'dismissed'
 
   static open() {
     if (!EntityPanelApp.#instance) {
@@ -186,9 +213,21 @@ export class EntityPanelApp extends ApplicationV2 {
   // -----------------------------------------------------------------------
 
   async _prepareContext(_options) {
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const isCurrentLocation = (id) =>
+      !!campaignState.currentLocationId && campaignState.currentLocationId === id;
+
     if (this.#selectedId) {
       const entity = await findEntity(this.#selectedId);
-      return { view: 'detail', entity };
+      return { view: 'detail', entity, isCurrentLocation: isCurrentLocation(this.#selectedId) };
+    }
+
+    if (this.#activeTopTab === 'dismissed') {
+      return {
+        view:               'dismissed',
+        dismissedEntities:  campaignState.dismissedEntities ?? [],
+        topTab:             'dismissed',
+      };
     }
 
     const groups = await loadAllEntities();
@@ -200,13 +239,18 @@ export class EntityPanelApp extends ApplicationV2 {
     })).filter(s => s.entities.length > 0);
 
     const totalCount = Object.values(groups).reduce((n, arr) => n + arr.length, 0);
-    return { view: 'list', sections, totalCount };
+    return { view: 'list', sections, totalCount, topTab: 'entities' };
   }
 
   async _renderHTML(context, _options) {
-    const html = context.view === 'detail'
-      ? this.#renderDetail(context.entity)
-      : this.#renderList(context.sections, context.totalCount);
+    let html;
+    if (context.view === 'detail') {
+      html = this.#renderDetail(context.entity, context.isCurrentLocation);
+    } else if (context.view === 'dismissed') {
+      html = this.#renderDismissed(context.dismissedEntities);
+    } else {
+      html = this.#renderList(context.sections, context.totalCount, context.topTab);
+    }
 
     const tmp = document.createElement('div');
     tmp.innerHTML = html.trim();
@@ -222,10 +266,19 @@ export class EntityPanelApp extends ApplicationV2 {
   // List view
   // -----------------------------------------------------------------------
 
-  #renderList(sections, totalCount) {
+  #renderList(sections, totalCount, topTab = 'entities') {
+    const tabs = `
+      <div class="sf-entity-toptabs">
+        <button class="sf-entity-toptab${topTab === 'entities' ? ' sf-entity-toptab-active' : ''}"
+                data-action="switchTopTab" data-tab="entities">Entities</button>
+        <button class="sf-entity-toptab${topTab === 'dismissed' ? ' sf-entity-toptab-active' : ''}"
+                data-action="switchTopTab" data-tab="dismissed">Dismissed</button>
+      </div>`;
+
     if (totalCount === 0) {
       return `
         <div class="sf-entity-panel sf-entity-list">
+          ${tabs}
           <p class="entity-empty-state">
             No entities tracked yet.<br>
             They appear here when created via the entity modules.
@@ -245,7 +298,32 @@ export class EntityPanelApp extends ApplicationV2 {
         </ul>
       </section>`).join('');
 
-    return `<div class="sf-entity-panel sf-entity-list">${sectionHtml}</div>`;
+    return `<div class="sf-entity-panel sf-entity-list">${tabs}${sectionHtml}</div>`;
+  }
+
+  #renderDismissed(dismissedEntities) {
+    const tabs = `
+      <div class="sf-entity-toptabs">
+        <button class="sf-entity-toptab" data-action="switchTopTab" data-tab="entities">Entities</button>
+        <button class="sf-entity-toptab sf-entity-toptab-active"
+                data-action="switchTopTab" data-tab="dismissed">Dismissed</button>
+      </div>`;
+
+    const list = dismissedEntities.length
+      ? dismissedEntities.map(name => `
+          <li class="sf-dismissed-row">
+            <span class="sf-dismissed-name">${escapeHtml(name)}</span>
+            <button class="entity-btn sf-undismiss-btn"
+                    data-action="undismiss" data-name="${escapeHtml(name)}">Undismiss</button>
+          </li>`).join('')
+      : '';
+
+    const body = list
+      ? `<ul class="sf-dismissed-list">${list}</ul>`
+      : `<p class="entity-empty-state">No dismissed entities. Names dismissed from the entity-discovery
+         draft card appear here so you can restore them.</p>`;
+
+    return `<div class="sf-entity-panel sf-entity-dismissed">${tabs}${body}</div>`;
   }
 
   #renderEntityRow(entity) {
@@ -278,6 +356,8 @@ export class EntityPanelApp extends ApplicationV2 {
       case 'settlement':  text = [d.location, d.population].filter(Boolean).join(' · '); break;
       case 'faction':     text = [d.type, d.goal].filter(Boolean).join(' · '); break;
       case 'planet':      text = [d.type, d.biomes].filter(Boolean).join(' · '); break;
+      case 'location':    text = [d.type, d.status].filter(Boolean).join(' · '); break;
+      case 'creature':    text = [d.scale, d.environment].filter(Boolean).join(' · '); break;
     }
     return text ? `<span class="entity-row-subtitle">${text}</span>` : '';
   }
@@ -286,7 +366,7 @@ export class EntityPanelApp extends ApplicationV2 {
   // Detail view
   // -----------------------------------------------------------------------
 
-  #renderDetail(entity) {
+  #renderDetail(entity, isCurrentLocation = false) {
     if (!entity) {
       return `
         <div class="sf-entity-panel sf-entity-detail">
@@ -299,6 +379,27 @@ export class EntityPanelApp extends ApplicationV2 {
 
     const config = ENTITY_TYPES[entity.typeKey];
     const isGenerating = this.#generatingIds.has(entity.journalId);
+    const canonicalLocked = !!entity.data.canonicalLocked;
+    const lockToggleTitle = canonicalLocked
+      ? 'Canonical fields are locked — narrator may not contradict'
+      : 'Canonical fields are unlocked — narrator prefers consistency';
+    const lockToggleHtml = `
+      <button class="sf-canonical-lock${canonicalLocked ? ' sf-canonical-locked' : ''}"
+              data-action="toggleCanonicalLock"
+              data-journal-id="${escapeHtml(entity.journalId)}"
+              title="${escapeHtml(lockToggleTitle)}">
+        ${canonicalLocked ? '🔒 Locked' : '🔓 Unlocked'}
+      </button>`;
+
+    const supportsCurrentLocation = ['settlement', 'location', 'planet'].includes(entity.typeKey);
+    const currentLocationBtn = supportsCurrentLocation
+      ? `<button class="sf-set-current-location${isCurrentLocation ? ' sf-current-location-active' : ''}"
+                 data-action="setCurrentLocation"
+                 data-journal-id="${escapeHtml(entity.journalId)}"
+                 data-type="${escapeHtml(entity.typeKey)}">
+           ${isCurrentLocation ? '✓ Current location' : 'Set as current location'}
+         </button>`
+      : '';
 
     let portraitHtml;
     if (entity.art?.dataUri) {
@@ -368,6 +469,13 @@ export class EntityPanelApp extends ApplicationV2 {
          </details>`
       : '';
 
+    const tierHtml = this.#renderGenerativeTier(entity);
+    const headerActions = `
+      <div class="detail-header-actions">
+        ${lockToggleHtml}
+        ${currentLocationBtn}
+      </div>`;
+
     return `
       <div class="sf-entity-panel sf-entity-detail">
         <div class="detail-back">
@@ -376,17 +484,81 @@ export class EntityPanelApp extends ApplicationV2 {
         <div class="detail-header">
           <span class="detail-type-icon">${config.icon}</span>
           <div class="detail-titles">
-            <h2 class="detail-name">${entity.name}</h2>
+            <h2 class="detail-name">${escapeHtml(entity.name)}</h2>
             <span class="detail-type-label">${config.label.replace(/s$/, '')}</span>
           </div>
         </div>
+        ${headerActions}
         ${portraitHtml}
         <dl class="detail-fields">
           ${fieldsHtml}
           ${progressHtml}
         </dl>
+        ${tierHtml}
         ${historyHtml}
       </div>`;
+  }
+
+  /**
+   * Render the generative-tier section (collapsible) per
+   * narrator-entity-discovery scope §3. Pinned entries appear first; promoted
+   * entries are filtered out (they live on the canonical fields now).
+   */
+  #renderGenerativeTier(entity) {
+    const tier = Array.isArray(entity?.data?.generativeTier)
+      ? entity.data.generativeTier
+      : [];
+    const visible = tier.filter(e => !e?.promoted);
+    if (!visible.length) {
+      return `
+        <details class="sf-generative-tier sf-generative-tier-empty">
+          <summary>Narrator-added details (0)</summary>
+          <p class="sf-tier-empty">
+            No narrator-added details yet. The combined detection pass appends
+            them automatically when the narrator references this entity.
+          </p>
+        </details>`;
+    }
+
+    const sorted = visible.slice().sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return (b.sessionNum ?? 0) - (a.sessionNum ?? 0);
+    });
+
+    const rows = sorted.map((e, idx) => {
+      const sessionTag = e.sessionNum
+        ? `Session ${escapeHtml(String(e.sessionNum))}`
+        : (e.sessionId ? escapeHtml(String(e.sessionId)) : '');
+      const pinnedClass = e.pinned ? ' sf-tier-pinned' : '';
+      const pinIcon     = e.pinned ? '📌' : '📍';
+      const pinTitle    = e.pinned ? 'Unpin' : 'Pin (always include in narrator prompt)';
+      return `
+        <li class="sf-tier-row${pinnedClass}" data-entry-index="${idx}">
+          <div class="sf-tier-meta">
+            <span class="sf-tier-session">${sessionTag}</span>
+            <button class="sf-tier-pin-btn" data-action="pinTier"
+                    data-journal-id="${escapeHtml(entity.journalId)}"
+                    data-detail="${escapeHtml(e.detail ?? '')}"
+                    title="${escapeHtml(pinTitle)}">${pinIcon}</button>
+            <button class="sf-tier-promote-btn" data-action="promoteTier"
+                    data-journal-id="${escapeHtml(entity.journalId)}"
+                    data-detail="${escapeHtml(e.detail ?? '')}"
+                    title="Promote to canonical (append to notes)">⤴</button>
+            <button class="sf-tier-remove-btn" data-action="removeTier"
+                    data-journal-id="${escapeHtml(entity.journalId)}"
+                    data-detail="${escapeHtml(e.detail ?? '')}"
+                    title="Remove">✕</button>
+          </div>
+          <div class="sf-tier-detail">${escapeHtml(e.detail ?? '')}</div>
+        </li>`;
+    }).join('');
+
+    return `
+      <details class="sf-generative-tier" open>
+        <summary>Narrator-added details (${visible.length})</summary>
+        <ul class="sf-tier-list">${rows}</ul>
+      </details>`;
   }
 
   // -----------------------------------------------------------------------
@@ -486,6 +658,142 @@ export class EntityPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
+  // Generative tier handlers
+  // -----------------------------------------------------------------------
+
+  static async #onPinTier(event, target) {
+    const journalId = target.dataset.journalId;
+    const detail    = target.dataset.detail;
+    if (!journalId || !detail) return;
+    await mutateGenerativeTier(journalId, (tier) => {
+      const idx = tier.findIndex(e => (e?.detail ?? '') === detail);
+      if (idx === -1) return tier;
+      const updated = [...tier];
+      updated[idx] = { ...updated[idx], pinned: !updated[idx].pinned };
+      return updated;
+    });
+    this.render();
+  }
+
+  static async #onPromoteTier(event, target) {
+    const journalId = target.dataset.journalId;
+    const detail    = target.dataset.detail;
+    if (!journalId || !detail) return;
+
+    const confirmed = await DialogV2.confirm({
+      window:  { title: 'Promote to canonical' },
+      content:
+        `<p>Promoting this detail appends it to the entity's <strong>notes</strong> field ` +
+        `and removes it from the generative-tier display. The narrator will then treat it ` +
+        `as canonical (not soft-established).</p>` +
+        `<p>Continue?</p>`,
+    });
+    if (!confirmed) return;
+
+    const journal = game.journal?.get(journalId);
+    const page    = journal?.pages?.contents?.[0];
+    if (!page) return;
+    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
+    if (!entityType) return;
+    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
+
+    const tier = Array.isArray(data.generativeTier) ? [...data.generativeTier] : [];
+    const idx  = tier.findIndex(e => (e?.detail ?? '') === detail);
+    if (idx === -1) return;
+
+    const promotedAt = new Date().toISOString();
+    tier[idx] = { ...tier[idx], promoted: true, promotedAt };
+
+    const existingNotes = data.notes ?? '';
+    const appended      = existingNotes
+      ? `${existingNotes}\n\n${detail}`
+      : detail;
+
+    await page.setFlag(MODULE_ID, entityType, {
+      ...data,
+      notes:          appended,
+      generativeTier: tier,
+      updatedAt:      promotedAt,
+    });
+    this.render();
+  }
+
+  static async #onRemoveTier(event, target) {
+    const journalId = target.dataset.journalId;
+    const detail    = target.dataset.detail;
+    if (!journalId || !detail) return;
+    await mutateGenerativeTier(journalId, (tier) =>
+      tier.filter(e => (e?.detail ?? '') !== detail),
+    );
+    this.render();
+  }
+
+  // -----------------------------------------------------------------------
+  // canonicalLocked toggle + current-location button
+  // -----------------------------------------------------------------------
+
+  static async #onToggleCanonicalLock(event, target) {
+    const journalId = target.dataset.journalId;
+    if (!journalId) return;
+    const journal = game.journal?.get(journalId);
+    const page    = journal?.pages?.contents?.[0];
+    if (!page) return;
+    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
+    if (!entityType) return;
+    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
+    const next = !data.canonicalLocked;
+    await page.setFlag(MODULE_ID, entityType, {
+      ...data,
+      canonicalLocked: next,
+      updatedAt:       new Date().toISOString(),
+    });
+    this.render();
+  }
+
+  static async #onSetCurrentLocation(event, target) {
+    const journalId = target.dataset.journalId;
+    const type      = target.dataset.type;
+    if (!journalId || !type) return;
+    if (!game.user.isGM) {
+      ui?.notifications?.warn('Setting the current location is GM-only (writes campaign state).');
+      return;
+    }
+
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const isAlreadyCurrent = campaignState.currentLocationId === journalId;
+    campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
+    campaignState.currentLocationType = isAlreadyCurrent ? null : type;
+    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    this.render();
+  }
+
+  // -----------------------------------------------------------------------
+  // Top-tab switcher + dismissed-entities undo
+  // -----------------------------------------------------------------------
+
+  static async #onSwitchTopTab(event, target) {
+    const tab = target?.dataset?.tab;
+    if (!tab) return;
+    this.#activeTopTab = tab;
+    this.#selectedId   = null;
+    this.render();
+  }
+
+  static async #onUndismiss(event, target) {
+    const name = target.dataset.name;
+    if (!name) return;
+    if (!game.user.isGM) {
+      ui?.notifications?.warn('Undismissing an entity is GM-only (writes campaign state).');
+      return;
+    }
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const list = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
+    campaignState.dismissedEntities = list;
+    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    this.render();
+  }
+
+  // -----------------------------------------------------------------------
   // Foundry hooks
   // -----------------------------------------------------------------------
 
@@ -526,4 +834,46 @@ export function openEntityPanel(journalId = null) {
 
 export function registerEntityPanelHooks() {
   EntityPanelApp.registerHooks();
+}
+
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Read the entity record on a journal's first page, apply a transformation
+ * to its generativeTier array, and persist the result via page.setFlag.
+ * Returns the resulting tier (or null if the page/record could not be
+ * resolved). Used by Pin / Remove handlers.
+ */
+async function mutateGenerativeTier(journalId, transform) {
+  try {
+    const journal = game.journal?.get(journalId);
+    const page    = journal?.pages?.contents?.[0];
+    if (!page) return null;
+    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
+    if (!entityType) return null;
+
+    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
+    const tier = Array.isArray(data.generativeTier) ? data.generativeTier : [];
+    const next = transform(tier) ?? tier;
+    await page.setFlag(MODULE_ID, entityType, {
+      ...data,
+      generativeTier: next,
+      updatedAt:      new Date().toISOString(),
+    });
+    return next;
+  } catch (err) {
+    console.error(`${MODULE_ID} | mutateGenerativeTier failed:`, err);
+    return null;
+  }
 }

@@ -52,6 +52,13 @@ import { getShip }       from "../entities/ship.js";
 import { getPlanet }     from "../entities/planet.js";
 import { getLocation }   from "../entities/location.js";
 import { getCreature }   from "../entities/creature.js";
+import {
+  getConfirmedLore,
+  getNarratorAssertedLore,
+  getActiveThreats,
+  getFactionLandscape,
+  getRecentDiscoveries,
+} from "../world/worldJournal.js";
 
 const MODULE_ID         = "starforged-companion";
 const TRACKS_JOURNAL    = "Starforged Progress Tracks";
@@ -103,11 +110,18 @@ export async function assembleContextPacket(resolution, campaignState, options =
   // ── Section 2: Oracle seeds (exempt — change every call) ──────────────────
   const oracleSeedsContent = formatOracleSeedsBlock(resolution?.oracleSeeds) ?? "";
 
-  // ── Sections 3, 4, 9, 10: World Journal stubs (Phase 5) ───────────────────
-  const confirmedLoreContent     = getConfirmedLoreSection();
-  const activeThreatsContent     = getActiveThreatsSection();
-  const factionLandscapeContent  = getFactionLandscapeSection();
-  const recentDiscoveriesContent = getRecentDiscoveriesSection();
+  // ── Sections 3, 4, 9, 10: World Journal content (Phase 5) ────────────────
+  // Section 3 splits into a "confirmed" half (never dropped) and an
+  // "asserted" half that is the LAST droppable section. Section 4 splits
+  // similarly into immediate (never dropped) and non-immediate (drops with
+  // the rest of the budgeted sections). See the priority comments in
+  // enforceBudget below.
+  const confirmedLoreContent       = getConfirmedLoreSection(campaignState);
+  const assertedLoreContent        = getAssertedLoreSection(campaignState);
+  const immediateThreatsContent    = getImmediateThreatsSection(campaignState);
+  const nonImmediateThreatsContent = getNonImmediateThreatsSection(campaignState);
+  const factionLandscapeContent    = getFactionLandscapeSection(campaignState);
+  const recentDiscoveriesContent   = getRecentDiscoveriesSection(campaignState);
 
   // ── Section 5: World Truths summary ───────────────────────────────────────
   const { content: worldTruthsContent, summarized: worldTruthsSummarized } =
@@ -145,38 +159,62 @@ export async function assembleContextPacket(resolution, campaignState, options =
   const moveOutcomeContent = resolution?.loremasterContext ?? "";
 
   // ── Budget enforcement ────────────────────────────────────────────────────
-  // Priority — lower number wins (kept first under pressure):
-  //   1: confirmedLore, activeThreats, currentLocation, entityCards,
-  //      connections, characterState, progressTracks
-  //   2: worldTruths, activeSector, factionLandscape, recentDiscoveries
-  //   3: recentOracles
-  //   4: sessionNotes (dropped first)
+  // Priority — lower number wins (kept first under pressure). Drop order
+  // per narrator-entity-discovery scope §8 / WJ scope §6:
+  //   12 → 10 → 9 → 11 → 8 → 7(partial) → 4(non-immediate) → 3(asserted)
+  //
+  //   1: confirmedLore (confirmed half), immediateThreats, currentLocation,
+  //      worldTruths, characterState, connections — never dropped
+  //   2: assertedLore (Section 3 asserted, last to drop)
+  //   3: nonImmediateThreats (Section 4 looming/active)
+  //   4: entityCards (truncate-able)
+  //   5: progressTracks
+  //   6: activeSector (legacy, sits between progress tracks and oracles)
+  //   7: recentOracles
+  //   8: factionLandscape
+  //   9: recentDiscoveries
+  //  10: sessionNotes (drop first)
   const budgetResult = enforceBudget({
     tokenBudget,
     sections: {
-      confirmedLore:      { content: confirmedLoreContent,     priority: 1 },
-      activeThreats:      { content: activeThreatsContent,     priority: 1 },
-      worldTruths:        { content: worldTruthsContent,       priority: 2 },
-      currentLocation:    { content: currentLocationContent,   priority: 1 },
-      entityCards:        { content: entityCardsContent,       priority: 1 },
-      connections:        { content: connectionsContent,       priority: 1 },
-      characterState:     { content: characterContent,         priority: 1 },
-      progressTracks:     { content: tracksContent,            priority: 1 },
-      activeSector:       { content: sectorContent,            priority: 2 },
-      factionLandscape:   { content: factionLandscapeContent,  priority: 2 },
-      recentDiscoveries:  { content: recentDiscoveriesContent, priority: 2 },
-      recentOracles:      { content: oraclesContent,           priority: 3 },
-      sessionNotes:       { content: sessionNotesContent,      priority: 4 },
+      confirmedLore:        { content: confirmedLoreContent,       priority: 1 },
+      immediateThreats:     { content: immediateThreatsContent,    priority: 1 },
+      worldTruths:          { content: worldTruthsContent,         priority: 1 },
+      currentLocation:      { content: currentLocationContent,     priority: 1 },
+      characterState:       { content: characterContent,           priority: 1 },
+      connections:          { content: connectionsContent,         priority: 1 },
+      assertedLore:         { content: assertedLoreContent,        priority: 2 },
+      nonImmediateThreats:  { content: nonImmediateThreatsContent, priority: 3 },
+      entityCards:          { content: entityCardsContent,         priority: 4 },
+      progressTracks:       { content: tracksContent,              priority: 5 },
+      activeSector:         { content: sectorContent,              priority: 6 },
+      recentOracles:        { content: oraclesContent,             priority: 7 },
+      factionLandscape:     { content: factionLandscapeContent,    priority: 8 },
+      recentDiscoveries:    { content: recentDiscoveriesContent,   priority: 9 },
+      sessionNotes:         { content: sessionNotesContent,        priority: 10 },
     },
   });
 
   // ── Assemble final string in scope §8 order ───────────────────────────────
+  // Sections 3 and 4 each have two budget keys (confirmed/asserted lore;
+  // immediate/non-immediate threats). Each pair renders consecutively under
+  // its section heading so the asserted/non-immediate halves drop without
+  // breaking the layout.
+  const section3 = joinSubsections([
+    budgetResult.included.confirmedLore,
+    budgetResult.included.assertedLore,
+  ]);
+  const section4 = joinSubsections([
+    budgetResult.included.immediateThreats,
+    budgetResult.included.nonImmediateThreats,
+  ]);
+
   const parts = [
     safetyContent,
     permissionsContent,
     oracleSeedsContent,
-    budgetResult.included.confirmedLore     ?? "",
-    budgetResult.included.activeThreats     ?? "",
+    section3,
+    section4,
     budgetResult.included.worldTruths       ?? "",
     budgetResult.included.currentLocation   ?? "",
     budgetResult.included.entityCards       ?? "",
@@ -219,9 +257,24 @@ export async function assembleContextPacket(resolution, campaignState, options =
         content:        confirmedLoreContent,
         tokenEstimate:  estimateTokens(confirmedLoreContent),
       },
+      assertedLore: {
+        content:        assertedLoreContent,
+        tokenEstimate:  estimateTokens(assertedLoreContent),
+      },
       activeThreats: {
-        content:        activeThreatsContent,
-        tokenEstimate:  estimateTokens(activeThreatsContent),
+        // Combined Section 4 content for backwards-compat with consumers that
+        // read this key. Independent budgeting uses immediateThreats /
+        // nonImmediateThreats below.
+        content:        joinSubsections([immediateThreatsContent, nonImmediateThreatsContent]),
+        tokenEstimate:  estimateTokens(joinSubsections([immediateThreatsContent, nonImmediateThreatsContent])),
+      },
+      immediateThreats: {
+        content:        immediateThreatsContent,
+        tokenEstimate:  estimateTokens(immediateThreatsContent),
+      },
+      nonImmediateThreats: {
+        content:        nonImmediateThreatsContent,
+        tokenEstimate:  estimateTokens(nonImmediateThreatsContent),
       },
       worldTruths: {
         content:        worldTruthsContent,
@@ -394,33 +447,155 @@ function buildEntityCardsSection(ids, types) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WORLD JOURNAL STUBS — Sections 3, 4, 9, 10 (Phase 5)
+// WORLD JOURNAL SECTIONS — Sections 3, 4, 9, 10 (Phase 5)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Confirmed lore section. Phase 5 will read from World Journal entries.
- * Returns empty string here — never contributes to the assembled prompt
- * and consumes 0 tokens.
+ * Section 3a — Confirmed lore. Hard narrator constraint. Per WJ scope §6
+ * this content is "never dropped" — assigned the highest-priority budget
+ * tier so the assembler keeps it whenever any room remains.
  */
-function getConfirmedLoreSection() { return ""; }
+function getConfirmedLoreSection(campaignState) {
+  if (!loreInContextEnabled()) return "";
+  let entries;
+  try { entries = getConfirmedLore(campaignState) ?? []; }
+  catch { return ""; }
+  if (!entries.length) return "";
+  const lines = entries.map(e => `"${e.title ?? ''}"`).filter(s => s !== '""');
+  if (!lines.length) return "";
+  return `## ESTABLISHED LORE — DO NOT CONTRADICT\n\n${lines.join("\n")}`;
+}
 
 /**
- * Active threats section. Phase 5 will read from World Journal entries.
- * Returns empty string until WJ ships.
+ * Section 3b — Narrator-asserted lore. Soft constraint. Drops before the
+ * confirmed half of Section 3 under budget pressure.
  */
-function getActiveThreatsSection() { return ""; }
+function getAssertedLoreSection(campaignState) {
+  if (!loreInContextEnabled()) return "";
+  let entries;
+  try { entries = getNarratorAssertedLore(campaignState) ?? []; }
+  catch { return ""; }
+  if (!entries.length) return "";
+  const lines = entries.map(e => `"${e.title ?? ''}"`).filter(s => s !== '""');
+  if (!lines.length) return "";
+  return `NARRATOR-ASSERTED (treat as established):\n${lines.join("\n")}`;
+}
 
 /**
- * Faction landscape section. Phase 5 will read from World Journal entries.
- * Returns empty string until WJ ships.
+ * Section 4a — Immediate threats. Hard narrator constraint, never dropped.
  */
-function getFactionLandscapeSection() { return ""; }
+function getImmediateThreatsSection(campaignState) {
+  if (!threatsInContextEnabled()) return "";
+  let entries;
+  try { entries = getActiveThreats(campaignState) ?? []; }
+  catch { return ""; }
+  const immediate = entries.filter(t => t?.severity === "immediate");
+  if (!immediate.length) return "";
+  const lines = immediate.map(t =>
+    `IMMEDIATE: ${t.name ?? ''}${t.summary ? ` — ${t.summary}` : ''}`,
+  );
+  return `## ACTIVE THREATS\n\n${lines.join("\n")}`;
+}
 
 /**
- * Recent World Journal discoveries section. Phase 5 will read from World
- * Journal entries. Returns empty string until WJ ships.
+ * Section 4b — Active and looming threats. Drops before the immediate half.
+ * Looming is dropped before active under tight budget (the budget allocator
+ * truncates from the end).
  */
-function getRecentDiscoveriesSection() { return ""; }
+function getNonImmediateThreatsSection(campaignState) {
+  if (!threatsInContextEnabled()) return "";
+  let entries;
+  try { entries = getActiveThreats(campaignState) ?? []; }
+  catch { return ""; }
+  const filtered = entries.filter(t => t?.severity === "active" || t?.severity === "looming");
+  if (!filtered.length) return "";
+  // Active before looming — getActiveThreats already sorts but filter loses
+  // the cross-severity ordering, so re-sort here.
+  filtered.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+  const lines = filtered.map(t =>
+    `${t.severity?.toUpperCase()}: ${t.name ?? ''}${t.summary ? ` — ${t.summary}` : ''}`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Section 9 — Faction landscape. Up to 3 factions, most recent first.
+ * Per WJ scope §4: factions with entity records are excluded — they're
+ * already represented in the matched-entity-cards section.
+ */
+function getFactionLandscapeSection(campaignState) {
+  if (!factionLandscapeInContextEnabled()) return "";
+  let entries;
+  try { entries = getFactionLandscape(campaignState) ?? []; }
+  catch { return ""; }
+  if (!entries.length) return "";
+  const noEntityRecord = entries.filter(f => !factionHasEntityRecord(f, campaignState));
+  if (!noEntityRecord.length) return "";
+  const top = noEntityRecord.slice(0, 3);
+  const lines = top.map(f => {
+    const summary = lastEncounterSummary(f);
+    return `${f.factionName ?? ''}: ${f.attitude ?? 'unknown'}` +
+      (summary ? ` — ${summary}` : '');
+  });
+  return `## FACTION ATTITUDES\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Section 10 — Recent unconfirmed lore from the current session.
+ */
+function getRecentDiscoveriesSection(campaignState) {
+  let entries;
+  try { entries = getRecentDiscoveries(campaignState) ?? []; }
+  catch { return ""; }
+  if (!entries.length) return "";
+  const lines = entries.map(e => `"${e.title ?? ''}"`).filter(s => s !== '""');
+  if (!lines.length) return "";
+  return `## THIS SESSION — UNCONFIRMED\n\n${lines.join("\n")}`;
+}
+
+
+// ── helpers for the WJ section builders ────────────────────────────────────
+
+const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
+function severityRank(s) { return SEVERITY_ORDER[s] ?? 99; }
+
+function lastEncounterSummary(faction) {
+  const last = Array.isArray(faction?.encounters)
+    ? faction.encounters[faction.encounters.length - 1]
+    : null;
+  return last?.summary ?? "";
+}
+
+function factionHasEntityRecord(factionEntry, campaignState) {
+  // Fast path: WJ entry's entityId field directly references the faction
+  // entity journal.
+  if (factionEntry?.entityId) return true;
+
+  const ids = campaignState?.factionIds ?? [];
+  if (!ids.length) return false;
+  const target = (factionEntry?.factionName ?? "").trim().toLowerCase();
+  if (!target) return false;
+  for (const journalId of ids) {
+    let rec = null;
+    try { rec = getFaction(journalId); }
+    catch { continue; }
+    if (rec?.name && rec.name.trim().toLowerCase() === target) return true;
+  }
+  return false;
+}
+
+function loreInContextEnabled() {
+  try   { return game.settings?.get(MODULE_ID, "loreInContext") !== false; }
+  catch { return true; }
+}
+function threatsInContextEnabled() {
+  try   { return game.settings?.get(MODULE_ID, "threatsInContext") !== false; }
+  catch { return true; }
+}
+function factionLandscapeInContextEnabled() {
+  try   { return game.settings?.get(MODULE_ID, "factionLandscapeInContext") !== false; }
+  catch { return true; }
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -683,6 +858,15 @@ function truncateToTokens(content, maxTokens) {
   const maxChars = maxTokens * 4;
   if (content.length <= maxChars) return content;
   return content.slice(0, maxChars).replace(/\s+\S*$/, "") + "\n…(truncated)";
+}
+
+/**
+ * Concatenate two related sub-sections (e.g. confirmed lore + asserted
+ * lore) so they render under a single section heading. Returns the empty
+ * string when nothing is present so the caller can drop the slot entirely.
+ */
+function joinSubsections(parts) {
+  return parts.filter(Boolean).join("\n\n");
 }
 
 

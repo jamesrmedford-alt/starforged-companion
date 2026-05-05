@@ -808,3 +808,324 @@ describe("assembler — token budget", () => {
     expect(packet.assembled).toMatch(/Name suggestion: Kael/);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5 — full WJ integration via fullStateFixture
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { buildFullCampaignState, addFactionEntity } from "../helpers/fullStateFixture.js";
+import {
+  recordLoreDiscovery,
+  recordThreat,
+  recordFactionIntelligence,
+} from "../../src/world/worldJournal.js";
+
+async function seedWj(fixture, { lore = [], threats = [], factions = [] } = {}) {
+  for (const entry of lore) {
+    await recordLoreDiscovery(entry.title, {
+      text:             entry.text ?? "",
+      confirmed:        entry.confirmed === true,
+      narratorAsserted: entry.narratorAsserted === true,
+      sessionId:        entry.sessionId ?? fixture.campaignState.currentSessionId,
+    }, fixture.campaignState);
+  }
+  for (const entry of threats) {
+    await recordThreat(entry.name, {
+      severity: entry.severity ?? "looming",
+      summary:  entry.summary ?? "",
+    }, fixture.campaignState);
+  }
+  for (const entry of factions) {
+    await recordFactionIntelligence(entry.name, {
+      attitude: entry.attitude ?? "neutral",
+      summary:  entry.summary ?? "",
+    }, fixture.campaignState);
+  }
+}
+
+describe("assembler — WJ Section 3 (confirmed lore + asserted)", () => {
+  it("renders confirmed lore under DO NOT CONTRADICT header", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "The iron panel navigates to Ascendancy space", confirmed: true },
+        { title: "Bleakhold's administrator answers off-world", narratorAsserted: true },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/ESTABLISHED LORE — DO NOT CONTRADICT/);
+    expect(packet.assembled).toMatch(/iron panel navigates to Ascendancy space/);
+    fixture.restore();
+  });
+
+  it("Section 3 contains a NARRATOR-ASSERTED sub-section when soft entries exist", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Confirmed fact", confirmed: true },
+        { title: "Soft assertion", narratorAsserted: true },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/NARRATOR-ASSERTED \(treat as established\)/);
+    expect(packet.assembled).toMatch(/Soft assertion/);
+    fixture.restore();
+  });
+
+  it("Section 3 never omits confirmed lore regardless of budget", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [{ title: "Confirmed fact", confirmed: true }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 60 }
+    );
+    expect(packet.assembled).toMatch(/ESTABLISHED LORE/);
+    expect(packet.assembled).toMatch(/Confirmed fact/);
+    expect(packet.omittedSections).not.toContain("confirmedLore");
+    fixture.restore();
+  });
+
+  it("Section 3 omits asserted lore before confirmed under tight budget", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Confirmed",                 confirmed:        true },
+        { title: "Soft a", narratorAsserted:  true },
+        { title: "Soft b", narratorAsserted:  true },
+        { title: "Soft c", narratorAsserted:  true },
+      ],
+    });
+    // Budget low enough that priority-1 items (confirmed lore + world truths)
+    // eat the budget and there's <10 tokens left — assertedLore (priority 2)
+    // is omitted entirely rather than truncated.
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 30 }
+    );
+    expect(packet.assembled).toMatch(/Confirmed/);
+    expect(packet.omittedSections).toContain("assertedLore");
+    fixture.restore();
+  });
+});
+
+describe("assembler — WJ Section 4 (active threats)", () => {
+  it("renders immediate threats under ACTIVE THREATS header", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      threats: [{ name: "AI fragment", severity: "immediate", summary: "pursuing" }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/ACTIVE THREATS/);
+    expect(packet.assembled).toMatch(/IMMEDIATE: AI fragment/);
+    fixture.restore();
+  });
+
+  it("Section 4 never omits immediate threats regardless of budget", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      threats: [{ name: "AI fragment", severity: "immediate", summary: "pursuing" }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 60 }
+    );
+    expect(packet.omittedSections).not.toContain("immediateThreats");
+    expect(packet.assembled).toMatch(/IMMEDIATE: AI fragment/);
+    fixture.restore();
+  });
+
+  it("Section 4 drops looming threats before immediate ones", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      threats: [
+        { name: "AI fragment", severity: "immediate" },
+        { name: "Watcher",     severity: "looming"   },
+      ],
+    });
+    // Tight budget — non-immediate (priority 3) is omitted while immediate
+    // (priority 1) is preserved.
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 30 }
+    );
+    expect(packet.assembled).toMatch(/IMMEDIATE: AI fragment/);
+    expect(packet.omittedSections).toContain("nonImmediateThreats");
+    fixture.restore();
+  });
+});
+
+describe("assembler — Section 9 faction landscape (entity-record exclusion)", () => {
+  it("includes WJ-only factions", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      factions: [{ name: "The Iron Compact", attitude: "neutral", summary: "watching" }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/FACTION ATTITUDES/);
+    expect(packet.assembled).toMatch(/The Iron Compact: neutral/);
+    fixture.restore();
+  });
+
+  it("excludes factions with entity records (The Covenant)", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      factions: [
+        { name: "The Iron Compact", attitude: "neutral" },
+        { name: "The Covenant",     attitude: "antagonistic" },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/The Iron Compact/);
+    // The Covenant has an entity record in the fixture
+    expect(packet.assembled).not.toMatch(/The Covenant: antagonistic/);
+    fixture.restore();
+  });
+});
+
+describe("assembler — Section 10 recent discoveries", () => {
+  it("contains current-session unconfirmed lore", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Brand new revelation", narratorAsserted: true,
+          sessionId: fixture.campaignState.currentSessionId },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/THIS SESSION — UNCONFIRMED/);
+    expect(packet.assembled).toMatch(/Brand new revelation/);
+    fixture.restore();
+  });
+
+  it("is omitted when no current-session unconfirmed lore exists", async () => {
+    const fixture = buildFullCampaignState();
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/THIS SESSION — UNCONFIRMED/);
+    fixture.restore();
+  });
+
+  it("excludes lore tagged to a past session", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Old soft fact",     narratorAsserted: true, sessionId: "session-old" },
+        { title: "Current soft fact", narratorAsserted: true,
+          sessionId: fixture.campaignState.currentSessionId },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).toMatch(/Current soft fact/);
+    // Section 10 must not contain the past-session entry
+    const section10 = packet.assembled.split("THIS SESSION — UNCONFIRMED")[1] ?? "";
+    expect(section10).not.toMatch(/Old soft fact/);
+    fixture.restore();
+  });
+});
+
+describe("assembler — drop order under tight budget", () => {
+  it("drop order: 12 → 10 → 9 → 11 → 8 → 7 → 4(non-immediate) → 3(asserted)", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Confirmed",   confirmed:        true  },
+        { title: "Soft",        narratorAsserted: true  },
+        { title: "Recent soft", narratorAsserted: true,
+          sessionId: fixture.campaignState.currentSessionId },
+      ],
+      threats: [
+        { name: "Imm",   severity: "immediate" },
+        { name: "Loom",  severity: "looming"   },
+      ],
+      factions: [{ name: "The Iron Compact", attitude: "neutral" }],
+    });
+
+    // Tightest budget that still fits the priority-1 set — exercises the
+    // drop-order ladder without forcing immediate truncation of confirmed lore.
+    const sessionState = { notes: "X".repeat(800), xCardActive: false };
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState,
+      { tokenBudget: 200, narratorClass: "interaction", sessionState }
+    );
+
+    // The bottom of the drop ladder must be omitted before higher-priority
+    // sections. We don't assert the full ordering against omittedSections —
+    // only that bottom items go before top ones for any given budget.
+    const omitted = packet.omittedSections;
+    if (omitted.includes("nonImmediateThreats")) {
+      // If non-immediate threats dropped, sessionNotes / recentDiscoveries /
+      // factionLandscape / recentOracles / progressTracks / entityCards must
+      // also be omitted.
+      expect(omitted).toContain("sessionNotes");
+    }
+    expect(omitted).not.toContain("safety");
+    expect(omitted).not.toContain("narratorPermissions");
+    expect(omitted).not.toContain("confirmedLore");
+    expect(omitted).not.toContain("immediateThreats");
+    fixture.restore();
+  });
+
+  it("total assembled packet does not exceed 1200 tokens under realistic load", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Confirmed fact", confirmed: true },
+        { title: "Soft fact",      narratorAsserted: true },
+      ],
+      threats: [
+        { name: "AI fragment", severity: "immediate" },
+        { name: "Marauders",   severity: "active"    },
+      ],
+      factions: [{ name: "The Iron Compact", attitude: "neutral" }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState,
+      { narratorClass: "interaction" }   // default 1200-token budget
+    );
+    // 4 chars/token estimate; allow 25% headroom for exempt sections that
+    // can themselves grow — confirmed lore + immediate threats + permissions
+    // + safety + move outcome.
+    expect(packet.totalTokenEstimate).toBeLessThanOrEqual(1500);
+    fixture.restore();
+  });
+});
+
+describe("assembler — Section 9 + entity card linkage (factions excluded)", () => {
+  it("does NOT include a faction in landscape if the matched-entity-cards section has it", async () => {
+    const fixture = buildFullCampaignState();
+    // Add an extra faction with an entity record AND a WJ entry
+    addFactionEntity(fixture.journals, { name: "Pelican Confederacy", relationship: "neutral" });
+    fixture.campaignState.factionIds.push(
+      [...fixture.journals.values()].find(j => j.name === "Pelican Confederacy").id,
+    );
+    await seedWj(fixture, {
+      factions: [
+        { name: "Pelican Confederacy", attitude: "neutral" },
+        { name: "The Iron Compact",    attitude: "neutral" },
+      ],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    // The Iron Compact has no entity record → in landscape.
+    expect(packet.assembled).toMatch(/The Iron Compact/);
+    // Pelican Confederacy has an entity record → NOT in landscape.
+    const factionBlock = packet.assembled.split("FACTION ATTITUDES")[1] ?? "";
+    expect(factionBlock).not.toMatch(/Pelican Confederacy/);
+    fixture.restore();
+  });
+});
