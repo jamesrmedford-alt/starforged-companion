@@ -6,7 +6,7 @@
  * Unlike entity portraits, sector backgrounds:
  *   - Use landscape format (1792×1024)
  *   - Have no lock policy — can be regenerated freely
- *   - Are uploaded to Foundry's data folder (required for Scene backgrounds)
+ *   - Are uploaded to worlds/{worldId}/scenes/ (persists across module updates)
  *   - Are referenced by file path, not stored as base64 flags
  *
  * FilePicker.createDirectory() is always called before upload to ensure the
@@ -15,57 +15,47 @@
 
 import { apiPost } from "../api-proxy.js";
 
-const MODULE_ID  = "starforged-companion";
-const UPLOAD_DIR = "modules/starforged-companion/art";
+const MODULE_ID = "starforged-companion";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REGION VISUAL PROFILES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Hard exclusion clause — appended to every region prompt, every trouble
-// modifier, and the base prompt template to keep DALL-E producing pure space
-// views with no planetary surfaces, terrain, or architecture.
-const PURE_SPACE_EXCLUSION =
-  "Pure deep space view only. No planets in foreground, no ground, no " +
-  "landscapes, no cityscapes, no architecture, no terrain, no horizon " +
-  "lines. Stars, nebulae, gas clouds, and distant celestial objects only.";
-
+// Each profile describes what fills the image — affirmative framing so
+// DALL-E has a clear subject rather than a list of things to avoid.
 const REGION_PROMPTS = {
-  terminus: "Dense star field, warm amber and gold hues, colorful nebulae in the background, " +
-    "distant station and settlement lights visible, active space lanes, inhabited and settled " +
-    "feeling, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels. " + PURE_SPACE_EXCLUSION,
+  terminus:
+    "The image is filled with a warm dense starfield — amber, gold, and copper " +
+    "tones dominate. Rich coloured nebulae billow across the frame. Distant star " +
+    "clusters suggest habitation and activity.",
 
-  outlands: "Sparse star field, cool blue and white tones, one or two distant nebulae, " +
-    "scattered isolated settlement lights, frontier space feeling, recent expansion into the " +
-    "unknown, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels. " + PURE_SPACE_EXCLUSION,
+  outlands:
+    "The image is filled with a cool sparse starfield — blue-white tones, widely " +
+    "spaced stars. One or two thin nebula wisps. Emptiness dominates but is not " +
+    "absolute.",
 
-  expanse:  "Very sparse star field, deep cold blues and blacks, vast emptiness, a single " +
-    "distant galaxy smear or lone nebula as the only color, almost no settlement lights, " +
-    "desolate and beautiful, pioneer space at the edge of the known, cinematic science " +
-    "fiction space art, 1792x1024 wide landscape orientation, no text or labels. " +
-    PURE_SPACE_EXCLUSION,
+  expanse:
+    "The image is filled with deep cold darkness — only a sparse scatter of white " +
+    "stars and a single faint nebula smear. Vast, lonely, and beautiful.",
 
-  void:     "Near-total darkness, isolated stars barely visible, vast empty void, no " +
-    "settlements, hostile and forbidding, the space beyond the Forge where travel is " +
-    "impossible, cinematic science fiction space art, 1792x1024 wide landscape orientation, " +
-    "no text or labels. " + PURE_SPACE_EXCLUSION,
+  void:
+    "The image is near-total darkness — barely any stars visible, an oppressive " +
+    "empty void with only the faintest distant light.",
 };
 
 const TROUBLE_VISUAL_MODIFIERS = {
   "Energy storms are rampant":
-    "with visible crackling energy storms and lightning. " + PURE_SPACE_EXCLUSION,
+    "Crackling energy storms and lightning arc through the void.",
   "Magnetic disturbances disrupt communication":
-    "with aurora-like magnetic disturbances visible. " + PURE_SPACE_EXCLUSION,
+    "Aurora-like magnetic disturbances shimmer across the starfield.",
   "Supernova is imminent":
-    "with a bright dying star dominating the background. " + PURE_SPACE_EXCLUSION,
+    "A bright dying star dominates the background, its light flooding the void.",
   "Chaotic breaches in spacetime spread like wildfire":
-    "with strange spatial distortions and rifts visible. " + PURE_SPACE_EXCLUSION,
+    "Strange spatial distortions and rifts tear through the fabric of space.",
   "Dense nebula cloud":
-    "with a vast colorful nebula filling the background. " + PURE_SPACE_EXCLUSION,
+    "A vast colourful nebula fills the background, its gas clouds billowing across the frame.",
   "Fiery energy storm":
-    "with billowing plasma storms and solar flares. " + PURE_SPACE_EXCLUSION,
+    "Billowing plasma storms and solar flares illuminate the deep space.",
 };
 
 
@@ -127,19 +117,19 @@ export async function generateSectorBackground(sector, _campaignState) {
  * @returns {{ prompt: string, size: string }}
  */
 export function buildSectorBackgroundPrompt(sector) {
-  const region  = sector.region ?? "outlands";
-  const base    = REGION_PROMPTS[region] ?? REGION_PROMPTS.outlands;
-
+  const region   = sector.region ?? "outlands";
+  const profile  = REGION_PROMPTS[region] ?? REGION_PROMPTS.outlands;
   const modifier = TROUBLE_VISUAL_MODIFIERS[sector.trouble] ?? null;
-  const body     = modifier ? `${base}, ${modifier}` : base;
 
-  // Append the exclusion clause once more at the template level so the
-  // restriction still applies if region or modifier strings change later.
-  const prompt = `${body} Wide cinematic space panorama, 1792x1024 landscape ` +
-    `orientation, no text or labels. Pure deep space view only — no planets ` +
-    `in foreground, no ground, no landscapes, no cityscapes, no architecture, ` +
-    `no terrain, no horizon lines. Stars, nebulae, gas clouds, and distant ` +
-    `celestial objects only.`;
+  const body = modifier ? `${profile} ${modifier}` : profile;
+
+  const prompt =
+    `${body} The entire image is deep space as seen from open space — stars, ` +
+    `nebulae, gas clouds, and distant galaxies only. The camera is floating in ` +
+    `the void with nothing in the foreground, middleground, or near field. No ` +
+    `celestial bodies closer than a distant star. No planets, moons, asteroids, ` +
+    `ships, structures, ground, terrain, or atmosphere visible at any scale. ` +
+    `Wide cinematic panorama, 1792x1024 landscape orientation, no text, no labels, no borders.`;
 
   return { prompt, size: "1792x1024" };
 }
@@ -177,17 +167,19 @@ async function requestDalleImage(prompt, size, apiKey) {
 }
 
 async function uploadSectorImage(b64, sectorId) {
-  const filename = `sector-${sectorId}.png`;
+  const filename  = `sector-${sectorId}.png`;
+  const worldId   = game.world.id;
+  const uploadDir = `worlds/${worldId}/scenes`;
 
-  // Ensure the upload directory exists before uploading.
-  // createDirectory() throws if the directory already exists; this is the
-  // expected case — but log it so a permissions/disk error is still visible.
+  // Ensure the upload directory exists. createDirectory() throws when the
+  // directory already exists — that is the common case and can be ignored.
   try {
-    await foundry.applications.apps.FilePicker.implementation.createDirectory("data", UPLOAD_DIR, {});
+    await foundry.applications.apps.FilePicker.implementation
+      .createDirectory("data", uploadDir, {});
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (!/exists/i.test(msg)) {
-      console.warn(`${MODULE_ID} | sectorArt: createDirectory(${UPLOAD_DIR}) failed:`, err);
+      console.warn(`${MODULE_ID} | sectorArt: createDirectory(${uploadDir}) failed:`, err);
     }
   }
 
@@ -200,6 +192,8 @@ async function uploadSectorImage(b64, sectorId) {
   const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], filename, { type: "image/png" });
 
-  const result = await foundry.applications.apps.FilePicker.implementation.upload("data", UPLOAD_DIR, file, {}, { notify: false });
-  return result?.path ?? null;
+  await foundry.applications.apps.FilePicker.implementation
+    .upload("data", uploadDir, file, {}, { notify: false });
+
+  return `${uploadDir}/${filename}`;
 }
