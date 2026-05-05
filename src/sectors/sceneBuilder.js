@@ -43,7 +43,7 @@ const SCENE_CONFIG = {
 export async function createSectorScene(sector, backgroundPath, entityJournals) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
 
-  // Foundry v13 scene img requires a path from the server root.
+  // Foundry v13 scene background.src requires a path from the server root.
   // FilePicker.upload returns a relative path (no leading slash); add one.
   const imgPath = backgroundPath
     ? (backgroundPath.startsWith("/") ? backgroundPath : `/${backgroundPath}`)
@@ -52,7 +52,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
 
   const scene = await Scene.create({
     name:            sector.name,
-    img:             imgPath,
+    background:      { src: imgPath },
     width:           sceneWidth,
     height:          sceneHeight,
     backgroundColor: "#000000",
@@ -84,9 +84,11 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
         entryId:    journal?.id ?? null,
         x:          s.gridX * gridCellSize,
         y:          s.gridY * gridCellSize,
-        icon:       iconPathForLocationType(locationType),
+        texture: {
+          src:  iconPathForLocationType(locationType),
+          tint: tintForLocationType(locationType),
+        },
         iconSize:   40,
-        iconTint:   tintForLocationType(locationType),
         text:       s.name,
         fontSize:   24,
         textColor:  "#FFFFFF",

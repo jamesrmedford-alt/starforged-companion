@@ -129,6 +129,14 @@ export function buildSectorBackgroundPrompt(sector) {
     `the void with nothing in the foreground, middleground, or near field. No ` +
     `celestial bodies closer than a distant star. No planets, moons, asteroids, ` +
     `ships, structures, ground, terrain, or atmosphere visible at any scale. ` +
+    `The image shows only the interstellar medium — the space between star ` +
+    `systems. There is no nearby object of any kind. No planet, moon, asteroid, ` +
+    `comet, debris field, ship, station, or structure exists at any distance ` +
+    `that would be visible to the naked eye or any instrument. The only visible ` +
+    `objects are stars (as points of light), nebulae (as diffuse gas clouds), ` +
+    `and distant galaxies (as smears of light). Nothing has a disc, surface, ` +
+    `atmosphere, rings, or any resolved shape. Every light source is a point ` +
+    `or a diffuse cloud. ` +
     `Wide cinematic panorama, 1792x1024 landscape orientation, no text, no labels, no borders.`;
 
   return { prompt, size: "1792x1024" };
