@@ -1129,3 +1129,201 @@ describe("assembler — Section 9 + entity card linkage (factions excluded)", ()
     fixture.restore();
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5 — settings toggles + getter-throws coverage
+// ─────────────────────────────────────────────────────────────────────────────
+
+import * as wjModule from "../../src/world/worldJournal.js";
+
+describe("assembler — WJ section builders: enabled-toggle paths", () => {
+  afterEach(() => {
+    game.settings._store.delete("starforged-companion.loreInContext");
+    game.settings._store.delete("starforged-companion.threatsInContext");
+    game.settings._store.delete("starforged-companion.factionLandscapeInContext");
+  });
+
+  it("Section 3 confirmed + asserted lore are omitted when loreInContext is false", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      lore: [
+        { title: "Confirmed", confirmed: true },
+        { title: "Asserted", narratorAsserted: true },
+      ],
+    });
+    game.settings._store.set("starforged-companion.loreInContext", false);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/ESTABLISHED LORE/);
+    expect(packet.assembled).not.toMatch(/NARRATOR-ASSERTED/);
+    fixture.restore();
+  });
+
+  it("Section 4 immediate + non-immediate threats are omitted when threatsInContext is false", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      threats: [
+        { name: "Imm", severity: "immediate" },
+        { name: "Loom", severity: "looming" },
+      ],
+    });
+    game.settings._store.set("starforged-companion.threatsInContext", false);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/ACTIVE THREATS/);
+    fixture.restore();
+  });
+
+  it("Section 9 faction landscape is omitted when factionLandscapeInContext is false", async () => {
+    const fixture = buildFullCampaignState();
+    await seedWj(fixture, {
+      factions: [{ name: "The Iron Compact", attitude: "neutral" }],
+    });
+    game.settings._store.set("starforged-companion.factionLandscapeInContext", false);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/FACTION ATTITUDES/);
+    fixture.restore();
+  });
+});
+
+describe("assembler — WJ section builders: getter-throws + post-filter-empty paths", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("Section 3 confirmed lore returns empty string when getConfirmedLore throws", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getConfirmedLore").mockImplementation(() => { throw new Error("boom"); });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.sections.confirmedLore.content).toBe("");
+    fixture.restore();
+  });
+
+  it("Section 3 asserted lore returns empty string when getNarratorAssertedLore throws", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getNarratorAssertedLore").mockImplementation(() => { throw new Error("boom"); });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.sections.assertedLore.content).toBe("");
+    fixture.restore();
+  });
+
+  it("Section 4 immediate + non-immediate threats return empty when getActiveThreats throws", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getActiveThreats").mockImplementation(() => { throw new Error("boom"); });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.sections.immediateThreats.content).toBe("");
+    expect(packet.sections.nonImmediateThreats.content).toBe("");
+    fixture.restore();
+  });
+
+  it("Section 9 faction landscape returns empty string when getFactionLandscape throws", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getFactionLandscape").mockImplementation(() => { throw new Error("boom"); });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/FACTION ATTITUDES/);
+    fixture.restore();
+  });
+
+  it("Section 10 recent discoveries returns empty string when getRecentDiscoveries throws", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getRecentDiscoveries").mockImplementation(() => { throw new Error("boom"); });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/THIS SESSION — UNCONFIRMED/);
+    fixture.restore();
+  });
+
+  it("Section 9 omitted when every faction has an entity record", async () => {
+    const fixture = buildFullCampaignState();
+    // Only seed The Covenant which already has an entity record
+    await seedWj(fixture, {
+      factions: [{ name: "The Covenant", attitude: "antagonistic" }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/FACTION ATTITUDES/);
+    fixture.restore();
+  });
+
+  it("Section 10 omitted when currentSessionId is null", async () => {
+    const fixture = buildFullCampaignState({ currentSessionId: null });
+    await seedWj(fixture, {
+      lore: [{ title: "Whatever", narratorAsserted: true }],
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/THIS SESSION — UNCONFIRMED/);
+    fixture.restore();
+  });
+
+  it("Section 10 returns empty when filtered titles are all blank strings", async () => {
+    const fixture = buildFullCampaignState();
+    // Titles are blank strings — getRecentDiscoveries returns them, but they
+    // map to "" and are filtered out by the section builder.
+    vi.spyOn(wjModule, "getRecentDiscoveries").mockReturnValue([
+      { title: "", narratorAsserted: true, sessionId: fixture.campaignState.currentSessionId },
+    ]);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/THIS SESSION — UNCONFIRMED/);
+    fixture.restore();
+  });
+
+  it("Section 3 confirmed lore returns empty when titles are all blank strings", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getConfirmedLore").mockReturnValue([
+      { title: "", confirmed: true },
+    ]);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/ESTABLISHED LORE/);
+    fixture.restore();
+  });
+
+  it("factionHasEntityRecord short-circuits when entry.entityId is set", async () => {
+    const fixture = buildFullCampaignState();
+    // A WJ faction entry with entityId set should be excluded even if the
+    // name doesn't appear in any factionIds entity record.
+    vi.spyOn(wjModule, "getFactionLandscape").mockReturnValue([
+      { factionName: "Pre-linked Faction", attitude: "neutral",
+        entityId: "external-id-not-in-collection" },
+    ]);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    expect(packet.assembled).not.toMatch(/Pre-linked Faction/);
+    fixture.restore();
+  });
+
+  it("factionHasEntityRecord with empty factionName returns false (no match)", async () => {
+    const fixture = buildFullCampaignState();
+    vi.spyOn(wjModule, "getFactionLandscape").mockReturnValue([
+      { factionName: "", attitude: "neutral" },
+      { factionName: "Visible Faction", attitude: "neutral" },
+    ]);
+    const packet = await assembleContextPacket(
+      baseResolution(), fixture.campaignState, { tokenBudget: 4000 }
+    );
+    // The empty-name entry is rendered with an empty leading name; the
+    // visible entry should still render cleanly. We just check the visible
+    // one comes through.
+    expect(packet.assembled).toMatch(/Visible Faction/);
+    fixture.restore();
+  });
+});
