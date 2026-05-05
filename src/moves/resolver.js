@@ -17,6 +17,7 @@
  */
 
 import { MOVES, RANK_TICKS } from "../schemas.js";
+import { rollOracle, rollPaired } from "../oracles/roller.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -791,6 +792,11 @@ export function resolveMove(interpretation, campaignState) {
     consequences,
   });
 
+  // Oracle seeding (narrator-entity-discovery scope §7) — runs after the
+  // outcome is known so we can condition on hit-with-match etc. Only the
+  // configured moves produce seeds; everything else gets null.
+  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch);
+
   return {
     playerNarration,
     inputMethod,
@@ -814,9 +820,124 @@ export function resolveMove(interpretation, campaignState) {
     isProgressMove,
     progressScore,
     consequences,
+    oracleSeeds,
     loremasterContext,
     sessionId: campaignState.currentSessionId ?? "",
   };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORACLE SEEDING
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build oracle seeds for the narrator prompt for moves where the rulebook
+ * recommends rolling on oracle tables to inform the scene.
+ *
+ * Per scope §7 — applicable moves:
+ *   make_a_connection      → role + goal + first look + given name
+ *   explore_a_waypoint     → action + theme (only on strong hit with match)
+ *   make_a_discovery       → descriptor + focus
+ *   confront_chaos         → action + theme
+ *   ask_the_oracle         → action + theme (default fallback)
+ *
+ * Returns null for moves that don't seed.
+ *
+ * @param {string} moveId
+ * @param {string} outcome
+ * @param {boolean} isMatch
+ * @returns {Object|null}
+ */
+export function buildOracleSeeds(moveId, outcome, isMatch) {
+  try {
+    switch (moveId) {
+
+      case "make_a_connection": {
+        const role      = safeRoll("character_role");
+        const goal      = safeRoll("character_goal");
+        const firstLook = safeRoll("character_first_look");
+        const given     = safeRoll("given_name");
+        const results = [];
+        if (role)      results.push(`Character role: ${role}`);
+        if (goal)      results.push(`Character goal: ${goal}`);
+        if (firstLook) results.push(`Character first look: ${firstLook}`);
+        const names = given ? [given] : [];
+        if (!results.length && !names.length) return null;
+        return { results, names, context: "make_a_connection" };
+      }
+
+      case "explore_a_waypoint": {
+        // Per the Reference Guide: "If you roll a match on a strong hit,
+        // envision a notable encounter or aspect of this place." Use Action +
+        // Theme as the prompt.
+        if (outcome !== "strong_hit" || !isMatch) return null;
+        const pair = safeRollPaired("action", "theme");
+        if (!pair) return null;
+        return {
+          results: [`Notable aspect of this waypoint: ${pair}`],
+          names:   [],
+          context: "explore_a_waypoint",
+        };
+      }
+
+      case "make_a_discovery": {
+        const pair = safeRollPaired("descriptor", "focus");
+        if (!pair) return null;
+        return {
+          results: [`Discovery descriptor and focus: ${pair}`],
+          names:   [],
+          context: "make_a_discovery",
+        };
+      }
+
+      case "confront_chaos": {
+        const pair = safeRollPaired("action", "theme");
+        if (!pair) return null;
+        return {
+          results: [`Chaos prompt (action + theme): ${pair}`],
+          names:   [],
+          context: "confront_chaos",
+        };
+      }
+
+      case "ask_the_oracle": {
+        // Default fallback — Action + Theme provides a flexible prompt that
+        // suits free-form oracle questions.
+        const pair = safeRollPaired("action", "theme");
+        if (!pair) return null;
+        return {
+          results: [`Oracle prompt (action + theme): ${pair}`],
+          names:   [],
+          context: "ask_the_oracle",
+        };
+      }
+
+      default:
+        return null;
+    }
+  } catch (err) {
+    console.warn("starforged-companion | buildOracleSeeds failed:", err);
+    return null;
+  }
+}
+
+function safeRoll(tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeRollPaired(t1, t2) {
+  try {
+    const r = rollPaired(t1, t2);
+    return r?.combined ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

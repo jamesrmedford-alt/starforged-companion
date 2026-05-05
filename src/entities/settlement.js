@@ -47,6 +47,9 @@ export const SettlementSchema = {
   // No-op until the entity discovery system reads it.
   canonicalLocked: false,
 
+  // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
+  generativeTier:  [],
+
   createdAt: null,
   updatedAt: null,
 };

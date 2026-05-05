@@ -1,6 +1,6 @@
 /**
  * STARFORGED COMPANION
- * src/context/assembler.js — Builds Loremaster context packets
+ * src/context/assembler.js — Builds narrator context packets
  *
  * Responsibilities:
  * - Assemble all context sections in the correct injection order
@@ -8,17 +8,29 @@
  * - Guarantee safety section is always first and never omitted
  * - Return a ContextPacketSchema-shaped object with the assembled string
  *
- * Injection order (fixed — safety is always first):
- *   1. Safety configuration       — always included, exempt from budget
- *   2. World Truths summary       — summarised if budget is tight
- *   3. Active connections         — scene-relevant first, then allies
- *   4. Open progress tracks       — active vows, expeditions, combats
- *   5. Recent oracle results      — last 3 results from session
- *   6. Session notes              — dropped first if budget exceeded
- *   7. Resolved move outcome      — always included (Loremaster needs this)
+ * Injection order (narrator-entity-discovery scope §8 — Phase 2 target):
+ *   0. Safety configuration       — exempt, always first
+ *   1. Narrator permissions       — exempt, always second (when set)
+ *   2. Oracle seeds               — exempt, when resolution provides them
+ *   3. Confirmed lore             — WJ stub (empty until Phase 5)
+ *   4. Active threats             — WJ stub (empty until Phase 5)
+ *   5. World Truths
+ *   6. Current location card      — when currentLocationId set
+ *   7. Matched entity cards       — relevance resolver results
+ *   8. Progress tracks
+ *   9. Faction landscape          — WJ stub (empty until Phase 5)
+ *  10. Recent WJ discoveries      — WJ stub (empty until Phase 5)
+ *  11. Oracle history             — last 3 rolls
+ *  12. Session notes              — dropped first under budget pressure
+ *  13. Move outcome               — exempt, always last
  *
- * Token budget default: 400 tokens (~1600 characters).
- * Safety and move outcome sections are exempt — they are never dropped.
+ * Token budget default: 1200 tokens (~4800 characters).
+ * Sections 0, 1, 2, 13 are exempt and do not count against the budget.
+ *
+ * Implementation-extras retained in this codebase (not in the spec numbering):
+ *   - Active connections (legacy summary, retained for backwards-compatibility)
+ *   - Active sector
+ *   - Character state
  *
  * Post-session-3 fixes applied here:
  *   — buildWorldTruthsSection: reads v.title ?? v.result (TruthResult shape,
@@ -32,6 +44,14 @@
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
 import { getPlayerActors, readCharacterSnapshot } from "../character/actorBridge.js";
 import { getChronicleForContext } from "../character/chronicle.js";
+import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock } from "../narration/narratorPrompt.js";
+import { getConnection } from "../entities/connection.js";
+import { getSettlement } from "../entities/settlement.js";
+import { getFaction }    from "../entities/faction.js";
+import { getShip }       from "../entities/ship.js";
+import { getPlanet }     from "../entities/planet.js";
+import { getLocation }   from "../entities/location.js";
+import { getCreature }   from "../entities/creature.js";
 
 const MODULE_ID         = "starforged-companion";
 const TRACKS_JOURNAL    = "Starforged Progress Tracks";
@@ -43,21 +63,27 @@ const TRACKS_FLAG_KEY   = "tracks";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Assemble a complete Loremaster context packet.
+ * Assemble a complete narrator context packet.
  *
  * @param {Object} resolution      — MoveResolutionSchema (from resolver.js)
  * @param {Object} campaignState   — CampaignStateSchema
  * @param {Object} [options]
- * @param {Object} [options.sessionState]  — SessionSchema for session-scoped safety
- * @param {string} [options.currentUserId] — For private Lines resolution
- * @param {number} [options.tokenBudget]   — Override default 400-token budget
+ * @param {Object}   [options.sessionState]  — SessionSchema for session-scoped safety
+ * @param {string}   [options.currentUserId] — For private Lines resolution
+ * @param {number}   [options.tokenBudget]   — Override default 1200-token budget
+ * @param {string}   [options.narratorClass] — "discovery" | "interaction" | "embellishment"
+ * @param {string[]} [options.matchedEntityIds]   — JournalEntry IDs from relevance resolver
+ * @param {string[]} [options.matchedEntityTypes] — Corresponding entity type strings
  * @returns {Object}               — ContextPacketSchema
  */
 export async function assembleContextPacket(resolution, campaignState, options = {}) {
   const {
-    sessionState  = null,
-    currentUserId = null,
-    tokenBudget   = 400,
+    sessionState        = null,
+    currentUserId       = null,
+    tokenBudget         = 1200,
+    narratorClass       = null,
+    matchedEntityIds    = [],
+    matchedEntityTypes  = [],
   } = options;
 
   // FIX 3: Check both sessionState.xCardActive (session-scoped) and
@@ -67,63 +93,101 @@ export async function assembleContextPacket(resolution, campaignState, options =
     return buildSuppressedPacket(resolution, campaignState);
   }
 
-  // ── 1. Safety (always first, exempt from budget) ──────────────────────────
+  // ── Section 0: Safety (always first, exempt from budget) ──────────────────
   const safetyContent = formatSafetyContext(campaignState, sessionState, currentUserId);
   const safetyTokens  = estimateSafetyTokens(safetyContent);
 
-  // ── 2. World Truths summary ───────────────────────────────────────────────
+  // ── Section 1: Narrator permissions (exempt — never dropped) ──────────────
+  const permissionsContent = buildPermissionsSection(narratorClass);
+
+  // ── Section 2: Oracle seeds (exempt — change every call) ──────────────────
+  const oracleSeedsContent = formatOracleSeedsBlock(resolution?.oracleSeeds) ?? "";
+
+  // ── Sections 3, 4, 9, 10: World Journal stubs (Phase 5) ───────────────────
+  const confirmedLoreContent     = getConfirmedLoreSection();
+  const activeThreatsContent     = getActiveThreatsSection();
+  const factionLandscapeContent  = getFactionLandscapeSection();
+  const recentDiscoveriesContent = getRecentDiscoveriesSection();
+
+  // ── Section 5: World Truths summary ───────────────────────────────────────
   const { content: worldTruthsContent, summarized: worldTruthsSummarized } =
     buildWorldTruthsSection(campaignState);
 
-  // ── 3. Active connections ─────────────────────────────────────────────────
+  // ── Section 6: Current location card ──────────────────────────────────────
+  const currentLocationContent = buildCurrentLocationSection(campaignState);
+
+  // ── Section 7: Matched entity cards ───────────────────────────────────────
+  const entityCardsContent = buildEntityCardsSection(matchedEntityIds, matchedEntityTypes);
+
+  // ── Legacy: Active connections ────────────────────────────────────────────
   const { content: connectionsContent, connectionIds } =
     await buildConnectionsSection(campaignState);
 
-  // ── 3a. Character state ───────────────────────────────────────────────────
+  // ── Legacy: Character state ───────────────────────────────────────────────
   const { content: characterContent, characterIds } =
     await buildCharacterStateSection(campaignState);
 
-  // ── 4. Progress tracks ────────────────────────────────────────────────────
+  // ── Section 8: Progress tracks ────────────────────────────────────────────
   const { content: tracksContent, trackIds } =
     await buildProgressTracksSection();
 
-  // ── 4a. Active sector ─────────────────────────────────────────────────────
+  // ── Legacy: Active sector ─────────────────────────────────────────────────
   const { content: sectorContent } = buildSectorSection(campaignState);
 
-  // ── 5. Recent oracle results ──────────────────────────────────────────────
+  // ── Section 11: Oracle history ────────────────────────────────────────────
   const { content: oraclesContent, oracleIds } =
     buildOraclesSection(campaignState);
 
-  // ── 6. Session notes ──────────────────────────────────────────────────────
+  // ── Section 12: Session notes (dropped first under budget pressure) ───────
   const sessionNotesContent = buildSessionNotesSection(sessionState);
 
-  // ── 7. Move outcome (exempt from budget — Loremaster always needs this) ───
+  // ── Section 13: Move outcome (exempt, always last) ────────────────────────
   const moveOutcomeContent = resolution?.loremasterContext ?? "";
 
   // ── Budget enforcement ────────────────────────────────────────────────────
+  // Priority — lower number wins (kept first under pressure):
+  //   1: confirmedLore, activeThreats, currentLocation, entityCards,
+  //      connections, characterState, progressTracks
+  //   2: worldTruths, activeSector, factionLandscape, recentDiscoveries
+  //   3: recentOracles
+  //   4: sessionNotes (dropped first)
   const budgetResult = enforceBudget({
     tokenBudget,
     sections: {
-      worldTruths:    { content: worldTruthsContent,   priority: 2 },
-      connections:    { content: connectionsContent,    priority: 1 },
-      characterState: { content: characterContent,      priority: 1 },
-      progressTracks: { content: tracksContent,         priority: 1 },
-      activeSector:   { content: sectorContent,         priority: 2 },
-      recentOracles:  { content: oraclesContent,        priority: 3 },
-      sessionNotes:   { content: sessionNotesContent,   priority: 4 },
+      confirmedLore:      { content: confirmedLoreContent,     priority: 1 },
+      activeThreats:      { content: activeThreatsContent,     priority: 1 },
+      worldTruths:        { content: worldTruthsContent,       priority: 2 },
+      currentLocation:    { content: currentLocationContent,   priority: 1 },
+      entityCards:        { content: entityCardsContent,       priority: 1 },
+      connections:        { content: connectionsContent,       priority: 1 },
+      characterState:     { content: characterContent,         priority: 1 },
+      progressTracks:     { content: tracksContent,            priority: 1 },
+      activeSector:       { content: sectorContent,            priority: 2 },
+      factionLandscape:   { content: factionLandscapeContent,  priority: 2 },
+      recentDiscoveries:  { content: recentDiscoveriesContent, priority: 2 },
+      recentOracles:      { content: oraclesContent,           priority: 3 },
+      sessionNotes:       { content: sessionNotesContent,      priority: 4 },
     },
   });
 
-  // ── Assemble final string ─────────────────────────────────────────────────
+  // ── Assemble final string in scope §8 order ───────────────────────────────
   const parts = [
     safetyContent,
-    budgetResult.included.worldTruths    ?? "",
-    budgetResult.included.connections    ?? "",
-    budgetResult.included.characterState ?? "",
-    budgetResult.included.progressTracks ?? "",
-    budgetResult.included.activeSector   ?? "",
-    budgetResult.included.recentOracles  ?? "",
-    budgetResult.included.sessionNotes   ?? "",
+    permissionsContent,
+    oracleSeedsContent,
+    budgetResult.included.confirmedLore     ?? "",
+    budgetResult.included.activeThreats     ?? "",
+    budgetResult.included.worldTruths       ?? "",
+    budgetResult.included.currentLocation   ?? "",
+    budgetResult.included.entityCards       ?? "",
+    budgetResult.included.connections       ?? "",
+    budgetResult.included.characterState    ?? "",
+    budgetResult.included.progressTracks    ?? "",
+    budgetResult.included.activeSector      ?? "",
+    budgetResult.included.factionLandscape  ?? "",
+    budgetResult.included.recentDiscoveries ?? "",
+    budgetResult.included.recentOracles     ?? "",
+    budgetResult.included.sessionNotes      ?? "",
     moveOutcomeContent,
   ].filter(Boolean);
 
@@ -141,10 +205,38 @@ export async function assembleContextPacket(resolution, campaignState, options =
         tokenEstimate:  safetyTokens,
         alwaysInclude:  true,
       },
+      narratorPermissions: {
+        content:        permissionsContent,
+        tokenEstimate:  estimateTokens(permissionsContent),
+        alwaysInclude:  true,
+      },
+      oracleSeeds: {
+        content:        oracleSeedsContent,
+        tokenEstimate:  estimateTokens(oracleSeedsContent),
+        alwaysInclude:  true,
+      },
+      confirmedLore: {
+        content:        confirmedLoreContent,
+        tokenEstimate:  estimateTokens(confirmedLoreContent),
+      },
+      activeThreats: {
+        content:        activeThreatsContent,
+        tokenEstimate:  estimateTokens(activeThreatsContent),
+      },
       worldTruths: {
         content:        worldTruthsContent,
         tokenEstimate:  estimateTokens(worldTruthsContent),
         summarized:     worldTruthsSummarized,
+      },
+      currentLocation: {
+        content:        currentLocationContent,
+        tokenEstimate:  estimateTokens(currentLocationContent),
+      },
+      entityCards: {
+        content:        entityCardsContent,
+        tokenEstimate:  estimateTokens(entityCardsContent),
+        entityIds:      matchedEntityIds,
+        entityTypes:    matchedEntityTypes,
       },
       activeConnections: {
         content:        connectionsContent,
@@ -164,6 +256,14 @@ export async function assembleContextPacket(resolution, campaignState, options =
       activeSector: {
         content:       sectorContent,
         tokenEstimate: estimateTokens(sectorContent),
+      },
+      factionLandscape: {
+        content:        factionLandscapeContent,
+        tokenEstimate:  estimateTokens(factionLandscapeContent),
+      },
+      recentDiscoveries: {
+        content:        recentDiscoveriesContent,
+        tokenEstimate:  estimateTokens(recentDiscoveriesContent),
       },
       recentOracles: {
         content:        oraclesContent,
@@ -189,6 +289,138 @@ export async function assembleContextPacket(resolution, campaignState, options =
     assembled,
   };
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NARRATOR PERMISSIONS — Section 1
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the narrator permissions block from the relevance result.
+ * Returns empty string when no narratorClass is supplied (default behaviour
+ * when the assembler is called outside the live narrator pipeline, e.g. in
+ * tests for unrelated sections).
+ */
+function buildPermissionsSection(narratorClass) {
+  if (!narratorClass) return "";
+  return NARRATOR_PERMISSIONS[narratorClass] ?? "";
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CURRENT LOCATION — Section 6
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the current location card from campaignState.currentLocationId.
+ * Used by the narrator to anchor every narration to the current scene's place.
+ */
+function buildCurrentLocationSection(campaignState) {
+  const id   = campaignState?.currentLocationId;
+  const type = campaignState?.currentLocationType;
+  if (!id || !type) return "";
+
+  const getter = LOCATION_GETTERS[type];
+  if (!getter) return "";
+
+  let entity = null;
+  try {
+    entity = getter(id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | assembler: load currentLocation (${type} ${id}) failed:`, err);
+    return "";
+  }
+  if (!entity) return "";
+
+  const card = formatEntityCard(entity, type);
+  if (!card) return "";
+  return `## CURRENT LOCATION\n\n${card}`;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MATCHED ENTITY CARDS — Section 7
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ENTITY_GETTERS = {
+  connection: getConnection,
+  settlement: getSettlement,
+  faction:    getFaction,
+  ship:       getShip,
+  planet:     getPlanet,
+  location:   getLocation,
+  creature:   getCreature,
+};
+
+const LOCATION_GETTERS = {
+  settlement: getSettlement,
+  location:   getLocation,
+  planet:     getPlanet,
+};
+
+/**
+ * Build the matched-entity-cards section from the relevance resolver result.
+ * Each ID/type pair is formatted via formatEntityCard() and joined.
+ *
+ * Replaces the legacy "ACTIVE CONNECTIONS — N count" placeholder for the
+ * narrator pipeline. The legacy section still runs for backwards-compatibility
+ * with code paths that don't pass matchedEntityIds.
+ */
+function buildEntityCardsSection(ids, types) {
+  if (!Array.isArray(ids) || !ids.length) return "";
+
+  const cards = [];
+  for (let i = 0; i < ids.length; i++) {
+    const journalId = ids[i];
+    const type      = types?.[i];
+    if (!journalId || !type) continue;
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    let entity = null;
+    try {
+      entity = getter(journalId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | assembler: load entity (${type} ${journalId}) failed:`, err);
+      continue;
+    }
+    if (!entity) continue;
+    const card = formatEntityCard(entity, type);
+    if (card) cards.push(card);
+  }
+
+  if (!cards.length) return "";
+  return ["## ENTITIES IN SCENE", ...cards].join("\n\n");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORLD JOURNAL STUBS — Sections 3, 4, 9, 10 (Phase 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Confirmed lore section. Phase 5 will read from World Journal entries.
+ * Returns empty string here — never contributes to the assembled prompt
+ * and consumes 0 tokens.
+ */
+function getConfirmedLoreSection() { return ""; }
+
+/**
+ * Active threats section. Phase 5 will read from World Journal entries.
+ * Returns empty string until WJ ships.
+ */
+function getActiveThreatsSection() { return ""; }
+
+/**
+ * Faction landscape section. Phase 5 will read from World Journal entries.
+ * Returns empty string until WJ ships.
+ */
+function getFactionLandscapeSection() { return ""; }
+
+/**
+ * Recent World Journal discoveries section. Phase 5 will read from World
+ * Journal entries. Returns empty string until WJ ships.
+ */
+function getRecentDiscoveriesSection() { return ""; }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,10 +799,15 @@ function buildSuppressedPacket(resolution, campaignState) {
       safety: { content, tokenEstimate: estimateTokens(content), alwaysInclude: true },
     },
     totalTokenEstimate: estimateTokens(content),
-    tokenBudget:     400,
+    tokenBudget:     1200,
     budgetExceeded:  false,
     omittedSections: [
-      "worldTruths", "activeConnections", "progressTracks",
+      "narratorPermissions", "oracleSeeds",
+      "confirmedLore", "activeThreats", "worldTruths",
+      "currentLocation", "entityCards",
+      "activeConnections", "characterState",
+      "progressTracks", "activeSector",
+      "factionLandscape", "recentDiscoveries",
       "recentOracles", "sessionNotes", "moveOutcome",
     ],
     assembled: content,

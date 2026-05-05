@@ -62,6 +62,22 @@ import {
   getRecapGmOnly,
 } from "./ui/settingsPanel.js";
 
+import {
+  initWorldJournals,
+  parseJournalCommand,
+  executeJournalCommand,
+} from "./world/worldJournal.js";
+
+import {
+  openWorldJournalPanel,
+} from "./world/worldJournalPanel.js";
+
+import { resolveRelevance } from "./context/relevanceResolver.js";
+import {
+  ClarificationDialog,
+  applyClarificationSelection,
+} from "./world/clarificationDialog.js";
+
 const MODULE_ID = "starforged-companion";
 
 
@@ -261,6 +277,18 @@ function registerChatHook() {
       return;
     }
 
+    // !at command — set or clear the current location (intercept before move pipeline)
+    if (isAtCommand(message)) {
+      await handleAtCommand(message);
+      return;
+    }
+
+    // !journal command — manual World Journal entry (intercept before move pipeline)
+    if (isJournalCommand(message)) {
+      await handleJournalCommand(message);
+      return;
+    }
+
     // !recap command — intercept before move pipeline
     if (isRecapCommand(message)) {
       const text = message.content?.trim() ?? "";
@@ -304,16 +332,62 @@ function registerChatHook() {
       if (!accepted) return;
 
       const resolution = resolveMove(interpretation, campaignState);
-      const packet     = await assembleContextPacket(resolution, campaignState);
 
-      // Step 7: post move result card
+      // Step 7: relevance resolver — picks the narrator-permission block
+      // and identifies which entity records to inject as cards. For hybrid
+      // moves with implicit references, we pause the pipeline for a
+      // clarification dialog before continuing.
+      let relevance = await resolveRelevance(
+        resolution.playerNarration ?? narration,
+        resolution.moveId,
+        resolution.outcome,
+        campaignState,
+      ).catch(err => {
+        console.warn(`${MODULE_ID} | relevance resolver failed:`, err);
+        return {
+          resolvedClass: 'embellishment', entityIds: [], entityTypes: [],
+          matchedNames: [], needsClarification: false, referenceType: 'none',
+        };
+      });
+
+      if (relevance.needsClarification) {
+        // Mark pendingClarification on campaignState so other clients can
+        // observe a paused pipeline (GM can read state). Cleared before
+        // narration is requested.
+        if (game.user.isGM) {
+          campaignState.pendingClarification = {
+            resolutionId: resolution._id ?? null,
+            moveId:       resolution.moveId,
+            referenceType: relevance.referenceType,
+            postedAt:     new Date().toISOString(),
+          };
+          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
+        }
+
+        const selection = await ClarificationDialog.prompt(campaignState, relevance);
+        relevance = applyClarificationSelection(relevance, selection);
+
+        if (game.user.isGM) {
+          campaignState.pendingClarification = null;
+          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
+        }
+      }
+
+      // Step 8: build the context packet using the resolved class + matches
+      const packet = await assembleContextPacket(resolution, campaignState, {
+        narratorClass:      relevance.resolvedClass,
+        matchedEntityIds:   relevance.entityIds,
+        matchedEntityTypes: relevance.entityTypes,
+      });
+
+      // Step 9: post move result card
       await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null
       );
 
-      // Step 8: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, packet, campaignState);
+      // Step 10: narrate the consequence directly via Claude — no GM dependency
+      await narrateResolution(resolution, packet, campaignState, { relevance });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -455,6 +529,161 @@ export function isRecapCommand(message) {
 export function isSectorCommand(message) {
   const text = message.content?.trim() ?? "";
   return text.toLowerCase().startsWith("!sector");
+}
+
+/**
+ * Determine whether a chat message is an !at command.
+ *   !at [name] — set current location by name (matches settlement/location/planet)
+ *   !at        — clear current location
+ */
+export function isAtCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (!text.toLowerCase().startsWith("!at")) return false;
+  // Must be exactly "!at" or "!at " — don't match "!atlas" etc.
+  return text.length === 3 || /^!at\s/i.test(text);
+}
+
+/**
+ * Determine whether a chat message is a !journal command.
+ */
+export function isJournalCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return /^!journal\s/i.test(text);
+}
+
+/**
+ * Handle a !journal command. GM-only — World Journal writes require world-
+ * scoped permissions. Posts a confirmation card on success or a notification
+ * on rejection.
+ */
+async function handleJournalCommand(message) {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!journal is GM-only (writes campaign state).");
+    return;
+  }
+
+  const parsed = parseJournalCommand(message.content?.trim() ?? "");
+  if (!parsed) {
+    ui.notifications.warn(
+      'Invalid !journal command. Format: !journal <type> "Name" qualifier — text  ' +
+      '(types: faction, location, lore, threat).'
+    );
+    return;
+  }
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  try {
+    const result = await executeJournalCommand(parsed, campaignState);
+    if (!result) {
+      ui.notifications.warn(`!journal ${parsed.type} failed — see console for details.`);
+      return;
+    }
+    await ChatMessage.create({
+      content:
+        `<p><strong>World Journal updated:</strong> ${parsed.type} — ` +
+        `<em>${escapeChatHtml(parsed.name)}</em>` +
+        (parsed.qualifier ? ` (${escapeChatHtml(parsed.qualifier)})` : '') +
+        `</p>`,
+      flags:   { [MODULE_ID]: { worldJournalCard: true } },
+    });
+  } catch (err) {
+    console.error(`${MODULE_ID} | !journal command failed:`, err);
+    ui.notifications.error("!journal command failed. Check console for details.");
+  }
+}
+
+function escapeChatHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Resolve a name fragment to an entity record by scanning settlement, location,
+ * and planet collections in that priority order. Case-insensitive prefix match
+ * before falling back to substring match.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {{ id: string, type: string, entity: Object }|null}
+ */
+export function resolveCurrentLocationName(name, campaignState) {
+  const target = name?.trim().toLowerCase();
+  if (!target) return null;
+
+  const groups = [
+    ["settlement", campaignState?.settlementIds ?? [], "settlement"],
+    ["location",   campaignState?.locationIds   ?? [], "location"],
+    ["planet",     campaignState?.planetIds     ?? [], "planet"],
+  ];
+
+  // Two-pass match — exact name first, then prefix, then substring.
+  const candidates = [];
+  for (const [type, ids, flagKey] of groups) {
+    for (const journalId of ids) {
+      try {
+        const entry = game.journal?.get(journalId);
+        const page  = entry?.pages?.contents?.[0];
+        const data  = page?.flags?.[MODULE_ID]?.[flagKey];
+        if (data?.name) {
+          candidates.push({ id: journalId, type, entity: data, lc: data.name.toLowerCase() });
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | resolveCurrentLocationName: ${type} ${journalId} failed:`, err);
+      }
+    }
+  }
+
+  return candidates.find(c => c.lc === target)
+      ?? candidates.find(c => c.lc.startsWith(target))
+      ?? candidates.find(c => c.lc.includes(target))
+      ?? null;
+}
+
+/**
+ * Handle !at chat commands.
+ *   !at [name] — set currentLocationId / currentLocationType
+ *   !at        — clear currentLocationId / currentLocationType
+ *
+ * GM-only — world-scoped settings cannot be written by player clients.
+ */
+async function handleAtCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const arg  = text.slice("!at".length).trim();
+
+  if (!game.user.isGM) {
+    ui.notifications.warn("!at is GM-only (writes campaign state).");
+    return;
+  }
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  if (!arg) {
+    campaignState.currentLocationId   = null;
+    campaignState.currentLocationType = null;
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await ChatMessage.create({
+      content: "<p><strong>Current location cleared.</strong></p>",
+      flags:   { [MODULE_ID]: { atCommandCard: true } },
+    });
+    return;
+  }
+
+  const match = resolveCurrentLocationName(arg, campaignState);
+  if (!match) {
+    ui.notifications.warn(`No settlement, location, or planet named "${arg}" found.`);
+    return;
+  }
+
+  campaignState.currentLocationId   = match.id;
+  campaignState.currentLocationType = match.type;
+  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  await ChatMessage.create({
+    content: `<p>Current location set to <strong>${match.entity.name}</strong> (${match.type}).</p>`,
+    flags:   { [MODULE_ID]: { atCommandCard: true } },
+  });
 }
 
 /**
@@ -650,6 +879,13 @@ Hooks.once("ready", () => {
     ensureHelpJournal().catch(err =>
       console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
     );
+
+    // World Journal — create the folder + four category journals if missing.
+    // Phase 3 only writes; the combined detection pass that auto-populates is
+    // Phase 4. Errors are logged and do not block the rest of the ready hook.
+    initWorldJournals().catch(err =>
+      console.warn(`${MODULE_ID} | World Journal init failed:`, err?.message ?? err)
+    );
   }
 
   registerChatHook();
@@ -727,6 +963,14 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => {},
   };
+  tokenControls.tools.worldJournal = {
+    name:     "worldJournal",
+    title:    "World Journal",
+    icon:     "fas fa-book",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -742,6 +986,7 @@ Hooks.on("renderSceneControls", (app, html) => {
     chronicle:      () => openChroniclePanel(),
     sfSettings:     () => openSettingsPanel(),
     sectorCreator:  () => openSectorCreator(),
+    worldJournal:   () => openWorldJournalPanel(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {

@@ -60,14 +60,24 @@
         "ship": "Ships",
         "settlement": "Settlements",
         "faction": "Factions",
-        "planet": "Planets"
+        "planet": "Planets",
+        "location": "Locations",
+        "creature": "Creatures"
       },
       "TypeSingular": {
         "connection": "Connection",
         "ship": "Ship",
         "settlement": "Settlement",
         "faction": "Faction",
-        "planet": "Planet"
+        "planet": "Planet",
+        "location": "Location",
+        "creature": "Creature"
+      },
+      "FieldLabels": {
+        "generativeTier": "Narrator-added details",
+        "canonicalLocked": "Canonical (locked)",
+        "pinned": "Pinned",
+        "promoted": "Promoted to canonical"
       },
       "EmptyState": "No entities tracked yet.\nThey appear here when created via the entity modules.",
       "BackButton": "← All Entities",

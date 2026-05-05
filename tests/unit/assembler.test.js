@@ -509,3 +509,302 @@ describe("enforceBudget — truncation", () => {
     expect(packet.budgetExceeded).toBe(true);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — narrator permissions, WJ stubs, entity cards, current location
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembler — narrator permissions (Section 1)", () => {
+  it("appears between safety (Section 0) and world truths (Section 5)", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { tokenBudget: 2000, narratorClass: "interaction" }
+    );
+    const safetyIdx      = packet.assembled.indexOf("SAFETY CONFIGURATION");
+    const permissionsIdx = packet.assembled.indexOf("NARRATOR PERMISSIONS");
+    const truthsIdx      = packet.assembled.indexOf("WORLD TRUTHS");
+    expect(safetyIdx).toBeGreaterThanOrEqual(0);
+    expect(permissionsIdx).toBeGreaterThan(safetyIdx);
+    expect(truthsIdx).toBeGreaterThan(permissionsIdx);
+  });
+
+  it("is omitted when narratorClass is not provided", async () => {
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState());
+    expect(packet.assembled).not.toMatch(/NARRATOR PERMISSIONS/);
+  });
+
+  it("uses the discovery block when narratorClass is 'discovery'", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { tokenBudget: 2000, narratorClass: "discovery" }
+    );
+    expect(packet.assembled).toMatch(/DISCOVERY MODE/);
+    expect(packet.assembled).toMatch(/You MAY introduce/);
+  });
+
+  it("uses the embellishment block when narratorClass is 'embellishment'", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { tokenBudget: 2000, narratorClass: "embellishment" }
+    );
+    expect(packet.assembled).toMatch(/EMBELLISHMENT MODE/);
+  });
+
+  it("permissions section is exempt from budget enforcement", async () => {
+    // Tight budget — permissions block (~600 chars / ~150 tokens) is exempt
+    // and must still appear regardless of how aggressive the budget is.
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { tokenBudget: 20, narratorClass: "interaction" }
+    );
+    expect(packet.assembled).toMatch(/NARRATOR PERMISSIONS/);
+    expect(packet.assembled).toMatch(/SAFETY CONFIGURATION/);
+  });
+});
+
+describe("assembler — World Journal stubs (Sections 3, 4, 9, 10)", () => {
+  it("WJ stub sections are absent from the assembled string", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CONFIRMED LORE/i);
+    expect(packet.assembled).not.toMatch(/ACTIVE THREATS/i);
+    expect(packet.assembled).not.toMatch(/FACTION LANDSCAPE/i);
+    expect(packet.assembled).not.toMatch(/RECENT DISCOVERIES/i);
+  });
+
+  it("WJ stub sections consume 0 tokens", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.sections.confirmedLore.tokenEstimate).toBe(0);
+    expect(packet.sections.activeThreats.tokenEstimate).toBe(0);
+    expect(packet.sections.factionLandscape.tokenEstimate).toBe(0);
+    expect(packet.sections.recentDiscoveries.tokenEstimate).toBe(0);
+  });
+
+  it("WJ stub sections expose empty content via the sections shape", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.sections.confirmedLore.content).toBe("");
+    expect(packet.sections.activeThreats.content).toBe("");
+    expect(packet.sections.factionLandscape.content).toBe("");
+    expect(packet.sections.recentDiscoveries.content).toBe("");
+  });
+});
+
+describe("assembler — matched entity cards (Section 7)", () => {
+  afterEach(() => {
+    game.journal.get = () => null;
+  });
+
+  it("renders ENTITIES IN SCENE for matched IDs/types", async () => {
+    game.journal.get = (id) => {
+      if (id !== "j-sable") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { connection: {
+        _id: "conn-1", name: "Sable", role: "AI navigator",
+        canonicalLocked: false, generativeTier: [],
+      }}}}] }};
+    };
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState({ connectionIds: ["j-sable"] }),
+      { tokenBudget: 2000, matchedEntityIds: ["j-sable"], matchedEntityTypes: ["connection"] }
+    );
+    expect(packet.assembled).toMatch(/ENTITIES IN SCENE/);
+    expect(packet.assembled).toMatch(/SABLE/);
+    expect(packet.assembled).toMatch(/Role: AI navigator/);
+  });
+
+  it("omits ENTITIES IN SCENE when no match IDs supplied", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+
+  it("skips IDs whose getter throws and continues with the rest", async () => {
+    expectConsoleError(/getConnection.*failed/);
+    let calls = 0;
+    game.journal.get = (id) => {
+      calls++;
+      if (id === "throws") throw new Error("journal error");
+      if (id === "j-sable") return { pages: { contents: [{ flags: { "starforged-companion": { connection: {
+        _id: "c1", name: "Sable", role: "Navigator",
+        canonicalLocked: false, generativeTier: [],
+      }}}}] }};
+      return null;
+    };
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["throws", "j-sable"],
+        matchedEntityTypes: ["connection", "connection"],
+      }
+    );
+    expect(calls).toBeGreaterThan(0);
+    expect(packet.assembled).toMatch(/SABLE/);
+  });
+
+  it("skips IDs of unknown entity type", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["x"],
+        matchedEntityTypes: ["unknown_type"],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+
+  it("skips ID/type pairs where the type is missing", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["only-id"],
+        matchedEntityTypes: [],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+
+  it("omits ENTITIES IN SCENE when getter returns null for every id", async () => {
+    game.journal.get = () => null;
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      {
+        tokenBudget: 2000,
+        matchedEntityIds:   ["unknown"],
+        matchedEntityTypes: ["connection"],
+      }
+    );
+    expect(packet.assembled).not.toMatch(/ENTITIES IN SCENE/);
+  });
+});
+
+describe("assembler — current location card (Section 6)", () => {
+  afterEach(() => {
+    game.journal.get = () => null;
+  });
+
+  it("injects CURRENT LOCATION block when currentLocationId is set", async () => {
+    game.journal.get = (id) => {
+      if (id !== "j-bleak") return null;
+      return { pages: { contents: [{ flags: { "starforged-companion": { settlement: {
+        _id: "loc-1", name: "Bleakhold", location: "Planetside",
+        canonicalLocked: false, generativeTier: [],
+      }}}}] }};
+    };
+    const state = baseCampaignState({
+      currentLocationId:   "j-bleak",
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).toMatch(/CURRENT LOCATION/);
+    expect(packet.assembled).toMatch(/BLEAKHOLD/);
+  });
+
+  it("omits CURRENT LOCATION when no currentLocationId is set", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(), { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when only the type is set (no id)", async () => {
+    const state = baseCampaignState({
+      currentLocationId:   null,
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when type is unknown", async () => {
+    const state = baseCampaignState({
+      currentLocationId:   "j-bleak",
+      currentLocationType: "not_a_real_type",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when the getter throws", async () => {
+    expectConsoleError(/getSettlement.*failed/);
+    game.journal.get = () => { throw new Error("boom"); };
+    const state = baseCampaignState({
+      currentLocationId:   "j-bleak",
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+
+  it("omits CURRENT LOCATION when the entity record is missing", async () => {
+    game.journal.get = () => null;
+    const state = baseCampaignState({
+      currentLocationId:   "missing",
+      currentLocationType: "settlement",
+    });
+    const packet = await assembleContextPacket(
+      baseResolution(), state, { tokenBudget: 2000 }
+    );
+    expect(packet.assembled).not.toMatch(/CURRENT LOCATION/);
+  });
+});
+
+describe("assembler — token budget", () => {
+  it("session notes drop before world truths when budget is tight", async () => {
+    // World truths (priority 2) consumes the budget first; session notes
+    // (priority 4, ~500 tokens) finds <10 tokens remaining and is fully
+    // omitted rather than truncated. World truths content is still present
+    // (potentially truncated, but the section header survives).
+    const sessionState = { notes: "S".repeat(2000), xCardActive: false };
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { sessionState, tokenBudget: 20, narratorClass: "interaction" }
+    );
+    expect(packet.omittedSections).toContain("sessionNotes");
+  });
+
+  it("safety and permissions are never dropped under budget pressure", async () => {
+    const packet = await assembleContextPacket(
+      baseResolution(), baseCampaignState(),
+      { tokenBudget: 20, narratorClass: "discovery" }
+    );
+    expect(packet.assembled).toMatch(/SAFETY CONFIGURATION/);
+    expect(packet.assembled).toMatch(/NARRATOR PERMISSIONS/);
+    expect(packet.omittedSections).not.toContain("safety");
+    expect(packet.omittedSections).not.toContain("narratorPermissions");
+  });
+
+  it("oracle seeds appear when resolution provides them", async () => {
+    const resolution = {
+      ...baseResolution(),
+      oracleSeeds: {
+        results: ["Character role: Captain", "Character goal: Protect a secret"],
+        names:   ["Kael"],
+        context: "make_a_connection",
+      },
+    };
+    const packet = await assembleContextPacket(
+      resolution, baseCampaignState(),
+      { tokenBudget: 2000, narratorClass: "discovery" }
+    );
+    expect(packet.assembled).toMatch(/ORACLE SEEDS/);
+    expect(packet.assembled).toMatch(/Character role: Captain/);
+    expect(packet.assembled).toMatch(/Name suggestion: Kael/);
+  });
+});

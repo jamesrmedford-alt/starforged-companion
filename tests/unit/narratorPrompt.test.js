@@ -11,6 +11,9 @@ import {
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
   resolveNarrationPerspective,
+  formatEntityCard,
+  formatOracleSeedsBlock,
+  NARRATOR_PERMISSIONS,
 } from '../../src/narration/narratorPrompt.js';
 
 
@@ -286,5 +289,239 @@ describe('buildNarratorUserMessage()', () => {
     );
     expect(typeof msg).toBe('string');
     expect(msg.length).toBeGreaterThan(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NARRATOR_PERMISSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NARRATOR_PERMISSIONS', () => {
+  it('discovery block contains "You MAY introduce"', () => {
+    expect(NARRATOR_PERMISSIONS.discovery).toContain('You MAY introduce');
+  });
+
+  it('interaction block contains "do not contradict"', () => {
+    expect(NARRATOR_PERMISSIONS.interaction.toLowerCase()).toContain('do not contradict');
+  });
+
+  it('embellishment block forbids new named entities', () => {
+    expect(NARRATOR_PERMISSIONS.embellishment.toLowerCase()).toContain('no new named entity');
+  });
+
+  it('permissions appear after safety, before world truths in the system prompt', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({
+        safety: { lines: ['No real-world atrocities'], veils: [], privateLines: [] },
+        worldTruths: { cataclysm: { title: 'The Sundering' } },
+      }),
+      makeNarratorSettings(),
+      null,
+      '',
+      { narratorClass: 'interaction' },
+    );
+    const safetyIdx      = prompt.indexOf('SAFETY CONFIGURATION');
+    const permissionsIdx = prompt.indexOf('NARRATOR PERMISSIONS');
+    const truthsIdx      = prompt.indexOf('WORLD TRUTHS');
+    expect(safetyIdx).toBeGreaterThan(-1);
+    expect(permissionsIdx).toBeGreaterThan(safetyIdx);
+    expect(truthsIdx).toBeGreaterThan(permissionsIdx);
+  });
+
+  it('omits the permissions block when no narratorClass is supplied', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).not.toContain('NARRATOR PERMISSIONS');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatEntityCard
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatEntityCard', () => {
+  function makeConnection(overrides = {}) {
+    return {
+      _id:  'conn-1',
+      name: 'Sable',
+      role: 'AI navigator',
+      relationshipType: 'Neutral-wary',
+      motivation: 'Unknown',
+      description: 'Lean, calculating.',
+      canonicalLocked: false,
+      generativeTier: [],
+      ...overrides,
+    };
+  }
+
+  it('includes entity name and type label', () => {
+    const card = formatEntityCard(makeConnection(), 'connection');
+    expect(card).toContain('SABLE');
+    expect(card).toContain('Connection');
+  });
+
+  it('includes canonical fields', () => {
+    const card = formatEntityCard(makeConnection(), 'connection');
+    expect(card).toContain('Role: AI navigator');
+    expect(card).toContain('Disposition: Neutral-wary');
+    expect(card).toContain('Description: Lean, calculating.');
+  });
+
+  it('includes generative tier entries (up to 5)', () => {
+    const card = formatEntityCard(makeConnection({
+      generativeTier: [
+        { sessionNum: 1, detail: 'Detail one' },
+        { sessionNum: 2, detail: 'Detail two' },
+        { sessionNum: 3, detail: 'Detail three' },
+        { sessionNum: 4, detail: 'Detail four' },
+        { sessionNum: 5, detail: 'Detail five' },
+        { sessionNum: 6, detail: 'Detail six' },
+        { sessionNum: 7, detail: 'Detail seven' },
+      ],
+    }), 'connection');
+    expect(card).toContain('NARRATOR-ADDED');
+    // Five most-recent unpinned entries — sessions 7,6,5,4,3
+    expect(card).toContain('Detail seven');
+    expect(card).toContain('Detail three');
+    // Sessions 1 and 2 should be dropped
+    expect(card).not.toContain('Detail one');
+    expect(card).not.toContain('Detail two');
+  });
+
+  it('orders pinned entries before unpinned (and pinned survives the cap)', () => {
+    const card = formatEntityCard(makeConnection({
+      generativeTier: [
+        { sessionNum: 1, detail: 'Old pinned',   pinned: true  },
+        { sessionNum: 5, detail: 'Recent A',     pinned: false },
+        { sessionNum: 6, detail: 'Recent B',     pinned: false },
+        { sessionNum: 7, detail: 'Recent C',     pinned: false },
+        { sessionNum: 8, detail: 'Recent D',     pinned: false },
+        { sessionNum: 9, detail: 'Recent E',     pinned: false },
+        { sessionNum: 10, detail: 'Recent F',    pinned: false },
+      ],
+    }), 'connection');
+    // Pinned entry survives despite being oldest
+    expect(card).toContain('Old pinned');
+    expect(card).toContain('📌');
+    // Pinned appears before the most recent unpinned
+    const pinnedIdx = card.indexOf('Old pinned');
+    const recentIdx = card.indexOf('Recent F');
+    expect(pinnedIdx).toBeGreaterThan(-1);
+    expect(recentIdx).toBeGreaterThan(pinnedIdx);
+  });
+
+  it('canonicalLocked: true → "do not contradict" label', () => {
+    const card = formatEntityCard(makeConnection({ canonicalLocked: true }), 'connection');
+    expect(card.toLowerCase()).toContain('do not contradict');
+  });
+
+  it('canonicalLocked: false → "established — prefer consistency" label', () => {
+    const card = formatEntityCard(makeConnection({ canonicalLocked: false }), 'connection');
+    expect(card.toLowerCase()).toContain('established');
+    expect(card.toLowerCase()).toContain('prefer consistency');
+  });
+
+  it('omits the generative tier section when the array is empty', () => {
+    const card = formatEntityCard(makeConnection({ generativeTier: [] }), 'connection');
+    expect(card).not.toContain('NARRATOR-ADDED');
+  });
+
+  it('omits promoted entries from the visible generative tier', () => {
+    const card = formatEntityCard(makeConnection({
+      generativeTier: [
+        { sessionNum: 1, detail: 'Now canonical', promoted: true, promotedAt: '2025-01-01' },
+        { sessionNum: 2, detail: 'Still soft' },
+      ],
+    }), 'connection');
+    expect(card).not.toContain('Now canonical');
+    expect(card).toContain('Still soft');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatOracleSeedsBlock
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatOracleSeedsBlock', () => {
+  it('returns empty string when seeds are null', () => {
+    expect(formatOracleSeedsBlock(null)).toBe('');
+    expect(formatOracleSeedsBlock(undefined)).toBe('');
+  });
+
+  it('returns empty string when both results and names are empty', () => {
+    expect(formatOracleSeedsBlock({ results: [], names: [] })).toBe('');
+  });
+
+  it('renders results and a name suggestion', () => {
+    const block = formatOracleSeedsBlock({
+      results: ['Character role: Captain', 'Character goal: Protect a secret'],
+      names:   ['Kael'],
+      context: 'make_a_connection',
+    });
+    expect(block).toContain('ORACLE SEEDS');
+    expect(block).toContain('Character role: Captain');
+    expect(block).toContain('Name suggestion: Kael');
+  });
+
+  it('uses the plural form when multiple names are suggested', () => {
+    const block = formatOracleSeedsBlock({
+      results: [],
+      names:   ['Kael', 'Astra'],
+    });
+    expect(block).toContain('Name suggestions: Kael, Astra');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildNarratorSystemPrompt — extras integration
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildNarratorSystemPrompt extras', () => {
+  it('injects entity cards under the ENTITIES IN SCENE header', () => {
+    const card = formatEntityCard({
+      name: 'Sable', role: 'AI navigator', generativeTier: [], canonicalLocked: false,
+    }, 'connection');
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { narratorClass: 'interaction', entityCards: [card] },
+    );
+    expect(prompt).toContain('ENTITIES IN SCENE');
+    expect(prompt).toContain('Sable'.toUpperCase());
+  });
+
+  it('injects oracle seeds block before world truths', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({
+        worldTruths: { cataclysm: { title: 'The Sundering' } },
+      }),
+      makeNarratorSettings(), null, '',
+      {
+        narratorClass: 'discovery',
+        oracleSeeds:   { results: ['Character role: Captain'], names: [] },
+      },
+    );
+    const seedsIdx  = prompt.indexOf('ORACLE SEEDS');
+    const truthsIdx = prompt.indexOf('WORLD TRUTHS');
+    expect(seedsIdx).toBeGreaterThan(-1);
+    expect(truthsIdx).toBeGreaterThan(seedsIdx);
+  });
+
+  it('injects current location card under CURRENT LOCATION header', () => {
+    const card = formatEntityCard({
+      name: 'Bleakhold', location: 'Planetside', generativeTier: [], canonicalLocked: false,
+    }, 'settlement');
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { narratorClass: 'interaction', currentLocationCard: card },
+    );
+    expect(prompt).toContain('CURRENT LOCATION');
+    expect(prompt).toContain('BLEAKHOLD');
   });
 });

@@ -67,6 +67,14 @@ const SETTING = {
   AUTO_RECAP_ENABLED:       'autoRecapEnabled',
   SESSION_GAP_HOURS:        'sessionGapHours',
   RECAP_GM_ONLY:            'recapGmOnly',
+  // ── World Journal ─────────────────────────────────────────────────────────
+  WJ_ENABLED:                  'worldJournalEnabled',
+  WJ_AUTO_DETECT:              'worldJournalAutoDetect',
+  WJ_LORE_IN_CONTEXT:          'loreInContext',
+  WJ_THREATS_IN_CONTEXT:       'threatsInContext',
+  WJ_FACTION_IN_CONTEXT:       'factionLandscapeInContext',
+  WJ_CONTRADICTION_NOTIFY:     'contradictionNotifications',
+  WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
 };
 
 const NARRATION_MODELS = {
@@ -292,6 +300,71 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.RECAP_GM_ONLY, {
     name:    'Recap GM-Only',
     hint:    'When enabled, only the GM can trigger recap generation via /recap commands.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  // ── World Journal ─────────────────────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.WJ_ENABLED, {
+    name:    'World Journal Enabled',
+    hint:    'Master switch for the World Journal subsystem (folder, !journal commands, panel, context injection).',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_AUTO_DETECT, {
+    name:    'World Journal Auto-Detect',
+    hint:    'When enabled, the combined detection pass populates lore, threats, factions, and locations from narration. Wired in Phase 4.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_LORE_IN_CONTEXT, {
+    name:    'Confirmed Lore in Narrator Context',
+    hint:    'When enabled, confirmed World Journal lore is injected into the narrator context as a hard constraint.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_THREATS_IN_CONTEXT, {
+    name:    'Active Threats in Narrator Context',
+    hint:    'When enabled, active and immediate threats are injected into the narrator context.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_FACTION_IN_CONTEXT, {
+    name:    'Faction Landscape in Narrator Context',
+    hint:    'When enabled, the faction attitude landscape (up to 3 factions) is injected into the narrator context.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_CONTRADICTION_NOTIFY, {
+    name:    'Contradiction Notifications',
+    hint:    'When enabled, the GM is notified via chat card when the narrator may have contradicted a confirmed lore entry.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_SESSION_LOG_AUTOWRITE, {
+    name:    'Session Log Auto-Write',
+    hint:    'When enabled, a session-log page is written automatically at session end.',
     scope:   'world',
     config:  false,
     type:    Boolean,
