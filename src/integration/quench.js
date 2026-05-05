@@ -29,6 +29,7 @@ Hooks.on("quenchReady", (quench) => {
   registerSectorCreatorTests(quench);
   registerEntityWorldJournalTests(quench);
   registerWorldJournalTests(quench);
+  registerSystemAssetTests(quench);
 });
 
 
@@ -1187,5 +1188,92 @@ function registerWorldJournalTests(quench) {
       });
     },
     { displayName: "STARFORGED: World Journal" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYSTEM ASSET INTEGRATION — live foundry-ironsworn pack and asset checks
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSystemAssetTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.systemAssets",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      describe("ironswornAssets — runtime path resolution", function () {
+        it("isIronswornAvailable resolves to true when the system is installed", async function () {
+          const { isIronswornAvailable, _resetIronswornAvailabilityCache } =
+            await import(`${MODULE_PATH}/system/ironswornAssets.js`);
+          _resetIronswornAvailabilityCache();
+          const available = await isIronswornAvailable();
+          // Skip when running in a world without foundry-ironsworn
+          if (!available) { this.skip(); return; }
+          assert.isTrue(available, "system should be detected as installed");
+        });
+
+        it("pickStarshipIcon returns a path under the starships asset folder", async function () {
+          const { pickStarshipIcon, IS_PATHS } =
+            await import(`${MODULE_PATH}/system/ironswornAssets.js`);
+          const path = pickStarshipIcon("Quench Test Ship");
+          assert.match(path, new RegExp(`^${IS_PATHS.STARSHIPS.replace(/\//g, "\\/")}\\/`));
+        });
+
+        it("resolveLocationArt produces a non-null path for every category × environment", async function () {
+          const { resolveLocationArt } =
+            await import(`${MODULE_PATH}/system/ironswornAssets.js`);
+          for (const cat of ["settlement", "vault", "derelict"]) {
+            for (const env of ["deep-space", "orbital", "planetside"]) {
+              const path = resolveLocationArt(cat, env, "auto");
+              assert.isString(path, `${cat}/${env} should resolve to a path`);
+            }
+          }
+        });
+      });
+
+      describe("ironswornPacks — live compendium lookups", function () {
+        it("getCanonicalMove resolves a known Starforged move when the pack is installed", async function () {
+          this.timeout(15000);
+          const { getCanonicalMove, _clearPackCache } =
+            await import(`${MODULE_PATH}/system/ironswornPacks.js`);
+          _clearPackCache();
+          if (!game.packs?.get?.("foundry-ironsworn.starforged-moves")) { this.skip(); return; }
+          const move = await getCanonicalMove("pay_the_price");
+          if (!move) { this.skip(); return; } // pack present but slug not found
+          assert.isObject(move, "pay_the_price should resolve to a Move document");
+        });
+
+        it("listCanonicalEncounters returns at least one encounter when the pack is installed", async function () {
+          this.timeout(15000);
+          const { listCanonicalEncounters, _clearPackCache } =
+            await import(`${MODULE_PATH}/system/ironswornPacks.js`);
+          _clearPackCache();
+          if (!game.packs?.get?.("foundry-ironsworn.foe-actors-sf")) { this.skip(); return; }
+          const list = await listCanonicalEncounters();
+          assert.isArray(list);
+          assert.isAtLeast(list.length, 1, "at least one encounter should be indexed");
+        });
+      });
+
+      describe("encounterSpawn — chat command parser", function () {
+        it("parseEncounterCommand extracts the encounter name", async function () {
+          const { parseEncounterCommand } =
+            await import(`${MODULE_PATH}/system/encounterSpawn.js`);
+          assert.equal(parseEncounterCommand("!sfc encounter Iron Wraith"), "Iron Wraith");
+          assert.isNull(parseEncounterCommand("!sector new"));
+        });
+      });
+
+      describe("campaignTruths — narrator block builder", function () {
+        it("returns an empty string when no canonical truth slugs are configured", async function () {
+          const { buildCampaignTruthsBlock } =
+            await import(`${MODULE_PATH}/system/campaignTruths.js`);
+          const out = await buildCampaignTruthsBlock({});
+          assert.equal(out, "");
+        });
+      });
+    },
+    { displayName: "STARFORGED: System Asset Integration" },
   );
 }

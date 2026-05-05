@@ -25,6 +25,7 @@ import { getShip }        from '../entities/ship.js';
 import { getPlanet }      from '../entities/planet.js';
 import { getLocation }    from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
+import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -124,6 +125,10 @@ export async function narrateResolution(resolution, contextPacket, campaignState
 
   const entityCards = collectEntityCards(relevance.entityIds, relevance.entityTypes);
   const currentLocationCard = formatCurrentLocation(campaignState);
+  const campaignTruthsBlock = await buildCampaignTruthsBlock(campaignState).catch(err => {
+    console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
+    return '';
+  });
 
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, recapContext,
@@ -132,6 +137,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       entityCards,
       currentLocationCard,
       oracleSeeds:         resolution.oracleSeeds ?? null,
+      campaignTruthsBlock,
     },
   );
   const userMessage  = buildNarratorUserMessage(

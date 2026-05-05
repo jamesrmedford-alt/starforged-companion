@@ -268,6 +268,7 @@ export function resolveNarrationPerspective(setting) {
  * @param {Array}  [extras.entityCards]        — Pre-formatted entity card strings (from formatEntityCard)
  * @param {string} [extras.currentLocationCard]— Pre-formatted current location card
  * @param {Object} [extras.oracleSeeds]        — { results, names, context } per scope §7
+ * @param {string} [extras.campaignTruthsBlock]— Pre-built `<campaign_truths>` block from system asset integration Phase 8
  * @returns {string}
  */
 export function buildNarratorSystemPrompt(
@@ -289,6 +290,7 @@ export function buildNarratorSystemPrompt(
     entityCards          = [],
     currentLocationCard  = '',
     oracleSeeds          = null,
+    campaignTruthsBlock  = '',
   } = extras ?? {};
 
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective);
@@ -340,6 +342,11 @@ export function buildNarratorSystemPrompt(
   // [4] World truths
   const worldTruths = buildWorldTruthsBlock(campaignState);
   if (worldTruths) parts.push(worldTruths);
+
+  // [4a] Campaign truths — canonical setting-truth digest from foundry-ironsworn
+  if (typeof campaignTruthsBlock === 'string' && campaignTruthsBlock.trim()) {
+    parts.push(campaignTruthsBlock.trim());
+  }
 
   // [5] Current location card — always injected when set
   if (currentLocationCard?.trim()) {
