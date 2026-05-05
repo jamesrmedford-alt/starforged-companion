@@ -218,6 +218,29 @@ of these require.
 
 ---
 
+## Sector background art storage: worlds/{worldId}/scenes/
+
+**Decision:** Sector background images are uploaded to `worlds/{worldId}/scenes/`
+using `foundry.applications.apps.FilePicker.implementation.upload()`. The path
+is constructed at upload time from `game.world.id`.
+
+**Reason:** The previous path (`modules/starforged-companion/art/`) lives inside
+the module folder. Foundry's module installer wipes that folder on every module
+update or reinstall, destroying all generated backgrounds. The world's own
+`worlds/{worldId}/scenes/` directory is created by Foundry when the world is
+created, persists across module updates and reinstalls, and is included in
+Foundry's world export/backup. No custom folder needs to be created.
+
+**Side-effects:**
+- Foundry no longer shows the "unsafe module folder" warning for uploaded art.
+- Sector backgrounds are backed up with the world via Foundry's world export.
+- Entity portraits are unaffected — they continue to use base64 flag storage.
+
+**FilePicker namespace:** `foundry.applications.apps.FilePicker.implementation`
+(the v13 non-deprecated form). The bare global `FilePicker` is deprecated in v13.
+
+---
+
 ## Narrator tone and perspective
 
 **Tone: wry** — knowing and slightly sardonic, aware of consequence without
