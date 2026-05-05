@@ -254,3 +254,106 @@ describe('buildMischiefFraming', () => {
     expect(buildMischiefFraming('lawful', NARRATION_AUTODOC)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 9. Coverage gaps — pickBalancedAside category branch
+//    'adventure' is not in categoryAsides, so existing tests miss the
+//    truthy categoryAsides[category] arm. Math.random() ≥ 0.5 also forces
+//    the function past the stat-aside short-circuit at line 251.
+// ---------------------------------------------------------------------------
+
+describe('pickBalancedAside — category aside branch', () => {
+  it('returns a category aside when stat-aside is skipped and category matches', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99); // skip statAsides bucket
+    const aside = buildMischiefAside('whatever', 'endure_harm', 'wits', 'balanced');
+    // endure_harm → category 'suffer' → categoryAsides.suffer is defined
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+    vi.restoreAllMocks();
+  });
+
+  it('returns the generic fallback when category is not in categoryAsides', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99); // skip statAsides
+    const aside = buildMischiefAside('whatever', 'face_danger', 'wits', 'balanced');
+    // face_danger → category 'adventure' (NOT in categoryAsides) → falls to generic
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+    vi.restoreAllMocks();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Coverage gaps — pickChaoticAside regex and stat-fallback branches
+// ---------------------------------------------------------------------------
+
+describe('pickChaoticAside — regex and fallback branches', () => {
+  it('returns a fight aside for combat narration on a non-combat move', () => {
+    // gather_information NOT in moveAsides; category 'adventure' (≠ 'combat')
+    const aside = buildMischiefAside('I attack the bandits with a punch', 'gather_information', 'wits', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('returns a diplomacy aside for social narration on a non-adventure move', () => {
+    // sojourn NOT in moveAsides; category 'recover' (≠ 'adventure')
+    const aside = buildMischiefAside('I ask them to convince the captain', 'sojourn', 'heart', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('returns a tech aside for technical narration on a non-recover move', () => {
+    // gather_information NOT in moveAsides; category 'adventure' (≠ 'recover')
+    const aside = buildMischiefAside('I fix the system console', 'gather_information', 'wits', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('returns a caution aside for cautious narration', () => {
+    // gather_information NOT in moveAsides; narration matches careful regex
+    const aside = buildMischiefAside('I sneak past quietly', 'gather_information', 'shadow', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('falls through to chaoticStatAsides when nothing else matches', () => {
+    // gather_information NOT in moveAsides; bland narration with no regex matches;
+    // 'edge' IS in chaoticStatAsides
+    const aside = buildMischiefAside('something neutral happens', 'gather_information', 'edge', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('falls through to the absolute fallback when stat is not a chaoticStatAside key', () => {
+    // 'health' is not in chaoticStatAsides — exercises the final pick() at lines 359-369
+    const aside = buildMischiefAside('something neutral happens', 'gather_information', 'health', 'chaotic');
+    expect(typeof aside).toBe('string');
+    expect(aside.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Coverage gaps — selectChaoticHeuristics narration buckets
+//    Existing chaotic-framing tests use NARRATION_AUTODOC (no keyword
+//    matches) and NARRATION_REPAIR (technical only). These exercise the
+//    combat / social / cautious buckets that are otherwise untouched.
+// ---------------------------------------------------------------------------
+
+describe('buildMischiefFraming — chaotic heuristics branches', () => {
+  it('builds chaotic framing for combat-flavoured narration', () => {
+    const f = buildMischiefFraming('chaotic', 'I shoot at the patrol and punch through');
+    expect(typeof f).toBe('string');
+    expect(f.length).toBeGreaterThan(0);
+  });
+
+  it('builds chaotic framing for social-flavoured narration', () => {
+    const f = buildMischiefFraming('chaotic', 'I talk to the captain and try to convince her');
+    expect(typeof f).toBe('string');
+    expect(f.length).toBeGreaterThan(0);
+  });
+
+  it('builds chaotic framing for cautious-flavoured narration', () => {
+    const f = buildMischiefFraming('chaotic', 'I move slowly and check the next corner carefully');
+    expect(typeof f).toBe('string');
+    expect(f.length).toBeGreaterThan(0);
+  });
+});

@@ -333,3 +333,69 @@ describe('updateChronicleEntry', () => {
     expect(unchanged[0].text).toBe('Original.');
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error-path coverage for catch blocks in
+//   getOrCreateChronicleJournal (console.error)
+//   getContextCount             (console.warn)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('error path coverage', () => {
+  it('addChronicleEntry returns silently when JournalEntry.create throws', async () => {
+    setupActor();
+    expectConsoleError(/failed to create chronicle journal/i);
+
+    JournalEntry.create = async () => { throw new Error('DB write failure'); };
+
+    await expect(
+      addChronicleEntry(ACTOR_ID, { type: 'annotation', text: 'Test.' })
+    ).resolves.toBeUndefined();
+  });
+
+  it('getChronicleForContext defaults to 5 recent entries when settings.get throws', async () => {
+    setupActor();
+    const entries = [];
+    for (let i = 1; i <= 8; i++) {
+      entries.push({
+        id: `e${i}`, type: 'annotation', text: `Entry ${i}.`,
+        timestamp: `2024-01-0${i}T00:00:00Z`, pinned: false,
+      });
+    }
+    setupExistingJournal(ACTOR_NAME, entries);
+
+    const originalGet = game.settings.get;
+    game.settings.get = () => { throw new Error('settings unavailable'); };
+
+    const ctx = await getChronicleForContext(ACTOR_ID);
+    expect(ctx.recent).toHaveLength(5);
+
+    game.settings.get = originalGet;
+  });
+
+  it('uses cached summary when present on the first entry', async () => {
+    setupActor();
+    const entries = [
+      { id: 'e1', type: 'annotation', text: 'first',  timestamp: '2024-01-01T00:00:00Z', pinned: false, _cachedSummary: 'Pre-built summary text.' },
+      { id: 'e2', type: 'annotation', text: 'second', timestamp: '2024-01-02T00:00:00Z', pinned: false },
+    ];
+    setupExistingJournal(ACTOR_NAME, entries);
+
+    const ctx = await getChronicleForContext(ACTOR_ID);
+    expect(ctx.summary).toBe('Pre-built summary text.');
+  });
+
+  it('builds entry with default fields when omitted (?? branches)', async () => {
+    setupActor();
+    setupExistingJournal(ACTOR_NAME);
+
+    // Add an entry providing only `type`; text/moveId/sessionId/automated default
+    await addChronicleEntry(ACTOR_ID, { type: 'annotation' });
+
+    const updated = await getChronicleEntries(ACTOR_ID);
+    expect(updated[0].text).toBe('');
+    expect(updated[0].moveId).toBeNull();
+    expect(updated[0].sessionId).toBe('');
+    expect(updated[0].automated).toBe(false);
+  });
+});
