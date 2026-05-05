@@ -32,6 +32,7 @@ For detail on any scope, open the linked document.
 | [API Key Privacy](api-key-privacy-scope.md) | ✅ COMPLETE | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
 | [Sector Creator](sector-creator-scope.md) | ✅ COMPLETE | 11-step guided sector generation following Starforged rulebook (pp. 114–127); SECTOR_TROUBLE table, settlement/planet/connection/map generation | — | Sector Creator Enhanced |
 | [Sector Creator Enhanced](sector-creator-enhanced-scope.md) | ✅ COMPLETE | DALL-E 3 background art per region, Foundry Scene creation with Note pins and Drawing passages, narrator journal stubs | Sector Creator | — |
+| [System Asset Integration](system-asset-integration-scope.md) | 📋 PLANNED | Reuse foundry-ironsworn art (starships, locations, asset/oracle/stat icons), compendium content (canonical moves, oracles, encounters, truths), and localisation strings; nine phases sequenced low-risk first | Ironsworn API | — |
 ---
 
 ## Dependency graph
@@ -53,7 +54,9 @@ Narrator (✅)
 
 ## What to work on next
 
-All current scopes are complete. Possible next directions:
+- **System Asset Integration (📋 PLANNED)** — start with Phase 1 (centralise asset constants) + Phase 2 (i18n wrapper) + Phase 5 (canonical pack lookup) as one foundational PR. See [system-asset-integration-scope.md](system-asset-integration-scope.md).
+
+Other possible directions:
 
 - **Speech input polish** — push-to-talk reliability, dictation accuracy improvements.
 - **Sector Creator iteration** — e.g. richer narrator stubs, additional region templates, post-generation editing.
