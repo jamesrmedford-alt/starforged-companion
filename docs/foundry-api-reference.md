@@ -608,7 +608,7 @@ async function postCard(content, flags = {}) {
 ```js
 const scene = await Scene.create({
   name:            "Devil's Maw",
-  img:             "modules/starforged-companion/art/sector-abc123.png",  // path, not base64
+  background:      { src: "modules/starforged-companion/art/sector-abc123.png" },  // v13: background.src not img
   width:           1400,   // scene pixel width — should match image dimensions
   height:          1000,   // scene pixel height
   backgroundColor: "#000000",
@@ -691,10 +691,12 @@ await scene.createEmbeddedDocuments("Note", [
     x:          500,               // canvas pixel x position
     y:          300,               // canvas pixel y position
 
-    // Icon
-    icon:       "icons/svg/circle.svg",   // path to icon image
-    iconSize:   40,                        // icon size in pixels (default 40)
-    iconTint:   "#ffffff",                 // CSS color or null for no tint
+    // Icon — v13: moved to texture object
+    texture: {
+      src:  "icons/svg/circle.svg",   // path to icon image
+      tint: "#ffffff",                // CSS color or null for no tint
+    },
+    iconSize:   40,                   // icon size in pixels (default 40)
 
     // Label text shown below/above the pin
     text:       "Bleakhold Station",
@@ -891,7 +893,7 @@ const path = await uploadBase64Image(
 - `source: "data"` uploads to the Foundry user data folder — correct for module assets
 - `source: "public"` uploads to the public folder — not needed for module assets
 - `FilePicker.createDirectory()` throws if the directory already exists — always wrap in try/catch
-- The returned `result.path` is what goes into `scene.img` or `actor.img`
+- The returned `result.path` is what goes into `scene.background.src` or `actor.img`
 - **Requires GM permissions** — only call from contexts where `game.user.isGM` is true
 - The upload is a server-side operation; the Electron renderer makes an HTTP POST to
   the local Foundry server (not an external API — no proxy needed)
