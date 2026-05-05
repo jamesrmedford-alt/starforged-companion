@@ -840,6 +840,64 @@ await scene.createEmbeddedDocuments("Drawing", [
 
 ---
 
+## foundry-ironsworn system asset directories
+
+Confirmed static asset paths available from any module via server root. These
+files are part of the installed foundry-ironsworn system and do not require
+uploading — reference them directly in `texture.src`.
+
+### Planet globe tokens
+
+**Base path:** `systems/foundry-ironsworn/assets/planets/`  
+**Pattern:** `Starforged-Planet-Token-{Type}-01.webp`  
+**Do NOT apply `texture.tint`** — tokens are pre-coloured globe images.
+
+| Oracle result (`planet.type`) | Token filename |
+|-------------------------------|----------------|
+| `"Desert World"` | `Starforged-Planet-Token-Desert-01.webp` |
+| `"Furnace World"` | `Starforged-Planet-Token-Furnace-01.webp` |
+| `"Grave World"` | `Starforged-Planet-Token-Grave-01.webp` |
+| `"Ice World"` | `Starforged-Planet-Token-Ice-01.webp` |
+| `"Jovian World"` | `Starforged-Planet-Token-Jovian-01.webp` |
+| `"Jungle World"` | `Starforged-Planet-Token-Jungle-01.webp` |
+| `"Ocean World"` | `Starforged-Planet-Token-Ocean-01.webp` |
+| `"Rocky World"` | `Starforged-Planet-Token-Rocky-01.webp` |
+| `"Shattered World"` | `Starforged-Planet-Token-Shattered-01.webp` |
+| `"Vital World"` | `Starforged-Planet-Token-Vital-01.webp` |
+| `"Tainted World"` | no token — falls back to `icons/svg/circle.svg` |
+
+### Stellar object tokens
+
+**Base path:** `systems/foundry-ironsworn/assets/stellar-objects/`  
+**Pattern:** `Starforged-Stellar-Token-{Name}-01.webp`  
+**Do NOT apply `texture.tint`** — tokens are pre-coloured.
+
+| Oracle result (full string from `STELLAR_OBJECT` table) | Token filename |
+|---------------------------------------------------------|----------------|
+| `"Smoldering red star"` | `Starforged-Stellar-Token-Red-Star-01.webp` |
+| `"Glowing orange star"` | `Starforged-Stellar-Token-Orange-Star-01.webp` |
+| `"Burning yellow star"` | `Starforged-Stellar-Token-Yellow-Star-01.webp` |
+| `"Blazing blue star"` | `Starforged-Stellar-Token-Blue-Star-01.webp` |
+| `"Young star incubating in a molecular cloud"` | `Starforged-Stellar-Token-Star-In-Incubating-Cloud-01.webp` |
+| `"White dwarf shining with spectral light"` | `Starforged-Stellar-Token-White-Dwarf-01.webp` |
+| `"Corrupted star radiating with unnatural light"` | `Starforged-Stellar-Token-Corrupted-Star-01.webp` |
+| `"Neutron star surrounded by intense magnetic fields"` | `Starforged-Stellar-Token-Neutron-Star-01.webp` |
+| `"Two stars in close orbit connected by fiery tendrils of energy"` | `Starforged-Stellar-Token-Binary-Star-01.webp` |
+| `"Black hole allows nothing to escape—not even light"` | `Starforged-Stellar-Token-Black-Hole-01.webp` |
+| `"Hypergiant star generating turbulent solar winds"` | `Starforged-Stellar-Token-Hypergiant-01.webp` |
+| `"Unstable star showing signs of impending supernova"` | `Starforged-Stellar-Token-Unstable-Star-01.webp` |
+| `"Artificial star constructed by a long-dead civilization"` | no token — falls back to `icons/svg/sun.svg` |
+
+```js
+// Usage example — planet note icon (no tint)
+texture: { src: "systems/foundry-ironsworn/assets/planets/Starforged-Planet-Token-Jovian-01.webp" }
+
+// Usage example — stellar object note icon (no tint)
+texture: { src: "systems/foundry-ironsworn/assets/stellar-objects/Starforged-Stellar-Token-Black-Hole-01.webp" }
+```
+
+---
+
 ## FilePicker.upload
 
 **Official:** https://foundryvtt.com/api/classes/foundry.applications.apps.FilePicker.html  

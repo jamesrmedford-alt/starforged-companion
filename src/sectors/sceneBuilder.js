@@ -27,6 +27,9 @@ const SCENE_CONFIG = {
   padding:      0,     // no padding — image fills the canvas edge to edge
 };
 
+const PLANET_BASE  = "systems/foundry-ironsworn/assets/planets";
+const STELLAR_BASE = "systems/foundry-ironsworn/assets/stellar-objects";
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
@@ -74,13 +77,20 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
     },
   });
 
-  // Place Journal Note pins for each settlement
-  const settlements = sector.mapData?.settlements ?? [];
-  if (settlements.length) {
-    const noteData = settlements.map(s => {
+  // Build lookup from full settlement objects (which carry planet and stellar)
+  const fullSettlementById = Object.fromEntries(
+    (sector.settlements ?? []).map(s => [s.id, s])
+  );
+
+  // Place Journal Note pins for each settlement, plus planet and stellar notes
+  const mapSettlements = sector.mapData?.settlements ?? [];
+  if (mapSettlements.length) {
+    const noteData = [];
+
+    for (const s of mapSettlements) {
       const journal      = entityJournals?.[s.id] ?? null;
       const locationType = s.locationType ?? s.type;
-      return {
+      noteData.push({
         entryId:    journal?.id ?? null,
         x:          s.gridX * gridCellSize,
         y:          s.gridY * gridCellSize,
@@ -101,8 +111,52 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
             locationType,
           },
         },
-      };
-    });
+      });
+
+      const full = fullSettlementById[s.id];
+
+      // FIX 3: Planet note — offset (+70, +40) from settlement pin
+      if (full?.planet) {
+        noteData.push({
+          x:         (s.gridX * gridCellSize) + 70,
+          y:         (s.gridY * gridCellSize) + 40,
+          texture:   { src: iconForPlanetType(full.planet.type) },
+          iconSize:  52,
+          text:      full.planet.name,
+          fontSize:  18,
+          textColor: "#CCCCCC",
+          flags: {
+            [MODULE_ID]: {
+              sectorNote:   true,
+              planetNote:   true,
+              planetType:   full.planet.type,
+              settlementId: s.id,
+            },
+          },
+        });
+      }
+
+      // FIX 4: Stellar object note — offset (-60, +30) from settlement pin
+      if (full?.stellar) {
+        noteData.push({
+          x:         (s.gridX * gridCellSize) - 60,
+          y:         (s.gridY * gridCellSize) + 30,
+          texture:   { src: iconForStellarObject(full.stellar) },
+          iconSize:  44,
+          text:      full.stellar,
+          fontSize:  16,
+          textColor: "#DDDDDD",
+          flags: {
+            [MODULE_ID]: {
+              sectorNote:   true,
+              stellarNote:  true,
+              settlementId: s.id,
+            },
+          },
+        });
+      }
+    }
+
     await scene.createEmbeddedDocuments("Note", noteData, { render: false });
   }
 
@@ -111,24 +165,53 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
   if (passages.length) {
     const drawingData = passages
       .map(p => {
-        const from = settlements.find(s => s.id === p.fromId || String(s.id) === String(p.fromId));
+        const from = mapSettlements.find(s => s.id === p.fromId || String(s.id) === String(p.fromId));
         if (!from) return null;
 
-        const x1 = (from.gridX + 0.5) * gridCellSize;
-        const y1 = (from.gridY + 0.5) * gridCellSize;
+        // FIX 1: Use grid cell origin — no +0.5 centre offset
+        const fromX = from.gridX * gridCellSize;
+        const fromY = from.gridY * gridCellSize;
 
+        // FIX 2: Edge passages draw from settlement to nearest scene boundary
         if (p.toEdge) {
-          // Passage to the sector edge — draw a dashed line to the right edge
-          const x2 = SCENE_CONFIG.gridWidth * gridCellSize;
-          return makePassageLine(x1, y1, x2, y1, p, true);
+          const cx     = SCENE_CONFIG.sceneWidth  / 2;
+          const cy     = SCENE_CONFIG.sceneHeight / 2;
+          const dx     = fromX - cx;
+          const dy     = fromY - cy;
+          const scaleX = dx !== 0 ? (SCENE_CONFIG.sceneWidth  / 2) / Math.abs(dx) : Infinity;
+          const scaleY = dy !== 0 ? (SCENE_CONFIG.sceneHeight / 2) / Math.abs(dy) : Infinity;
+          const scale  = Math.min(scaleX, scaleY);
+          const edgeX  = cx + dx * scale;
+          const edgeY  = cy + dy * scale;
+          const ex     = edgeX - fromX;
+          const ey     = edgeY - fromY;
+          return {
+            x:           fromX,
+            y:           fromY,
+            shape: {
+              type:   "p",
+              width:  Math.max(Math.abs(ex), 1),
+              height: Math.max(Math.abs(ey), 1),
+              points: [0, 0, ex, ey],
+            },
+            strokeWidth: 1,
+            strokeColor: "#7EB8F7",
+            strokeAlpha: 0.4,
+            fillType:    0,
+            fillAlpha:   0,
+            hidden:      false,
+            flags: {
+              [MODULE_ID]: { sectorPassage: true, toEdge: true, fromId: p.fromId },
+            },
+          };
         }
 
-        const to = settlements.find(s => s.id === p.toId || String(s.id) === String(p.toId));
+        const to = mapSettlements.find(s => s.id === p.toId || String(s.id) === String(p.toId));
         if (!to) return null;
 
-        const x2 = (to.gridX + 0.5) * gridCellSize;
-        const y2 = (to.gridY + 0.5) * gridCellSize;
-        return makePassageLine(x1, y1, x2, y2, p, false);
+        const toX = to.gridX * gridCellSize;
+        const toY = to.gridY * gridCellSize;
+        return makePassageLine(fromX, fromY, toX, toY, p);
       })
       .filter(Boolean);
 
@@ -149,7 +232,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePassageLine(x1, y1, x2, y2, passage, _dashed) {
+function makePassageLine(x1, y1, x2, y2, passage) {
   // v13 BaseDrawing rejects shapes whose bounding box has zero width AND height
   // even when stroke is visible — so derive shape.width/shape.height from the
   // segment deltas. Math.max(..., 1) guards against degenerate same-point pairs.
@@ -172,10 +255,9 @@ function makePassageLine(x1, y1, x2, y2, passage, _dashed) {
     hidden:      false,
     flags: {
       [MODULE_ID]: {
-        passage: true,
-        fromId:  passage.fromId,
-        toId:    passage.toId ?? null,
-        toEdge:  passage.toEdge ?? false,
+        sectorPassage: true,
+        fromId: passage.fromId,
+        toId:   passage.toId ?? null,
       },
     },
   };
@@ -195,4 +277,61 @@ function tintForLocationType(locationType) {
     case "planetside": return "#8FCF7E";   // warm green — habitable world
     default:           return "#C4A45A";   // amber — isolated outpost
   }
+}
+
+// Planet type keys are the raw oracle result strings from PLANET_TYPE table
+// (e.g. "Desert World", "Jovian World"). Token files confirmed from
+// systems/foundry-ironsworn/assets/planets/ — do NOT apply texture.tint.
+function iconForPlanetType(type) {
+  const typeMap = {
+    "Desert World":    `${PLANET_BASE}/Starforged-Planet-Token-Desert-01.webp`,
+    "Furnace World":   `${PLANET_BASE}/Starforged-Planet-Token-Furnace-01.webp`,
+    "Grave World":     `${PLANET_BASE}/Starforged-Planet-Token-Grave-01.webp`,
+    "Ice World":       `${PLANET_BASE}/Starforged-Planet-Token-Ice-01.webp`,
+    "Jovian World":    `${PLANET_BASE}/Starforged-Planet-Token-Jovian-01.webp`,
+    "Jungle World":    `${PLANET_BASE}/Starforged-Planet-Token-Jungle-01.webp`,
+    "Ocean World":     `${PLANET_BASE}/Starforged-Planet-Token-Ocean-01.webp`,
+    "Rocky World":     `${PLANET_BASE}/Starforged-Planet-Token-Rocky-01.webp`,
+    "Shattered World": `${PLANET_BASE}/Starforged-Planet-Token-Shattered-01.webp`,
+    "Vital World":     `${PLANET_BASE}/Starforged-Planet-Token-Vital-01.webp`,
+    // "Tainted World" has no confirmed token in foundry-ironsworn assets
+  };
+  return typeMap[type] ?? "icons/svg/circle.svg";
+}
+
+// Oracle result strings are the full strings from the STELLAR_OBJECT table.
+// Token files confirmed from systems/foundry-ironsworn/assets/stellar-objects/
+// — do NOT apply texture.tint.
+function iconForStellarObject(oracleResult) {
+  const stellarMap = {
+    "Smoldering red star":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Red-Star-01.webp`,
+    "Glowing orange star":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Orange-Star-01.webp`,
+    "Burning yellow star":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Yellow-Star-01.webp`,
+    "Blazing blue star":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Blue-Star-01.webp`,
+    "Young star incubating in a molecular cloud":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Star-In-Incubating-Cloud-01.webp`,
+    "White dwarf shining with spectral light":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-White-Dwarf-01.webp`,
+    "Corrupted star radiating with unnatural light":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Corrupted-Star-01.webp`,
+    "Neutron star surrounded by intense magnetic fields":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Neutron-Star-01.webp`,
+    "Two stars in close orbit connected by fiery tendrils of energy":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Binary-Star-01.webp`,
+    "Black hole allows nothing to escape—not even light":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Black-Hole-01.webp`,
+    "Hypergiant star generating turbulent solar winds":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Hypergiant-01.webp`,
+    "Unstable star showing signs of impending supernova":
+      `${STELLAR_BASE}/Starforged-Stellar-Token-Unstable-Star-01.webp`,
+    // "Artificial star constructed by a long-dead civilization" has no confirmed token
+  };
+  const key = Object.keys(stellarMap).find(
+    k => k.toLowerCase() === oracleResult?.toLowerCase()
+  );
+  return key ? stellarMap[key] : "icons/svg/sun.svg";
 }
