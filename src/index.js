@@ -74,6 +74,11 @@ import {
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import {
+  isEncounterCommand,
+  parseEncounterCommand,
+  spawnEncounter,
+} from "./system/encounterSpawn.js";
+import {
   ClarificationDialog,
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
@@ -125,6 +130,21 @@ function registerCoreSettings() {
       dalle:     "DALL-E (OpenAI)",
     },
     default: "dalle",
+  });
+
+  game.settings.register(MODULE_ID, "locationArtSource", {
+    name:    "Location Background Art Source",
+    hint:    "Choose system-bundled location art (free) or DALL-E generation (paid). Auto prefers system art when available.",
+    scope:   "world",
+    config:  true,
+    type:    String,
+    choices: {
+      auto:  "Auto (system art first, DALL-E fallback)",
+      kirin: "System — illustrated (Kirin)",
+      rains: "System — photorealistic (Rains)",
+      dalle: "Always generate via DALL-E",
+    },
+    default: "auto",
   });
 
   game.settings.register(MODULE_ID, "sectorArtEnabled", {
@@ -286,6 +306,17 @@ function registerChatHook() {
     // !journal command — manual World Journal entry (intercept before move pipeline)
     if (isJournalCommand(message)) {
       await handleJournalCommand(message);
+      return;
+    }
+
+    // !sfc encounter command — spawn a canonical foundry-ironsworn encounter
+    if (isEncounterCommand(message)) {
+      const name = parseEncounterCommand(message.content);
+      if (name) {
+        await spawnEncounter(name).catch(err =>
+          console.error(`${MODULE_ID} | encounter spawn failed:`, err)
+        );
+      }
       return;
     }
 

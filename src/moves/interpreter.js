@@ -17,6 +17,7 @@
 import { MOVES, STATS } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
+import { getCanonicalMove } from "../system/ironswornPacks.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
@@ -185,28 +186,71 @@ function buildContextSummary(campaignState) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Build a canonical-move grounding block for inclusion in the interpreter
+ * user message. When the foundry-ironsworn `starforged-moves` compendium
+ * contains an Item matching `slug`, its description is wrapped in a
+ * `<canonical_move>...</canonical_move>` tag the model can ground against.
+ *
+ * Returns "" when the slug is missing, no system is installed, or the
+ * compendium document has no description text. Never throws.
+ *
+ * Exported for unit testing of the grounding logic.
+ *
+ * @param {string} slug
+ * @returns {Promise<string>}
+ */
+export async function buildCanonicalMoveBlock(slug) {
+  if (!slug) return "";
+  let doc = null;
+  try {
+    doc = await getCanonicalMove(slug);
+  } catch (err) {
+    console.warn(`starforged-companion | interpreter: getCanonicalMove(${slug}) failed:`, err);
+    return "";
+  }
+  if (!doc) return "";
+  const description =
+    doc.system?.description
+    ?? doc.system?.text
+    ?? doc.system?.Text?.text
+    ?? "";
+  if (!description) return "";
+  return `<canonical_move>\n${String(description).trim()}\n</canonical_move>`;
+}
+
+/**
  * Interpret player narration as a Starforged move.
  *
  * @param {string} narration       — raw player input (typed or transcribed)
  * @param {Object} options
- * @param {Object} options.campaignState  — CampaignStateSchema
- * @param {string} options.mischiefLevel  — "serious" | "balanced" | "chaotic"
- * @param {string} options.apiKey         — Claude API key
+ * @param {Object} options.campaignState   — CampaignStateSchema
+ * @param {string} options.mischiefLevel   — "serious" | "balanced" | "chaotic"
+ * @param {string} options.apiKey          — Claude API key
+ * @param {string} [options.expectedMoveSlug] — When provided (e.g. on a
+ *   re-interpretation pass after the player overrode the move in the
+ *   confirmation dialog), the canonical move text from foundry-ironsworn
+ *   is injected as a `<canonical_move>` block to ground the response.
  * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
  */
-export async function interpretMove(narration, { campaignState, mischiefLevel, apiKey }) {
+export async function interpretMove(narration, {
+  campaignState, mischiefLevel, apiKey, expectedMoveSlug,
+}) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
 
   const systemPrompt = buildSystemPrompt();
   const mischiefFraming = buildMischiefFraming(mischiefLevel, narration);
   const contextSummary  = buildContextSummary(campaignState);
+  const canonicalBlock  = expectedMoveSlug
+    ? await buildCanonicalMoveBlock(expectedMoveSlug)
+    : "";
 
-  // User message: context + mischief framing + narration
+  // User message: context + mischief framing + canonical block + narration
   // Mischief framing is invisible to the player — it shapes how the model reads the input
   const userMessage = [
     contextSummary,
     mischiefFraming,
+    canonicalBlock,
     `Player narration: "${narration}"`,
   ].filter(Boolean).join("\n\n");
 

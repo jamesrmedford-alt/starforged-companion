@@ -16,6 +16,11 @@
  *   - createEmbeddedDocuments("Drawing", ...): docs/foundry-api-reference.md §DrawingDocument
  */
 
+import {
+  iconForPlanetType,
+  iconForStellarObject,
+} from "../system/ironswornAssets.js";
+
 const MODULE_ID = "starforged-companion";
 
 const SCENE_CONFIG = {
@@ -26,9 +31,6 @@ const SCENE_CONFIG = {
   sceneHeight:  1024,
   padding:      0,     // no padding — image fills the canvas edge to edge
 };
-
-const PLANET_BASE  = "systems/foundry-ironsworn/assets/planets";
-const STELLAR_BASE = "systems/foundry-ironsworn/assets/stellar-objects";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,59 +281,6 @@ function tintForLocationType(locationType) {
   }
 }
 
-// Planet type keys are the raw oracle result strings from PLANET_TYPE table
-// (e.g. "Desert World", "Jovian World"). Token files confirmed from
-// systems/foundry-ironsworn/assets/planets/ — do NOT apply texture.tint.
-function iconForPlanetType(type) {
-  const typeMap = {
-    "Desert World":    `${PLANET_BASE}/Starforged-Planet-Token-Desert-01.webp`,
-    "Furnace World":   `${PLANET_BASE}/Starforged-Planet-Token-Furnace-01.webp`,
-    "Grave World":     `${PLANET_BASE}/Starforged-Planet-Token-Grave-01.webp`,
-    "Ice World":       `${PLANET_BASE}/Starforged-Planet-Token-Ice-01.webp`,
-    "Jovian World":    `${PLANET_BASE}/Starforged-Planet-Token-Jovian-01.webp`,
-    "Jungle World":    `${PLANET_BASE}/Starforged-Planet-Token-Jungle-01.webp`,
-    "Ocean World":     `${PLANET_BASE}/Starforged-Planet-Token-Ocean-01.webp`,
-    "Rocky World":     `${PLANET_BASE}/Starforged-Planet-Token-Rocky-01.webp`,
-    "Shattered World": `${PLANET_BASE}/Starforged-Planet-Token-Shattered-01.webp`,
-    "Vital World":     `${PLANET_BASE}/Starforged-Planet-Token-Vital-01.webp`,
-    // "Tainted World" has no confirmed token in foundry-ironsworn assets
-  };
-  return typeMap[type] ?? "icons/svg/circle.svg";
-}
-
-// Oracle result strings are the full strings from the STELLAR_OBJECT table.
-// Token files confirmed from systems/foundry-ironsworn/assets/stellar-objects/
-// — do NOT apply texture.tint.
-function iconForStellarObject(oracleResult) {
-  const stellarMap = {
-    "Smoldering red star":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Red-Star-01.webp`,
-    "Glowing orange star":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Orange-Star-01.webp`,
-    "Burning yellow star":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Yellow-Star-01.webp`,
-    "Blazing blue star":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Blue-Star-01.webp`,
-    "Young star incubating in a molecular cloud":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Star-In-Incubating-Cloud-01.webp`,
-    "White dwarf shining with spectral light":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-White-Dwarf-01.webp`,
-    "Corrupted star radiating with unnatural light":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Corrupted-Star-01.webp`,
-    "Neutron star surrounded by intense magnetic fields":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Neutron-Star-01.webp`,
-    "Two stars in close orbit connected by fiery tendrils of energy":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Binary-Star-01.webp`,
-    "Black hole allows nothing to escape—not even light":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Black-Hole-01.webp`,
-    "Hypergiant star generating turbulent solar winds":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Hypergiant-01.webp`,
-    "Unstable star showing signs of impending supernova":
-      `${STELLAR_BASE}/Starforged-Stellar-Token-Unstable-Star-01.webp`,
-    // "Artificial star constructed by a long-dead civilization" has no confirmed token
-  };
-  const key = Object.keys(stellarMap).find(
-    k => k.toLowerCase() === oracleResult?.toLowerCase()
-  );
-  return key ? stellarMap[key] : "icons/svg/sun.svg";
-}
+// Planet and stellar icon lookups are sourced from the central system-asset
+// module so every consumer reads from one place if foundry-ironsworn relocates
+// its assets in a future version. See src/system/ironswornAssets.js.

@@ -6,6 +6,12 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: System asset integration — the companion now reuses foundry-ironsworn art, compendium content, and localisation. Centralised path constants in `src/system/ironswornAssets.js` (planet, stellar, starship, location, asset, oracle, stat icons); deterministic starship token picker; location-background resolver with three art sets (Kirin/Rains/Root) and a new `locationArtSource` world setting.
+- Added: Localisation wrapper (`src/system/i18n.js`) maps internal stat/meter/debility/move slugs to `IRONSWORN.*` keys, with English fallbacks for missing translations.
+- Added: Canonical compendium lookup (`src/system/ironswornPacks.js`) — null-safe helpers for moves, oracles, encounter actors, and setting truths, with per-session document caching.
+- Added: Move interpreter optionally injects the canonical move description from `starforged-moves` as a `<canonical_move>` block when an `expectedMoveSlug` is supplied.
+- Added: `!sfc encounter <name>` chat command spawns canonical encounters from `foe-actors-sf` — drops a token on the active scene for GMs, posts a stat-summary chat card otherwise.
+- Added: Narrator system prompt now includes a `<campaign_truths>` digest built from the foundry-ironsworn `starforged-truths` pack when `campaignState.canonicalTruthSlugs` is configured.
 - Fixed: Silent-failure audit — production code paths that previously swallowed errors with empty `try/catch` now log via `console.error`/`console.warn` or rethrow. Settings-write functions across `sectors`, `entities/*`, `art/storage`, and `truths` now propagate persistence failures instead of no-opping. Actor-bridge reads (`getPlayerActors`, `getActor`) no longer mask Foundry errors with empty defaults that previously matched empty test fixtures by accident.
 - Added: Test-suite console-error guard — `tests/setup.js` now spies on `console.error`/`console.warn` and fails any test that emits an unexpected error log. Tests that exercise legitimate error-handling paths can opt in via the new `expectConsoleError(/pattern/)` and `silenceConsoleErrors()` helpers.
 - Added: ESLint rule banning empty catch blocks across the module (`no-empty` with `allowEmptyCatch: false`, plus a `no-restricted-syntax` rule that catches comment-only catch bodies).
