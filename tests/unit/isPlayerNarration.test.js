@@ -41,9 +41,9 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('isPlayerNarration()', () => {
-  it('returns false for GM messages', () => {
+  it('returns true for GM messages — GM is a player in GM-less Ironsworn', () => {
     const msg = makeMessage({ author: { isGM: true } });
-    expect(isPlayerNarration(msg)).toBe(false);
+    expect(isPlayerNarration(msg)).toBe(true);
   });
 
   it('returns false for OOC messages (type "ooc")', () => {
@@ -123,12 +123,12 @@ describe('isSceneQuery()', () => {
     expect(isSceneQuery(msg)).toBe(true);
   });
 
-  it('returns false for "@scene" from GM', () => {
+  it('returns true for "@scene" from GM — GM is a player', () => {
     const msg = makeMessage({
       content: '@scene what do I see?',
       author:  { isGM: true },
     });
-    expect(isSceneQuery(msg)).toBe(false);
+    expect(isSceneQuery(msg)).toBe(true);
   });
 
   it('returns false for messages without @scene prefix', () => {

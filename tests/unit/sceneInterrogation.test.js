@@ -58,12 +58,12 @@ describe('isSceneQuery()', () => {
     expect(isSceneQuery(msg)).toBe(false);
   });
 
-  it('returns false for GM messages', () => {
+  it('returns true for GM @scene messages', () => {
     const msg = makeMessage({
       content: '@scene what lurks here?',
       author:  { isGM: true },
     });
-    expect(isSceneQuery(msg)).toBe(false);
+    expect(isSceneQuery(msg)).toBe(true);
   });
 
   it('returns false for "@" messages that are not "@scene"', () => {

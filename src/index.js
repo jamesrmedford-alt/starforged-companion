@@ -526,11 +526,6 @@ export function isPlayerNarration(message) {
   if (message.flags?.['foundry-ironsworn']) return false;
   if (message.speaker?.alias === 'Ironsworn') return false;
 
-  // message.author is correct for both v12 and v13.
-  // message.user was the old name — accessing it in v13 logs a deprecation warning.
-  const user = message.author ?? game.users?.get(message.user);
-  if (user?.isGM) return false;
-
   const text = message.content?.trim() ?? "";
 
   // No meaningful text content — system-generated empty or near-empty messages
@@ -551,15 +546,14 @@ export function isPlayerNarration(message) {
 
 /**
  * Determine whether a chat message is a scene interrogation query.
- * Scene queries start with "@scene" (case-insensitive), come from non-GM players,
- * and are not themselves scene response cards.
+ * Scene queries start with "@scene" (case-insensitive) and are not themselves
+ * scene response cards.
  */
 export function isSceneQuery(message) {
   const text = message.content?.trim() ?? "";
   if (!text.toLowerCase().startsWith("@scene")) return false;
   if (message.flags?.[MODULE_ID]?.sceneResponse) return false;
-  const user = message.author ?? game.users?.get(message.user);
-  return !user?.isGM;
+  return true;
 }
 
 /**

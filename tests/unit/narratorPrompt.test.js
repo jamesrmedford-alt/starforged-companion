@@ -183,16 +183,15 @@ describe('buildNarratorSystemPrompt()', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('resolveNarrationPerspective()', () => {
-  it('returns "second_person" for "auto" with 1 active non-GM user', () => {
-    mockUsers = [{ active: true, isGM: false }];
+  it('returns "second_person" for "auto" with 1 active user (even if GM)', () => {
+    mockUsers = [{ active: true, isGM: true }];
     expect(resolveNarrationPerspective('auto')).toBe('second_person');
   });
 
-  it('returns "third_person" for "auto" with 2+ active non-GM users', () => {
+  it('returns "third_person" for "auto" with 2+ active users (GM counts)', () => {
     mockUsers = [
       { active: true, isGM: false },
-      { active: true, isGM: false },
-      { active: true, isGM: true }, // GM ignored
+      { active: true, isGM: true },
     ];
     expect(resolveNarrationPerspective('auto')).toBe('third_person');
   });
