@@ -288,13 +288,35 @@ export function getTruth(campaignState, categoryId) {
 
 /**
  * Check whether world truths have been established for this campaign.
+ * Accepts truths set via the system dialog (worldTruthsSet flag) OR via
+ * the old module-built structured format (worldTruths with all 14 categories).
  *
  * @param {Object} campaignState
  * @returns {boolean}
  */
 export function hasTruths(campaignState) {
-  return !!campaignState.worldTruths &&
-    Object.keys(campaignState.worldTruths).length === TRUTH_CATEGORIES.length;
+  return !!(
+    campaignState.worldTruthsSet ||
+    (campaignState.worldTruths &&
+      Object.keys(campaignState.worldTruths).length === TRUTH_CATEGORIES.length)
+  );
+}
+
+/**
+ * Open the foundry-ironsworn system's World Truths dialog for Starforged.
+ * Requires the system to be active and CONFIG.IRONSWORN to be populated.
+ * Safe to call from any context — guards against missing CONFIG entry.
+ */
+export function openSystemTruthsDialog() {
+  const TruthsDialog = CONFIG.IRONSWORN?.applications?.SFSettingTruthsDialog;
+  if (!TruthsDialog) {
+    ui?.notifications?.warn(
+      "Starforged Companion: Could not find the World Truths dialog. " +
+        "Ensure the foundry-ironsworn system is active."
+    );
+    return;
+  }
+  new TruthsDialog("starforged").render(true);
 }
 
 

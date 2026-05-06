@@ -613,6 +613,7 @@ function factionLandscapeInContextEnabled() {
  * Summarised version: first 6 when full version exceeds token limit.
  */
 function buildWorldTruthsSection(campaignState) {
+  // Prefer our own structured truths if any entries have actual text content
   const truths  = campaignState.worldTruths ?? {};
   const entries = Object.entries(truths)
     .map(([key, v]) => {
@@ -624,21 +625,39 @@ function buildWorldTruthsSection(campaignState) {
     })
     .filter(Boolean);
 
-  if (!entries.length) {
-    return { content: "", summarized: false };
+  if (entries.length) {
+    const full = "## WORLD TRUTHS\n\n" + entries.join("\n");
+
+    if (estimateTokens(full) > 120) {
+      const summary =
+        "## WORLD TRUTHS (summary)\n\n" +
+        entries.slice(0, 6).join("\n") +
+        `\n…and ${entries.length - 6} more truths established.`;
+      return { content: summary, summarized: true };
+    }
+
+    return { content: full, summarized: false };
   }
 
-  const full = "## WORLD TRUTHS\n\n" + entries.join("\n");
-
-  if (estimateTokens(full) > 120) {
-    const summary =
-      "## WORLD TRUTHS (summary)\n\n" +
-      entries.slice(0, 6).join("\n") +
-      `\n…and ${entries.length - 6} more truths established.`;
-    return { content: summary, summarized: true };
+  // Fall back to the system's journal when truths were set via the system dialog
+  if (campaignState.worldTruthsJournalId) {
+    try {
+      const je   = game.journal?.get(campaignState.worldTruthsJournalId);
+      const page = je?.pages?.contents?.[0];
+      const html = page?.text?.content ?? "";
+      if (html) {
+        const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        return {
+          content: "## WORLD TRUTHS\n\n" + text.slice(0, 1500),
+          summarized: text.length > 1500,
+        };
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | assembler: failed to read worldTruths journal:`, err);
+    }
   }
 
-  return { content: full, summarized: false };
+  return { content: "", summarized: false };
 }
 
 /**

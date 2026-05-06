@@ -678,9 +678,11 @@ export const CampaignStateSchema = {
     language: "en-US",          // BCP 47 language tag passed to Web Speech API
   },
 
+  // World Truths state
+  worldTruthsSet:       false,  // true once truths established via any method
   // Foundry document references
   // v13 note: world truths journal uses JournalEntryPage documents inside a parent JournalEntry
-  worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID
+  worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
   worldTruthsPageId: null,      // JournalEntryPage Foundry ID
 
   currentSessionId:     "",    // managed by initSessionId() on ready hook
