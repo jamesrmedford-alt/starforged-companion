@@ -944,6 +944,22 @@ Hooks.once("ready", () => {
           console.warn(`${MODULE_ID} | truths setup card failed:`, err)
         );
       }
+
+      // Fallback — link the system's truths journal if truths were set before
+      // the createJournalEntryPage hook was wired, or if the ID was never stored.
+      if (!freshState.worldTruthsJournalId) {
+        const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
+        if (systemTitle) {
+          const truthsJournal = game.journal?.contents?.find(j => j.name === systemTitle);
+          if (truthsJournal) {
+            freshState.worldTruthsJournalId = truthsJournal.id;
+            freshState.worldTruthsSet       = true;
+            game.settings.set(MODULE_ID, "campaignState", freshState).catch(err =>
+              console.warn(`${MODULE_ID} | ready: fallback truths link failed:`, err)
+            );
+          }
+        }
+      }
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
@@ -1122,31 +1138,29 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
- * createJournalEntry — detect when the system's World Truths dialog saves truths.
+ * createJournalEntryPage — detect when the system's World Truths dialog saves truths.
  *
- * The system's saveTruths() creates a JournalEntry named with the i18n key
- * IRONSWORN.JOURNALENTRYPAGES.TypeTruth ("Setting Truths" in English) with a
- * single plain-text page of the same name, no module flags on either document,
- * and content consisting of <h2>-headed truth category sections.
+ * saveTruths() in sf-truths.vue creates the JournalEntry first, then the page in a
+ * separate call. The createJournalEntry hook fires before the page exists (pages.size
+ * is 0 at that point), so we listen on createJournalEntryPage instead — the parent
+ * journal is accessible as page.parent and is fully constructed.
  *
- * We use the combination of:
- *   - journal name matches the i18n key (locale-correct)
- *   - page has type "text" and no starforged-companion flags
- *   - content contains ≥2 <h2> elements (rules out accidental name collisions)
+ * The system journal name matches i18n key IRONSWORN.JOURNALENTRYPAGES.TypeTruth
+ * ("Setting Truths" in English). No module flags are written on either document.
+ * Content has ≥2 <h2> elements — one per truth category saved.
  */
-Hooks.on("createJournalEntry", async (entry) => {
+Hooks.on("createJournalEntryPage", async (page) => {
   if (!game.user.isGM) return;
 
-  // Must have exactly one page — system truths dialog creates exactly one
-  if (!entry.pages?.size || entry.pages.size !== 1) return;
-  const page = entry.pages.contents[0];
+  const entry = page.parent;
+  if (!entry) return;
 
-  // Page must be a plain text page with no flags from our module
+  // Page must be plain text with no flags from our module
   if (page.type !== "text") return;
   if (page.flags?.[MODULE_ID]) return;
   if (entry.flags?.[MODULE_ID]) return;
 
-  // Name must match the system's i18n key (locale-safe at runtime)
+  // Journal name must match the system's i18n key (locale-safe at runtime)
   const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
   if (!systemTitle || entry.name !== systemTitle) return;
 
@@ -1160,7 +1174,7 @@ Hooks.on("createJournalEntry", async (entry) => {
   campaignState.worldTruthsSet       = true;
   campaignState.worldTruthsJournalId = entry.id;
   await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
-    console.error(`${MODULE_ID} | createJournalEntry: failed to persist truths state:`, err)
+    console.error(`${MODULE_ID} | createJournalEntryPage: failed to persist truths state:`, err)
   );
 
   // Dismiss the setup notification card if it is still in chat

@@ -346,39 +346,17 @@ export async function generateLoreRecap(campaignState) {
     return null;
   }
 
-  // Build source text — prefer structured truths, fall back to system journal HTML
-  let truthsText = "";
-  const truthSet = campaignState.worldTruths;
-  if (truthSet && Object.keys(truthSet).length) {
-    truthsText = formatForContext(truthSet);
-  } else if (campaignState.worldTruthsJournalId) {
-    try {
-      const je   = game.journal?.get(campaignState.worldTruthsJournalId);
-      const page = je?.pages?.contents?.[0];
-      const html = page?.text?.content ?? "";
-      truthsText = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | lore: could not read truths journal:`, err);
-    }
-  }
-
-  if (!truthsText) {
-    ui?.notifications?.warn(
-      "Starforged Companion: No world truths established yet. Use !truths first."
-    );
-    return null;
-  }
-
   let recap = null;
   try {
-    recap = await callLoreRecapNarrator(truthsText, apiKey);
+    recap = await callLoreRecapNarrator(campaignState, apiKey);
   } catch (err) {
     console.error(`${MODULE_ID} | lore: callLoreRecapNarrator failed:`, err);
     ui?.notifications?.error("Starforged Companion: !lore failed — check console and API key.");
     return null;
   }
 
-  if (!recap?.trim()) return null;
+  if (!recap) return null;
+  if (!recap.trim()) return null;
 
   campaignState.loreRecap          = recap;
   campaignState.loreRecapSessionId = campaignState.currentSessionId ?? null;
@@ -407,7 +385,39 @@ export async function generateLoreRecap(campaignState) {
   return recap;
 }
 
-async function callLoreRecapNarrator(truthsText, apiKey) {
+async function callLoreRecapNarrator(campaignState, apiKey) {
+  let truthsContent = "";
+
+  // Try system journal first — it's the authoritative source when set via dialog
+  if (campaignState.worldTruthsJournalId) {
+    const entry = game.journal?.get(campaignState.worldTruthsJournalId);
+    const page  = entry?.pages?.contents?.[0];
+    const html  = page?.text?.content ?? "";
+    if (html.trim()) {
+      truthsContent = html
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+  }
+
+  // Fall back to structured format — but validate it has real content
+  if (!truthsContent && campaignState.worldTruths) {
+    const formatted = formatForContext(campaignState.worldTruths);
+    if (formatted && !formatted.includes("undefined")) {
+      truthsContent = formatted;
+    }
+  }
+
+  // Guard — nothing to work with
+  if (!truthsContent) {
+    ui?.notifications?.warn(
+      "Starforged Companion: World Truths content could not be read. " +
+      "Try setting truths again with !truths."
+    );
+    return null;
+  }
+
   const systemPrompt =
     "You are a world-weary spacer narrator — sardonic, laconic, and atmospheric. " +
     "When given a list of world truths, you summarise them as a brief in-world passage: " +
@@ -418,7 +428,7 @@ async function callLoreRecapNarrator(truthsText, apiKey) {
     model:      "claude-haiku-4-5-20251001",
     max_tokens: 300,
     system:     systemPrompt,
-    messages:   [{ role: "user", content: `Summarise these world truths:\n\n${truthsText}` }],
+    messages:   [{ role: "user", content: `Summarise these world truths:\n\n${truthsContent}` }],
   };
 
   const headers = {
