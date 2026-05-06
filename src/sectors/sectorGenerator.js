@@ -36,9 +36,9 @@ const MODULE_ID = "starforged-companion";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REGION_CONFIG = {
-  terminus: { settlements: 4, passages: 3, label: "Terminus" },
-  outlands: { settlements: 3, passages: 2, label: "Outlands" },
-  expanse:  { settlements: 2, passages: 1, label: "Expanse"  },
+  terminus: { settlements: 4, passages: 4, label: "Terminus" },
+  outlands: { settlements: 3, passages: 3, label: "Outlands" },
+  expanse:  { settlements: 2, passages: 2, label: "Expanse"  },
 };
 
 const POPULATION_TABLE_BY_REGION = {
