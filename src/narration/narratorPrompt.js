@@ -233,7 +233,7 @@ const PERSPECTIVE_DESCRIPTIONS = {
 export function resolveNarrationPerspective(setting) {
   if (setting !== 'auto') return setting;
   try {
-    const playerCount = game.users.filter(u => u.active && !u.isGM).length;
+    const playerCount = game.users.filter(u => u.active).length;
     return playerCount === 1 ? 'second_person' : 'third_person';
   } catch {
     return 'second_person';
