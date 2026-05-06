@@ -31,9 +31,11 @@
  */
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
+import { apiPost } from "../api-proxy.js";
 
-const MODULE_ID = "starforged-companion";
-const JOURNAL_NAME = "World Truths";
+const MODULE_ID      = "starforged-companion";
+const JOURNAL_NAME   = "World Truths";
+const ANTHROPIC_URL  = "https://api.anthropic.com/v1/messages";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,13 +290,178 @@ export function getTruth(campaignState, categoryId) {
 
 /**
  * Check whether world truths have been established for this campaign.
+ * Accepts truths set via the system dialog (worldTruthsSet flag) OR via
+ * the old module-built structured format (worldTruths with all 14 categories).
  *
  * @param {Object} campaignState
  * @returns {boolean}
  */
 export function hasTruths(campaignState) {
-  return !!campaignState.worldTruths &&
-    Object.keys(campaignState.worldTruths).length === TRUTH_CATEGORIES.length;
+  return !!(
+    campaignState.worldTruthsSet ||
+    (campaignState.worldTruths &&
+      Object.keys(campaignState.worldTruths).length === TRUTH_CATEGORIES.length)
+  );
+}
+
+/**
+ * Open the foundry-ironsworn system's World Truths dialog for Starforged.
+ * Requires the system to be active and CONFIG.IRONSWORN to be populated.
+ * Safe to call from any context — guards against missing CONFIG entry.
+ */
+export function openSystemTruthsDialog() {
+  const TruthsDialog = CONFIG.IRONSWORN?.applications?.SFSettingTruthsDialog;
+  if (!TruthsDialog) {
+    ui?.notifications?.warn(
+      "Starforged Companion: Could not find the World Truths dialog. " +
+        "Ensure the foundry-ironsworn system is active."
+    );
+    return;
+  }
+  new TruthsDialog("starforged").render(true);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LORE RECAP
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generate an atmospheric narrator lore recap from the campaign's world truths.
+ * Posts a chat card, writes a "The Story So Far" page to the World Truths journal,
+ * and persists the text in campaignState for context injection.
+ *
+ * @param {Object} campaignState — mutated in place (loreRecap, loreRecapSessionId)
+ * @returns {Promise<string|null>} recap text, or null on failure
+ */
+export async function generateLoreRecap(campaignState) {
+  let apiKey = "";
+  try {
+    apiKey = game.settings.get(MODULE_ID, "claudeApiKey");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | lore: settings read failed:`, err);
+  }
+  if (!apiKey) {
+    ui?.notifications?.warn("Starforged Companion: Claude API key required for !lore.");
+    return null;
+  }
+
+  // Build source text — prefer structured truths, fall back to system journal HTML
+  let truthsText = "";
+  const truthSet = campaignState.worldTruths;
+  if (truthSet && Object.keys(truthSet).length) {
+    truthsText = formatForContext(truthSet);
+  } else if (campaignState.worldTruthsJournalId) {
+    try {
+      const je   = game.journal?.get(campaignState.worldTruthsJournalId);
+      const page = je?.pages?.contents?.[0];
+      const html = page?.text?.content ?? "";
+      truthsText = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | lore: could not read truths journal:`, err);
+    }
+  }
+
+  if (!truthsText) {
+    ui?.notifications?.warn(
+      "Starforged Companion: No world truths established yet. Use !truths first."
+    );
+    return null;
+  }
+
+  let recap = null;
+  try {
+    recap = await callLoreRecapNarrator(truthsText, apiKey);
+  } catch (err) {
+    console.error(`${MODULE_ID} | lore: callLoreRecapNarrator failed:`, err);
+    ui?.notifications?.error("Starforged Companion: !lore failed — check console and API key.");
+    return null;
+  }
+
+  if (!recap?.trim()) return null;
+
+  campaignState.loreRecap          = recap;
+  campaignState.loreRecapSessionId = campaignState.currentSessionId ?? null;
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  } catch (err) {
+    console.error(`${MODULE_ID} | lore: failed to persist loreRecap:`, err);
+    throw err;
+  }
+
+  await writeLoreRecapToJournal(recap, campaignState).catch(err =>
+    console.warn(`${MODULE_ID} | lore: writeLoreRecapToJournal failed:`, err)
+  );
+
+  const paragraphs = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("");
+  await ChatMessage.create({
+    content: `
+      <div class="sf-lore-card">
+        <div class="sf-lore-label">◈ World Lore</div>
+        <div class="sf-lore-prose">${paragraphs}</div>
+      </div>
+    `.trim(),
+    flags: { [MODULE_ID]: { loreCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | lore: chat post failed:`, err));
+
+  return recap;
+}
+
+async function callLoreRecapNarrator(truthsText, apiKey) {
+  const systemPrompt =
+    "You are a world-weary spacer narrator — sardonic, laconic, and atmospheric. " +
+    "When given a list of world truths, you summarise them as a brief in-world passage: " +
+    "what this corner of the Forge is like, why it is the way it is, and what it costs to live here. " +
+    "4–6 sentences. No bullet points. No category labels. Pure prose.";
+
+  const body = {
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 300,
+    system:     systemPrompt,
+    messages:   [{ role: "user", content: `Summarise these world truths:\n\n${truthsText}` }],
+  };
+
+  const headers = {
+    "Content-Type":      "application/json",
+    "x-api-key":         apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+
+  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const text = (data.content ?? [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("");
+
+  if (!text) throw new Error("Lore narrator returned no content.");
+  return text;
+}
+
+async function writeLoreRecapToJournal(recap, campaignState) {
+  const PAGE_NAME = "The Story So Far";
+  const html      = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("\n");
+
+  async function upsertPage(je) {
+    const existing = je.pages?.contents?.find(p => p.name === PAGE_NAME);
+    if (existing) {
+      await existing.update({ "text.content": html });
+    } else {
+      await je.createEmbeddedDocuments("JournalEntryPage", [{
+        name: PAGE_NAME,
+        type: "text",
+        text: { content: html },
+      }]);
+    }
+  }
+
+  // Prefer the journal we already know about (system-created or ours)
+  if (campaignState.worldTruthsJournalId) {
+    const je = game.journal?.get(campaignState.worldTruthsJournalId);
+    if (je) { await upsertPage(je); return; }
+  }
+
+  const je = game.journal?.getName(JOURNAL_NAME);
+  if (je) await upsertPage(je);
 }
 
 

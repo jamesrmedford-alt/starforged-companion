@@ -27,6 +27,7 @@ export default [
         game:         "readonly",
         ui:           "readonly",
         Hooks:        "readonly",
+        CONFIG:       "readonly",
         CONST:        "readonly",
         foundry:      "readonly",
         ChatMessage:  "readonly",

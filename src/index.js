@@ -40,6 +40,7 @@ import { invalidateActorCache, recalculateMomentumBounds } from "./character/act
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
+import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -306,6 +307,29 @@ function registerChatHook() {
     // !journal command — manual World Journal entry (intercept before move pipeline)
     if (isJournalCommand(message)) {
       await handleJournalCommand(message);
+      return;
+    }
+
+    // !truths command — open the system World Truths dialog (GM only)
+    if (isTruthsCommand(message)) {
+      if (!game.user.isGM) {
+        ui.notifications.warn("!truths is GM-only.");
+        return;
+      }
+      openSystemTruthsDialog();
+      return;
+    }
+
+    // !lore command — generate and post narrator world truths recap (GM only)
+    if (isLoreCommand(message)) {
+      if (!game.user.isGM) {
+        ui.notifications.warn("!lore is GM-only.");
+        return;
+      }
+      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      await generateLoreRecap(campaignState).catch(err =>
+        console.error(`${MODULE_ID} | !lore failed:`, err)
+      );
       return;
     }
 
@@ -580,6 +604,24 @@ export function isAtCommand(message) {
 export function isJournalCommand(message) {
   const text = message.content?.trim() ?? "";
   return /^!journal\s/i.test(text);
+}
+
+/**
+ * Determine whether a chat message is a !truths command.
+ * GM-only — opens the foundry-ironsworn World Truths dialog.
+ */
+export function isTruthsCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return text.toLowerCase() === "!truths";
+}
+
+/**
+ * Determine whether a chat message is a !lore command.
+ * GM-only — generates an atmospheric narrator recap of the world truths.
+ */
+export function isLoreCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return text.toLowerCase() === "!lore";
 }
 
 /**
@@ -886,6 +928,22 @@ Hooks.once("ready", () => {
           console.error(`${MODULE_ID} | Auto-recap failed:`, err);
         });
       }
+
+      // Notify GM if no World Truths have been established yet
+      const freshState = game.settings.get(MODULE_ID, "campaignState");
+      if (!freshState.worldTruthsSet) {
+        ChatMessage.create({
+          content: `<div class="sf-card sf-card--setup">
+            <div class="sf-card-header">◈ Campaign Setup</div>
+            <p>No World Truths have been established for this campaign.</p>
+            <button data-action="openTruthsDialog">Set World Truths ▸</button>
+          </div>`,
+          flags:   { [MODULE_ID]: { setupCard: true } },
+          whisper: [game.user.id],
+        }).catch(err =>
+          console.warn(`${MODULE_ID} | truths setup card failed:`, err)
+        );
+      }
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
@@ -1002,6 +1060,14 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => {},
   };
+  tokenControls.tools.worldTruths = {
+    name:     "worldTruths",
+    title:    "World Truths",
+    icon:     "fas fa-scroll",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -1018,6 +1084,7 @@ Hooks.on("renderSceneControls", (app, html) => {
     sfSettings:     () => openSettingsPanel(),
     sectorCreator:  () => openSectorCreator(),
     worldJournal:   () => openWorldJournalPanel(),
+    worldTruths:    () => openSystemTruthsDialog(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {
@@ -1041,4 +1108,66 @@ Hooks.on("renderChatLog", (_chatLog, html, _data) => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     injectPushToTalkButton(html);
   }
+});
+
+/**
+ * renderChatMessage — wire the "Set World Truths" button on setup notification cards.
+ * The card is whispered to the GM on ready when no truths are established.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  if (!message.flags?.[MODULE_ID]?.setupCard) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  root?.querySelector('[data-action="openTruthsDialog"]')
+    ?.addEventListener("click", () => openSystemTruthsDialog());
+});
+
+/**
+ * createJournalEntry — detect when the system's World Truths dialog saves truths.
+ *
+ * The system's saveTruths() creates a JournalEntry named with the i18n key
+ * IRONSWORN.JOURNALENTRYPAGES.TypeTruth ("Setting Truths" in English) with a
+ * single plain-text page of the same name, no module flags on either document,
+ * and content consisting of <h2>-headed truth category sections.
+ *
+ * We use the combination of:
+ *   - journal name matches the i18n key (locale-correct)
+ *   - page has type "text" and no starforged-companion flags
+ *   - content contains ≥2 <h2> elements (rules out accidental name collisions)
+ */
+Hooks.on("createJournalEntry", async (entry) => {
+  if (!game.user.isGM) return;
+
+  // Must have exactly one page — system truths dialog creates exactly one
+  if (!entry.pages?.size || entry.pages.size !== 1) return;
+  const page = entry.pages.contents[0];
+
+  // Page must be a plain text page with no flags from our module
+  if (page.type !== "text") return;
+  if (page.flags?.[MODULE_ID]) return;
+  if (entry.flags?.[MODULE_ID]) return;
+
+  // Name must match the system's i18n key (locale-safe at runtime)
+  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
+  if (!systemTitle || entry.name !== systemTitle) return;
+
+  // Content must have ≥2 <h2> elements — a real truths journal has up to 14
+  const content = page.text?.content ?? "";
+  if ((content.match(/<h2/gi) ?? []).length < 2) return;
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  if (campaignState.worldTruthsSet) return; // Already recorded
+
+  campaignState.worldTruthsSet       = true;
+  campaignState.worldTruthsJournalId = entry.id;
+  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+    console.error(`${MODULE_ID} | createJournalEntry: failed to persist truths state:`, err)
+  );
+
+  // Dismiss the setup notification card if it is still in chat
+  const setupCard = game.messages?.contents?.find(
+    m => m.flags?.[MODULE_ID]?.setupCard
+  );
+  if (setupCard) await setupCard.delete().catch(() => {});
+
+  ui?.notifications?.info("Starforged Companion: World Truths recorded.");
 });
