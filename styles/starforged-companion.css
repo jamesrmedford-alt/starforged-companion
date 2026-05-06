@@ -1529,38 +1529,6 @@
   font-size:      0.92em;
 }
 
-.sf-wj-header {
-  border-bottom:  1px solid var(--color-border-light, #ddd);
-  padding-bottom: 0.5rem;
-  margin-bottom:  0.5rem;
-}
-
-.sf-wj-tabs {
-  display: flex;
-  gap:     4px;
-}
-
-.sf-wj-tab {
-  background:    transparent;
-  border:        1px solid var(--color-border-light, #ccc);
-  border-radius: 3px 3px 0 0;
-  border-bottom: none;
-  padding:       4px 12px;
-  font-size:     0.92em;
-  cursor:        pointer;
-  color:         var(--color-text-dark-secondary, #555);
-}
-
-.sf-wj-tab:hover {
-  background: rgba(124, 92, 191, 0.08);
-}
-
-.sf-wj-tab-active {
-  background:  var(--color-bg-option, #f6f4ee);
-  color:       var(--color-text-dark-primary, #111);
-  font-weight: 600;
-}
-
 .sf-wj-body {
   flex:        1 1 auto;
   overflow-y:  auto;
@@ -1727,21 +1695,96 @@
   border-top:    1px solid var(--color-border-light, #ddd);
   padding-top:   0.5rem;
   margin-top:    0.5rem;
-  text-align:    right;
 }
 
-.sf-wj-session-log-btn {
-  font-size:     0.85em;
+.sf-wj-link-grid {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   4px;
+}
+
+.sf-wj-link-btn {
+  font-size:     0.78em;
   background:    transparent;
   border:        1px solid var(--color-accent, #7c5cbf);
   color:         var(--color-accent, #7c5cbf);
   border-radius: 3px;
-  padding:       3px 10px;
+  padding:       3px 6px;
+  cursor:        pointer;
+  text-align:    center;
+}
+
+.sf-wj-link-btn:hover {
+  background: rgba(124, 92, 191, 0.1);
+}
+
+.sf-wj-empty-compact {
+  font-style: italic;
+  color:      var(--color-text-dark-secondary, #888);
+  font-size:  0.85em;
+  padding:    0.25rem 0 0.5rem;
+}
+
+.sf-wj-action-row {
+  display:     flex;
+  gap:         4px;
+  margin-top:  4px;
+  flex-wrap:   wrap;
+}
+
+.sf-wj-dismiss-btn,
+.sf-wj-review-btn,
+.sf-wj-override-btn {
+  background:    transparent;
+  border:        1px solid var(--color-border-light, #ccc);
+  color:         var(--color-text-dark-secondary, #555);
+  border-radius: 3px;
+  padding:       2px 8px;
+  font-size:     0.78em;
   cursor:        pointer;
 }
 
-.sf-wj-session-log-btn:hover {
-  background: rgba(124, 92, 191, 0.1);
+.sf-wj-override-btn {
+  border-color: #b3261e;
+  color:        #b3261e;
+}
+
+.sf-wj-review-btn:hover,
+.sf-wj-dismiss-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.sf-wj-override-btn:hover {
+  background: rgba(179, 38, 30, 0.08);
+}
+
+.sf-wj-contradiction-entry {
+  border-left: 3px solid #b3261e;
+}
+
+.sf-wj-threat-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+
+.sf-wj-threat-row {
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+  padding:     4px 6px;
+  border:      1px solid var(--color-border-light, #e2dfd6);
+  border-radius: 3px;
+  background:  var(--color-bg, #fffefb);
+}
+
+.sf-wj-threat-row .sf-wj-entry-title {
+  flex: 1 1 auto;
+  font-size: 0.92em;
+}
+
+.sf-wj-threat-row .sf-wj-severity-select {
+  margin-left: 0;
 }
 
 /* GM-only contradiction notification card */
