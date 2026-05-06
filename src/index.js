@@ -40,7 +40,7 @@ import { invalidateActorCache, recalculateMomentumBounds } from "./character/act
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -317,6 +317,19 @@ function registerChatHook() {
         return;
       }
       openSystemTruthsDialog();
+      return;
+    }
+
+    // !lore command — generate and post narrator world truths recap (GM only)
+    if (isLoreCommand(message)) {
+      if (!game.user.isGM) {
+        ui.notifications.warn("!lore is GM-only.");
+        return;
+      }
+      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      await generateLoreRecap(campaignState).catch(err =>
+        console.error(`${MODULE_ID} | !lore failed:`, err)
+      );
       return;
     }
 
@@ -600,6 +613,15 @@ export function isJournalCommand(message) {
 export function isTruthsCommand(message) {
   const text = message.content?.trim() ?? "";
   return text.toLowerCase() === "!truths";
+}
+
+/**
+ * Determine whether a chat message is a !lore command.
+ * GM-only — generates an atmospheric narrator recap of the world truths.
+ */
+export function isLoreCommand(message) {
+  const text = message.content?.trim() ?? "";
+  return text.toLowerCase() === "!lore";
 }
 
 /**

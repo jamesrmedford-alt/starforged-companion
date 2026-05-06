@@ -155,6 +155,9 @@ export async function assembleContextPacket(resolution, campaignState, options =
   // ── Section 12: Session notes (dropped first under budget pressure) ───────
   const sessionNotesContent = buildSessionNotesSection(sessionState);
 
+  // ── Lore recap (low priority — injected when available) ───────────────────
+  const loreRecapContent = buildLoreRecapSection(campaignState);
+
   // ── Section 13: Move outcome (exempt, always last) ────────────────────────
   const moveOutcomeContent = resolution?.loremasterContext ?? "";
 
@@ -192,6 +195,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
       factionLandscape:     { content: factionLandscapeContent,    priority: 8 },
       recentDiscoveries:    { content: recentDiscoveriesContent,   priority: 9 },
       sessionNotes:         { content: sessionNotesContent,        priority: 10 },
+      loreRecap:            { content: loreRecapContent,           priority: 11 },
     },
   });
 
@@ -225,6 +229,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     budgetResult.included.factionLandscape  ?? "",
     budgetResult.included.recentDiscoveries ?? "",
     budgetResult.included.recentOracles     ?? "",
+    budgetResult.included.loreRecap         ?? "",
     budgetResult.included.sessionNotes      ?? "",
     moveOutcomeContent,
   ].filter(Boolean);
@@ -326,6 +331,10 @@ export async function assembleContextPacket(resolution, campaignState, options =
       sessionNotes: {
         content:        sessionNotesContent,
         tokenEstimate:  estimateTokens(sessionNotesContent),
+      },
+      loreRecap: {
+        content:        loreRecapContent,
+        tokenEstimate:  estimateTokens(loreRecapContent),
       },
       moveOutcome: {
         content:          moveOutcomeContent,
@@ -819,6 +828,17 @@ function buildOraclesSection(campaignState) {
 function buildSessionNotesSection(sessionState) {
   if (!sessionState?.notes?.trim()) return "";
   return `## SESSION NOTES\n\n${sessionState.notes.trim()}`;
+}
+
+/**
+ * Lore recap section.
+ * Atmospheric narrator summary of the world truths — lower priority than session notes,
+ * dropped first under token pressure. Truncated to 400 chars to keep it compact.
+ */
+function buildLoreRecapSection(campaignState) {
+  const recap = campaignState?.loreRecap?.trim();
+  if (!recap) return "";
+  return `## WORLD LORE\n\n${recap.slice(0, 400)}`;
 }
 
 

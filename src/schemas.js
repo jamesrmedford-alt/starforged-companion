@@ -684,6 +684,8 @@ export const CampaignStateSchema = {
   // v13 note: world truths journal uses JournalEntryPage documents inside a parent JournalEntry
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
   worldTruthsPageId: null,      // JournalEntryPage Foundry ID
+  loreRecap:          "",       // last generated lore recap text (for context injection)
+  loreRecapSessionId: null,     // session ID when loreRecap was last generated
 
   currentSessionId:     "",    // managed by initSessionId() on ready hook
   sessionNumber:        0,     // increments each new session
