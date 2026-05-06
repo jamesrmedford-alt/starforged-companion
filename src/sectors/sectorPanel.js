@@ -235,11 +235,9 @@ export class SectorCreatorApp extends ApplicationV2 {
       // entity description matches what the sector journal page shows.
       await applyStubsToSettlementEntities(entityData.settlements, stubs);
 
-      // Sector journal (needs stubs); scene (needs background + entity journals)
-      const [sectorJournal, scene] = await Promise.all([
-        createSectorJournal(this.#sector, stubs),
-        createSectorScene(this.#sector, backgroundPath, entityData.settlements),
-      ]);
+      // Sector journal (needs stubs); scene sequential after background resolves
+      const sectorJournal = await createSectorJournal(this.#sector, stubs);
+      const scene         = await createSectorScene(this.#sector, backgroundPath, entityData.settlements);
 
       const stored = await storeSector(this.#sector, {
         settlements:         entityData.settlements,
