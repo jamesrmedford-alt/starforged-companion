@@ -108,15 +108,15 @@ export class SectorCreatorApp extends ApplicationV2 {
           <div class="sf-region-choices">
             <button class="sf-region-btn" data-action="chooseRegion" data-region="terminus">
               <strong>Terminus</strong>
-              <span>4 settlements · 3 passages · Dense, well-charted</span>
+              <span>4 settlements · 4 passages · Dense, well-charted</span>
             </button>
             <button class="sf-region-btn" data-action="chooseRegion" data-region="outlands">
               <strong>Outlands</strong>
-              <span>3 settlements · 2 passages · Frontier, scattered</span>
+              <span>3 settlements · 3 passages · Frontier, scattered</span>
             </button>
             <button class="sf-region-btn" data-action="chooseRegion" data-region="expanse">
               <strong>Expanse</strong>
-              <span>2 settlements · 1 passage · Remote, uncharted</span>
+              <span>2 settlements · 2 passages · Remote, uncharted</span>
             </button>
           </div>
         </div>
@@ -235,11 +235,9 @@ export class SectorCreatorApp extends ApplicationV2 {
       // entity description matches what the sector journal page shows.
       await applyStubsToSettlementEntities(entityData.settlements, stubs);
 
-      // Sector journal (needs stubs); scene (needs background + entity journals)
-      const [sectorJournal, scene] = await Promise.all([
-        createSectorJournal(this.#sector, stubs),
-        createSectorScene(this.#sector, backgroundPath, entityData.settlements),
-      ]);
+      // Sector journal (needs stubs); scene sequential after background resolves
+      const sectorJournal = await createSectorJournal(this.#sector, stubs);
+      const scene         = await createSectorScene(this.#sector, backgroundPath, entityData.settlements);
 
       const stored = await storeSector(this.#sector, {
         settlements:         entityData.settlements,

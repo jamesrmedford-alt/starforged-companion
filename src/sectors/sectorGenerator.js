@@ -36,9 +36,9 @@ const MODULE_ID = "starforged-companion";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REGION_CONFIG = {
-  terminus: { settlements: 4, passages: 3, label: "Terminus" },
-  outlands: { settlements: 3, passages: 2, label: "Outlands" },
-  expanse:  { settlements: 2, passages: 1, label: "Expanse"  },
+  terminus: { settlements: 4, passages: 4, label: "Terminus" },
+  outlands: { settlements: 3, passages: 3, label: "Outlands" },
+  expanse:  { settlements: 2, passages: 2, label: "Expanse"  },
 };
 
 const POPULATION_TABLE_BY_REGION = {
@@ -433,8 +433,17 @@ export async function createSectorJournal(sector, stubs = {}) {
   try {
     const regionLabel = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
 
+    const sectorsFolder = game.folders?.find(
+      f => f.name === "Sectors" && f.type === "JournalEntry"
+    ) ?? await Folder.create({
+      name:  "Sectors",
+      type:  "JournalEntry",
+      color: "#4A6FA5",
+    });
+
     const journal = await JournalEntry.create({
-      name:  `${sector.name} — Sector Record`,
+      name:   `${sector.name} — Sector Record`,
+      folder: sectorsFolder.id,
       flags: {
         [MODULE_ID]: {
           sectorRecord: true,

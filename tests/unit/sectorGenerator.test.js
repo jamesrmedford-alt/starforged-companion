@@ -199,9 +199,9 @@ describe("generateSector('terminus')", () => {
     expect(sector.settlements).toHaveLength(4);
   });
 
-  it("produces 3 passages for terminus", () => {
+  it("produces 4 passages for terminus", () => {
     const sector = generateSector("terminus");
-    expect(sector.passages).toHaveLength(3);
+    expect(sector.passages).toHaveLength(4);
   });
 
   it("sector has a trouble string", () => {
@@ -234,9 +234,9 @@ describe("generateSector('outlands')", () => {
     expect(sector.settlements).toHaveLength(3);
   });
 
-  it("produces 2 passages for outlands", () => {
+  it("produces 3 passages for outlands", () => {
     const sector = generateSector("outlands");
-    expect(sector.passages).toHaveLength(2);
+    expect(sector.passages).toHaveLength(3);
   });
 });
 
@@ -246,9 +246,9 @@ describe("generateSector('expanse')", () => {
     expect(sector.settlements).toHaveLength(2);
   });
 
-  it("produces 1 passage for expanse", () => {
+  it("produces 2 passages for expanse", () => {
     const sector = generateSector("expanse");
-    expect(sector.passages).toHaveLength(1);
+    expect(sector.passages).toHaveLength(2);
   });
 });
 
