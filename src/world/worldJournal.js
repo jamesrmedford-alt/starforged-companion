@@ -107,7 +107,7 @@ export async function initWorldJournals() {
  * @param {string} title
  * @param {Object} entry — partial loreEntry (text, category, sessionId, …)
  * @param {Object} campaignState
- * @returns {Promise<Object|null>} — the persisted entry, or null on failure
+ * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
 export async function recordLoreDiscovery(title, entry, campaignState) {
   const cleanTitle = title?.trim();
@@ -137,8 +137,8 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     updatedAt:        now,
   };
 
-  await upsertPage(journal, cleanTitle, FLAG_KEYS.lore, data);
-  return data;
+  const page = await upsertPage(journal, cleanTitle, FLAG_KEYS.lore, data);
+  return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
 }
 
 /**
@@ -151,7 +151,7 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
  * @param {string} name
  * @param {Object} entry
  * @param {Object} campaignState
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
 export async function recordThreat(name, entry, campaignState) {
   const cleanName = name?.trim();
@@ -188,8 +188,8 @@ export async function recordThreat(name, entry, campaignState) {
     updatedAt:   now,
   };
 
-  await upsertPage(journal, cleanName, FLAG_KEYS.threats, data);
-  return data;
+  const page = await upsertPage(journal, cleanName, FLAG_KEYS.threats, data);
+  return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
 }
 
 /**
@@ -200,7 +200,7 @@ export async function recordThreat(name, entry, campaignState) {
  * @param {string} name
  * @param {Object} entry — { attitude, summary, knownGoal, entityId, ... }
  * @param {Object} campaignState
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
 export async function recordFactionIntelligence(name, entry, campaignState) {
   const cleanName = name?.trim();
@@ -235,8 +235,8 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     updatedAt:    now,
   };
 
-  await upsertPage(journal, cleanName, FLAG_KEYS.factions, data);
-  return data;
+  const page = await upsertPage(journal, cleanName, FLAG_KEYS.factions, data);
+  return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
 }
 
 /**
@@ -246,7 +246,7 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
  * @param {string} name
  * @param {Object} entry — { type, description, status, summary, entityId, ... }
  * @param {Object} campaignState
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
 export async function recordLocation(name, entry, campaignState) {
   const cleanName = name?.trim();
@@ -279,8 +279,8 @@ export async function recordLocation(name, entry, campaignState) {
     updatedAt:    now,
   };
 
-  await upsertPage(journal, cleanName, FLAG_KEYS.locations, data);
-  return data;
+  const page = await upsertPage(journal, cleanName, FLAG_KEYS.locations, data);
+  return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
 }
 
 /**

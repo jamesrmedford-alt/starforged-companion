@@ -759,9 +759,9 @@ function registerEntityWorldJournalTests(quench) {
 
           // Entity record for "The Covenant"
           await createFaction({ name: "The Covenant", relationship: "antagonistic" }, state);
-          // WJ entry for "The Iron Compact" — no entity record
+          // WJ entry for "QUENCH TEST — The Iron Compact" — no entity record
           await recordFactionIntelligence(
-            "The Iron Compact",
+            "QUENCH TEST — The Iron Compact",
             { attitude: "neutral", summary: "first contact" },
             state,
           );
@@ -794,12 +794,13 @@ function registerEntityWorldJournalTests(quench) {
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
 
+          const newFactionName = "QUENCH TEST — Brand New Faction";
           await routeWorldJournalResults({
-            factionUpdates: [{ name: "Brand New Faction", attitude: "neutral", summary: "spotted" }],
+            factionUpdates: [{ name: newFactionName, attitude: "neutral", summary: "spotted" }],
           }, state);
 
           const updated = wj.getFactionLandscape(state);
-          const found = updated.find(f => f.factionName === "Brand New Faction");
+          const found = updated.find(f => f.factionName === newFactionName);
           assert.isObject(found, "Brand New Faction should exist as a WJ entry");
         });
 
@@ -810,7 +811,7 @@ function registerEntityWorldJournalTests(quench) {
           );
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Test lore — ${Date.now()}`;
+          const title = `QUENCH TEST — Test lore — ${Date.now()}`;
 
           await routeWorldJournalResults({
             lore: [{ title, text: "Discovered.", confirmed: true }],
@@ -827,7 +828,7 @@ function registerEntityWorldJournalTests(quench) {
           );
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const name = `Test threat — ${Date.now()}`;
+          const name = `QUENCH TEST — Test threat — ${Date.now()}`;
 
           await routeWorldJournalResults({
             threats: [{ name, severity: "active", summary: "immediate danger" }],
@@ -983,11 +984,12 @@ function registerWorldJournalTests(quench) {
   quench.registerBatch(
     "starforged-companion.worldJournal",
     (context) => {
-      const { describe, it, assert, before, after } = context;
+      const { describe, it, assert, before, after, afterEach } = context;
       const MODULE = "starforged-companion";
 
       let stateAtStart = null;
       const createdJournalIds = [];
+      const createdPageIds = [];
 
       before(async function () {
         if (!game.user.isGM) { this.skip(); return; }
@@ -1010,6 +1012,18 @@ function registerWorldJournalTests(quench) {
         }
       });
 
+      afterEach(async function () {
+        for (const { journalId, pageId } of createdPageIds) {
+          const journal = game.journal?.get(journalId);
+          const page    = journal?.pages?.get(pageId);
+          if (page?.delete) {
+            await page.delete().catch(err =>
+              console.warn(`${MODULE} | quench: WJ page cleanup failed (${pageId}):`, err));
+          }
+        }
+        createdPageIds.length = 0;
+      });
+
       describe("WJ CRUD — live Foundry", function () {
         it("initWorldJournals creates the folder and all category journals", async function () {
           this.timeout(20000);
@@ -1025,10 +1039,11 @@ function registerWorldJournalTests(quench) {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Quench confirmed lore — ${Date.now()}`;
+          const title = `QUENCH TEST — Quench confirmed lore — ${Date.now()}`;
 
           const parsed = wj.parseJournalCommand(`!journal lore "${title}" confirmed — quench-test`);
-          await wj.executeJournalCommand(parsed, state);
+          const result = await wj.executeJournalCommand(parsed, state);
+          if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
 
           const found = wj.getConfirmedLore(state).find(l => l.title === title);
           assert.isObject(found, "confirmed lore entry should exist");
@@ -1039,10 +1054,11 @@ function registerWorldJournalTests(quench) {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Soft fact ${Date.now()}`;
+          const title = `QUENCH TEST — Soft fact ${Date.now()}`;
 
-          await wj.recordLoreDiscovery(title,
+          const loreResult = await wj.recordLoreDiscovery(title,
             { text: "x", narratorAsserted: true, confirmed: false }, state);
+          if (loreResult?.pageId) createdPageIds.push({ journalId: loreResult.journalId, pageId: loreResult.pageId });
 
           const result = await wj.promoteLoreToConfirmed(title, state);
           assert.isObject(result);
@@ -1054,9 +1070,10 @@ function registerWorldJournalTests(quench) {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const name = `AI fragment ${Date.now()}`;
+          const name = `QUENCH TEST — AI fragment ${Date.now()}`;
 
-          await wj.recordThreat(name, { severity: "immediate", summary: "live" }, state);
+          const result = await wj.recordThreat(name, { severity: "immediate", summary: "live" }, state);
+          if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
           await wj.applyStateTransition(
             { entryType: "threat", name, change: "resolved" }, state,
           );
@@ -1071,9 +1088,10 @@ function registerWorldJournalTests(quench) {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Established ${Date.now()}`;
+          const title = `QUENCH TEST — Established ${Date.now()}`;
 
-          await wj.recordLoreDiscovery(title, { confirmed: true, text: "do not contradict" }, state);
+          const loreResult = await wj.recordLoreDiscovery(title, { confirmed: true, text: "do not contradict" }, state);
+          if (loreResult?.pageId) createdPageIds.push({ journalId: loreResult.journalId, pageId: loreResult.pageId });
           const before = game.messages.size;
 
           await wj.applyStateTransition(
@@ -1098,14 +1116,15 @@ function registerWorldJournalTests(quench) {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Annotatable lore ${Date.now()}`;
+          const title = `QUENCH TEST — Annotatable lore ${Date.now()}`;
 
-          await wj.recordLoreDiscovery(title, { confirmed: true, text: "x" }, state);
+          const loreResult = await wj.recordLoreDiscovery(title, { confirmed: true, text: "x" }, state);
+          if (loreResult?.pageId) createdPageIds.push({ journalId: loreResult.journalId, pageId: loreResult.pageId });
           await wj.annotateEntry("lore", title, "GM note", "Quench Reviewer", state);
 
           const journal = game.journal?.getName?.(wj.JOURNAL_NAMES.lore);
-          const page    = journal?.pages?.contents?.find(p => p.name === title);
-          const entry   = page?.flags?.[MODULE]?.[wj.FLAG_KEYS.lore];
+          const pg      = journal?.pages?.contents?.find(p => p.name === title);
+          const entry   = pg?.flags?.[MODULE]?.[wj.FLAG_KEYS.lore];
           const ann     = entry?.annotations ?? [];
           assert.isAtLeast(ann.length, 1);
           assert.equal(ann.at(-1).author, "Quench Reviewer");
@@ -1117,6 +1136,8 @@ function registerWorldJournalTests(quench) {
           const state = game.settings.get(MODULE, "campaignState");
           const before = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
           const page = await wj.writeSessionLog(state);
+          const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
+          if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
           assert.isObject(page);
           const after = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
           assert.isAtLeast(after, before + 1);
@@ -1129,9 +1150,10 @@ function registerWorldJournalTests(quench) {
           const wj   = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const title = `Section 3 confirmed ${Date.now()}`;
+          const title = `QUENCH TEST — Section 3 confirmed ${Date.now()}`;
 
-          await wj.recordLoreDiscovery(title, { confirmed: true, text: "section-3 test" }, state);
+          const result = await wj.recordLoreDiscovery(title, { confirmed: true, text: "section-3 test" }, state);
+          if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
 
           const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
           assert.match(packet.assembled, /ESTABLISHED LORE/);
@@ -1143,9 +1165,10 @@ function registerWorldJournalTests(quench) {
           const wj  = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const asm = await import(`${MODULE_PATH}/context/assembler.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const name = `Section 4 immediate ${Date.now()}`;
+          const name = `QUENCH TEST — Section 4 immediate ${Date.now()}`;
 
-          await wj.recordThreat(name, { severity: "immediate", summary: "section-4 test" }, state);
+          const result = await wj.recordThreat(name, { severity: "immediate", summary: "section-4 test" }, state);
+          if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
 
           const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
           assert.match(packet.assembled, /ACTIVE THREATS/);
@@ -1158,17 +1181,19 @@ function registerWorldJournalTests(quench) {
           const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
           const { createFaction } = await import(`${MODULE_PATH}/entities/faction.js`);
           const state = game.settings.get(MODULE, "campaignState");
-          const wjOnlyName = `WJ-only Faction ${Date.now()}`;
-          const entityName = `Entity-backed Faction ${Date.now()}`;
+          const wjOnlyName = `QUENCH TEST — WJ-only Faction ${Date.now()}`;
+          const entityName = `QUENCH TEST — Entity-backed Faction ${Date.now()}`;
 
           // Faction with no entity record — should appear in Section 9
-          await wj.recordFactionIntelligence(wjOnlyName,
+          const wjResult = await wj.recordFactionIntelligence(wjOnlyName,
             { attitude: "neutral", summary: "first contact" }, state);
+          if (wjResult?.pageId) createdPageIds.push({ journalId: wjResult.journalId, pageId: wjResult.pageId });
 
           // Faction WITH entity record — should NOT appear in Section 9
           await createFaction({ name: entityName, relationship: "neutral" }, state);
-          await wj.recordFactionIntelligence(entityName,
+          const entityResult = await wj.recordFactionIntelligence(entityName,
             { attitude: "neutral", summary: "via detection" }, state);
+          if (entityResult?.pageId) createdPageIds.push({ journalId: entityResult.journalId, pageId: entityResult.pageId });
           await game.settings.set(MODULE, "campaignState", state);
 
           const fresh  = game.settings.get(MODULE, "campaignState");
