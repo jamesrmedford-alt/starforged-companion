@@ -6,6 +6,7 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Changed: World Journal panel reduced to a compact action surface (~320×400). Tabs removed; the panel now shows only Pending Lore (Confirm/Dismiss), Contradictions (Review/Override/Dismiss when flagged), Active Threats (severity dropdown), and a footer of links that open the Lore, Threats, Factions, and Session Log JournalEntries in Foundry's native viewer for reading.
 - Added: System asset integration — the companion now reuses foundry-ironsworn art, compendium content, and localisation. Centralised path constants in `src/system/ironswornAssets.js` (planet, stellar, starship, location, asset, oracle, stat icons); deterministic starship token picker; location-background resolver with three art sets (Kirin/Rains/Root) and a new `locationArtSource` world setting.
 - Added: Localisation wrapper (`src/system/i18n.js`) maps internal stat/meter/debility/move slugs to `IRONSWORN.*` keys, with English fallbacks for missing translations.
 - Added: Canonical compendium lookup (`src/system/ironswornPacks.js`) — null-safe helpers for moves, oracles, encounter actors, and setting truths, with per-session document caching.
