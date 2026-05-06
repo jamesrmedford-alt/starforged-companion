@@ -433,8 +433,17 @@ export async function createSectorJournal(sector, stubs = {}) {
   try {
     const regionLabel = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
 
+    const sectorsFolder = game.folders?.find(
+      f => f.name === "Sectors" && f.type === "JournalEntry"
+    ) ?? await Folder.create({
+      name:  "Sectors",
+      type:  "JournalEntry",
+      color: "#4A6FA5",
+    });
+
     const journal = await JournalEntry.create({
-      name:  `${sector.name} — Sector Record`,
+      name:   `${sector.name} — Sector Record`,
+      folder: sectorsFolder.id,
       flags: {
         [MODULE_ID]: {
           sectorRecord: true,

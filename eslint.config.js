@@ -31,6 +31,7 @@ export default [
         foundry:      "readonly",
         ChatMessage:  "readonly",
         JournalEntry: "readonly",
+        Folder:       "readonly",
         Scene:        "readonly",
         FilePicker:   "readonly",
         Dialog:       "readonly",
