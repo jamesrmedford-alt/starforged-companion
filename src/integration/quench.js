@@ -95,13 +95,28 @@ function registerActorBridgeTests(quench) {
   quench.registerBatch(
     "starforged-companion.actorBridge",
     (context) => {
-      const { describe, it, assert, before } = context;
+      const { describe, it, assert, before, after } = context;
       let actor;
+      let meterSnapshot = null;
 
       before(async function () {
         actor = game.user.character;
         if (!actor) {
           console.warn("STARFORGED | No character assigned to user — actor bridge tests will be skipped");
+          return;
+        }
+        meterSnapshot = {
+          "system.momentum.value": actor.system.momentum.value,
+          "system.health.value":   actor.system.health.value,
+          "system.spirit.value":   actor.system.spirit.value,
+          "system.supply.value":   actor.system.supply.value,
+        };
+      });
+
+      after(async function () {
+        if (actor && meterSnapshot) {
+          await actor.update(meterSnapshot).catch(err =>
+            console.warn("starforged-companion | quench: actorBridge meter restore failed:", err));
         }
       });
 
@@ -166,9 +181,7 @@ function registerActorBridgeTests(quench) {
           await applyMeterChanges(actor, { momentum: -100 });
           assert.isAtLeast(actor.system.momentum.value, resetValue,
             "momentum should not go below momentumReset");
-
-          // Restore to 2 (initial value)
-          await actor.update({ "system.momentum.value": 2 });
+          // Meter restore is handled by the batch-level after() hook
         });
 
         it("batches multiple meter changes in one update call", async function () {
@@ -329,7 +342,19 @@ function registerNarratorTests(quench) {
   quench.registerBatch(
     "starforged-companion.narrator",
     (context) => {
-      const { describe, it, assert } = context;
+      const { describe, it, assert, after } = context;
+      const createdMessageIds = [];
+
+      after(async function () {
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) {
+            await msg.delete().catch(err =>
+              console.warn(`starforged-companion | quench: narrator message cleanup failed (${id}):`, err));
+          }
+        }
+        createdMessageIds.length = 0;
+      });
 
       // Sample resolution for narrator tests
       const sampleResolution = {
@@ -355,11 +380,14 @@ function registerNarratorTests(quench) {
 
           const { narrateResolution } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const campaignState = game.settings.get("starforged-companion", "campaignState");
-          const before = game.messages.size;
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
 
           await narrateResolution(sampleResolution, {}, campaignState);
 
-          assert.isAbove(game.messages.size, before,
+          const newMessages = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          newMessages.forEach(m => createdMessageIds.push(m.id));
+
+          assert.isAbove(newMessages.length, 0,
             "A narration card should have been posted to chat");
 
           const last = game.messages.contents.at(-1);
@@ -396,14 +424,17 @@ function registerNarratorTests(quench) {
 
           const { narrateResolution } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const campaignState = game.settings.get("starforged-companion", "campaignState");
-          const before = game.messages.size;
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
 
           await narrateResolution(sampleResolution, {}, campaignState);
 
           // Restore key
           await game.settings.set("starforged-companion", "claudeApiKey", realKey);
 
-          assert.isAbove(game.messages.size, before,
+          const newMessages = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          newMessages.forEach(m => createdMessageIds.push(m.id));
+
+          assert.isAbove(newMessages.length, 0,
             "A fallback card should still be posted even without an API key");
         });
       });
@@ -508,6 +539,14 @@ function registerSectorCreatorTests(quench) {
           }
           if (createdSectorId || createdSettlementIds.length || createdConnectionId) {
             await game.settings.set("starforged-companion", "campaignState", state);
+          }
+          // Delete entity journal documents (IDs were removed from campaignState above)
+          for (const id of [...createdSettlementIds, createdConnectionId].filter(Boolean)) {
+            const j = game.journal?.get(id);
+            if (j?.delete) {
+              await j.delete().catch(err =>
+                console.warn(`starforged-companion | quench: sector entity journal cleanup failed (${id}):`, err));
+            }
           }
         });
 
