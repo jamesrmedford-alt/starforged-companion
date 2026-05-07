@@ -278,7 +278,7 @@ export function isNewSessionStart(campaignState, gapHours) {
  *   8. narrateResolution() calls Claude directly, posts narration card
  *   9. persistResolution() applies meter/track changes to character and campaign state
  */
-function registerChatHook() {
+export function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
     // Scene query — intercept before move pipeline
     if (isSceneQuery(message)) {
@@ -362,10 +362,26 @@ function registerChatHook() {
 
     if (!isPlayerNarration(message)) return;
 
-    const narration     = message.content;
+    // Concurrency guard — one move at a time. A second narration that arrives
+    // while a pipeline is running would otherwise race on campaignState writes
+    // and post duplicate narration cards.
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    const apiKey        = game.settings.get(MODULE_ID, "claudeApiKey");
-    const dial          = getMischiefDial();
+    if (campaignState.pendingMove) {
+      ui?.notifications?.info(
+        "Starforged Companion: A move is already being resolved. " +
+        "Please wait for the current narration to complete.",
+        { permanent: false }
+      );
+      return;
+    }
+
+    // Claim the lock before any async work so other clients see it immediately.
+    campaignState.pendingMove = true;
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+
+    const narration = message.content;
+    const apiKey    = game.settings.get(MODULE_ID, "claudeApiKey");
+    const dial      = getMischiefDial();
 
     try {
       const interpretation = await interpretMove(narration, {
@@ -455,6 +471,15 @@ function registerChatHook() {
       ui.notifications.error(
         "Starforged Companion: Move interpretation failed. " +
         "Check your API key in module settings and try again."
+      );
+    } finally {
+      // Always release the lock, even if the pipeline threw. Re-read the
+      // latest state so we don't overwrite changes made during the pipeline
+      // (entity records, progress ticks, recap caches, etc).
+      const latestState = game.settings.get(MODULE_ID, "campaignState");
+      latestState.pendingMove = false;
+      await game.settings.set(MODULE_ID, "campaignState", latestState).catch(err =>
+        console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err)
       );
     }
   });
@@ -912,6 +937,13 @@ Hooks.once("ready", () => {
   // Session ID — GM writes to world-scoped settings; players read from state
   if (game.user.isGM) {
     const prevState = game.settings.get(MODULE_ID, "campaignState");
+
+    // Reset a stale pendingMove lock — left set if Foundry was closed mid-move.
+    if (prevState.pendingMove) {
+      prevState.pendingMove = false;
+      console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
+    }
+
     const wasNewSession = isNewSessionStart(prevState);
     const updated = initSessionId(prevState);
     game.settings.set(MODULE_ID, "campaignState", updated).then(async () => {

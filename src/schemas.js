@@ -649,6 +649,11 @@ export const CampaignStateSchema = {
   // Pipeline pauses until the clarification card is resolved.
   pendingClarification: null,
 
+  // Concurrency lock — true while the move interpretation pipeline is running.
+  // Prevents two narration messages from kicking off parallel pipelines that
+  // would race on campaignState writes. Cleared on ready if left stuck.
+  pendingMove: false,
+
   // Claude API configuration
   api: {
     // Primary model for move interpretation and oracle calls
