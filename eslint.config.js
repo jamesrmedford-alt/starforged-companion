@@ -39,9 +39,10 @@ export default [
         $:            "readonly",
 
         // ── Browser globals used in Foundry renderer context ─────────────
-        atob: "readonly",
-        Blob: "readonly",
-        File: "readonly",
+        atob:       "readonly",
+        Blob:       "readonly",
+        File:       "readonly",
+        MouseEvent: "readonly",
 
         // ── The Forge globals ────────────────────────────────────────────
         ForgeVTT:  "readonly",
