@@ -398,6 +398,15 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .trim();
+    } else if (entry && page) {
+      // Journal page exists but was saved with no truth selections recorded
+      // (async timing gap in TruthCategory.randomize() — model.valid stayed false)
+      ui?.notifications?.warn(
+        "Starforged Companion: World Truths dialog was saved but no truth " +
+        "selections were recorded. Re-open !truths, select or randomize each " +
+        "category, then click Save Your Truths."
+      );
+      return null;
     }
   }
 

@@ -1164,6 +1164,36 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
+ * createJournalEntry — capture worldTruthsJournalId the moment the system's
+ * "Setting Truths" journal is created, before the page and its content exist.
+ *
+ * saveTruths() in sf-truths.vue creates the JournalEntry first and the page
+ * in a separate async call. When the page content ends up empty (async timing
+ * gap in the TruthCategory.randomize() chain), the createJournalEntryPage hook
+ * below correctly rejects the empty page via its <h2> guard, leaving
+ * worldTruthsJournalId unset. This hook closes that gap by capturing the ID
+ * at journal creation time regardless of future page content.
+ *
+ * worldTruthsSet remains controlled by createJournalEntryPage and still
+ * requires ≥2 <h2> elements.
+ */
+Hooks.on("createJournalEntry", async (entry) => {
+  if (!game.user.isGM) return;
+  if (entry.flags?.[MODULE_ID]) return;
+
+  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
+  if (!systemTitle || entry.name !== systemTitle) return;
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  if (campaignState.worldTruthsSet) return; // Already recorded with real content
+
+  campaignState.worldTruthsJournalId = entry.id;
+  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+    console.error(`${MODULE_ID} | createJournalEntry: failed to persist journal id:`, err)
+  );
+});
+
+/**
  * createJournalEntryPage — detect when the system's World Truths dialog saves truths.
  *
  * saveTruths() in sf-truths.vue creates the JournalEntry first, then the page in a
