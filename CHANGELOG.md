@@ -6,6 +6,7 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: Quench integration test coverage extended to chat command routing, move pipeline confirmation/persistence, mischief dial, progress track and entity panel actions, character chronicle, settings panel, world truths, sector commands, encounter spawn, session lifecycle, safety extras, toolbar registration, and clarification edge cases. Adds 14 new batches alongside the existing 10, exercising user-facing surfaces previously untested in a live Foundry world.
 - Changed: World Journal panel reduced to a compact action surface (~320×400). Tabs removed; the panel now shows only Pending Lore (Confirm/Dismiss), Contradictions (Review/Override/Dismiss when flagged), Active Threats (severity dropdown), and a footer of links that open the Lore, Threats, Factions, and Session Log JournalEntries in Foundry's native viewer for reading.
 - Added: System asset integration — the companion now reuses foundry-ironsworn art, compendium content, and localisation. Centralised path constants in `src/system/ironswornAssets.js` (planet, stellar, starship, location, asset, oracle, stat icons); deterministic starship token picker; location-background resolver with three art sets (Kirin/Rains/Root) and a new `locationArtSource` world setting.
 - Added: Localisation wrapper (`src/system/i18n.js`) maps internal stat/meter/debility/move slugs to `IRONSWORN.*` keys, with English fallbacks for missing translations.
