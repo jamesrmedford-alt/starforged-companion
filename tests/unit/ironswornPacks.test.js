@@ -28,10 +28,10 @@ function makeFakePack({ id, entries }) {
 
 describe('Phase 5 — IS_PACKS constants', () => {
   it('exposes Starforged-prefixed pack IDs', () => {
-    expect(IS_PACKS.STARFORGED_MOVES).toBe('foundry-ironsworn.starforged-moves');
-    expect(IS_PACKS.STARFORGED_ORACLES).toBe('foundry-ironsworn.starforged-oracles');
-    expect(IS_PACKS.FOE_ACTORS_SF).toBe('foundry-ironsworn.foe-actors-sf');
-    expect(IS_PACKS.STARFORGED_TRUTHS).toBe('foundry-ironsworn.starforged-truths');
+    expect(IS_PACKS.STARFORGED_MOVES).toBe('foundry-ironsworn.starforgedmoves');
+    expect(IS_PACKS.STARFORGED_ORACLES).toBe('foundry-ironsworn.starforgedoracles');
+    expect(IS_PACKS.FOE_ACTORS_SF).toBe('foundry-ironsworn.foeactorssf');
+    expect(IS_PACKS.STARFORGED_TRUTHS).toBe('foundry-ironsworn.starforgedtruths');
   });
 });
 
