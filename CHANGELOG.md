@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: `!x` (X-Card) now flips `xCardActive` reliably regardless of how the chat message is created. The previous handler ran only on the typed-input `chatMessage` hook; messages created programmatically (or relayed in ways that bypass the typed input) reached `createChatMessage` without ever activating the X-Card. The `createChatMessage` hook now also recognises `!x` and calls `suppressScene()` so the flag flips on the GM client whichever path delivered the command.
+- Fixed: Move confirmation dialog accept button no longer races with the dialog's close path. Resolution is now gated by a single `#decided` flag so that an explicit accept cannot be overridden by a default reject from `close()`.
 - Fixed: In-game Help & Reference journal now shows correct `!` command prefixes (`!x`, `!recap`, `!journal`) — content was showing stale `/` prefixes from before the v13 command-prefix change
 - Fixed: `ensureHelpJournal` now detects content version changes and updates existing journals automatically — existing worlds receive corrected content on next world reload, no manual steps required
 - Removed: `packs/help.json` deleted — was a dead file with no module.json declaration and no build pipeline; `src/help/helpJournal.js` is the sole source of help content

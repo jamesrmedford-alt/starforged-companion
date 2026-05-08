@@ -1027,6 +1027,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
 
   #resolve = null;
   #interp  = null;
+  #decided = false;
 
   static DEFAULT_OPTIONS = {
     id:      `${MODULE_ID}-move-confirm`,
@@ -1111,21 +1112,31 @@ export class MoveConfirmDialog extends ApplicationV2 {
     content.append(result);
   }
 
-  async close(options) {
-    this.#resolve?.(false);
+  // Single resolution gate — the first call wins. Prevents close() from
+  // clobbering an explicit accept/reject when the framework runs both paths
+  // (action handler resolves true, then close() races to resolve false).
+  #settle(value) {
+    if (this.#decided) return;
+    this.#decided = true;
+    const r = this.#resolve;
     this.#resolve = null;
+    r?.(value);
+  }
+
+  async close(options) {
+    // External close (X button, escape, programmatic) is treated as cancel.
+    // No-op if the user already accepted or rejected.
+    this.#settle(false);
     return super.close(options);
   }
 
   static async #onAccept(event, target) {
-    this.#resolve?.(true);
-    this.#resolve = null;
+    this.#settle(true);
     this.close({ animate: false });
   }
 
   static async #onReject(event, target) {
-    this.#resolve?.(false);
-    this.#resolve = null;
+    this.#settle(false);
     this.close({ animate: false });
   }
 }
