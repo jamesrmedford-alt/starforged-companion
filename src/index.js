@@ -74,6 +74,7 @@ import {
 } from "./world/worldJournalPanel.js";
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
+import { suppressScene } from "./context/safety.js";
 import {
   isEncounterCommand,
   parseEncounterCommand,
@@ -295,6 +296,16 @@ export function registerChatHook() {
     // !sector command — intercept before move pipeline
     if (isSectorCommand(message)) {
       await handleSectorCommand(message);
+      return;
+    }
+
+    // !x command — X-Card. Suppresses the scene immediately. Any player can use
+    // it. The chatMessage hook (settingsPanel.js) handles typed input by
+    // cancelling the message before creation; this branch handles cases where
+    // !x reaches createChatMessage anyway (programmatic ChatMessage.create,
+    // socket-relayed posts, etc.) so the X-Card flag flips reliably.
+    if (isXCardCommand(message)) {
+      await handleXCardCommand(message);
       return;
     }
 
@@ -606,6 +617,19 @@ export function isSectorCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is an !x (X-Card) command.
+ * Matches "!x" exactly (trimmed, case-insensitive). Excludes module-posted
+ * X-Card cards so we never re-trigger on our own card.
+ */
+export function isXCardCommand(message) {
+  const text = message.content?.trim().toLowerCase() ?? "";
+  if (text !== "!x") return false;
+  if (message.flags?.[MODULE_ID]?.type === "xcard") return false;
+  if (message.flags?.[MODULE_ID]?.xcardCard) return false;
+  return true;
+}
+
+/**
  * Determine whether a chat message is an !at command.
  *   !at [name] — set current location by name (matches settlement/location/planet)
  *   !at        — clear current location
@@ -732,6 +756,41 @@ export function resolveCurrentLocationName(name, campaignState) {
       ?? candidates.find(c => c.lc.startsWith(target))
       ?? candidates.find(c => c.lc.includes(target))
       ?? null;
+}
+
+/**
+ * Handle the !x (X-Card) command. Activates suppressScene so the assembler
+ * blocks creative content for the rest of the scene, and posts a visible
+ * X-Card card so other players see the scene was paused.
+ *
+ * Runs on whichever client received the createChatMessage event. The setting
+ * write requires GM permissions; on player clients it logs a warning and the
+ * GM client's hook fires the actual persist. The card is posted from the
+ * client that called the handler — that's fine, ChatMessage.create relays.
+ */
+async function handleXCardCommand(_message) {
+  await suppressScene();
+
+  // Only one client should post the response card to avoid duplicates.
+  // Prefer the GM; if no GM is online, the message author's client posts it.
+  if (!game.user.isGM) return;
+
+  await ChatMessage.create({
+    content: `
+      <div class="starforged-move-card xcard-card">
+        <div class="move-header">
+          <span class="move-type">X-Card</span>
+        </div>
+        <div class="move-body">
+          <p class="xcard-message">
+            Scene paused. Current content is suppressed.<br>
+            The story will redirect at the next narration beat.
+          </p>
+        </div>
+      </div>
+    `.trim(),
+    flags: { [MODULE_ID]: { type: "xcard", xcardCard: true } },
+  });
 }
 
 /**
