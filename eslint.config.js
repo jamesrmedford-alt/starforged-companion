@@ -30,6 +30,7 @@ export default [
         CONFIG:       "readonly",
         CONST:        "readonly",
         foundry:      "readonly",
+        Actor:        "readonly",
         ChatMessage:  "readonly",
         JournalEntry: "readonly",
         Folder:       "readonly",

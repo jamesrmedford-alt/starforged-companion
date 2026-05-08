@@ -16,14 +16,14 @@
  */
 
 export const IS_PACKS = Object.freeze({
-  STARFORGED_MOVES:      "foundry-ironsworn.starforged-moves",
-  STARFORGED_ORACLES:    "foundry-ironsworn.starforged-oracles",
-  STARFORGED_TRUTHS:     "foundry-ironsworn.starforged-truths",
-  STARFORGED_ENCOUNTERS: "foundry-ironsworn.starforged-encounters",
-  STARFORGED_ASSETS:     "foundry-ironsworn.starforged-assets",
-  FOE_ACTORS_SF:         "foundry-ironsworn.foe-actors-sf",
-  IRONSWORN_MOVES:       "foundry-ironsworn.ironsworn-moves",
-  IRONSWORN_ORACLES:     "foundry-ironsworn.ironsworn-oracles",
+  STARFORGED_MOVES:      "foundry-ironsworn.starforgedmoves",
+  STARFORGED_ORACLES:    "foundry-ironsworn.starforgedoracles",
+  STARFORGED_TRUTHS:     "foundry-ironsworn.starforgedtruths",
+  STARFORGED_ENCOUNTERS: "foundry-ironsworn.starforgedencounters",
+  STARFORGED_ASSETS:     "foundry-ironsworn.starforgedassets",
+  FOE_ACTORS_SF:         "foundry-ironsworn.foeactorssf",
+  IRONSWORN_MOVES:       "foundry-ironsworn.ironswornmoves",
+  IRONSWORN_ORACLES:     "foundry-ironsworn.ironswornoracles",
 });
 
 const ALL_MOVE_PACKS = [

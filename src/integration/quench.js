@@ -209,9 +209,19 @@ function registerActorBridgeTests(quench) {
       let meterSnapshot = null;
 
       before(async function () {
-        actor = game.user.character;
+        actor = await Actor.create({
+          name: `QUENCH TEST Actor — ${Date.now()}`,
+          type: "character",
+          system: {
+            edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+            health:   { value: 5 },
+            spirit:   { value: 5 },
+            supply:   { value: 3 },
+            momentum: { value: 2, resetValue: 2 },
+          },
+        });
         if (!actor) {
-          console.warn("STARFORGED | No character assigned to user — actor bridge tests will be skipped");
+          console.warn("STARFORGED | Actor.create failed — actor bridge tests will be skipped");
           return;
         }
         meterSnapshot = {
@@ -227,6 +237,8 @@ function registerActorBridgeTests(quench) {
           await actor.update(meterSnapshot).catch(err =>
             console.warn("starforged-companion | quench: actorBridge meter restore failed:", err));
         }
+        if (actor?.delete) await actor.delete().catch(() => {});
+        actor = null;
       });
 
       describe("readCharacterSnapshot — confirms correct schema paths", function () {
@@ -624,7 +636,7 @@ function registerSectorCreatorTests(quench) {
   quench.registerBatch(
     "starforged-companion.sectorCreator",
     (context) => {
-      const { describe, it, assert, after } = context;
+      const { describe, it, assert, before, after } = context;
 
       describe("storeSector — live journal", function () {
         let createdSectorId     = null;
@@ -712,6 +724,27 @@ function registerSectorCreatorTests(quench) {
       });
 
       describe("assembler includes sector context", function () {
+        let seededSectorId = null;
+
+        before(async function () {
+          const { generateSector, storeSector } = await import(
+            `${MODULE_PATH}/sectors/sectorGenerator.js`
+          );
+          const state = game.settings.get("starforged-companion", "campaignState");
+          const sector = generateSector("expanse");
+          seededSectorId = sector.id;
+          await storeSector(sector, { settlements: {}, connectionJournalId: null }, state);
+        });
+
+        after(async function () {
+          if (!seededSectorId) return;
+          const state = game.settings.get("starforged-companion", "campaignState");
+          state.sectors = (state.sectors ?? []).filter(s => s.id !== seededSectorId);
+          if (state.activeSectorId === seededSectorId) state.activeSectorId = null;
+          await game.settings.set("starforged-companion", "campaignState", state);
+          seededSectorId = null;
+        });
+
         it("assembled packet contains 'ACTIVE SECTOR' when a sector is active", async function () {
           const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
           const state = game.settings.get("starforged-companion", "campaignState");
@@ -1411,7 +1444,7 @@ function registerSystemAssetTests(quench) {
           const { getCanonicalMove, _clearPackCache } =
             await import(`${MODULE_PATH}/system/ironswornPacks.js`);
           _clearPackCache();
-          if (!game.packs?.get?.("foundry-ironsworn.starforged-moves")) { this.skip(); return; }
+          if (!game.packs?.get?.("foundry-ironsworn.starforgedmoves")) { this.skip(); return; }
           const move = await getCanonicalMove("pay_the_price");
           if (!move) { this.skip(); return; } // pack present but slug not found
           assert.isObject(move, "pay_the_price should resolve to a Move document");
@@ -1422,7 +1455,7 @@ function registerSystemAssetTests(quench) {
           const { listCanonicalEncounters, _clearPackCache } =
             await import(`${MODULE_PATH}/system/ironswornPacks.js`);
           _clearPackCache();
-          if (!game.packs?.get?.("foundry-ironsworn.foe-actors-sf")) { this.skip(); return; }
+          if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
           const list = await listCanonicalEncounters();
           assert.isArray(list);
           assert.isAtLeast(list.length, 1, "at least one encounter should be indexed");
@@ -1583,7 +1616,7 @@ function registerChatCommandsTests(quench) {
       describe("!sfc encounter — passes name through to spawn", function () {
         it("!sfc encounter Bogfaller dispatches spawnEncounter (skips if pack absent)", async function () {
           this.timeout(15000);
-          if (!game.packs?.get?.("foundry-ironsworn.foe-actors-sf")) { this.skip(); return; }
+          if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
           const before = game.messages.size;
           await post("!sfc encounter Bogfaller");
           assert.isAbove(game.messages.size, before, "encounter dispatch should at least post a card");
@@ -1614,9 +1647,9 @@ function registerMovePipelineExtendedTests(quench) {
           if (m?.delete) await m.delete().catch(() => {});
         }
         cardIds.length = 0;
-        if (actor && actorSnap) {
-          await actor.update(actorSnap).catch(() => {});
-        }
+        if (actor?.delete) await actor.delete().catch(() => {});
+        actor = null;
+        actorSnap = null;
       });
 
       describe("confirmInterpretation — accept / reject", function () {
@@ -1669,23 +1702,31 @@ function registerMovePipelineExtendedTests(quench) {
         it("writes momentum delta from a resolution and updates the actor", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
-          actor = game.user.character;
+          actor = await Actor.create({
+            name: `QUENCH TEST Actor — ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+              health:   { value: 5 },
+              spirit:   { value: 5 },
+              supply:   { value: 3 },
+              momentum: { value: 2, resetValue: 2 },
+            },
+          });
           if (!actor) { this.skip(); return; }
-          actorSnap = {
-            "system.momentum.value": actor.system.momentum.value,
-            "system.health.value":   actor.system.health.value,
-            "system.spirit.value":   actor.system.spirit.value,
-          };
           const { persistResolution } = await import(
             `/modules/${MODULE_ID}/src/moves/persistResolution.js`);
           const state = game.settings.get(MODULE_ID, "campaignState");
           const beforeMomentum = actor.system.momentum.value;
-          await persistResolution({
-            _id: "quench-persist-1",
-            moveId: "face_danger", moveName: "Face Danger", statUsed: "wits",
-            outcome: "miss",
-            consequences: { meterChanges: { momentum: -1 } },
-          }, state);
+          await withTempSetting("campaignState", { ...state, activeCharacterId: actor.id }, async () => {
+            const freshState = game.settings.get(MODULE_ID, "campaignState");
+            await persistResolution({
+              _id: "quench-persist-1",
+              moveId: "face_danger", moveName: "Face Danger", statUsed: "wits",
+              outcome: "miss",
+              consequences: { momentumChange: -1 },
+            }, freshState);
+          });
           assert.equal(actor.system.momentum.value, beforeMomentum - 1,
             "momentum should decrement after persistResolution");
         });
@@ -1895,12 +1936,14 @@ function registerEntityPanelActionsTests(quench) {
         const { createConnection } = await import(
           `/modules/${MODULE_ID}/src/entities/connection.js`);
         const state = game.settings.get(MODULE_ID, "campaignState");
-        const journal = await createConnection({
+        await createConnection({
           name: `QUENCH TEST Connection ${Date.now()}`,
           role: "merchant",
           disposition: "neutral",
         }, state);
-        testJournalId = journal?.id ?? journal?.journalId ?? null;
+        // createConnection() returns the connection schema object (with _id), not the
+        // JournalEntry. The journal entry ID is pushed to campaignState.connectionIds.
+        testJournalId = state.connectionIds?.at(-1) ?? null;
         await game.settings.set(MODULE_ID, "campaignState", state);
 
         const ep = await import(`/modules/${MODULE_ID}/src/ui/entityPanel.js`);
@@ -1993,7 +2036,17 @@ function registerChronicleTests(quench) {
       const seededIds = [];
 
       before(async function () {
-        actor = game.user.character;
+        actor = await Actor.create({
+          name: `QUENCH TEST Actor — ${Date.now()}`,
+          type: "character",
+          system: {
+            edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+            health:   { value: 5 },
+            spirit:   { value: 5 },
+            supply:   { value: 3 },
+            momentum: { value: 2, resetValue: 2 },
+          },
+        });
         if (!actor) return;
         const { ChroniclePanelApp } = await import(
           `/modules/${MODULE_ID}/src/character/chroniclePanel.js`);
@@ -2003,9 +2056,9 @@ function registerChronicleTests(quench) {
 
       after(async function () {
         if (app?.close) await app.close().catch(() => {});
-        // Seeded chronicle entries are left in place — no public delete API
-        // is exported, and the volume is small enough not to skew context tests.
-        // Cleanup is a best-effort GM operation if needed via the panel UI.
+        if (actor?.delete) await actor.delete().catch(() => {});
+        actor = null;
+        app = null;
       });
 
       describe("addAnnotation — DOM click", function () {
@@ -2261,7 +2314,7 @@ function registerEncounterSpawnLiveTests(quench) {
       describe("spawnEncounter — known encounter (skips if pack absent)", function () {
         it("returns an actor when the canonical encounter exists", async function () {
           this.timeout(20000);
-          if (!game.packs?.get?.("foundry-ironsworn.foe-actors-sf")) { this.skip(); return; }
+          if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
           const { spawnEncounter } = await import(
             `/modules/${MODULE_ID}/src/system/encounterSpawn.js`);
           const out = await spawnEncounter("Bogfaller");
