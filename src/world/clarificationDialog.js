@@ -32,9 +32,19 @@ export class ClarificationDialog extends ApplicationV2 {
   #resolve = null;
   #options = [];
   #referenceType = 'none';
+  #decided = false;
 
+  // Most-recently-prompted instance, exposed so callers (and Quench tests)
+  // can locate the in-flight dialog without scanning foundry.applications.instances.
+  static #pending = null;
+  static get pending() { return ClarificationDialog.#pending; }
+
+  // No static `id` — each prompt() creates an instance with a unique id.
+  // A singleton id makes ApplicationV2 reuse the prior entry in
+  // foundry.applications.instances; the new instance can then inherit a
+  // sticky #decided=true from the old close() and the next action becomes
+  // a no-op, hanging the prompt promise. Same shape as MoveConfirmDialog.
   static DEFAULT_OPTIONS = {
-    id:      `${MODULE_ID}-clarification`,
     classes: [MODULE_ID, 'sf-clarification-dialog'],
     tag:     'div',
     window: {
@@ -52,18 +62,22 @@ export class ClarificationDialog extends ApplicationV2 {
 
   /**
    * Show the dialog. Returns the player's selection.
+   * Awaits the inner render so the instance is fully wired before the
+   * returned promise can be observed.
    * @param {Object} campaignState
    * @param {Object} relevance — RelevanceResult from resolveRelevance
    * @returns {Promise<ClarificationSelection>}
    */
   static async prompt(campaignState, relevance) {
-    return new Promise((resolve) => {
-      const dialog = new ClarificationDialog();
-      dialog.#options = collectOptions(campaignState);
-      dialog.#referenceType = relevance?.referenceType ?? 'none';
-      dialog.#resolve = resolve;
-      dialog.render({ force: true });
+    const dialog = new ClarificationDialog({
+      id: `${MODULE_ID}-clarification-${foundry.utils.randomID()}`,
     });
+    dialog.#options       = collectOptions(campaignState);
+    dialog.#referenceType = relevance?.referenceType ?? 'none';
+    const result = new Promise((resolve) => { dialog.#resolve = resolve; });
+    ClarificationDialog.#pending = dialog;
+    await dialog.render({ force: true });
+    return result;
   }
 
   async _prepareContext(_options) {
@@ -110,12 +124,8 @@ export class ClarificationDialog extends ApplicationV2 {
 
   async close(options) {
     // If the user closes the window without picking, treat it as "no specific
-    // entity — continue" so the pipeline isn't stuck.
-    if (this.#resolve) {
-      const r = this.#resolve;
-      this.#resolve = null;
-      r({ kind: 'none', entityId: null, entityType: null, entityName: null });
-    }
+    // entity — continue" so the pipeline isn't stuck. Idempotent via #decided.
+    this.#settle({ kind: 'none', entityId: null, entityType: null, entityName: null });
     return super.close?.(options);
   }
 
@@ -132,11 +142,20 @@ export class ClarificationDialog extends ApplicationV2 {
     this.#finish({ kind: 'none', entityId: null, entityType: null, entityName: null });
   }
 
-  #finish(selection) {
+  // Single resolution gate — first call wins, prevents close() from clobbering
+  // an explicit selection. Same pattern as MoveConfirmDialog.#settle.
+  #settle(selection) {
+    if (this.#decided) return;
+    this.#decided = true;
     const r = this.#resolve;
     this.#resolve = null;
-    this.close({ animate: false }).catch(() => {});
+    if (ClarificationDialog.pending === this) ClarificationDialog.#pending = null;
     r?.(selection);
+  }
+
+  #finish(selection) {
+    this.#settle(selection);
+    this.close({ animate: false }).catch(() => {});
   }
 }
 

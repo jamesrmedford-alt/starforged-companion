@@ -1703,21 +1703,16 @@ function registerMovePipelineExtendedTests(quench) {
           this.timeout(10000);
           const { confirmInterpretation, MoveConfirmDialog } = await import(
             `/modules/${MODULE_ID}/src/ui/settingsPanel.js`);
-          // Render the dialog asynchronously, then auto-click accept.
+          // confirmInterpretation awaits its inner render, so the dialog is
+          // fully wired by the time the outer promise is observable.
           const promise = confirmInterpretation({
             moveId: "face_danger", statUsed: "wits", rationale: "test",
             mischiefApplied: false,
           });
-          // Find the rendered MoveConfirmDialog instance and click accept.
-          for (let i = 0; i < 30; i++) {
-            await flushMicrotasks();
-            const inst = Object.values(foundry.applications.instances ?? {})
-              .find(a => a instanceof MoveConfirmDialog && a.rendered);
-            if (inst) {
-              await clickAction(inst, "accept");
-              break;
-            }
-          }
+          await flushMicrotasks();
+          const inst = MoveConfirmDialog.pending;
+          assert.ok(inst?.rendered, "MoveConfirmDialog.pending should expose the rendered dialog");
+          await clickAction(inst, "accept");
           const result = await promise;
           assert.equal(result, true, "accept should resolve confirmation to true");
         });
@@ -1730,15 +1725,10 @@ function registerMovePipelineExtendedTests(quench) {
             moveId: "face_danger", statUsed: "wits", rationale: "test",
             mischiefApplied: false,
           });
-          for (let i = 0; i < 30; i++) {
-            await flushMicrotasks();
-            const inst = Object.values(foundry.applications.instances ?? {})
-              .find(a => a instanceof MoveConfirmDialog && a.rendered);
-            if (inst) {
-              await clickAction(inst, "reject");
-              break;
-            }
-          }
+          await flushMicrotasks();
+          const inst = MoveConfirmDialog.pending;
+          assert.ok(inst?.rendered, "MoveConfirmDialog.pending should expose the rendered dialog");
+          await clickAction(inst, "reject");
           const result = await promise;
           assert.equal(result, false, "reject should resolve confirmation to false");
         });

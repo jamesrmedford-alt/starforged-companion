@@ -41,9 +41,14 @@ const FLAG_KEY   = "connection";
  *
  * @param {Object} data  — Partial ConnectionSchema fields
  * @param {Object} campaignState — CampaignStateSchema (will be mutated)
+ * @param {Object} [opts]
+ * @param {boolean} [opts.persist=true] — When false, mutate campaignState in
+ *   place but skip the game.settings.set write. Used by sectorGenerator's
+ *   createEntityJournals so a single batched write happens at the end of
+ *   storeSector instead of three sequential writes that race against each other.
  * @returns {Promise<Object>} — The created connection record
  */
-export async function createConnection(data, campaignState) {
+export async function createConnection(data, campaignState, { persist = true } = {}) {
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -78,7 +83,7 @@ export async function createConnection(data, campaignState) {
   if (!campaignState.connectionIds) campaignState.connectionIds = [];
   if (!campaignState.connectionIds.includes(entry.id)) {
     campaignState.connectionIds.push(entry.id);
-    await persistCampaignState(campaignState);
+    if (persist) await persistCampaignState(campaignState);
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);

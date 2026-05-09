@@ -220,6 +220,11 @@ export function generateSectorName() {
 export async function createEntityJournals(sector, campaignState) {
   const settlements = {};
 
+  // persist:false on the entity creators — storeSector (the only caller of
+  // this function in production) performs a single batched game.settings.set
+  // at the end. Multiple sequential writes against the same campaignState
+  // reference race in Foundry v13 and lose late-stage mutations like
+  // sectors.push() and activeSectorId.
   for (const s of sector.settlements) {
     const beforeLen = campaignState.settlementIds?.length ?? 0;
     await createSettlement({
@@ -230,7 +235,7 @@ export async function createEntityJournals(sector, campaignState) {
       projects:   s.projects,
       trouble:    s.trouble ?? null,
       planet:     s.planet ?? null,
-    }, campaignState);
+    }, campaignState, { persist: false });
     const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
     const journalEntry = journalId ? (game.journal?.get(journalId) ?? null) : null;
     settlements[s.id] = journalEntry;
@@ -254,7 +259,7 @@ export async function createEntityJournals(sector, campaignState) {
     goal:     sector.connection.goal,
     rank:     "dangerous",
     location: sector.connection.homeSettlement,
-  }, campaignState);
+  }, campaignState, { persist: false });
   const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
   if (connectionJournalId) {
     try {
