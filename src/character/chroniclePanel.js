@@ -126,37 +126,56 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
   }
 
   // ── Static action handlers (click via data-action) ─────────────────────────
+  //
+  // Each handler records its in-flight promise on `this._lastAction` so that
+  // integration tests can await the full async chain after dispatching a real
+  // DOM click event. ApplicationV2's action dispatcher invokes handlers
+  // fire-and-forget, so without this hook there is no way for a test to wait
+  // for multi-step persistence (journal create → page create → setFlag) to
+  // settle before re-reading state.
 
-  static async #onAddAnnotation(_event, _target) {
-    const sessionId = game.settings?.get(MODULE_ID, 'campaignState')?.currentSessionId ?? '';
-    await addChronicleEntry(this.#actorId, {
-      type:      'annotation',
-      text:      'New annotation — click to edit.',
-      sessionId,
-      automated: false,
-    });
-    this.render();
+  static #onAddAnnotation(_event, _target) {
+    const work = (async () => {
+      const sessionId = game.settings?.get(MODULE_ID, 'campaignState')?.currentSessionId ?? '';
+      await addChronicleEntry(this.#actorId, {
+        type:      'annotation',
+        text:      'New annotation — click to edit.',
+        sessionId,
+        automated: false,
+      });
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onDeleteEntry(_event, target) {
-    if (!game.user?.isGM) return;
-    const entryId = target.dataset.entryId;
-    if (!entryId) return;
+  static #onDeleteEntry(_event, target) {
+    const work = (async () => {
+      if (!game.user?.isGM) return;
+      const entryId = target.dataset.entryId;
+      if (!entryId) return;
 
-    const entries = this.#entries.filter(en => en.id !== entryId);
-    await this.#saveEntries(entries);
-    this.render();
+      const entries = this.#entries.filter(en => en.id !== entryId);
+      await this.#saveEntries(entries);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onTogglePin(_event, target) {
-    const entryId = target.dataset.entryId;
-    if (!entryId) return;
+  static #onTogglePin(_event, target) {
+    const work = (async () => {
+      const entryId = target.dataset.entryId;
+      if (!entryId) return;
 
-    const updated = this.#entries.map(en =>
-      en.id === entryId ? { ...en, pinned: !en.pinned } : en
-    );
-    await this.#saveEntries(updated);
-    this.render();
+      const updated = this.#entries.map(en =>
+        en.id === entryId ? { ...en, pinned: !en.pinned } : en
+      );
+      await this.#saveEntries(updated);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   // ── Persistence ───────────────────────────────────────────────────────────

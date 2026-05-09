@@ -100,8 +100,17 @@ async function clickAction(app, actionName, extras = null) {
   const btn = root.querySelector(selector);
   if (!btn) throw new Error(`clickAction: no element matches ${selector}`);
   btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  // Allow the async handler to start and any awaited work to settle.
+  // Allow the async handler to start.
   await flushMicrotasks();
+  // If the handler exposes its in-flight promise on the app instance, await it.
+  // This is the only way to wait for multi-step persistence chains (e.g.
+  // JournalEntry.create → createEmbeddedDocuments → setFlag) to fully settle,
+  // because ApplicationV2's action dispatcher is fire-and-forget.
+  try {
+    await app._lastAction;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | clickAction: action "${actionName}" handler threw:`, err);
+  }
   await flushMicrotasks();
   return btn;
 }
