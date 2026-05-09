@@ -2065,6 +2065,18 @@ function registerChronicleTests(quench) {
           },
         });
         if (!actor) return;
+        // Seed a chronicle entry directly via the library so togglePin has
+        // something to operate on, regardless of whether the addAnnotation
+        // DOM-click test runs (or passes) earlier in the batch.
+        const { addChronicleEntry, getChronicleEntries } = await import(
+          `/modules/${MODULE_ID}/src/character/chronicle.js`);
+        await addChronicleEntry(actor.id, {
+          type: "annotation",
+          text: "seed entry for togglePin",
+          automated: false,
+        });
+        const seeded = await getChronicleEntries(actor.id);
+        if (seeded[0]) seededIds.push(seeded[0].id);
         const { ChroniclePanelApp } = await import(
           `/modules/${MODULE_ID}/src/character/chroniclePanel.js`);
         app = new ChroniclePanelApp(actor.id);
