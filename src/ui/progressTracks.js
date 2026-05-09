@@ -232,7 +232,7 @@ export class ProgressTrackApp extends ApplicationV2 {
   // -----------------------------------------------------------------------
 
   /** @override */
-  async _prepareContext(options) {
+  async _prepareContext(_options) {
     const tracks = await loadTracks();
 
     // Annotate each track with derived display values.
@@ -256,7 +256,7 @@ export class ProgressTrackApp extends ApplicationV2 {
   }
 
   /** @override */
-  async _renderHTML(context, options) {
+  async _renderHTML(context, _options) {
     const { active, completed, rankOptions, typeOptions } = context;
 
     const renderTrack = (t) => `
@@ -351,7 +351,7 @@ export class ProgressTrackApp extends ApplicationV2 {
   }
 
   /** @override */
-  _replaceHTML(result, content, options) {
+  _replaceHTML(result, content, _options) {
     // Replace inner content without destroying the window chrome.
     content.innerHTML = '';
     content.append(result);
@@ -493,7 +493,7 @@ export class ProgressTrackApp extends ApplicationV2 {
   /**
    * Add a new track from the input fields at the top of the panel.
    */
-  static #onAddTrack(event, target) {
+  static #onAddTrack(_event, _target) {
     const work = (async () => {
       const panel = this.element.querySelector('.sf-progress-panel');
       const labelInput = panel.querySelector('[name="newLabel"]');
