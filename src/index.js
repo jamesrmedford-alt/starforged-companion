@@ -87,6 +87,16 @@ import {
 
 const MODULE_ID = "starforged-companion";
 
+// In-flight !journal command promise. Foundry's createChatMessage hook is
+// fire-and-forget for async handlers, so callers (notably integration tests)
+// have no way to await the journal write chain after posting the message.
+// We assign this synchronously inside the hook before the first await so
+// callers can read it right after `await ChatMessage.create(...)` resolves.
+let _lastJournalCommandWork = null;
+export function getLastJournalCommandPromise() {
+  return _lastJournalCommandWork;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS REGISTRATION
@@ -317,7 +327,11 @@ export function registerChatHook() {
 
     // !journal command — manual World Journal entry (intercept before move pipeline)
     if (isJournalCommand(message)) {
-      await handleJournalCommand(message);
+      // Assign the in-flight work synchronously (before any await) so callers
+      // that grab it after `ChatMessage.create()` resolves can await the full
+      // journal write chain. See getLastJournalCommandPromise().
+      _lastJournalCommandWork = handleJournalCommand(message);
+      await _lastJournalCommandWork;
       return;
     }
 

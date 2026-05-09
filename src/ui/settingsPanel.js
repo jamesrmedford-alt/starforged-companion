@@ -1029,8 +1029,12 @@ export class MoveConfirmDialog extends ApplicationV2 {
   #interp  = null;
   #decided = false;
 
+  // No static `id` — each prompt() creates an instance with a unique id.
+  // A singleton id makes ApplicationV2 reuse the prior entry in
+  // foundry.applications.instances; the new instance can then inherit a
+  // sticky #decided=true from the old close() and the next #onAccept
+  // becomes a no-op, hanging the prompt promise.
   static DEFAULT_OPTIONS = {
-    id:      `${MODULE_ID}-move-confirm`,
     classes: [MODULE_ID, 'move-confirm-dialog'],
     tag:     'div',
     window: {
@@ -1052,7 +1056,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
    */
   static async prompt(interpretation) {
     return new Promise((resolve) => {
-      const dialog = new MoveConfirmDialog();
+      const dialog = new MoveConfirmDialog({
+        id: `${MODULE_ID}-move-confirm-${foundry.utils.randomID()}`,
+      });
       dialog.#interp  = interpretation;
       dialog.#resolve = resolve;
       dialog.render({ force: true });

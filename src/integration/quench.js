@@ -1547,6 +1547,16 @@ function registerChatCommandsTests(quench) {
         if (msg?.id) created.push(msg.id);
         // Allow the createChatMessage hook chain (which may post more cards) to settle.
         await flushMicrotasks();
+        // !journal commands run through a multi-step async chain
+        // (JournalEntry.create → createEmbeddedDocuments → setFlag) that two
+        // setTimeout(0) ticks cannot reliably bridge on a cold journal. The
+        // chat hook exposes its in-flight work via getLastJournalCommandPromise
+        // — await it so the assertion sees committed state.
+        const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+        const journalWork = idx.getLastJournalCommandPromise?.();
+        if (journalWork) {
+          await journalWork.catch(() => {});
+        }
         await flushMicrotasks();
         const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
         for (const m of newOnes) if (m.id !== msg?.id) created.push(m.id);
