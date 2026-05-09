@@ -451,9 +451,13 @@ function registerAssemblerTests(quench) {
           const { suppressScene, clearXCard } = await import(`${MODULE_PATH}/context/safety.js`);
 
           await suppressScene();
-          const campaignState = game.settings.get("starforged-companion", "campaignState");
-          const packet = await assembleContextPacket({}, campaignState);
-          await clearXCard();
+          let packet;
+          try {
+            const campaignState = game.settings.get("starforged-companion", "campaignState");
+            packet = await assembleContextPacket({}, campaignState);
+          } finally {
+            await clearXCard();
+          }
 
           assert.include(packet.assembled, "SCENE PAUSED", "X-Card should produce SCENE PAUSED packet");
           assert.equal(packet.triggeredBy, "x_card");
@@ -779,37 +783,51 @@ function registerSectorCreatorTests(quench) {
       });
 
       describe("createSectorScene", function () {
-        let testScene = null;
+        let testSector = null;
+        let testScene  = null;
+
+        before(async function () {
+          const { generateSector } = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
+          const { createSectorScene } = await import(`${MODULE_PATH}/sectors/sceneBuilder.js`);
+          testSector = generateSector("expanse");
+          testScene  = await createSectorScene(testSector, null, {});
+        });
 
         after(async function () {
           if (testScene) {
             await testScene.delete().catch(err =>
               console.error(`starforged-companion | quench: testScene teardown failed (orphaned scene id ${testScene?.id ?? "?"}):`, err));
-            testScene = null;
+            testScene  = null;
+            testSector = null;
           }
         });
 
         it("creates a Foundry Scene with the sector name", async function () {
-          const { generateSector } = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
-          const { createSectorScene } = await import(`${MODULE_PATH}/sectors/sceneBuilder.js`);
-          const sector = generateSector("expanse");
-          testScene = await createSectorScene(sector, null, {});
-          assert.isObject(testScene,               "scene should be an object");
-          assert.equal(testScene.name, sector.name, "scene name should match sector name");
+          assert.isObject(testScene,                   "scene should be an object");
+          assert.equal(testScene.name, testSector.name, "scene name should match sector name");
         });
 
-        it("scene has the correct number of notes — one per settlement", async function () {
-          if (!testScene) { this.skip(); return; }
+        it("scene has the correct number of notes — one per settlement plus planet/stellar markers", async function () {
+          if (!testScene || !testSector) { this.skip(); return; }
           const notes = testScene.notes?.size ?? testScene.notes?.contents?.length ?? 0;
-          // expanse has 2 settlements → 2 notes
-          assert.equal(notes, 2, "should have one note per settlement");
+          // sceneBuilder creates one note per settlement, plus one extra per planet
+          // and per stellar object on each settlement (see FIX 3 / FIX 4 in sceneBuilder.js).
+          // Planet assignment is random, so compute the expected count from the sector data.
+          const expected = (testSector.settlements ?? []).reduce(
+            (n, s) => n + 1 + (s.planet ? 1 : 0) + (s.stellar ? 1 : 0),
+            0,
+          );
+          assert.equal(notes, expected,
+            "should have one note per settlement, plus one per planet and per stellar object");
         });
 
         it("scene has the correct number of drawings — one per passage", async function () {
-          if (!testScene) { this.skip(); return; }
+          if (!testScene || !testSector) { this.skip(); return; }
           const drawings = testScene.drawings?.size ?? testScene.drawings?.contents?.length ?? 0;
-          // expanse has 1 passage → 1 drawing
-          assert.equal(drawings, 1, "should have one drawing per passage");
+          // sceneBuilder renders both between-settlement passages and toEdge passages.
+          // generateSector("expanse") always produces cfg.passages = 2.
+          const expected = (testSector.mapData?.passages ?? []).length;
+          assert.equal(drawings, expected, "should have one drawing per passage");
         });
 
         it("scene is NOT activated after creation", async function () {
@@ -1604,16 +1622,17 @@ function registerChatCommandsTests(quench) {
 
       describe("!x via chat hook — triggers suppressScene", function () {
         it("posting !x sets campaignState.xCardActive = true", async function () {
-          const stateBefore = game.settings.get(MODULE_ID, "campaignState");
           try {
             await post("!x");
             await flushMicrotasks();
             const after = game.settings.get(MODULE_ID, "campaignState");
             assert.isTrue(after.xCardActive, "xCardActive should be true after !x");
           } finally {
+            // clearXCard alone is sufficient — restoring a captured snapshot of
+            // campaignState would re-introduce any dirty xCardActive=true that
+            // leaked in from an earlier test (snapshot is by-reference in Foundry).
             const safety = await import(`/modules/${MODULE_ID}/src/context/safety.js`);
             await safety.clearXCard();
-            await game.settings.set(MODULE_ID, "campaignState", stateBefore);
           }
         });
       });
@@ -2461,7 +2480,7 @@ function registerSafetyExtrasTests(quench) {
   quench.registerBatch(
     "starforged-companion.safetyExtras",
     (context) => {
-      const { describe, it, assert, after } = context;
+      const { describe, it, assert, before, after } = context;
       const created = [];
 
       after(async function () {
@@ -2512,16 +2531,28 @@ function registerSafetyExtrasTests(quench) {
       });
 
       describe("!x via chat hook — full path", function () {
+        // Defensive precondition: clear any xCardActive=true left over from
+        // earlier batches so the precondition assertion below is meaningful.
+        before(async function () {
+          const safety = await import(`/modules/${MODULE_ID}/src/context/safety.js`);
+          await safety.clearXCard();
+        });
+
         it("posting !x through ChatMessage.create triggers suppressScene", async function () {
           this.timeout(10000);
-          const before = game.settings.get(MODULE_ID, "campaignState");
-          assert.isFalse(before.xCardActive, "precondition: xCardActive should start false");
-          const msg = await ChatMessage.create({ content: "!x", user: game.user.id });
-          if (msg?.id) created.push(msg.id);
-          await flushMicrotasks();
-          await flushMicrotasks();
-          const after = game.settings.get(MODULE_ID, "campaignState");
-          assert.isTrue(after.xCardActive, "xCardActive should flip after !x");
+          try {
+            const before = game.settings.get(MODULE_ID, "campaignState");
+            assert.isFalse(before.xCardActive, "precondition: xCardActive should start false");
+            const msg = await ChatMessage.create({ content: "!x", user: game.user.id });
+            if (msg?.id) created.push(msg.id);
+            await flushMicrotasks();
+            await flushMicrotasks();
+            const after = game.settings.get(MODULE_ID, "campaignState");
+            assert.isTrue(after.xCardActive, "xCardActive should flip after !x");
+          } finally {
+            const safety = await import(`/modules/${MODULE_ID}/src/context/safety.js`);
+            await safety.clearXCard();
+          }
         });
       });
     },
