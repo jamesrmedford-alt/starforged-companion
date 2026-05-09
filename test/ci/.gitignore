@@ -1,0 +1,6 @@
+# Real credentials — committed-credentials are a hard NO.
+.env
+
+# Bind-mounted Foundry userData. Contains the licensed Foundry zip,
+# downloaded systems/modules, and any worlds you create. Never commit.
+data/
