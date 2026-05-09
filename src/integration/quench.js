@@ -894,7 +894,7 @@ function registerEntityWorldJournalTests(quench) {
   quench.registerBatch(
     "starforged-companion.entityWorldJournal",
     (context) => {
-      const { describe, it, assert, before, after, beforeEach } = context;
+      const { describe, it, assert, before, after, beforeEach, afterEach } = context;
 
       const MODULE = "starforged-companion";
       let createdJournalIds = [];
@@ -904,7 +904,7 @@ function registerEntityWorldJournalTests(quench) {
         if (journal?.id) createdJournalIds.push(journal.id);
       }
 
-      after(async function () {
+      async function flushJournalCleanup() {
         for (const id of createdJournalIds) {
           const j = game.journal?.get(id);
           if (j?.delete) {
@@ -913,7 +913,9 @@ function registerEntityWorldJournalTests(quench) {
           }
         }
         createdJournalIds = [];
-      });
+      }
+
+      after(flushJournalCleanup);
 
       describe("Combined detection routing — cross-dependency suppression", function () {
         let stateAtStart = null;
@@ -938,8 +940,12 @@ function registerEntityWorldJournalTests(quench) {
           const { recordFactionIntelligence } = await import(`${MODULE_PATH}/world/worldJournal.js`);
           const state = game.settings.get(MODULE, "campaignState");
 
-          // Entity record for "The Covenant"
-          await createFaction({ name: "The Covenant", relationship: "antagonistic" }, state);
+          // Entity record for "QUENCH TEST — The Covenant"
+          const idsBefore = new Set(state.factionIds ?? []);
+          await createFaction({ name: "QUENCH TEST — The Covenant", relationship: "antagonistic" }, state);
+          for (const id of state.factionIds ?? []) {
+            if (!idsBefore.has(id)) track({ id });
+          }
           // WJ entry for "QUENCH TEST — The Iron Compact" — no entity record
           await recordFactionIntelligence(
             "QUENCH TEST — The Iron Compact",
@@ -948,6 +954,8 @@ function registerEntityWorldJournalTests(quench) {
           );
           await game.settings.set(MODULE, "campaignState", state);
         });
+
+        afterEach(flushJournalCleanup);
 
         it("faction with entity record → entity is treated as authoritative; WJ suppressed", async function () {
           this.timeout(30000);
@@ -959,7 +967,7 @@ function registerEntityWorldJournalTests(quench) {
 
           const before = wj.getFactionLandscape(state).length;
           await routeWorldJournalResults({
-            factionUpdates: [{ name: "The Covenant", attitude: "antagonistic", summary: "burned the relay" }],
+            factionUpdates: [{ name: "QUENCH TEST — The Covenant", attitude: "antagonistic", summary: "burned the relay" }],
           }, state);
           const after = wj.getFactionLandscape(state).length;
 
@@ -2056,7 +2064,14 @@ function registerChronicleTests(quench) {
 
       after(async function () {
         if (app?.close) await app.close().catch(() => {});
-        if (actor?.delete) await actor.delete().catch(() => {});
+        if (actor) {
+          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
+          if (chronicleJournal?.delete) {
+            await chronicleJournal.delete().catch(err =>
+              console.warn(`${MODULE_ID} | quench: chronicle journal cleanup failed:`, err));
+          }
+          if (actor.delete) await actor.delete().catch(() => {});
+        }
         actor = null;
         app = null;
       });
