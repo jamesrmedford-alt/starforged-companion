@@ -378,6 +378,13 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   // -----------------------------------------------------------------------
   // Action handlers (static — bound via DEFAULT_OPTIONS.actions)
+  //
+  // Each handler records its in-flight promise on `this._lastAction` so that
+  // integration tests can await the full async chain after dispatching a real
+  // DOM click event. ApplicationV2's action dispatcher invokes handlers
+  // fire-and-forget, so without this hook there is no way for a test to wait
+  // for multi-step persistence (loadTracks → DialogV2.confirm → saveTracks)
+  // to settle before re-reading state.
   // -----------------------------------------------------------------------
 
   /**
@@ -385,111 +392,135 @@ export class ProgressTrackApp extends ApplicationV2 {
    * @param {PointerEvent} event
    * @param {HTMLElement}  target
    */
-  static async #onMarkProgress(event, target) {
-    const trackId = target.dataset.trackId;
-    const tracks = await loadTracks();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track) return;
+  static #onMarkProgress(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track) return;
 
-    const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
-    track.ticks = Math.min(track.ticks + ticksPerMark, MAX_TICKS);
+      const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
+      track.ticks = Math.min(track.ticks + ticksPerMark, MAX_TICKS);
 
-    await saveTracks(tracks);
-    await ProgressTrackApp.#syncConnectionEntity(track);
-    this.render();
+      await saveTracks(tracks);
+      await ProgressTrackApp.#syncConnectionEntity(track);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   /**
    * Clear one box of progress (removes TICKS_PER_BOX ticks, min 0).
    */
-  static async #onClearProgress(event, target) {
-    const trackId = target.dataset.trackId;
-    const tracks = await loadTracks();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track) return;
+  static #onClearProgress(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track) return;
 
-    track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
+      track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
 
-    await saveTracks(tracks);
-    await ProgressTrackApp.#syncConnectionEntity(track);
-    this.render();
+      await saveTracks(tracks);
+      await ProgressTrackApp.#syncConnectionEntity(track);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   /**
    * Execute a progress roll for this track and post a chat card.
    */
-  static async #onRollProgress(event, target) {
-    const trackId = target.dataset.trackId;
-    const tracks = await loadTracks();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track || track.ticks === 0) return;
-    await rollProgress(track);
+  static #onRollProgress(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track || track.ticks === 0) return;
+      await rollProgress(track);
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   /**
    * Toggle a track's completed state. Completed tracks are moved to the archive
    * section but kept for campaign record-keeping.
    */
-  static async #onCompleteTrack(event, target) {
-    const trackId = target.dataset.trackId;
-    const tracks = await loadTracks();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track) return;
+  static #onCompleteTrack(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track) return;
 
-    track.completed = true;
-    track.completedAt = Date.now();
+      track.completed = true;
+      track.completedAt = Date.now();
 
-    await saveTracks(tracks);
-    this.render();
+      await saveTracks(tracks);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   /**
    * Remove a track permanently (with a confirm dialog for safety).
    */
-  static async #onRemoveTrack(event, target) {
-    const trackId = target.dataset.trackId;
-    const tracks = await loadTracks();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track) return;
+  static #onRemoveTrack(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track) return;
 
-    const confirmed = await DialogV2.confirm({
-      window:  { title: 'Remove Track' },
-      content: `<p>Permanently remove <strong>${track.label}</strong>? This cannot be undone.</p>`,
-    });
-    if (!confirmed) return;
+      const confirmed = await DialogV2.confirm({
+        window:  { title: 'Remove Track' },
+        content: `<p>Permanently remove <strong>${track.label}</strong>? This cannot be undone.</p>`,
+      });
+      if (!confirmed) return;
 
-    const updated = tracks.filter(t => t.id !== trackId);
-    await saveTracks(updated);
-    this.render();
+      const updated = tracks.filter(t => t.id !== trackId);
+      await saveTracks(updated);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   /**
    * Add a new track from the input fields at the top of the panel.
    */
-  static async #onAddTrack(event, target) {
-    const panel = this.element.querySelector('.sf-progress-panel');
-    const labelInput = panel.querySelector('[name="newLabel"]');
-    const typeSelect = panel.querySelector('[name="newType"]');
-    const rankSelect = panel.querySelector('[name="newRank"]');
+  static #onAddTrack(event, target) {
+    const work = (async () => {
+      const panel = this.element.querySelector('.sf-progress-panel');
+      const labelInput = panel.querySelector('[name="newLabel"]');
+      const typeSelect = panel.querySelector('[name="newType"]');
+      const rankSelect = panel.querySelector('[name="newRank"]');
 
-    const label = labelInput.value.trim();
-    if (!label) {
-      labelInput.focus();
-      return;
-    }
+      const label = labelInput.value.trim();
+      if (!label) {
+        labelInput.focus();
+        return;
+      }
 
-    const track = createTrack({
-      label,
-      type: typeSelect.value,
-      rank: rankSelect.value,
-    });
+      const track = createTrack({
+        label,
+        type: typeSelect.value,
+        rank: rankSelect.value,
+      });
 
-    const tracks = await loadTracks();
-    tracks.push(track);
-    await saveTracks(tracks);
+      const tracks = await loadTracks();
+      tracks.push(track);
+      await saveTracks(tracks);
 
-    labelInput.value = '';
-    this.render();
+      labelInput.value = '';
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
   // -----------------------------------------------------------------------
