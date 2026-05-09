@@ -38,7 +38,6 @@ import { storeArtAsset, loadArtAsset }           from "./storage.js";
 import { apiPost } from "../api-proxy.js";
 
 const MODULE_ID   = "starforged-companion";
-const DALLE_URL   = "https://api.openai.com/v1/images/generations";
 const DALLE_MODEL = "dall-e-3";
 
 
@@ -240,46 +239,6 @@ async function attemptDallECall(apiKey, prompt, size, entityId, entityType, isRe
     return null;
   }
 }
-
-/**
- * Handle DALL-E API errors.
- * Returns null for all errors except rate limits (retried once).
- */
-async function handleDallEError(error, apiKey, prompt, size, entityId, entityType, isRetry) {
-  const code = error?.error?.code ?? error?.error?.type ?? "unknown";
-
-  switch (code) {
-    case "content_policy_violation":
-      console.warn(`${MODULE_ID} | Art: content policy violation — portrait will be skipped.`);
-      console.warn(`${MODULE_ID} | Art: prompt was: ${prompt}`);
-      // Non-blocking — entity continues without portrait
-      return null;
-
-    case "rate_limit_exceeded":
-      if (!isRetry) {
-        console.warn(`${MODULE_ID} | Art: rate limited — retrying in 10s`);
-        await delay(10_000);
-        return attemptDallECall(apiKey, prompt, size, entityId, entityType, true);
-      }
-      console.error(`${MODULE_ID} | Art: rate limit retry failed`);
-      return null;
-
-    case "invalid_api_key":
-    case "account_deactivated":
-      notifyBillingError(code);
-      return null;
-
-    case "billing_hard_limit_reached":
-    case "insufficient_quota":
-      notifyBillingError(code);
-      return null;
-
-    default:
-      console.error(`${MODULE_ID} | Art: DALL-E error (${code}):`, error?.error?.message);
-      return null;
-  }
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENTITY LINKING

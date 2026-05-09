@@ -133,7 +133,7 @@ export function buildRegenerationPrompt(entityType, sourceDescription, entity = 
  * @param {string} entityType
  * @returns {string}
  */
-function extractVisualElements(text, entityType) {
+function extractVisualElements(text, _entityType) {
   if (!text) return "";
 
   // Strip quoted dialogue — not visual
@@ -174,7 +174,7 @@ function extractVisualElements(text, entityType) {
  * @param {string} entityType
  * @returns {string}
  */
-function sanitiseForPolicy(text, entityType) {
+function sanitiseForPolicy(text, _entityType) {
   if (!text) return "";
 
   let s = text;

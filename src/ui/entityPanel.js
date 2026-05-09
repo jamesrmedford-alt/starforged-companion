@@ -570,7 +570,7 @@ export class EntityPanelApp extends ApplicationV2 {
     this.render();
   }
 
-  static async #onBackToList(event, target) {
+  static async #onBackToList(_event, _target) {
     this.#selectedId = null;
     this.render();
   }

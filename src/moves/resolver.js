@@ -16,7 +16,7 @@
  * Source: Ironsworn: Starforged Reference Guide pp.8-25, Rules Summary pp.116-121
  */
 
-import { MOVES, RANK_TICKS } from "../schemas.js";
+import { MOVES } from "../schemas.js";
 import { rollOracle, rollPaired } from "../oracles/roller.js";
 
 

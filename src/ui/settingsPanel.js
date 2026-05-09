@@ -479,7 +479,7 @@ async function syncSafetyToCampaignState() {
 // ---------------------------------------------------------------------------
 
 function registerXCardHook() {
-  Hooks.on('chatMessage', (chatLog, message, chatData) => {
+  Hooks.on('chatMessage', (chatLog, message, _chatData) => {
     if (message.trim().toLowerCase() !== '!x') return true;
 
     suppressScene();
@@ -923,7 +923,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onAddLine(event, target) {
+  static #onAddLine(_event, _target) {
     const work = (async () => {
       if (!game.user.isGM) return;
       const input = this.element.querySelector('[name="newLine"]');
@@ -938,7 +938,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onRemoveLine(event, target) {
+  static #onRemoveLine(_event, target) {
     const work = (async () => {
       if (!game.user.isGM) return;
       const idx = Number(target.dataset.index);
@@ -951,7 +951,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onAddVeil(event, target) {
+  static #onAddVeil(_event, _target) {
     const work = (async () => {
       if (!game.user.isGM) return;
       const input = this.element.querySelector('[name="newVeil"]');
@@ -966,7 +966,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onRemoveVeil(event, target) {
+  static #onRemoveVeil(_event, target) {
     const work = (async () => {
       if (!game.user.isGM) return;
       const idx = Number(target.dataset.index);
@@ -979,7 +979,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onAddPrivateLine(event, target) {
+  static #onAddPrivateLine(_event, _target) {
     const work = (async () => {
       const input = this.element.querySelector('[name="newPrivateLine"]');
       const text = input?.value.trim();
@@ -993,7 +993,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onRemovePrivateLine(event, target) {
+  static #onRemovePrivateLine(_event, target) {
     const work = (async () => {
       const idx = Number(target.dataset.index);
       const lines = getPrivateLines();
@@ -1005,7 +1005,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onSaveNarratorSettings(event, target) {
+  static #onSaveNarratorSettings(_event, _target) {
     const work = (async () => {
       if (!game.user.isGM) return;
       const el = this.element;
@@ -1042,7 +1042,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
-  static #onSaveApiKeys(event, target) {
+  static #onSaveApiKeys(_event, _target) {
     const work = (async () => {
       if (!game.user.isGM) return;
 
@@ -1194,12 +1194,12 @@ export class MoveConfirmDialog extends ApplicationV2 {
     return super.close(options);
   }
 
-  static async #onAccept(event, target) {
+  static async #onAccept(_event, _target) {
     this.#settle(true);
     this.close({ animate: false });
   }
 
-  static async #onReject(event, target) {
+  static async #onReject(_event, _target) {
     this.#settle(false);
     this.close({ animate: false });
   }

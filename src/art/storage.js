@@ -105,7 +105,7 @@ export async function loadArtAsset(assetId, campaignState = null) {
  * @param {Object} [campaignState]
  * @returns {Promise<ArtAsset[]>}
  */
-export async function loadEntityAssets(entityId, campaignState = null) {
+export async function loadEntityAssets(entityId, _campaignState = null) {
   const assets = [];
   try {
     for (const entry of game.journal?.contents ?? []) {

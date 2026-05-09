@@ -8,7 +8,6 @@ import {
   buildNarratorUserMessage,
   buildSceneUserMessage,
   buildCampaignRecapUserMessage,
-  resolveNarrationPerspective,
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
@@ -563,7 +562,7 @@ export function markRecapInjected(sessionId) {
  * @param {string} [options.actorId]  — requesting player's actor ID (unused; reserved)
  * @returns {Promise<string|null>}    — response text, or null on failure/disabled
  */
-export async function interrogateScene(question, campaignState, options = {}) {
+export async function interrogateScene(question, campaignState, _options = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
   if (!getSceneQueryEnabled()) {

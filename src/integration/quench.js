@@ -1684,7 +1684,6 @@ function registerMovePipelineExtendedTests(quench) {
     (context) => {
       const { describe, it, assert, after } = context;
       const cardIds = [];
-      let actorSnap = null;
       let actor = null;
 
       after(async function () {
@@ -1695,7 +1694,6 @@ function registerMovePipelineExtendedTests(quench) {
         cardIds.length = 0;
         if (actor?.delete) await actor.delete().catch(() => {});
         actor = null;
-        actorSnap = null;
       });
 
       describe("confirmInterpretation — accept / reject", function () {
