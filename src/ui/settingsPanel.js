@@ -1029,6 +1029,12 @@ export class MoveConfirmDialog extends ApplicationV2 {
   #interp  = null;
   #decided = false;
 
+  // Most-recently-prompted instance, exposed so callers (and Quench tests)
+  // can locate the in-flight dialog without scanning foundry.applications.instances
+  // (which is a Map in v13 and unfriendly to Object.values()).
+  static #pending = null;
+  static get pending() { return MoveConfirmDialog.#pending; }
+
   // No static `id` — each prompt() creates an instance with a unique id.
   // A singleton id makes ApplicationV2 reuse the prior entry in
   // foundry.applications.instances; the new instance can then inherit a
@@ -1051,18 +1057,20 @@ export class MoveConfirmDialog extends ApplicationV2 {
 
   /**
    * Show the dialog for an interpretation and return the player's choice.
+   * Awaits the inner render so the instance is fully wired (DOM in place,
+   * action handlers bound) before the returned promise can be observed.
    * @param {object} interpretation
    * @returns {Promise<boolean>}
    */
   static async prompt(interpretation) {
-    return new Promise((resolve) => {
-      const dialog = new MoveConfirmDialog({
-        id: `${MODULE_ID}-move-confirm-${foundry.utils.randomID()}`,
-      });
-      dialog.#interp  = interpretation;
-      dialog.#resolve = resolve;
-      dialog.render({ force: true });
+    const dialog = new MoveConfirmDialog({
+      id: `${MODULE_ID}-move-confirm-${foundry.utils.randomID()}`,
     });
+    dialog.#interp = interpretation;
+    const result = new Promise((resolve) => { dialog.#resolve = resolve; });
+    MoveConfirmDialog.#pending = dialog;
+    await dialog.render({ force: true });
+    return result;
   }
 
   async _prepareContext(_options) {
@@ -1126,6 +1134,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
     this.#decided = true;
     const r = this.#resolve;
     this.#resolve = null;
+    if (MoveConfirmDialog.pending === this) MoveConfirmDialog.#pending = null;
     r?.(value);
   }
 

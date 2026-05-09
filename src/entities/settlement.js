@@ -55,7 +55,19 @@ export const SettlementSchema = {
 };
 
 
-export async function createSettlement(data, campaignState) {
+/**
+ * Create a settlement entity (JournalEntry + page) and register its ID in
+ * campaign state.
+ *
+ * @param {Object} data — Partial SettlementSchema fields
+ * @param {Object} campaignState — CampaignStateSchema (will be mutated)
+ * @param {Object} [opts]
+ * @param {boolean} [opts.persist=true] — When false, mutate campaignState in
+ *   place but skip the game.settings.set write. Used by sectorGenerator's
+ *   createEntityJournals so a single batched write happens at the end of
+ *   storeSector instead of N+1 sequential writes that race against each other.
+ */
+export async function createSettlement(data, campaignState, { persist = true } = {}) {
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -82,7 +94,7 @@ export async function createSettlement(data, campaignState) {
   if (!campaignState.settlementIds) campaignState.settlementIds = [];
   if (!campaignState.settlementIds.includes(entry.id)) {
     campaignState.settlementIds.push(entry.id);
-    await persistCampaignState(campaignState);
+    if (persist) await persistCampaignState(campaignState);
   }
 
   return settlement;
