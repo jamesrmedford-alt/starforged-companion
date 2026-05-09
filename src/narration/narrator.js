@@ -564,13 +564,22 @@ export function markRecapInjected(sessionId) {
  * @returns {Promise<string|null>}    — response text, or null on failure/disabled
  */
 export async function interrogateScene(question, campaignState, options = {}) {
-  if (!getSceneQueryEnabled()) return null;
+  const sessionId = campaignState?.currentSessionId ?? null;
 
-  if (campaignState?.xCardActive) return null;
+  if (!getSceneQueryEnabled()) {
+    await postSceneFallbackCard(question, 'Scene queries are disabled in module settings.', sessionId);
+    return null;
+  }
+
+  if (campaignState?.xCardActive) {
+    await postSceneFallbackCard(question, 'Scene paused — X-Card is active.', sessionId);
+    return null;
+  }
 
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | interrogateScene: Claude API key not configured`);
+    await postSceneFallbackCard(question, 'Scene query unavailable — Claude API key not configured.', sessionId);
     return null;
   }
 
@@ -578,7 +587,6 @@ export async function interrogateScene(question, campaignState, options = {}) {
   const character    = getActiveCharacter(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character);
 
-  const sessionId     = campaignState?.currentSessionId ?? null;
   const contextLimit  = getSceneContextCards();
   const recentContext = getRecentNarrationContext(sessionId, contextLimit);
   const sentenceTarget = getSceneResponseLength();
@@ -593,7 +601,10 @@ export async function interrogateScene(question, campaignState, options = {}) {
       maxTokens: 200,
     });
 
-    if (!response?.trim()) return null;
+    if (!response?.trim()) {
+      await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
+      return null;
+    }
 
     await postSceneCard(question, response, sessionId);
     return response;
@@ -616,6 +627,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       }
     }
     console.error(`${MODULE_ID} | interrogateScene failed:`, err);
+    await postSceneFallbackCard(question, 'Scene query failed — check your API key and proxy.', sessionId);
     return null;
   }
 }
@@ -689,6 +701,27 @@ async function postSceneCard(question, responseText, sessionId) {
         sceneText:     responseText,
         sceneQuestion: question,
         sessionId:     sessionId ?? null,
+      },
+    },
+  });
+}
+
+async function postSceneFallbackCard(question, reason, sessionId) {
+  return ChatMessage.create({
+    content: `
+      <div class="sf-scene-card sf-scene-fallback">
+        <div class="sf-scene-label">◈ Scene</div>
+        <div class="sf-scene-question">${question}</div>
+        <div class="sf-scene-error">${reason}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        sceneResponse:    true,
+        sceneFallback:    true,
+        sceneQuestion:    question,
+        sceneFailReason:  reason,
+        sessionId:        sessionId ?? null,
       },
     },
   });
