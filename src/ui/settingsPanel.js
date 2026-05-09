@@ -892,130 +892,179 @@ export class SettingsPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
-  // Action handlers
+  // Action handlers (static — bound via DEFAULT_OPTIONS.actions)
+  //
+  // Each handler records its in-flight promise on `this._lastAction` so that
+  // integration tests can await the full async chain after dispatching a real
+  // DOM click event. ApplicationV2's action dispatcher invokes handlers
+  // fire-and-forget, so without this hook there is no way for a test to wait
+  // for multi-step persistence (e.g. game.settings.set + syncSafetyToCampaignState)
+  // to settle before re-reading state. On hosted environments like Forge VTT,
+  // world-scoped settings writes round-trip to the server and exceed the
+  // microtask window the test helper otherwise relies on.
   // -----------------------------------------------------------------------
 
-  static async #onSwitchTab(event, target) {
-    this.#activeTab = target.dataset.tab;
-    this.render();
+  static #onSwitchTab(event, target) {
+    const work = (async () => {
+      this.#activeTab = target.dataset.tab;
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onSetDial(event, target) {
-    if (!game.user.isGM) return;
-    await setDial(target.dataset.value);
-    this.render();
+  static #onSetDial(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      await setDial(target.dataset.value);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onAddLine(event, target) {
-    if (!game.user.isGM) return;
-    const input = this.element.querySelector('[name="newLine"]');
-    const text = input?.value.trim();
-    if (!text) return;
-    const lines = getGlobalLines();
-    lines.push(text);
-    await setGlobalLines(lines);   // sync included
-    this.render();
+  static #onAddLine(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const input = this.element.querySelector('[name="newLine"]');
+      const text = input?.value.trim();
+      if (!text) return;
+      const lines = getGlobalLines();
+      lines.push(text);
+      await setGlobalLines(lines);   // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onRemoveLine(event, target) {
-    if (!game.user.isGM) return;
-    const idx = Number(target.dataset.index);
-    const lines = getGlobalLines();
-    lines.splice(idx, 1);
-    await setGlobalLines(lines);   // sync included
-    this.render();
+  static #onRemoveLine(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const idx = Number(target.dataset.index);
+      const lines = getGlobalLines();
+      lines.splice(idx, 1);
+      await setGlobalLines(lines);   // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onAddVeil(event, target) {
-    if (!game.user.isGM) return;
-    const input = this.element.querySelector('[name="newVeil"]');
-    const text = input?.value.trim();
-    if (!text) return;
-    const veils = getGlobalVeils();
-    veils.push(text);
-    await setGlobalVeils(veils);   // sync included
-    this.render();
+  static #onAddVeil(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const input = this.element.querySelector('[name="newVeil"]');
+      const text = input?.value.trim();
+      if (!text) return;
+      const veils = getGlobalVeils();
+      veils.push(text);
+      await setGlobalVeils(veils);   // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onRemoveVeil(event, target) {
-    if (!game.user.isGM) return;
-    const idx = Number(target.dataset.index);
-    const veils = getGlobalVeils();
-    veils.splice(idx, 1);
-    await setGlobalVeils(veils);   // sync included
-    this.render();
+  static #onRemoveVeil(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const idx = Number(target.dataset.index);
+      const veils = getGlobalVeils();
+      veils.splice(idx, 1);
+      await setGlobalVeils(veils);   // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onAddPrivateLine(event, target) {
-    const input = this.element.querySelector('[name="newPrivateLine"]');
-    const text = input?.value.trim();
-    if (!text) return;
-    const lines = getPrivateLines();
-    lines.push(text);
-    await setPrivateLines(lines);  // sync included
-    this.render();
+  static #onAddPrivateLine(event, target) {
+    const work = (async () => {
+      const input = this.element.querySelector('[name="newPrivateLine"]');
+      const text = input?.value.trim();
+      if (!text) return;
+      const lines = getPrivateLines();
+      lines.push(text);
+      await setPrivateLines(lines);  // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onRemovePrivateLine(event, target) {
-    const idx = Number(target.dataset.index);
-    const lines = getPrivateLines();
-    lines.splice(idx, 1);
-    await setPrivateLines(lines);  // sync included
-    this.render();
+  static #onRemovePrivateLine(event, target) {
+    const work = (async () => {
+      const idx = Number(target.dataset.index);
+      const lines = getPrivateLines();
+      lines.splice(idx, 1);
+      await setPrivateLines(lines);  // sync included
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onSaveNarratorSettings(event, target) {
-    if (!game.user.isGM) return;
-    const el = this.element;
+  static #onSaveNarratorSettings(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const el = this.element;
 
-    const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
-    const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
-    const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
-    const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
-    const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
-    const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
-    const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
+      const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
+      const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
+      const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
+      const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
+      const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
+      const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
+      const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
-    const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
-    const sessionGapRaw    = el.querySelector('[name="sessionGapHours"]')?.value;
-    const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
-    const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
+      const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
+      const sessionGapRaw    = el.querySelector('[name="sessionGapHours"]')?.value;
+      const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
+      const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
 
-    await Promise.all([
-      game.settings.set(MODULE_ID, SETTING.NARRATION_ENABLED,      enabled),
-      game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
-      game.settings.set(MODULE_ID, SETTING.NARRATION_PERSPECTIVE,  perspective),
-      game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
-      game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
-      game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
-      game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
-      game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
-      game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
-    ]);
+      await Promise.all([
+        game.settings.set(MODULE_ID, SETTING.NARRATION_ENABLED,      enabled),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_PERSPECTIVE,  perspective),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
+        game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
+        game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
+        game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
+      ]);
 
-    ui.notifications?.info('Starforged Companion: Narrator settings saved.');
-    this.render();
+      ui.notifications?.info('Starforged Companion: Narrator settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onSaveApiKeys(event, target) {
-    if (!game.user.isGM) return;
+  static #onSaveApiKeys(event, target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
 
-    const panel      = this.element;
-    const claudeKey  = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
-    const artKey     = panel.querySelector('[name="artApiKey"]')?.value?.trim();
+      const panel      = this.element;
+      const claudeKey  = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
+      const artKey     = panel.querySelector('[name="artApiKey"]')?.value?.trim();
 
-    if (claudeKey) {
-      await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
-    }
-    if (artKey) {
-      await game.settings.set(MODULE_ID, 'artApiKey', artKey);
-    }
+      if (claudeKey) {
+        await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
+      }
+      if (artKey) {
+        await game.settings.set(MODULE_ID, 'artApiKey', artKey);
+      }
 
-    if (claudeKey || artKey) {
-      ui.notifications.info('Starforged Companion: API keys saved.');
-    }
+      if (claudeKey || artKey) {
+        ui.notifications.info('Starforged Companion: API keys saved.');
+      }
 
-    this.render();
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
   }
 }
 
