@@ -44,8 +44,12 @@ export async function generateOpenRouterImage({ apiKey, prompt, model, title } =
   const headers = {
     "Content-Type":  "application/json",
     "Authorization": `Bearer ${apiKey}`,
-    "HTTP-Referer":  resolveReferer(),
-    "X-Title":       title || "Starforged Companion",
+    // HTTP header values must be ISO-8859-1; sanitize any non-Latin-1 code
+    // points (e.g. em-dash in the default titles) before sending. The
+    // browser fails fetch() validation otherwise, so the request never
+    // reaches OpenRouter.
+    "HTTP-Referer":  sanitizeHeaderValue(resolveReferer()),
+    "X-Title":       sanitizeHeaderValue(title || "Starforged Companion"),
   };
 
   const body = {
@@ -202,6 +206,19 @@ function safeStringify(value, maxLen = 1500) {
   } catch {
     return String(value).slice(0, maxLen);
   }
+}
+
+/**
+ * Replace any non-ISO-8859-1 code point with a hyphen. Required because the
+ * Fetch API rejects RequestInit.headers if any value contains characters
+ * outside the Latin-1 range (the spec encodes header values as byte strings).
+ * Common offenders in our copy: em-dash, curly quotes, ellipsis, accented
+ * letters in user-supplied prompts that find their way into header values.
+ */
+function sanitizeHeaderValue(value) {
+  if (typeof value !== "string") return "";
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[^\x00-\xFF]/g, "-");
 }
 
 function resolveReferer() {
