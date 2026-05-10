@@ -237,6 +237,57 @@ function registerCoreSettings() {
 }
 
 
+/**
+ * One-time migrations for the `artBackend` setting.
+ *
+ * Two cases addressed:
+ *   1. The choices map used to include `replicate` and `fal`, neither of which
+ *      were ever wired up. Worlds that have a stale value stored will render
+ *      a blank dropdown until migrated to a valid choice.
+ *   2. Worlds created before the OpenRouter backend existed have `dalle`
+ *      stored. On The Forge, DALL-E cannot reach the OpenAI API (browser CORS),
+ *      so this combination is non-functional. Switch those worlds to
+ *      `openrouter` and tell the GM why.
+ *
+ * Idempotent: subsequent calls do nothing once the value is in
+ * {`openrouter`, `dalle`} and not the broken Forge+DALL-E combination.
+ *
+ * Exported for unit testing.
+ */
+export async function migrateArtBackend() {
+  const current = game.settings.get(MODULE_ID, "artBackend");
+  const onForge = typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true;
+
+  // Case 1: stale value from a removed choice.
+  if (current !== "openrouter" && current !== "dalle") {
+    const next = onForge ? "openrouter" : "dalle";
+    await game.settings.set(MODULE_ID, "artBackend", next);
+    console.log(`${MODULE_ID} | Migrated artBackend "${current}" → "${next}" (removed choice)`);
+    if (typeof ui !== "undefined") {
+      ui.notifications?.info(
+        `Starforged Companion: Art backend migrated to ${next === "openrouter" ? "OpenRouter" : "DALL-E"} ` +
+        `(your previous selection "${current}" is no longer supported).`
+      );
+    }
+    return;
+  }
+
+  // Case 2: dalle on The Forge — non-functional combination, switch to OpenRouter.
+  if (onForge && current === "dalle") {
+    await game.settings.set(MODULE_ID, "artBackend", "openrouter");
+    console.log(`${MODULE_ID} | Migrated artBackend "dalle" → "openrouter" on The Forge`);
+    if (typeof ui !== "undefined") {
+      ui.notifications?.info(
+        "Starforged Companion: Art backend switched to OpenRouter. DALL-E cannot " +
+        "be reached from a browser on The Forge. Add an OpenRouter API key in " +
+        "Companion Settings → About to enable art generation.",
+        { permanent: true }
+      );
+    }
+  }
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SESSION ID MANAGEMENT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1031,6 +1082,14 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
+
+  // One-time migrations for settings whose shape or default has changed.
+  // GM-only because artBackend is world-scoped.
+  if (game.user.isGM) {
+    migrateArtBackend().catch(err =>
+      console.error(`${MODULE_ID} | artBackend migration failed:`, err)
+    );
+  }
 
   // Session ID — GM writes to world-scoped settings; players read from state
   if (game.user.isGM) {
