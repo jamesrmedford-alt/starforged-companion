@@ -75,12 +75,19 @@ export async function generateSectorBackground(sector, _campaignState) {
   const backend = readBackend();
   const { prompt, size } = buildSectorBackgroundPrompt(sector);
 
+  // Trace line — useful when console access is available; cheap to keep.
+  console.log(`${MODULE_ID} | sectorArt: starting (backend=${backend}, ` +
+    `openRouterKey=${readOpenRouterKey() ? "set" : "unset"}, ` +
+    `artApiKey=${readApiKey() ? "set" : "unset"})`);
+
   let b64;
   try {
     if (backend === "openrouter") {
       const apiKey = readOpenRouterKey();
       if (!apiKey) {
-        console.warn(`${MODULE_ID} | sectorArt: no OpenRouter API key configured — scene will have no background`);
+        const msg = "Sector art skipped — no OpenRouter API key. Add one in Companion Settings → About.";
+        console.warn(`${MODULE_ID} | sectorArt: ${msg}`);
+        notify("warn", msg, { permanent: true });
         return null;
       }
       b64 = await generateOpenRouterImage({
@@ -92,18 +99,26 @@ export async function generateSectorBackground(sector, _campaignState) {
     } else {
       const artApiKey = readApiKey();
       if (!artApiKey) {
-        console.warn(`${MODULE_ID} | sectorArt: no OpenAI art API key configured — scene will have no background`);
+        const msg = "Sector art skipped — no OpenAI API key. Add one in Companion Settings → About, or switch the Art Backend to OpenRouter.";
+        console.warn(`${MODULE_ID} | sectorArt: ${msg}`);
+        notify("warn", msg, { permanent: true });
         return null;
       }
       b64 = await requestDalleImage(prompt, size, artApiKey);
     }
   } catch (err) {
-    console.warn(`${MODULE_ID} | sectorArt: image API call failed:`, err?.message ?? err);
+    const reason = err?.message ?? String(err);
+    console.warn(`${MODULE_ID} | sectorArt: image API call failed:`, reason);
+    notify("error", `Sector art failed — image API error: ${truncate(reason, 200)}`, { permanent: true });
     return null;
   }
 
   if (!b64) {
-    console.warn(`${MODULE_ID} | sectorArt: image backend returned no data`);
+    const msg = backend === "openrouter"
+      ? "Sector art failed — OpenRouter returned no image bytes. Check the browser console for the raw response shape; the parser may need an update for this model."
+      : "Sector art failed — DALL-E returned no image data.";
+    console.warn(`${MODULE_ID} | sectorArt: ${msg}`);
+    notify("error", msg, { permanent: true });
     return null;
   }
 
@@ -111,12 +126,16 @@ export async function generateSectorBackground(sector, _campaignState) {
   try {
     uploadedPath = await uploadSectorImage(b64, sector.id);
   } catch (err) {
-    console.warn(`${MODULE_ID} | sectorArt: FilePicker.upload failed:`, err?.message ?? err);
+    const reason = err?.message ?? String(err);
+    console.warn(`${MODULE_ID} | sectorArt: FilePicker.upload failed:`, reason);
+    notify("error", `Sector art generated but upload failed: ${truncate(reason, 200)}`, { permanent: true });
     return null;
   }
 
   if (!uploadedPath) {
-    console.warn(`${MODULE_ID} | sectorArt: upload returned no path`);
+    const msg = "Sector art generated but upload returned no path.";
+    console.warn(`${MODULE_ID} | sectorArt: ${msg}`);
+    notify("error", msg, { permanent: true });
     return null;
   }
 
@@ -195,6 +214,16 @@ function readBackend() {
   } catch {
     return "dalle";
   }
+}
+
+function notify(level, message, opts = {}) {
+  if (typeof ui === "undefined") return;
+  const fn = ui.notifications?.[level];
+  if (typeof fn === "function") fn.call(ui.notifications, `Starforged Companion: ${message}`, opts);
+}
+
+function truncate(s, n) {
+  return typeof s === "string" && s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
 async function requestDalleImage(prompt, size, apiKey) {

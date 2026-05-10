@@ -287,6 +287,40 @@ export async function migrateArtBackend() {
   }
 }
 
+/**
+ * Print a one-line summary of the current art-generation configuration.
+ * Helpful for diagnosing "no art appeared" reports without a network capture —
+ * the active backend and key-presence flags show up at world-load time.
+ */
+export function logArtBackendStatus() {
+  try {
+    const backend          = game.settings.get(MODULE_ID, "artBackend");
+    const onForge          = typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true;
+    const openRouterKeySet = !!game.settings.get(MODULE_ID, "openRouterApiKey");
+    const artKeySet        = !!game.settings.get(MODULE_ID, "artApiKey");
+    const sectorArt        = game.settings.get(MODULE_ID, "sectorArtEnabled");
+    const orModel          = game.settings.get(MODULE_ID, "openRouterImageModel");
+
+    console.log(
+      `${MODULE_ID} | Art status: backend=${backend}, onForge=${onForge}, ` +
+      `sectorArtEnabled=${sectorArt}, openRouterKey=${openRouterKeySet ? "set" : "unset"}, ` +
+      `artApiKey=${artKeySet ? "set" : "unset"}, openRouterModel=${orModel}`
+    );
+
+    // Surface the most common misconfiguration to the GM as a UI hint —
+    // backend says OpenRouter, but no key is configured.
+    if (backend === "openrouter" && !openRouterKeySet && sectorArt) {
+      ui.notifications?.warn(
+        "Starforged Companion: Sector art is enabled but no OpenRouter API key is set. " +
+        "Open Companion Settings → About and paste your OpenRouter key (sk-or-v1-...) to enable art.",
+        { permanent: true }
+      );
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | logArtBackendStatus failed:`, err);
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SESSION ID MANAGEMENT
@@ -1086,9 +1120,11 @@ Hooks.once("ready", () => {
   // One-time migrations for settings whose shape or default has changed.
   // GM-only because artBackend is world-scoped.
   if (game.user.isGM) {
-    migrateArtBackend().catch(err =>
-      console.error(`${MODULE_ID} | artBackend migration failed:`, err)
-    );
+    migrateArtBackend()
+      .then(() => logArtBackendStatus())
+      .catch(err =>
+        console.error(`${MODULE_ID} | artBackend migration failed:`, err)
+      );
   }
 
   // Session ID — GM writes to world-scoped settings; players read from state

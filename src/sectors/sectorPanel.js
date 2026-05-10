@@ -224,10 +224,22 @@ export class SectorCreatorApp extends ApplicationV2 {
       const [entityData, backgroundPath, stubs] = await Promise.all([
         createEntityJournals(this.#sector, campaignState),
         artEnabled
-          ? generateSectorBackground(this.#sector, campaignState).catch(() => null)
+          ? generateSectorBackground(this.#sector, campaignState).catch(err => {
+              // generateSectorBackground notifies its own failure paths; this
+              // catch is the safety net for anything that bubbled out.
+              console.warn(`${MODULE_ID} | Sector art unhandled rejection:`, err?.message ?? err);
+              ui.notifications?.error(
+                `Starforged Companion: Sector art failed unexpectedly: ${err?.message ?? err}`,
+                { permanent: true }
+              );
+              return null;
+            })
           : Promise.resolve(null),
         stubsEnabled
-          ? generateNarratorStubs(this.#sector, narratorSettings).catch(() => ({ sector: null, settlements: {} }))
+          ? generateNarratorStubs(this.#sector, narratorSettings).catch(err => {
+              console.warn(`${MODULE_ID} | Narrator stubs unhandled rejection:`, err?.message ?? err);
+              return { sector: null, settlements: {} };
+            })
           : Promise.resolve({ sector: null, settlements: {} }),
       ]);
 
