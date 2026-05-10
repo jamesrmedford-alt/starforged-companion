@@ -122,8 +122,20 @@ function registerCoreSettings() {
   });
 
   game.settings.register(MODULE_ID, "artApiKey", {
-    name:    "Art Generation API Key",
-    hint:    "API key for your chosen art generation backend (Replicate, fal.ai, or DALL-E).",
+    name:    "OpenAI Art API Key",
+    hint:    "OpenAI API key for DALL-E art generation (used when Art Backend is set to DALL-E). Stored locally in your browser.",
+    scope:   "client",
+    config:  false,
+    type:    String,
+    default: "",
+  });
+
+  // OpenRouter API key — required when artBackend is "openrouter". OpenRouter
+  // routes image generation through a CORS-enabled gateway, which works from
+  // browser-hosted Foundry (The Forge) where direct OpenAI calls cannot.
+  game.settings.register(MODULE_ID, "openRouterApiKey", {
+    name:    "OpenRouter API Key",
+    hint:    "OpenRouter API key for image generation (works on The Forge). Get one at openrouter.ai. Stored locally in your browser.",
     scope:   "client",
     config:  false,
     type:    String,
@@ -132,16 +144,29 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "artBackend", {
     name:    "Art Generation Backend",
-    hint:    "External API used for generating entity portraits.",
+    hint:    "External API used for generating entity portraits and sector backgrounds. OpenRouter works on The Forge; DALL-E requires the local proxy.",
     scope:   "world",
     config:  true,
     type:    String,
     choices: {
-      replicate: "Replicate",
-      fal:       "fal.ai",
-      dalle:     "DALL-E (OpenAI)",
+      openrouter: "OpenRouter (recommended; works on The Forge)",
+      dalle:      "DALL-E (OpenAI; desktop only)",
     },
-    default: "dalle",
+    // Default to OpenRouter on The Forge (where DALL-E cannot reach the API
+    // due to browser CORS), otherwise keep the existing DALL-E default for
+    // desktop users — make-before-break of the Phase 1 migration.
+    default: (typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true)
+      ? "openrouter"
+      : "dalle",
+  });
+
+  game.settings.register(MODULE_ID, "openRouterImageModel", {
+    name:    "OpenRouter Image Model",
+    hint:    "OpenRouter model identifier for image generation. Default: black-forest-labs/flux.2-pro.",
+    scope:   "world",
+    config:  true,
+    type:    String,
+    default: "black-forest-labs/flux.2-pro",
   });
 
   game.settings.register(MODULE_ID, "locationArtSource", {

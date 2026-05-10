@@ -14,6 +14,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { generateOpenRouterImage } from "../art/openRouterImage.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -71,25 +72,38 @@ const TROUBLE_VISUAL_MODIFIERS = {
  * @returns {Promise<string|null>} — Foundry data file path, or null on failure
  */
 export async function generateSectorBackground(sector, _campaignState) {
-  const artApiKey = readApiKey();
-
-  if (!artApiKey) {
-    console.warn(`${MODULE_ID} | sectorArt: no OpenAI art API key configured — scene will have no background`);
-    return null;
-  }
-
+  const backend = readBackend();
   const { prompt, size } = buildSectorBackgroundPrompt(sector);
 
   let b64;
   try {
-    b64 = await requestDalleImage(prompt, size, artApiKey);
+    if (backend === "openrouter") {
+      const apiKey = readOpenRouterKey();
+      if (!apiKey) {
+        console.warn(`${MODULE_ID} | sectorArt: no OpenRouter API key configured — scene will have no background`);
+        return null;
+      }
+      b64 = await generateOpenRouterImage({
+        apiKey,
+        prompt,
+        model: readOpenRouterModel(),
+        title: "Starforged Companion — sector background",
+      });
+    } else {
+      const artApiKey = readApiKey();
+      if (!artApiKey) {
+        console.warn(`${MODULE_ID} | sectorArt: no OpenAI art API key configured — scene will have no background`);
+        return null;
+      }
+      b64 = await requestDalleImage(prompt, size, artApiKey);
+    }
   } catch (err) {
-    console.warn(`${MODULE_ID} | sectorArt: DALL-E API call failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | sectorArt: image API call failed:`, err?.message ?? err);
     return null;
   }
 
   if (!b64) {
-    console.warn(`${MODULE_ID} | sectorArt: DALL-E returned no image data`);
+    console.warn(`${MODULE_ID} | sectorArt: image backend returned no data`);
     return null;
   }
 
@@ -155,6 +169,31 @@ function readApiKey() {
   } catch (err) {
     console.warn(`${MODULE_ID} | sectorArt: artApiKey settings read failed:`, err);
     return null;
+  }
+}
+
+function readOpenRouterKey() {
+  try {
+    return game.settings.get(MODULE_ID, "openRouterApiKey") ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sectorArt: openRouterApiKey settings read failed:`, err);
+    return null;
+  }
+}
+
+function readOpenRouterModel() {
+  try {
+    return game.settings.get(MODULE_ID, "openRouterImageModel") || "black-forest-labs/flux.2-pro";
+  } catch {
+    return "black-forest-labs/flux.2-pro";
+  }
+}
+
+function readBackend() {
+  try {
+    return game.settings.get(MODULE_ID, "artBackend") || "dalle";
+  } catch {
+    return "dalle";
   }
 }
 
