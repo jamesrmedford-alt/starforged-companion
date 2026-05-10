@@ -36,6 +36,7 @@
 import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
 import { apiPost } from "../api-proxy.js";
+import { generateOpenRouterImage } from "./openRouterImage.js";
 
 const MODULE_ID   = "starforged-companion";
 const DALLE_MODEL = "dall-e-3";
@@ -80,14 +81,8 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
     }
   }
 
-  const apiKey = readApiKey();
-  if (!apiKey) {
-    notifyMissingApiKey();
-    return null;
-  }
-
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callDallE(apiKey, prompt, size, entity._id, entityType);
+  const asset = await callImageBackend(prompt, size, entity._id, entityType);
 
   if (!asset) return null;
 
@@ -135,14 +130,8 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
     return null;
   }
 
-  const apiKey = readApiKey();
-  if (!apiKey) {
-    notifyMissingApiKey();
-    return null;
-  }
-
   const { prompt, size } = buildRegenerationPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callDallE(apiKey, prompt, size, entity._id, entityType);
+  const asset = await callImageBackend(prompt, size, entity._id, entityType);
 
   if (!asset) return null;
 
@@ -159,6 +148,73 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
   return lockedAsset;
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMAGE BACKEND DISPATCH
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Route a portrait request to the configured image backend (OpenRouter on
+ * The Forge by default, DALL-E on desktop). Returns a raw ArtAsset record on
+ * success, null on any failure.
+ */
+async function callImageBackend(prompt, size, entityId, entityType) {
+  const backend = readBackend();
+
+  if (backend === "openrouter") {
+    const apiKey = readOpenRouterKey();
+    if (!apiKey) {
+      notifyMissingOpenRouterKey();
+      return null;
+    }
+    return callOpenRouter(apiKey, prompt, size, entityId, entityType);
+  }
+
+  // Default / "dalle"
+  const apiKey = readApiKey();
+  if (!apiKey) {
+    notifyMissingApiKey();
+    return null;
+  }
+  return callDallE(apiKey, prompt, size, entityId, entityType);
+}
+
+async function callOpenRouter(apiKey, prompt, size, entityId, entityType) {
+  try {
+    const b64 = await generateOpenRouterImage({
+      apiKey,
+      prompt,
+      model: readOpenRouterModel(),
+      title: "Starforged Companion — entity portrait",
+    });
+
+    if (!b64) {
+      console.warn(`${MODULE_ID} | Art: OpenRouter returned no image data.`);
+      return null;
+    }
+
+    return {
+      _id:              generateId(),
+      entityId,
+      entityType,
+      prompt,
+      revisedPrompt:    prompt,
+      b64,
+      size,
+      generatedAt:      new Date().toISOString(),
+      regenerationUsed: false,
+      locked:           false,
+      superseded:       false,
+    };
+  } catch (err) {
+    if (err.message?.includes("401") || err.message?.includes("403")) {
+      notifyBillingError(err.message);
+    } else {
+      console.error(`${MODULE_ID} | Art: OpenRouter call failed:`, err.message);
+    }
+    return null;
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DALL-E API CALL
@@ -292,12 +348,47 @@ function readApiKey() {
   }
 }
 
+function readOpenRouterKey() {
+  try {
+    return game.settings.get(MODULE_ID, "openRouterApiKey") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readOpenRouterModel() {
+  try {
+    return game.settings.get(MODULE_ID, "openRouterImageModel") || "black-forest-labs/flux.2-pro";
+  } catch {
+    return "black-forest-labs/flux.2-pro";
+  }
+}
+
+function readBackend() {
+  try {
+    return game.settings.get(MODULE_ID, "artBackend") || "dalle";
+  } catch {
+    return "dalle";
+  }
+}
+
 function notifyMissingApiKey() {
   console.warn(`${MODULE_ID} | Art: no OpenAI API key configured`);
   if (typeof ui !== "undefined") {
     ui.notifications?.warn(
       "Starforged Companion: No OpenAI API key is configured. " +
       "Add your key in module settings to enable portrait generation.",
+      { permanent: false }
+    );
+  }
+}
+
+function notifyMissingOpenRouterKey() {
+  console.warn(`${MODULE_ID} | Art: no OpenRouter API key configured`);
+  if (typeof ui !== "undefined") {
+    ui.notifications?.warn(
+      "Starforged Companion: No OpenRouter API key is configured. " +
+      "Add your key in Companion Settings → About to enable portrait generation.",
       { permanent: false }
     );
   }

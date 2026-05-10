@@ -1,20 +1,25 @@
 /**
  * STARFORGED COMPANION
- * src/api-proxy.js — Unified external API proxy routing
+ * src/api-proxy.js — External API request routing
  *
- * Handles CORS-safe external API calls for both the Claude API (interpreter.js)
- * and DALL-E API (art/generator.js) by routing through:
+ * Two transport paths, selected per-call:
  *
- *   • The Forge  — ForgeAPI.call("proxy", ...) when running on forge-vtt.com
- *                  Server-side proxy; no CORS restriction; no local setup needed.
+ *   • Direct browser fetch — used on The Forge (and for any host that supports
+ *     browser CORS). Anthropic supports this with the
+ *     `anthropic-dangerous-direct-browser-access: true` opt-in header. OpenRouter
+ *     supports it natively. Direct fetch needs no relay.
  *
- *   • Local proxy — http://127.0.0.1:3001 when running Foundry desktop
- *                   Run: npm run proxy (proxy/claude-proxy.mjs must be running)
- *                   The proxy relays to api.anthropic.com and api.openai.com
- *                   from Node.js where CORS does not apply.
+ *   • Local Node proxy — used on Foundry desktop for hosts that do not allow
+ *     browser CORS (currently only api.openai.com — the legacy DALL-E path).
+ *     Run `npm run proxy` before launching Foundry.
  *
- * Both paths present the same interface to callers:
- *   const responseText = await apiPost(url, headers, body);
+ * Phase 1 ("make"): both paths coexist. On Forge the Anthropic header carries
+ * the call; on desktop the existing local proxy still handles everything.
+ * Image generation on Forge goes through OpenRouter (see src/art/generator.js
+ * and src/sectors/sectorArt.js), not through this proxy.
+ *
+ * Phase 2 ("break"): once Forge is verified, the local proxy can be removed
+ * and all Anthropic traffic moved to direct fetch on every platform.
  *
  * Output path: modules/starforged-companion/src/api-proxy.js
  */
@@ -25,18 +30,12 @@ const MODULE_ID = "starforged-companion";
 // Environment detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Detect whether we are running inside The Forge.
- * ForgeVTT is a global injected by The Forge's client-side script.
- */
+/** Detect whether the renderer is loaded inside The Forge. */
 function isForge() {
   return typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true;
 }
 
-/**
- * Get the local proxy base URL from module settings.
- * Falls back to the default port if settings are unavailable (test context).
- */
+/** Local proxy base URL (read from settings; safe default for tests). */
 function getLocalProxyBase() {
   try {
     const url = game.settings.get(MODULE_ID, "claudeProxyUrl");
@@ -52,30 +51,35 @@ function getLocalProxyBase() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Make an external API POST request through the appropriate proxy.
+ * POST to an external API and return the parsed JSON response.
  *
- * @param {string} url       — Full target URL (e.g. https://api.anthropic.com/v1/messages)
- * @param {Object} headers   — Request headers (x-api-key, Content-Type, etc.)
- * @param {Object} body      — Request body (will be JSON-serialised)
- * @returns {Promise<Object>} — Parsed JSON response body
- * @throws {Error}            — On non-2xx responses or network failures
+ * Routes by host + environment:
+ *   • api.anthropic.com on Forge → direct fetch with the dangerous-direct
+ *     browser-access header (Anthropic's documented opt-in for client-side use).
+ *   • api.anthropic.com on desktop → local Node proxy.
+ *   • Any other host → local Node proxy (still required for OpenAI on desktop).
+ *
+ * @param {string} url
+ * @param {Object} headers
+ * @param {Object} body
+ * @returns {Promise<Object>}
  */
 export async function apiPost(url, headers, body) {
-  if (isForge()) {
-    return forgePost(url, headers, body);
+  const targetIsAnthropic = url.includes("api.anthropic.com");
+
+  if (targetIsAnthropic && isForge()) {
+    return directAnthropicPost(url, headers, body);
   }
+
   return localProxyPost(url, headers, body);
 }
 
 /**
- * Check whether the local proxy is reachable.
- * Used by the ready hook to surface a warning when the proxy isn't running.
- * Returns true if reachable, false otherwise. Never throws.
- *
- * @returns {Promise<boolean>}
+ * Health-check the local proxy. Returns true on Forge (no proxy needed for
+ * Anthropic; OpenAI image gen is handled separately via OpenRouter).
  */
 export async function isLocalProxyReachable() {
-  if (isForge()) return true;   // Forge doesn't need the local proxy
+  if (isForge()) return true;
   try {
     const base = getLocalProxyBase();
     const res  = await fetch(`${base}/health`, {
@@ -84,59 +88,49 @@ export async function isLocalProxyReachable() {
     });
     return res.ok;
   } catch (err) {
-    console.warn(`starforged-companion | api-proxy: local proxy health check failed:`, err);
+    console.warn(`${MODULE_ID} | api-proxy: local proxy health check failed:`, err);
     return false;
   }
 }
 
-/**
- * Return a human-readable description of the current proxy mode.
- * Used in the About pane and notifications.
- *
- * @returns {string}
- */
+/** Human-readable description of the active transport. */
 export function proxyModeDescription() {
-  if (isForge()) return "The Forge server-side proxy";
+  if (isForge()) return "Direct browser CORS (Anthropic) + OpenRouter (images)";
   return `Local proxy (${getLocalProxyBase()})`;
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Forge path
+// Direct fetch — Anthropic on Forge
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Route an API call through The Forge's built-in server-side proxy.
+ * POST directly to Anthropic from the browser.
  *
- * The Forge provides ForgeAPI.call("proxy", options) which makes the HTTP
- * request from their Node.js server, bypassing CORS entirely.
+ * Adds `anthropic-dangerous-direct-browser-access: true` — Anthropic's documented
+ * opt-in that makes their API send `Access-Control-Allow-Origin`. The "dangerous"
+ * naming is a warning about embedding keys in shared client code; it does not
+ * apply here, where the user enters their own key in module settings (BYOK).
  *
- * ForgeAPI.call("proxy", { url, method, headers, body }) returns:
- *   { success: true, response: <json-parsed body> }  on success
- *   { success: false, error: <string> }               on failure
- *
- * Ref: https://forge-vtt.com/api-docs (Proxy endpoint)
+ * Reference: https://docs.anthropic.com/en/api/client-sdks#direct-browser-access
  */
-async function forgePost(url, headers, body) {
-  if (typeof ForgeAPI === "undefined") {
-    throw new Error("ForgeAPI is not available. Is The Forge client script loaded?");
-  }
-
-  const result = await ForgeAPI.call("proxy", {
-    url,
+async function directAnthropicPost(url, headers, body) {
+  const res = await fetch(url, {
     method:  "POST",
-    headers,
-    body:    JSON.stringify(body),
+    headers: {
+      "Content-Type":                              "application/json",
+      "anthropic-dangerous-direct-browser-access": "true",
+      ...headers,
+    },
+    body: JSON.stringify(body),
   });
 
-  if (!result?.success) {
-    throw new Error(
-      `The Forge proxy error: ${result?.error ?? "unknown error"}`
-    );
+  if (!res.ok) {
+    const errText = await res.text().catch(() => `HTTP ${res.status}`);
+    throw new Error(`Anthropic API error ${res.status}: ${errText}`);
   }
 
-  // ForgeAPI.call returns the parsed response body in result.response
-  return result.response;
+  return res.json();
 }
 
 
@@ -145,16 +139,11 @@ async function forgePost(url, headers, body) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Route an API call through the local Node.js proxy (proxy/claude-proxy.mjs).
- *
- * The proxy listens on localhost and forwards requests to external APIs
- * from Node.js, which has no CORS restriction.
+ * POST through the local Node proxy (proxy/claude-proxy.mjs).
  *
  * URL rewriting:
- *   https://api.anthropic.com/v1/messages     → <proxyBase>/v1/messages
- *   https://api.openai.com/v1/images/generations → <proxyBase>/openai/v1/images/generations
- *
- * The proxy uses path prefix to determine the upstream host.
+ *   https://api.anthropic.com/v1/messages           → <proxyBase>/v1/messages
+ *   https://api.openai.com/v1/images/generations    → <proxyBase>/openai/v1/images/generations
  */
 async function localProxyPost(url, headers, body) {
   const proxyUrl = rewriteForLocalProxy(url);
@@ -176,13 +165,6 @@ async function localProxyPost(url, headers, body) {
   return res.json();
 }
 
-/**
- * Rewrite an external API URL to route through the local proxy.
- *
- * Proxy path conventions (must match claude-proxy.mjs routing):
- *   api.anthropic.com  → <base>/v1/... (no prefix change — Anthropic is the default)
- *   api.openai.com     → <base>/openai/v1/...
- */
 function rewriteForLocalProxy(originalUrl) {
   const base = getLocalProxyBase();
 
@@ -196,7 +178,6 @@ function rewriteForLocalProxy(originalUrl) {
     return `${base}/openai${path}`;
   }
 
-  // Unknown host — pass through as-is (will likely fail CORS, but don't swallow)
   console.warn(`${MODULE_ID} | api-proxy: unknown host in URL: ${originalUrl}`);
   return originalUrl;
 }

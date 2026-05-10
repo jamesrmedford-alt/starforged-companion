@@ -193,11 +193,22 @@ which programmatically creates the help journal on first GM world load.
 
 ### CORS-001 — Electron renderer blocks external API calls ✓
 
-**Resolved in:** Post-session-3 hardening
+**Resolved in:** Post-session-3 hardening (initial), revised in Phase 1 of
+the API-key-errors fix.
 
-**Fix:** Local Node.js proxy (`proxy/claude-proxy.mjs`) + Forge server-side
-proxy (`ForgeAPI.call("proxy", ...)`). All external API calls routed through
-`src/api-proxy.js`.
+**Fix (current):**
+- Anthropic on Forge → direct browser fetch with
+  `anthropic-dangerous-direct-browser-access: true`.
+- Anthropic on desktop → local Node proxy (`proxy/claude-proxy.mjs`),
+  unchanged from before. Phase 2 will migrate desktop to direct fetch as well.
+- Image generation on Forge → OpenRouter (`black-forest-labs/flux.2-pro` by
+  default) via `chat/completions` with `modalities: ["image"]`.
+- Image generation on desktop → DALL-E 3 via the local proxy, unchanged.
+
+The previously documented Forge path (`ForgeAPI.call("proxy", ...)`) does not
+exist as a Forge API verb and never worked. See `docs/decisions.md` for the
+full rationale and reference precedent (the `loremaster-foundry` module uses
+the same direct-fetch approach in production).
 
 ---
 

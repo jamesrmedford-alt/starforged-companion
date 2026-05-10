@@ -583,8 +583,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
       apiKeys: game.user.isGM ? {
-        claudeKeySet: !!game.settings.get(MODULE_ID, 'claudeApiKey'),
-        artKeySet:    !!game.settings.get(MODULE_ID, 'artApiKey'),
+        claudeKeySet:     !!game.settings.get(MODULE_ID, 'claudeApiKey'),
+        artKeySet:        !!game.settings.get(MODULE_ID, 'artApiKey'),
+        openRouterKeySet: !!game.settings.get(MODULE_ID, 'openRouterApiKey'),
       } : null,
     };
   }
@@ -839,7 +840,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
-            <dd>DALL-E 3 · standard quality · natural style</dd>
+            <dd>OpenRouter (FLUX.2 Pro by default) on The Forge · DALL-E 3 on desktop · backend selectable in module settings</dd>
           </div>
           <div class="about-field">
             <dt>Foundry target</dt>
@@ -867,7 +868,7 @@ export class SettingsPanelApp extends ApplicationV2 {
             </div>
             <div class="api-key-field">
               <label class="api-key-label" for="sf-art-key">
-                Art Generation API Key (OpenAI)
+                OpenAI Art API Key (DALL-E backend)
                 ${ctx.apiKeys.artKeySet
                   ? '<span class="api-key-status api-key-set">● Set</span>'
                   : '<span class="api-key-status api-key-unset">○ Not set</span>'}
@@ -875,6 +876,18 @@ export class SettingsPanelApp extends ApplicationV2 {
               <input class="settings-input api-key-input" type="password"
                      id="sf-art-key" name="artApiKey"
                      placeholder="sk-..."
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <div class="api-key-field">
+              <label class="api-key-label" for="sf-openrouter-key">
+                OpenRouter API Key (OpenRouter backend, works on The Forge)
+                ${ctx.apiKeys.openRouterKeySet
+                  ? '<span class="api-key-status api-key-set">● Set</span>'
+                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+              </label>
+              <input class="settings-input api-key-input" type="password"
+                     id="sf-openrouter-key" name="openRouterApiKey"
+                     placeholder="sk-or-v1-..."
                      autocomplete="off" spellcheck="false">
             </div>
             <div class="api-key-actions">
@@ -1046,9 +1059,10 @@ export class SettingsPanelApp extends ApplicationV2 {
     const work = (async () => {
       if (!game.user.isGM) return;
 
-      const panel      = this.element;
-      const claudeKey  = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
-      const artKey     = panel.querySelector('[name="artApiKey"]')?.value?.trim();
+      const panel          = this.element;
+      const claudeKey      = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
+      const artKey         = panel.querySelector('[name="artApiKey"]')?.value?.trim();
+      const openRouterKey  = panel.querySelector('[name="openRouterApiKey"]')?.value?.trim();
 
       if (claudeKey) {
         await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
@@ -1056,8 +1070,11 @@ export class SettingsPanelApp extends ApplicationV2 {
       if (artKey) {
         await game.settings.set(MODULE_ID, 'artApiKey', artKey);
       }
+      if (openRouterKey) {
+        await game.settings.set(MODULE_ID, 'openRouterApiKey', openRouterKey);
+      }
 
-      if (claudeKey || artKey) {
+      if (claudeKey || artKey || openRouterKey) {
         ui.notifications.info('Starforged Companion: API keys saved.');
       }
 
