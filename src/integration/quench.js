@@ -54,9 +54,17 @@ Hooks.on("quenchReady", (quench) => {
 
 const MODULE_ID = "starforged-companion";
 
-/** Save a setting, run fn, restore the setting (even on throw). */
+/** Save a setting, run fn, restore the setting (even on throw).
+ *  Object-valued settings (campaignState, globalSafetyLines, …) are
+ *  deep-cloned for the snapshot because Foundry returns them by reference;
+ *  without the clone a handler that mutates the live array (e.g.
+ *  `lines.push(text)` in settingsPanel.#onAddLine) also corrupts `original`,
+ *  and the restore silently writes the corrupted value back. */
 async function withTempSetting(key, value, fn) {
-  const original = game.settings.get(MODULE_ID, key);
+  const raw = game.settings.get(MODULE_ID, key);
+  const original = (raw !== null && typeof raw === "object")
+    ? JSON.parse(JSON.stringify(raw))
+    : raw;
   await game.settings.set(MODULE_ID, key, value);
   try { return await fn(); }
   finally { await game.settings.set(MODULE_ID, key, original); }
@@ -2243,8 +2251,14 @@ function registerSettingsPanelTests(quench) {
           const input = app.element.querySelector('[name="newLine"]');
           if (!input) { this.skip(); return; }
           const probe = `QUENCH PROBE ${Date.now()}`;
+          // Deep-clone the snapshot — Foundry returns the array by reference,
+          // and the addLine handler mutates it in place via lines.push(probe).
+          // Without the clone the restore would write the mutated value back
+          // and the probe would survive in the Safety panel.
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "globalSafetyLines") ?? []
+          ));
           input.value = probe;
-          const before = game.settings.get(MODULE_ID, "globalSafetyLines") ?? [];
           try {
             await clickAction(app, "addLine");
             await awaitRender(app);

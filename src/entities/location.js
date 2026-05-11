@@ -18,6 +18,8 @@
  * Storage: JournalEntry + JournalEntryPage, same pattern as planets.
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "location";
 
@@ -73,8 +75,9 @@ export async function createLocation(data, campaignState) {
   };
 
   const entry = await JournalEntry.create({
-    name:  location.name || "Unknown Location",
-    flags: { [MODULE_ID]: { entityType: "location", entityId: id } },
+    name:   location.name || "Unknown Location",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "location", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
