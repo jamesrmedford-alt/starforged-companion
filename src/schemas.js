@@ -707,6 +707,16 @@ export const CampaignStateSchema = {
     chronicleLength: 0,
   },
 
+  // Pacing classifier state (see docs/pacing-scope.md)
+  //   sceneOverride   — { modifier, label } when GM has set !pace hot/quiet; null otherwise
+  //   forceNextAsMove — set by !roll, consumed by router before classification
+  // Recent-decision rolling window lives in-memory in src/pacing/router.js;
+  // it resets when the scene tag changes and does not need to persist.
+  pacing: {
+    sceneOverride:   null,
+    forceNextAsMove: false,
+  },
+
   createdAt: null,
   updatedAt: null,
 };

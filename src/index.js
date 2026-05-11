@@ -75,6 +75,12 @@ import {
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
 import {
+  routePacedInput,
+  applyPaceCommand,
+  markForceNextAsMove,
+  resetRecentDensity,
+} from "./pacing/router.js";
+import {
   isEncounterCommand,
   parseEncounterCommand,
   spawnEncounter,
@@ -308,12 +314,16 @@ export function isNewSessionStart(campaignState, gapHours) {
  */
 export function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
-    // Scene query — intercept before move pipeline
+    // Scene query — intercept before move pipeline.
+    // @scene starts a new scene moment in the fiction, so reset the recent
+    // move-density window so the pacing classifier doesn't carry over the
+    // previous scene's run of MOVE decisions.
     if (isSceneQuery(message)) {
       const text     = message.content?.trim() ?? "";
       const question = text.replace(/^@scene\s*/i, "").trim();
       if (!question) return;
       const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      resetRecentDensity();
       await interrogateScene(question, campaignState, {
         actorId: message.author?.character?.id,
       });
@@ -402,7 +412,40 @@ export function registerChatHook() {
       return;
     }
 
+    // !pace command — GM-only pacing scene override
+    if (isPaceCommand(message)) {
+      await handlePaceCommand(message);
+      return;
+    }
+
+    // !roll command — force the next undecorated input through the move pipeline
+    if (isRollCommand(message)) {
+      await handleRollCommand(message);
+      return;
+    }
+
     if (!isPlayerNarration(message)) return;
+
+    const narration = message.content;
+    const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
+
+    // Pacing classifier — decides whether to run the move pipeline, narrate
+    // only, or narrate with an inline move suggestion. The classifier runs
+    // freely; only the MOVE branch claims the pendingMove lock below.
+    const preState  = game.settings.get(MODULE_ID, "campaignState");
+    const character = getActiveCharacterForPacing(preState);
+    let pacingResult = { runMove: true, decision: "MOVE", suggestedMove: null };
+    try {
+      pacingResult = await routePacedInput({
+        playerText: narration,
+        campaignState: preState,
+        character,
+        apiKey: apiKeyForPacing,
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
+    }
+    if (!pacingResult.runMove) return;
 
     // Concurrency guard — one move at a time. A second narration that arrives
     // while a pipeline is running would otherwise race on campaignState writes
@@ -421,9 +464,8 @@ export function registerChatHook() {
     campaignState.pendingMove = true;
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
 
-    const narration = message.content;
-    const apiKey    = game.settings.get(MODULE_ID, "claudeApiKey");
-    const dial      = getMischiefDial();
+    const apiKey = apiKeyForPacing;
+    const dial   = getMischiefDial();
 
     try {
       const interpretation = await interpretMove(narration, {
@@ -583,11 +625,13 @@ export function isPlayerNarration(message) {
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
 
   // Skip messages already processed by this module
-  if (message.flags?.[MODULE_ID]?.moveResolution) return false;
-  if (message.flags?.[MODULE_ID]?.narrationCard)  return false;
-  if (message.flags?.[MODULE_ID]?.sceneResponse)  return false;
-  if (message.flags?.[MODULE_ID]?.recapCard)       return false;
-  if (message.flags?.[MODULE_ID]?.xcardCard)       return false;
+  if (message.flags?.[MODULE_ID]?.moveResolution)   return false;
+  if (message.flags?.[MODULE_ID]?.narrationCard)    return false;
+  if (message.flags?.[MODULE_ID]?.sceneResponse)    return false;
+  if (message.flags?.[MODULE_ID]?.recapCard)         return false;
+  if (message.flags?.[MODULE_ID]?.xcardCard)         return false;
+  if (message.flags?.[MODULE_ID]?.paceCommandCard)   return false;
+  if (message.flags?.[MODULE_ID]?.rollCommandCard)   return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
@@ -699,6 +743,29 @@ export function isLoreCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is a !pace command.
+ *   !pace hot | quiet | clear | status
+ */
+export function isPaceCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (!/^!pace(\s|$)/i.test(text)) return false;
+  if (message.flags?.[MODULE_ID]?.paceCommandCard) return false;
+  return true;
+}
+
+/**
+ * Determine whether a chat message is a !roll command.
+ *   !roll — force the next undecorated input through the move pipeline
+ *           (bypasses the pacing classifier).
+ */
+export function isRollCommand(message) {
+  const text = message.content?.trim().toLowerCase() ?? "";
+  if (text !== "!roll") return false;
+  if (message.flags?.[MODULE_ID]?.rollCommandCard) return false;
+  return true;
+}
+
+/**
  * Handle a !journal command. GM-only — World Journal writes require world-
  * scoped permissions. Posts a confirmation card on success or a notification
  * on rejection.
@@ -737,6 +804,66 @@ async function handleJournalCommand(message) {
     console.error(`${MODULE_ID} | !journal command failed:`, err);
     ui.notifications.error("!journal command failed. Check console for details.");
   }
+}
+
+/**
+ * Load the active character for the pacing classifier. Returns a minimal
+ * { name, connections } object — the classifier doesn't need full stat
+ * state. Returns null when no character is set.
+ */
+function getActiveCharacterForPacing(campaignState) {
+  try {
+    const ids = campaignState?.characterIds ?? [];
+    if (!ids.length) return null;
+    const entry = game.journal?.get?.(ids[0]);
+    const page  = entry?.pages?.contents?.[0];
+    const data  = page?.flags?.[MODULE_ID]?.character;
+    if (!data) return null;
+    return { name: data.name ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Handle a !pace chat command. GM-only — writes world-scoped campaignState.
+ */
+async function handlePaceCommand(message) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("!pace is GM-only (writes campaign state).");
+    return;
+  }
+  const text = message.content?.trim() ?? "";
+  const arg  = text.slice("!pace".length).trim().split(/\s+/)[0] ?? "";
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  const result = await applyPaceCommand(campaignState, arg);
+
+  const body = result.status.includes("\n")
+    ? `<pre class="sf-pace-status">${escapeChatHtml(result.status)}</pre>`
+    : `<p>${escapeChatHtml(result.status)}</p>`;
+
+  await ChatMessage.create({
+    content: `<div class="sf-pace-card"><strong>Pacing</strong> ${body}</div>`,
+    flags:   { [MODULE_ID]: { paceCommandCard: true } },
+  });
+}
+
+/**
+ * Handle a !roll chat command — forces the next undecorated input through
+ * the move pipeline regardless of the classifier's decision. GM-only.
+ */
+async function handleRollCommand(_message) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("!roll is GM-only (writes campaign state).");
+    return;
+  }
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  await markForceNextAsMove(campaignState);
+  await ChatMessage.create({
+    content: `<div class="sf-pace-card"><strong>Pacing</strong> <p>Next undecorated input will route to the move interpreter, bypassing the classifier.</p></div>`,
+    flags:   { [MODULE_ID]: { rollCommandCard: true } },
+  });
 }
 
 function escapeChatHtml(s) {
@@ -1105,6 +1232,10 @@ Hooks.once("ready", () => {
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerSettingsHooks();
+
+  // Pacing recent-density buffer is in-memory; clear it on world load so a
+  // returning session doesn't inherit the previous run's MOVE count.
+  resetRecentDensity();
 
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();

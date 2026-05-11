@@ -75,6 +75,22 @@ const SETTING = {
   WJ_FACTION_IN_CONTEXT:       'factionLandscapeInContext',
   WJ_CONTRADICTION_NOTIFY:     'contradictionNotifications',
   WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
+  // ── Pacing classifier ────────────────────────────────────────────────────
+  PACING_ENABLED:              'pacing.enabled',
+  PACING_DENSITY_WINDOW:       'pacing.densityWindow',
+  PACING_DIAL_COMBAT:          'pacing.dial.combat',
+  PACING_DIAL_INVESTIGATION:   'pacing.dial.investigation',
+  PACING_DIAL_EXPLORATION:     'pacing.dial.exploration',
+  PACING_DIAL_SOCIAL:          'pacing.dial.social',
+  PACING_DIAL_DOWNTIME:        'pacing.dial.downtime',
+};
+
+const PACING_DEFAULTS = {
+  combat:        9,
+  investigation: 6,
+  exploration:   5,
+  social:        3,
+  downtime:      1,
 };
 
 const NARRATION_MODELS = {
@@ -370,6 +386,71 @@ export function registerSettings() {
     type:    Boolean,
     default: true,
   });
+
+  // ── Pacing classifier ────────────────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.PACING_ENABLED, {
+    name:    'Pacing Classifier Enabled',
+    hint:    'Master switch. When enabled, a Haiku pre-classifier decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DENSITY_WINDOW, {
+    name:    'Pacing Density Window',
+    hint:    'Number of recent inputs considered for the recent-move-density signal. Higher values smooth pacing, lower values react faster. Range: 3–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 5,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_COMBAT, {
+    name:    'Pacing Dial — Combat',
+    hint:    'How move-leaning combat scenes should be. 10 = almost every input is a move. 0 = almost never.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.combat,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION, {
+    name:    'Pacing Dial — Investigation',
+    hint:    'How move-leaning investigation scenes should be. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.investigation,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION, {
+    name:    'Pacing Dial — Exploration',
+    hint:    'How move-leaning exploration scenes should be. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.exploration,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_SOCIAL, {
+    name:    'Pacing Dial — Social',
+    hint:    'How move-leaning social scenes should be. Default 3 — most chat in a social scene reads as narrative. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.social,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME, {
+    name:    'Pacing Dial — Downtime',
+    hint:    'How move-leaning downtime scenes should be. Default 1 — downtime is mostly narrative. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.downtime,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +478,19 @@ function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTIN
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
 function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
 function getRecapGmOnly()      { return game.settings.get(MODULE_ID, SETTING.RECAP_GM_ONLY)      ?? true; }
+
+// ── Pacing classifier ────────────────────────────────────────────────────
+function getPacingEnabled()       { return game.settings.get(MODULE_ID, SETTING.PACING_ENABLED) ?? true; }
+function getPacingDensityWindow() { return game.settings.get(MODULE_ID, SETTING.PACING_DENSITY_WINDOW) ?? 5; }
+function getPacingDials() {
+  return {
+    combat:        game.settings.get(MODULE_ID, SETTING.PACING_DIAL_COMBAT)        ?? PACING_DEFAULTS.combat,
+    investigation: game.settings.get(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION) ?? PACING_DEFAULTS.investigation,
+    exploration:   game.settings.get(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION)   ?? PACING_DEFAULTS.exploration,
+    social:        game.settings.get(MODULE_ID, SETTING.PACING_DIAL_SOCIAL)        ?? PACING_DEFAULTS.social,
+    downtime:      game.settings.get(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME)      ?? PACING_DEFAULTS.downtime,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -536,6 +630,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       removePrivateLine:      SettingsPanelApp.#onRemovePrivateLine,
       setDial:                SettingsPanelApp.#onSetDial,
       saveNarratorSettings:   SettingsPanelApp.#onSaveNarratorSettings,
+      savePacingSettings:     SettingsPanelApp.#onSavePacingSettings,
       saveApiKeys:            SettingsPanelApp.#onSaveApiKeys,
     },
   };
@@ -579,6 +674,10 @@ export class SettingsPanelApp extends ApplicationV2 {
       autoRecapEnabled:      getAutoRecapEnabled(),
       sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
+      pacingEnabled:         getPacingEnabled(),
+      pacingDensityWindow:   getPacingDensityWindow(),
+      pacingDials:           getPacingDials(),
+      pacingSceneOverride:   campaignState?.pacing?.sceneOverride ?? null,
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
@@ -713,12 +812,28 @@ export class SettingsPanelApp extends ApplicationV2 {
     `).join('');
 
     const gmNote = ctx.isGM ? '' : `
-      <p class="dial-player-note">Mischief dial is controlled by the GM.</p>
+      <p class="dial-player-note">Mischief and pacing are controlled by the GM.</p>
     `;
+
+    const dis = ctx.isGM ? '' : 'disabled';
+    const dials = ctx.pacingDials ?? {};
+    const dialRow = (name, label, value) => `
+      <div class="pacing-dial-row">
+        <label class="pacing-dial-label" for="sf-pacing-${name}">${label}</label>
+        <input class="settings-input pacing-dial-input" id="sf-pacing-${name}"
+               name="pacing.dial.${name}" type="number" min="0" max="10" step="1"
+               value="${value}" ${dis}>
+      </div>
+    `;
+
+    const overrideLabel = ctx.pacingSceneOverride?.label
+      ? `${ctx.pacingSceneOverride.label} (${ctx.pacingSceneOverride.modifier >= 0 ? '+' : ''}${ctx.pacingSceneOverride.modifier})`
+      : 'none';
 
     return `
       <div class="mischief-pane">
         ${gmNote}
+        <h4 class="mischief-section-heading">Mischief Dial</h4>
         <div class="dial-options ${!ctx.isGM ? 'dial-readonly' : ''}">
           ${dialHtml}
         </div>
@@ -726,6 +841,44 @@ export class SettingsPanelApp extends ApplicationV2 {
           <strong>Note:</strong> Safety configuration is always a hard ceiling on the mischief layer.
           Active Lines and Veils are injected before any mischief is applied, regardless of dial setting.
         </div>
+
+        <hr class="mischief-divider">
+        <h4 class="mischief-section-heading">Pacing Classifier</h4>
+        <p class="pacing-pane-intro">
+          When enabled, a small Haiku call decides whether each undecorated chat input should
+          trigger a move, be handled as pure narration, or end with an inline move suggestion.
+          Dials below set how move-leaning each scene type should be on a 0–10 scale.
+        </p>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="pacing.enabled"
+                   ${ctx.pacingEnabled ? 'checked' : ''} ${dis}>
+            Enable pacing classifier
+          </label>
+        </div>
+        <div class="pacing-dials-grid">
+          ${dialRow('combat',        'Combat',        dials.combat        ?? 9)}
+          ${dialRow('investigation', 'Investigation', dials.investigation ?? 6)}
+          ${dialRow('exploration',   'Exploration',   dials.exploration   ?? 5)}
+          ${dialRow('social',        'Social',        dials.social        ?? 3)}
+          ${dialRow('downtime',      'Downtime',      dials.downtime      ?? 1)}
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label" for="sf-pacing-window">Density window</label>
+          <input class="settings-input pacing-dial-input" id="sf-pacing-window"
+                 name="pacing.densityWindow" type="number" min="3" max="10" step="1"
+                 value="${ctx.pacingDensityWindow ?? 5}" ${dis}>
+          <span class="pacing-field-hint">Number of recent inputs considered for pacing recovery. 3–10.</span>
+        </div>
+        <p class="pacing-override-line">
+          <strong>Scene override:</strong> ${overrideLabel}
+          <span class="pacing-field-hint">— change with <code>!pace hot</code>, <code>!pace quiet</code>, or <code>!pace clear</code>.</span>
+        </p>
+        ${ctx.isGM ? `
+          <div class="pacing-actions">
+            <button class="settings-btn btn-save-pacing" data-action="savePacingSettings">Save Pacing Settings</button>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -1036,6 +1189,44 @@ export class SettingsPanelApp extends ApplicationV2 {
       ]);
 
       ui.notifications?.info('Starforged Companion: Narrator settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  static #onSavePacingSettings(_event, _target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const el = this.element;
+
+      const enabled = el.querySelector('[name="pacing.enabled"]')?.checked ?? true;
+      const windowRaw = el.querySelector('[name="pacing.densityWindow"]')?.value;
+      const densityWindow = Math.max(3, Math.min(10, Number(windowRaw) || 5));
+
+      const read = (name, fallback) => {
+        const v = Number(el.querySelector(`[name="pacing.dial.${name}"]`)?.value);
+        return Math.max(0, Math.min(10, Number.isFinite(v) ? v : fallback));
+      };
+      const dials = {
+        combat:        read('combat',        PACING_DEFAULTS.combat),
+        investigation: read('investigation', PACING_DEFAULTS.investigation),
+        exploration:   read('exploration',   PACING_DEFAULTS.exploration),
+        social:        read('social',        PACING_DEFAULTS.social),
+        downtime:      read('downtime',      PACING_DEFAULTS.downtime),
+      };
+
+      await Promise.all([
+        game.settings.set(MODULE_ID, SETTING.PACING_ENABLED,             enabled),
+        game.settings.set(MODULE_ID, SETTING.PACING_DENSITY_WINDOW,      densityWindow),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_COMBAT,         dials.combat),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION,  dials.investigation),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION,    dials.exploration),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_SOCIAL,         dials.social),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME,       dials.downtime),
+      ]);
+
+      ui.notifications?.info('Starforged Companion: Pacing settings saved.');
       this.render();
     })();
     this._lastAction = work;

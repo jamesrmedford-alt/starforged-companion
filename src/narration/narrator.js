@@ -8,6 +8,7 @@ import {
   buildNarratorUserMessage,
   buildSceneUserMessage,
   buildCampaignRecapUserMessage,
+  buildPacedNarrativeUserMessage,
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
@@ -629,6 +630,103 @@ export async function interrogateScene(question, campaignState, _options = {}) {
     await postSceneFallbackCard(question, 'Scene query failed — check your API key and proxy.', sessionId);
     return null;
   }
+}
+
+/**
+ * Run a narrator-only response for the pacing classifier's NARRATIVE and
+ * NARRATIVE_WITH_MOVE_AVAILABLE decisions. No move is rolled, no move card is
+ * posted, no chronicle entry — just a narrator card continuing the fiction
+ * directly from the player's input.
+ *
+ * @param {string} playerText        — raw player narration
+ * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {string|null} [options.suggestedMove] — when set, the narrator is
+ *   instructed to end with an italicized inline hint nominating this move
+ * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
+ */
+export async function narratePacedInput(playerText, campaignState, options = {}) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const suggestedMove = options.suggestedMove ?? null;
+
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+
+  if (campaignState?.xCardActive) {
+    // Don't run the narrator while the scene is paused.
+    return null;
+  }
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.warn(`${MODULE_ID} | narratePacedInput: Claude API key not configured`);
+    return null;
+  }
+
+  const character    = getActiveCharacter(campaignState);
+  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character);
+
+  const recentContext = getRecentNarrationContext(sessionId, 3);
+  const sentenceTarget = settings.narrationLength ?? 3;
+  const userMessage = buildPacedNarrativeUserMessage(
+    playerText, recentContext, sentenceTarget, suggestedMove,
+  );
+
+  try {
+    const text = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: settings.narrationMaxTokens,
+    });
+
+    if (!text?.trim()) return null;
+
+    await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
+    return text;
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try {
+        await delay(RETRY_DELAY_MS);
+        const text = await callNarratorAPI({
+          apiKey, systemPrompt, userMessage,
+          model:     settings.narrationModel,
+          maxTokens: settings.narrationMaxTokens,
+        });
+        if (text?.trim()) {
+          await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
+          return text;
+        }
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
+      }
+    }
+    console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+    return null;
+  }
+}
+
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove) {
+  const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
+  return ChatMessage.create({
+    content: `
+      <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
+        <div class="sf-narration-label">◈ Narrator</div>
+        <div class="sf-narration-prose">${narrationText}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        narratorCard:   true,
+        narrationCard:  true,                  // back-compat
+        pacedNarrative: true,
+        narrationText:  narrationText,
+        playerText:     playerText,
+        suggestedMove:  suggestedMove ?? null,
+        sessionId:      sessionId ?? null,
+        timestamp:      new Date().toISOString(),
+      },
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
