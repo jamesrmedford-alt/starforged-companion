@@ -193,22 +193,25 @@ which programmatically creates the help journal on first GM world load.
 
 ### CORS-001 — Electron renderer blocks external API calls ✓
 
-**Resolved in:** Post-session-3 hardening (initial), revised in Phase 1 of
-the API-key-errors fix.
+**Resolved.** Multi-phase: initial post-session-3 hardening added a local Node
+proxy; Phase 1 of the API-key-errors fix introduced direct browser fetch on
+The Forge (Anthropic via the `anthropic-dangerous-direct-browser-access`
+header, image generation via OpenRouter); Phase 2 removed the local proxy
+entirely and unified desktop and Forge on direct browser fetch.
 
-**Fix (current):**
-- Anthropic on Forge → direct browser fetch with
-  `anthropic-dangerous-direct-browser-access: true`.
-- Anthropic on desktop → local Node proxy (`proxy/claude-proxy.mjs`),
-  unchanged from before. Phase 2 will migrate desktop to direct fetch as well.
-- Image generation on Forge → OpenRouter (`black-forest-labs/flux.2-pro` by
-  default) via `chat/completions` with `modalities: ["image"]`.
-- Image generation on desktop → DALL-E 3 via the local proxy, unchanged.
+**Final transport:**
+- Anthropic — direct browser fetch from `src/api-proxy.js` with
+  `anthropic-dangerous-direct-browser-access: true`. Works on desktop and
+  Forge identically.
+- Image generation — direct browser fetch to OpenRouter
+  (`openrouter.ai/api/v1/chat/completions`) via `src/art/openRouterImage.js`.
+  Default model `black-forest-labs/flux.2-pro`, configurable via the
+  `openRouterImageModel` setting.
 
-The previously documented Forge path (`ForgeAPI.call("proxy", ...)`) does not
-exist as a Forge API verb and never worked. See `docs/decisions.md` for the
-full rationale and reference precedent (the `loremaster-foundry` module uses
-the same direct-fetch approach in production).
+No local proxy, no environment branching. See `docs/decisions.md` for the
+rationale (including the previously rescinded `ForgeAPI.call("proxy", ...)`
+claim) and reference precedent (`loremaster-foundry` uses the same
+direct-fetch approach in production).
 
 ---
 

@@ -29,7 +29,6 @@ import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { initSpeechInput }       from "./input/speechInput.js";
-import { isLocalProxyReachable, proxyModeDescription } from "./api-proxy.js";
 import {
   narrateResolution,
   interrogateScene,
@@ -121,43 +120,16 @@ function registerCoreSettings() {
     default: "",
   });
 
-  game.settings.register(MODULE_ID, "artApiKey", {
-    name:    "OpenAI Art API Key",
-    hint:    "OpenAI API key for DALL-E art generation (used when Art Backend is set to DALL-E). Stored locally in your browser.",
-    scope:   "client",
-    config:  false,
-    type:    String,
-    default: "",
-  });
-
-  // OpenRouter API key — required when artBackend is "openrouter". OpenRouter
-  // routes image generation through a CORS-enabled gateway, which works from
-  // browser-hosted Foundry (The Forge) where direct OpenAI calls cannot.
+  // OpenRouter API key — the user's BYOK credential for image generation.
+  // OpenRouter is the only image backend; calls go directly from the browser
+  // to openrouter.ai/api/v1/chat/completions.
   game.settings.register(MODULE_ID, "openRouterApiKey", {
     name:    "OpenRouter API Key",
-    hint:    "OpenRouter API key for image generation (works on The Forge). Get one at openrouter.ai. Stored locally in your browser.",
+    hint:    "OpenRouter API key for image generation. Get one at openrouter.ai. Stored locally in your browser.",
     scope:   "client",
     config:  false,
     type:    String,
     default: "",
-  });
-
-  game.settings.register(MODULE_ID, "artBackend", {
-    name:    "Art Generation Backend",
-    hint:    "External API used for generating entity portraits and sector backgrounds. OpenRouter works on The Forge; DALL-E requires the local proxy.",
-    scope:   "world",
-    config:  true,
-    type:    String,
-    choices: {
-      openrouter: "OpenRouter (recommended; works on The Forge)",
-      dalle:      "DALL-E (OpenAI; desktop only)",
-    },
-    // Default to OpenRouter on The Forge (where DALL-E cannot reach the API
-    // due to browser CORS), otherwise keep the existing DALL-E default for
-    // desktop users — make-before-break of the Phase 1 migration.
-    default: (typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true)
-      ? "openrouter"
-      : "dalle",
   });
 
   game.settings.register(MODULE_ID, "openRouterImageModel", {
@@ -171,22 +143,22 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "locationArtSource", {
     name:    "Location Background Art Source",
-    hint:    "Choose system-bundled location art (free) or DALL-E generation (paid). Auto prefers system art when available.",
+    hint:    "Choose system-bundled location art (free) or OpenRouter generation (paid). Auto prefers system art when available.",
     scope:   "world",
     config:  true,
     type:    String,
     choices: {
-      auto:  "Auto (system art first, DALL-E fallback)",
-      kirin: "System — illustrated (Kirin)",
-      rains: "System — photorealistic (Rains)",
-      dalle: "Always generate via DALL-E",
+      auto:       "Auto (system art first, OpenRouter fallback)",
+      kirin:      "System — illustrated (Kirin)",
+      rains:      "System — photorealistic (Rains)",
+      openrouter: "Always generate via OpenRouter",
     },
     default: "auto",
   });
 
   game.settings.register(MODULE_ID, "sectorArtEnabled", {
     name:    "Generate Sector Background Art",
-    hint:    "Generate a DALL-E 3 background image for each new sector. Requires Art API Key.",
+    hint:    "Generate a background image (via OpenRouter, FLUX.2 Pro by default) for each new sector. Requires the OpenRouter API key.",
     scope:   "world",
     config:  true,
     type:    Boolean,
@@ -222,94 +194,29 @@ function registerCoreSettings() {
     type:    String,
     default: "en-US",
   });
-
-  // Claude proxy base URL — required to route API calls through the local
-  // proxy (proxy/claude-proxy.mjs) which bypasses Electron renderer CORS.
-  // Default assumes the proxy is running on the same machine as Foundry.
-  game.settings.register(MODULE_ID, "claudeProxyUrl", {
-    name:    "Claude Proxy URL",
-    hint:    "Base URL of the local Claude proxy server. Run 'npm run proxy' in the module folder before starting a session. Default: http://127.0.0.1:3001",
-    scope:   "world",
-    config:  true,
-    type:    String,
-    default: "http://127.0.0.1:3001",
-  });
 }
 
 
 /**
- * One-time migrations for the `artBackend` setting.
- *
- * Two cases addressed:
- *   1. The choices map used to include `replicate` and `fal`, neither of which
- *      were ever wired up. Worlds that have a stale value stored will render
- *      a blank dropdown until migrated to a valid choice.
- *   2. Worlds created before the OpenRouter backend existed have `dalle`
- *      stored. On The Forge, DALL-E cannot reach the OpenAI API (browser CORS),
- *      so this combination is non-functional. Switch those worlds to
- *      `openrouter` and tell the GM why.
- *
- * Idempotent: subsequent calls do nothing once the value is in
- * {`openrouter`, `dalle`} and not the broken Forge+DALL-E combination.
+ * Log a one-line summary of the current art-generation configuration and
+ * surface the most common misconfiguration (no OpenRouter key while sector
+ * art is enabled) to the GM as a permanent toast.
  *
  * Exported for unit testing.
  */
-export async function migrateArtBackend() {
-  const current = game.settings.get(MODULE_ID, "artBackend");
-  const onForge = typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true;
-
-  // Case 1: stale value from a removed choice.
-  if (current !== "openrouter" && current !== "dalle") {
-    const next = onForge ? "openrouter" : "dalle";
-    await game.settings.set(MODULE_ID, "artBackend", next);
-    console.log(`${MODULE_ID} | Migrated artBackend "${current}" → "${next}" (removed choice)`);
-    if (typeof ui !== "undefined") {
-      ui.notifications?.info(
-        `Starforged Companion: Art backend migrated to ${next === "openrouter" ? "OpenRouter" : "DALL-E"} ` +
-        `(your previous selection "${current}" is no longer supported).`
-      );
-    }
-    return;
-  }
-
-  // Case 2: dalle on The Forge — non-functional combination, switch to OpenRouter.
-  if (onForge && current === "dalle") {
-    await game.settings.set(MODULE_ID, "artBackend", "openrouter");
-    console.log(`${MODULE_ID} | Migrated artBackend "dalle" → "openrouter" on The Forge`);
-    if (typeof ui !== "undefined") {
-      ui.notifications?.info(
-        "Starforged Companion: Art backend switched to OpenRouter. DALL-E cannot " +
-        "be reached from a browser on The Forge. Add an OpenRouter API key in " +
-        "Companion Settings → About to enable art generation.",
-        { permanent: true }
-      );
-    }
-  }
-}
-
-/**
- * Print a one-line summary of the current art-generation configuration.
- * Helpful for diagnosing "no art appeared" reports without a network capture —
- * the active backend and key-presence flags show up at world-load time.
- */
 export function logArtBackendStatus() {
   try {
-    const backend          = game.settings.get(MODULE_ID, "artBackend");
-    const onForge          = typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge === true;
     const openRouterKeySet = !!game.settings.get(MODULE_ID, "openRouterApiKey");
-    const artKeySet        = !!game.settings.get(MODULE_ID, "artApiKey");
     const sectorArt        = game.settings.get(MODULE_ID, "sectorArtEnabled");
     const orModel          = game.settings.get(MODULE_ID, "openRouterImageModel");
 
     console.log(
-      `${MODULE_ID} | Art status: backend=${backend}, onForge=${onForge}, ` +
-      `sectorArtEnabled=${sectorArt}, openRouterKey=${openRouterKeySet ? "set" : "unset"}, ` +
-      `artApiKey=${artKeySet ? "set" : "unset"}, openRouterModel=${orModel}`
+      `${MODULE_ID} | Art status: sectorArtEnabled=${sectorArt}, ` +
+      `openRouterKey=${openRouterKeySet ? "set" : "unset"}, ` +
+      `openRouterModel=${orModel}`
     );
 
-    // Surface the most common misconfiguration to the GM as a UI hint —
-    // backend says OpenRouter, but no key is configured.
-    if (backend === "openrouter" && !openRouterKeySet && sectorArt) {
+    if (!openRouterKeySet && sectorArt) {
       ui.notifications?.warn(
         "Starforged Companion: Sector art is enabled but no OpenRouter API key is set. " +
         "Open Companion Settings → About and paste your OpenRouter key (sk-or-v1-...) to enable art.",
@@ -1117,14 +1024,10 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
 
-  // One-time migrations for settings whose shape or default has changed.
-  // GM-only because artBackend is world-scoped.
+  // Log the art-generation configuration and surface the most common
+  // misconfiguration (no OpenRouter key while sector art is enabled) to the GM.
   if (game.user.isGM) {
-    migrateArtBackend()
-      .then(() => logArtBackendStatus())
-      .catch(err =>
-        console.error(`${MODULE_ID} | artBackend migration failed:`, err)
-      );
+    logArtBackendStatus();
   }
 
   // Session ID — GM writes to world-scoped settings; players read from state
@@ -1183,21 +1086,6 @@ Hooks.once("ready", () => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
   }
-
-  // Check proxy health — warn GM if local proxy is not running
-  // (On The Forge this always returns true and no warning is shown)
-  isLocalProxyReachable().then(reachable => {
-    if (!reachable) {
-      ui.notifications.warn(
-        "Starforged Companion: Claude proxy is not running. " +
-        "Run 'npm run proxy' (or proxy/start.sh) in the module folder before interpreting moves. " +
-        `Proxy mode: ${proxyModeDescription()}`,
-        { permanent: true }
-      );
-    } else {
-      console.log(`${MODULE_ID} | Proxy reachable: ${proxyModeDescription()}`);
-    }
-  });
 
   if (game.user.isGM) {
     ensureHelpJournal().catch(err =>

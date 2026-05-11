@@ -3,7 +3,7 @@
 Reference index for the `docs/` directory. These are developer and contributor
 documents; they are not bundled into the Foundry module zip.
 
-For the full source tree (src/, tests/, proxy/, styles/, etc.) see the root
+For the full source tree (src/, tests/, styles/, etc.) see the root
 `file-structure.md`.
 
 ---

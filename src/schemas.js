@@ -203,9 +203,13 @@ export const IMPACTS = {
 
 /**
  * External art generation backends.
- * Local generation is not supported — backend is always an external API.
+ *
+ * Image generation goes through OpenRouter; the specific model is selected
+ * via the `openRouterImageModel` setting (default `black-forest-labs/flux.2-pro`).
+ * This constant is retained for ArtAssetSchema metadata fields that record
+ * which provider produced a stored asset.
  */
-export const ART_BACKENDS = ["replicate", "fal", "dalle"];
+export const ART_BACKENDS = ["openrouter"];
 
 /**
  * Ask the Oracle yes/no odds and their threshold rolls.
@@ -666,8 +670,8 @@ export const CampaignStateSchema = {
 
   // Art generation — external API only
   art: {
-    // ART_BACKENDS: "replicate" | "fal" | "dalle"
-    // null until configured in module settings during setup
+    // ART_BACKENDS: "openrouter"
+    // null until first generation records a value
     backend: null,
     // API key stored in Foundry's client settings (not here — never serialise credentials)
     enabled: false,

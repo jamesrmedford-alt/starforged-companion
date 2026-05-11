@@ -2316,13 +2316,9 @@ function registerSectorCommandsTests(quench) {
       });
 
       describe("generateSectorBackground — skips without API key", function () {
-        it("returns null when no art API key configured", async function () {
+        it("returns null when no OpenRouter API key configured", async function () {
           this.timeout(15000);
-          // Clear both backends' keys so the test exercises the no-key path
-          // whichever backend is active (DALL-E on desktop, OpenRouter on Forge).
-          const realArtKey        = game.settings.get(MODULE_ID, "artApiKey");
           const realOpenRouterKey = game.settings.get(MODULE_ID, "openRouterApiKey");
-          await game.settings.set(MODULE_ID, "artApiKey", "");
           await game.settings.set(MODULE_ID, "openRouterApiKey", "");
           try {
             const { generateSector } = await import(
@@ -2334,7 +2330,6 @@ function registerSectorCommandsTests(quench) {
               game.settings.get(MODULE_ID, "campaignState"));
             assert.isNull(result, "should return null when no key");
           } finally {
-            await game.settings.set(MODULE_ID, "artApiKey",        realArtKey);
             await game.settings.set(MODULE_ID, "openRouterApiKey", realOpenRouterKey);
           }
         });

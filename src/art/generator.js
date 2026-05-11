@@ -1,45 +1,40 @@
 /**
  * STARFORGED COMPANION
- * src/art/generator.js — DALL-E 3 image generation pipeline
+ * src/art/generator.js — Entity portrait generation pipeline
  *
  * Responsibilities:
- * - Call the DALL-E 3 API with a built prompt
+ * - Call the OpenRouter image API with a built prompt
  * - Enforce the one-generation / one-regeneration / locked policy
  * - Store generated assets via art/storage.js
- * - Trigger generation from entity hooks (first Loremaster description)
+ * - Trigger generation from entity hooks (first narrator description)
  * - Handle API errors gracefully — generation failure is silent, not blocking
  *
  * Generation policy (per Brief §2 — Art Generation):
- *   1. Generation fires after Loremaster's first description of an entity —
+ *   1. Generation fires after the narrator's first description of an entity —
  *      not on name first appearance
  *   2. One generation, one permitted regeneration, then locked
  *   3. Art is generated once per entity per campaign — not per session
  *   4. API key stored scope: "client" — never sent to server
  *
- * DALL-E 3 API:
- *   POST https://api.openai.com/v1/images/generations
- *   model: dall-e-3
- *   quality: "standard" (default) — "hd" available but doubles cost
- *   style: "vivid" | "natural" — "natural" fits the Starforged aesthetic better
- *   response_format: "url" (default, expires after 1 hour) |
- *                    "b64_json" (preferred — persists via storage.js)
+ * Transport: OpenRouter chat-completions with `modalities: ["image"]`. The
+ * default model is FLUX.2 Pro (`black-forest-labs/flux.2-pro`), configurable
+ * via the `openRouterImageModel` setting. See src/art/openRouterImage.js
+ * for the request shape; that helper handles base64 decoding, response-shape
+ * variance, and ISO-8859-1 header sanitisation.
  *
  * Error handling:
- *   content_policy_violation — log and return null; entity portrait stays blank
- *   rate_limit_exceeded      — retry once after 10s; then return null
- *   billing / auth errors    — notify GM via ui.notifications, return null
- *   network errors           — return null silently
+ *   auth (401/403)          — notify GM via ui.notifications, return null
+ *   any other API error     — log, return null
+ *   network / parse failure — log, return null
  *
  * All errors are non-blocking. A missing portrait is preferable to a broken scene.
  */
 
 import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
-import { apiPost } from "../api-proxy.js";
-import { generateOpenRouterImage } from "./openRouterImage.js";
+import { generateOpenRouterImage }                from "./openRouterImage.js";
 
-const MODULE_ID   = "starforged-companion";
-const DALLE_MODEL = "dall-e-3";
+const MODULE_ID = "starforged-companion";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,8 +42,7 @@ const DALLE_MODEL = "dall-e-3";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate a portrait for an entity after Loremaster's first description.
- * This is the primary entry point called from the Loremaster hook.
+ * Generate a portrait for an entity after the narrator's first description.
  *
  * Checks the generation policy before calling the API:
  *   - Has a source description been set? (required)
@@ -62,7 +56,6 @@ const DALLE_MODEL = "dall-e-3";
  * @returns {Promise<ArtAsset|null>}
  */
 export async function generatePortrait(journalEntryId, entityType, entity, campaignState) {
-  // Policy check
   if (!entity.portraitSourceDescription) {
     console.warn(`${MODULE_ID} | Art: no source description for ${entityType} ${entity._id}`);
     return null;
@@ -82,11 +75,10 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   }
 
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callImageBackend(prompt, size, entity._id, entityType);
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType);
 
   if (!asset) return null;
 
-  // Store and link
   await storeArtAsset(asset, campaignState);
   await linkPortraitToEntity(journalEntryId, entityType, asset._id);
 
@@ -131,11 +123,10 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
   }
 
   const { prompt, size } = buildRegenerationPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callImageBackend(prompt, size, entity._id, entityType);
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType);
 
   if (!asset) return null;
 
-  // Mark old asset as superseded, lock the new one
   if (existing) {
     await storeArtAsset({ ...existing, superseded: true }, campaignState);
   }
@@ -150,42 +141,22 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IMAGE BACKEND DISPATCH
+// OpenRouter call
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Route a portrait request to the configured image backend (OpenRouter on
- * The Forge by default, DALL-E on desktop). Returns a raw ArtAsset record on
- * success, null on any failure.
- */
-async function callImageBackend(prompt, size, entityId, entityType) {
-  const backend = readBackend();
-
-  if (backend === "openrouter") {
-    const apiKey = readOpenRouterKey();
-    if (!apiKey) {
-      notifyMissingOpenRouterKey();
-      return null;
-    }
-    return callOpenRouter(apiKey, prompt, size, entityId, entityType);
-  }
-
-  // Default / "dalle"
-  const apiKey = readApiKey();
+async function callOpenRouter(prompt, size, entityId, entityType) {
+  const apiKey = readOpenRouterKey();
   if (!apiKey) {
-    notifyMissingApiKey();
+    notifyMissingOpenRouterKey();
     return null;
   }
-  return callDallE(apiKey, prompt, size, entityId, entityType);
-}
 
-async function callOpenRouter(apiKey, prompt, size, entityId, entityType) {
   try {
     const b64 = await generateOpenRouterImage({
       apiKey,
       prompt,
       model: readOpenRouterModel(),
-      title: "Starforged Companion — entity portrait",
+      title: "Starforged Companion - entity portrait",
     });
 
     if (!b64) {
@@ -208,7 +179,7 @@ async function callOpenRouter(apiKey, prompt, size, entityId, entityType) {
     };
   } catch (err) {
     if (err.message?.includes("401") || err.message?.includes("403")) {
-      notifyBillingError(err.message);
+      notifyAuthError(err.message);
     } else {
       console.error(`${MODULE_ID} | Art: OpenRouter call failed:`, err.message);
     }
@@ -216,85 +187,6 @@ async function callOpenRouter(apiKey, prompt, size, entityId, entityType) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DALL-E API CALL
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Call the DALL-E 3 API.
- * Returns a raw ArtAsset record on success, null on any failure.
- * Retries once on rate limit (10s delay).
- *
- * @param {string} apiKey
- * @param {string} prompt
- * @param {string} size    — "1024x1024" | "1792x1024"
- * @param {string} entityId
- * @param {string} entityType
- * @returns {Promise<ArtAsset|null>}
- */
-async function callDallE(apiKey, prompt, size, entityId, entityType) {
-  return attemptDallECall(apiKey, prompt, size, entityId, entityType, false);
-}
-
-async function attemptDallECall(apiKey, prompt, size, entityId, entityType, isRetry) {
-  try {
-    const body = {
-      model:           DALLE_MODEL,
-      prompt,
-      n:               1,
-      size,
-      quality:         "standard",
-      style:           "natural",
-      response_format: "b64_json",
-    };
-
-    const headers = {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    };
-
-    // Route through api-proxy.js — handles Forge vs local proxy detection
-    const data = await apiPost(
-      "https://api.openai.com/v1/images/generations",
-      headers,
-      body
-    );
-
-    const b64      = data.data?.[0]?.b64_json;
-    const revised  = data.data?.[0]?.revised_prompt ?? prompt;
-
-    if (!b64) throw new Error("DALL-E returned no image data.");
-
-    return {
-      _id:              generateId(),
-      entityId,
-      entityType,
-      prompt,
-      revisedPrompt:    revised,
-      b64,
-      size,
-      generatedAt:      new Date().toISOString(),
-      regenerationUsed: false,
-      locked:           false,
-      superseded:       false,
-    };
-  } catch (err) {
-    // Retry once on rate limit
-    if (!isRetry && err.message?.includes("429")) {
-      console.warn(`${MODULE_ID} | Art: rate limited, retrying in 10s...`);
-      await delay(10000);
-      return attemptDallECall(apiKey, prompt, size, entityId, entityType, true);
-    }
-
-    // Auth / billing errors — surface immediately
-    if (err.message?.includes("401") || err.message?.includes("403")) {
-      notifyBillingError(err.message);
-    } else {
-      console.error(`${MODULE_ID} | Art: DALL-E call failed:`, err.message);
-    }
-    return null;
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENTITY LINKING
@@ -302,7 +194,6 @@ async function attemptDallECall(apiKey, prompt, size, entityId, entityType, isRe
 
 /**
  * Write the generated asset ID back to the entity record.
- * Routes to the correct entity module based on entityType.
  */
 async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
   try {
@@ -318,10 +209,8 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
       return;
     }
 
-    // Write portraitId directly to the entity's flag object.
     // All entity types (connection, ship, settlement, faction, planet) store
-    // their data under page.flags[MODULE_ID][entityType] — this approach works
-    // for all of them without depending on each module's specific export names.
+    // their data under page.flags[MODULE_ID][entityType].
     const existing = page.flags?.[MODULE_ID]?.[entityType] ?? {};
     await page.setFlag(MODULE_ID, entityType, {
       ...existing,
@@ -340,14 +229,6 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function readApiKey() {
-  try {
-    return game.settings.get(MODULE_ID, "artApiKey") ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function readOpenRouterKey() {
   try {
     return game.settings.get(MODULE_ID, "openRouterApiKey") ?? null;
@@ -364,42 +245,22 @@ function readOpenRouterModel() {
   }
 }
 
-function readBackend() {
-  try {
-    return game.settings.get(MODULE_ID, "artBackend") || "dalle";
-  } catch {
-    return "dalle";
-  }
-}
-
-function notifyMissingApiKey() {
-  console.warn(`${MODULE_ID} | Art: no OpenAI API key configured`);
-  if (typeof ui !== "undefined") {
-    ui.notifications?.warn(
-      "Starforged Companion: No OpenAI API key is configured. " +
-      "Add your key in module settings to enable portrait generation.",
-      { permanent: false }
-    );
-  }
-}
-
 function notifyMissingOpenRouterKey() {
   console.warn(`${MODULE_ID} | Art: no OpenRouter API key configured`);
   if (typeof ui !== "undefined") {
     ui.notifications?.warn(
       "Starforged Companion: No OpenRouter API key is configured. " +
-      "Add your key in Companion Settings → About to enable portrait generation.",
-      { permanent: false }
+      "Add your key in Companion Settings → About to enable portrait generation."
     );
   }
 }
 
-function notifyBillingError(code) {
-  console.error(`${MODULE_ID} | Art: OpenAI billing/auth error: ${code}`);
+function notifyAuthError(code) {
+  console.error(`${MODULE_ID} | Art: OpenRouter auth/billing error: ${code}`);
   if (typeof ui !== "undefined") {
     ui.notifications?.error(
-      `Starforged Companion: OpenAI API error (${code}). ` +
-      "Check your API key and account billing status in module settings.",
+      `Starforged Companion: OpenRouter API error (${code}). ` +
+      "Check your API key and account balance in module settings.",
       { permanent: true }
     );
   }
@@ -408,10 +269,6 @@ function notifyBillingError(code) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**

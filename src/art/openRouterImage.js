@@ -4,8 +4,8 @@
  *
  * OpenRouter exposes image generation through its chat-completions endpoint
  * with `modalities: ["image"]`. The endpoint sends `Access-Control-Allow-Origin`,
- * so it works directly from a browser — including Foundry running on The Forge,
- * where the legacy DALL-E path is blocked by CORS.
+ * so it works directly from a browser on every platform (Foundry desktop and
+ * The Forge).
  *
  * Reference: https://openrouter.ai/docs/guides/overview/multimodal/image-generation
  *
@@ -21,9 +21,8 @@ const DEFAULT_MODEL     = "black-forest-labs/flux.2-pro";
 /**
  * Generate one image via OpenRouter and return the raw base64 payload.
  *
- * Returns the base64 PNG (no data URL prefix) so callers can persist it in
- * the same shape they already use for DALL-E b64_json responses. Callers that
- * want a data URL can prefix `data:image/png;base64,` themselves.
+ * Returns the base64 PNG (no data URL prefix) so callers see a uniform shape.
+ * Callers that want a data URL can prefix `data:image/png;base64,` themselves.
  *
  * If the model returns an https:// image URL instead of inline base64
  * (which BFL/FLUX is documented to do — URLs expire after 10 minutes), the
