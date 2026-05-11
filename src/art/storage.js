@@ -184,7 +184,12 @@ function readAssetFromEntry(entry) {
 }
 
 function buildEntryName(asset) {
-  return `Art: ${asset.entityType} ${asset.entityId}`;
+  // Include asset._id so superseded predecessors keep their own journal entry
+  // instead of being clobbered by the regenerated portrait that shares the
+  // same entityType + entityId. loadArtAsset's fast path keys off
+  // campaignState.artAssetIds[assetId] → entryName, so the change is
+  // transparent to callers.
+  return `Art: ${asset.entityType} ${asset.entityId} ${asset._id}`;
 }
 
 async function persistCampaignState(campaignState) {
