@@ -15,6 +15,8 @@
  * or when the player has a relevant open vow.
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
 
@@ -77,8 +79,9 @@ export async function createFaction(data, campaignState) {
   };
 
   const entry = await JournalEntry.create({
-    name:  faction.name || "Unknown Faction",
-    flags: { [MODULE_ID]: { entityType: "faction", entityId: id } },
+    name:   faction.name || "Unknown Faction",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "faction", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{

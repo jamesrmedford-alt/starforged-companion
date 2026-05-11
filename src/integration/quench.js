@@ -54,9 +54,17 @@ Hooks.on("quenchReady", (quench) => {
 
 const MODULE_ID = "starforged-companion";
 
-/** Save a setting, run fn, restore the setting (even on throw). */
+/** Save a setting, run fn, restore the setting (even on throw).
+ *  Object-valued settings (campaignState, globalSafetyLines, …) are
+ *  deep-cloned for the snapshot because Foundry returns them by reference;
+ *  without the clone a handler that mutates the live array (e.g.
+ *  `lines.push(text)` in settingsPanel.#onAddLine) also corrupts `original`,
+ *  and the restore silently writes the corrupted value back. */
 async function withTempSetting(key, value, fn) {
-  const original = game.settings.get(MODULE_ID, key);
+  const raw = game.settings.get(MODULE_ID, key);
+  const original = (raw !== null && typeof raw === "object")
+    ? JSON.parse(JSON.stringify(raw))
+    : raw;
   await game.settings.set(MODULE_ID, key, value);
   try { return await fn(); }
   finally { await game.settings.set(MODULE_ID, key, original); }
@@ -129,6 +137,27 @@ async function withAutoConfirm(value, fn) {
   finally {
     D.confirm = realConfirm;
     D.prompt  = realPrompt;
+  }
+}
+
+/**
+ * Silence `ui.notifications.{info,warn,error}` toasts while fn runs, then
+ * restore. Use around tests that deliberately exercise a fallback path whose
+ * production code surfaces a user-visible toast (missing entity, missing
+ * encounter, no API key, etc.) — Quench would otherwise show those toasts
+ * stacked over the results panel for every run.
+ */
+async function withSilencedNotifications(fn) {
+  const n = ui?.notifications;
+  if (!n) return await fn();
+  const real = { info: n.info, warn: n.warn, error: n.error, notify: n.notify };
+  const noop = () => undefined;
+  n.info = noop; n.warn = noop; n.error = noop;
+  if (typeof real.notify === "function") n.notify = noop;
+  try { return await fn(); }
+  finally {
+    n.info = real.info; n.warn = real.warn; n.error = real.error;
+    if (typeof real.notify === "function") n.notify = real.notify;
   }
 }
 
@@ -1589,12 +1618,14 @@ function registerChatCommandsTests(quench) {
           const stateBefore = JSON.parse(JSON.stringify(
             game.settings.get(MODULE_ID, "campaignState")));
           try {
-            await post("!at Quench Test Bar");
-            const after1 = game.settings.get(MODULE_ID, "campaignState");
-            assert.isString(after1.currentLocationId ?? "", "currentLocationId should be set after !at");
-            await post("!at");
-            const after2 = game.settings.get(MODULE_ID, "campaignState");
-            assert.isTrue(!after2.currentLocationId, "currentLocationId should clear on bare !at");
+            await withSilencedNotifications(async () => {
+              await post("!at Quench Test Bar");
+              const after1 = game.settings.get(MODULE_ID, "campaignState");
+              assert.isString(after1.currentLocationId ?? "", "currentLocationId should be set after !at");
+              await post("!at");
+              const after2 = game.settings.get(MODULE_ID, "campaignState");
+              assert.isTrue(!after2.currentLocationId, "currentLocationId should clear on bare !at");
+            });
           } finally {
             await game.settings.set(MODULE_ID, "campaignState", stateBefore);
           }
@@ -1664,7 +1695,9 @@ function registerChatCommandsTests(quench) {
           this.timeout(15000);
           if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
           const before = game.messages.size;
-          await post("!sfc encounter Bogfaller");
+          await withSilencedNotifications(async () => {
+            await post("!sfc encounter Bogfaller");
+          });
           assert.isAbove(game.messages.size, before, "encounter dispatch should at least post a card");
         });
       });
@@ -1774,7 +1807,9 @@ function registerMovePipelineExtendedTests(quench) {
             `/modules/${MODULE_ID}/src/narration/narrator.js`);
           const before = game.messages.size;
           const state = game.settings.get(MODULE_ID, "campaignState");
-          await interrogateScene("what is the immediate danger?", state, {});
+          await withSilencedNotifications(async () => {
+            await interrogateScene("what is the immediate danger?", state, {});
+          });
           assert.isAbove(game.messages.size, before,
             "a scene response card should have been posted");
           const last = game.messages.contents.at(-1);
@@ -1919,9 +1954,11 @@ function registerProgressTrackActionsTests(quench) {
         it("posts a progress roll card to chat", async function () {
           if (!testTrackId) { this.skip(); return; }
           const beforeMsgs = game.messages.size;
-          await clickAction(app, "rollProgress", { trackId: testTrackId });
-          // give the roll + card render time
-          for (let i = 0; i < 30 && game.messages.size <= beforeMsgs; i++) await flushMicrotasks();
+          await withSilencedNotifications(async () => {
+            await clickAction(app, "rollProgress", { trackId: testTrackId });
+            // give the roll + card render time
+            for (let i = 0; i < 30 && game.messages.size <= beforeMsgs; i++) await flushMicrotasks();
+          });
           assert.isAbove(game.messages.size, beforeMsgs,
             "rollProgress should post a roll card");
           const last = game.messages.contents.at(-1);
@@ -2214,8 +2251,14 @@ function registerSettingsPanelTests(quench) {
           const input = app.element.querySelector('[name="newLine"]');
           if (!input) { this.skip(); return; }
           const probe = `QUENCH PROBE ${Date.now()}`;
+          // Deep-clone the snapshot — Foundry returns the array by reference,
+          // and the addLine handler mutates it in place via lines.push(probe).
+          // Without the clone the restore would write the mutated value back
+          // and the probe would survive in the Safety panel.
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "globalSafetyLines") ?? []
+          ));
           input.value = probe;
-          const before = game.settings.get(MODULE_ID, "globalSafetyLines") ?? [];
           try {
             await clickAction(app, "addLine");
             await awaitRender(app);
@@ -2277,8 +2320,10 @@ function registerWorldTruthsTests(quench) {
             `/modules/${MODULE_ID}/src/truths/generator.js`);
           const state = game.settings.get(MODULE_ID, "campaignState");
           const before = game.messages.size;
-          await generateLoreRecap(state).catch(err => {
-            console.warn("starforged-companion | quench: lore recap error:", err);
+          await withSilencedNotifications(async () => {
+            await generateLoreRecap(state).catch(err => {
+              console.warn("starforged-companion | quench: lore recap error:", err);
+            });
           });
           assert.isAtLeast(game.messages.size, before,
             "lore recap should not throw; may post a card");
@@ -2326,8 +2371,9 @@ function registerSectorCommandsTests(quench) {
             const { generateSectorBackground } = await import(
               `/modules/${MODULE_ID}/src/sectors/sectorArt.js`);
             const sector = generateSector("expanse");
-            const result = await generateSectorBackground(sector,
-              game.settings.get(MODULE_ID, "campaignState"));
+            const result = await withSilencedNotifications(() =>
+              generateSectorBackground(sector,
+                game.settings.get(MODULE_ID, "campaignState")));
             assert.isNull(result, "should return null when no key");
           } finally {
             await game.settings.set(MODULE_ID, "openRouterApiKey", realOpenRouterKey);
@@ -2356,7 +2402,8 @@ function registerEncounterSpawnLiveTests(quench) {
           const { spawnEncounter } = await import(
             `/modules/${MODULE_ID}/src/system/encounterSpawn.js`);
           const before = game.messages.size;
-          const out = await spawnEncounter("__definitely_not_an_encounter__");
+          const out = await withSilencedNotifications(() =>
+            spawnEncounter("__definitely_not_an_encounter__"));
           assert.isObject(out);
           assert.isFalse(out.placed, "missing encounter should not place a token");
           assert.isAtLeast(game.messages.size, before,
@@ -2370,7 +2417,8 @@ function registerEncounterSpawnLiveTests(quench) {
           if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
           const { spawnEncounter } = await import(
             `/modules/${MODULE_ID}/src/system/encounterSpawn.js`);
-          const out = await spawnEncounter("Bogfaller");
+          const out = await withSilencedNotifications(() =>
+            spawnEncounter("Bogfaller"));
           // Tolerate either placement or chat fallback; the actor object is the contract.
           assert.isTrue(out?.actor !== undefined,
             "result.actor field should be present (null acceptable on missing slug)");

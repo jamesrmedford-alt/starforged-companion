@@ -23,6 +23,7 @@
  */
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
+import { getOrCreateEntitiesFolder } from "./folder.js";
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -68,8 +69,9 @@ export async function createConnection(data, campaignState, { persist = true } =
 
   // Create the Foundry journal entry
   const entry = await JournalEntry.create({
-    name:  connection.name || "Unknown Connection",
-    flags: { [MODULE_ID]: { entityType: "connection", entityId: id } },
+    name:   connection.name || "Unknown Connection",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "connection", entityId: id } },
   });
 
   // Create the page that holds the data

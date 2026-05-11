@@ -13,6 +13,8 @@
  * They're primarily narrative and context-injection entities.
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "planet";
 
@@ -73,8 +75,9 @@ export async function createPlanet(data, campaignState) {
   };
 
   const entry = await JournalEntry.create({
-    name:  planet.name || "Unknown Planet",
-    flags: { [MODULE_ID]: { entityType: "planet", entityId: id } },
+    name:   planet.name || "Unknown Planet",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "planet", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{

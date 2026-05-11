@@ -9,6 +9,8 @@
  * Storage: JournalEntry + JournalEntryPage, same pattern as connections.
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "settlement";
 
@@ -81,8 +83,9 @@ export async function createSettlement(data, campaignState, { persist = true } =
   };
 
   const entry = await JournalEntry.create({
-    name:  settlement.name || "Unknown Settlement",
-    flags: { [MODULE_ID]: { entityType: "settlement", entityId: id } },
+    name:   settlement.name || "Unknown Settlement",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "settlement", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{

@@ -18,6 +18,8 @@
  * Source: Starforged Reference Guide p.121 / Rulebook pp.55-65
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
 
@@ -77,8 +79,9 @@ export async function createShip(data, campaignState) {
   };
 
   const entry = await JournalEntry.create({
-    name:  ship.name || "Unknown Ship",
-    flags: { [MODULE_ID]: { entityType: "ship", entityId: id } },
+    name:   ship.name || "Unknown Ship",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "ship", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
