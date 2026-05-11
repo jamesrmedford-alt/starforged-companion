@@ -912,7 +912,7 @@ function registerSectorCreatorTests(quench) {
 
       describe("generateNarratorStubs (requires Claude API key)", function () {
         it("returns a sector stub string when API key is configured", async function () {
-          this.timeout(30000);
+          this.timeout(60000);
           let apiKey;
           try {
             apiKey = game.settings.get("starforged-companion", "claudeApiKey");
