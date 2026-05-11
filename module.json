@@ -2,7 +2,7 @@
   "id": "starforged-companion",
   "title": "Starforged Companion",
   "description": "A companion module for Ironsworn: Starforged supporting solo and multiplayer campaigns. Handles move interpretation, dice resolution, AI narration, oracle integration, progress tracking, entity management with AI portrait generation, and safety configuration.",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "compatibility": {
     "minimum": "12",
     "verified": "13"
