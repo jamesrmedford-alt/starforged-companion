@@ -373,26 +373,33 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
     .map(s => `${s.name} (${locationTypeToLabel(s.locationType)})`)
     .join(", ");
 
-  const sectorStubText = await callStubApi(
-    buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote),
-    150,
-    apiKey
-  ).catch(err => {
-    console.warn(`${MODULE_ID} | sectorGenerator: sector stub generation failed:`, err);
-    return null;
-  });
-
-  const settlements = {};
-  for (const s of sector.settlements) {
-    settlements[s.id] = await callStubApi(
-      buildSettlementStubPrompt(s, sector, regionLabel, perspectiveNote),
-      100,
+  // Fire the sector stub and every settlement stub in parallel — they're
+  // independent calls and serialising them stacks Anthropic round-trips,
+  // which on Forge can push wall-clock past the Quench live-API timeout.
+  const [sectorStubText, ...settlementResults] = await Promise.all([
+    callStubApi(
+      buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote),
+      150,
       apiKey
     ).catch(err => {
-      console.warn(`${MODULE_ID} | sectorGenerator: settlement stub generation failed for ${s.id}:`, err);
+      console.warn(`${MODULE_ID} | sectorGenerator: sector stub generation failed:`, err);
       return null;
-    });
-  }
+    }),
+    ...sector.settlements.map(s =>
+      callStubApi(
+        buildSettlementStubPrompt(s, sector, regionLabel, perspectiveNote),
+        100,
+        apiKey
+      ).catch(err => {
+        console.warn(`${MODULE_ID} | sectorGenerator: settlement stub generation failed for ${s.id}:`, err);
+        return null;
+      })
+    ),
+  ]);
+
+  const settlements = Object.fromEntries(
+    sector.settlements.map((s, i) => [s.id, settlementResults[i]])
+  );
 
   return { sector: sectorStubText, settlements };
 }
