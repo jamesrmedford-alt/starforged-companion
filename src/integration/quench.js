@@ -47,6 +47,11 @@ Hooks.on("quenchReady", (quench) => {
   registerToolbarTests(quench);
   registerClarificationExtrasTests(quench);
   registerPacingTests(quench);
+  // Cross-cutting overlap batches — exercise the narrator → connection → portrait
+  // pipeline end-to-end so each unit-style seam gets a second check inside the
+  // chain that actually runs in production.
+  registerConnectionPipelineTests(quench);
+  registerPortraitGenerationTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +183,40 @@ function skipNotGM(testCtx) {
     return true;
   }
   return false;
+}
+
+/**
+ * Temporarily replace globalThis.fetch with a router that matches by URL
+ * substring. Each route is `[urlSubstr, (url, init) => Response]`; the first
+ * matching handler wins. Unmatched URLs pass through to the real fetch so
+ * Foundry's internal requests (assets, websocket bootstrap, etc.) keep working.
+ *
+ * Handlers may return a Response, a Promise<Response>, or a plain object —
+ * an object is wrapped as `new Response(JSON.stringify(obj), { status: 200,
+ * headers: { "Content-Type": "application/json" } })` so common cases stay
+ * terse.
+ *
+ * The stub is reinstated in a finally block so a throw in `fn` cannot leave
+ * the world with a broken fetch.
+ */
+async function withStubbedFetch(routes, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const target = typeof url === "string" ? url : url?.url ?? String(url);
+    for (const [pattern, handler] of routes) {
+      if (target.includes(pattern)) {
+        const out = await handler(target, init);
+        if (out instanceof Response) return out;
+        return new Response(JSON.stringify(out), {
+          status:  200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    return real(url, init);
+  };
+  try { return await fn(); }
+  finally { globalThis.fetch = real; }
 }
 
 
@@ -1223,6 +1262,255 @@ function registerEntityWorldJournalTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CONNECTION PIPELINE — end-to-end overlap coverage
+//
+// The existing entityWorldJournal batch exercises the make_a_connection seam
+// at each junction (resolveMove oracle seeds, routeEntityDrafts with a synthetic
+// draft). This batch overlaps with that by running narrateResolution() itself
+// for a make_a_connection strong hit and asserting the full chain — narrator
+// call → post-narration detection → routeEntityDrafts → createConnection —
+// produces a real journal entry registered in campaignState. Two variants:
+//   - stubbed: fetch is patched so the Anthropic calls return canned responses
+//   - live   : guarded by claudeApiKey; hits real Anthropic
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerConnectionPipelineTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.connectionPipeline",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdJournalIds = [];
+
+      function track(id) { if (id) createdJournalIds.push(id); }
+
+      async function flushJournalCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench connectionPipeline: cleanup failed for ${id}:`, err));
+          }
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        await flushJournalCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushJournalCleanup);
+
+      // Canned responses — shaped to match what api-proxy.js / openRouterImage.js
+      // expect from the Anthropic and OpenRouter chat-completions endpoints.
+      const NARRATOR_NAME = `Riven Tal-${Date.now()}`;
+      function anthropicNarratorResponse() {
+        return {
+          content: [{
+            type: "text",
+            text: `You catch ${NARRATOR_NAME}, a wiry quartermaster in oiled ` +
+                  `leathers, lingering near the cargo lift. They tip a chipped ` +
+                  `mug your way and gesture to the bench.`,
+          }],
+        };
+      }
+      function anthropicDetectionResponse(name = NARRATOR_NAME) {
+        const payload = {
+          entities: [
+            { type: "connection", name, description: "Wiry quartermaster.", confidence: "high" },
+          ],
+          worldJournal: {
+            lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [],
+          },
+        };
+        return {
+          content: [{ type: "text", text: JSON.stringify(payload) }],
+        };
+      }
+
+      // The Anthropic stub routes by call order: the first call is the narrator
+      // (Sonnet, returns prose); the second is the post-narration detection
+      // (Haiku, returns the JSON detection envelope). resolveRelevance for
+      // make_a_connection is non-hybrid so it makes no API call.
+      function makeAnthropicRouter() {
+        let n = 0;
+        return [
+          "api.anthropic.com",
+          () => {
+            n += 1;
+            return n === 1 ? anthropicNarratorResponse() : anthropicDetectionResponse();
+          },
+        ];
+      }
+
+      describe("narrateResolution → connection auto-create — stubbed end-to-end", function () {
+        it("creates a connection journal entry registered in campaignState", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { narrateResolution } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+
+          // Provide a sentinel claudeApiKey so narrateResolution proceeds past
+          // the missing-key fallback. The fetch stub never reads the key.
+          await withTempSetting("claudeApiKey", "sk-stub-test-key", async () => {
+            await withStubbedFetch([makeAnthropicRouter()], async () => {
+              await withSilencedNotifications(async () => {
+                await narrateResolution(
+                  {
+                    _id:             "quench-conn-pipeline",
+                    moveId:          "make_a_connection",
+                    moveName:        "Make a Connection",
+                    statUsed:        "heart",
+                    statValue:       3,
+                    actionDie:       6,
+                    actionScore:     9,
+                    challengeDice:   [3, 7],
+                    outcome:         "strong_hit",
+                    outcomeLabel:    "Strong Hit",
+                    playerNarration: "I head to the promenade looking for an old fixer.",
+                    consequences:    {},
+                    oracleSeeds:     { context: "make_a_connection", results: [], names: [] },
+                  },
+                  {},
+                  state,
+                );
+              });
+            });
+          });
+
+          const after = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (after.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(track);
+
+          assert.isAtLeast(newIds.length, 1,
+            "expected at least one new connection id registered in campaignState");
+
+          const entry = game.journal?.get(newIds[0]);
+          assert.isOk(entry, "the connection journal entry should exist");
+          const page = entry.pages?.contents?.[0];
+          assert.isOk(page, "the connection page should exist");
+          const conn = page.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "the page should carry the connection flag payload");
+          assert.equal(conn.name, NARRATOR_NAME,
+            "the connection name should come from the stubbed detection response");
+        });
+      });
+
+      describe("narrateResolution — off-pipeline move does not auto-create", function () {
+        it("a non-discovery move yields no connection even on a hit", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { narrateResolution } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+
+          await withTempSetting("claudeApiKey", "sk-stub-test-key", async () => {
+            await withStubbedFetch([makeAnthropicRouter()], async () => {
+              await withSilencedNotifications(async () => {
+                await narrateResolution(
+                  {
+                    _id:             "quench-conn-pipeline-off",
+                    moveId:          "reach_a_milestone", // embellishment class
+                    moveName:        "Reach a Milestone",
+                    statUsed:        null,
+                    statValue:       0,
+                    actionDie:       0,
+                    actionScore:     0,
+                    challengeDice:   [0, 0],
+                    outcome:         "strong_hit",
+                    outcomeLabel:    "Strong Hit",
+                    playerNarration: "I mark progress on my vow.",
+                    consequences:    {},
+                  },
+                  {},
+                  state,
+                );
+              });
+            });
+          });
+
+          const after = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (after.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(track);
+
+          assert.equal(newIds.length, 0,
+            "embellishment-class moves should not auto-create connections");
+        });
+      });
+
+      describe("narrateResolution — live API end-to-end", function () {
+        it("auto-creates a connection on make_a_connection strong hit (live)", async function () {
+          this.timeout(60000);
+          if (!game.user.isGM) { this.skip(); return; }
+          if (skipNoKey(this)) return;
+
+          const { narrateResolution } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+
+          await narrateResolution(
+            {
+              _id:             "quench-conn-pipeline-live",
+              moveId:          "make_a_connection",
+              moveName:        "Make a Connection",
+              statUsed:        "heart",
+              statValue:       3,
+              actionDie:       6,
+              actionScore:     9,
+              challengeDice:   [3, 7],
+              outcome:         "strong_hit",
+              outcomeLabel:    "Strong Hit",
+              playerNarration:
+                "I head down to the rusted promenade and seek out an old contact, " +
+                "a wiry quartermaster who owes me a favour. We share a drink while " +
+                "they brief me on the latest comings and goings.",
+              consequences:    {},
+              oracleSeeds:     { context: "make_a_connection", results: [], names: [] },
+            },
+            {},
+            state,
+          );
+
+          const after = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (after.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(track);
+
+          // Soft assertion: the live model may not emit a usable NPC name in
+          // every roll. If nothing was created, skip rather than fail — the
+          // intent is to confirm the pipeline runs end-to-end when the model
+          // does produce a draft. The stubbed test above pins the happy path.
+          if (newIds.length === 0) {
+            console.warn(`${MODULE} | quench connectionPipeline: live narrator did not yield a connection draft this run; skipping.`);
+            this.skip();
+            return;
+          }
+
+          const entry = game.journal?.get(newIds[0]);
+          assert.isOk(entry, "the live-generated connection journal entry should exist");
+          const conn = entry.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          assert.isOk(conn?.name, "the live-generated connection should have a name");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Connection Pipeline (end-to-end)", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WORLD JOURNAL — live CRUD + assembler injection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2090,6 +2378,329 @@ function registerEntityPanelActionsTests(quench) {
       });
     },
     { displayName: "STARFORGED: Entity Panel Actions" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTRAIT GENERATION — gating, initial generation, regenerate-and-lock
+//
+// The portrait pipeline (entity-panel button → generatePortrait → OpenRouter →
+// storeArtAsset → linkPortraitToEntity) had no Quench coverage. These tests
+// exercise it end-to-end against a stubbed OpenRouter, plus a live-key gated
+// variant. The Generate/Regenerate calls are invoked directly via generator.js
+// rather than through the panel button so the assertions are robust to the
+// known journal-vs-page flag read quirk in loadAllEntities() (tracked as a
+// latent issue in known-issues.md). The flow each test exercises is the same
+// chain the UI handler runs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerPortraitGenerationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.portraitGeneration",
+    (context) => {
+      const { describe, it, assert, before, after, beforeEach } = context;
+      const MODULE = "starforged-companion";
+
+      // 1×1 transparent PNG, base64 — stable fixtures so the stubbed tests can
+      // assert exactly which payload landed.
+      const FIXTURE_B64_A =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      const FIXTURE_B64_B =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+
+      function openRouterResponse(b64) {
+        return {
+          choices: [{
+            message: {
+              images: [{ image_url: { url: `data:image/png;base64,${b64}` } }],
+            },
+          }],
+        };
+      }
+
+      let testJournalId = null;
+      let stateAtStart = null;
+      const createdJournalIds = [];
+
+      function track(id) { if (id) createdJournalIds.push(id); }
+
+      async function flushAllCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench portraitGeneration: cleanup failed for ${id}:`, err));
+          }
+        }
+        // Also delete any "Art: connection <id>" assets created during the run.
+        const orphanArt = (game.journal?.contents ?? []).filter(j =>
+          j?.flags?.[MODULE]?.entityType === "artAsset" &&
+          typeof j.name === "string" &&
+          j.name.startsWith("Art: connection "));
+        for (const j of orphanArt) {
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench portraitGeneration: art cleanup failed for ${j.id}:`, err));
+          }
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+
+        const { createConnection } = await import(
+          `/modules/${MODULE}/src/entities/connection.js`);
+        const state = game.settings.get(MODULE, "campaignState") ?? {};
+        await createConnection({
+          name: `QUENCH PORTRAIT ${Date.now()}`,
+          role: "fixer",
+          disposition: "neutral",
+        }, state);
+        testJournalId = state.connectionIds?.at(-1) ?? null;
+        track(testJournalId);
+        await game.settings.set(MODULE, "campaignState", state);
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushAllCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      // Reset portrait-related fields on the test connection before each test
+      // so we can step through placeholder → ready → generated → locked.
+      beforeEach(async function () {
+        if (!testJournalId) return;
+        const { updateConnection } = await import(
+          `/modules/${MODULE}/src/entities/connection.js`);
+        await updateConnection(testJournalId, {
+          portraitSourceDescription: "",
+          portraitId:                null,
+        });
+      });
+
+      function readConnectionData() {
+        const j = game.journal?.get(testJournalId);
+        return j?.pages?.contents?.[0]?.flags?.[MODULE]?.connection ?? null;
+      }
+
+      describe("Gating — placeholder, ready, locked states", function () {
+        it("isReadyForArtGeneration is false until a source description is set", async function () {
+          if (!testJournalId) { this.skip(); return; }
+          const { isReadyForArtGeneration } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+
+          const initial = readConnectionData();
+          assert.isOk(initial, "connection data should be readable");
+          // Schema default leaves active=true; missing description must block readiness.
+          assert.isFalse(isReadyForArtGeneration({ ...initial, active: true }),
+            "no source description → not ready");
+        });
+
+        it("setPortraitSourceDescription flips isReadyForArtGeneration to true", async function () {
+          if (!testJournalId) { this.skip(); return; }
+          const { setPortraitSourceDescription, isReadyForArtGeneration } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+
+          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+          const data = readConnectionData();
+          assert.equal(data.portraitSourceDescription, "wiry quartermaster in oiled leathers",
+            "source description should be persisted on the page flag");
+          assert.isTrue(isReadyForArtGeneration({ ...data, active: true }),
+            "with description and no portraitId → ready");
+        });
+
+        it("portraitId set + no asset record → not ready (already generated)", async function () {
+          if (!testJournalId) { this.skip(); return; }
+          const { setPortraitSourceDescription, setPortraitId, isReadyForArtGeneration } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+
+          await setPortraitSourceDescription(testJournalId, "wiry quartermaster");
+          await setPortraitId(testJournalId, "fake-asset-id");
+          const data = readConnectionData();
+          assert.isFalse(isReadyForArtGeneration({ ...data, active: true }),
+            "with portraitId already set → no longer ready for first generation");
+        });
+      });
+
+      describe("Initial generation — stubbed OpenRouter", function () {
+        it("generatePortrait stores an asset and links portraitId on the connection", async function () {
+          this.timeout(30000);
+          if (!testJournalId) { this.skip(); return; }
+
+          const { setPortraitSourceDescription } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+          const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
+          const { loadArtAsset, getDataUri } = await import(`${MODULE_PATH}/art/storage.js`);
+
+          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+          const data = readConnectionData();
+
+          let asset = null;
+          await withTempSetting("openRouterApiKey", "sk-or-stub-test", async () => {
+            await withStubbedFetch(
+              [["openrouter.ai", () => openRouterResponse(FIXTURE_B64_A)]],
+              async () => {
+                await withSilencedNotifications(async () => {
+                  asset = await generatePortrait(
+                    testJournalId, "connection", data,
+                    game.settings.get(MODULE, "campaignState") ?? {},
+                  );
+                });
+              },
+            );
+          });
+
+          assert.isOk(asset, "generatePortrait should return the new asset");
+          assert.equal(asset.b64, FIXTURE_B64_A, "asset should carry the stubbed base64 payload");
+          assert.isFalse(asset.locked, "first generation should not be locked");
+          assert.isFalse(asset.regenerationUsed, "first generation has not used regeneration");
+
+          const after = readConnectionData();
+          assert.equal(after.portraitId, asset._id,
+            "the connection page should record the new portraitId");
+
+          const loaded = await loadArtAsset(asset._id,
+            game.settings.get(MODULE, "campaignState") ?? {});
+          assert.isOk(loaded, "the asset journal entry should be retrievable by id");
+          assert.equal(getDataUri(loaded),
+            `data:image/png;base64,${FIXTURE_B64_A}`,
+            "the loaded asset should produce the expected data URI");
+        });
+      });
+
+      describe("Regenerate-and-lock — stubbed OpenRouter", function () {
+        it("regeneratePortrait replaces the portrait, marks regenerationUsed, and locks", async function () {
+          this.timeout(30000);
+          if (!testJournalId) { this.skip(); return; }
+
+          const { setPortraitSourceDescription } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+          const { generatePortrait, regeneratePortrait } = await import(
+            `${MODULE_PATH}/art/generator.js`);
+          const { loadArtAsset } = await import(`${MODULE_PATH}/art/storage.js`);
+
+          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+
+          // First generation
+          let firstAsset = null;
+          await withTempSetting("openRouterApiKey", "sk-or-stub-test", async () => {
+            await withStubbedFetch(
+              [["openrouter.ai", () => openRouterResponse(FIXTURE_B64_A)]],
+              async () => {
+                await withSilencedNotifications(async () => {
+                  firstAsset = await generatePortrait(
+                    testJournalId, "connection", readConnectionData(),
+                    game.settings.get(MODULE, "campaignState") ?? {},
+                  );
+                });
+              },
+            );
+          });
+          assert.isOk(firstAsset, "initial portrait should be created");
+
+          // Regenerate — must auto-confirm the DialogV2 inside the panel handler,
+          // but generator.regeneratePortrait does not itself prompt — the panel
+          // wraps it. Calling regeneratePortrait directly skips the dialog.
+          let secondAsset = null;
+          await withTempSetting("openRouterApiKey", "sk-or-stub-test", async () => {
+            await withStubbedFetch(
+              [["openrouter.ai", () => openRouterResponse(FIXTURE_B64_B)]],
+              async () => {
+                await withSilencedNotifications(async () => {
+                  secondAsset = await regeneratePortrait(
+                    testJournalId, "connection", readConnectionData(),
+                    game.settings.get(MODULE, "campaignState") ?? {},
+                  );
+                });
+              },
+            );
+          });
+
+          assert.isOk(secondAsset, "regeneration should return an asset");
+          assert.notEqual(secondAsset._id, firstAsset._id,
+            "regenerated asset must have a new id");
+          assert.equal(secondAsset.b64, FIXTURE_B64_B,
+            "regenerated asset should carry the second fixture payload");
+          assert.isTrue(secondAsset.locked, "regenerated portrait must be locked");
+          assert.isTrue(secondAsset.regenerationUsed, "regenerationUsed must be true");
+
+          const data = readConnectionData();
+          assert.equal(data.portraitId, secondAsset._id,
+            "connection should now point at the regenerated portrait");
+
+          // A third call should refuse (locked).
+          let thirdAsset = "not-null-sentinel";
+          await withTempSetting("openRouterApiKey", "sk-or-stub-test", async () => {
+            await withStubbedFetch(
+              [["openrouter.ai", () => openRouterResponse(FIXTURE_B64_A)]],
+              async () => {
+                await withSilencedNotifications(async () => {
+                  thirdAsset = await regeneratePortrait(
+                    testJournalId, "connection", readConnectionData(),
+                    game.settings.get(MODULE, "campaignState") ?? {},
+                  );
+                });
+              },
+            );
+          });
+          assert.isNull(thirdAsset,
+            "regeneration of a locked portrait must return null");
+
+          // Confirm the supersede flag landed on the first asset.
+          const firstAfter = await loadArtAsset(firstAsset._id,
+            game.settings.get(MODULE, "campaignState") ?? {});
+          assert.isTrue(firstAfter?.superseded === true,
+            "the original asset should be marked superseded");
+        });
+      });
+
+      describe("Initial generation — live OpenRouter", function () {
+        it("hits real OpenRouter and stores the resulting portrait", async function () {
+          this.timeout(120000);
+          if (!testJournalId) { this.skip(); return; }
+          if (skipNoKey(this, "openRouterApiKey")) return;
+
+          const { setPortraitSourceDescription } = await import(
+            `/modules/${MODULE}/src/entities/connection.js`);
+          const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
+          const { loadArtAsset, getDataUri } = await import(`${MODULE_PATH}/art/storage.js`);
+
+          await setPortraitSourceDescription(testJournalId,
+            "a wiry quartermaster in oiled leathers, lit by station floodlights");
+
+          let asset = null;
+          await withSilencedNotifications(async () => {
+            asset = await generatePortrait(
+              testJournalId, "connection", readConnectionData(),
+              game.settings.get(MODULE, "campaignState") ?? {},
+            );
+          });
+
+          if (!asset) {
+            console.warn(`${MODULE} | quench portraitGeneration: live OpenRouter returned no image this run; skipping.`);
+            this.skip();
+            return;
+          }
+          assert.isString(asset.b64, "live asset.b64 should be a non-empty base64 string");
+          assert.isAbove(asset.b64.length, 100,
+            "live base64 payload should be substantial (not a placeholder)");
+
+          const loaded = await loadArtAsset(asset._id,
+            game.settings.get(MODULE, "campaignState") ?? {});
+          assert.isOk(loaded, "live asset should be loadable from storage");
+          const uri = getDataUri(loaded);
+          assert.match(uri, /^data:image\/png;base64,/,
+            "live asset should produce a PNG data URI");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Portrait Generation", timeout: 120000 },
   );
 }
 
