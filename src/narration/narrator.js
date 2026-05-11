@@ -162,7 +162,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
 
     if (recapContext) markRecapInjected(campaignState?.currentSessionId);
     await postNarrationCard(narration, resolution, campaignState);
-    runPostNarrationPasses(narration, resolution, relevance, campaignState);
+    await runPostNarrationPasses(narration, resolution, relevance, campaignState);
     return narration;
 
   } catch (err) {
@@ -178,7 +178,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
         if (narration?.trim()) {
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState);
-          runPostNarrationPasses(narration, resolution, relevance, campaignState);
+          await runPostNarrationPasses(narration, resolution, relevance, campaignState);
           return narration;
         }
       } catch (retryErr) {
