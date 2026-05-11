@@ -45,6 +45,7 @@ export default [
         Blob:       "readonly",
         File:       "readonly",
         MouseEvent: "readonly",
+        Response:   "readonly",
         Uint8Array: "readonly",
         AbortSignal: "readonly",
 
