@@ -1,4 +1,4 @@
-const CONTENT_VERSION = "0.1.64";
+const CONTENT_VERSION = "1.2.0";
 
 const JOURNAL_NAME = "Starforged Companion — Help & Reference";
 
