@@ -388,17 +388,46 @@ export async function generateLoreRecap(campaignState) {
 async function callLoreRecapNarrator(campaignState, apiKey) {
   let truthsContent = "";
 
-  // Try system journal first — it's the authoritative source when set via dialog
-  if (campaignState.worldTruthsJournalId) {
-    const entry = game.journal?.get(campaignState.worldTruthsJournalId);
-    const page  = entry?.pages?.contents?.[0];
-    const html  = page?.text?.content ?? "";
+  // Resolve the world-truths journal. Prefer the stored id, but tolerate stale
+  // or missing ids by searching for the system "Setting Truths" journal (i18n
+  // key TypeTruth) and the module's own "World Truths" journal as fallbacks.
+  // When the dialog is re-run or the original journal is deleted/recreated,
+  // worldTruthsJournalId can point at a document that no longer exists.
+  let entry = campaignState.worldTruthsJournalId
+    ? (game.journal?.get(campaignState.worldTruthsJournalId) ?? null)
+    : null;
+
+  if (!entry) {
+    const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
+    const candidates  = (game.journal?.contents ?? []).filter(
+      j => j.name === systemTitle || j.name === JOURNAL_NAME
+    );
+    // Prefer a candidate whose first page looks like a real truths page
+    // (≥2 <h2> elements — same shape the createJournalEntryPage hook checks).
+    entry = candidates.find(j => {
+      const html = j.pages?.contents?.[0]?.text?.content ?? "";
+      return (html.match(/<h2/gi) ?? []).length >= 2;
+    }) ?? candidates[0] ?? null;
+
+    if (entry && entry.id !== campaignState.worldTruthsJournalId) {
+      campaignState.worldTruthsJournalId = entry.id;
+      if (game.user?.isGM) {
+        await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+          console.warn(`${MODULE_ID} | lore: failed to repair worldTruthsJournalId:`, err)
+        );
+      }
+    }
+  }
+
+  if (entry) {
+    const page = entry.pages?.contents?.[0];
+    const html = page?.text?.content ?? "";
     if (html.trim()) {
       truthsContent = html
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .trim();
-    } else if (entry && page) {
+    } else if (page) {
       // Journal page exists but was saved with no truth selections recorded
       // (async timing gap in TruthCategory.randomize() — model.valid stayed false)
       ui?.notifications?.warn(
@@ -479,7 +508,10 @@ async function writeLoreRecapToJournal(recap, campaignState) {
     if (je) { await upsertPage(je); return; }
   }
 
-  const je = game.journal?.getName(JOURNAL_NAME);
+  // Fallback by name — accept the system's localized "Setting Truths" too,
+  // not only the module's own "World Truths" journal.
+  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
+  const je = game.journal?.getName(systemTitle) ?? game.journal?.getName(JOURNAL_NAME);
   if (je) await upsertPage(je);
 }
 
