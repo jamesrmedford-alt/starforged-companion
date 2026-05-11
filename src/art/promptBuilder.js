@@ -1,15 +1,15 @@
 /**
  * STARFORGED COMPANION
- * src/art/promptBuilder.js — Build DALL-E prompts from entity descriptions
+ * src/art/promptBuilder.js — Build image-generation prompts from entity descriptions
  *
  * Responsibilities:
- * - Translate Loremaster narration excerpts into DALL-E-appropriate prompts
+ * - Translate narrator narration excerpts into image-model prompts
  * - Apply a consistent visual style anchor across all generated images
- * - Sanitise content that DALL-E will refuse — redirect toward implication
- *   rather than depiction (scars not wounds, aftermath not violence)
+ * - Sanitise content that image moderation will refuse — redirect toward
+ *   implication rather than depiction (scars not wounds, aftermath not violence)
  * - Produce negative-space guidance via the style anchor (no photorealism,
- *   no contemporary settings) without requiring a separate negative prompt
- *   field (DALL-E 3 doesn't support negative prompts)
+ *   no contemporary settings) without relying on negative-prompt fields,
+ *   which many hosted image APIs do not expose
  *
  * Style anchor:
  *   All images share: dark science fiction concept art, painted illustration,
@@ -17,11 +17,11 @@
  *   cinematic composition. This is prepended to every prompt and produces a
  *   recognisable visual identity across portraits, locations, and ships.
  *
- * DALL-E 3 characteristics to design around:
- * - No negative prompts: exclusions must be phrased as positive instructions
- * - Strict moderation: gore, explicit violence, death imagery → redirect to
+ * Image-model characteristics to design around:
+ * - Negative prompts not assumed: exclusions phrased as positive instructions
+ * - Moderation: gore, explicit violence, death imagery → redirect to
  *   environmental storytelling (damage to setting, not body)
- * - House style pull: the style anchor counteracts this somewhat
+ * - Style anchor counteracts house-style pull
  * - 1024×1024 default: suitable for portraits and location thumbnails
  * - 1792×1024 landscape: suitable for ships and wide establishing shots
  *
@@ -65,14 +65,14 @@ const TYPE_STYLE = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a DALL-E 3 prompt for a given entity type and source description.
+ * Build a image-generation prompt for a given entity type and source description.
  *
- * The source description is the Loremaster narration excerpt that triggered
+ * The source description is the narrator narration excerpt that triggered
  * art generation — it contains the raw descriptive language that should be
  * translated into visual prompt terms.
  *
  * @param {string} entityType  — "connection" | "settlement" | "ship" | "faction" | "planet"
- * @param {string} sourceDescription — Loremaster narration excerpt
+ * @param {string} sourceDescription — narrator narration excerpt
  * @param {Object} [entity]    — The entity record for additional context
  * @returns {{ prompt: string, size: string }}
  */
@@ -98,7 +98,7 @@ export function buildPrompt(entityType, sourceDescription, entity = {}) {
 /**
  * Build a prompt for a regeneration request.
  * Same logic as buildPrompt but with a variation instruction appended
- * so DALL-E produces a meaningfully different result rather than a
+ * so the model produces a meaningfully different result rather than a
  * slight reshuffle.
  *
  * @param {string} entityType
@@ -120,13 +120,13 @@ export function buildRegenerationPrompt(entityType, sourceDescription, entity = 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Extract visual elements from a Loremaster narration excerpt.
+ * Extract visual elements from a narrator narration excerpt.
  * Filters prose for the parts that translate directly to image description:
  * physical appearance, clothing, setting details, lighting, mood.
  * Drops dialogue, internal thoughts, and mechanical commentary.
  *
  * This is heuristic — the source description is already filtered by the
- * caller to be the first descriptive paragraph from Loremaster, but it
+ * caller to be the first descriptive paragraph from the narrator, but it
  * may still contain non-visual content.
  *
  * @param {string} text
@@ -145,7 +145,7 @@ function extractVisualElements(text, _entityType) {
   // Collapse whitespace
   cleaned = cleaned.replace(/\s+/g, " ").trim();
 
-  // Truncate to a reasonable length — DALL-E prompts over ~400 words lose coherence
+  // Truncate to a reasonable length — Most image-model prompts over ~400 words lose coherence
   const words = cleaned.split(" ");
   if (words.length > 120) {
     cleaned = words.slice(0, 120).join(" ") + "…";
@@ -160,14 +160,14 @@ function extractVisualElements(text, _entityType) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Redirect content that DALL-E moderation will refuse toward implication.
+ * Redirect content that image-model moderation will refuse toward implication.
  *
  * Strategy: replace the direct depiction with environmental or contextual
  * storytelling. Scars instead of wounds. Damage to setting not body.
  * The aesthetic of aftermath rather than the moment of violence.
  *
- * This is not censorship — it's a translation to what DALL-E can render well.
- * The Loremaster narration already exists as the authoritative description;
+ * This is not censorship — it's a translation to what the model can render well.
+ * The narrator narration already exists as the authoritative description;
  * the image is an accompaniment, not a literal reproduction.
  *
  * @param {string} text

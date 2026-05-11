@@ -29,14 +29,12 @@ run `npm test`, `git diff`, `git commit`, and any other shell commands.
 ## Before each Claude Code session
 
 ```bash
-# Terminal 1 — Start the API proxy (for testing in Foundry)
-npm run proxy
-# or: ./proxy/start.sh
-
-# Terminal 2 — Start Claude Code
 cd starforged-companion
 claude
 ```
+
+No proxy needed — API calls go directly from the Foundry renderer to
+Anthropic and OpenRouter (Phase 2 architecture).
 
 ---
 
@@ -117,7 +115,9 @@ Intercepts player chat narration, identifies the appropriate game move via
 Claude API, rolls dice, resolves outcomes, and triggers narrative continuation.
 
 **Tech stack:** ES modules, Vitest (unit tests), Quench (integration tests),
-Foundry v13 ApplicationV2 UI, local Node.js proxy for CORS.
+Foundry v13 ApplicationV2 UI. Direct browser fetch for all external APIs —
+Anthropic via the `anthropic-dangerous-direct-browser-access` opt-in,
+image generation via OpenRouter (which supports browser CORS natively).
 
 **Current state:** Pipeline works end-to-end (narration → move card posted).
 Narrator not yet implemented (was Loremaster, being replaced). Several UI
@@ -133,8 +133,8 @@ via the module's truth generator. The example is not hardcoded into the module.
 ## Architecture in one paragraph
 
 Player types narration → `createChatMessage` hook intercepts → `interpretMove()`
-calls Claude Haiku via `api-proxy.js` (local proxy on desktop, Forge proxy on
-The Forge) → `MoveConfirmDialog` shown → player accepts → `resolveMove()` rolls
+calls Claude Haiku via `api-proxy.js` (direct browser fetch with Anthropic's
+client-side opt-in header) → `MoveConfirmDialog` shown → player accepts → `resolveMove()` rolls
 dice → `assembleContextPacket()` builds 7-section context (safety first, always) →
 `postMoveResult()` posts move card to chat → `narrateResolution()` calls Claude
 Sonnet for narrative continuation → narration card posted → `persistResolution()`

@@ -460,7 +460,6 @@ User-facing language only — no file names or internal architecture references.
 - Modify `tests/fixtures/` files without discussing the impact first
 - Change coverage thresholds in `vitest.config.js`
 - Add new npm dependencies without discussing the choice first
-- Modify `proxy/claude-proxy.mjs` routing logic without confirming
 - Rename exported functions (breaks callers across the codebase)
 - Update `vendor/foundry-ironsworn` without explicit instruction
 
@@ -471,8 +470,12 @@ User-facing language only — no file names or internal architecture references.
 These are deliberate decisions — do not change without reading
 `docs/decisions.md` and confirming with the user:
 
-- All external API calls must go through `src/api-proxy.js`. Never add direct
-  `fetch()` calls to `api.anthropic.com` or `api.openai.com` in module source.
+- All Anthropic API calls must go through `src/api-proxy.js` (which injects the
+  `anthropic-dangerous-direct-browser-access` header). Never add ad-hoc direct
+  `fetch()` calls to `api.anthropic.com` in module source.
+- All image generation goes through `src/art/openRouterImage.js`. Do not add
+  alternative image-provider call sites — if a new model is needed, expose it
+  via the `openRouterImageModel` setting and let OpenRouter route to it.
 - All UI panels must use `foundry.applications.api.ApplicationV2`. Do not use
   the v1 `Application` class.
 - No jQuery. DOM API only (`querySelector`, `createElement`, `addEventListener`).
@@ -495,9 +498,12 @@ progress tracking, entity management, art generation, and safety configuration.
 **Target:** Foundry v13 (v12 minimum). ES modules throughout. Vitest for
 unit tests. Quench for integration tests (require live Foundry).
 
-**Proxy:** Foundry Electron renderer enforces CORS. All external API calls
-route through `src/api-proxy.js` → local Node proxy (desktop) or Forge
-server-side proxy. Start `npm run proxy` before testing in Foundry.
+**Transport:** No proxy. Claude calls go directly from the browser using
+Anthropic's `anthropic-dangerous-direct-browser-access: true` opt-in (see
+`src/api-proxy.js`). Image generation goes directly to OpenRouter, which
+supports browser CORS natively (see `src/art/openRouterImage.js`). The same
+code runs on Foundry desktop and on The Forge — no setup difference, no
+local Node process required.
 
 **System dependency:** foundry-ironsworn v1.27.0. Actor schema confirmed:
 stats flat on `system` (not nested), meters at `system.health.value` etc,

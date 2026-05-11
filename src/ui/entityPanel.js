@@ -577,7 +577,7 @@ export class EntityPanelApp extends ApplicationV2 {
 
   /**
    * Generate a portrait using the real generator.js API.
-   * generator.js handles prompt building, DALL-E call, storage, and entity linking.
+   * generator.js handles prompt building, OpenRouter call, storage, and entity linking.
    */
   static async #onGeneratePortrait(event, target) {
     const journalId = target.dataset.journalId;
