@@ -451,6 +451,55 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
 }
 
 /**
+ * Build the user message for a paced narrative-only response.
+ * Used when the pacing classifier returns NARRATIVE or
+ * NARRATIVE_WITH_MOVE_AVAILABLE — no move is rolled, the narrator continues
+ * the fiction directly from the player's input.
+ *
+ * When `suggestedMove` is provided, the narrator is instructed to end with a
+ * single italicized line inviting that move. The narrator may decline if the
+ * fiction wouldn't carry it.
+ *
+ * @param {string} playerText      — raw player narration
+ * @param {string} recentContext   — recent narration cards joined as text (may be empty)
+ * @param {number} sentenceTarget  — how many sentences to produce
+ * @param {string|null} suggestedMove
+ * @returns {string}
+ */
+export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove) {
+  const parts = [];
+
+  if (recentContext?.trim()) {
+    parts.push(`## RECENT SCENE\n\n${recentContext.trim()}`);
+  }
+
+  parts.push(`## PLAYER NARRATION\n\n"${(playerText ?? '').trim()}"`);
+
+  if (suggestedMove) {
+    parts.push(
+      `## SUGGESTED MOVE\n\n` +
+      `The pacing classifier nominated ${suggestedMove} as a move the player could ` +
+      `make if they want to push this moment. End your narration with ONE italicized ` +
+      `sentence inviting this move, in the narrator's voice. Do not announce it ` +
+      `mechanically. Examples:\n\n` +
+      `  *If you want to read him for tells, this could be a Gather Information.*\n` +
+      `  *Pressing further here would be a Compel.*\n\n` +
+      `Do not include this hint if your narration would naturally close the moment or ` +
+      `if the moment doesn't actually warrant pressing. The hint is optional.`
+    );
+  }
+
+  const target = Math.max(1, Number(sentenceTarget) || 3);
+  parts.push(
+    `Continue the fiction from this input in ${target} sentence${target !== 1 ? 's' : ''}. ` +
+    `No move was rolled — stay in narration. Do not announce mechanics. Do not introduce ` +
+    `unestablished plot elements. The narrator is continuing the scene, not advancing it.`
+  );
+
+  return parts.join('\n\n');
+}
+
+/**
  * Build the user message for a single narration call.
  * This is the uncached portion — it changes every call.
  *

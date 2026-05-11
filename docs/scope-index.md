@@ -33,7 +33,7 @@ For detail on any scope, open the linked document.
 | [Sector Creator](sector-creator-scope.md) | ✅ COMPLETE | 11-step guided sector generation following Starforged rulebook (pp. 114–127); SECTOR_TROUBLE table, settlement/planet/connection/map generation | — | Sector Creator Enhanced |
 | [Sector Creator Enhanced](sector-creator-enhanced-scope.md) | ✅ COMPLETE | DALL-E 3 background art per region, Foundry Scene creation with Note pins and Drawing passages, narrator journal stubs | Sector Creator | — |
 | [System Asset Integration](system-asset-integration-scope.md) | ✅ COMPLETE | Reuse foundry-ironsworn art (starships, locations, asset/oracle/stat icons), compendium content (canonical moves, oracles, encounters, truths), and localisation strings; all nine phases shipped: centralised asset paths (`src/system/ironswornAssets.js`), i18n wrapper, canonical pack lookup, starship/location/stat/asset/oracle icon resolvers, move-interpreter canonical grounding, `!sfc encounter <name>` chat command, campaign-truths digest in narrator system prompt | Ironsworn API | — |
-| [Pacing](pacing-scope.md) | 📋 PLANNED | Haiku pre-classifier between chat input and move interpreter; routes to `MOVE`, `NARRATIVE`, or `NARRATIVE_WITH_MOVE_AVAILABLE`; per-category dials (combat/investigation/exploration/social/downtime), `!pace hot|quiet|clear` scene override, connection-awareness, recent move density signal, telemetry for dial tuning | Narrator, Move interpreter, Settings | — |
+| [Pacing](pacing-scope.md) | ✅ COMPLETE | Haiku pre-classifier between chat input and move interpreter; routes to `MOVE`, `NARRATIVE`, or `NARRATIVE_WITH_MOVE_AVAILABLE`; per-category dials (combat/investigation/exploration/social/downtime); `!pace hot|quiet|clear|status` scene override; `!roll` false-negative recovery; connection-awareness via classifier context; recent move-density signal (in-memory ring buffer); telemetry journal under the Starforged Companion folder for dial tuning | Narrator, Move interpreter, Settings | — |
 | [Narrator Entity Discovery v2](narrator-entity-discovery-scope-v2.md) | 🔧 SUPERSEDED | Earlier draft of entity discovery — replaced by v3 (combined detection pass, hybrid permissions, current-location card). Kept on disk for design history | — | — |
 | [World Journal v1](world-journal-scope.md) | 🔧 SUPERSEDED | Earlier draft of World Journal — replaced by v2 (folder + four category journals, manual `!journal` commands, combined detection-pass routing rule, WJ panel). Kept on disk for design history | — | — |
 ---
@@ -57,7 +57,6 @@ Narrator (✅)
 
 ## What to work on next
 
-- **Pacing classifier** — the only planned scope not yet started. High priority per its own doc; addresses pacing fatigue observed in playtesting. All dependencies satisfied.
 - **Visual UI polish** — wire the new `statIcon` / `assetIcon` / `oracleIcon` resolvers into the entity panel and chat cards. Helpers shipped in Phase 9; the templates were not touched in that pass and remain a follow-up.
 
 Other possible directions:

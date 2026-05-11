@@ -46,6 +46,7 @@ Hooks.on("quenchReady", (quench) => {
   registerSafetyExtrasTests(quench);
   registerToolbarTests(quench);
   registerClarificationExtrasTests(quench);
+  registerPacingTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2725,5 +2726,152 @@ function registerClarificationExtrasTests(quench) {
       });
     },
     { displayName: "STARFORGED: Clarification Extras" },
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PACING CLASSIFIER — dials, scene override, !pace / !roll, density buffer
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerPacingTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.pacing",
+    (context) => {
+      const { describe, it, assert, after } = context;
+      const cardIds = [];
+
+      after(async function () {
+        if (game.user?.isGM) {
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          if (state.pacing) {
+            state.pacing.sceneOverride   = null;
+            state.pacing.forceNextAsMove = false;
+            await game.settings.set(MODULE_ID, "campaignState", state).catch(() => {});
+          }
+        }
+        for (const id of cardIds) {
+          const m = game.messages?.get(id);
+          if (m?.delete) await m.delete().catch(() => {});
+        }
+        cardIds.length = 0;
+      });
+
+      describe("effectiveDial / scene override math", function () {
+        it("base dial returned without override", async function () {
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const cfg = { dials: { combat: 9, social: 3 }, sceneOverride: null };
+          assert.equal(effectiveDial("combat", cfg), 9);
+          assert.equal(effectiveDial("social", cfg), 3);
+        });
+
+        it("clamps to [0, 10] with extreme modifiers", async function () {
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const hot  = { dials: { combat: 9 }, sceneOverride: { modifier:  5, label: "hot"   } };
+          const cold = { dials: { downtime: 1 }, sceneOverride: { modifier: -5, label: "quiet" } };
+          assert.equal(effectiveDial("combat",   hot),  10);
+          assert.equal(effectiveDial("downtime", cold),  0);
+        });
+      });
+
+      describe("recent-density buffer", function () {
+        it("resetRecentDensity returns zero", async function () {
+          const { resetRecentDensity, getRecentMoveDensity } = await import(`/modules/${MODULE_ID}/src/pacing/router.js`);
+          resetRecentDensity();
+          assert.equal(getRecentMoveDensity(5).count, 0);
+        });
+
+        it("counts MOVE decisions in rolling window", async function () {
+          const { recordRecentDecision, getRecentMoveDensity, resetRecentDensity } = await import(`/modules/${MODULE_ID}/src/pacing/router.js`);
+          resetRecentDensity();
+          recordRecentDecision({ decision: "MOVE",      sceneTag: "s1", window: 5 });
+          recordRecentDecision({ decision: "NARRATIVE", sceneTag: "s1", window: 5 });
+          recordRecentDecision({ decision: "MOVE",      sceneTag: "s1", window: 5 });
+          assert.equal(getRecentMoveDensity(5).count, 2);
+        });
+
+        it("scene tag change resets buffer", async function () {
+          const { recordRecentDecision, getRecentMoveDensity, resetRecentDensity } = await import(`/modules/${MODULE_ID}/src/pacing/router.js`);
+          resetRecentDensity();
+          recordRecentDecision({ decision: "MOVE", sceneTag: "alpha", window: 5 });
+          recordRecentDecision({ decision: "MOVE", sceneTag: "alpha", window: 5 });
+          recordRecentDecision({ decision: "MOVE", sceneTag: "beta",  window: 5 });
+          assert.equal(getRecentMoveDensity(5).count, 1);
+        });
+      });
+
+      describe("pacing settings — registered defaults", function () {
+        it("five dials register with the documented defaults", async function () {
+          const expectations = [
+            ["pacing.dial.combat",        9],
+            ["pacing.dial.investigation", 6],
+            ["pacing.dial.exploration",   5],
+            ["pacing.dial.social",        3],
+            ["pacing.dial.downtime",      1],
+          ];
+          for (const [key, expected] of expectations) {
+            const v = game.settings.get(MODULE_ID, key);
+            assert.equal(v, expected, `${key} should default to ${expected}`);
+          }
+          assert.equal(game.settings.get(MODULE_ID, "pacing.enabled"),       true);
+          assert.equal(game.settings.get(MODULE_ID, "pacing.densityWindow"), 5);
+        });
+      });
+
+      describe("!pace command — scene override persistence", function () {
+        it("!pace hot sets a +3 override and posts a confirmation card", async function () {
+          if (skipNotGM(this)) return;
+          const before = game.messages.size;
+          await ChatMessage.create({ content: "!pace hot" }).then(m => cardIds.push(m.id));
+          await flushMicrotasks();
+          await flushMicrotasks();
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          assert.deepEqual(state.pacing?.sceneOverride, { modifier: 3, label: "hot" });
+          assert.isAtLeast(game.messages.size, before, "should post a confirmation card");
+        });
+
+        it("!pace clear removes the override", async function () {
+          if (skipNotGM(this)) return;
+          await ChatMessage.create({ content: "!pace clear" }).then(m => cardIds.push(m.id));
+          await flushMicrotasks();
+          await flushMicrotasks();
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          assert.isNull(state.pacing?.sceneOverride);
+        });
+      });
+
+      describe("!roll command — false-negative recovery", function () {
+        it("sets pacing.forceNextAsMove on campaignState", async function () {
+          if (skipNotGM(this)) return;
+          await ChatMessage.create({ content: "!roll" }).then(m => cardIds.push(m.id));
+          await flushMicrotasks();
+          await flushMicrotasks();
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          assert.isTrue(state.pacing?.forceNextAsMove === true);
+          state.pacing.forceNextAsMove = false;
+          await game.settings.set(MODULE_ID, "campaignState", state);
+        });
+      });
+
+      describe("routePacedInput — disabled short-circuit", function () {
+        it("returns runMove:true without an API call when pacing.enabled is false", async function () {
+          if (skipNotGM(this)) return;
+          await withTempSetting("pacing.enabled", false, async () => {
+            const { routePacedInput } = await import(`/modules/${MODULE_ID}/src/pacing/router.js`);
+            const state = game.settings.get(MODULE_ID, "campaignState");
+            const result = await routePacedInput({
+              playerText: "any input here",
+              campaignState: state,
+              character: null,
+              apiKey: "",
+            });
+            assert.equal(result.runMove, true);
+            assert.equal(result.reasoning, "pacing disabled");
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Pacing Classifier" },
   );
 }
