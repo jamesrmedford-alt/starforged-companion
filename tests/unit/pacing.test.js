@@ -12,6 +12,7 @@ import {
   effectiveDial,
   buildClassifierContext,
   classifyInput,
+  normalizeMischiefForClassifier,
 } from '../../src/pacing/classifier.js';
 
 import {
@@ -48,8 +49,9 @@ function makeApiResponse(parsed) {
   return { content: [{ type: 'text', text: JSON.stringify(parsed) }] };
 }
 
+// Defaults after suggestion-loop remediation §B3 (exploration 5→6, social 3→5).
 const BASE_PACING_CFG = {
-  dials: { combat: 9, investigation: 6, exploration: 5, social: 3, downtime: 1 },
+  dials: { combat: 9, investigation: 6, exploration: 6, social: 5, downtime: 1 },
   sceneOverride: null,
 };
 
@@ -67,12 +69,12 @@ const BASE_STATE = {
 describe('effectiveDial()', () => {
   it('returns the base dial when no override', () => {
     expect(effectiveDial('combat', BASE_PACING_CFG)).toBe(9);
-    expect(effectiveDial('social', BASE_PACING_CFG)).toBe(3);
+    expect(effectiveDial('social', BASE_PACING_CFG)).toBe(5);
   });
 
   it('applies +3 modifier for hot scene override', () => {
     const cfg = { ...BASE_PACING_CFG, sceneOverride: { modifier: 3, label: 'hot' } };
-    expect(effectiveDial('social', cfg)).toBe(6);
+    expect(effectiveDial('social', cfg)).toBe(8);
   });
 
   it('applies -3 modifier for quiet scene override', () => {
@@ -155,6 +157,148 @@ describe('buildClassifierContext()', () => {
       pacingConfig: BASE_PACING_CFG,
     });
     expect(userMessage).toContain('Last 5 inputs in current scene: 4 were moves');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mischief posture — suggestion-loop remediation §B2
+// ---------------------------------------------------------------------------
+
+describe('normalizeMischiefForClassifier()', () => {
+  it('maps "lawful" to "lawful"', () => {
+    expect(normalizeMischiefForClassifier('lawful')).toBe('lawful');
+  });
+
+  it('maps the internal alias "serious" to "lawful"', () => {
+    expect(normalizeMischiefForClassifier('serious')).toBe('lawful');
+  });
+
+  it('preserves "balanced" and "chaotic"', () => {
+    expect(normalizeMischiefForClassifier('balanced')).toBe('balanced');
+    expect(normalizeMischiefForClassifier('chaotic')).toBe('chaotic');
+  });
+
+  it('defaults to "balanced" for unknown / empty / null values', () => {
+    expect(normalizeMischiefForClassifier(null)).toBe('balanced');
+    expect(normalizeMischiefForClassifier(undefined)).toBe('balanced');
+    expect(normalizeMischiefForClassifier('')).toBe('balanced');
+    expect(normalizeMischiefForClassifier('wild')).toBe('balanced');
+  });
+
+  it('is case-insensitive', () => {
+    expect(normalizeMischiefForClassifier('LAWFUL')).toBe('lawful');
+    expect(normalizeMischiefForClassifier('Chaotic')).toBe('chaotic');
+  });
+});
+
+describe('buildClassifierContext() — mischief posture (suggestion-loop §B2)', () => {
+  const baseArgs = () => ({
+    playerText: 'I press her on what she heard',
+    campaignState: BASE_STATE,
+    character: { name: 'Kira' },
+    recentMoveDensity: { count: 0, window: 5 },
+    pacingConfig: BASE_PACING_CFG,
+  });
+
+  it('defaults to the balanced posture when mischiefDial is omitted', () => {
+    const { systemPrompt, posture } = buildClassifierContext(baseArgs());
+    expect(posture).toBe('balanced');
+    expect(systemPrompt).toContain('BALANCED');
+    expect(systemPrompt).toMatch(/Read the player's[\s\n]+commitment from what they describe/);
+  });
+
+  it('renders the lawful posture into the system prompt when mischiefDial is "lawful"', () => {
+    const { systemPrompt, posture } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'lawful',
+    });
+    expect(posture).toBe('lawful');
+    expect(systemPrompt).toContain('LAWFUL');
+    expect(systemPrompt).toContain('Require an explicit verbal intent marker');
+  });
+
+  it('renders the chaotic posture into the system prompt when mischiefDial is "chaotic"', () => {
+    const { systemPrompt, posture } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'chaotic',
+    });
+    expect(posture).toBe('chaotic');
+    expect(systemPrompt).toContain('CHAOTIC');
+    expect(systemPrompt).toContain('Infer commitment aggressively');
+  });
+
+  it('accepts the internal alias "serious" as lawful', () => {
+    const { systemPrompt, posture } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'serious',
+    });
+    expect(posture).toBe('lawful');
+    expect(systemPrompt).toContain('LAWFUL');
+  });
+
+  it('falls back to balanced for an unknown mischief value', () => {
+    const { systemPrompt, posture } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'extreme',
+    });
+    expect(posture).toBe('balanced');
+    expect(systemPrompt).toContain('BALANCED');
+  });
+
+  it('different postures produce distinct system prompts (cache key separation)', () => {
+    const lawful   = buildClassifierContext({ ...baseArgs(), mischiefDial: 'lawful' }).systemPrompt;
+    const balanced = buildClassifierContext({ ...baseArgs(), mischiefDial: 'balanced' }).systemPrompt;
+    const chaotic  = buildClassifierContext({ ...baseArgs(), mischiefDial: 'chaotic' }).systemPrompt;
+    expect(lawful).not.toBe(balanced);
+    expect(balanced).not.toBe(chaotic);
+    expect(lawful).not.toBe(chaotic);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decision-guidance language — suggestion-loop remediation §B1
+// ---------------------------------------------------------------------------
+
+describe('classifier system prompt — decision guidance (suggestion-loop §B1)', () => {
+  const baseArgs = () => ({
+    playerText: 'I take a moment to look out the viewport',
+    campaignState: BASE_STATE,
+    character: null,
+    recentMoveDensity: { count: 0, window: 5 },
+    pacingConfig: BASE_PACING_CFG,
+  });
+
+  it('no longer treats the absence of "I try to" as a NARRATIVE default', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    // The pre-remediation prompt instructed the model to prefer
+    // NARRATIVE_WITH_MOVE_AVAILABLE whenever the player didn't use
+    // "I try to" / "I attempt to". That clause is gone in the balanced
+    // posture — only the lawful posture requires verbal markers.
+    expect(systemPrompt).not.toMatch(/no "I try to", "I attempt", "I want to"/);
+  });
+
+  it('the balanced posture instructs the model to read commitment from depicted action', () => {
+    const { systemPrompt } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'balanced',
+    });
+    expect(systemPrompt).toMatch(/depicts the character acting with[\s\n]+intent/i);
+    expect(systemPrompt).toMatch(/genuine[\s\n]+ambiguity/i);
+  });
+
+  it('the lawful posture still requires a verbal intent marker', () => {
+    const { systemPrompt } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'lawful',
+    });
+    expect(systemPrompt).toMatch(/I try to/);
+    expect(systemPrompt).toMatch(/I attempt to/);
+    expect(systemPrompt).toMatch(/I roll to/);
+  });
+
+  it('the posture clause is positioned to override the dial priors', () => {
+    const { systemPrompt } = buildClassifierContext({
+      ...baseArgs(), mischiefDial: 'balanced',
+    });
+    const postureIdx = systemPrompt.indexOf('INTERPRETATION POSTURE');
+    const guidanceIdx = systemPrompt.indexOf('DECISION GUIDANCE');
+    expect(postureIdx).toBeGreaterThan(-1);
+    expect(guidanceIdx).toBeGreaterThan(postureIdx);
+    expect(systemPrompt).toContain('the posture wins');
   });
 });
 
@@ -286,6 +430,31 @@ describe('classifyInput()', () => {
     const result = await classifyInput(baseArgs());
     expect(result.category).toBe('exploration');
   });
+
+  it('threads mischiefDial through to the system prompt (suggestion-loop §B2)', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'face_danger',
+      category: 'exploration', confidence: 0.5,
+    }));
+    await classifyInput({ ...baseArgs(), mischiefDial: 'lawful' });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    // apiPost(url, headers, body); the system prompt is the first system block.
+    const body = apiPost.mock.calls[0][2];
+    const systemText = body.system[0].text;
+    expect(systemText).toContain('LAWFUL');
+    expect(systemText).toContain('Require an explicit verbal intent marker');
+  });
+
+  it('renders the chaotic posture when mischiefDial is "chaotic"', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'face_danger',
+      category: 'exploration', confidence: 0.5,
+    }));
+    await classifyInput({ ...baseArgs(), mischiefDial: 'chaotic' });
+    const body = apiPost.mock.calls[0][2];
+    expect(body.system[0].text).toContain('CHAOTIC');
+    expect(body.system[0].text).toContain('Infer commitment aggressively');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -345,8 +514,8 @@ describe('routePacedInput()', () => {
     game.settings._store.set('starforged-companion.pacing.densityWindow', 5);
     game.settings._store.set('starforged-companion.pacing.dial.combat', 9);
     game.settings._store.set('starforged-companion.pacing.dial.investigation', 6);
-    game.settings._store.set('starforged-companion.pacing.dial.exploration', 5);
-    game.settings._store.set('starforged-companion.pacing.dial.social', 3);
+    game.settings._store.set('starforged-companion.pacing.dial.exploration', 6);
+    game.settings._store.set('starforged-companion.pacing.dial.social', 5);
     game.settings._store.set('starforged-companion.pacing.dial.downtime', 1);
   });
 
@@ -413,6 +582,28 @@ describe('routePacedInput()', () => {
 
     expect(result.runMove).toBe(false);
     expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: 'compel' });
+  });
+
+  it('threads mischiefDial through to the classifier system prompt (suggestion-loop §B2)', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE',
+      suggestedMove: 'face_danger',
+      category: 'combat',
+      confidence: 0.8,
+      reasoning: 'attack',
+    }));
+
+    await routePacedInput({
+      playerText: 'I attack the guard',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+      mischiefDial: 'chaotic',
+    });
+
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    const body = apiPost.mock.calls[0][2];
+    expect(body.system[0].text).toContain('CHAOTIC');
   });
 
   it('records every decision in telemetry', async () => {
@@ -484,7 +675,8 @@ describe('readPacingConfig()', () => {
 
   it('falls back to scope defaults when settings unset', () => {
     const cfg = readPacingConfig({});
-    expect(cfg.dials).toEqual({ combat: 9, investigation: 6, exploration: 5, social: 3, downtime: 1 });
+    // Suggestion-loop remediation §B3 — exploration 5→6, social 3→5.
+    expect(cfg.dials).toEqual({ combat: 9, investigation: 6, exploration: 6, social: 5, downtime: 1 });
     expect(cfg.enabled).toBe(true);
     expect(cfg.densityWindow).toBe(5);
     expect(cfg.sceneOverride).toBe(null);
