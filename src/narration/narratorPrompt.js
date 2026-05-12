@@ -205,6 +205,56 @@ export function formatEntityCard(entity, entityType) {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Role descriptions — narrator-suggestion-loop remediation §A1
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-call-site role descriptions. The narrator is invoked from three places
+ * and each has a different job — `buildNarratorSystemPrompt` would previously
+ * reuse the move-resolution role description for all three, which contributed
+ * to the "suggest rather than depict" drift documented in the investigation
+ * report (H4). Each mode now gets a role description that matches its call
+ * site.
+ */
+const NARRATOR_MODES = new Set(['move_resolution', 'paced_narrative', 'scene_interrogation']);
+
+const ROLE_DESCRIPTIONS = {
+  move_resolution:
+    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
+    `narrate the mechanical consequences of move outcomes as vivid, atmospheric prose ` +
+    `that serves the story.\n\n` +
+    `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
+    `Keep the player in the fiction.`,
+
+  paced_narrative:
+    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
+    `continue the fiction in response to the player's narration as vivid, atmospheric ` +
+    `prose that serves the story.\n\n` +
+    `No move was rolled for this turn. Stay in narration; do not announce mechanics. ` +
+    `Keep the player in the fiction.`,
+
+  scene_interrogation:
+    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
+    `answer the player's question about the current scene as vivid, atmospheric prose ` +
+    `that serves the story.\n\n` +
+    `The narrator is a camera here, not a writer. Describe what is already established; ` +
+    `do not introduce new plot elements.`,
+};
+
+/**
+ * Anti-suggestion clause applied to every mode. Fixes the H6 finding —
+ * the model generalizing the closing-italic-hint pattern in
+ * `buildPacedNarrativeUserMessage` into inline bracketed suggestions inside
+ * the prose. The closing italic move-hint, where applicable, is carved out
+ * explicitly by the user-message builder.
+ */
+const ANTI_SUGGESTION_CLAUSE =
+  `Depict, do not offer. Do not propose actions to the player in the body of the ` +
+  `narration. Do not surface mechanical options as parenthetical or italicized asides ` +
+  `inside the prose. The fiction moves forward through what the narrator describes ` +
+  `happening, not through suggestions about what could happen next.`;
+
 const TONE_DESCRIPTIONS = {
   wry: "Wry — knowing and slightly sardonic, aware of consequence without wallowing in it. The narrator has seen this before. It notices the irony. It does not editorialize, but it does not pretend not to notice.",
   grim_and_grounded: "Grim and grounded — sparse, consequential, Ironsworn-canonical. Short sentences. Weighted words. No flourish.",
@@ -269,6 +319,9 @@ export function resolveNarrationPerspective(setting) {
  * @param {string} [extras.currentLocationCard]— Pre-formatted current location card
  * @param {Object} [extras.oracleSeeds]        — { results, names, context } per scope §7
  * @param {string} [extras.campaignTruthsBlock]— Pre-built `<campaign_truths>` block from system asset integration Phase 8
+ * @param {string} [extras.mode]               — "move_resolution" | "paced_narrative" | "scene_interrogation"
+ *   Selects the role description and downstream wording. Defaults to
+ *   "move_resolution" for back-compat with existing call sites and tests.
  * @returns {string}
  */
 export function buildNarratorSystemPrompt(
@@ -291,7 +344,11 @@ export function buildNarratorSystemPrompt(
     currentLocationCard  = '',
     oracleSeeds          = null,
     campaignTruthsBlock  = '',
+    mode                 = 'move_resolution',
   } = extras ?? {};
+
+  const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
+  const roleDescription = ROLE_DESCRIPTIONS[resolvedMode];
 
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective);
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
@@ -299,7 +356,9 @@ export function buildNarratorSystemPrompt(
 
   const parts = [];
 
-  // [0] Role and style block
+  // [0] Role and style block — role description per call-site mode, anti-
+  //     suggestion clause appended in every mode (paced-narrative carves out
+  //     its closing italic move-hint in its own user message).
   const styleLines = [
     `Perspective: ${perspectiveDesc}`,
     `Tone: ${toneDesc}`,
@@ -311,11 +370,9 @@ export function buildNarratorSystemPrompt(
 
   parts.push(
     `## NARRATOR ROLE AND VOICE\n\n` +
-    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
-    `narrate the mechanical consequences of move outcomes as vivid, atmospheric prose ` +
-    `that serves the story.\n\n` +
-    `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
-    `Keep the player in the fiction.\n\n` +
+    `${roleDescription}\n\n` +
+    `### DEPICT, DO NOT OFFER\n\n` +
+    `${ANTI_SUGGESTION_CLAUSE}\n\n` +
     `### STYLE\n\n` +
     styleLines.join('\n')
   );
@@ -484,6 +541,11 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
       `mechanically. Examples:\n\n` +
       `  *If you want to read him for tells, this could be a Gather Information.*\n` +
       `  *Pressing further here would be a Compel.*\n\n` +
+      `This closing italic sentence is the ONE permitted exception to the ` +
+      `"depict, do not offer" rule. It must appear at the very end of the ` +
+      `narration, after the prose body has finished. Do not place italicized ` +
+      `suggestions or "you could…" / "perhaps you might…" asides inside the ` +
+      `body of the prose — only at the close.\n\n` +
       `Do not include this hint if your narration would naturally close the moment or ` +
       `if the moment doesn't actually warrant pressing. The hint is optional.`
     );

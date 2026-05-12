@@ -133,6 +133,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, recapContext,
     {
+      mode:                'move_resolution',
       narratorClass:       relevance.resolvedClass,
       entityCards,
       currentLocationCard,
@@ -585,7 +586,10 @@ export async function interrogateScene(question, campaignState, _options = {}) {
 
   const settings = getNarratorSettings();
   const character    = getActiveCharacter(campaignState);
-  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '',
+    { mode: 'scene_interrogation' },
+  );
 
   const contextLimit  = getSceneContextCards();
   const recentContext = getRecentNarrationContext(sessionId, contextLimit);
@@ -664,7 +668,10 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   }
 
   const character    = getActiveCharacter(campaignState);
-  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '',
+    { mode: 'paced_narrative' },
+  );
 
   const recentContext = getRecentNarrationContext(sessionId, 3);
   const sentenceTarget = settings.narrationLength ?? 3;
