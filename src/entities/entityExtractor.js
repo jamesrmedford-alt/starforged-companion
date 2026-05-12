@@ -113,11 +113,34 @@ export async function runCombinedDetectionPass(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Sentinel `moveId` value used by the paced-narrative detection path
+ * (narrator-suggestion-loop remediation §C). Triggers the conditional
+ * "no move was rolled" framing in `buildCombinedDetectionPrompt`. Not a
+ * real foundry-ironsworn move id; using a snake_case sentinel keeps the
+ * shape compatible with the existing string parameter without changing
+ * the call signature.
+ */
+export const PACED_NARRATIVE_MOVE_ID = "paced_narrative";
+
+/**
+ * Sentinel `outcome` value paired with PACED_NARRATIVE_MOVE_ID. The
+ * paced path has no roll outcome; the prompt builder omits the
+ * `Outcome:` line entirely when this sentinel is seen so the model
+ * doesn't get confused by `Outcome: n/a` masquerading as a real result.
+ */
+export const PACED_NARRATIVE_OUTCOME = "n/a";
+
+/**
  * Build the single Haiku prompt covering both entity extraction (scope §9)
  * and World Journal state updates (WJ scope §5). The base entity-extraction
  * prompt is prefixed with the current WJ state so the model can detect
  * state transitions. Scopes for established entity names + dismissed names
  * are appended so the model does not re-suggest them.
+ *
+ * When `moveId === PACED_NARRATIVE_MOVE_ID` the move/outcome lines are
+ * rendered as a "no move was rolled" framing instead of literal values,
+ * so paced-narrative detection calls get a clearer prompt without
+ * confusing the model with a fake move id (suggestion-loop remediation §C).
  */
 export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState) {
   const established = collectEstablishedEntityNames(campaignState);
@@ -125,10 +148,18 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
 
   const wjState = describeWorldJournalState(campaignState);
 
+  const isPaced = moveId === PACED_NARRATIVE_MOVE_ID;
+  const moveLine = isPaced
+    ? `Move: (paced narration — no move was rolled).`
+    : `Move: ${moveId}.`;
+  const outcomeLine = isPaced || outcome === PACED_NARRATIVE_OUTCOME
+    ? null
+    : `Outcome: ${outcome}.`;
+
   return [
     `You are analysing an Ironsworn: Starforged narration.`,
-    `Move: ${moveId}.`,
-    `Outcome: ${outcome}.`,
+    moveLine,
+    ...(outcomeLine ? [outcomeLine] : []),
     ``,
     `ENTITY TYPES TO DETECT:`,
     `- connection: named individual (NPC, person, AI)`,
@@ -267,7 +298,13 @@ export function parseDetectionResponse(text, campaignState) {
  * @param {boolean} [options.autoCreateConnection]  — when true, the first
  *   connection-typed draft is auto-created via createConnection() rather
  *   than queued on the GM card. Used by make_a_connection on a hit.
+ *   The paced-narrative detection path explicitly sets this to false
+ *   so detected NPCs always go through GM review (suggestion-loop
+ *   remediation §C — see docs/narrator-suggestion-loop-group-c-design-memo.md).
  * @param {string}  [options.sessionId]
+ * @param {string}  [options.source]  — telemetry flag attached to the
+ *   GM draft card. "paced_narrative" for paced-path detection;
+ *   anything else / omitted is treated as "move_resolution" (default).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
@@ -297,7 +334,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState);
+    await postDraftEntityCard(queued, campaignState, { source: options.source });
   }
 
   return { created, queued };
@@ -587,7 +624,7 @@ const TYPE_LABELS = {
   creature:   "Creature",
 };
 
-async function postDraftEntityCard(entities, _campaignState) {
+async function postDraftEntityCard(entities, _campaignState, options = {}) {
   if (!globalThis.ChatMessage?.create) return null;
   if (!entities?.length) return null;
 
@@ -607,6 +644,13 @@ async function postDraftEntityCard(entities, _campaignState) {
 
   const whisper = collectGmIds();
 
+  // `source` is purely a telemetry flag — "paced_narrative" when the drafts
+  // came from runPacedDetection, otherwise defaults to "move_resolution"
+  // (the legacy / Path 2 path). Lets operators audit how often paced
+  // detection is firing and what the GM does with those drafts without
+  // adding an explicit UI.
+  const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
+
   try {
     return await ChatMessage.create({
       content: html,
@@ -615,6 +659,7 @@ async function postDraftEntityCard(entities, _campaignState) {
         [MODULE_ID]: {
           draftEntityCard: true,
           drafts:          entities,
+          source,
         },
       },
     });

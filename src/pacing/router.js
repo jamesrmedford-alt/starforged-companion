@@ -223,7 +223,7 @@ export async function routePacedInput({
     ? result.suggestedMove
     : null;
 
-  await narratePacedInput(playerText, campaignState, { suggestedMove })
+  await narratePacedInput(playerText, campaignState, { suggestedMove, mischiefDial })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {
