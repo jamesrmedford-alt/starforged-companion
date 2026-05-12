@@ -123,8 +123,11 @@ function safeGet(key, fallback) {
 }
 
 function defaultDial(category) {
-  // Match pacing-scope §7.
-  return ({ combat: 9, investigation: 6, exploration: 5, social: 3, downtime: 1 })[category] ?? 5;
+  // Suggestion-loop remediation §B3 — exploration 5→6, social 3→5; combat,
+  // investigation, and downtime unchanged. Worlds with existing per-dial
+  // values keep them; new worlds and unset categories pick up the new
+  // priors.
+  return ({ combat: 9, investigation: 6, exploration: 6, social: 5, downtime: 1 })[category] ?? 5;
 }
 
 
@@ -147,6 +150,9 @@ function defaultDial(category) {
  * @param {Object} args.campaignState
  * @param {Object|null} args.character
  * @param {string} args.apiKey
+ * @param {string} [args.mischiefDial]  — "lawful" | "balanced" | "chaotic".
+ *   Passed through to the classifier so its interpretation posture matches
+ *   the mischief dial. Defaults to "balanced" when omitted.
  * @returns {Promise<{
  *   runMove: boolean,
  *   decision: string,
@@ -156,7 +162,9 @@ function defaultDial(category) {
  *   reasoning: string,
  * }>}
  */
-export async function routePacedInput({ playerText, campaignState, character, apiKey }) {
+export async function routePacedInput({
+  playerText, campaignState, character, apiKey, mischiefDial,
+}) {
   const pacingConfig = readPacingConfig(campaignState);
 
   // Master switch — when disabled, behave exactly like the existing pipeline.
@@ -176,6 +184,7 @@ export async function routePacedInput({ playerText, campaignState, character, ap
 
   const result = await classifyInput({
     playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey,
+    mischiefDial,
   });
 
   // Record the decision for both the in-memory density window and the
@@ -214,7 +223,7 @@ export async function routePacedInput({ playerText, campaignState, character, ap
     ? result.suggestedMove
     : null;
 
-  await narratePacedInput(playerText, campaignState, { suggestedMove })
+  await narratePacedInput(playerText, campaignState, { suggestedMove, mischiefDial })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {

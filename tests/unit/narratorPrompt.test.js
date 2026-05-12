@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
+  buildPacedNarrativeUserMessage,
   resolveNarrationPerspective,
   formatEntityCard,
   formatOracleSeedsBlock,
@@ -174,6 +175,128 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('grizzled scavenger');
     expect(prompt).toContain('Wary of strangers');
     expect(prompt).toContain('Health 4/5');
+  });
+
+  // Narrator suggestion-loop remediation §A1 — role description must match
+  // the call-site mode so the paced-narrative path does not inherit the
+  // "narrate the mechanical consequences of move outcomes" framing.
+  describe('mode parameter (suggestion-loop remediation §A1)', () => {
+    it('defaults to move_resolution role description when mode is omitted', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null,
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+
+    it('move_resolution mode mentions mechanical consequences', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'move_resolution' },
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+
+    it('paced_narrative mode does not mention move outcomes', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'paced_narrative' },
+      );
+      expect(prompt).not.toContain('mechanical consequences of move outcomes');
+      expect(prompt).toContain('continue the fiction');
+      expect(prompt).toContain('No move was rolled');
+    });
+
+    it('scene_interrogation mode frames the narrator as a camera', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'scene_interrogation' },
+      );
+      expect(prompt).not.toContain('mechanical consequences of move outcomes');
+      expect(prompt).toContain('camera');
+      expect(prompt).toContain("player's question");
+    });
+
+    it('falls back to move_resolution for an unknown mode value', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'not_a_real_mode' },
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+  });
+
+  // Narrator suggestion-loop remediation §A2 — anti-suggestion clause must
+  // appear in every mode. Fixes the H6 finding (model generalizing the
+  // closing-italic-hint pattern into inline bracketed suggestions).
+  describe('anti-suggestion clause (suggestion-loop remediation §A2)', () => {
+    it.each(['move_resolution', 'paced_narrative', 'scene_interrogation'])(
+      '%s mode includes DEPICT, DO NOT OFFER section',
+      (mode) => {
+        const prompt = buildNarratorSystemPrompt(
+          makeCampaignState(), makeNarratorSettings(), null, '', { mode },
+        );
+        expect(prompt).toContain('DEPICT, DO NOT OFFER');
+        expect(prompt).toContain('Depict, do not offer');
+        expect(prompt).toContain('Do not propose actions to the player');
+      },
+    );
+
+    it('forbids parenthetical and italicized asides in the prose body', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'paced_narrative' },
+      );
+      expect(prompt).toContain('parenthetical');
+      expect(prompt).toContain('italicized asides');
+    });
+
+    it('appears in the default-mode (omitted extras) call too', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null,
+      );
+      expect(prompt).toContain('DEPICT, DO NOT OFFER');
+    });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildPacedNarrativeUserMessage — italic carve-out
+// (Narrator suggestion-loop remediation §A2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildPacedNarrativeUserMessage()', () => {
+  it('omits the SUGGESTED MOVE block when no move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I lean against the bulkhead and watch.', '', 3, null,
+    );
+    expect(msg).not.toContain('SUGGESTED MOVE');
+    expect(msg).toContain('Continue the fiction');
+  });
+
+  it('includes the suggested move block when a move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I press her on what she heard.', '', 3, 'Gather Information',
+    );
+    expect(msg).toContain('SUGGESTED MOVE');
+    expect(msg).toContain('Gather Information');
+  });
+
+  it('reinforces the "italic only at the close" carve-out when a move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I press her on what she heard.', '', 3, 'Gather Information',
+    );
+    expect(msg).toContain('ONE permitted exception');
+    expect(msg).toContain('"depict, do not offer"');
+    expect(msg).toContain('at the very end of the narration');
+    expect(msg).toMatch(/inside the[\s\n]+body of the prose/);
+  });
+
+  it('does not mention the italic carve-out when no move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I look out the viewport.', '', 3, null,
+    );
+    expect(msg).not.toContain('ONE permitted exception');
   });
 });
 

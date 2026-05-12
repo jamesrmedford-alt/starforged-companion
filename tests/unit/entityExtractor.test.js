@@ -22,6 +22,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  PACED_NARRATIVE_MOVE_ID,
+  PACED_NARRATIVE_OUTCOME,
   runCombinedDetectionPass,
   buildCombinedDetectionPrompt,
   parseDetectionResponse,
@@ -384,6 +386,47 @@ describe("routeEntityDrafts", () => {
     expect(result.queued).toEqual([]);
     fixture.restore();
   });
+
+  // Suggestion-loop remediation §C — paced-narrative detection routes
+  // through the GM draft-card path with a telemetry flag and never
+  // auto-creates.
+  describe("paced-narrative source (suggestion-loop §C)", () => {
+    it("never auto-creates a connection even on a high-confidence paced match", async () => {
+      const fixture = buildFullCampaignState();
+      const result = await routeEntityDrafts([
+        { type: "connection", name: "Maren", description: "wiry, watchful", confidence: "high" },
+      ], fixture.campaignState, {
+        autoCreateConnection: false,
+        source:               "paced_narrative",
+      });
+      expect(result.created).toEqual([]);
+      expect(result.queued).toHaveLength(1);
+      fixture.restore();
+    });
+
+    it("tags the draft card with source: 'paced_narrative'", async () => {
+      const fixture = buildFullCampaignState();
+      global.ChatMessage._reset?.();
+      await routeEntityDrafts([
+        { type: "connection", name: "Maren", description: "wiry", confidence: "high" },
+      ], fixture.campaignState, { source: "paced_narrative" });
+      const cards = global.ChatMessage._created;
+      expect(cards.length).toBeGreaterThan(0);
+      expect(cards[0].flags?.[MODULE_ID]?.source).toBe("paced_narrative");
+      fixture.restore();
+    });
+
+    it("defaults source to 'move_resolution' when option is omitted", async () => {
+      const fixture = buildFullCampaignState();
+      global.ChatMessage._reset?.();
+      await routeEntityDrafts([
+        { type: "connection", name: "Kael", description: "scarred", confidence: "high" },
+      ], fixture.campaignState);
+      const cards = global.ChatMessage._created;
+      expect(cards[0].flags?.[MODULE_ID]?.source).toBe("move_resolution");
+      fixture.restore();
+    });
+  });
 });
 
 
@@ -457,6 +500,49 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toContain('"entities"');
     expect(prompt).toContain('"worldJournal"');
     expect(prompt).toContain("stateTransitions");
+  });
+
+  // Suggestion-loop remediation §C — paced sentinel framing.
+  describe("paced-narrative sentinel (suggestion-loop §C)", () => {
+    it("exports the sentinel constants", () => {
+      expect(PACED_NARRATIVE_MOVE_ID).toBe("paced_narrative");
+      expect(PACED_NARRATIVE_OUTCOME).toBe("n/a");
+    });
+
+    it("renders the no-move framing line when moveId is the paced sentinel", () => {
+      const prompt = buildCombinedDetectionPrompt(
+        "narration", PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, {},
+      );
+      expect(prompt).toContain("paced narration — no move was rolled");
+      expect(prompt).not.toContain("Move: paced_narrative.");
+    });
+
+    it("omits the Outcome line entirely when the paced sentinel is used", () => {
+      const prompt = buildCombinedDetectionPrompt(
+        "narration", PACED_NARRATIVE_MOVE_ID, PACED_NARRATIVE_OUTCOME, {},
+      );
+      expect(prompt).not.toMatch(/^Outcome:/m);
+      expect(prompt).not.toContain("n/a");
+    });
+
+    it("renders the legacy Move/Outcome lines for a real move id", () => {
+      const prompt = buildCombinedDetectionPrompt(
+        "narration", "face_danger", "strong_hit", {},
+      );
+      expect(prompt).toContain("Move: face_danger.");
+      expect(prompt).toContain("Outcome: strong_hit.");
+      expect(prompt).not.toContain("paced narration");
+    });
+
+    it("treats outcome=PACED_NARRATIVE_OUTCOME as paced even with a real moveId", () => {
+      // Defensive — if a caller passes a real moveId with the paced
+      // outcome sentinel, we still omit the Outcome line cleanly rather
+      // than emitting "Outcome: n/a." into the prompt.
+      const prompt = buildCombinedDetectionPrompt(
+        "narration", "face_danger", PACED_NARRATIVE_OUTCOME, {},
+      );
+      expect(prompt).not.toMatch(/^Outcome:/m);
+    });
   });
 });
 

@@ -3485,4 +3485,193 @@ function registerPacingTests(quench) {
     },
     { displayName: "STARFORGED: Pacing Classifier" },
   );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PACED DETECTION — narrator-suggestion-loop remediation §C
+  //
+  // Covers the new Group C path: when narratePacedInput posts a paced narration
+  // card, schedulePacedDetection fires runPacedDetection on Balanced + Chaotic
+  // (with a 2 s async delay) and short-circuits on Lawful. Drafts route through
+  // the GM-only review card with source: "paced_narrative" and never auto-create.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  quench.registerBatch(
+    "starforged-companion.pacedDetection",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdJournalIds = [];
+
+      function track(id) { if (id) createdJournalIds.push(id); }
+
+      async function flushJournalCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench pacedDetection: cleanup failed for ${id}:`, err));
+          }
+        }
+      }
+
+      // Track the draft-card ChatMessages we post so we can clean them up.
+      const createdMessageIds = [];
+      async function flushMessages() {
+        for (const id of createdMessageIds.splice(0)) {
+          const m = game.messages?.get(id);
+          if (m?.delete) {
+            await m.delete().catch(err =>
+              console.warn(`${MODULE} | quench pacedDetection: message cleanup failed for ${id}:`, err));
+          }
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        await flushJournalCleanup();
+        await flushMessages();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(async function () {
+        await flushJournalCleanup();
+        await flushMessages();
+      });
+
+      // Snapshot draft-card IDs before/after so we can find what landed.
+      function snapshotDraftCardIds() {
+        return new Set(
+          (game.messages?.contents ?? [])
+            .filter(m => m.flags?.[MODULE]?.draftEntityCard)
+            .map(m => m.id),
+        );
+      }
+
+      function newDraftCardsSince(before) {
+        return (game.messages?.contents ?? [])
+          .filter(m => m.flags?.[MODULE]?.draftEntityCard)
+          .filter(m => !before.has(m.id));
+      }
+
+      describe("runPacedDetection — Balanced posture", function () {
+        it("creates a draft entity card with source: 'paced_narrative' and no auto-create", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { runPacedDetection } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const beforeIds = snapshotDraftCardIds();
+          const beforeConnectionIds = new Set(
+            (game.settings.get(MODULE, "campaignState")?.connectionIds ?? []),
+          );
+
+          const detectionPayload = {
+            entities: [{
+              type: "connection",
+              name: `Maren-${Date.now()}`,
+              description: "Wiry, watchful.",
+              confidence: "high",
+            }],
+            worldJournal: {
+              lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [],
+            },
+          };
+
+          await withTempSetting("claudeApiKey", "sk-stub-paced", async () => {
+            await withStubbedFetch([
+              ["api.anthropic.com", () => ({
+                content: [{ type: "text", text: JSON.stringify(detectionPayload) }],
+              })],
+            ], async () => {
+              await withSilencedNotifications(async () => {
+                const state = game.settings.get(MODULE, "campaignState") ?? {};
+                await runPacedDetection(
+                  "Maren leans against the bulkhead, scanning the bay.",
+                  state,
+                );
+              });
+            });
+          });
+
+          const newCards = newDraftCardsSince(beforeIds);
+          newCards.forEach(c => createdMessageIds.push(c.id));
+
+          assert.isAtLeast(newCards.length, 1,
+            "expected at least one draft entity card from paced detection");
+          const card = newCards[0];
+          assert.equal(card.flags?.[MODULE]?.source, "paced_narrative",
+            "draft card should be flagged with source: 'paced_narrative'");
+          assert.equal(card.flags?.[MODULE]?.draftEntityCard, true);
+
+          // No auto-create — campaignState.connectionIds must be unchanged.
+          const afterConnectionIds = new Set(
+            (game.settings.get(MODULE, "campaignState")?.connectionIds ?? []),
+          );
+          for (const id of afterConnectionIds) {
+            assert.isTrue(beforeConnectionIds.has(id),
+              `paced detection unexpectedly auto-created connection ${id}`);
+          }
+        });
+      });
+
+      describe("schedulePacedDetection — Lawful posture short-circuits", function () {
+        it("does not post a draft card on Lawful even when entities would have been detected", async function () {
+          this.timeout(8000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { schedulePacedDetection } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const beforeIds = snapshotDraftCardIds();
+
+          // No fetch stub is needed — on Lawful, runCombinedDetectionPass is
+          // never called. If it were called, the absence of a stub would
+          // produce a network error and a different failure mode.
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          schedulePacedDetection("Maren scans the bay.", state, "lawful");
+
+          // The schedule uses setTimeout(2000) on the Balanced/Chaotic path.
+          // Wait longer than that to confirm nothing fires.
+          await new Promise(r => setTimeout(r, 2500));
+
+          const newCards = newDraftCardsSince(beforeIds);
+          newCards.forEach(c => createdMessageIds.push(c.id));
+          assert.equal(newCards.length, 0,
+            "Lawful posture should not produce paced-detection draft cards");
+        });
+      });
+
+      describe("buildCombinedDetectionPrompt — paced sentinel framing", function () {
+        it("renders the no-move framing line and omits the Outcome line", async function () {
+          if (skipNotGM(this)) return;
+          const {
+            buildCombinedDetectionPrompt,
+            PACED_NARRATIVE_MOVE_ID,
+            PACED_NARRATIVE_OUTCOME,
+          } = await import(`${MODULE_PATH}/entities/entityExtractor.js`);
+          const prompt = buildCombinedDetectionPrompt(
+            "Maren leans on the bulkhead.",
+            PACED_NARRATIVE_MOVE_ID,
+            PACED_NARRATIVE_OUTCOME,
+            game.settings.get(MODULE, "campaignState") ?? {},
+          );
+          assert.include(prompt, "paced narration — no move was rolled");
+          assert.notInclude(prompt, "Move: paced_narrative.");
+          assert.notMatch(prompt, /^Outcome:/m);
+        });
+      });
+
+      // Reference so the linter sees `track` and `createdJournalIds` used —
+      // the cleanup hooks call flushJournalCleanup() which iterates these,
+      // and individual tests may push journal ids here in future expansions.
+      void track;
+    },
+    { displayName: "STARFORGED: Paced Detection (§C)" },
+  );
 }

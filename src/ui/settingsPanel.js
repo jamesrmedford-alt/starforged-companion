@@ -88,8 +88,8 @@ const SETTING = {
 const PACING_DEFAULTS = {
   combat:        9,
   investigation: 6,
-  exploration:   5,
-  social:        3,
+  exploration:   6,
+  social:        5,
   downtime:      1,
 };
 
@@ -436,7 +436,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PACING_DIAL_SOCIAL, {
     name:    'Pacing Dial — Social',
-    hint:    'How move-leaning social scenes should be. Default 3 — most chat in a social scene reads as narrative. 0–10.',
+    hint:    'How move-leaning social scenes should be. Default 5 — pressing a connection on intent or stakes reads as a move; idle chat reads as narrative. 0–10.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -857,11 +857,11 @@ export class SettingsPanelApp extends ApplicationV2 {
           </label>
         </div>
         <div class="pacing-dials-grid">
-          ${dialRow('combat',        'Combat',        dials.combat        ?? 9)}
-          ${dialRow('investigation', 'Investigation', dials.investigation ?? 6)}
-          ${dialRow('exploration',   'Exploration',   dials.exploration   ?? 5)}
-          ${dialRow('social',        'Social',        dials.social        ?? 3)}
-          ${dialRow('downtime',      'Downtime',      dials.downtime      ?? 1)}
+          ${dialRow('combat',        'Combat',        dials.combat        ?? PACING_DEFAULTS.combat)}
+          ${dialRow('investigation', 'Investigation', dials.investigation ?? PACING_DEFAULTS.investigation)}
+          ${dialRow('exploration',   'Exploration',   dials.exploration   ?? PACING_DEFAULTS.exploration)}
+          ${dialRow('social',        'Social',        dials.social        ?? PACING_DEFAULTS.social)}
+          ${dialRow('downtime',      'Downtime',      dials.downtime      ?? PACING_DEFAULTS.downtime)}
         </div>
         <div class="pacing-field">
           <label class="pacing-field-label" for="sf-pacing-window">Density window</label>
