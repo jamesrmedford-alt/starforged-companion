@@ -28,9 +28,54 @@ Skip:
 - **`appendGenerativeTierUpdates`** ([src/entities/entityExtractor.js:423](../src/entities/entityExtractor.js)). This is the interaction-class branch — it requires `entityRefs` from the relevance resolver. There is no relevance resolution upstream of `narratePacedInput` today, so we have no matched-entity list to update against, and the brief explicitly flagged this branch as not appropriate here. The implementation should simply not pass interaction-class refs; `runPostNarrationPasses`' existing `if (cls === 'interaction' && ...)` guard at [src/narration/narrator.js:251](../src/narration/narrator.js) already skips this branch when called with `discovery` class.
 
 Skip:
-- **The `make_a_connection` auto-create branch.** The synchronous auto-create at [src/narration/narrator.js:236](../src/narration/narrator.js) is keyed on `moveId === 'make_a_connection' && isHit`. In paced narration there is no move and no outcome, so this branch never fires — which is correct. Drafts go through the GM-only draft card path instead.
+- **The `make_a_connection` auto-create branch.** See below.
 
-Net behaviour: paced detection runs the same single Haiku call as move-pipeline detection, drafts route to the GM-only review card, the player sees nothing different unless they're GM. **No auto-commits.**
+### Path 1 vs Path 2 — what "skip auto-create" actually means
+
+The codebase has three paths by which an NPC / connection / faction record gets created today:
+
+| # | Trigger | Where it fires | Net result |
+|---|---|---|---|
+| **1** | Move pipeline, `make_a_connection` move + strong/weak hit | `runDiscoveryDetection` called with `autoCreateConnection: true` (see [src/narration/narrator.js:236](../src/narration/narrator.js)) | **Auto-creates** a `connection` journal entry. No GM review. Lands silently in the player's character chronicle and entities list. |
+| **2** | Move pipeline, any other discovery-class move (e.g. `gather_information`, `face_danger` strong-hit narration that names someone) | `runDiscoveryDetection` called with `autoCreateConnection: false` (async, ~2 s after narration) | **Drafts** posted to a GM-only whispered chat card via `postDraftEntityCard`. GM opens the Entities panel and clicks Confirm per entity, filling in canonical fields (role, motivation, disposition) before the journal entry is created. |
+| **3** | Player-declared — typed `!journal` chat commands, Entities-panel "New connection…" button, or the Sector Creator wizard | Settings panel / chat-command paths | **Explicit** creation by user action. No model in the loop. |
+
+Path 1 is the special case. The gate at [src/entities/entityExtractor.js:282](../src/entities/entityExtractor.js) reads:
+
+```js
+if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
+  // calls createConnection() immediately — full journal entry, page flags, the works
+}
+```
+
+The `&& !created.length` clause caps it at one auto-create per call so the model can't go wide on a single `make_a_connection` roll. The whole branch exists because `make_a_connection` is the one move whose *purpose* is to establish a relationship with an NPC — when the player rolled it and hit, the system has unambiguous consent to commit. That's the spec'd, validated behaviour and Group C does not touch it.
+
+### Why Group C does not pass `autoCreateConnection: true`
+
+In a paced-narrative turn there is no move and no roll. The player typed something like *"I lean against the bulkhead and watch the bay"*, the classifier said NARRATIVE, the narrator wrote prose that named "Maren." There is no `make_a_connection` happening, the precondition for Path 1 was never met, and the player did not explicitly choose to commit a relationship.
+
+So the named NPC takes **Path 2**: the detection pass extracts it, `routeEntityDrafts` skips the auto-create branch (because we explicitly do not set `autoCreateConnection: true`), and the entity falls through to `queued.push(entity)` → `postDraftEntityCard`. The GM sees a whispered card:
+
+> ◈ **New Entities Detected**
+> - [👤 Connection] **Maren** — Wiry, watchful, leans against the bulkhead
+>
+> *Open the Entities panel to confirm or dismiss.*
+
+The GM opens the Entities panel, fills in the canonical fields the model can't reliably invent (role, rank, disposition, motivation), and clicks Confirm. *Then* the connection journal entry is created. If the GM dismisses, the name goes into `campaignState.dismissedEntities` so the same model doesn't keep proposing it next turn.
+
+This is identical to how Path 2 already works for non-`make_a_connection` discovery moves — Group C adds paced-narrative as one more source feeding into the same GM review surface, with the same affordances and the same dedup behaviour. **No new UI. No new commands. The `make_a_connection` auto-create wiring is unchanged.**
+
+### Could paced detection ever auto-create?
+
+In principle, yes — e.g. on Chaotic + high model confidence + a name that doesn't collide with anything dismissed — but it's not what the brief asked for and it's the wrong default. The Path 1 design rests on the player *explicitly choosing* `make_a_connection` and the dice saying yes. In paced narration there is no equivalent consent signal. The closest analogue — "the narrator wrote a compelling NPC name and the GM didn't `!roll` the previous input" — is not consent; the player may have been describing atmosphere and the narrator riffed. Defaulting to GM review preserves the spec invariant that *only deliberate, dice-backed creation skips review*.
+
+If a future change wants softer behaviour, the surface for it already exists (the `options` bag on `routeEntityDrafts`) and the test pattern already exists (the connection-pipeline Quench batch). Out of scope here.
+
+### What `runPostNarrationPasses` does not do for paced detection
+
+`runPostNarrationPasses` ([src/narration/narrator.js:216](../src/narration/narrator.js)) is the move-pipeline orchestrator — it dispatches by `relevance.resolvedClass` (`discovery` / `interaction` / `embellishment`) and decides synchronous vs async based on `moveId === "make_a_connection"`. Paced detection has no resolvedClass and no moveId, so it bypasses this orchestrator entirely and calls `runCombinedDetectionPass` + `routeWorldJournalResults` + `routeEntityDrafts` directly — same code, simpler dispatch.
+
+This also means the interaction-class `appendGenerativeTierUpdates` branch can't accidentally fire from the paced path (it requires `cls === 'interaction'` and an `entityIds` array, neither of which exist when calling the routers directly).
 
 ---
 
