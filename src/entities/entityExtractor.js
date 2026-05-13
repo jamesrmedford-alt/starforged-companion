@@ -71,6 +71,33 @@ const ENTITY_ID_FIELDS = {
   creature:   "creatureIds",
 };
 
+// Honorifics that the detector may strip when extracting a name from prose.
+// We strip the same set so "Dr. Chen" stored as a connection matches a "Chen"
+// detection on the next narration, instead of being treated as a new NPC.
+const HONORIFIC_PREFIXES = new Set([
+  "dr", "mr", "mrs", "ms", "mx", "miss",
+  "cmdr", "commander", "captain", "capt", "cap", "cpt",
+  "lt", "lieutenant", "sgt", "sergeant",
+  "gen", "general", "col", "colonel", "maj", "major",
+  "prof", "professor", "rev", "reverend",
+  "sir", "dame", "lord", "lady",
+]);
+
+/**
+ * Reduce an entity name to a canonical form for dedup comparisons.
+ * Lowercases, trims, collapses interior whitespace, and strips a single
+ * leading honorific (with optional trailing period). Returns `""` for
+ * non-string / empty input.
+ */
+export function normalizeEntityName(name) {
+  if (typeof name !== "string") return "";
+  let n = name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!n) return "";
+  const m = n.match(/^([a-z]+)\.?\s+(.+)$/);
+  if (m && HONORIFIC_PREFIXES.has(m[1])) n = m[2];
+  return n.trim();
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ENTRY POINT
@@ -145,6 +172,7 @@ export const PACED_NARRATIVE_OUTCOME = "n/a";
 export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState) {
   const established = collectEstablishedEntityNames(campaignState);
   const dismissed   = (campaignState?.dismissedEntities ?? []).filter(Boolean);
+  const pending     = collectPendingDraftNames();
 
   const wjState = describeWorldJournalState(campaignState);
 
@@ -171,6 +199,14 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     ``,
     `ESTABLISHED ENTITIES (do not return these as new entities):`,
     established.length ? established.join(", ") : "(none)",
+    `Treat honorifics and titles as equivalent to the bare name —`,
+    `"Dr. Chen" and "Chen" refer to the same person; "Captain Reyes" and`,
+    `"Reyes" refer to the same person. Match against this list by stripping`,
+    `any leading title before comparing.`,
+    ``,
+    `PENDING DRAFTS (already proposed in earlier narration, not yet confirmed —`,
+    `do not return these again, the GM has them under review):`,
+    pending.length ? pending.join(", ") : "(none)",
     ``,
     `DISMISSED NAMES (do not return these — the GM has already rejected them):`,
     dismissed.length ? dismissed.join(", ") : "(none)",
@@ -259,17 +295,24 @@ export function parseDetectionResponse(text, campaignState) {
   const dismissed = new Set(
     (campaignState?.dismissedEntities ?? [])
       .filter(n => typeof n === "string")
-      .map(n => n.trim().toLowerCase()),
+      .map(normalizeEntityName)
+      .filter(Boolean),
   );
   const established = new Set(
-    collectEstablishedEntityNames(campaignState).map(n => n.toLowerCase()),
+    collectEstablishedEntityNames(campaignState)
+      .map(normalizeEntityName)
+      .filter(Boolean),
+  );
+  const pending = new Set(
+    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
 
   const filteredEntities = entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
     .filter(e => (e.confidence ?? "high") !== "low")
-    .filter(e => !dismissed.has(e.name.trim().toLowerCase()))
-    .filter(e => !established.has(e.name.trim().toLowerCase()));
+    .filter(e => !dismissed.has(normalizeEntityName(e.name)))
+    .filter(e => !established.has(normalizeEntityName(e.name)))
+    .filter(e => !pending.has(normalizeEntityName(e.name)));
 
   return {
     entities: filteredEntities,
@@ -310,11 +353,17 @@ export function parseDetectionResponse(text, campaignState) {
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const created = [];
   const queued  = [];
+  const pendingNormalized = new Set(
+    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
+  );
 
   for (const entity of entities ?? []) {
     if (!entity?.name || !entity?.type) continue;
     if (!ENTITY_GETTERS[entity.type]) continue;
     if (entityExistsForName(entity.name, entity.type, campaignState)) continue;
+    // Skip names already sitting in an unresolved draft card — the GM is
+    // already reviewing them; re-flagging causes the suggestion loop.
+    if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
 
     if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
       try {
@@ -424,13 +473,14 @@ export function entityExistsForName(name, type, campaignState) {
   const getter   = ENTITY_GETTERS[type];
   if (!idsField || !getter) return false;
 
-  const target = name.trim().toLowerCase();
+  const target = normalizeEntityName(name);
+  if (!target) return false;
   const ids    = campaignState?.[idsField] ?? [];
   for (const journalId of ids) {
     let rec = null;
     try { rec = getter(journalId); }
     catch { continue; }
-    if (rec?.name && rec.name.trim().toLowerCase() === target) return true;
+    if (rec?.name && normalizeEntityName(rec.name) === target) return true;
   }
   return false;
 }
@@ -756,6 +806,34 @@ function collectEstablishedEntityNames(campaignState) {
     }
   }
   return [...names];
+}
+
+/**
+ * Collect names that have been proposed in a still-pending "New Entities
+ * Detected" draft card but not yet accepted into an entity record or
+ * dismissed. Reading from chat is sufficient — the draft card carries the
+ * full `drafts` array as a flag, and deleting the card (the de-facto
+ * "dismiss" gesture) naturally drops the names from this list.
+ *
+ * Suppresses the same NPC being re-flagged on every subsequent narration
+ * that mentions them.
+ */
+function collectPendingDraftNames() {
+  try {
+    const messages = globalThis.game?.messages?.contents ?? [];
+    const names = new Set();
+    for (const m of messages) {
+      const f = m?.flags?.[MODULE_ID];
+      if (!f?.draftEntityCard) continue;
+      const drafts = Array.isArray(f.drafts) ? f.drafts : [];
+      for (const d of drafts) {
+        if (d?.name && typeof d.name === "string") names.add(d.name.trim());
+      }
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
 }
 
 function describeWorldJournalState(campaignState) {
