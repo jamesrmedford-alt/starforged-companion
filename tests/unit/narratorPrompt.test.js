@@ -424,8 +424,19 @@ describe('NARRATOR_PERMISSIONS', () => {
     expect(NARRATOR_PERMISSIONS.discovery).toContain('You MAY introduce');
   });
 
-  it('interaction block contains "do not contradict"', () => {
-    expect(NARRATOR_PERMISSIONS.interaction.toLowerCase()).toContain('do not contradict');
+  it('interaction block instructs the narrator to honour established facts', () => {
+    expect(NARRATOR_PERMISSIONS.interaction.toLowerCase()).toContain('established');
+  });
+
+  it('every permission block bans referencing module mechanics in prose', () => {
+    for (const key of ['discovery', 'interaction', 'embellishment']) {
+      expect(NARRATOR_PERMISSIONS[key].toLowerCase()).toContain('speak only as the fiction');
+    }
+  });
+
+  it('discovery block no longer leaks "captured for the campaign record"', () => {
+    expect(NARRATOR_PERMISSIONS.discovery.toLowerCase())
+      .not.toContain('captured for the campaign record');
   });
 
   it('embellishment block forbids new named entities', () => {
@@ -537,14 +548,15 @@ describe('formatEntityCard', () => {
     expect(recentIdx).toBeGreaterThan(pinnedIdx);
   });
 
-  it('canonicalLocked: true → "do not contradict" label', () => {
+  it('canonicalLocked: true → "established facts (fixed)" label', () => {
     const card = formatEntityCard(makeConnection({ canonicalLocked: true }), 'connection');
-    expect(card.toLowerCase()).toContain('do not contradict');
+    expect(card.toLowerCase()).toContain('established facts');
+    expect(card.toLowerCase()).toContain('fixed');
   });
 
-  it('canonicalLocked: false → "established — prefer consistency" label', () => {
+  it('canonicalLocked: false → "established facts — prefer consistency" label', () => {
     const card = formatEntityCard(makeConnection({ canonicalLocked: false }), 'connection');
-    expect(card.toLowerCase()).toContain('established');
+    expect(card.toLowerCase()).toContain('established facts');
     expect(card.toLowerCase()).toContain('prefer consistency');
   });
 
