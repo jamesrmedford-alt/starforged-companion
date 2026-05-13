@@ -88,6 +88,7 @@ const SETTING = {
   FC_LEDGER_IN_CONTEXT:        'factContinuity.ledgerInContext',
   FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
+  FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
 };
 
 const PACING_DEFAULTS = {
@@ -494,6 +495,15 @@ export function registerSettings() {
     type:    Number,
     default: 400,
   });
+
+  game.settings.register(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK, {
+    name:    'Consistency Check (experimental)',
+    hint:    'After every narration, run a Haiku audit pass that checks the prose against the active-scene ledger. High-confidence contradictions surface on the existing GM-only Narrative Review card. Adds ~$0.0004 and 200–500ms per narration; off by default.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: false,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -540,6 +550,7 @@ export function getFactContinuityEnabled()        { return game.settings.get(MOD
 export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
 export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
+export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -733,6 +744,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         ledgerInContext:   getFactContinuityLedgerInContext(),
         sidecarRequired:   getFactContinuitySidecarRequired(),
         maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
+        consistencyCheck:  getFactContinuityConsistencyCheck(),
       },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
@@ -970,6 +982,14 @@ export class SettingsPanelApp extends ApplicationV2 {
                  name="factContinuity.maxLedgerTokens" type="number" min="100" max="2000" step="50"
                  value="${ctx.factContinuity.maxLedgerTokens}" ${dis}>
           <span class="pacing-field-hint">Soft cap on the Section 6.5 block. State drops first when the cap is exceeded; truths are never dropped.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.consistencyCheck"
+                   ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
+            Consistency check (experimental)
+          </label>
+          <span class="pacing-field-hint">Run a Haiku audit pass after every narration. High-confidence contradictions surface on the GM Narrative Review card. ~$0.0004 and 200–500ms per call; off by default.</span>
         </div>
         ${ctx.isGM ? `
           <div class="pacing-actions">
@@ -1335,17 +1355,19 @@ export class SettingsPanelApp extends ApplicationV2 {
       if (!game.user.isGM) return;
       const el = this.element;
 
-      const enabled         = el.querySelector('[name="factContinuity.enabled"]')?.checked         ?? true;
-      const ledgerInContext = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked ?? true;
-      const sidecarRequired = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked ?? true;
-      const maxRaw          = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
-      const maxTokens       = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
+      const enabled          = el.querySelector('[name="factContinuity.enabled"]')?.checked          ?? true;
+      const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
+      const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
+      const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
+      const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
+      const maxTokens        = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
 
       await Promise.all([
         game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
         game.settings.set(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT,   ledgerInContext),
         game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
         game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
+        game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
       ]);
 
       ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');

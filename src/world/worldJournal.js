@@ -443,6 +443,16 @@ export async function applyStateTransition(transition, campaignState) {
       return null;
     }
 
+    case "factContinuity": {
+      // fact-continuity scope §11.2 — high-confidence consistency-check
+      // contradictions land on the same GM-only Narrative Review surface.
+      if (transition.change === "contradicted") {
+        await postContradictionNotification(transition);
+        return null;
+      }
+      return null;
+    }
+
     default:
       return null;
   }
@@ -790,16 +800,35 @@ async function postContradictionNotification(transition) {
 
   const name   = escapeHtml(transition.name ?? "(unknown)");
   const detail = escapeHtml(transition.summary ?? transition.newValue ?? "");
+  const isFactContinuity = transition.entryType === "factContinuity";
+
+  const retractButton = isFactContinuity
+    ? `<div class="sf-wj-contradiction-actions">` +
+      `<button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Retract the offending fact">` +
+      `<i class="fas fa-list-check"></i> Retract the offending fact</button></div>`
+    : "";
+
   const html =
     `<div class="sf-wj-contradiction"><div class="sf-wj-contradiction-label">◈ Narrative Review</div>` +
     `<p>The narrator may have contradicted an established fact.</p>` +
-    `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p></div>`;
+    `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p>` +
+    retractButton +
+    `</div>`;
 
   try {
     await ChatMessage.create({
       content:  html,
       whisper:  game.users?.filter ? game.users.filter(u => u.isGM).map(u => u.id) : [],
-      flags:    { [MODULE_ID]: { worldJournalContradiction: true } },
+      flags:    {
+        [MODULE_ID]: {
+          worldJournalContradiction: true,
+          narratorCard:              isFactContinuity,             // surfaces the correction renderChatMessage hook
+          factContinuityReview:      isFactContinuity,
+          contradictedSubject:       transition.name ?? null,
+          contradictedTruthId:       transition.truthId ?? null,
+          matchedEntityIds:          transition.matchedEntityIds ?? [],
+        },
+      },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | worldJournal: postContradictionNotification failed:`, err);

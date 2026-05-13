@@ -85,6 +85,83 @@ export async function logPacingDecision(entry) {
 }
 
 /**
+ * Append a fact-continuity consistency-check decision to the
+ * "Consistency Check" page on the existing Pacing Telemetry journal.
+ * Reuses the journal so all post-narration telemetry sits together
+ * (fact-continuity scope §17 Phase E item 32). Writes are GM-gated and
+ * best-effort.
+ *
+ * @param {Object} entry
+ * @param {string} entry.sceneId
+ * @param {string|null} entry.sessionId
+ * @param {number|null} [entry.sessionNumber]
+ * @param {string} entry.prose          — narrator prose (truncated to 200)
+ * @param {Array}  entry.contradictions — full audit result from the Haiku call
+ * @param {number} [entry.elapsedMs]
+ * @param {boolean} [entry.dispatched]  — true when ≥1 high-confidence routed
+ * @returns {Promise<void>}
+ */
+export async function logConsistencyDecision(entry) {
+  if (!globalThis.game?.user?.isGM) return;
+  if (!globalThis.JournalEntry) return;
+
+  try {
+    const journal = await getOrCreateJournal();
+    if (!journal) return;
+
+    const pageName = "Consistency Check";
+    const existing = journal.pages?.contents?.find(p => p.name === pageName) ?? null;
+
+    const record = {
+      ts:             new Date().toISOString(),
+      sceneId:        entry.sceneId ?? null,
+      sessionId:      entry.sessionId ?? null,
+      prose:          truncate(entry.prose ?? "", 200),
+      contradictions: Array.isArray(entry.contradictions) ? entry.contradictions : [],
+      elapsedMs:      typeof entry.elapsedMs === "number" ? entry.elapsedMs : null,
+      dispatched:     !!entry.dispatched,
+    };
+
+    if (existing) {
+      const prev    = existing.getFlag(MODULE_ID, "consistencyCheckTelemetry") ?? { entries: [] };
+      const entries = Array.isArray(prev.entries) ? prev.entries : [];
+      entries.push(record);
+      while (entries.length > MAX_ENTRIES_PER_SESSION) entries.shift();
+      await existing.setFlag(MODULE_ID, "consistencyCheckTelemetry", { entries });
+      await existing.update({ "text.content": renderConsistencyHtml(entries) }).catch(() => {});
+    } else {
+      const entries = [record];
+      await journal.createEmbeddedDocuments("JournalEntryPage", [{
+        name:  pageName,
+        type:  "text",
+        text:  { content: renderConsistencyHtml(entries), format: 1 },
+        flags: { [MODULE_ID]: { consistencyCheckTelemetry: { entries } } },
+      }]);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consistency telemetry: write failed:`, err);
+  }
+}
+
+/**
+ * Read all consistency-check telemetry entries. Returns [] when the page
+ * is missing.
+ *
+ * @returns {Array<Object>}
+ */
+export function readConsistencyTelemetry() {
+  try {
+    const journal = findJournal();
+    if (!journal) return [];
+    const page = journal.pages?.contents?.find(p => p.name === "Consistency Check");
+    return page?.flags?.[MODULE_ID]?.consistencyCheckTelemetry?.entries ?? [];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consistency telemetry: read failed:`, err);
+    return [];
+  }
+}
+
+/**
  * Read all telemetry entries for a session. Returns [] when the journal or
  * page is missing.
  *
@@ -158,6 +235,23 @@ function renderHtml(entries, label) {
     `<h2>Pacing Telemetry — ${escapeHtml(label)}</h2>`,
     `<p>Most recent ${Math.min(50, entries.length)} of ${entries.length} decisions.</p>`,
     `<table><thead><tr><th>Time</th><th>Decision</th><th>Category</th><th>Conf.</th><th>Input → Move</th></tr></thead>`,
+    `<tbody>${rows}</tbody></table>`,
+  ].join("");
+}
+
+function renderConsistencyHtml(entries) {
+  const rows = entries.slice(-50).reverse().map(e => {
+    const time   = e.ts ? new Date(e.ts).toLocaleTimeString() : "—";
+    const high   = (e.contradictions ?? []).filter(c => c.confidence === "high").length;
+    const total  = (e.contradictions ?? []).length;
+    const flags  = `${high} high / ${total} total`;
+    const proseExcerpt = escapeHtml(e.prose ?? "");
+    return `<tr><td>${time}</td><td>${escapeHtml(e.sceneId ?? "—")}</td><td>${flags}</td><td>${e.dispatched ? "✓" : ""}</td><td>${proseExcerpt}</td></tr>`;
+  }).join("");
+  return [
+    `<h2>Consistency Check Telemetry</h2>`,
+    `<p>Most recent ${Math.min(50, entries.length)} of ${entries.length} audit passes.</p>`,
+    `<table><thead><tr><th>Time</th><th>Scene</th><th>Contradictions</th><th>Routed</th><th>Prose excerpt</th></tr></thead>`,
     `<tbody>${rows}</tbody></table>`,
   ].join("");
 }

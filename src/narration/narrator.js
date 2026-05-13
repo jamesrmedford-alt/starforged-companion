@@ -15,6 +15,7 @@ import { resolveRelevance } from '../context/relevanceResolver.js';
 import { extractSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar }   from '../factContinuity/ledgers.js';
 import { startScene }     from '../factContinuity/sceneLifecycle.js';
+import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -171,7 +172,11 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
     });
-    const narration = applyNarratorSidecar(raw, campaignState, { moveId: resolution?.moveId });
+    const narration = applyNarratorSidecar(raw, campaignState, {
+      moveId:           resolution?.moveId,
+      matchedEntityIds: relevance.entityIds ?? [],
+      playerNarration:  resolution.playerNarration ?? '',
+    });
 
     if (!narration?.trim()) {
       await postFallbackCard(resolution);
@@ -195,7 +200,11 @@ export async function narrateResolution(resolution, contextPacket, campaignState
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
         });
-        const narration = applyNarratorSidecar(raw, campaignState, { moveId: resolution?.moveId });
+        const narration = applyNarratorSidecar(raw, campaignState, {
+          moveId:           resolution?.moveId,
+          matchedEntityIds: relevance.entityIds ?? [],
+          playerNarration:  resolution.playerNarration ?? '',
+        });
         if (narration?.trim()) {
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState);
@@ -661,7 +670,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       model:     settings.narrationModel,
       maxTokens: 200,
     });
-    const response = applyNarratorSidecar(raw, campaignState, { moveId: null });
+    const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
 
     if (!response?.trim()) {
       await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
@@ -680,7 +689,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
           model:     settings.narrationModel,
           maxTokens: 200,
         });
-        const response = applyNarratorSidecar(raw, campaignState, { moveId: null });
+        const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
           return response;
@@ -754,7 +763,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
 
     if (!text?.trim()) return null;
 
@@ -770,7 +779,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
         });
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
           schedulePacedDetection(text, campaignState, mischiefDial);
@@ -1087,6 +1096,19 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
     }
+  }
+
+  // Phase E — optional Haiku audit of the prose against the active-scene
+  // ledger. Gated inside runConsistencyCheck on the
+  // factContinuity.consistencyCheck setting; fire-and-forget.
+  if (campaignState && prose?.trim()) {
+    runConsistencyCheck(prose, campaignState, {
+      matchedEntityIds:  ctx.matchedEntityIds ?? [],
+      currentLocationId: campaignState.currentLocationId ?? null,
+      playerNarration:   ctx.playerNarration ?? '',
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
+    );
   }
 
   return prose ?? rawText;
