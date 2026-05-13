@@ -86,6 +86,25 @@ describe('isPlayerNarration()', () => {
     expect(isPlayerNarration(msg)).toBe(false);
   });
 
+  // Regression: an empty-state recap card was posted without any flags in
+  // v1.2.3, which meant `isPlayerNarration` returned true and the chat hook
+  // routed its HTML body ("<div ...>No campaign history available yet</div>")
+  // into the narrator as if the player had said it aloud. The umbrella
+  // module-flag check makes the filter robust to any future card type that
+  // sets a `starforged-companion` flag — no need to extend this filter for
+  // each new flag name.
+  it('returns false for ANY message bearing a starforged-companion module flag', () => {
+    for (const flag of [
+      'recapCard', 'recapEmpty', 'paceCommandCard', 'rollCommandCard',
+      'sectorList', 'sectorSwitch', 'atCommandCard', 'draftEntityCard',
+      'worldJournalCard', 'worldJournalContradiction', 'xcardCard',
+      'pacedNarrative', 'someFutureFlagWeHaventCreatedYet',
+    ]) {
+      const msg = makeMessage({ flags: { [MODULE_ID]: { [flag]: true } } });
+      expect(isPlayerNarration(msg), `flag=${flag}`).toBe(false);
+    }
+  });
+
   it('returns false for messages with xcardCard flag', () => {
     const msg = makeMessage({ flags: { [MODULE_ID]: { xcardCard: true } } });
     expect(isPlayerNarration(msg)).toBe(false);

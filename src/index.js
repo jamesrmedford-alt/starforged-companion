@@ -625,14 +625,16 @@ export function isPlayerNarration(message) {
   const type = message.type;
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
 
-  // Skip messages already processed by this module
-  if (message.flags?.[MODULE_ID]?.moveResolution)   return false;
-  if (message.flags?.[MODULE_ID]?.narrationCard)    return false;
-  if (message.flags?.[MODULE_ID]?.sceneResponse)    return false;
-  if (message.flags?.[MODULE_ID]?.recapCard)         return false;
-  if (message.flags?.[MODULE_ID]?.xcardCard)         return false;
-  if (message.flags?.[MODULE_ID]?.paceCommandCard)   return false;
-  if (message.flags?.[MODULE_ID]?.rollCommandCard)   return false;
+  // Skip ANY message bearing a module flag — these are all programmatically
+  // posted cards (move cards, narrator cards, recap cards, pace/roll
+  // confirmations, scene responses, sector commands, entity drafts, world
+  // journal cards, x-card cards, etc.) and must never be treated as player
+  // narration. Earlier builds filtered by named flag, which silently broke
+  // when a new card type was added without updating this filter — the
+  // empty-state recap card had no flag at all and was ingested by the
+  // narrator as if the player had said "<div class=...>No campaign history
+  // available yet</div>", producing prose like "you speak the HTML aloud".
+  if (message.flags?.[MODULE_ID]) return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
@@ -1021,7 +1023,10 @@ async function handleSectorCommand(message) {
   if (sub === "list") {
     const sectors = campaignState.sectors ?? [];
     if (!sectors.length) {
-      await ChatMessage.create({ content: "<p>No sectors created yet. Type <code>!sector new</code> to create one.</p>" });
+      await ChatMessage.create({
+        content: "<p>No sectors created yet. Type <code>!sector new</code> to create one.</p>",
+        flags:   { [MODULE_ID]: { sectorList: true, sectorListEmpty: true } },
+      });
       return;
     }
     const lines = sectors.map(s =>
