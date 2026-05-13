@@ -34,6 +34,7 @@ import {
   appendDetailToTier,
   applyStateTransition,
   parseTierUpdateResponse,
+  normalizeEntityName,
 } from "../../src/entities/entityExtractor.js";
 import * as wj from "../../src/world/worldJournal.js";
 import {
@@ -656,5 +657,202 @@ describe("MOVES — narratorClass for oracle-seeded moves", () => {
 
   it("gather_information is discovery class (no oracle seeding configured)", () => {
     expect(MOVES.gather_information.narratorClass).toBe("discovery");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// normalizeEntityName — honorifics, case, whitespace
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("normalizeEntityName", () => {
+  it("returns empty string for non-string input", () => {
+    expect(normalizeEntityName(null)).toBe("");
+    expect(normalizeEntityName(undefined)).toBe("");
+    expect(normalizeEntityName(42)).toBe("");
+  });
+
+  it("lowercases and trims", () => {
+    expect(normalizeEntityName("  Chen  ")).toBe("chen");
+    expect(normalizeEntityName("CHEN")).toBe("chen");
+  });
+
+  it("collapses interior whitespace", () => {
+    expect(normalizeEntityName("Dr.   Marisol   Chen")).toBe("marisol chen");
+  });
+
+  it("strips a leading honorific with trailing period", () => {
+    expect(normalizeEntityName("Dr. Chen")).toBe("chen");
+    expect(normalizeEntityName("Captain Reyes")).toBe("reyes");
+    expect(normalizeEntityName("Lt Sato")).toBe("sato");
+  });
+
+  it("strips honorifics case-insensitively", () => {
+    expect(normalizeEntityName("DR. CHEN")).toBe("chen");
+    expect(normalizeEntityName("dr chen")).toBe("chen");
+  });
+
+  it("leaves bare names unchanged", () => {
+    expect(normalizeEntityName("Chen")).toBe("chen");
+    expect(normalizeEntityName("Marisol Chen")).toBe("marisol chen");
+  });
+
+  it("does not strip non-honorific leading words", () => {
+    expect(normalizeEntityName("Iron Compact")).toBe("iron compact");
+    expect(normalizeEntityName("Old Sable")).toBe("old sable");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Honorific-aware dedup — the v1.2.2 entity-loop bug
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseDetectionResponse — honorific dedup", () => {
+  it('filters "Chen" when the established record is stored as "Dr. Chen"', () => {
+    const fixture = buildFullCampaignState();
+    addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
+    // Re-derive connectionIds so collectEstablishedEntityNames sees the new record.
+    const drChenJournal = [...fixture.journals.values()].find(j => j.name === "Dr. Chen");
+    fixture.campaignState.connectionIds.push(drChenJournal.id);
+
+    const raw = JSON.stringify({
+      entities: [
+        { type: "connection", name: "Chen", confidence: "high" },
+      ],
+    });
+    const result = parseDetectionResponse(raw, fixture.campaignState);
+    expect(result.entities).toEqual([]);
+    fixture.restore();
+  });
+
+  it('filters "Dr. Chen" when the established record is stored as "Chen"', () => {
+    const fixture = buildFullCampaignState();
+    addConnectionEntity(fixture.journals, { name: "Chen" });
+    const chenJournal = [...fixture.journals.values()].find(j => j.name === "Chen");
+    fixture.campaignState.connectionIds.push(chenJournal.id);
+
+    const raw = JSON.stringify({
+      entities: [
+        { type: "connection", name: "Dr. Chen", confidence: "high" },
+      ],
+    });
+    const result = parseDetectionResponse(raw, fixture.campaignState);
+    expect(result.entities).toEqual([]);
+    fixture.restore();
+  });
+});
+
+describe("entityExistsForName — honorific dedup", () => {
+  it('matches "Chen" against a stored "Dr. Chen"', () => {
+    const fixture = buildFullCampaignState();
+    addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
+    const j = [...fixture.journals.values()].find(j => j.name === "Dr. Chen");
+    fixture.campaignState.connectionIds.push(j.id);
+    expect(entityExistsForName("Chen", "connection", fixture.campaignState)).toBe(true);
+    expect(entityExistsForName("CHEN", "connection", fixture.campaignState)).toBe(true);
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pending-drafts suppression — the second half of the entity-loop bug
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("pending-drafts suppression", () => {
+  beforeEach(() => {
+    // Reset chat messages between tests so a draft from one test doesn't bleed
+    // into the next. The shared ChatMessage stub uses a flat array.
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  afterEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  it("does not re-flag an entity that is already sitting in a draft card", async () => {
+    const fixture = buildFullCampaignState();
+
+    // First detection — posts a draft card containing "Chen".
+    await routeEntityDrafts(
+      [{ type: "connection", name: "Chen", description: "scientist" }],
+      fixture.campaignState,
+      { autoCreateConnection: false, source: "paced_narrative" },
+    );
+    const firstDraftCount = global.game.messages.contents.filter(
+      m => m.flags?.[MODULE_ID]?.draftEntityCard,
+    ).length;
+    expect(firstDraftCount).toBe(1);
+
+    // Second detection on the next narration — same name, still pending.
+    await routeEntityDrafts(
+      [{ type: "connection", name: "Chen", description: "scientist" }],
+      fixture.campaignState,
+      { autoCreateConnection: false, source: "paced_narrative" },
+    );
+    const secondDraftCount = global.game.messages.contents.filter(
+      m => m.flags?.[MODULE_ID]?.draftEntityCard,
+    ).length;
+    expect(secondDraftCount).toBe(1);
+    fixture.restore();
+  });
+
+  it("filters pending names out of parseDetectionResponse too", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts(
+      [{ type: "connection", name: "Dr. Chen", description: "scientist" }],
+      fixture.campaignState,
+      { autoCreateConnection: false, source: "paced_narrative" },
+    );
+
+    // Haiku now returns the same NPC (possibly with a different form).
+    const raw = JSON.stringify({
+      entities: [
+        { type: "connection", name: "Chen", confidence: "high" },
+      ],
+    });
+    const result = parseDetectionResponse(raw, fixture.campaignState);
+    expect(result.entities).toEqual([]);
+    fixture.restore();
+  });
+
+  it("lists pending drafts in the detection prompt under PENDING DRAFTS", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts(
+      [{ type: "connection", name: "Dr. Chen", description: "scientist" }],
+      fixture.campaignState,
+      { autoCreateConnection: false, source: "paced_narrative" },
+    );
+    const prompt = buildCombinedDetectionPrompt(
+      "a paragraph mentioning Chen",
+      PACED_NARRATIVE_MOVE_ID,
+      PACED_NARRATIVE_OUTCOME,
+      fixture.campaignState,
+    );
+    expect(prompt).toContain("PENDING DRAFTS");
+    expect(prompt).toContain("Dr. Chen");
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt content — honorific-equivalence instruction
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildCombinedDetectionPrompt — honorific instruction", () => {
+  it("tells the detector to treat honorifics as equivalent", () => {
+    const fixture = buildFullCampaignState();
+    const prompt = buildCombinedDetectionPrompt(
+      "narration",
+      PACED_NARRATIVE_MOVE_ID,
+      PACED_NARRATIVE_OUTCOME,
+      fixture.campaignState,
+    );
+    expect(prompt.toLowerCase()).toContain("honorifics and titles as equivalent");
+    fixture.restore();
   });
 });

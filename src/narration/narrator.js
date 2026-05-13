@@ -29,6 +29,8 @@ import { getPlanet }      from '../entities/planet.js';
 import { getLocation }    from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
+import { getChronicleEntries } from '../character/chronicle.js';
+import { readCharacterSnapshot } from '../character/actorBridge.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -334,10 +336,20 @@ export async function postNarrationCard(narrationText, resolution, campaignState
 export function getRecentNarrationContext(sessionId, limit = 3) {
   try {
     return (game.messages?.contents ?? [])
-      .filter(m =>
-        m.flags?.[MODULE_ID]?.narratorCard &&
-        m.flags?.[MODULE_ID]?.sessionId === sessionId
-      )
+      .filter(m => {
+        const f = m.flags?.[MODULE_ID];
+        if (!f?.narratorCard) return false;
+        if (f.sessionId !== sessionId) return false;
+        // Defensive excludes — even if a future code path co-marks a system
+        // card as a narratorCard, none of these should ever feed back into
+        // the narrator's user message. Avoids module-meta leaking into prose.
+        if (f.worldJournalContradiction) return false;
+        if (f.worldJournalCard) return false;
+        if (f.recapCard) return false;
+        if (f.draftEntityCard) return false;
+        if (Array.isArray(m.whisper) && m.whisper.length) return false;
+        return true;
+      })
       .slice(-limit)
       .map(m => m.flags?.[MODULE_ID]?.narrationText)
       .filter(Boolean)
@@ -440,7 +452,7 @@ export async function postSessionRecap(campaignState, sessionId = null) {
  */
 export async function getCampaignRecap(campaignState, options = {}) {
   const cache = campaignState?.campaignRecapCache;
-  const chronicleLength = _getChronicleLength(campaignState);
+  const chronicleLength = await _getChronicleLength(campaignState);
 
   if (!options.forceRefresh && cache?.text && cache.chronicleLength === chronicleLength) {
     return cache.text;
@@ -449,7 +461,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
   const apiKey = getApiKey();
   if (!apiKey) return '';
 
-  const chronicleEntries = _getChronicleEntries(campaignState);
+  const chronicleEntries = await _getChronicleEntries(campaignState);
   if (!chronicleEntries.length) return '';
 
   const settings    = getNarratorSettings();
@@ -989,10 +1001,19 @@ function getActiveCharacter(campaignState) {
   try {
     const ids = campaignState?.characterIds ?? [];
     if (!ids.length) return null;
-    const entry = game.journal?.get(ids[0]);
-    if (!entry) return null;
-    const page = entry.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.character ?? null;
+    const actor = game.actors?.get?.(ids[0]);
+    if (!actor) return null;
+    const snap = readCharacterSnapshot(actor);
+    if (!snap) return null;
+    const notes = actor.getFlag?.(MODULE_ID, 'narratorNotes')
+      ?? actor.system?.biography
+      ?? '';
+    return {
+      name:           snap.name,
+      description:    actor.system?.description ?? '',
+      narratorNotes:  notes,
+      meters:         snap.meters,
+    };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: getActiveCharacter failed:`, err);
     return null;
@@ -1036,20 +1057,45 @@ function delay(ms) {
 }
 
 /**
- * Count chronicle entries from the campaign's character chronicle journal.
- * Returns 0 if no chronicle is available — cache will be treated as valid
- * until entries are created.
+ * Aggregate chronicle entries (oldest first) across every PC in the campaign.
+ * Each entry is annotated with `actorId` so a single combined sort by
+ * timestamp produces a coherent campaign timeline.
+ *
+ * `characterIds` holds Actor IDs (populated by the assembler from
+ * `actors.map(a => a.id)`) — the chronicle journal itself is found by name
+ * via `getChronicleEntries`, so callers don't need to know the journal id.
  */
-function _getChronicleLength(campaignState) {
+async function _collectAllChronicleEntries(campaignState) {
+  const ids = campaignState?.characterIds ?? [];
+  if (!ids.length) return [];
+
+  const aggregated = [];
+  for (const actorId of ids) {
+    try {
+      const entries = await getChronicleEntries(actorId);
+      for (const entry of entries ?? []) {
+        if (entry) aggregated.push({ ...entry, _actorId: actorId });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: getChronicleEntries(${actorId}) failed:`, err);
+    }
+  }
+
+  aggregated.sort((a, b) => {
+    const ta = a.timestamp ?? '';
+    const tb = b.timestamp ?? '';
+    if (ta === tb) return 0;
+    return ta < tb ? -1 : 1;
+  });
+  return aggregated;
+}
+
+/**
+ * Count chronicle entries across every PC. Used to detect stale recap caches.
+ */
+async function _getChronicleLength(campaignState) {
   try {
-    const ids = campaignState?.characterIds ?? [];
-    if (!ids.length) return 0;
-    const entry = game.journal?.get(ids[0]);
-    if (!entry) return 0;
-    const page = entry.pages?.contents?.find(p =>
-      p.flags?.[MODULE_ID]?.chroniclePage
-    );
-    const entries = page?.flags?.[MODULE_ID]?.entries ?? [];
+    const entries = await _collectAllChronicleEntries(campaignState);
     return entries.length;
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: _getChronicleLength failed:`, err);
@@ -1060,26 +1106,16 @@ function _getChronicleLength(campaignState) {
 /**
  * Read chronicle entries as formatted strings for the campaign recap prompt.
  */
-function _getChronicleEntries(campaignState) {
+async function _getChronicleEntries(campaignState) {
   try {
-    const ids = campaignState?.characterIds ?? [];
-    if (!ids.length) return [];
-    const entry = game.journal?.get(ids[0]);
-    if (!entry) return [];
-    const page = entry.pages?.contents?.find(p =>
-      p.flags?.[MODULE_ID]?.chroniclePage
-    );
-    const entries = page?.flags?.[MODULE_ID]?.entries ?? [];
-    return entries
-      .slice()
-      .sort((a, b) => (a.timestamp ?? '') < (b.timestamp ?? '') ? -1 : 1)
-      .map(e => {
-        const date = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
-        const session = e.sessionNumber ? `Session ${e.sessionNumber}` : '';
-        const header = [session, date].filter(Boolean).join(' — ');
-        return header ? `[${header}]\n${e.text ?? e.content ?? ''}` : (e.text ?? e.content ?? '');
-      })
-      .filter(Boolean);
+    const entries = await _collectAllChronicleEntries(campaignState);
+    return entries.map(e => {
+      const date    = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
+      const session = e.sessionNumber ? `Session ${e.sessionNumber}` : '';
+      const header  = [session, date].filter(Boolean).join(' — ');
+      const body    = e.text ?? e.content ?? '';
+      return header ? `[${header}]\n${body}` : body;
+    }).filter(Boolean);
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: _getChronicleEntries failed:`, err);
     return [];
