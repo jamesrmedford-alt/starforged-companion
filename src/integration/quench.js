@@ -3417,8 +3417,8 @@ function registerPacingTests(quench) {
           const expectations = [
             ["pacing.dial.combat",        9],
             ["pacing.dial.investigation", 6],
-            ["pacing.dial.exploration",   5],
-            ["pacing.dial.social",        3],
+            ["pacing.dial.exploration",   6],
+            ["pacing.dial.social",        5],
             ["pacing.dial.downtime",      1],
           ];
           for (const [key, expected] of expectations) {
