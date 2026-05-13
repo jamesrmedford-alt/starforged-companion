@@ -14,6 +14,7 @@ import {
 import { resolveRelevance } from '../context/relevanceResolver.js';
 import { extractSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar }   from '../factContinuity/ledgers.js';
+import { startScene }     from '../factContinuity/sceneLifecycle.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -89,6 +90,10 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   }
 
   const character    = getActiveCharacter(campaignState);
+
+  // First narration of a session implicitly starts a scene if none is active.
+  // See docs/fact-continuity-scope.md §9.1.
+  await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
 
   // Inject campaign recap into the system prompt for the first narration of a session
   let recapContext = '';
@@ -623,6 +628,9 @@ export async function interrogateScene(question, campaignState, _options = {}) {
 
   const settings = getNarratorSettings();
   const character    = getActiveCharacter(campaignState);
+  // The @scene intercept in index.js already calls startScene; this guard
+  // covers any direct interrogateScene callers that bypass the chat hook.
+  await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
@@ -716,6 +724,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   }
 
   const character    = getActiveCharacter(campaignState);
+  await ensureSceneStarted(campaignState, 'first_narration_paced');
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
@@ -1006,6 +1015,28 @@ async function postFallbackCard(resolution) {
  * @param {string|null} [ctx.moveId]
  * @returns {string} prose with the sidecar block removed
  */
+/**
+ * Ensure an active fact-continuity scene exists before a narrator call.
+ * If `currentSceneId` is null, assigns one by calling startScene with the
+ * given reason. Tolerates failure (player clients can't write world
+ * settings; the in-memory mutation still happens).
+ *
+ * @param {Object} campaignState
+ * @param {string} reason — diagnostic only ("first_narration", "paced_narrative", …)
+ */
+async function ensureSceneStarted(campaignState, reason) {
+  if (!campaignState) return;
+  let enabled = true;
+  try {
+    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | ensureSceneStarted: setting lookup failed; defaulting to enabled:`, err);
+  }
+  if (!enabled) return;
+  if (campaignState.currentSceneId) return;
+  await startScene(campaignState, { reason });
+}
+
 function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // Master gate — when fact-continuity is disabled, return the raw text
   // unchanged. The sidecar instruction is also suppressed at the prompt

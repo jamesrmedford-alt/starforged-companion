@@ -74,6 +74,7 @@ import {
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
+import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -100,6 +101,18 @@ const MODULE_ID = "starforged-companion";
 let _lastJournalCommandWork = null;
 export function getLastJournalCommandPromise() {
   return _lastJournalCommandWork;
+}
+
+/**
+ * Read the fact-continuity master toggle. Defaults to enabled when the
+ * setting hasn't been registered (early init, unit-test contexts).
+ */
+function factContinuityEnabledFromSettings() {
+  try {
+    return game.settings?.get(MODULE_ID, "factContinuity.enabled") !== false;
+  } catch {
+    return true;
+  }
 }
 
 
@@ -324,6 +337,12 @@ export function registerChatHook() {
       if (!question) return;
       const campaignState = game.settings.get(MODULE_ID, "campaignState");
       resetRecentDensity();
+      // Fact continuity: every @scene begins a new scene moment. Flush any
+      // unended prior scene and assign a fresh scene ID before narration.
+      // See docs/fact-continuity-scope.md §9.1.
+      if (factContinuityEnabledFromSettings()) {
+        await startScene(campaignState, { reason: "@scene_intercept" });
+      }
       await interrogateScene(question, campaignState, {
         actorId: message.author?.character?.id,
       });
@@ -359,6 +378,12 @@ export function registerChatHook() {
       // journal write chain. See getLastJournalCommandPromise().
       _lastJournalCommandWork = handleJournalCommand(message);
       await _lastJournalCommandWork;
+      return;
+    }
+
+    // !scene start | !scene end — fact-continuity scene lifecycle (GM only)
+    if (isSceneCommand(message)) {
+      await handleSceneCommand(message);
       return;
     }
 
@@ -766,6 +791,72 @@ export function isRollCommand(message) {
   if (text !== "!roll") return false;
   if (message.flags?.[MODULE_ID]?.rollCommandCard) return false;
   return true;
+}
+
+/**
+ * Determine whether a chat message is a !scene command.
+ *   !scene start | !scene end
+ * GM-only. fact-continuity scope §9.1 / §9.2.
+ */
+export function isSceneCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sceneCommand) return false;
+  return /^!scene\s+(start|end)\b/i.test(text);
+}
+
+/**
+ * Handle a !scene command. GM-only. Posts a confirmation card flagged
+ * `sceneCommand: true` so it never bleeds through isPlayerNarration on the
+ * next turn (PR #94).
+ */
+async function handleSceneCommand(message) {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!scene is GM-only (writes campaign state).");
+    return;
+  }
+  if (!factContinuityEnabledFromSettings()) {
+    ui.notifications.warn("!scene requires Fact Continuity to be enabled in Companion Settings.");
+    return;
+  }
+
+  const text = (message.content ?? "").trim();
+  const verb = /^!scene\s+(start|end)\b/i.exec(text)?.[1]?.toLowerCase();
+  if (verb !== "start" && verb !== "end") return;
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  let resultLine = "";
+  try {
+    if (verb === "start") {
+      const id = await startScene(campaignState, { reason: "scene_command" });
+      resultLine = id
+        ? `Scene started — <code>${id}</code>.`
+        : "Scene start failed.";
+    } else {
+      const summary = await endScene(campaignState, { reason: "scene_command" });
+      resultLine =
+        `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
+        `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);
+    resultLine = "!scene failed — see the browser console.";
+  }
+
+  await ChatMessage.create({
+    content: `
+      <div class="sf-scene-command-card">
+        <div class="sf-scene-command-label">◈ Scene Lifecycle</div>
+        <div class="sf-scene-command-body">${resultLine}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        sceneCommand: true,
+        verb,
+      },
+    },
+  });
 }
 
 /**
@@ -1251,6 +1342,16 @@ Hooks.once("ready", () => {
 Hooks.once("closeWorld", async () => {
   if (!game.user.isGM) return;
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // Fact continuity: flush any active scene before the world closes so
+  // truths migrate to entity tiers / WJ Lore rather than vanishing on the
+  // next world load. See docs/fact-continuity-scope.md §9.2.
+  if (factContinuityEnabledFromSettings() && campaignState?.currentSceneId) {
+    try {
+      await endScene(campaignState, { reason: "session_close" });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | closeWorld: endScene failed:`, err);
+    }
+  }
   campaignState.lastSessionTimestamp = new Date().toISOString();
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });

@@ -649,6 +649,46 @@ async function persistGenerativeTier(entityRef, tier) {
   }
 }
 
+/**
+ * Append a fact-continuity scene-end migration entry to an entity's
+ * generative tier. See docs/fact-continuity-scope.md §9.2 step 1.
+ *
+ * Lower-level than `appendDetailToTier` — does not dedupe against existing
+ * entries (migration entries are tagged source: "scene_truth_migration"
+ * and may legitimately repeat narrator-extracted detail wording).
+ *
+ * Returns true on success, false when the entity's journal/page cannot be
+ * resolved.
+ *
+ * @param {string} journalId
+ * @param {string} type — "connection" | "ship" | "settlement" | …
+ * @param {Object} entry — fully-formed generative-tier entry
+ * @returns {Promise<boolean>}
+ */
+export async function appendMigratedTruthToTier(journalId, type, entry) {
+  if (!journalId || !type || !entry) return false;
+  try {
+    const journalEntry = game.journal?.get(journalId);
+    const page         = journalEntry?.pages?.contents?.[0];
+    if (!page) return false;
+
+    const existingFlags = page.flags?.[MODULE_ID]?.[type] ?? {};
+    const tier          = Array.isArray(existingFlags.generativeTier)
+      ? existingFlags.generativeTier
+      : [];
+    const updated = {
+      ...existingFlags,
+      generativeTier: [...tier, entry],
+      updatedAt:      new Date().toISOString(),
+    };
+    await page.setFlag(MODULE_ID, type, updated);
+    return true;
+  } catch (err) {
+    console.error(`${MODULE_ID} | entityExtractor: appendMigratedTruthToTier failed:`, err);
+    return false;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DRAFT CARD

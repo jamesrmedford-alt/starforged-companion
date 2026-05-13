@@ -147,6 +147,61 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
 }
 
 /**
+ * Archive a scene-end fact-continuity truth (free-text or scene-scoped) to
+ * the WJ Lore journal. See docs/fact-continuity-scope.md §9.2 step 2.
+ *
+ * Composes a synthetic page title:
+ *   - scene subjects → "Scene <sceneId>: <fact>"
+ *   - text  subjects → "<subject>: <fact>"
+ *
+ * Returns the recordLoreDiscovery result, or null if the truth has no fact
+ * or no resolvable subject.
+ *
+ * @param {Object} truth — sceneTruths entry from campaignState
+ * @param {Object} campaignState
+ * @returns {Promise<Object|null>}
+ */
+export async function archiveSceneTruth(truth, campaignState) {
+  const fact = String(truth?.fact ?? '').trim();
+  if (!fact) return null;
+  const subject = truth?.subject;
+  if (!subject || typeof subject !== 'object') return null;
+
+  let subjectLabel = '';
+  let subjectKey   = '';
+  if (subject.kind === 'scene') {
+    subjectLabel = `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
+    subjectKey   = 'scene';
+  } else if (subject.kind === 'text') {
+    subjectLabel = String(subject.text ?? '').trim();
+    subjectKey   = subjectLabel;
+  } else if (subject.kind === 'entity') {
+    // Entity-kind subjects migrate to the entity's generative tier — they
+    // should not reach the lore archival path. Tolerate defensively.
+    return null;
+  } else {
+    return null;
+  }
+  if (!subjectLabel) return null;
+
+  const titleSeed = `${subjectLabel}: ${fact}`;
+  const title     = titleSeed.length > 100 ? `${titleSeed.slice(0, 97)}...` : titleSeed;
+
+  return recordLoreDiscovery(title, {
+    category:         'other',
+    text:             fact,
+    subject:          subjectKey,
+    fact,
+    sceneId:          truth.sceneId ?? null,
+    narratorAsserted: true,
+    confirmed:        false,
+    sessionId:        truth.sessionId ?? null,
+    sessionNumber:    truth.sessionNum ?? null,
+    moveId:           truth.moveId    ?? null,
+  }, campaignState);
+}
+
+/**
  * Record an active threat. Creates a page named after the threat; on duplicate
  * names the existing entry is updated. Severity changes are appended to the
  * history array so the timeline is preserved.
