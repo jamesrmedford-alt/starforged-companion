@@ -223,6 +223,194 @@ export function subjectKey(subject) {
 }
 
 // ---------------------------------------------------------------------------
+// Corrections — fact-continuity scope §10
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark a truth retracted in place. Does not remove the entry — strike-through
+ * is recorded for audit (scope §4.1).
+ *
+ * Returns the matched entry on success, null when no entry has the given ID
+ * or the actor lacks permission. Permission is enforced via canCorrectTruth.
+ *
+ * @param {string} truthId — full id or 6-char prefix
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @param {boolean} [ctx.isGM=true]
+ * @param {"gm"|"player"} [ctx.actor="gm"]
+ * @returns {Object|null}
+ */
+export function strikeTruth(truthId, campaignState, ctx = {}) {
+  if (!campaignState || !truthId) return null;
+  ensureLedgerShape(campaignState);
+  const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
+  if (!entry) return null;
+  if (!canCorrectTruth(entry, ctx)) return null;
+  entry.retracted   = true;
+  entry.retractedBy = ctx.actor ?? 'gm';
+  entry.retractedAt = Date.now();
+  return entry;
+}
+
+/**
+ * Replace a truth (strike the old, append a new one with `correctedTo`
+ * link). Returns { struck, replacement } on success, null on permission /
+ * lookup failure.
+ *
+ * @param {string} truthId
+ * @param {Object} replacement — { subject, fact, sessionId, sceneId, moveId }
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @returns {{ struck: Object, replacement: Object }|null}
+ */
+export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
+  if (!campaignState || !truthId || !replacement) return null;
+  ensureLedgerShape(campaignState);
+  const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
+  if (!entry) return null;
+  if (!canCorrectTruth(entry, ctx)) return null;
+
+  const newId = newTruthId();
+  const now   = Date.now();
+  const fact  = String(replacement.fact ?? '').trim();
+  if (!fact) return null;
+
+  const newEntry = {
+    id:          newId,
+    subject:     replacement.subject ?? entry.subject,
+    fact,
+    sessionId:   replacement.sessionId ?? entry.sessionId,
+    sceneId:     replacement.sceneId   ?? entry.sceneId,
+    moveId:      replacement.moveId    ?? entry.moveId,
+    source:      'manual_truth_cmd',
+    asserter:    ctx.actor ?? 'gm',
+    createdAt:   now,
+    retracted:   false,
+    retractedBy: null,
+    retractedAt: null,
+    correctedTo: null,
+    migratedTo:  null,
+  };
+
+  entry.retracted   = true;
+  entry.retractedBy = ctx.actor ?? 'gm';
+  entry.retractedAt = now;
+  entry.correctedTo = newId;
+  campaignState.sceneTruths.push(newEntry);
+
+  return { struck: entry, replacement: newEntry };
+}
+
+/**
+ * Assert a new truth without going through the narrator. Use for manual
+ * GM-driven corrections via the dialog or !truth set commands.
+ *
+ * @param {Object} subjectRef — resolved subject ({kind, ...})
+ * @param {string} fact
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @returns {Object|null} the new truth entry
+ */
+export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
+  if (!campaignState || !subjectRef) return null;
+  const cleanFact = String(fact ?? '').trim();
+  if (!cleanFact) return null;
+  ensureLedgerShape(campaignState);
+
+  const entry = {
+    id:          newTruthId(),
+    subject:     subjectRef,
+    fact:        cleanFact,
+    sessionId:   ctx.sessionId ?? campaignState.currentSessionId ?? null,
+    sceneId:     ctx.sceneId   ?? campaignState.currentSceneId   ?? null,
+    moveId:      ctx.moveId    ?? null,
+    source:      ctx.source    ?? 'manual_truth_cmd',
+    asserter:    ctx.actor     ?? 'gm',
+    createdAt:   Date.now(),
+    retracted:   false,
+    retractedBy: null,
+    retractedAt: null,
+    correctedTo: null,
+    migratedTo:  null,
+  };
+  campaignState.sceneTruths.push(entry);
+  return entry;
+}
+
+/**
+ * Remove a single attribute from the state ledger for a subject. Returns
+ * true if an entry was struck, false if nothing matched.
+ *
+ * @param {string} key — subjectKey (entityId, "scene", or lowercased text)
+ * @param {string} attribute
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+export function strikeStateValue(key, attribute, campaignState) {
+  if (!campaignState || !key || !attribute) return false;
+  ensureLedgerShape(campaignState);
+  const list = campaignState.sceneState.bySubject[key];
+  if (!Array.isArray(list) || !list.length) return false;
+  const idx = list.findIndex(e => e.attribute === attribute);
+  if (idx < 0) return false;
+  list.splice(idx, 1);
+  if (!list.length) delete campaignState.sceneState.bySubject[key];
+  return true;
+}
+
+/**
+ * Set or replace a state value for a subject + attribute. Same semantics as
+ * the sidecar state-change apply, but exposed for the dialog and the
+ * !state set command.
+ *
+ * @param {string} key
+ * @param {string} attribute
+ * @param {*} value
+ * @param {Object} campaignState
+ * @returns {{ key: string, attribute: string }|null}
+ */
+export function setStateValue(key, attribute, value, campaignState) {
+  if (!campaignState || !key || !attribute) return null;
+  if (value === undefined || value === null || value === '') return null;
+  ensureLedgerShape(campaignState);
+  const list  = (campaignState.sceneState.bySubject[key] ??= []);
+  const entry = { attribute, value, updatedAt: Date.now() };
+  const idx   = list.findIndex(e => e.attribute === attribute);
+  if (idx >= 0) list[idx] = entry; else list.push(entry);
+  return { key, attribute };
+}
+
+/**
+ * Permission gate for truth corrections (scope §10.1). The GM may correct
+ * anything. A player may correct any truth EXCEPT one originally asserted
+ * by the GM.
+ *
+ * @param {Object} truth
+ * @param {Object} [ctx]
+ * @param {boolean} [ctx.isGM=true]
+ * @returns {boolean}
+ */
+export function canCorrectTruth(truth, ctx = {}) {
+  if (!truth) return false;
+  const isGM = ctx.isGM ?? true;
+  if (isGM) return true;
+  return truth.asserter !== 'gm';
+}
+
+/**
+ * Locate a truth by full ID or 6+ char prefix. Returns the entry or null
+ * if no match / ambiguous match.
+ */
+function findTruthByIdOrPrefix(truths, needle) {
+  if (!Array.isArray(truths)) return null;
+  const exact = truths.find(t => t?.id === needle);
+  if (exact) return exact;
+  if (typeof needle !== 'string' || needle.length < 4) return null;
+  const matches = truths.filter(t => typeof t?.id === 'string' && t.id.startsWith(needle));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 

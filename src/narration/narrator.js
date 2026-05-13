@@ -179,7 +179,9 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     }
 
     if (recapContext) markRecapInjected(campaignState?.currentSessionId);
-    await postNarrationCard(narration, resolution, campaignState);
+    await postNarrationCard(narration, resolution, campaignState, {
+      matchedEntityIds: relevance.entityIds ?? [],
+    });
     await runPostNarrationPasses(narration, resolution, relevance, campaignState);
     return narration;
 
@@ -314,25 +316,32 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
  * @param {Object} [campaignState] — CampaignStateSchema (provides session fields)
  * @returns {Promise<ChatMessage>}
  */
-export async function postNarrationCard(narrationText, resolution, campaignState) {
+export async function postNarrationCard(narrationText, resolution, campaignState, options = {}) {
+  const matchedEntityIds = Array.isArray(options.matchedEntityIds) ? options.matchedEntityIds : [];
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
+        <div class="sf-narration-footer">
+          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
+            <i class="fas fa-list-check"></i> Correct a fact
+          </button>
+        </div>
       </div>
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        narratorCard:  true,
-        narrationCard: true,                              // kept for backwards compat
-        narrationText: narrationText,
-        sessionId:     campaignState?.currentSessionId ?? null,
-        sessionNumber: campaignState?.sessionNumber     ?? null,
-        moveId:        resolution?.moveId               ?? null,
-        outcome:       resolution?.outcome              ?? null,
-        resolutionId:  resolution?._id                  ?? '',
-        timestamp:     new Date().toISOString(),
+        narratorCard:     true,
+        narrationCard:    true,                              // kept for backwards compat
+        narrationText:    narrationText,
+        sessionId:        campaignState?.currentSessionId ?? null,
+        sessionNumber:    campaignState?.sessionNumber     ?? null,
+        moveId:           resolution?.moveId               ?? null,
+        outcome:          resolution?.outcome              ?? null,
+        resolutionId:     resolution?._id                  ?? '',
+        matchedEntityIds,
+        timestamp:        new Date().toISOString(),
       },
     },
   });
@@ -840,18 +849,24 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
+        <div class="sf-narration-footer">
+          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
+            <i class="fas fa-list-check"></i> Correct a fact
+          </button>
+        </div>
       </div>
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        narratorCard:   true,
-        narrationCard:  true,                  // back-compat
-        pacedNarrative: true,
-        narrationText:  narrationText,
-        playerText:     playerText,
-        suggestedMove:  suggestedMove ?? null,
-        sessionId:      sessionId ?? null,
-        timestamp:      new Date().toISOString(),
+        narratorCard:     true,
+        narrationCard:    true,                  // back-compat
+        pacedNarrative:   true,
+        narrationText:    narrationText,
+        playerText:       playerText,
+        suggestedMove:    suggestedMove ?? null,
+        sessionId:        sessionId ?? null,
+        matchedEntityIds: [],
+        timestamp:        new Date().toISOString(),
       },
     },
   });

@@ -75,6 +75,15 @@ import {
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
 import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
+import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
+import {
+  strikeTruth as fcStrikeTruth,
+  setTruth as fcSetTruth,
+  strikeStateValue as fcStrikeStateValue,
+  setStateValue as fcSetStateValue,
+  resolveSubject as fcResolveSubject,
+  subjectKey as fcSubjectKey,
+} from "./factContinuity/ledgers.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -384,6 +393,12 @@ export function registerChatHook() {
     // !scene start | !scene end — fact-continuity scene lifecycle (GM only)
     if (isSceneCommand(message)) {
       await handleSceneCommand(message);
+      return;
+    }
+
+    // !truth strike|set, !state strike|set — fact-continuity corrections
+    if (isFactContinuityCommand(message)) {
+      await handleFactContinuityCommand(message);
       return;
     }
 
@@ -805,6 +820,21 @@ export function isSceneCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is a !truth or !state correction
+ * command. fact-continuity scope §10.3.
+ *
+ *   !truth strike <id-prefix>
+ *   !truth set <subject> <fact>
+ *   !state strike <subject> <attribute>
+ *   !state set <subject> <attribute>=<value>
+ */
+export function isFactContinuityCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.factContinuityCommand) return false;
+  return /^!(truth|state)\s+/i.test(text);
+}
+
+/**
  * Handle a !scene command. GM-only. Posts a confirmation card flagged
  * `sceneCommand: true` so it never bleeds through isPlayerNarration on the
  * next turn (PR #94).
@@ -857,6 +887,146 @@ async function handleSceneCommand(message) {
       },
     },
   });
+}
+
+/**
+ * Handle !truth / !state correction commands. fact-continuity scope §10.3.
+ *
+ * Grammar:
+ *   !truth strike <id-prefix>
+ *   !truth set <subject> <fact-text>
+ *   !state strike <subject> <attribute>
+ *   !state set <subject> <attribute>=<value>
+ *
+ * Subjects accepted as bare words ("Vance", "scene") or as quoted strings
+ * for multi-word subjects ("\"Covenant officer\"", "\"cargo bay\""). For
+ * !state set, the attribute and value are separated by an unquoted `=`.
+ */
+async function handleFactContinuityCommand(message) {
+  const text = (message.content ?? "").trim();
+  const isGM = !!game.user?.isGM;
+
+  if (!factContinuityEnabledFromSettings()) {
+    ui.notifications.warn("Fact Continuity is disabled in Companion Settings.");
+    return;
+  }
+
+  const verbMatch = /^!(truth|state)\s+(strike|set)\s+(.*)$/i.exec(text);
+  if (!verbMatch) {
+    ui.notifications.warn('Usage: !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>');
+    return;
+  }
+  const [, domain, verb, restRaw] = verbMatch;
+  const rest = restRaw.trim();
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  const ctx = { isGM, actor: isGM ? "gm" : "player" };
+
+  let resultLine = "";
+  try {
+    if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "strike") {
+      const struck = fcStrikeTruth(rest, campaignState, ctx);
+      resultLine = struck
+        ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
+        : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
+    } else if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "set") {
+      const parsed = parseSubjectAndRest(rest);
+      if (!parsed) {
+        ui.notifications.warn('Usage: !truth set <subject> <fact-text>');
+        return;
+      }
+      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const truth   = fcSetTruth(subject, parsed.rest, campaignState, ctx);
+      resultLine = truth
+        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest)}</em>.`
+        : `Truth not recorded — empty subject or fact.`;
+    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "strike") {
+      const parsed = parseSubjectAndRest(rest);
+      if (!parsed?.rest) {
+        ui.notifications.warn('Usage: !state strike <subject> <attribute>');
+        return;
+      }
+      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const ok      = fcStrikeStateValue(fcSubjectKey(subject), parsed.rest.trim(), campaignState);
+      resultLine = ok
+        ? `State <code>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest.trim())}</code> struck.`
+        : `No matching state entry.`;
+    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "set") {
+      const parsed = parseSubjectAndRest(rest);
+      const eqIdx  = parsed?.rest?.indexOf("=") ?? -1;
+      if (!parsed || eqIdx < 1) {
+        ui.notifications.warn('Usage: !state set <subject> <attribute>=<value>');
+        return;
+      }
+      const attribute = parsed.rest.slice(0, eqIdx).trim();
+      const value     = parsed.rest.slice(eqIdx + 1).trim();
+      const subject   = fcResolveSubject(parsed.subject, campaignState);
+      const result    = fcSetStateValue(fcSubjectKey(subject), attribute, value, campaignState);
+      resultLine = result
+        ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(attribute)}: ${escapeHtml(value)}</em>.`
+        : `State not recorded — empty attribute or value.`;
+    } else {
+      ui.notifications.warn('Unrecognised !truth / !state form.');
+      return;
+    }
+
+    if (resultLine) {
+      // Persist after a successful mutation.
+      try {
+        await game.settings.set(MODULE_ID, "campaignState", campaignState);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | handleFactContinuityCommand: persist failed:`, err);
+      }
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | handleFactContinuityCommand failed:`, err);
+    resultLine = "Command failed — see the browser console.";
+  }
+
+  await ChatMessage.create({
+    content: `
+      <div class="sf-fc-command-card">
+        <div class="sf-fc-command-label">◈ Fact Continuity</div>
+        <div class="sf-fc-command-body">${resultLine}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        factContinuityCommand: true,
+        domain: domain.toLowerCase(),
+        verb:   verb.toLowerCase(),
+      },
+    },
+  });
+}
+
+/**
+ * Parse "<subject> <rest>" with subject either a quoted string or a single
+ * bare word. Returns { subject, rest } or null on malformed input.
+ */
+function parseSubjectAndRest(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('"')) {
+    const close = trimmed.indexOf('"', 1);
+    if (close < 0) return null;
+    const subject = trimmed.slice(1, close).trim();
+    const rest    = trimmed.slice(close + 1).trim();
+    return subject ? { subject, rest } : null;
+  }
+  const space = trimmed.search(/\s/);
+  if (space < 0) return { subject: trimmed, rest: '' };
+  const subject = trimmed.slice(0, space).trim();
+  const rest    = trimmed.slice(space + 1).trim();
+  return subject ? { subject, rest } : null;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -1480,6 +1650,32 @@ Hooks.on("renderChatMessage", (message, html) => {
   const root = html instanceof HTMLElement ? html : html[0];
   root?.querySelector('[data-action="openTruthsDialog"]')
     ?.addEventListener("click", () => openSystemTruthsDialog());
+});
+
+/**
+ * renderChatMessage — wire the "Correct a fact" button on narrator cards
+ * (fact-continuity scope §10.2). Two-hook pattern per CLAUDE.md: the card
+ * HTML is rendered with the button in postNarrationCard /
+ * postPacedNarrativeCard; click handlers are attached here at render time.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  if (!message.flags?.[MODULE_ID]?.narratorCard) return;
+  if (!factContinuityEnabledFromSettings()) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  const btn = root.querySelector('[data-action="openCorrectionDialog"]');
+  if (!btn) return;
+  // Clone-replace to drop any listener attached on a prior render.
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openCorrectionDialog(message).catch(err =>
+      console.error(`${MODULE_ID} | openCorrectionDialog failed:`, err),
+    );
+  });
 });
 
 /**
