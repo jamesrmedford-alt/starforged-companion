@@ -5,6 +5,59 @@
 import { formatSafetyContext } from '../context/safety.js';
 
 // ---------------------------------------------------------------------------
+// Fact-continuity sidecar instruction — fact-continuity scope §7
+// ---------------------------------------------------------------------------
+
+/**
+ * Mandatory sidecar response-format instruction appended to every narrator
+ * system prompt. Tells the narrator to emit prose followed by a single
+ * fenced JSON block describing new truths and state changes. The block is
+ * parsed off-screen by src/factContinuity/sidecarParser.js and stripped
+ * before the prose reaches chat.
+ *
+ * Returns a single string ready to push onto the system-prompt parts array.
+ */
+export function appendSidecarInstruction() {
+  return [
+    '## RESPONSE FORMAT — MANDATORY SIDECAR',
+    '',
+    'Respond with prose followed by a single fenced JSON code block, in this',
+    'exact shape:',
+    '',
+    '    <your prose narration here, no JSON inside the prose>',
+    '',
+    '    ```json',
+    '    {',
+    '      "newTruths": [',
+    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
+    '      ],',
+    '      "stateChanges": [',
+    '        { "subject": "scene",     "attribute": "lighting", "value": "stable" },',
+    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
+    '      ]',
+    '    }',
+    '    ```',
+    '',
+    'The JSON block MUST be present. Both arrays MAY be empty.',
+    '',
+    'Rules:',
+    '- A "newTruth" is binding — a fact that, if asserted again later, must',
+    '  not change. Use it for established physical traits, named history,',
+    '  declared backstory.',
+    '- A "stateChange" is what is true right now. Use it for posture, mood,',
+    '  visible state, door positions, lighting, weather. These supersede',
+    '  prior state for the same subject + attribute.',
+    '- A subject is the name as it appears in the scene. If the subject is',
+    '  the scene itself (lighting, weather, ambient sound) use "scene".',
+    '- The "ship" subject is reserved for the player\'s command vehicle.',
+    '  Use it only when narration actually moves the ship.',
+    '- Do not declare a truth that contradicts the active scene block. If you',
+    '  must walk one back, the player or GM will retract it via the',
+    '  correction affordance.',
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Narrator permissions — narrator-entity-discovery scope §8
 // ---------------------------------------------------------------------------
 
@@ -424,6 +477,10 @@ export function buildNarratorSystemPrompt(
 
   // [8] Character
   if (character) parts.push(buildCharacterBlock(character));
+
+  // [9] Fact-continuity sidecar instruction — appended last so it is the most
+  // recent guidance the model sees before generating. Applies to every mode.
+  parts.push(appendSidecarInstruction());
 
   return parts.join('\n\n---\n\n');
 }

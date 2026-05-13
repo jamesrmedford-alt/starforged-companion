@@ -12,6 +12,8 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
+import { extractSidecar } from '../factContinuity/sidecarParser.js';
+import { applySidecar }   from '../factContinuity/ledgers.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -151,13 +153,14 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   );
 
   try {
-    const narration = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey,
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
     });
+    const narration = applyNarratorSidecar(raw, campaignState, { moveId: resolution?.moveId });
 
     if (!narration?.trim()) {
       await postFallbackCard(resolution);
@@ -174,11 +177,12 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const narration = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
         });
+        const narration = applyNarratorSidecar(raw, campaignState, { moveId: resolution?.moveId });
         if (narration?.trim()) {
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState);
@@ -600,13 +604,14 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   const userMessage   = buildSceneUserMessage(question, recentContext, sentenceTarget);
 
   try {
-    const response = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey,
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
       maxTokens: 200,
     });
+    const response = applyNarratorSidecar(raw, campaignState, { moveId: null });
 
     if (!response?.trim()) {
       await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
@@ -620,11 +625,12 @@ export async function interrogateScene(question, campaignState, _options = {}) {
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const response = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: 200,
         });
+        const response = applyNarratorSidecar(raw, campaignState, { moveId: null });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
           return response;
@@ -689,11 +695,12 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   );
 
   try {
-    const text = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
     });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null });
 
     if (!text?.trim()) return null;
 
@@ -704,11 +711,12 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const text = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
         });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
           schedulePacedDetection(text, campaignState, mischiefDial);
@@ -920,6 +928,49 @@ async function postFallbackCard(resolution) {
       },
     },
   });
+}
+
+/**
+ * Process a raw narrator API response: strip the fenced JSON sidecar from
+ * the prose, apply it to the active-scene ledgers in campaignState, and
+ * persist campaignState in the background. Returns the prose with the
+ * sidecar removed. See docs/fact-continuity-scope.md §7–8.
+ *
+ * Failures (missing block, JSON parse error, persistence write rejected)
+ * never block the narrator: the prose is always returned, only ledger
+ * updates are skipped.
+ *
+ * @param {string} rawText
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @param {string|null} [ctx.moveId]
+ * @returns {string} prose with the sidecar block removed
+ */
+function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
+  const { prose, sidecar, parseError } = extractSidecar(rawText);
+
+  if (parseError) {
+    console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);
+  }
+
+  if (sidecar && campaignState) {
+    try {
+      applySidecar(sidecar, {
+        campaignState,
+        sessionId: campaignState.currentSessionId ?? null,
+        sceneId:   campaignState.currentSceneId   ?? null,
+        moveId:    ctx.moveId ?? null,
+        asserter:  'narrator',
+      });
+      game.settings.set(MODULE_ID, 'campaignState', campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
+      );
+    } catch (err) {
+      console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
+    }
+  }
+
+  return prose ?? rawText;
 }
 
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens }) {

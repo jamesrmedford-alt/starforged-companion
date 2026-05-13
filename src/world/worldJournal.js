@@ -133,6 +133,11 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     narratorAsserted: entry?.narratorAsserted === true,
     annotations:      Array.isArray(existing?.annotations) ? existing.annotations : [],
     promotedAt:       existing?.promotedAt ?? (entry?.confirmed === true ? now : null),
+    // Fact-continuity fields (docs/fact-continuity-scope.md §4.4). Optional;
+    // null for entries that did not originate from a scene-truth migration.
+    subject:          entry?.subject ?? existing?.subject ?? null,
+    fact:             entry?.fact    ?? existing?.fact    ?? null,
+    sceneId:          entry?.sceneId ?? existing?.sceneId ?? null,
     createdAt:        existing?.createdAt ?? now,
     updatedAt:        now,
   };

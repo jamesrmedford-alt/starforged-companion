@@ -717,6 +717,18 @@ export const CampaignStateSchema = {
     forceNextAsMove: false,
   },
 
+  // Fact-continuity active-scene ledgers (see docs/fact-continuity-scope.md §4–5).
+  //   currentSceneId — assigned on scene start, cleared on scene end
+  //   sceneTruths    — append-only ledger of narrator-asserted truths
+  //                    { id, subject: { kind, ... }, fact, sessionId, sceneId,
+  //                      moveId, source, asserter, createdAt, retracted,
+  //                      retractedBy, retractedAt, correctedTo, migratedTo }
+  //   sceneState     — supersede-on-attribute state ledger
+  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt }] }, sceneId }
+  currentSceneId: null,
+  sceneTruths:    [],
+  sceneState:     { bySubject: {}, sceneId: null },
+
   createdAt: null,
   updatedAt: null,
 };
