@@ -134,6 +134,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
     return '';
   });
+  const entityNamesById = collectEntityNamesById(relevance.entityIds, relevance.entityTypes);
 
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, recapContext,
@@ -144,6 +145,9 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       currentLocationCard,
       oracleSeeds:         resolution.oracleSeeds ?? null,
       campaignTruthsBlock,
+      matchedEntityIds:    relevance.entityIds ?? [],
+      playerNarration:     resolution.playerNarration ?? '',
+      entityNamesById,
     },
   );
   const userMessage  = buildNarratorUserMessage(
@@ -595,7 +599,10 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   const character    = getActiveCharacter(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
-    { mode: 'scene_interrogation' },
+    {
+      mode:            'scene_interrogation',
+      playerNarration: question,
+    },
   );
 
   const contextLimit  = getSceneContextCards();
@@ -685,7 +692,10 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   const character    = getActiveCharacter(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
-    { mode: 'paced_narrative' },
+    {
+      mode:            'paced_narrative',
+      playerNarration: playerText,
+    },
   );
 
   const recentContext = getRecentNarrationContext(sessionId, 3);
@@ -845,6 +855,30 @@ function collectEntityCards(ids, types) {
 }
 
 /**
+ * Build a { entityId → name } map for the matched entities. Used by the
+ * fact-continuity ledger block in narratorPrompt.js so entity-subject lines
+ * render with display names rather than journal IDs.
+ */
+function collectEntityNamesById(ids, types) {
+  const map = new Map();
+  if (!Array.isArray(ids) || !ids.length) return map;
+  for (let i = 0; i < ids.length; i++) {
+    const journalId = ids[i];
+    const type      = types?.[i];
+    if (!journalId || !type) continue;
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    try {
+      const e = getter(journalId);
+      if (e?.name) map.set(journalId, e.name);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: collectEntityNamesById (${type} ${journalId}) failed:`, err);
+    }
+  }
+  return map;
+}
+
+/**
  * Build the current-location card from campaignState.currentLocationId.
  * Returns empty string when no current location is set or the record cannot
  * be resolved.
@@ -947,6 +981,19 @@ async function postFallbackCard(resolution) {
  * @returns {string} prose with the sidecar block removed
  */
 function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
+  // Master gate — when fact-continuity is disabled, return the raw text
+  // unchanged. The sidecar instruction is also suppressed at the prompt
+  // layer so well-behaved narrators won't emit a fence in this state, but
+  // skip the parse just in case to avoid mutating ledgers silently.
+  let enabled = true;
+  try {
+    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
+  } catch (err) {
+    // Setting not registered (unit tests, very early init). Default to on.
+    console.debug?.(`${MODULE_ID} | factContinuity: setting lookup failed; defaulting to enabled:`, err);
+  }
+  if (!enabled) return rawText;
+
   const { prose, sidecar, parseError } = extractSidecar(rawText);
 
   if (parseError) {
@@ -1004,24 +1051,30 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
 function getNarratorSettings() {
   try {
     return {
-      narrationEnabled:      game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
-      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
-      narrationPerspective:  game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
-      narrationTone:         game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
-      narrationLength:       game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
-      narrationInstructions: game.settings.get(MODULE_ID, 'narrationInstructions') ?? '',
-      narrationMaxTokens:    game.settings.get(MODULE_ID, 'narrationMaxTokens')    ?? 300,
+      narrationEnabled:        game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
+      narrationModel:          game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
+      narrationPerspective:    game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
+      narrationTone:           game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
+      narrationLength:         game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
+      narrationInstructions:   game.settings.get(MODULE_ID, 'narrationInstructions') ?? '',
+      narrationMaxTokens:      game.settings.get(MODULE_ID, 'narrationMaxTokens')    ?? 300,
+      factContinuityEnabled:        game.settings.get(MODULE_ID, 'factContinuity.enabled')          ?? true,
+      factContinuityLedgerInContext:game.settings.get(MODULE_ID, 'factContinuity.ledgerInContext')  ?? true,
+      factContinuityMaxLedgerTokens:game.settings.get(MODULE_ID, 'factContinuity.maxLedgerTokens')  ?? 400,
     };
   } catch (err) {
     console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
     return {
-      narrationEnabled:      true,
-      narrationModel:        'claude-sonnet-4-5-20250929',
-      narrationPerspective:  'auto',
-      narrationTone:         'wry',
-      narrationLength:       3,
-      narrationInstructions: '',
-      narrationMaxTokens:    300,
+      narrationEnabled:        true,
+      narrationModel:          'claude-sonnet-4-5-20250929',
+      narrationPerspective:    'auto',
+      narrationTone:           'wry',
+      narrationLength:         3,
+      narrationInstructions:   '',
+      narrationMaxTokens:      300,
+      factContinuityEnabled:         true,
+      factContinuityLedgerInContext: true,
+      factContinuityMaxLedgerTokens: 400,
       _error:                err,
     };
   }
