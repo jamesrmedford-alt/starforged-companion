@@ -11,9 +11,12 @@ import {
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
   buildPacedNarrativeUserMessage,
+  buildSceneUserMessage,
   resolveNarrationPerspective,
   formatEntityCard,
   formatOracleSeedsBlock,
+  sanitizePlayerText,
+  stripHtml,
   NARRATOR_PERMISSIONS,
 } from '../../src/narration/narratorPrompt.js';
 
@@ -657,5 +660,116 @@ describe('buildNarratorSystemPrompt extras', () => {
     );
     expect(prompt).toContain('CURRENT LOCATION');
     expect(prompt).toContain('BLEAKHOLD');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sanitizePlayerText / stripHtml — HTML leak fix
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('sanitizePlayerText()', () => {
+  it('returns empty string for non-string input', () => {
+    expect(sanitizePlayerText(null)).toBe('');
+    expect(sanitizePlayerText(undefined)).toBe('');
+    expect(sanitizePlayerText(42)).toBe('');
+  });
+
+  it('strips paragraph tags Foundry adds to chat content', () => {
+    expect(sanitizePlayerText('<p>I peer at the screen.</p>'))
+      .toBe('I peer at the screen.');
+  });
+
+  it('strips nested and attributed tags', () => {
+    expect(sanitizePlayerText(
+      '<div class="message-content"><span>She speaks slowly.</span></div>',
+    )).toBe('She speaks slowly.');
+  });
+
+  it('decodes core HTML entities', () => {
+    expect(sanitizePlayerText('Chen &amp; I look at the data.'))
+      .toBe('Chen & I look at the data.');
+    expect(sanitizePlayerText('She said &quot;run&quot; &mdash; we ran.'))
+      .toContain('"run"');
+    expect(sanitizePlayerText('Tab&nbsp;over&nbsp;here'))
+      .toBe('Tab over here');
+  });
+
+  it('collapses whitespace to a single space', () => {
+    expect(sanitizePlayerText('I   look\n\nlong  at   the   panel.'))
+      .toBe('I look long at the panel.');
+  });
+
+  it('handles a realistic enriched chat message', () => {
+    const input = '<p>Chen&apos;s expression shifts. &quot;What did you find?&quot;</p>';
+    // &apos; is decoded too via the &#0?39; rule when written as &#39; — keep
+    // the more common &apos; literal to make the assertion explicit.
+    const out = sanitizePlayerText(input);
+    expect(out).not.toContain('<');
+    expect(out).not.toContain('>');
+    expect(out).toContain('What did you find?');
+  });
+});
+
+describe('stripHtml()', () => {
+  it('preserves paragraph breaks for multi-paragraph context', () => {
+    const input = '<p>First paragraph.</p>\n\n<p>Second paragraph.</p>';
+    const out = stripHtml(input);
+    expect(out).toContain('First paragraph.');
+    expect(out).toContain('Second paragraph.');
+    expect(out.split(/\n\n/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('returns empty string for non-string input', () => {
+    expect(stripHtml(null)).toBe('');
+  });
+});
+
+describe('user-message builders strip HTML at the intake', () => {
+  it('buildPacedNarrativeUserMessage does not leak tags from playerText', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      '<p>I lean toward the artifact.</p>',
+      '',
+      3,
+      null,
+    );
+    expect(msg).toContain('I lean toward the artifact.');
+    expect(msg).not.toContain('<p>');
+    expect(msg).not.toContain('</p>');
+  });
+
+  it('buildSceneUserMessage does not leak tags from a scene question', () => {
+    const msg = buildSceneUserMessage(
+      '<p>What does the room smell like?</p>',
+      '',
+      2,
+    );
+    expect(msg).toContain('What does the room smell like?');
+    expect(msg).not.toContain('<p>');
+  });
+
+  it('buildNarratorUserMessage does not leak tags from playerNarration', () => {
+    const msg = buildNarratorUserMessage(
+      { loremasterContext: 'Strong hit.' },
+      '<div>She tries to keep her hands steady.</div>',
+      2,
+    );
+    expect(msg).toContain('She tries to keep her hands steady.');
+    expect(msg).not.toContain('<div>');
+  });
+
+  it('regression — narrator no longer sees the word "HTML" if user content has tags', () => {
+    // Reproduces the v1.2.3 bug: Foundry chat content carries <p>...</p>;
+    // the prompt formerly included the tags verbatim and the narrator
+    // wrote prose like "Chen's expression shifts when you speak the HTML
+    // aloud". With sanitization the tags are gone and the model has
+    // nothing markup-shaped to riff on.
+    const msg = buildPacedNarrativeUserMessage(
+      '<p>I open my mouth to ask but nothing comes out.</p>',
+      '',
+      3,
+    );
+    expect(msg.toLowerCase()).not.toContain('<p');
+    expect(msg.toLowerCase()).not.toContain('html');
   });
 });
