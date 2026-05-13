@@ -1156,14 +1156,13 @@ G11. `npm test && npm run lint` — all green.
 
 ## 18. Design decisions — Q1–Q7 positions
 
-Each position below is taken as a recommendation. **Confirm before
-implementation** — the user may override any of these and the scope
-should be revised before code lands.
+All seven positions below were confirmed by the user on 2026-05-12 and
+are LOCKED. Subsequent revisions require explicit user agreement and a
+note in `docs/decisions.md`.
 
 ### Q1. Truths ledger ↔ unconfirmed-lore queue relationship
 
-**Position: two pipelines.** Position taken — confirm before
-implementation.
+**Decision: two pipelines.** LOCKED 2026-05-12.
 
 The truths ledger captures every narrator-asserted fact during a scene
 without GM gating. The existing WJ unconfirmed-lore queue
@@ -1185,8 +1184,7 @@ trades drift for friction without obvious net gain.
 
 ### Q2. Auto-detected contradictions vs. existing contradiction-flag surface
 
-**Position: feed the existing surface.** Position taken — confirm
-before implementation.
+**Decision: feed the existing surface.** LOCKED 2026-05-12.
 
 `applyStateTransition` with `change: "contradicted"` already posts the
 "◈ Narrative Review" card. The consistency-check pass calls into the
@@ -1197,8 +1195,8 @@ existing call sites.
 
 ### Q3. Scene-scoped truths on scene end — archive or discard
 
-**Position: archive to the existing WJ Lore journal with scene-ID
-tagging.** Position taken — confirm before implementation.
+**Decision: archive to the existing WJ Lore journal with scene-ID
+tagging.** LOCKED 2026-05-12.
 
 The lore journal's page-flag schema (`loreEntry`) accommodates the
 extension (`subject`, `fact`, `sceneId` as nullable fields) with no
@@ -1211,8 +1209,7 @@ cheaply.
 
 ### Q4. Correction affordance — button vs. command vs. both
 
-**Position: button is primary, commands secondary.** Position taken —
-confirm before implementation.
+**Decision: button is primary, commands secondary.** LOCKED 2026-05-12.
 
 The button is discoverable and doesn't require recall — that's the
 right default. Commands (`!truth strike`, `!state set`, …) exist for
@@ -1222,8 +1219,7 @@ chat-history-greppable). The button's dialog uses the same
 
 ### Q5. Consistency-check pass — opt-in, opt-out, or mandatory
 
-**Position: opt-in, default off.** Position taken — confirm before
-implementation.
+**Decision: opt-in, default off.** LOCKED 2026-05-12.
 
 The cheaper layers (ledger in context, sidecar discipline, correction
 affordance) handle the bulk of observed drift. Auto-detection adds
@@ -1237,8 +1233,7 @@ in a subsequent release.
 
 ### Q6. Sidecar format — pure JSON or markup tags
 
-**Position: fenced JSON block.** Position taken — confirm before
-implementation.
+**Decision: fenced JSON block.** LOCKED 2026-05-12.
 
 The move interpreter already uses raw JSON (`parseInterpretation` in
 `src/moves/interpreter.js`). Reusing that pattern keeps two parsers
@@ -1254,9 +1249,11 @@ and a bug here, where the chat card should read as plain prose.
 
 ### Q7. Where in the implementation ordering does this slot
 
-**Position: a new scope after Pacing in `scope-index.md`. No revision
-to `implementation-ordering.md` required** — that document covers NED
-and WJ phasing only and is unaffected by this addition.
+**Decision: a new scope after Pacing in `scope-index.md`. No revision
+to `implementation-ordering.md` required.** LOCKED 2026-05-12.
+
+That document covers NED and WJ phasing only and is unaffected by
+this addition.
 
 Dependencies: NED Phase 1 (entity IDs and generative tier), WJ Phase 3
 (`recordLoreDiscovery` and the contradiction surface), and Pacing
