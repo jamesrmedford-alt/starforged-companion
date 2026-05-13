@@ -104,7 +104,9 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const matchedIds        = new Set(options?.matchedEntityIds ?? []);
   const currentLocationId = options?.currentLocationId ?? null;
   if (currentLocationId) matchedIds.add(currentLocationId);
-  const narration         = (options?.playerNarration ?? '').toLowerCase();
+  // Sanitize the narration before substring-matching free-text subjects so
+  // stray HTML from chat enrichment never produces false matches (see PR #94).
+  const narration         = sanitizePlayerText(options?.playerNarration ?? '').toLowerCase();
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
 
@@ -763,6 +765,48 @@ export function buildCampaignRecapUserMessage(chronicleEntries) {
 }
 
 /**
+ * Strip HTML markup and decode HTML entities. Preserves whitespace and
+ * paragraph breaks — used for multi-paragraph context where line breaks
+ * carry meaning (e.g. the joined recent-narration window).
+ */
+export function stripHtml(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    // Collapse runs of horizontal whitespace, but keep newlines so
+    // paragraph structure survives.
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * Sanitize text that arrived as a Foundry chat message's content before
+ * it reaches the narrator's user message. Foundry's chat enricher, the
+ * formatting toolbar, and pasted rich text can introduce HTML tags (and
+ * entities like `&nbsp;` / `&amp;`) into `message.content`; without
+ * sanitization the tags arrive verbatim in `PLAYER NARRATION` and the
+ * model has been observed riffing on them — e.g. "you speak the HTML
+ * aloud" — instead of treating them as out-of-fiction markup.
+ *
+ * Player input is treated as a single utterance — newlines are flattened
+ * to spaces. For multi-paragraph context preservation use `stripHtml`
+ * instead. Exported for tests.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function sanitizePlayerText(text) {
+  return stripHtml(text).replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Build the user message for a scene interrogation call.
  * This is uncached — it changes every call with the player's question.
  *
@@ -774,11 +818,12 @@ export function buildCampaignRecapUserMessage(chronicleEntries) {
 export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
   const parts = [];
 
-  if (recentContext?.trim()) {
-    parts.push(`## RECENT SCENE\n\n${recentContext.trim()}`);
+  const cleanedRecent = stripHtml(recentContext).trim();
+  if (cleanedRecent) {
+    parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER QUESTION\n\n"${question.trim()}"`);
+  parts.push(`## PLAYER QUESTION\n\n"${sanitizePlayerText(question)}"`);
 
   parts.push(
     `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
@@ -808,11 +853,12 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
 export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove) {
   const parts = [];
 
-  if (recentContext?.trim()) {
-    parts.push(`## RECENT SCENE\n\n${recentContext.trim()}`);
+  const cleanedRecent = stripHtml(recentContext).trim();
+  if (cleanedRecent) {
+    parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER NARRATION\n\n"${(playerText ?? '').trim()}"`);
+  parts.push(`## PLAYER NARRATION\n\n"${sanitizePlayerText(playerText ?? '')}"`);
 
   if (suggestedMove) {
     parts.push(
@@ -860,8 +906,9 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
-  if (playerNarration?.trim()) {
-    parts.push(`## PLAYER NARRATION\n\n"${playerNarration.trim()}"`);
+  const cleanedPlayerNarration = sanitizePlayerText(playerNarration);
+  if (cleanedPlayerNarration) {
+    parts.push(`## PLAYER NARRATION\n\n"${cleanedPlayerNarration}"`);
   }
 
   parts.push(

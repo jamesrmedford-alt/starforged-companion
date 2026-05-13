@@ -395,6 +395,13 @@ export async function postSessionRecap(campaignState, sessionId = null) {
           <div class="sf-recap-empty">No narrated moves found for this session.</div>
         </div>
       `.trim(),
+      flags: {
+        [MODULE_ID]: {
+          recapCard:    true,
+          recapType:    'session',
+          recapEmpty:   true,
+        },
+      },
     });
   }
 
@@ -525,6 +532,13 @@ export async function postCampaignRecap(campaignState, options = {}) {
             <div class="sf-recap-empty">No campaign history available yet. Play some sessions first!</div>
           </div>
         `.trim(),
+        flags: {
+          [MODULE_ID]: {
+            recapCard:    true,
+            recapType:    'campaign',
+            recapEmpty:   true,
+          },
+        },
       });
     }
     return '';
