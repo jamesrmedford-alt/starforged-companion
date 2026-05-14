@@ -82,6 +82,32 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### RECAP-002 — Campaign recap card "↻ Refresh" button did nothing ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Every campaign recap card the GM saw rendered a "↻ Refresh"
+button — but clicking it did nothing. No console error, no toast, no API call.
+
+**Root cause:** The button was added to the recap card HTML in
+`src/narration/narrator.js:547` but no `Hooks.on("renderChatMessage")` was
+ever registered to wire it. Same defect class as ENTITY-001 (the chat-card
+hint that pointed at a non-existent panel flow); same fix pattern as the
+existing `setupCard` "Set World Truths" handler at `src/index.js:1379`.
+
+**Fix:** Added a second `renderChatMessage` hook in `src/index.js` that
+matches `recapCard` + `recapType: "campaign"`, finds the `[data-action=
+"refreshCampaignRecap"]` button, gates on `game.user.isGM`, disables the
+button while in flight, and calls `postCampaignRecap(state, { forceRefresh:
+true })` (the same regen path `!recap` uses). Errors surface as a warn
+toast.
+
+**Coverage:** New Quench batch `starforged-companion.chatCardActions`
+includes a regression test that posts a recap card, clicks the Refresh
+button, and asserts a fresh recap card lands in chat.
+
+---
+
 ### ENTITY-001 — Entity panel always empty; draft cards had no Confirm UI ✓
 
 **Resolved in:** v1.2.6 (branch `claude/fix-entity-panel-display-0kjF5`)

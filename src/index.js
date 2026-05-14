@@ -1384,6 +1384,38 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
+ * renderChatMessage — wire the "↻ Refresh" button on campaign recap cards.
+ * The button is rendered for the GM on every non-empty campaign recap card
+ * (`src/narration/narrator.js` postCampaignRecap). Forces a regeneration that
+ * bypasses the chronicle-length cache.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  const f = message.flags?.[MODULE_ID];
+  if (!f?.recapCard || f.recapType !== "campaign") return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  const btn = root?.querySelector('[data-action="refreshCampaignRecap"]');
+  if (!btn) return;
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!game.user?.isGM) {
+      ui?.notifications?.warn("Refreshing the campaign recap is GM-only.");
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const fresh = game.settings.get(MODULE_ID, "campaignState");
+      await postCampaignRecap(fresh, { forceRefresh: true });
+    } catch (err) {
+      console.error(`${MODULE_ID} | refreshCampaignRecap failed:`, err);
+      ui?.notifications?.warn("Campaign recap refresh failed. Check console.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+
+/**
  * createJournalEntry — capture worldTruthsJournalId the moment the system's
  * "Setting Truths" journal is created, before the page and its content exist.
  *
