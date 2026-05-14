@@ -3604,9 +3604,9 @@ function registerPacingTests(quench) {
   // PACED DETECTION — narrator-suggestion-loop remediation §C
   //
   // Covers the new Group C path: when narratePacedInput posts a paced narration
-  // card, schedulePacedDetection fires runPacedDetection on Balanced + Chaotic
-  // (with a 2 s async delay) and short-circuits on Lawful. Drafts route through
-  // the GM-only review card with source: "paced_narrative" and never auto-create.
+  // card, schedulePacedDetection fires runPacedDetection (with a 2 s async
+  // delay). Drafts route through the GM-only review card with
+  // source: "paced_narrative" and never auto-create.
   // ─────────────────────────────────────────────────────────────────────────────
 
   quench.registerBatch(
@@ -3676,7 +3676,7 @@ function registerPacingTests(quench) {
           .filter(m => !before.has(m.id));
       }
 
-      describe("runPacedDetection — Balanced posture", function () {
+      describe("runPacedDetection — runs regardless of mischief dial", function () {
         it("creates a draft entity card with source: 'paced_narrative' and no auto-create", async function () {
           this.timeout(20000);
           if (!game.user.isGM) { this.skip(); return; }
@@ -3733,31 +3733,6 @@ function registerPacingTests(quench) {
             assert.isTrue(beforeConnectionIds.has(id),
               `paced detection unexpectedly auto-created connection ${id}`);
           }
-        });
-      });
-
-      describe("schedulePacedDetection — Lawful posture short-circuits", function () {
-        it("does not post a draft card on Lawful even when entities would have been detected", async function () {
-          this.timeout(8000);
-          if (!game.user.isGM) { this.skip(); return; }
-
-          const { schedulePacedDetection } = await import(`${MODULE_PATH}/narration/narrator.js`);
-          const beforeIds = snapshotDraftCardIds();
-
-          // No fetch stub is needed — on Lawful, runCombinedDetectionPass is
-          // never called. If it were called, the absence of a stub would
-          // produce a network error and a different failure mode.
-          const state = game.settings.get(MODULE, "campaignState") ?? {};
-          schedulePacedDetection("Maren scans the bay.", state, "lawful");
-
-          // The schedule uses setTimeout(2000) on the Balanced/Chaotic path.
-          // Wait longer than that to confirm nothing fires.
-          await new Promise(r => setTimeout(r, 2500));
-
-          const newCards = newDraftCardsSince(beforeIds);
-          newCards.forEach(c => createdMessageIds.push(c.id));
-          assert.equal(newCards.length, 0,
-            "Lawful posture should not produce paced-detection draft cards");
         });
       });
 

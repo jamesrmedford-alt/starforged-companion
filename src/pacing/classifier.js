@@ -32,74 +32,6 @@ const PACING_CATEGORY_VALUES = new Set(PACING_CATEGORIES);
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MISCHIEF POSTURE — narrator suggestion-loop remediation §B2
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Classifier postures, indexed by mischief-dial value. The mischief dial
- * governs how aggressively the module interprets ambiguous player
- * narration; this maps each dial position to an explicit posture for the
- * upstream classifier. The posture is rendered verbatim into the system
- * prompt so the model knows which interpretation stance to take.
- *
- * The classifier accepts both the settingsPanel.js values
- * ("lawful" | "balanced" | "chaotic") and the internal aliases
- * ("serious" | "balanced" | "chaotic"). Unknown values fall back to
- * "balanced".
- */
-const POSTURE_KEYS = Object.freeze(["lawful", "balanced", "chaotic"]);
-
-const POSTURE_BLOCKS = {
-  lawful:
-    `The mischief dial is set to LAWFUL. Take a strict interpretation posture.
-Require an explicit verbal intent marker — "I try to", "I attempt to",
-"I roll to", "I want to", or a clear declaration of stakes — before
-classifying as MOVE. Without such a marker, prefer
-NARRATIVE_WITH_MOVE_AVAILABLE and nominate the most likely move.
-This posture preserves low-friction-to-narrative play for tables that
-want the GM equivalent to ask for a roll explicitly.`,
-
-  balanced:
-    `The mischief dial is set to BALANCED (default). Read the player's
-commitment from what they describe, not from whether they used a
-specific verb. If the narration depicts the character acting with
-intent toward an outcome — pressing for information, taking a risk,
-attempting something with stakes — classify as MOVE. Reserve
-NARRATIVE_WITH_MOVE_AVAILABLE for genuine ambiguity: scene-setting,
-exploration without clear pressure, dialogue without a push, or
-moments where the player is describing reaction rather than action.`,
-
-  chaotic:
-    `The mischief dial is set to CHAOTIC. Infer commitment aggressively.
-When the narration could plausibly support a move, classify as MOVE
-even without a verbal intent marker. Reserve
-NARRATIVE_WITH_MOVE_AVAILABLE only for unambiguous atmosphere — pure
-scene-setting, character thought without external action, or
-descriptive prose with no actor pressure. The bias is toward
-mechanical engagement; assume the player wants the roll if the
-fiction supports one.`,
-};
-
-/**
- * Normalise the mischief-dial value before posture lookup. Accepts the
- * settingsPanel.js spellings ("lawful"|"balanced"|"chaotic") and the
- * internal aliases ("serious"|"balanced"|"chaotic"); anything else
- * resolves to "balanced".
- *
- * Exported for the unit test suite.
- *
- * @param {string} dial
- * @returns {"lawful"|"balanced"|"chaotic"}
- */
-export function normalizeMischiefForClassifier(dial) {
-  const v = typeof dial === "string" ? dial.toLowerCase().trim() : "";
-  if (v === "lawful" || v === "serious") return "lawful";
-  if (v === "chaotic") return "chaotic";
-  return "balanced";
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
 // DIAL MATH
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -124,11 +56,13 @@ export function effectiveDial(category, pacingConfig) {
 // SYSTEM PROMPT — cacheable
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(posture = "balanced") {
-  const postureKey   = POSTURE_KEYS.includes(posture) ? posture : "balanced";
-  const postureBlock = POSTURE_BLOCKS[postureKey];
-
+function buildSystemPrompt() {
   return `You are the pacing pre-classifier for an Ironsworn: Starforged tabletop RPG companion. Your sole job is to decide whether a player's input should trigger a Starforged move, be handled as pure narration with no roll, or be handled as narration with a single inline move suggestion.
+
+You decide only IF a move is invoked. You do NOT decide which move the player
+ultimately rolls or how strictly it is interpreted — a separate downstream
+stage handles that. Do not second-guess yourself on tone or strictness; rely
+on the dial values below.
 
 ## OUTPUT
 
@@ -142,24 +76,29 @@ Return ONLY a valid JSON object — no preamble, no markdown, no text outside th
   "reasoning":     "<one short sentence — internal, not shown to the player>"
 }
 
-## INTERPRETATION POSTURE (mischief dial)
-
-${postureBlock}
-
-This posture overrides any default inference guidance below. When the posture
-and the dial priors conflict, the posture wins.
-
 ## DECISION GUIDANCE
 
 A Starforged move triggers from FICTION + UNCERTAINTY. If the outcome is not in
 real doubt, or the action is too small to matter mechanically, prefer NARRATIVE.
 
-The pacing dials below indicate, per category, how move-leaning the table wants
-this scene type to be on a 0–10 scale. Treat the dial as a strong prior, not an
-absolute. 10 means almost every input should be a move. 0 means almost none.
+The pacing dials below are the primary signal and override your default
+caution. Treat the dial for the input's category as a strong prior on a 0–10
+scale:
+
+  - 9–10: classify as MOVE unless the input is pure atmosphere, internal
+          thought, or descriptive scene-setting with no actor pressure.
+  - 6–8:  classify as MOVE when the narration depicts the character acting
+          with intent toward an outcome — pressing for information, taking a
+          risk, attempting something with stakes. Otherwise prefer
+          NARRATIVE_WITH_MOVE_AVAILABLE and nominate the most likely move.
+  - 3–5:  classify as NARRATIVE_WITH_MOVE_AVAILABLE for borderline input;
+          reserve MOVE for clear, explicit attempts with stakes.
+  - 0–2:  classify as NARRATIVE unless the player has signalled explicit
+          intent ("I try to", "I attempt", "I roll to") or stakes are
+          unambiguous.
 
 Read commitment from what the player describes, not from whether they used a
-specific verb. The posture above tells you how loosely or strictly to read it.
+specific verb.
 
 If recent move density in the scene is high, lean toward NARRATIVE to allow
 pacing recovery — don't stack rolls.
@@ -231,17 +170,10 @@ FATE
  * @param {Object|null} args.character
  * @param {{count: number, window: number}} args.recentMoveDensity
  * @param {{dials: Object, sceneOverride?: {modifier:number,label:string}|null}} args.pacingConfig
- * @param {string} [args.mischiefDial]  — "lawful" | "balanced" | "chaotic"
- *   (also accepts the internal alias "serious" for "lawful"). Selects the
- *   classifier posture rendered into the system prompt. Defaults to
- *   "balanced". The prompt cache key is keyed on this value via the system
- *   prompt body, so different postures get distinct cache entries; switching
- *   the dial costs one cache miss.
- * @returns {{systemPrompt: string, userMessage: string, effective: Object, posture: string}}
+ * @returns {{systemPrompt: string, userMessage: string, effective: Object}}
  */
 export function buildClassifierContext({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  mischiefDial,
 }) {
   const effective = {};
   for (const cat of PACING_CATEGORIES) {
@@ -282,13 +214,10 @@ export function buildClassifierContext({
     `"${(playerText ?? "").trim()}"`,
   ];
 
-  const posture = normalizeMischiefForClassifier(mischiefDial);
-
   return {
-    systemPrompt: buildSystemPrompt(posture),
+    systemPrompt: buildSystemPrompt(),
     userMessage:  parts.join("\n"),
     effective,
-    posture,
   };
 }
 
@@ -323,14 +252,13 @@ export function buildClassifierContext({
  */
 export async function classifyInput({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  apiKey, model, mischiefDial,
+  apiKey, model,
 }) {
   if (!apiKey)             return fallbackDecision("missing api key");
   if (!playerText?.trim()) return fallbackDecision("empty input");
 
   const { systemPrompt, userMessage } = buildClassifierContext({
     playerText, campaignState, character, recentMoveDensity, pacingConfig,
-    mischiefDial,
   });
 
   try {
