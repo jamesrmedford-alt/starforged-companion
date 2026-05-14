@@ -3,7 +3,7 @@
 
 **Status:** 📋 PLANNED
 **Priority:** TBD (no current blocker; opportunistic structural cleanup)
-**Estimated Claude Code sessions:** 4 (3 for the migration, 1 for the sector-flag dedup)
+**Estimated Claude Code sessions:** 3
 **Dependencies:** Character Management (✅), Ironsworn API (✅), Narrator Entity Discovery (✅), World Journal (✅), Quench Integration Tests (✅)
 **Pre-requisite:** None — entity reads/writes are concentrated in a small surface (`src/entities/*.js`, `src/ui/entityPanel.js`, `src/context/{assembler,relevanceResolver}.js`)
 
@@ -222,7 +222,24 @@ Same rule applies to planets and POI locations when they're created via the sect
 
 The structural fields (locationType, population, authority) are pulled from the Actor at render time, so the overview stays current if the GM edits the settlement. The per-settlement pages embedded by the current code are not regenerated.
 
-A "Refresh sector overview" action lands on the sector-record journal as a header button — re-renders the overview from current Actor data. Implementation note: `createSectorJournal` is the natural call site for the initial render; a hook on `updateActor` (only for actors in this sector) re-renders the overview if names or locationType change, debounced ~500 ms.
+A "Refresh sector overview" action lands on the sector-record journal as a header button — re-renders the overview from current Actor data. Implementation note: `createSectorJournal` is the natural call site for the initial render; a hook on `updateActor` (only for actors in this sector) re-renders the overview, debounced ~500 ms.
+
+The hook fires on **every** `updateActor` for a sector-resident Actor, regardless of source — Foundry sidebar drag-rename, system sheet edit, entity-panel mutation handlers, the migrator's writes, world import, or a third-party module's `actor.update()`. The debounce coalesces bursts (e.g. the migrator's bulk pass), and a key-diff guard inside the hook short-circuits when none of the rendered fields actually changed:
+
+```js
+const RENDERED_KEYS = new Set([
+  "name",
+  "system.subtype",
+  `flags.${MODULE}.settlement.locationType`,
+  `flags.${MODULE}.settlement.population`,
+  `flags.${MODULE}.settlement.authority`,
+]);
+function diffTouchesOverview(changes) {
+  return [...RENDERED_KEYS].some(k => foundry.utils.hasProperty(changes, k));
+}
+```
+
+`updateActor`'s second argument is the `changes` diff Foundry actually applied, so meter ticks, debility flips, and the dozens of other fields the sheet writes never trigger a re-render. Only edits that affect what the overview displays will.
 
 ---
 
@@ -421,21 +438,18 @@ After implementing in a Foundry session:
 - Quench `entityActorMigration` batch lands with just the ship cases.
 - Confirm full test suite green; manual verification of one created ship and one migrated ship.
 
-**Phase 3 — Location-family migration (1 session)**
+**Phase 3 — Location-family migration + sector-flag dedup (1 session)**
 - Rewrite `planet.js`, `location.js`, `settlement.js` together (same target Actor type — natural batch).
-- Migrator extended to cover all three subtypes.
-- Quench batch extended; subtype disambiguation tested.
-- `!migrate-entities --cleanup` shipped.
-
-**Phase 4 — Sector-flag dedup + sector-record overview rewrite (1 session)**
 - `sectorGenerator.js`: drop the per-settlement embedded pages from `createSectorJournal`; rewrite the overview's settlements list as `@UUID[...]` document links; delete `saveSectorToJournal`.
 - `storeSector` (the `campaignState.sectors[]` push) emits slim settlement entries per §3.5.
 - Audit and update `src/context/assembler.js` and `src/narration/narrator.js` active-sector reads (§4.8).
 - Quench tests at `tests/integration/quench.js:776/781` switch to reading `campaignState.sectors[]`.
-- Migrator gains steps 4–6 (slim sector array, rewrite sector-record overview, delete orphan `Starforged Sectors` journal). The `updateActor` debounced hook for overview re-render lands here.
-- Quench `entityActorMigration` batch picks up two new cases: "fresh sector emits slim settlement entries" and "migrator slims a legacy sector and rewrites its overview".
+- Migrator covers all three subtypes plus the steps 4–6 dedup work (slim sector array, rewrite sector-record overview, delete orphan `Starforged Sectors` journal).
+- The `updateActor` debounced hook for overview re-render lands here.
+- Quench `entityActorMigration` batch is extended with subtype-disambiguation tests, "fresh sector emits slim settlement entries", and "migrator slims a legacy sector and rewrites its overview".
+- `!migrate-entities --cleanup` shipped.
 
-If any phase blows out, drop the last phase and ship the prior. Each phase leaves the module fully working. Phases 1–3 are correct without Phase 4 (the four storage layers continue to exist, just with the Actor as the new mutable source); Phase 4 is purely deduplication.
+If any phase blows out, drop the last phase and ship the prior. Each phase leaves the module fully working.
 
 ---
 
@@ -463,7 +477,7 @@ If any phase blows out, drop the last phase and ship the prior. Each phase leave
 | Sector folder name drift — GM renames a sector after generation | Folder names are looked up by sector id, not name, via `campaignState.sectors[]`. If the sector entry was renamed the folder is renamed via `folder.update({ name })` lazily on next entity creation. A `!migrate-entities --regroup` mode is reserved for post-MVP to consolidate orphans |
 | Two `Sectors` folders in two sidebars look confusing to users | Documented in the in-game help page (Settings Reference → Folder Layout). They're typed differently and Foundry shows them in different tabs, so no actual collision |
 | Slimming `campaignState.sectors[]` could break a reader that pulls settlement-instance fields from the array entry | §4.8 lists the three known readers (`!sector list`, assembler active-sector block, narrator active-sector block). Audit pass during Phase 3; add a unit test that imports each and asserts it only touches sector-level keys |
-| Sector overview re-render hook (debounced `updateActor`) could fire on every meter tick if a settlement Actor has meters | Only `updateActor` events that change `name`, `system.subtype`, or `flags[MODULE].settlement.{locationType,population,authority}` should trigger a re-render. Guard the hook with a key diff before calling render |
+| Sector overview re-render hook (debounced `updateActor`) could fire on every meter tick if a settlement Actor has meters | The hook listens to every `updateActor` regardless of source (sidebar drag-rename, sheet edit, entity-panel handler, migrator, third-party `actor.update()`) — but a `RENDERED_KEYS` diff guard short-circuits unless the diff touches `name`, `system.subtype`, or one of the displayed flag fields. See §3.6 for the guard. ~500 ms debounce coalesces migrator bursts |
 | Migrator step 4 (slim sectors array) could lose data if step 3 (Actor creation) silently skipped an entity | Step 4 runs only over sector entries whose corresponding settlement has a successful Actor (matched by `_id`). Entries without a matching Actor are left unmodified and reported in the summary card under "skipped — orphan sector entry" |
 | Document links in the sector overview break if a settlement Actor is later deleted by the GM | This is acceptable — Foundry's UUID renderer handles broken links gracefully (renders as "Unknown Document"). A future polish pass could add a hook to auto-prune dead links during the debounced re-render |
 | Sector generator (`src/sectors/sectorGenerator.js`) calls `createSettlement` inside `storeSector`'s batched-write block | Confirm the batched-write flag (`persist: false`) still works when the underlying create is an Actor. The existing `persist` short-circuit in `createSettlement` only governs the campaign-state write, not the entity create — should port unchanged |
