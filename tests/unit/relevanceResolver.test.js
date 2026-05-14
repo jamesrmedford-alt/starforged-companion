@@ -357,7 +357,10 @@ describe("parseClassificationJson", () => {
 
 describe("resolveRelevance — default collectAllEntities path", () => {
   const originalGet = global.game.journal.get;
-  afterEach(() => { global.game.journal.get = originalGet; });
+  afterEach(() => {
+    global.game.journal.get = originalGet;
+    global.game.actors._reset();
+  });
 
   function stubJournal(entries) {
     global.game.journal.get = (id) => {
@@ -367,21 +370,30 @@ describe("resolveRelevance — default collectAllEntities path", () => {
     };
   }
 
+  function stubShip(id, ship) {
+    // Ships are actor-hosted post Phase 2 of the Entity → Actor Migration;
+    // the relevance resolver pulls them via game.actors, not game.journal.
+    global.game.actors._set(id, global.makeTestActor({
+      id, type: "starship", name: ship.name,
+      flags: { "starforged-companion": { ship } },
+    }));
+  }
+
   it("scans every configured entity collection in the campaign state", async () => {
     stubJournal({
       "j-conn":  { connection: { _id: "c1", name: "Sable" } },
       "j-set":   { settlement: { _id: "s1", name: "Bleakhold" } },
       "j-fac":   { faction:    { _id: "f1", name: "Pelican Confederacy" } },
-      "j-ship":  { ship:       { _id: "sh1", name: "Ironfold" } },
       "j-plan":  { planet:     { _id: "p1", name: "Cinderworld" } },
       "j-loc":   { location:   { _id: "l1", name: "Glasspike Ruin" } },
       "j-creat": { creature:   { _id: "cr1", name: "Forgespawn Alpha" } },
     });
+    stubShip("a-ship", { _id: "sh1", name: "Ironfold" });
     const campaign = {
       connectionIds: ["j-conn"],
       settlementIds: ["j-set"],
       factionIds:    ["j-fac"],
-      shipIds:       ["j-ship"],
+      shipIds:       ["a-ship"],
       planetIds:     ["j-plan"],
       locationIds:   ["j-loc"],
       creatureIds:   ["j-creat"],
@@ -397,7 +409,7 @@ describe("resolveRelevance — default collectAllEntities path", () => {
     expect(result.matchedNames.sort()).toEqual(["Bleakhold", "Ironfold", "Sable"]);
     expect(result.entityIds).toContain("j-conn");
     expect(result.entityIds).toContain("j-set");
-    expect(result.entityIds).toContain("j-ship");
+    expect(result.entityIds).toContain("a-ship");
   });
 
   it("ignores journal IDs that don't resolve to a record", async () => {
