@@ -128,21 +128,44 @@ reference, settings documentation, troubleshooting guide, and changelog.
 
 ## Cost and API usage
 
-Estimated per 3-hour session (~20 moves) with prompt caching:
+Estimated per 2-hour session with prompt caching, based on real session
+telemetry (~60 chat inputs / hour observed in v1.2.7 play, of which roughly
+40 % resolve as a move and 60 % stay as narration under default pacing
+dials):
 
 | Configuration | Per session | Per year (50 sessions) |
 |---------------|-------------|------------------------|
-| Haiku interpretation + Haiku narration | ~$0.02 | ~$1.15 |
-| Haiku interpretation + Sonnet narration | ~$0.08 | ~$4.00 |
+| Haiku interpretation + Haiku narration | ~$0.20 | ~$10 |
+| Haiku interpretation + Sonnet narration | ~$0.30 | ~$15 |
 | Portrait generation (FLUX.2 Pro via OpenRouter) | a few cents each | Infrequent |
 | Sector background art (FLUX.2 Pro via OpenRouter) | a few cents per sector | ~3–5 sectors/campaign |
 
-Prompt caching significantly reduces interpretation and narration costs within
-a session. Both Haiku and Sonnet narration are practical for regular play.
+Prompt caching brings the cached input rate to ~10 % of the cold rate, and
+every long-lived prompt in the module (narrator system prompt, pacing
+classifier system prompt, chronicle writer system prompt) is cached.
 
 The image model is configurable via the `openRouterImageModel` setting —
 swap to a cheaper FLUX variant (`flux.2-klein`, `flux.2-flex`) or a different
 provider's image model on OpenRouter at any time.
+
+### Per-input breakdown
+
+Unlike the move pipeline (which only fires on a roll), several components in
+v1.2.7 run on **every chat input** — that's the dominant cost driver, not move
+count. Per-call figures with caching:
+
+| Component | When it fires | Per call |
+|---|---|---|
+| Pacing classifier (Haiku) | every undecorated input | ~$0.0006 |
+| Narrator (Haiku) | every input | ~$0.0008 |
+| Narrator (Sonnet) | every input | ~$0.003 |
+| Chronicle writer (Haiku) | every input (GM client only) | ~$0.0006 |
+| Move interpreter (Haiku) | only on MOVE | ~$0.001 |
+| Paced detection (Haiku) | only on non-MOVE | ~$0.001 |
+
+A 2-hour session at the observed ~60-input rate burns roughly **170 K tokens**
+in aggregate across all calls — pacing classifier ~22 K, narrator ~90 K,
+paced detection ~29 K, chronicle writer ~17 K, move interpreter ~14 K.
 
 ### Context packet size
 
@@ -151,9 +174,9 @@ Claude API, regardless of move type. This covers safety configuration, narrator
 permissions, world truths, entity cards for entities present in the scene,
 active progress tracks, and character state.
 
-At current Sonnet pricing this is ~$0.004 per narration input. Output
-(the narration itself) adds ~$0.003–$0.006 depending on length setting.
-Total per move: ~$0.007–$0.010 on Sonnet. Haiku is approximately 10× cheaper.
+At current Sonnet pricing this is ~$0.0004 per narration input with caching.
+Output (the narration itself) adds ~$0.002–$0.005 depending on length setting.
+Total per narration: ~$0.003 on Sonnet, ~$0.0008 on Haiku.
 
 The budget is defined in `src/schemas.js` (`ContextPacketSchema.tokenBudget`).
 
