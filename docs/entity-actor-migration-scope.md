@@ -143,6 +143,53 @@ function resolveTypeKey(actor) {
 
 The subtype values live in `flags[MODULE_ID][typeKey]` *also* (already there in `data.type` for ship/planet/location and `data.location` for settlement); `system.subtype` becomes the authoritative source. The flag duplicates are kept readable so the migrator and the existing entity records share field names — single subsequent cleanup removes the legacy field once the migrator has shipped.
 
+### 3.4 Folder layout
+
+Folders in Foundry are typed (Actor folders hold Actors, JournalEntry folders hold JournalEntries) — parallel trees per sidebar are required. The migration creates these structures on demand:
+
+**Actors sidebar:**
+```
+Starships/                  ← all migrated ships (cross-sector — ships travel)
+NPCs/                       ← reserved for future connection migration; created empty
+PCs/                        ← player characters (foundry-ironsworn manages these;
+                              we adopt the folder if one exists, otherwise create it
+                              and tag it with flags[MODULE].pcRoot so the system
+                              and the module don't fight over it)
+Sectors/
+  <Sector Name>/
+    Settlements/            ← settlements scoped to this sector (Actors)
+    Locations/              ← points-of-interest scoped to this sector (Actors)
+    Planets/                ← planets scoped to this sector (Actors)
+```
+
+**JournalEntry sidebar (unchanged top-level "Sectors", but newly hierarchical):**
+```
+Sectors/
+  <Sector Name>/
+    Sector Record           ← the existing sector-wrapper JournalEntry
+                              (moved from the flat Sectors folder during migration)
+Starforged Entities/        ← existing flat folder; continues to hold the three
+                              types that remain journal-backed (connection,
+                              faction, creature)
+```
+
+The Actor-side `Sectors / <Sector Name> /` tree is created lazily — `getOrCreateSectorActorFolder(sectorId)` walks the tree and creates only the missing nodes. Same for the type-plural subfolders (`Settlements`, `Locations`, `Planets`) — they're created when the first entity of that type lands in the sector.
+
+For entities with no `sectorId` (the entity was created via the narrator without a sector context, e.g. an early-campaign "ghost ship" with no charted home), the Actor lands directly under the top-level `Starships/` / `NPCs/` / etc. — no per-sector subfolder is forced. A later `!migrate-entities --regroup` pass (post-MVP) can move orphans into the right sector once the GM tags them.
+
+**Folder helpers** — replace the single `src/entities/folder.js` with:
+
+| Helper | Returns | Used by |
+|---|---|---|
+| `getOrCreateJournalEntitiesFolder()` | id of `Starforged Entities` (existing) | connection/faction/creature creators |
+| `getOrCreateActorFolder('Starships')` | id of top-level `Starships` | ship creator |
+| `getOrCreateActorFolder('NPCs')` | id (created empty for future migration) | none yet |
+| `getOrCreateActorFolder('PCs')` | id (adopt or create) | not needed at runtime; one-shot during migrator |
+| `getOrCreateSectorActorFolder(sectorId, typePlural)` | id of `Sectors / <name> / <typePlural>` | planet/location/settlement creators |
+| `getOrCreateSectorJournalFolder(sectorId)` | id of `Sectors / <name>` (Journal type) | `createSectorJournal` and the migrator |
+
+All helpers cache their results in a `Map<key, folderId>` and re-resolve if the cached id is no longer a valid folder (the user might delete a folder by hand).
+
 ---
 
 ## 4. Surface changes
@@ -174,9 +221,34 @@ campaignState[<typeKey>Ids].push(actor.id);
 
 Reads (`getShip`, `getPlanet`, etc.) replace `game.journal.get(id) → page.flags...` with `game.actors.get(id) → actor.flags...`. Update helpers (`updateShip`, `sufferDamage`, `repairIntegrity`, etc.) call `actor.update({ system: {...}, flags: {...} })` and split native-side fields (battered/cursed) from flag-side fields.
 
-### 4.2 Folder helper
+### 4.2 Folder helpers
 
-`src/entities/folders.js` (or wherever `getOrCreateEntitiesFolder` currently lives — confirm in the read-pass) gains a sibling `getOrCreateActorsFolder()` that scoped under the existing Companion-managed folder structure but for Actors. The entity folder for connection/faction/creature is kept; they remain JournalEntries.
+`src/entities/folder.js` is extended (or split — implementer's call) to expose the six helpers from §3.4. Internally the file maintains a typed cache:
+
+```js
+const _cache = new Map();   // key: `${type}:${path-joined-by-/}`
+
+async function ensurePath(type, segments) {
+  let parentId = null;
+  for (const name of segments) {
+    const key = `${type}:${segments.slice(0, i+1).join('/')}`;
+    let folder = _cache.get(key) && game.folders?.get(_cache.get(key));
+    if (!folder) {
+      folder = game.folders?.find(f => f.type === type && f.name === name && f.folder === parentId);
+    }
+    if (!folder) {
+      folder = await Folder.create({ name, type, folder: parentId });
+    }
+    _cache.set(key, folder.id);
+    parentId = folder.id;
+  }
+  return parentId;
+}
+```
+
+The sector-name segment is looked up at call time via `game.actors.get(...).name` (for `getOrCreateSectorJournalFolder`) or from the matching sector entry in `campaignState.sectors[]`. If the sector hasn't been generated yet (rare — most flows create sectors first), the helper falls back to the legacy flat top-level folder for that type and emits a single console warning.
+
+The current `getOrCreateEntitiesFolder` export is preserved under the new name `getOrCreateJournalEntitiesFolder` so connection/faction/creature creators don't churn their imports beyond a rename.
 
 ### 4.3 Entity panel
 
@@ -212,7 +284,14 @@ Reads (`getShip`, `getPlanet`, etc.) replace `game.journal.get(id) → page.flag
 
 ### 4.7 Sector generator
 
-`src/sectors/sectorGenerator.js` calls `createSettlement` (line 230). Once `createSettlement` returns an Actor instead of a JournalEntry, the call site only needs `entry.id` → `actor.id` rename. Confirm during implementation.
+`src/sectors/sectorGenerator.js`:
+
+- `createSectorJournal` (line 444) currently lands the sector-record JournalEntry directly in the flat `Sectors` folder. Switch the `folder:` argument to `await getOrCreateSectorJournalFolder(sector.id)` so each sector gets its own per-sector journal subfolder. The sector-record JournalEntry lives inside that subfolder.
+- `createSettlement` call (line 230) passes through unchanged in signature, but the underlying creator now uses `getOrCreateSectorActorFolder(state.activeSectorId, 'Settlements')`. The settlement Actor needs to know which sector it belongs to — currently `createSettlement` doesn't take a `sectorId`. Add an optional `{ sectorId }` parameter (defaulting to `campaignState.activeSectorId`) and stash it on `flags[MODULE].settlement.sectorId` for future folder regroups.
+- Same `{ sectorId }` parameter added to `createPlanet` and `createLocation`. Existing call sites in `sectorGenerator.js`, `routeEntityDrafts`, and the chat-card Confirm path get the parameter threaded through.
+- `entry.id` → `actor.id` references inside `sectorGenerator.js` (lines around 230 and 256) renamed where they capture the returned document.
+
+The migrator (§5) is responsible for moving existing sector-record JournalEntries from the flat `Sectors` folder into per-sector subfolders the first time it runs.
 
 ### 4.8 Campaign state
 
@@ -226,13 +305,18 @@ Reads (`getShip`, `getPlanet`, etc.) replace `game.journal.get(id) → page.flag
 
 `!migrate-entities` chat command, GM-only. Steps:
 
-1. Enumerate every JournalEntry under the existing entities folder.
-2. For each, read `page.flags[MODULE_ID][type]`. If `type ∈ {ship, planet, location, settlement}`:
-   1. Create the equivalent Actor (per §3.2 mapping). Preserve `flags[MODULE_ID].<type>._id` (the existing custom GUID) so context-card cross-references survive.
-   2. Replace the campaignState ID list entry (`shipIds[]`, etc.) with the new actor ID. Replace `currentLocationId` if it points at this entry.
-   3. Mark the source JournalEntry with `flags[MODULE_ID].migrated = { toActorId, at }`. **Do not delete** in this pass — a deferred reaper command (`!migrate-entities --cleanup`) deletes documents that have been marked for >7 days, giving users time to bail out if anything is wrong.
-3. Report a summary chat card: counts per type, IDs migrated, IDs skipped (e.g. corrupt payloads), and any unresolved cross-references (`currentLocationId` pointing at a settlement that wasn't migrated).
-4. Idempotent — re-running skips entries already flagged `migrated`.
+1. **Folder scaffolding.** Ensure the top-level Actor folders exist (`Starships`, `NPCs`, `PCs`, `Sectors`) and the per-sector subfolder for every sector in `campaignState.sectors[]`. Lazy — only sectors that will receive at least one migrated entity get their subfolders created in this pass.
+2. **Move existing sector-record JournalEntries** into per-sector journal subfolders. Each `JournalEntry` with `flags[MODULE].sectorRecord === true` is reparented from the flat `Sectors` folder to `Sectors / <sector name> /`. The journal name keeps its existing `"<Sector name> — Sector Record"` form so chat-card links don't break.
+3. **Migrate each entity record.** Enumerate every JournalEntry under the `Starforged Entities` folder. For each, read `page.flags[MODULE_ID][type]`. If `type ∈ {ship, planet, location, settlement}`:
+   1. Determine the target folder via the `sectorId` field on the flag payload (or `campaignState.activeSectorId` if absent). Ship is always top-level `Starships`; planet/settlement/location use `Sectors / <sector name> / <type-plural>`.
+   2. Create the equivalent Actor (per §3.2 mapping). Preserve `flags[MODULE_ID].<type>._id` (the existing custom GUID) so context-card cross-references survive. Place under the resolved folder.
+   3. Replace the campaignState ID list entry (`shipIds[]`, etc.) with the new actor ID. Replace `currentLocationId` if it points at this entry.
+   4. Mark the source JournalEntry with `flags[MODULE_ID].migrated = { toActorId, at }`. **Do not delete** in this pass — a deferred reaper command (`!migrate-entities --cleanup`) deletes documents that have been marked for >7 days, giving users time to bail out if anything is wrong.
+4. **Adopt the PCs folder.** If `Actors / PCs` doesn't exist, create it and move every `actor.type === 'character'` Actor into it. If a different folder already groups characters (e.g. the ironsworn system has its own), leave them — only act if there's no existing grouping.
+5. **Report** a summary chat card: counts per type, IDs migrated, IDs skipped (e.g. corrupt payloads), sectors with folders created, and any unresolved cross-references (`currentLocationId` pointing at a settlement that wasn't migrated).
+6. Idempotent — re-running skips entries already flagged `migrated`, skips folders that already exist, and skips journal reparenting if the journal is already inside a per-sector subfolder.
+
+`!migrate-entities --cleanup` runs after the 7-day window: it walks JournalEntries with `flags[MODULE].migrated.at` older than 7 days and deletes them. The flat `Sectors` folder is auto-deleted only if empty after the cleanup pass.
 
 Migrator lives at `src/entities/migrator.js` and is registered as a chat command in `src/index.js` alongside the existing `!recap` / `!pace` etc. handlers.
 
@@ -316,7 +400,9 @@ If any phase blows out, drop the last phase and ship the prior. Each phase leave
 | `actor.system.subtype` constrained values | `vendor/foundry-ironsworn/src/module/actor/subtypes/location.ts:14` shows `subtype` as a plain `StringField` with `initial: 'star'` — no enum constraint. Safe |
 | Cross-references from journal-backed entities (e.g. `connection.history` referencing a settlement name) | All cross-references are by name or by the custom GUID `_id` (not by Foundry document ID). Migrator preserves `_id`, so these references resolve unchanged |
 | Quench tests that currently seed entities via `JournalEntry.create` directly (bypassing the creator) | Audit `src/integration/quench.js` during Phase 1; ensure all entity seeds route through the creators, not raw `JournalEntry.create` |
-| Folder organisation — Actors and JournalEntries don't share folders | Add `getOrCreateActorsFolder` under the Companion-managed folder; sidebar will show two folders ("Starforged Companion / Entities" for journal-backed, "Starforged Companion / Entities (Actors)" for actor-backed). Same prefix groups them visually |
+| Folder organisation — Actors and JournalEntries don't share folders (Foundry folders are typed) | Parallel trees per sidebar per §3.4: Journal-side keeps `Sectors / <name> /` for sector records and `Starforged Entities /` for the three remaining journal-backed types; Actor-side adds top-level `Starships / NPCs / PCs / Sectors /` with per-sector subfolders for migrated entities |
+| Sector folder name drift — GM renames a sector after generation | Folder names are looked up by sector id, not name, via `campaignState.sectors[]`. If the sector entry was renamed the folder is renamed via `folder.update({ name })` lazily on next entity creation. A `!migrate-entities --regroup` mode is reserved for post-MVP to consolidate orphans |
+| Two `Sectors` folders in two sidebars look confusing to users | Documented in the in-game help page (Settings Reference → Folder Layout). They're typed differently and Foundry shows them in different tabs, so no actual collision |
 | Sector generator (`src/sectors/sectorGenerator.js`) calls `createSettlement` inside `storeSector`'s batched-write block | Confirm the batched-write flag (`persist: false`) still works when the underlying create is an Actor. The existing `persist` short-circuit in `createSettlement` only governs the campaign-state write, not the entity create — should port unchanged |
 
 ---
@@ -328,9 +414,11 @@ Modify:
 - `src/entities/planet.js` (rewrite)
 - `src/entities/location.js` (rewrite)
 - `src/entities/settlement.js` (rewrite)
+- `src/entities/folder.js` (extend with the six helpers in §3.4; rename existing export to `getOrCreateJournalEntitiesFolder`)
 - `src/entities/migrator.js` (new)
 - `src/entities/registry.js` (new — `getEntityDocument` helper)
 - `src/entities/entityExtractor.js` (`entityExistsAnyType` cross-search, plus folder helper import)
+- `src/sectors/sectorGenerator.js` (`createSectorJournal` uses the new per-sector journal folder helper; the `createSettlement`/`createPlanet`/`createLocation` calls thread `sectorId`)
 - `src/ui/entityPanel.js` (split `loadAllEntities`, `findEntity`, mutation handlers, hook registration)
 - `src/art/generator.js` (`linkPortraitToEntity` — actor path)
 - `src/index.js` (register `!migrate-entities`)
@@ -363,12 +451,18 @@ npm run lint
 
 Plus a live Foundry session:
 
-1. Fresh world. Run draft-card Confirm for a ship, a planet, a location, and a settlement. Each appears in the Actors sidebar tab. Entity Panel renders all four.
+1. Fresh world with a generated sector. Run draft-card Confirm for a ship, a planet, a location, and a settlement.
+   - Ship lands under `Actors / Starships /`.
+   - Planet under `Actors / Sectors / <sector name> / Planets /`.
+   - Location under `Actors / Sectors / <sector name> / Locations /`.
+   - Settlement under `Actors / Sectors / <sector name> / Settlements /`.
+   - Entity Panel renders all four.
 2. For the ship: open the system sheet, set Battered. Confirm the entity panel reflects it. Run `sufferDamage` via the Foundry console (or a relevant chat command if one exists). Integrity decrement persists.
-3. Generate a portrait for each. Confirm `actor.img` is the new data URI; the sidebar token preview shows it.
-4. Seed a JournalEntry-backed settlement (`createSettlement` *pre-migration code path*, simulated by direct `JournalEntry.create` with the legacy flag shape). Run `!migrate-entities`. Confirm chat summary card; confirm new Actor with preserved `_id`; confirm the journal is flagged `migrated` but not deleted.
-5. Run `!migrate-entities` a second time. Chat card shows 0 new.
-6. Fast-forward `migrated.at` 8 days; run `!migrate-entities --cleanup`. Confirm the original journal is deleted.
-7. Connection / faction / creature flows untouched — create one of each and confirm they still go to JournalEntry as before.
+3. Generate a portrait for each. Confirm `actor.img` is the new data URI; the sidebar token preview shows it. Drag the settlement Actor onto a Scene — a token appears with the portrait.
+4. Confirm `Journals / Sectors / <sector name> /` contains the sector-record JournalEntry (moved out of the flat parent).
+5. Seed a JournalEntry-backed settlement (`createSettlement` *pre-migration code path*, simulated by direct `JournalEntry.create` with the legacy flag shape). Run `!migrate-entities`. Confirm chat summary card; confirm new Actor with preserved `_id` in the right per-sector subfolder; confirm the journal is flagged `migrated` but not deleted.
+6. Run `!migrate-entities` a second time. Chat card shows 0 new.
+7. Fast-forward `migrated.at` 8 days; run `!migrate-entities --cleanup`. Confirm the original journal is deleted. Confirm the flat `Sectors` Journal folder is empty (or already gone, since the cleanup auto-removes empty residue).
+8. Connection / faction / creature flows untouched — create one of each and confirm they still go to JournalEntry under `Starforged Entities /`.
 
 All seven manual steps pass = scope complete. Move scope-index entry to ✅ COMPLETE.
