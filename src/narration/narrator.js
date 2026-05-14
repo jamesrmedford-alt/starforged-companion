@@ -20,7 +20,6 @@ import {
   PACED_NARRATIVE_MOVE_ID,
   PACED_NARRATIVE_OUTCOME,
 } from '../entities/entityExtractor.js';
-import { normalizeMischiefForClassifier } from '../pacing/classifier.js';
 import { getConnection }  from '../entities/connection.js';
 import { getSettlement }  from '../entities/settlement.js';
 import { getFaction }     from '../entities/faction.js';
@@ -685,17 +684,11 @@ export async function interrogateScene(question, campaignState, _options = {}) {
  * @param {Object} [options]
  * @param {string|null} [options.suggestedMove] — when set, the narrator is
  *   instructed to end with an italicized inline hint nominating this move
- * @param {string} [options.mischiefDial] — current mischief dial value
- *   ("lawful" | "balanced" | "chaotic"). Used to gate the paced-narrative
- *   detection pass per suggestion-loop remediation §C3: Lawful skips the
- *   detection pass entirely, Balanced and Chaotic run it. When omitted the
- *   normaliser defaults to "balanced".
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
 export async function narratePacedInput(playerText, campaignState, options = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const suggestedMove = options.suggestedMove ?? null;
-  const mischiefDial  = options.mischiefDial ?? null;
 
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
@@ -742,7 +735,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     if (!text?.trim()) return null;
 
     await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
-    schedulePacedDetection(text, campaignState, mischiefDial);
+    schedulePacedDetection(text, campaignState);
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -755,7 +748,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
-          schedulePacedDetection(text, campaignState, mischiefDial);
+          schedulePacedDetection(text, campaignState);
           return text;
         }
       } catch (retryErr) {
@@ -773,18 +766,10 @@ export async function narratePacedInput(playerText, campaignState, options = {})
  * branch in `runPostNarrationPasses` so the narration card settles
  * before the GM-only draft card appears.
  *
- * Gated by the mischief dial per narrator-suggestion-loop remediation §C3:
- *   - Lawful  → skip entirely (strict posture, zero cost)
- *   - Balanced → run
- *   - Chaotic → run
- *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {string|null} mischiefDial
  */
-export function schedulePacedDetection(narrationText, campaignState, mischiefDial) {
-  const posture = normalizeMischiefForClassifier(mischiefDial);
-  if (posture === 'lawful') return;
+export function schedulePacedDetection(narrationText, campaignState) {
   setTimeout(() => {
     runPacedDetection(narrationText, campaignState)
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));

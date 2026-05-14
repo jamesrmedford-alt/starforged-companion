@@ -442,7 +442,6 @@ export function registerChatHook() {
         campaignState: preState,
         character,
         apiKey: apiKeyForPacing,
-        mischiefDial: getMischiefDial(),
       });
     } catch (err) {
       console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);

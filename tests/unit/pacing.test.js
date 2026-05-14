@@ -12,7 +12,6 @@ import {
   effectiveDial,
   buildClassifierContext,
   classifyInput,
-  normalizeMischiefForClassifier,
 } from '../../src/pacing/classifier.js';
 
 import {
@@ -161,101 +160,10 @@ describe('buildClassifierContext()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Mischief posture — suggestion-loop remediation §B2
+// Classifier system prompt — dial-driven decision guidance
 // ---------------------------------------------------------------------------
 
-describe('normalizeMischiefForClassifier()', () => {
-  it('maps "lawful" to "lawful"', () => {
-    expect(normalizeMischiefForClassifier('lawful')).toBe('lawful');
-  });
-
-  it('maps the internal alias "serious" to "lawful"', () => {
-    expect(normalizeMischiefForClassifier('serious')).toBe('lawful');
-  });
-
-  it('preserves "balanced" and "chaotic"', () => {
-    expect(normalizeMischiefForClassifier('balanced')).toBe('balanced');
-    expect(normalizeMischiefForClassifier('chaotic')).toBe('chaotic');
-  });
-
-  it('defaults to "balanced" for unknown / empty / null values', () => {
-    expect(normalizeMischiefForClassifier(null)).toBe('balanced');
-    expect(normalizeMischiefForClassifier(undefined)).toBe('balanced');
-    expect(normalizeMischiefForClassifier('')).toBe('balanced');
-    expect(normalizeMischiefForClassifier('wild')).toBe('balanced');
-  });
-
-  it('is case-insensitive', () => {
-    expect(normalizeMischiefForClassifier('LAWFUL')).toBe('lawful');
-    expect(normalizeMischiefForClassifier('Chaotic')).toBe('chaotic');
-  });
-});
-
-describe('buildClassifierContext() — mischief posture (suggestion-loop §B2)', () => {
-  const baseArgs = () => ({
-    playerText: 'I press her on what she heard',
-    campaignState: BASE_STATE,
-    character: { name: 'Kira' },
-    recentMoveDensity: { count: 0, window: 5 },
-    pacingConfig: BASE_PACING_CFG,
-  });
-
-  it('defaults to the balanced posture when mischiefDial is omitted', () => {
-    const { systemPrompt, posture } = buildClassifierContext(baseArgs());
-    expect(posture).toBe('balanced');
-    expect(systemPrompt).toContain('BALANCED');
-    expect(systemPrompt).toMatch(/Read the player's[\s\n]+commitment from what they describe/);
-  });
-
-  it('renders the lawful posture into the system prompt when mischiefDial is "lawful"', () => {
-    const { systemPrompt, posture } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'lawful',
-    });
-    expect(posture).toBe('lawful');
-    expect(systemPrompt).toContain('LAWFUL');
-    expect(systemPrompt).toContain('Require an explicit verbal intent marker');
-  });
-
-  it('renders the chaotic posture into the system prompt when mischiefDial is "chaotic"', () => {
-    const { systemPrompt, posture } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'chaotic',
-    });
-    expect(posture).toBe('chaotic');
-    expect(systemPrompt).toContain('CHAOTIC');
-    expect(systemPrompt).toContain('Infer commitment aggressively');
-  });
-
-  it('accepts the internal alias "serious" as lawful', () => {
-    const { systemPrompt, posture } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'serious',
-    });
-    expect(posture).toBe('lawful');
-    expect(systemPrompt).toContain('LAWFUL');
-  });
-
-  it('falls back to balanced for an unknown mischief value', () => {
-    const { systemPrompt, posture } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'extreme',
-    });
-    expect(posture).toBe('balanced');
-    expect(systemPrompt).toContain('BALANCED');
-  });
-
-  it('different postures produce distinct system prompts (cache key separation)', () => {
-    const lawful   = buildClassifierContext({ ...baseArgs(), mischiefDial: 'lawful' }).systemPrompt;
-    const balanced = buildClassifierContext({ ...baseArgs(), mischiefDial: 'balanced' }).systemPrompt;
-    const chaotic  = buildClassifierContext({ ...baseArgs(), mischiefDial: 'chaotic' }).systemPrompt;
-    expect(lawful).not.toBe(balanced);
-    expect(balanced).not.toBe(chaotic);
-    expect(lawful).not.toBe(chaotic);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Decision-guidance language — suggestion-loop remediation §B1
-// ---------------------------------------------------------------------------
-
-describe('classifier system prompt — decision guidance (suggestion-loop §B1)', () => {
+describe('classifier system prompt — dial-driven decision guidance', () => {
   const baseArgs = () => ({
     playerText: 'I take a moment to look out the viewport',
     campaignState: BASE_STATE,
@@ -264,41 +172,31 @@ describe('classifier system prompt — decision guidance (suggestion-loop §B1)'
     pacingConfig: BASE_PACING_CFG,
   });
 
-  it('no longer treats the absence of "I try to" as a NARRATIVE default', () => {
+  it('does not reference the mischief dial or interpretation posture', () => {
     const { systemPrompt } = buildClassifierContext(baseArgs());
-    // The pre-remediation prompt instructed the model to prefer
-    // NARRATIVE_WITH_MOVE_AVAILABLE whenever the player didn't use
-    // "I try to" / "I attempt to". That clause is gone in the balanced
-    // posture — only the lawful posture requires verbal markers.
-    expect(systemPrompt).not.toMatch(/no "I try to", "I attempt", "I want to"/);
+    expect(systemPrompt).not.toMatch(/mischief/i);
+    expect(systemPrompt).not.toMatch(/INTERPRETATION POSTURE/);
+    expect(systemPrompt).not.toMatch(/posture wins/);
   });
 
-  it('the balanced posture instructs the model to read commitment from depicted action', () => {
-    const { systemPrompt } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'balanced',
-    });
-    expect(systemPrompt).toMatch(/depicts the character acting with[\s\n]+intent/i);
-    expect(systemPrompt).toMatch(/genuine[\s\n]+ambiguity/i);
+  it('declares the dial value as the primary signal for the MOVE/NARRATIVE decision', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/dials below are the primary signal/i);
   });
 
-  it('the lawful posture still requires a verbal intent marker', () => {
-    const { systemPrompt } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'lawful',
-    });
-    expect(systemPrompt).toMatch(/I try to/);
-    expect(systemPrompt).toMatch(/I attempt to/);
-    expect(systemPrompt).toMatch(/I roll to/);
+  it('describes high-dial behaviour as "almost always a move"', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/9[–-]10:\s*classify as MOVE/);
   });
 
-  it('the posture clause is positioned to override the dial priors', () => {
-    const { systemPrompt } = buildClassifierContext({
-      ...baseArgs(), mischiefDial: 'balanced',
-    });
-    const postureIdx = systemPrompt.indexOf('INTERPRETATION POSTURE');
-    const guidanceIdx = systemPrompt.indexOf('DECISION GUIDANCE');
-    expect(postureIdx).toBeGreaterThan(-1);
-    expect(guidanceIdx).toBeGreaterThan(postureIdx);
-    expect(systemPrompt).toContain('the posture wins');
+  it('describes low-dial behaviour as "almost never a move"', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/0[–-]2:\s*classify as NARRATIVE/);
+  });
+
+  it('explicitly limits the classifier to the IF-a-move question', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/only IF a move is invoked/i);
   });
 });
 
@@ -431,29 +329,18 @@ describe('classifyInput()', () => {
     expect(result.category).toBe('exploration');
   });
 
-  it('threads mischiefDial through to the system prompt (suggestion-loop §B2)', async () => {
+  it('does not render any mischief-dial text into the classifier system prompt', async () => {
     apiPost.mockResolvedValue(makeApiResponse({
       decision: 'MOVE', suggestedMove: 'face_danger',
       category: 'exploration', confidence: 0.5,
     }));
-    await classifyInput({ ...baseArgs(), mischiefDial: 'lawful' });
+    await classifyInput(baseArgs());
     expect(apiPost).toHaveBeenCalledTimes(1);
-    // apiPost(url, headers, body); the system prompt is the first system block.
     const body = apiPost.mock.calls[0][2];
     const systemText = body.system[0].text;
-    expect(systemText).toContain('LAWFUL');
-    expect(systemText).toContain('Require an explicit verbal intent marker');
-  });
-
-  it('renders the chaotic posture when mischiefDial is "chaotic"', async () => {
-    apiPost.mockResolvedValue(makeApiResponse({
-      decision: 'MOVE', suggestedMove: 'face_danger',
-      category: 'exploration', confidence: 0.5,
-    }));
-    await classifyInput({ ...baseArgs(), mischiefDial: 'chaotic' });
-    const body = apiPost.mock.calls[0][2];
-    expect(body.system[0].text).toContain('CHAOTIC');
-    expect(body.system[0].text).toContain('Infer commitment aggressively');
+    expect(systemText).not.toMatch(/mischief/i);
+    expect(systemText).not.toMatch(/LAWFUL|CHAOTIC/);
+    expect(systemText).not.toMatch(/INTERPRETATION POSTURE/);
   });
 });
 
@@ -584,7 +471,7 @@ describe('routePacedInput()', () => {
     expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: 'compel' });
   });
 
-  it('threads mischiefDial through to the classifier system prompt (suggestion-loop §B2)', async () => {
+  it('does not forward any mischief signal to the classifier', async () => {
     apiPost.mockResolvedValue(makeApiResponse({
       decision: 'MOVE',
       suggestedMove: 'face_danger',
@@ -598,12 +485,14 @@ describe('routePacedInput()', () => {
       campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
       character: { name: 'Kira' },
       apiKey: 'sk-ant-test',
-      mischiefDial: 'chaotic',
     });
 
     expect(apiPost).toHaveBeenCalledTimes(1);
     const body = apiPost.mock.calls[0][2];
-    expect(body.system[0].text).toContain('CHAOTIC');
+    const systemText = body.system[0].text;
+    expect(systemText).not.toMatch(/mischief/i);
+    expect(systemText).not.toMatch(/INTERPRETATION POSTURE/);
+    expect(systemText).not.toMatch(/posture wins/);
   });
 
   it('records every decision in telemetry', async () => {
