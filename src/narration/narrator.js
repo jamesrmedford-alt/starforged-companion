@@ -130,6 +130,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
 
   const entityCards = collectEntityCards(relevance.entityIds, relevance.entityTypes);
   const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
   const campaignTruthsBlock = await buildCampaignTruthsBlock(campaignState).catch(err => {
     console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
     return '';
@@ -142,6 +143,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       narratorClass:       relevance.resolvedClass,
       entityCards,
       currentLocationCard,
+      activeSectorBlock,
       oracleSeeds:         resolution.oracleSeeds ?? null,
       campaignTruthsBlock,
     },
@@ -615,9 +617,16 @@ export async function interrogateScene(question, campaignState, _options = {}) {
 
   const settings = getNarratorSettings();
   const character    = getActiveCharacter(campaignState);
+  // Same anchors as paced narration — see formatActiveSector() above.
+  const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
-    { mode: 'scene_interrogation' },
+    {
+      mode: 'scene_interrogation',
+      currentLocationCard,
+      activeSectorBlock,
+    },
   );
 
   const contextLimit  = getSceneContextCards();
@@ -703,9 +712,18 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   }
 
   const character    = getActiveCharacter(campaignState);
+  // Paced narrator previously had zero sector / current-location context and
+  // would invent new settlement names for places that already exist. Both
+  // anchors closed in the same pass — see formatActiveSector() above.
+  const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
-    { mode: 'paced_narrative' },
+    {
+      mode: 'paced_narrative',
+      currentLocationCard,
+      activeSectorBlock,
+    },
   );
 
   const recentContext = getRecentNarrationContext(sessionId, 3);
@@ -882,6 +900,48 @@ function formatCurrentLocation(campaignState) {
   }
   if (!entity) return '';
   return formatEntityCard(entity, type);
+}
+
+/**
+ * Build the active-sector anchor block for the narrator system prompt.
+ *
+ * The paced-narrative and scene-interrogation narrator paths previously had
+ * no sector context whatsoever and would freely invent settlement names for
+ * places the player was already inside. The move-pipeline narrator got
+ * sector content through `buildSectorSection` in the assembler, but the
+ * other two paths never call the assembler.
+ *
+ * This helper emits a directive block — not just a list — so the model is
+ * pushed to *reuse* the established settlement names rather than inventing
+ * alternatives. Returns empty string when no active sector is set.
+ */
+function formatActiveSector(campaignState) {
+  const id     = campaignState?.activeSectorId;
+  if (!id) return '';
+  const sector = (campaignState?.sectors ?? []).find(s => s.id === id);
+  if (!sector) return '';
+
+  const lines = [];
+  lines.push(`Active sector: ${sector.name}`);
+  const regionLabel = sector.regionLabel ?? sector.region;
+  if (regionLabel) lines.push(`Region: ${regionLabel}`);
+  if (sector.trouble) lines.push(`Trouble: ${sector.trouble}`);
+  if (sector.faction) lines.push(`Faction control: ${sector.faction}`);
+
+  const settlements = (sector.mapData?.settlements ?? [])
+    .map(s => s?.name)
+    .filter(Boolean);
+  if (settlements.length) {
+    lines.push(
+      `Established settlements in this sector: ${settlements.join(', ')}.`,
+    );
+    lines.push(
+      `When the scene is set in a settlement, reuse one of the established ` +
+      `names above. Do not invent a new settlement name for the same place.`,
+    );
+  }
+
+  return lines.join('\n');
 }
 
 async function postSceneCard(question, responseText, sessionId) {

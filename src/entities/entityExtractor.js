@@ -360,7 +360,14 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   for (const entity of entities ?? []) {
     if (!entity?.name || !entity?.type) continue;
     if (!ENTITY_GETTERS[entity.type]) continue;
-    if (entityExistsForName(entity.name, entity.type, campaignState)) continue;
+    // Cross-type dedup. A name that already exists anywhere in
+    // campaignState — settlement, location, faction, anything — should not
+    // be re-proposed as a different entity type. The detector classifies
+    // entities by surface form ("Oxidized Kettle cantina" can read as a
+    // Location even though the parent settlement is also called Oxidized
+    // Kettle), so the type-scoped entityExistsForName(name, type, …) lets
+    // duplicates through. entityExistsAnyType catches the cross-type case.
+    if (entityExistsAnyType(entity.name, campaignState)) continue;
     // Skip names already sitting in an unresolved draft card — the GM is
     // already reviewing them; re-flagging causes the suggestion loop.
     if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
@@ -481,6 +488,39 @@ export function entityExistsForName(name, type, campaignState) {
     try { rec = getter(journalId); }
     catch { continue; }
     if (rec?.name && normalizeEntityName(rec.name) === target) return true;
+  }
+  return false;
+}
+
+/**
+ * Cross-type variant of entityExistsForName — returns true if any entity of
+ * any type already carries this name. Used as the primary dedup gate in
+ * routeEntityDrafts so the detector's type classification cannot smuggle a
+ * duplicate through (e.g. proposing Location "Oxidized Kettle" when the
+ * Settlement of the same name is already established in the active sector).
+ *
+ * The WJ routing rules in routeWorldJournalResults still use the type-scoped
+ * entityExistsForName because faction/location WJ entries are deliberately
+ * scoped — a faction WJ note about "Blue Star Compact" should not be blocked
+ * by an unrelated settlement-typed entity that happens to share a name.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+export function entityExistsAnyType(name, campaignState) {
+  const target = normalizeEntityName(name);
+  if (!target) return false;
+  for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    const ids = campaignState?.[idsField] ?? [];
+    for (const journalId of ids) {
+      let rec = null;
+      try { rec = getter(journalId); }
+      catch { continue; }
+      if (rec?.name && normalizeEntityName(rec.name) === target) return true;
+    }
   }
   return false;
 }

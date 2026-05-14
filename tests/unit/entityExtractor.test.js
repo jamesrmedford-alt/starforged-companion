@@ -30,6 +30,7 @@ import {
   routeEntityDrafts,
   routeWorldJournalResults,
   entityExistsForName,
+  entityExistsAnyType,
   appendGenerativeTierUpdates,
   appendDetailToTier,
   applyStateTransition,
@@ -228,6 +229,104 @@ describe("entityExistsForName", () => {
   it("respects entity type — covenant faction is NOT a connection", () => {
     const fixture = buildFullCampaignState();
     expect(entityExistsForName("The Covenant", "connection", fixture.campaignState)).toBe(false);
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// entityExistsAnyType — cross-type dedup
+// (Prevents the detector smuggling a Location-typed duplicate past a name
+// that already exists as a Settlement / Faction / etc. See SECTOR-001 in
+// docs/known-issues.md.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("entityExistsAnyType", () => {
+  it("returns true for a name that exists under any entity type", () => {
+    const fixture = buildFullCampaignState();
+    // The fixture seeds "Kovash Derelict" as a Location.
+    expect(entityExistsAnyType("Kovash Derelict", fixture.campaignState)).toBe(true);
+    // "Sable" is a Connection.
+    expect(entityExistsAnyType("Sable", fixture.campaignState)).toBe(true);
+    // "The Covenant" is a Faction.
+    expect(entityExistsAnyType("The Covenant", fixture.campaignState)).toBe(true);
+    fixture.restore();
+  });
+
+  it("returns false for a name that exists nowhere", () => {
+    const fixture = buildFullCampaignState();
+    expect(entityExistsAnyType("Brand New Name", fixture.campaignState)).toBe(false);
+    fixture.restore();
+  });
+
+  it("is case- and honorific-insensitive", () => {
+    const fixture = buildFullCampaignState();
+    expect(entityExistsAnyType("kovash derelict", fixture.campaignState)).toBe(true);
+    expect(entityExistsAnyType("KOVASH DERELICT", fixture.campaignState)).toBe(true);
+    fixture.restore();
+  });
+
+  it("ignores empty / non-string input", () => {
+    const fixture = buildFullCampaignState();
+    expect(entityExistsAnyType("", fixture.campaignState)).toBe(false);
+    expect(entityExistsAnyType(null, fixture.campaignState)).toBe(false);
+    expect(entityExistsAnyType(undefined, fixture.campaignState)).toBe(false);
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// routeEntityDrafts — cross-type dedup at the routing gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("routeEntityDrafts — cross-type dedup", () => {
+  beforeEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+  afterEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  it("does not propose a Location-typed draft when an existing entity of any other type shares the name", async () => {
+    const fixture = buildFullCampaignState();
+    // Fixture has Faction "The Covenant". Detector proposes the same name
+    // classified as a Location (the kind of misclassification that triggered
+    // SECTOR-001 — the narrator's prose can read as either type, and the
+    // detector picks one).
+    const result = await routeEntityDrafts(
+      [{ type: "location", name: "The Covenant", description: "a place named for the cult" }],
+      fixture.campaignState,
+    );
+    expect(result.queued).toEqual([]);
+    expect(global.ChatMessage._created.length).toBe(0);
+    fixture.restore();
+  });
+
+  it("does not auto-create a connection that shares a name with an existing Location entity", async () => {
+    const fixture = buildFullCampaignState();
+    // Fixture has Location "Kovash Derelict". A connection draft with the
+    // same name (e.g. the narrator decided "Kovash Derelict" was a person
+    // somehow) should still be blocked by cross-type dedup.
+    const result = await routeEntityDrafts(
+      [{ type: "connection", name: "Kovash Derelict", description: "stub" }],
+      fixture.campaignState,
+      { autoCreateConnection: true },
+    );
+    expect(result.created).toEqual([]);
+    expect(result.queued).toEqual([]);
+    fixture.restore();
+  });
+
+  it("still queues genuinely new names", async () => {
+    const fixture = buildFullCampaignState();
+    const result = await routeEntityDrafts(
+      [{ type: "settlement", name: "Iron Anvil Outpost", description: "stub" }],
+      fixture.campaignState,
+    );
+    expect(result.queued).toHaveLength(1);
     fixture.restore();
   });
 });

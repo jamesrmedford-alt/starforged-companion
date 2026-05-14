@@ -82,6 +82,64 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### SECTOR-001 — Narrator invented new settlements for places already in the active sector ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** During paced narration and scene queries, the narrator would
+sometimes set a scene in a settlement name that had nothing to do with the
+active sector — even when the active sector's hub was an obviously
+established location. The detector would then post a draft entity card
+proposing the invented name as a "new" Settlement, pushing the GM toward
+forking the world.
+
+**Root cause — two layers:**
+
+1. **Prompt-side blindness.** The paced-narrative narrator
+   (`narratePacedInput`, `src/narration/narrator.js:686`) and the scene-
+   interrogation narrator (`interrogateScene`, ibid `:596`) did not call
+   the assembler at all. The move-pipeline narrator's `## ACTIVE SECTOR`
+   block — and the `## CURRENT LOCATION` card — only flowed through
+   `narrateResolution`. Both other paths had zero sector or current-
+   location context, so the model had no signal to keep the scene
+   anchored to an established place.
+2. **Detector cross-type gap.** `entityExistsForName(name, type, …)` in
+   `src/entities/entityExtractor.js:470` only walks the ID list for the
+   *one* type passed in. If the narrator wrote "Oxidized Kettle" and the
+   detector classified it as a Location, an existing Settlement of the
+   same name did not block the draft — the type-scoped check returned
+   false, and the same physical place got proposed as a new entity under
+   a different type.
+
+**Fixes:**
+
+- New helper `formatActiveSector(campaignState)` in
+  `src/narration/narrator.js` builds a directive anchor block:
+  *"Active sector: X / Region: Y / Trouble: Z / Established settlements
+  in this sector: A, B, C. When the scene is set in a settlement, reuse
+  one of the established names above. Do not invent a new settlement
+  name for the same place."* This and `formatCurrentLocation(...)` are
+  now threaded into all three narrator call sites
+  (`narrateResolution`, `narratePacedInput`, `interrogateScene`) via a
+  new `extras.activeSectorBlock` parameter on
+  `buildNarratorSystemPrompt`.
+- New `entityExistsAnyType(name, campaignState)` export in
+  `entityExtractor.js` does a cross-type name match against every entity
+  ID list. `routeEntityDrafts` now uses it as the primary dedup gate.
+  The type-scoped `entityExistsForName` is preserved for the WJ routing
+  rules in `routeWorldJournalResults` (faction / location WJ entries
+  remain type-scoped on purpose — a WJ faction note about "Blue Star
+  Compact" should not be blocked by an unrelated settlement entity that
+  happens to share a name).
+
+**Coverage:** 9 new unit tests across `tests/unit/entityExtractor.test.js`
+and `tests/unit/narratorPrompt.test.js`. Pins the cross-type dedup at
+the routing gate (Location, Connection, and Settlement variants), the
+`## ACTIVE SECTOR` header presence/absence in the system prompt, and
+the directive text the model receives.
+
+---
+
 ### RECAP-002 — Campaign recap card "↻ Refresh" button did nothing ✓
 
 **Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
