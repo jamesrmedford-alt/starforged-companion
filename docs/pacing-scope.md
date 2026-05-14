@@ -386,8 +386,8 @@ Five dials, each `0–10`, default values:
 |---|---|
 | Combat | 9 |
 | Investigation | 6 |
-| Exploration | 5 |
-| Social | 3 |
+| Exploration | 6 |
+| Social | 5 |
 | Downtime | 1 |
 
 ```js
