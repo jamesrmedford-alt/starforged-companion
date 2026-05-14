@@ -661,6 +661,32 @@ describe('buildNarratorSystemPrompt extras', () => {
     expect(prompt).toContain('CURRENT LOCATION');
     expect(prompt).toContain('BLEAKHOLD');
   });
+
+  it('injects active sector anchor under ACTIVE SECTOR header', () => {
+    const block =
+      'Active sector: Bleakhold Reach\n' +
+      'Region: Terminus\n' +
+      'Trouble: Exodus relic\n' +
+      'Established settlements in this sector: Bleakhold, Sable Crossing.\n' +
+      'When the scene is set in a settlement, reuse one of the established ' +
+      'names above. Do not invent a new settlement name for the same place.';
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { activeSectorBlock: block },
+    );
+    expect(prompt).toContain('## ACTIVE SECTOR');
+    expect(prompt).toContain('Bleakhold Reach');
+    expect(prompt).toContain('Established settlements in this sector: Bleakhold, Sable Crossing.');
+    expect(prompt).toContain('Do not invent a new settlement name');
+  });
+
+  it('omits the active sector header when the block is empty', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { activeSectorBlock: '' },
+    );
+    expect(prompt).not.toContain('## ACTIVE SECTOR');
+  });
 });
 
 

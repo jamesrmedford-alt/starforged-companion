@@ -82,6 +82,124 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### SECTOR-001 — Narrator invented new settlements for places already in the active sector ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** During paced narration and scene queries, the narrator would
+sometimes set a scene in a settlement name that had nothing to do with the
+active sector — even when the active sector's hub was an obviously
+established location. The detector would then post a draft entity card
+proposing the invented name as a "new" Settlement, pushing the GM toward
+forking the world.
+
+**Root cause — two layers:**
+
+1. **Prompt-side blindness.** The paced-narrative narrator
+   (`narratePacedInput`, `src/narration/narrator.js:686`) and the scene-
+   interrogation narrator (`interrogateScene`, ibid `:596`) did not call
+   the assembler at all. The move-pipeline narrator's `## ACTIVE SECTOR`
+   block — and the `## CURRENT LOCATION` card — only flowed through
+   `narrateResolution`. Both other paths had zero sector or current-
+   location context, so the model had no signal to keep the scene
+   anchored to an established place.
+2. **Detector cross-type gap.** `entityExistsForName(name, type, …)` in
+   `src/entities/entityExtractor.js:470` only walks the ID list for the
+   *one* type passed in. If the narrator wrote "Oxidized Kettle" and the
+   detector classified it as a Location, an existing Settlement of the
+   same name did not block the draft — the type-scoped check returned
+   false, and the same physical place got proposed as a new entity under
+   a different type.
+
+**Fixes:**
+
+- New helper `formatActiveSector(campaignState)` in
+  `src/narration/narrator.js` builds a directive anchor block:
+  *"Active sector: X / Region: Y / Trouble: Z / Established settlements
+  in this sector: A, B, C. When the scene is set in a settlement, reuse
+  one of the established names above. Do not invent a new settlement
+  name for the same place."* This and `formatCurrentLocation(...)` are
+  now threaded into all three narrator call sites
+  (`narrateResolution`, `narratePacedInput`, `interrogateScene`) via a
+  new `extras.activeSectorBlock` parameter on
+  `buildNarratorSystemPrompt`.
+- New `entityExistsAnyType(name, campaignState)` export in
+  `entityExtractor.js` does a cross-type name match against every entity
+  ID list. `routeEntityDrafts` now uses it as the primary dedup gate.
+  The type-scoped `entityExistsForName` is preserved for the WJ routing
+  rules in `routeWorldJournalResults` (faction / location WJ entries
+  remain type-scoped on purpose — a WJ faction note about "Blue Star
+  Compact" should not be blocked by an unrelated settlement entity that
+  happens to share a name).
+
+**Coverage:** 9 new unit tests across `tests/unit/entityExtractor.test.js`
+and `tests/unit/narratorPrompt.test.js`. Pins the cross-type dedup at
+the routing gate (Location, Connection, and Settlement variants), the
+`## ACTIVE SECTOR` header presence/absence in the system prompt, and
+the directive text the model receives.
+
+---
+
+### RECAP-002 — Campaign recap card "↻ Refresh" button did nothing ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Every campaign recap card the GM saw rendered a "↻ Refresh"
+button — but clicking it did nothing. No console error, no toast, no API call.
+
+**Root cause:** The button was added to the recap card HTML in
+`src/narration/narrator.js:547` but no `Hooks.on("renderChatMessage")` was
+ever registered to wire it. Same defect class as ENTITY-001 (the chat-card
+hint that pointed at a non-existent panel flow); same fix pattern as the
+existing `setupCard` "Set World Truths" handler at `src/index.js:1379`.
+
+**Fix:** Added a second `renderChatMessage` hook in `src/index.js` that
+matches `recapCard` + `recapType: "campaign"`, finds the `[data-action=
+"refreshCampaignRecap"]` button, gates on `game.user.isGM`, disables the
+button while in flight, and calls `postCampaignRecap(state, { forceRefresh:
+true })` (the same regen path `!recap` uses). Errors surface as a warn
+toast.
+
+**Coverage:** New Quench batch `starforged-companion.chatCardActions`
+includes a regression test that posts a recap card, clicks the Refresh
+button, and asserts a fresh recap card lands in chat.
+
+---
+
+### ENTITY-001 — Entity panel always empty; draft cards had no Confirm UI ✓
+
+**Resolved in:** v1.2.6 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Two compounding issues:
+1. The Entities panel always showed "No entities tracked yet" even after entities
+   had been created (manually, via `make_a_connection`, or via the sector creator).
+2. The "New Entities Detected" chat card told the GM to "Open the Entities panel
+   to confirm or dismiss" — but the panel had no UI to confirm a draft. Drafts
+   could only be implicitly dismissed by deleting the chat card; ship/settlement/
+   planet/location/creature drafts had no way to be promoted to entities at all.
+
+**Root cause (panel):** `loadAllEntities()` and `findEntity()` in
+`src/ui/entityPanel.js` read the entity flag via
+`journal.getFlag(MODULE_ID, config.flag)` — i.e. the JournalEntry's own flags.
+But all seven entity types (`connection.js`, `ship.js`, …, `creature.js`) store
+their data on the embedded `JournalEntryPage` flag. The entry itself only carries
+`{ entityType, entityId }` routing crumbs. Every iteration fell through the
+`if (!data) continue;` guard and the panel rendered the empty state.
+
+**Root cause (draft UX):** The card's hint text claimed the panel had a confirm
+flow, but no such code existed. Only `make_a_connection` auto-created the first
+connection draft; everything else lived on the chat card forever.
+
+**Fixes:**
+- `src/ui/entityPanel.js` — read entity data from `journal.pages.contents[0].getFlag(...)` in both `loadAllEntities()` and `findEntity()`. Added `updateJournalEntryPage` and `createJournalEntryPage` hooks so the panel re-renders when page flags change (entry-level hooks don't fire for embedded page edits).
+- `src/entities/entityExtractor.js` — draft chat cards now render Confirm and Dismiss buttons per row. Confirm calls the appropriate `createXxx()` from the entity modules; Dismiss appends the name to `campaignState.dismissedEntities`. Card content updates in place to show resolved status.
+- `collectPendingDraftNames()` — only "pending" drafts suppress re-detection; resolved drafts are now established (caught by `collectEstablishedEntityNames`) or dismissed (caught by `dismissedEntities`).
+- `src/integration/quench.js` — `entityPanelActions` batch hardened to assert the seeded Connection actually renders a row instead of silently calling `this.skip()`. The skip-on-miss guards were what hid this bug for months.
+
+**Why it wasn't caught:** the existing Quench batch (`registerEntityPanelActionsTests`) skipped every assertion when no row appeared. A code comment in `src/integration/quench.js` even acknowledged "the known journal-vs-page flag read quirk in loadAllEntities() (tracked as a latent issue in known-issues.md)" — but it was never actually tracked here. Bug present since `entityPanel.js` was first created (commit `102a9a3`).
+
+---
+
 ### CONTROLS-001 — Toolbar buttons appeared but did nothing ✓
 
 **Resolved in:** v0.1.34
