@@ -29,6 +29,7 @@ import { getLocation }    from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getChronicleEntries } from '../character/chronicle.js';
+import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot } from '../character/actorBridge.js';
 
 const ENTITY_GETTERS = {
@@ -170,6 +171,13 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     if (recapContext) markRecapInjected(campaignState?.currentSessionId);
     await postNarrationCard(narration, resolution, campaignState);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState);
+    scheduleChronicleEntry({
+      narrationText: narration,
+      campaignState,
+      moveId:        resolution.moveId,
+      outcome:       resolution.outcome,
+      kind:          'move',
+    });
     return narration;
 
   } catch (err) {
@@ -186,6 +194,13 @@ export async function narrateResolution(resolution, contextPacket, campaignState
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState);
+          scheduleChronicleEntry({
+            narrationText: narration,
+            campaignState,
+            moveId:        resolution.moveId,
+            outcome:       resolution.outcome,
+            kind:          'move',
+          });
           return narration;
         }
       } catch (retryErr) {
@@ -736,6 +751,11 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
     schedulePacedDetection(text, campaignState);
+    scheduleChronicleEntry({
+      narrationText: text,
+      campaignState,
+      kind:          'paced',
+    });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -749,6 +769,11 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
           schedulePacedDetection(text, campaignState);
+          scheduleChronicleEntry({
+            narrationText: text,
+            campaignState,
+            kind:          'paced',
+          });
           return text;
         }
       } catch (retryErr) {
