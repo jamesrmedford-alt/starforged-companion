@@ -572,8 +572,24 @@ With caching:
 
 **Per classification: ~$0.0006.**
 
-A typical session might see 30–50 classifier calls. Per-session cost:
-**~$0.02–0.03.** Below the noise floor of the existing main pipeline cost.
+**Telemetry update (v1.2.7).** Real session data — 11 decisions over 22.6
+minutes of play, sampled from a live session — gives ~60 inputs per 2-hour
+session, materially higher than the original 30–50/session guess. The
+per-call figure above still holds; the per-session figure should be:
+
+| Window | Decisions | Classifier cost |
+|---|---|---|
+| 1 hour | ~30 | ~$0.018 |
+| 2 hours | ~60 | ~$0.036 |
+| 3 hours | ~90 | ~$0.054 |
+
+The classifier remains below the noise floor of the main pipeline (the
+narrator dominates), but the pipeline total per 2-hour session is now
+roughly **$0.20 on Haiku narrator / $0.30 on Sonnet narrator** — see
+`README.md` "Per-input breakdown" for the full component table. The shift
+is driven by every chat input now triggering classifier + narrator +
+chronicle writer + (non-MOVE) paced detection, not by classifier cost
+alone.
 
 The cache write happens once per session at first call (~$0.00088), then
 reads dominate. Cache TTL is sufficient for a session of normal length.

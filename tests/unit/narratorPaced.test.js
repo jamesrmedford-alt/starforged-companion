@@ -45,43 +45,17 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// schedulePacedDetection — mischief-dial gating (§C3)
+// schedulePacedDetection — fires regardless of mischief dial
 // ---------------------------------------------------------------------------
 
-describe("schedulePacedDetection() — mischief-dial gating", () => {
-  it("does not call runCombinedDetectionPass on Lawful", async () => {
-    schedulePacedDetection("text", BASE_STATE, "lawful");
-    await vi.runAllTimersAsync();
+describe("schedulePacedDetection()", () => {
+  it("does not call runCombinedDetectionPass synchronously", () => {
+    schedulePacedDetection("text", BASE_STATE);
     expect(runCombinedDetectionPass).not.toHaveBeenCalled();
   });
 
-  it("does not call runCombinedDetectionPass on the 'serious' alias", async () => {
-    schedulePacedDetection("text", BASE_STATE, "serious");
-    await vi.runAllTimersAsync();
-    expect(runCombinedDetectionPass).not.toHaveBeenCalled();
-  });
-
-  it("calls runCombinedDetectionPass on Balanced (after the async delay)", async () => {
-    schedulePacedDetection("text", BASE_STATE, "balanced");
-    expect(runCombinedDetectionPass).not.toHaveBeenCalled();   // not synchronous
-    await vi.runAllTimersAsync();
-    expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls runCombinedDetectionPass on Chaotic", async () => {
-    schedulePacedDetection("text", BASE_STATE, "chaotic");
-    await vi.runAllTimersAsync();
-    expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
-  });
-
-  it("defaults to Balanced (runs detection) when dial is null / omitted", async () => {
-    schedulePacedDetection("text", BASE_STATE, null);
-    await vi.runAllTimersAsync();
-    expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
-  });
-
-  it("treats unknown dial values as Balanced", async () => {
-    schedulePacedDetection("text", BASE_STATE, "wild");
+  it("calls runCombinedDetectionPass after the async delay", async () => {
+    schedulePacedDetection("text", BASE_STATE);
     await vi.runAllTimersAsync();
     expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
   });

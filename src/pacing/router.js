@@ -150,9 +150,6 @@ function defaultDial(category) {
  * @param {Object} args.campaignState
  * @param {Object|null} args.character
  * @param {string} args.apiKey
- * @param {string} [args.mischiefDial]  — "lawful" | "balanced" | "chaotic".
- *   Passed through to the classifier so its interpretation posture matches
- *   the mischief dial. Defaults to "balanced" when omitted.
  * @returns {Promise<{
  *   runMove: boolean,
  *   decision: string,
@@ -163,7 +160,7 @@ function defaultDial(category) {
  * }>}
  */
 export async function routePacedInput({
-  playerText, campaignState, character, apiKey, mischiefDial,
+  playerText, campaignState, character, apiKey,
 }) {
   const pacingConfig = readPacingConfig(campaignState);
 
@@ -184,7 +181,6 @@ export async function routePacedInput({
 
   const result = await classifyInput({
     playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey,
-    mischiefDial,
   });
 
   // Record the decision for both the in-memory density window and the
@@ -223,7 +219,7 @@ export async function routePacedInput({
     ? result.suggestedMove
     : null;
 
-  await narratePacedInput(playerText, campaignState, { suggestedMove, mischiefDial })
+  await narratePacedInput(playerText, campaignState, { suggestedMove })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {
