@@ -153,24 +153,31 @@ export function addConnectionEntity(journals, data) {
   return { journalId: journal.id, internalId };
 }
 
-export function addLocationEntity(journals, data) {
+/**
+ * Add a location-of-interest entity. Phase 3 of the Entity → Actor Migration
+ * moved Locations onto `type='location'` Actor documents with the legacy
+ * type discriminator on `system.subtype`. Returns `{ journalId, internalId }`
+ * with `journalId` carrying the Actor id for backward-compat with callers
+ * that pass it into `campaignState.locationIds[]`.
+ */
+export function addLocationEntity(_journals, data) {
   const internalId = `loc-${randomToken()}`;
-  const flags = {
-    [MODULE_ID]: {
-      location: {
-        _id:           internalId,
-        name:          data.name,
-        type:          data.type ?? "derelict",
-        active:        true,
-        canonicalLocked: false,
-        generativeTier: [],
-      },
-    },
+  const actorId    = `actor-loc-${randomToken()}`;
+  const subtype    = data.type ?? "derelict";
+  const payload = {
+    _id:           internalId,
+    name:          data.name,
+    type:          subtype,
+    active:        true,
+    canonicalLocked: false,
+    generativeTier: [],
   };
-  const journal = makeJournalWithId(`journal-loc-${randomToken()}`, data.name);
-  journal.pages.contents.push(makePage({ name: "Location Data", flags }));
-  journals.set(journal.name, journal);
-  return { journalId: journal.id, internalId };
+  global.game.actors._set(actorId, global.makeTestActor({
+    id: actorId, type: "location", name: data.name,
+    system: { subtype, klass: null, description: "" },
+    flags:  { [MODULE_ID]: { location: payload, entityType: "location", entityId: internalId } },
+  }));
+  return { journalId: actorId, internalId };
 }
 
 function makeJournalWithId(id, name) {
@@ -246,6 +253,7 @@ export function buildFullCampaignState(overrides = {}) {
     ...overrides,
   };
 
+  const journalRestore = installed.restore;
   return {
     campaignState,
     journals,
@@ -254,6 +262,11 @@ export function buildFullCampaignState(overrides = {}) {
       sable,
       kovash,
     },
-    restore: installed.restore,
+    restore() {
+      journalRestore();
+      // The location fixture seeds actors directly via game.actors._set; clear
+      // them here so subsequent tests start with an empty actor collection.
+      global.game.actors._reset();
+    },
   };
 }

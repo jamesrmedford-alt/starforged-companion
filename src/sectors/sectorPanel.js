@@ -247,8 +247,10 @@ export class SectorCreatorApp extends ApplicationV2 {
       // entity description matches what the sector journal page shows.
       await applyStubsToSettlementEntities(entityData.settlements, stubs);
 
-      // Sector journal (needs stubs); scene sequential after background resolves
-      const sectorJournal = await createSectorJournal(this.#sector, stubs);
+      // Sector journal (needs stubs + the gen-id→Actor map so the overview can
+      // emit @UUID document links to each settlement Actor — see scope §3.6);
+      // scene sequential after background resolves.
+      const sectorJournal = await createSectorJournal(this.#sector, stubs, entityData.settlements);
       const scene         = await createSectorScene(this.#sector, backgroundPath, entityData.settlements);
 
       const stored = await storeSector(this.#sector, {

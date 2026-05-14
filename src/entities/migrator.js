@@ -21,12 +21,23 @@
  * sectors / folders that already exist.
  */
 
-import { createShip } from "./ship.js";
+import { createShip }       from "./ship.js";
+import { createPlanet }     from "./planet.js";
+import { createLocation }   from "./location.js";
+import { createSettlement } from "./settlement.js";
+import { getOrCreateSectorJournalFolder } from "./folder.js";
 
 const MODULE_ID = "starforged-companion";
 
 // Per scope: deferred reaper deletes legacy journals at least N days old.
 const CLEANUP_DELAY_MS = 7 * 24 * 60 * 60 * 1000;
+
+const TYPES = [
+  { key: "ship",       creator: createShip,       campaignField: "shipIds"       },
+  { key: "planet",     creator: createPlanet,     campaignField: "planetIds"     },
+  { key: "location",   creator: createLocation,   campaignField: "locationIds"   },
+  { key: "settlement", creator: createSettlement, campaignField: "settlementIds" },
+];
 
 /**
  * Entrypoint — invoked from src/index.js when the GM types `!migrate-entities`.
@@ -63,36 +74,53 @@ export async function handleMigrateEntitiesCommand(message) {
 async function runMigration() {
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
   const summary = {
-    ship:    { migrated: 0, alreadyMigrated: 0, errors: 0 },
-    notes:   [],
+    ship:               { migrated: 0, alreadyMigrated: 0, errors: 0 },
+    planet:             { migrated: 0, alreadyMigrated: 0, errors: 0 },
+    location:           { migrated: 0, alreadyMigrated: 0, errors: 0 },
+    settlement:         { migrated: 0, alreadyMigrated: 0, errors: 0 },
+    sectorJournalsMoved: 0,
+    orphanJournalDeleted: false,
+    notes:              [],
   };
 
-  // Walk every JournalEntry. A pre-migration ship entry has its page-flag
-  // payload at page.flags[MODULE_ID].ship.
-  for (const journal of globalThis.game?.journal ?? []) {
+  // Step 2 (scope §5) — reparent existing sector-record JournalEntries into
+  // per-sector subfolders before we add new Actor folders to the tree.
+  await reparentSectorRecordJournals(campaignState, summary);
+
+  // Step 3 — migrate every legacy entity journal of a migrated type.
+  for (const journal of [...(globalThis.game?.journal ?? [])]) {
     const page = journal.pages?.contents?.[0];
     if (!page) continue;
 
     const existingMigrated = journal.flags?.[MODULE_ID]?.migrated;
 
-    const shipData = page.getFlag?.(MODULE_ID, "ship") ?? page.flags?.[MODULE_ID]?.ship;
-    if (shipData) {
+    for (const { key, creator, campaignField } of TYPES) {
+      const data = page.getFlag?.(MODULE_ID, key) ?? page.flags?.[MODULE_ID]?.[key];
+      if (!data) continue;
+
       if (existingMigrated?.toActorId) {
-        summary.ship.alreadyMigrated += 1;
-        continue;
+        summary[key].alreadyMigrated += 1;
+        break;
       }
       try {
-        await migrateShipJournal(journal, shipData, campaignState);
-        summary.ship.migrated += 1;
+        await migrateEntityJournal(journal, key, data, creator, campaignField, campaignState);
+        summary[key].migrated += 1;
       } catch (err) {
-        console.error(`${MODULE_ID} | migrator: ship migration failed for ${journal.id}:`, err);
-        summary.ship.errors += 1;
-        summary.notes.push(`Ship "${shipData.name ?? journal.id}" — ${err.message ?? "unknown error"}`);
+        console.error(`${MODULE_ID} | migrator: ${key} migration failed for ${journal.id}:`, err);
+        summary[key].errors += 1;
+        summary.notes.push(`${key} "${data.name ?? journal.id}" — ${err.message ?? "unknown error"}`);
       }
+      break;  // a journal carries one typed payload; stop after the first match
     }
   }
 
-  if (summary.ship.migrated > 0) {
+  // Step 6 — delete the orphan "Starforged Sectors" JournalEntry. Nothing
+  // reads it post-migration; safe to remove now rather than waiting on the
+  // 7-day window.
+  await deleteOrphanSectorsJournal(summary);
+
+  const anyMigrated = TYPES.some(t => summary[t.key].migrated > 0);
+  if (anyMigrated) {
     try {
       await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
     } catch (err) {
@@ -104,30 +132,64 @@ async function runMigration() {
   return summary;
 }
 
-async function migrateShipJournal(journal, shipData, campaignState) {
-  // Re-create through the production path so the Actor lands in the right
-  // folder and the system.debility fields are mirrored. createShip writes
-  // its own campaignState entry — but we want to *replace* the journal id,
-  // not append, so we suppress its persist and rewrite ourselves.
-  const before = (campaignState.shipIds ?? []).slice();
-  await createShip(shipData, campaignState);
+async function migrateEntityJournal(journal, typeKey, payload, creator, campaignField, campaignState) {
+  const before = (campaignState[campaignField] ?? []).slice();
 
-  // createShip pushed the new actor id; remove the legacy journal id from
-  // the same array so the list stays the right length.
-  const all      = campaignState.shipIds ?? [];
-  const added    = all.find(id => !before.includes(id));
+  // Pass the legacy journal id as a hint into createXxx so the Actor
+  // creator's persist:false short-circuit doesn't accidentally rewrite
+  // campaignState — the migrator manages the array itself.
+  await creator(payload, campaignState, { persist: false });
+
+  const all   = campaignState[campaignField] ?? [];
+  const added = all.find(id => !before.includes(id));
   if (!added) {
-    throw new Error("createShip returned without registering an actor id");
+    throw new Error(`create${capitalize(typeKey)} returned without registering an actor id`);
   }
   const filtered = all.filter(id => id === added || id !== journal.id);
-  campaignState.shipIds = filtered;
+  campaignState[campaignField] = filtered;
 
-  // Mark the source journal as migrated so the cleanup pass can find it.
+  // Update currentLocationId pointer if it referenced the legacy journal id.
+  if (campaignState.currentLocationId === journal.id) {
+    campaignState.currentLocationId = added;
+  }
+
   await journal.setFlag?.(MODULE_ID, "migrated", {
     toActorId: added,
     at:        new Date().toISOString(),
   });
 }
+
+async function reparentSectorRecordJournals(campaignState, summary) {
+  for (const journal of globalThis.game?.journal ?? []) {
+    if (!journal.flags?.[MODULE_ID]?.sectorRecord) continue;
+    const sectorId = journal.flags[MODULE_ID].sectorId;
+    if (!sectorId) continue;
+
+    try {
+      const targetFolder = await getOrCreateSectorJournalFolder(sectorId, campaignState);
+      if (!targetFolder || journal.folder === targetFolder) continue;
+      await journal.update?.({ folder: targetFolder });
+      summary.sectorJournalsMoved += 1;
+    } catch (err) {
+      console.error(`${MODULE_ID} | migrator: reparent sector journal ${journal.id} failed:`, err);
+      summary.notes.push(`sector journal "${journal.name ?? journal.id}" — ${err.message ?? "reparent failed"}`);
+    }
+  }
+}
+
+async function deleteOrphanSectorsJournal(summary) {
+  try {
+    const journal = globalThis.game?.journal?.getName?.("Starforged Sectors");
+    if (!journal) return;
+    await journal.delete?.();
+    summary.orphanJournalDeleted = true;
+  } catch (err) {
+    console.error(`${MODULE_ID} | migrator: delete orphan "Starforged Sectors" failed:`, err);
+    summary.notes.push(`Starforged Sectors journal — ${err.message ?? "delete failed"}`);
+  }
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 /**
  * Cleanup pass — delete legacy journals that have been migrated for at least
@@ -163,14 +225,22 @@ async function runCleanup() {
 
 async function postSummaryCard(title, summary) {
   const lines = [];
-  if ("ship" in summary) {
-    lines.push(`<li>Ships migrated: <strong>${summary.ship.migrated}</strong></li>`);
-    if (summary.ship.alreadyMigrated) {
-      lines.push(`<li>Already migrated: ${summary.ship.alreadyMigrated}</li>`);
+  for (const { key } of TYPES) {
+    if (!(key in summary)) continue;
+    const counts = summary[key];
+    if (counts.migrated || counts.alreadyMigrated || counts.errors) {
+      const label = `${capitalize(key)}s`;
+      lines.push(`<li>${label} migrated: <strong>${counts.migrated}</strong>` +
+        (counts.alreadyMigrated ? ` (already migrated: ${counts.alreadyMigrated})` : "") +
+        (counts.errors ? ` <em>(${counts.errors} error${counts.errors === 1 ? "" : "s"})</em>` : "") +
+        `</li>`);
     }
-    if (summary.ship.errors) {
-      lines.push(`<li>Errors: ${summary.ship.errors}</li>`);
-    }
+  }
+  if (summary.sectorJournalsMoved) {
+    lines.push(`<li>Sector journals reparented: ${summary.sectorJournalsMoved}</li>`);
+  }
+  if (summary.orphanJournalDeleted) {
+    lines.push(`<li>Removed legacy "Starforged Sectors" journal.</li>`);
   }
   if ("deleted" in summary) {
     lines.push(`<li>Legacy journals deleted: <strong>${summary.deleted}</strong></li>`);

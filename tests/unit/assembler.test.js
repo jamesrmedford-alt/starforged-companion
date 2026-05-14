@@ -692,15 +692,18 @@ describe("assembler — current location card (Section 6)", () => {
   });
 
   it("injects CURRENT LOCATION block when currentLocationId is set", async () => {
-    game.journal.get = (id) => {
-      if (id !== "j-bleak") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { settlement: {
+    // Settlement is now actor-hosted (Phase 3 of the Entity → Actor Migration);
+    // seed via game.actors instead of game.journal.
+    global.game.actors._set("a-bleak", global.makeTestActor({
+      id: "a-bleak", type: "location", name: "Bleakhold",
+      system: { subtype: "settlement", klass: "Planetside", description: "" },
+      flags: { "starforged-companion": { settlement: {
         _id: "loc-1", name: "Bleakhold", location: "Planetside",
         canonicalLocked: false, generativeTier: [],
-      }}}}] }};
-    };
+      } } },
+    }));
     const state = baseCampaignState({
-      currentLocationId:   "j-bleak",
+      currentLocationId:   "a-bleak",
       currentLocationType: "settlement",
     });
     const packet = await assembleContextPacket(

@@ -371,31 +371,40 @@ describe("resolveRelevance — default collectAllEntities path", () => {
   }
 
   function stubShip(id, ship) {
-    // Ships are actor-hosted post Phase 2 of the Entity → Actor Migration;
-    // the relevance resolver pulls them via game.actors, not game.journal.
     global.game.actors._set(id, global.makeTestActor({
       id, type: "starship", name: ship.name,
       flags: { "starforged-companion": { ship } },
+    }));
+  }
+  // Settlement / planet / location now live on `type='location'` Actors with
+  // `system.subtype` discriminating between the three (§3.3 of the migration
+  // scope). The relevance resolver pulls each via its typed flag payload,
+  // so the test only needs to register the actor with the right flag set.
+  function stubLocationActor(id, typeKey, payload) {
+    global.game.actors._set(id, global.makeTestActor({
+      id, type: "location", name: payload.name,
+      system: { subtype: typeKey === "location" ? (payload.type || "other") : typeKey },
+      flags: { "starforged-companion": { [typeKey]: payload } },
     }));
   }
 
   it("scans every configured entity collection in the campaign state", async () => {
     stubJournal({
       "j-conn":  { connection: { _id: "c1", name: "Sable" } },
-      "j-set":   { settlement: { _id: "s1", name: "Bleakhold" } },
       "j-fac":   { faction:    { _id: "f1", name: "Pelican Confederacy" } },
-      "j-plan":  { planet:     { _id: "p1", name: "Cinderworld" } },
-      "j-loc":   { location:   { _id: "l1", name: "Glasspike Ruin" } },
       "j-creat": { creature:   { _id: "cr1", name: "Forgespawn Alpha" } },
     });
     stubShip("a-ship", { _id: "sh1", name: "Ironfold" });
+    stubLocationActor("a-set",  "settlement", { _id: "s1",  name: "Bleakhold" });
+    stubLocationActor("a-plan", "planet",     { _id: "p1",  name: "Cinderworld" });
+    stubLocationActor("a-loc",  "location",   { _id: "l1",  name: "Glasspike Ruin" });
     const campaign = {
       connectionIds: ["j-conn"],
-      settlementIds: ["j-set"],
+      settlementIds: ["a-set"],
       factionIds:    ["j-fac"],
       shipIds:       ["a-ship"],
-      planetIds:     ["j-plan"],
-      locationIds:   ["j-loc"],
+      planetIds:     ["a-plan"],
+      locationIds:   ["a-loc"],
       creatureIds:   ["j-creat"],
       dismissedEntities: [],
     };
@@ -408,7 +417,7 @@ describe("resolveRelevance — default collectAllEntities path", () => {
     // Three matches expected (Ironfold, Bleakhold, Sable)
     expect(result.matchedNames.sort()).toEqual(["Bleakhold", "Ironfold", "Sable"]);
     expect(result.entityIds).toContain("j-conn");
-    expect(result.entityIds).toContain("j-set");
+    expect(result.entityIds).toContain("a-set");
     expect(result.entityIds).toContain("a-ship");
   });
 

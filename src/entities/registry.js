@@ -25,11 +25,11 @@ const MODULE_ID = 'starforged-companion';
 // to 'actors' here without touching any caller.
 const HOST_COLLECTION = {
   connection: 'journal',
-  ship:       'actor',   // type='starship' — Phase 2 (Entity → Actor Migration)
-  settlement: 'journal',
+  ship:       'actor',   // type='starship'                    — Phase 2
+  settlement: 'actor',   // type='location', subtype='settlement' — Phase 3
   faction:    'journal',
-  planet:     'journal',
-  location:   'journal',
+  planet:     'actor',   // type='location', subtype='planet'  — Phase 3
+  location:   'actor',   // type='location', subtype=<type>    — Phase 3
   creature:   'journal',
 };
 
