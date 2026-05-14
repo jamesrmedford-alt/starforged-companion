@@ -26,13 +26,13 @@
 
 import { apiPost } from "../api-proxy.js";
 
-import { getConnection,  createConnection }  from "./connection.js";
-import { getSettlement } from "./settlement.js";
-import { getFaction }    from "./faction.js";
-import { getShip }       from "./ship.js";
-import { getPlanet }     from "./planet.js";
-import { getLocation }   from "./location.js";
-import { getCreature }   from "./creature.js";
+import { getConnection, createConnection } from "./connection.js";
+import { getSettlement, createSettlement } from "./settlement.js";
+import { getFaction,    createFaction }    from "./faction.js";
+import { getShip,       createShip }       from "./ship.js";
+import { getPlanet,     createPlanet }     from "./planet.js";
+import { getLocation,   createLocation }   from "./location.js";
+import { getCreature,   createCreature }   from "./creature.js";
 
 import {
   recordLoreDiscovery,
@@ -678,19 +678,12 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   if (!globalThis.ChatMessage?.create) return null;
   if (!entities?.length) return null;
 
-  const items = entities.map(e => {
-    const glyph = TYPE_GLYPHS[e.type] ?? "◇";
-    const label = TYPE_LABELS[e.type] ?? e.type;
-    const desc  = e.description ? ` — ${escapeHtml(e.description)}` : "";
-    return `<li>[${glyph} ${escapeHtml(label)}] <strong>${escapeHtml(e.name)}</strong>${desc}</li>`;
-  }).join("");
+  // Stable index lets click handlers identify the right draft after re-render.
+  // We never reorder the array so the index in the flag matches the index in
+  // the rendered DOM.
+  const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: "pending" }));
 
-  const html =
-    `<div class="sf-draft-entity-card">` +
-    `<div class="sf-draft-entity-label">◈ New Entities Detected</div>` +
-    `<ul class="sf-draft-entity-list">${items}</ul>` +
-    `<div class="sf-draft-entity-hint">Open the Entities panel to confirm or dismiss.</div>` +
-    `</div>`;
+  const html = renderDraftCardHtml(drafts);
 
   const whisper = collectGmIds();
 
@@ -708,7 +701,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
       flags: {
         [MODULE_ID]: {
           draftEntityCard: true,
-          drafts:          entities,
+          drafts,
           source,
         },
       },
@@ -716,6 +709,183 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   } catch (err) {
     console.warn(`${MODULE_ID} | entityExtractor: postDraftEntityCard failed:`, err);
     return null;
+  }
+}
+
+/**
+ * Render the HTML body of the draft entity card from a `drafts` array.
+ * Pure / re-runnable so the renderChatMessage hook can rebuild after each
+ * Confirm/Dismiss click.
+ */
+function renderDraftCardHtml(drafts) {
+  const items = drafts.map((e) => {
+    const glyph = TYPE_GLYPHS[e.type] ?? "◇";
+    const label = TYPE_LABELS[e.type] ?? e.type;
+    const desc  = e.description ? ` — ${escapeHtml(e.description)}` : "";
+    const status = e.status ?? "pending";
+
+    let actions;
+    if (status === "confirmed") {
+      actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>`;
+    } else if (status === "dismissed") {
+      actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
+    } else {
+      actions =
+        `<button class="sf-draft-btn sf-draft-confirm" ` +
+        `data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>` +
+        `<button class="sf-draft-btn sf-draft-dismiss" ` +
+        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
+    }
+
+    const rowClass = `sf-draft-row sf-draft-row-${status}`;
+    return (
+      `<li class="${rowClass}">` +
+      `<div class="sf-draft-row-info">` +
+      `[${glyph} ${escapeHtml(label)}] <strong>${escapeHtml(e.name)}</strong>${desc}` +
+      `</div>` +
+      `<div class="sf-draft-row-actions">${actions}</div>` +
+      `</li>`
+    );
+  }).join("");
+
+  const allResolved = drafts.every(d => d.status && d.status !== "pending");
+  const hint = allResolved
+    ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.</div>`
+    : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.</div>`;
+
+  return (
+    `<div class="sf-draft-entity-card">` +
+    `<div class="sf-draft-entity-label">◈ New Entities Detected</div>` +
+    `<ul class="sf-draft-entity-list">${items}</ul>` +
+    hint +
+    `</div>`
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAFT CARD — Confirm / Dismiss handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ENTITY_CREATORS = {
+  connection: createConnection,
+  ship:       createShip,
+  settlement: createSettlement,
+  faction:    createFaction,
+  planet:     createPlanet,
+  location:   createLocation,
+  creature:   createCreature,
+};
+
+/**
+ * Wire Confirm/Dismiss button clicks on draft entity chat cards. Idempotent:
+ * registers a single renderChatMessage hook that re-attaches listeners every
+ * render. Call once at module ready.
+ */
+export function registerDraftCardHooks() {
+  Hooks.on("renderChatMessage", (message, html) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard) return;
+
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    if (!root) return;
+
+    // Non-GMs see the card (they're whispered in) but cannot mutate state.
+    // Hide buttons rather than wire dead handlers.
+    if (!globalThis.game?.user?.isGM) {
+      root.querySelectorAll(".sf-draft-btn").forEach(btn => { btn.style.display = "none"; });
+      return;
+    }
+
+    root.querySelectorAll('[data-action="sf-draft-confirm"]').forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.index);
+        handleDraftConfirm(message, idx).catch(err =>
+          console.error(`${MODULE_ID} | draft confirm failed:`, err));
+      });
+    });
+
+    root.querySelectorAll('[data-action="sf-draft-dismiss"]').forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.index);
+        handleDraftDismiss(message, idx).catch(err =>
+          console.error(`${MODULE_ID} | draft dismiss failed:`, err));
+      });
+    });
+  });
+}
+
+async function handleDraftConfirm(message, draftIndex) {
+  const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
+    ? [...message.flags[MODULE_ID].drafts]
+    : [];
+  const draft = drafts.find(d => d.index === draftIndex);
+  if (!draft || draft.status !== "pending") return;
+
+  const creator = ENTITY_CREATORS[draft.type];
+  if (!creator) {
+    console.warn(`${MODULE_ID} | draft confirm: no creator for type "${draft.type}"`);
+    return;
+  }
+
+  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+
+  try {
+    await creator({
+      name:        draft.name,
+      description: draft.description ?? "",
+    }, campaignState);
+  } catch (err) {
+    console.error(`${MODULE_ID} | draft confirm: createXxx failed:`, err);
+    if (globalThis.ui?.notifications?.warn) {
+      globalThis.ui.notifications.warn(`Failed to create ${draft.type} "${draft.name}". See console.`);
+    }
+    return;
+  }
+
+  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });
+  await updateDraftCard(message, drafts);
+}
+
+async function handleDraftDismiss(message, draftIndex) {
+  const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
+    ? [...message.flags[MODULE_ID].drafts]
+    : [];
+  const draft = drafts.find(d => d.index === draftIndex);
+  if (!draft || draft.status !== "pending") return;
+
+  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+  const list = Array.isArray(campaignState.dismissedEntities)
+    ? [...campaignState.dismissedEntities]
+    : [];
+  if (draft.name && !list.includes(draft.name)) list.push(draft.name);
+  campaignState.dismissedEntities = list;
+
+  try {
+    await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+  } catch (err) {
+    console.error(`${MODULE_ID} | draft dismiss: settings.set failed:`, err);
+    return;
+  }
+
+  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "dismissed" });
+  await updateDraftCard(message, drafts);
+}
+
+async function updateDraftCard(message, drafts) {
+  const content = renderDraftCardHtml(drafts);
+  try {
+    // Update content first, then flags via setFlag so we don't accidentally
+    // clobber sibling flags (draftEntityCard, source) by passing a partial
+    // flags object to message.update.
+    await message.update({ content });
+    await message.setFlag(MODULE_ID, "drafts", drafts);
+  } catch (err) {
+    console.error(`${MODULE_ID} | updateDraftCard failed:`, err);
   }
 }
 
@@ -827,6 +997,10 @@ function collectPendingDraftNames() {
       if (!f?.draftEntityCard) continue;
       const drafts = Array.isArray(f.drafts) ? f.drafts : [];
       for (const d of drafts) {
+        // Only "pending" drafts should suppress re-detection. Confirmed
+        // drafts are now established entities (caught by collectEstablished-
+        // EntityNames). Dismissed drafts are now in dismissedEntities.
+        if (d?.status && d.status !== "pending") continue;
         if (d?.name && typeof d.name === "string") names.add(d.name.trim());
       }
     }

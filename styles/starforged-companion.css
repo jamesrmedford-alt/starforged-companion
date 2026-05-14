@@ -2063,3 +2063,104 @@
 .sf-wj-entity-link-btn:hover {
   background: rgba(124, 92, 191, 0.1);
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* DRAFT ENTITY CARD — chat-card Confirm/Dismiss buttons                       */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.sf-draft-entity-card {
+  font-size: 0.95em;
+}
+
+.sf-draft-entity-label {
+  font-weight:   600;
+  margin-bottom: 0.4rem;
+}
+
+.sf-draft-entity-list {
+  list-style: none;
+  padding:    0;
+  margin:     0 0 0.4rem 0;
+}
+
+.sf-draft-row {
+  display:         flex;
+  align-items:     flex-start;
+  justify-content: space-between;
+  gap:             0.5rem;
+  padding:         4px 0;
+  border-bottom:   1px dashed var(--color-border-light, #eee);
+}
+
+.sf-draft-row:last-child {
+  border-bottom: none;
+}
+
+.sf-draft-row-confirmed,
+.sf-draft-row-dismissed {
+  opacity: 0.7;
+}
+
+.sf-draft-row-info {
+  flex:        1 1 auto;
+  line-height: 1.35;
+}
+
+.sf-draft-row-actions {
+  flex:        0 0 auto;
+  display:     flex;
+  gap:         4px;
+  align-items: center;
+}
+
+.sf-draft-btn {
+  font-size:     0.82em;
+  padding:       2px 8px;
+  border-radius: 3px;
+  cursor:        pointer;
+  border:        1px solid var(--color-border-light, #ccc);
+  background:    transparent;
+  color:         var(--color-text-dark-primary, #111);
+}
+
+.sf-draft-confirm {
+  border-color: #2c5e2c;
+  color:        #2c5e2c;
+}
+
+.sf-draft-confirm:hover {
+  background: rgba(44, 94, 44, 0.1);
+}
+
+.sf-draft-dismiss {
+  border-color: #8a3a3a;
+  color:        #8a3a3a;
+}
+
+.sf-draft-dismiss:hover {
+  background: rgba(138, 58, 58, 0.1);
+}
+
+.sf-draft-status {
+  font-size:   0.82em;
+  font-weight: 600;
+}
+
+.sf-draft-status-confirmed {
+  color: #2c5e2c;
+}
+
+.sf-draft-status-dismissed {
+  color: #8a3a3a;
+}
+
+.sf-draft-entity-hint {
+  font-size:  0.85em;
+  color:      var(--color-text-dark-secondary, #555);
+  font-style: italic;
+}
+
+.sf-draft-entity-hint-done {
+  color: var(--color-text-dark-secondary, #888);
+}

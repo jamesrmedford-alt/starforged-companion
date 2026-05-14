@@ -89,6 +89,7 @@ import {
   ClarificationDialog,
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
+import { registerDraftCardHooks } from "./entities/entityExtractor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1237,6 +1238,7 @@ Hooks.once("ready", () => {
   registerActorHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
+  registerDraftCardHooks();
   registerSettingsHooks();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a

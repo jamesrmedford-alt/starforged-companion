@@ -2322,12 +2322,29 @@ function registerEntityPanelActionsTests(quench) {
         }
       });
 
+      // Regression guard: ENTITY-001 (the panel reading entry-level flags
+      // instead of page-level flags) silently green'd these tests for months
+      // because every assertion was gated behind `if (!btn) this.skip()`.
+      // The seeded Connection MUST render a row — failing this assertion
+      // means loadAllEntities() is broken again.
+      describe("seeded Connection renders a row in the entity panel", function () {
+        it("loadAllEntities surfaces the seeded entity", function () {
+          if (!app || !testJournalId) { this.skip(); return; }
+          const row = app.element?.querySelector(
+            `[data-action="selectEntity"][data-journal-id="${testJournalId}"]`);
+          assert.isNotNull(
+            row,
+            "seeded Connection should render a row — loadAllEntities() may be reading the wrong flag scope",
+          );
+        });
+      });
+
       describe("switchTopTab — toggle list and dismissed", function () {
         it("clicking switchTopTab[data-tab=dismissed] switches the active tab", async function () {
           if (!app) { this.skip(); return; }
           const dismissedBtn = app.element?.querySelector(
             '[data-action="switchTopTab"][data-tab="dismissed"]');
-          if (!dismissedBtn) { this.skip(); return; }
+          assert.isNotNull(dismissedBtn, "dismissed tab button should be present");
           dismissedBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
           await awaitRender(app);
           // Either the dismissed pane is now visible or the data-tab attribute reflects state
@@ -2343,7 +2360,10 @@ function registerEntityPanelActionsTests(quench) {
           if (!app || !testJournalId) { this.skip(); return; }
           const selector = `[data-action="selectEntity"][data-journal-id="${testJournalId}"]`;
           const btn = app.element.querySelector(selector);
-          if (!btn) { this.skip(); return; }
+          assert.isNotNull(
+            btn,
+            "seeded Connection row missing — see entityPanel loadAllEntities()",
+          );
           btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
           await awaitRender(app);
           // After selection, a back-to-list button should be present.
@@ -2357,11 +2377,24 @@ function registerEntityPanelActionsTests(quench) {
           if (!app || !testJournalId) { this.skip(); return; }
           const journal = game.journal.get(testJournalId);
           const page = journal?.pages?.contents?.[0];
-          if (!page) { this.skip(); return; }
+          assert.isOk(page, "seeded Connection page should exist");
+
+          // The lock button only appears in the detail view; ensure the panel
+          // is showing it (selectEntity may still be on the list view from the
+          // previous test, depending on Quench batch ordering).
+          const detailBack = app.element.querySelector('[data-action="backToList"]');
+          if (!detailBack) {
+            const row = app.element.querySelector(
+              `[data-action="selectEntity"][data-journal-id="${testJournalId}"]`);
+            assert.isNotNull(row, "must be able to navigate into the entity detail view");
+            row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await awaitRender(app);
+          }
+
           const before = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
           const lockBtn = app.element.querySelector(
             `[data-action="toggleCanonicalLock"][data-journal-id="${testJournalId}"]`);
-          if (!lockBtn) { this.skip(); return; }
+          assert.isNotNull(lockBtn, "canonical-lock button should be present in detail view");
           lockBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
           await flushMicrotasks(); await flushMicrotasks();
           const after = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
@@ -2389,10 +2422,9 @@ function registerEntityPanelActionsTests(quench) {
 // storeArtAsset → linkPortraitToEntity) had no Quench coverage. These tests
 // exercise it end-to-end against a stubbed OpenRouter, plus a live-key gated
 // variant. The Generate/Regenerate calls are invoked directly via generator.js
-// rather than through the panel button so the assertions are robust to the
-// known journal-vs-page flag read quirk in loadAllEntities() (tracked as a
-// latent issue in known-issues.md). The flow each test exercises is the same
-// chain the UI handler runs.
+// rather than through the panel button to keep the assertions independent of
+// the panel-render path (which is exercised separately in the entity-panel
+// actions batch above).
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerPortraitGenerationTests(quench) {

@@ -82,6 +82,40 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### ENTITY-001 — Entity panel always empty; draft cards had no Confirm UI ✓
+
+**Resolved in:** v1.2.6 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Two compounding issues:
+1. The Entities panel always showed "No entities tracked yet" even after entities
+   had been created (manually, via `make_a_connection`, or via the sector creator).
+2. The "New Entities Detected" chat card told the GM to "Open the Entities panel
+   to confirm or dismiss" — but the panel had no UI to confirm a draft. Drafts
+   could only be implicitly dismissed by deleting the chat card; ship/settlement/
+   planet/location/creature drafts had no way to be promoted to entities at all.
+
+**Root cause (panel):** `loadAllEntities()` and `findEntity()` in
+`src/ui/entityPanel.js` read the entity flag via
+`journal.getFlag(MODULE_ID, config.flag)` — i.e. the JournalEntry's own flags.
+But all seven entity types (`connection.js`, `ship.js`, …, `creature.js`) store
+their data on the embedded `JournalEntryPage` flag. The entry itself only carries
+`{ entityType, entityId }` routing crumbs. Every iteration fell through the
+`if (!data) continue;` guard and the panel rendered the empty state.
+
+**Root cause (draft UX):** The card's hint text claimed the panel had a confirm
+flow, but no such code existed. Only `make_a_connection` auto-created the first
+connection draft; everything else lived on the chat card forever.
+
+**Fixes:**
+- `src/ui/entityPanel.js` — read entity data from `journal.pages.contents[0].getFlag(...)` in both `loadAllEntities()` and `findEntity()`. Added `updateJournalEntryPage` and `createJournalEntryPage` hooks so the panel re-renders when page flags change (entry-level hooks don't fire for embedded page edits).
+- `src/entities/entityExtractor.js` — draft chat cards now render Confirm and Dismiss buttons per row. Confirm calls the appropriate `createXxx()` from the entity modules; Dismiss appends the name to `campaignState.dismissedEntities`. Card content updates in place to show resolved status.
+- `collectPendingDraftNames()` — only "pending" drafts suppress re-detection; resolved drafts are now established (caught by `collectEstablishedEntityNames`) or dismissed (caught by `dismissedEntities`).
+- `src/integration/quench.js` — `entityPanelActions` batch hardened to assert the seeded Connection actually renders a row instead of silently calling `this.skip()`. The skip-on-miss guards were what hid this bug for months.
+
+**Why it wasn't caught:** the existing Quench batch (`registerEntityPanelActionsTests`) skipped every assertion when no row appeared. A code comment in `src/integration/quench.js` even acknowledged "the known journal-vs-page flag read quirk in loadAllEntities() (tracked as a latent issue in known-issues.md)" — but it was never actually tracked here. Bug present since `entityPanel.js` was first created (commit `102a9a3`).
+
+---
+
 ### CONTROLS-001 — Toolbar buttons appeared but did nothing ✓
 
 **Resolved in:** v0.1.34

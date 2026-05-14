@@ -856,3 +856,89 @@ describe("buildCombinedDetectionPrompt — honorific instruction", () => {
     fixture.restore();
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draft entity card — Confirm/Dismiss UI shape
+// (ENTITY-001 — UX half: chat-card buttons replaced the misleading "Open the
+// Entities panel" hint that pointed at a non-existent confirm flow.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("draft entity card — Confirm/Dismiss buttons", () => {
+  beforeEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+  afterEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  it("renders per-row Confirm and Dismiss buttons with stable indices", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts([
+      { type: "faction", name: "Crimson Veil", description: "splinter cult", confidence: "high" },
+      { type: "ship",    name: "Long Memory", description: "old freighter",  confidence: "high" },
+    ], fixture.campaignState);
+
+    const card = global.ChatMessage._created[0];
+    expect(card).toBeTruthy();
+    expect(card.flags?.[MODULE_ID]?.draftEntityCard).toBe(true);
+
+    // Each row has both buttons, indexed 0 and 1.
+    expect(card.content).toContain('data-action="sf-draft-confirm" data-index="0"');
+    expect(card.content).toContain('data-action="sf-draft-dismiss" data-index="0"');
+    expect(card.content).toContain('data-action="sf-draft-confirm" data-index="1"');
+    expect(card.content).toContain('data-action="sf-draft-dismiss" data-index="1"');
+
+    // Hint text replaces the misleading "Open the Entities panel..." line.
+    expect(card.content).not.toContain("Open the Entities panel");
+    expect(card.content).toContain("Confirm to add to the Entities panel");
+
+    // Drafts in flags carry the index + status fields used by the click handler.
+    const drafts = card.flags[MODULE_ID].drafts;
+    expect(drafts).toHaveLength(2);
+    expect(drafts[0]).toMatchObject({ name: "Crimson Veil", index: 0, status: "pending" });
+    expect(drafts[1]).toMatchObject({ name: "Long Memory",  index: 1, status: "pending" });
+
+    fixture.restore();
+  });
+});
+
+describe("collectPendingDraftNames — only suppresses pending drafts", () => {
+  beforeEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+  afterEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  it("does not suppress detection of a draft that has already been confirmed or dismissed", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts(
+      [{ type: "ship", name: "Long Memory", description: "freighter" }],
+      fixture.campaignState,
+    );
+
+    // Manually mark the only draft as confirmed (simulating the user
+    // clicking the chat-card Confirm button — the message stays in chat).
+    const card = global.game.messages.contents[0];
+    const drafts = card.flags[MODULE_ID].drafts.map(d => ({ ...d, status: "confirmed" }));
+    card.flags[MODULE_ID].drafts = drafts;
+
+    // The detector should now see no PENDING DRAFTS line for "Long Memory",
+    // so a fresh detection of the same name parses through (it would be
+    // suppressed elsewhere by entityExistsForName once actually created,
+    // but parseDetectionResponse alone should not block it).
+    const raw = JSON.stringify({
+      entities: [{ type: "ship", name: "Long Memory", confidence: "high" }],
+    });
+    const parsed = parseDetectionResponse(raw, fixture.campaignState);
+    expect(parsed.entities).toHaveLength(1);
+    expect(parsed.entities[0].name).toBe("Long Memory");
+
+    fixture.restore();
+  });
+});
