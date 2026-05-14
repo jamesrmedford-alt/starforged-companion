@@ -106,10 +106,14 @@ async function loadAllEntities() {
     result[typeKey] = [];
 
     for (const journal of game.journal) {
-      const data = journal.getFlag(MODULE_ID, config.flag);
+      // Entity data lives on the embedded JournalEntryPage flag, not the
+      // JournalEntry itself. Entry-level flags only carry routing crumbs
+      // ({ entityType, entityId }). See src/entities/*.js create paths.
+      const page = journal.pages?.contents?.[0];
+      if (!page) continue;
+      const data = page.getFlag(MODULE_ID, config.flag);
       if (!data) continue;
 
-      // Load art asset via entity's portraitId
       const art = data.portraitId
         ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
         : null;
@@ -136,11 +140,13 @@ async function loadAllEntities() {
  */
 async function findEntity(journalId) {
   const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+  const journal = game.journal.get(journalId);
+  if (!journal) return null;
+  const page = journal.pages?.contents?.[0];
+  if (!page) return null;
 
   for (const [typeKey, config] of Object.entries(ENTITY_TYPES)) {
-    const journal = game.journal.get(journalId);
-    if (!journal) continue;
-    const data = journal.getFlag(MODULE_ID, config.flag);
+    const data = page.getFlag(MODULE_ID, config.flag);
     if (!data) continue;
 
     const art = data.portraitId
@@ -805,7 +811,27 @@ export class EntityPanelApp extends ApplicationV2 {
       instance.render();
     });
 
+    // Entity data lives on JournalEntryPage flags, so page-flag mutations
+    // (canonicalLocked toggle, generative-tier edits, portraitId writes) only
+    // surface via this hook — updateJournalEntry does not fire for embedded
+    // page changes.
+    Hooks.on('updateJournalEntryPage', (page, change) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered) return;
+      if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}`)) return;
+      instance.render();
+    });
+
     Hooks.on('createJournalEntry', () => {
+      const instance = EntityPanelApp.#instance;
+      if (instance?.rendered) instance.render();
+    });
+
+    // A new page on an existing journal can reveal entity data the panel
+    // hadn't yet been able to see (entity create flow is two steps:
+    // JournalEntry.create then createEmbeddedDocuments("JournalEntryPage")).
+    Hooks.on('createJournalEntryPage', (page) => {
+      if (!page?.flags?.[MODULE_ID]) return;
       const instance = EntityPanelApp.#instance;
       if (instance?.rendered) instance.render();
     });

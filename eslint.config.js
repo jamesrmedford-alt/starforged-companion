@@ -42,10 +42,11 @@ export default [
         // ── Browser globals used in Foundry renderer context ─────────────
         atob:       "readonly",
         btoa:       "readonly",
-        Blob:       "readonly",
-        File:       "readonly",
-        MouseEvent: "readonly",
-        Response:   "readonly",
+        Blob:        "readonly",
+        File:        "readonly",
+        HTMLElement: "readonly",
+        MouseEvent:  "readonly",
+        Response:    "readonly",
         Uint8Array: "readonly",
         AbortSignal: "readonly",
 

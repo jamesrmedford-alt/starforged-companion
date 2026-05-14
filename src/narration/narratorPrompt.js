@@ -574,6 +574,9 @@ export function resolveNarrationPerspective(setting) {
  * @param {string} [extras.narratorClass]      — "discovery" | "interaction" | "embellishment"
  * @param {Array}  [extras.entityCards]        — Pre-formatted entity card strings (from formatEntityCard)
  * @param {string} [extras.currentLocationCard]— Pre-formatted current location card
+ * @param {string} [extras.activeSectorBlock]  — Pre-built active-sector anchor block listing
+ *   established settlement names; tells the narrator to reuse them rather than invent
+ *   alternatives. Built by `formatActiveSector` in narrator.js.
  * @param {Object} [extras.oracleSeeds]        — { results, names, context } per scope §7
  * @param {string} [extras.campaignTruthsBlock]— Pre-built `<campaign_truths>` block from system asset integration Phase 8
  * @param {string} [extras.mode]               — "move_resolution" | "paced_narrative" | "scene_interrogation"
@@ -602,6 +605,7 @@ export function buildNarratorSystemPrompt(
     narratorClass        = null,
     entityCards          = [],
     currentLocationCard  = '',
+    activeSectorBlock    = '',
     oracleSeeds          = null,
     campaignTruthsBlock  = '',
     mode                 = 'move_resolution',
@@ -671,6 +675,14 @@ export function buildNarratorSystemPrompt(
   // [5] Current location card — always injected when set
   if (currentLocationCard?.trim()) {
     parts.push(`## CURRENT LOCATION\n\n${currentLocationCard.trim()}`);
+  }
+
+  // [5b] Active sector anchor — names + directive to reuse them. Closes the
+  //      paced-narrative / scene-interrogation gap where the narrator had
+  //      no sector context and would invent new settlement names for
+  //      places that already exist in the active sector.
+  if (activeSectorBlock?.trim()) {
+    parts.push(`## ACTIVE SECTOR\n\n${activeSectorBlock.trim()}`);
   }
 
   // [6] Matched entity cards — from relevance resolver
