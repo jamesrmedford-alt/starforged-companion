@@ -3,7 +3,7 @@
 
 **Status:** 📋 PLANNED
 **Priority:** TBD (no current blocker; opportunistic structural cleanup)
-**Estimated Claude Code sessions:** 3
+**Estimated Claude Code sessions:** 4 (3 for the migration, 1 for the sector-flag dedup)
 **Dependencies:** Character Management (✅), Ironsworn API (✅), Narrator Entity Discovery (✅), World Journal (✅), Quench Integration Tests (✅)
 **Pre-requisite:** None — entity reads/writes are concentrated in a small surface (`src/entities/*.js`, `src/ui/entityPanel.js`, `src/context/{assembler,relevanceResolver}.js`)
 
@@ -190,6 +190,40 @@ For entities with no `sectorId` (the entity was created via the narrator without
 
 All helpers cache their results in a `Map<key, folderId>` and re-resolve if the cached id is no longer a valid folder (the user might delete a folder by hand).
 
+### 3.5 Single source of truth for settlement / planet / location data
+
+Pre-migration, settlement (and to a lesser extent planet/location) data is duplicated across four storage layers — only one of which is mutable. This scope collapses that to two: the Actor (mutable) and the sector flag (structural / spatial). The four layers today, with their post-migration disposition:
+
+| # | Storage | Current contents | Post-migration |
+|---|---|---|---|
+| 1 | `actor.system + actor.flags[MODULE].<type>` | (doesn't exist yet) | **Source of truth.** Holds every mutable field. |
+| 2 | Embedded `JournalEntryPage` inside the sector-record `JournalEntry` (`src/sectors/sectorGenerator.js:494-515`) | One static HTML page per settlement (type / population / authority / projects / trouble / narrator stub) | **Removed.** The sector-record journal keeps the sector overview page only. Per-settlement detail is replaced by `@UUID[Actor.<id>]{Name}` links in the overview's settlement list. Same treatment applied if/when the sector record gains planet or POI pages. |
+| 3 | `campaignState.sectors[]` array on the world settings blob (`src/sectors/sectorGenerator.js:340`, read by `src/index.js:1024`, `src/context/assembler.js:792`, `src/narration/narrator.js:929`) | The entire generation result, including full settlement objects | **Slimmed.** Each `sector.settlements[]` entry becomes `{ id, actorId, locationType, planetActorId?, mapCoords? }` — only the structural/spatial fields needed for sector-map rendering and for the assembler's "what's in this sector" lookup. `id` is retained for backward compatibility with sector-art and map code that already references it. The other fields (`population`, `authority`, `projects`, `trouble`, `description`, etc.) are removed from the array entry and resolved at read time via `game.actors.get(actorId)`. |
+| 4 | `Starforged Sectors` JournalEntry flag (`saveSectorToJournal`, `src/sectors/sectorGenerator.js:529`) | The entire generation result, again | **Removed.** No production code reads this — only `tests/integration/quench.js:776/781`. Quench tests are updated to read from `campaignState.sectors[]` instead. The orphan `Starforged Sectors` JournalEntry itself is deleted by the migrator. |
+
+**Field ownership rule** — for every field, exactly one of (1) and (3) owns it:
+
+- Settlement-instance fields → **(1) Actor only.** Includes: name, population, authority, projects, trouble, firstLook, initialContact, description, history, notes, portraitId, sceneRelevant, loremasterNotes, connectionIds, canonicalLocked, generativeTier, createdAt, updatedAt, and `locationType` (orbital/planetside/deep-space — currently lives in (3); migrates to `flags[MODULE].settlement.locationType` on the Actor).
+- Sector-structural / spatial fields → **(3) sector flag only.** Includes: sector id, sector name, region, regionLabel, trouble, faction, passages[], the spatial map layout, plus the slim settlement reference array `{ id, actorId, planetActorId?, mapCoords? }`.
+
+Same rule applies to planets and POI locations when they're created via the sector generator. The Actor owns their mutable data; the sector flag owns only the position-on-the-map reference.
+
+### 3.6 Sector-record JournalEntry — overview only
+
+`createSectorJournal` (`src/sectors/sectorGenerator.js:444`) post-migration emits **one** JournalEntryPage — the sector overview. The overview's "Settlements" list switches from inline HTML pages to a UL of Foundry document links:
+
+```html
+<h3>Settlements</h3>
+<ul>
+  <li>@UUID[Actor.<actorId>]{<Settlement Name>} — Planetside, Pop: Thousands, Authority: Notorious</li>
+  ...
+</ul>
+```
+
+The structural fields (locationType, population, authority) are pulled from the Actor at render time, so the overview stays current if the GM edits the settlement. The per-settlement pages embedded by the current code are not regenerated.
+
+A "Refresh sector overview" action lands on the sector-record journal as a header button — re-renders the overview from current Actor data. Implementation note: `createSectorJournal` is the natural call site for the initial render; a hook on `updateActor` (only for actors in this sector) re-renders the overview if names or locationType change, debounced ~500 ms.
+
 ---
 
 ## 4. Surface changes
@@ -286,12 +320,26 @@ The current `getOrCreateEntitiesFolder` export is preserved under the new name `
 
 `src/sectors/sectorGenerator.js`:
 
-- `createSectorJournal` (line 444) currently lands the sector-record JournalEntry directly in the flat `Sectors` folder. Switch the `folder:` argument to `await getOrCreateSectorJournalFolder(sector.id)` so each sector gets its own per-sector journal subfolder. The sector-record JournalEntry lives inside that subfolder.
-- `createSettlement` call (line 230) passes through unchanged in signature, but the underlying creator now uses `getOrCreateSectorActorFolder(state.activeSectorId, 'Settlements')`. The settlement Actor needs to know which sector it belongs to — currently `createSettlement` doesn't take a `sectorId`. Add an optional `{ sectorId }` parameter (defaulting to `campaignState.activeSectorId`) and stash it on `flags[MODULE].settlement.sectorId` for future folder regroups.
-- Same `{ sectorId }` parameter added to `createPlanet` and `createLocation`. Existing call sites in `sectorGenerator.js`, `routeEntityDrafts`, and the chat-card Confirm path get the parameter threaded through.
-- `entry.id` → `actor.id` references inside `sectorGenerator.js` (lines around 230 and 256) renamed where they capture the returned document.
+- `createSectorJournal` (line 444) — three changes:
+  1. Switch the `folder:` argument to `await getOrCreateSectorJournalFolder(sector.id)` so each sector lands in its own per-sector journal subfolder (per §3.4).
+  2. Stop generating per-settlement embedded pages. The loop at lines 494-515 is deleted. Only the sector-overview page (lines 475-492) remains.
+  3. Rewrite the overview page's "Settlements" list to emit `@UUID[Actor.<id>]{Name}` document links per §3.6. The locationType / population / authority text after each link is resolved at render time by calling `game.actors.get(actorId)` and reading the flag payload.
+- `createSettlement` / `createPlanet` / `createLocation` gain an optional `{ sectorId }` parameter (default: `campaignState.activeSectorId`) and stash it on `flags[MODULE].<type>.sectorId` for future folder regroups. The call site for `createSettlement` (line 230) and `createConnection` (line 256) thread `state.activeSectorId` explicitly.
+- `saveSectorToJournal` (line 529) is **removed**. No production code reads the `Starforged Sectors` JournalEntry flag; the migrator deletes the orphan journal.
+- `storeSector` (the function around line 338 that pushes onto `campaignState.sectors[]`) — the entry it pushes is now slimmed per §3.5: settlement entries become `{ id, actorId, locationType, planetActorId?, mapCoords? }`. Same for planet/location entries when those land on the sector flag.
+- `entry.id` → `actor.id` references where the code captures returned documents (around lines 230 and 256) are renamed.
 
-The migrator (§5) is responsible for moving existing sector-record JournalEntries from the flat `Sectors` folder into per-sector subfolders the first time it runs.
+The migrator (§5) is responsible for moving existing sector-record JournalEntries from the flat `Sectors` folder into per-sector subfolders, deleting the embedded per-settlement pages, slimming `campaignState.sectors[]`, and deleting the orphan `Starforged Sectors` journal.
+
+### 4.8 Readers of `campaignState.sectors[]`
+
+The settlement-instance fields are being removed from the sector-flag entries. Three readers consume this data today:
+
+- `src/index.js:1024-1033` — `!sector list` command. Currently reads `s.name` and `s.regionLabel`. Both are sector-level fields kept in the slim entry. **No change.**
+- `src/context/assembler.js:792` — active-sector context block. Audit during implementation: any read of `sector.settlements[i].population` (etc.) must switch to `game.actors.get(actorId).flags[MODULE].settlement.population`. The slim entry's `actorId` is the lookup key.
+- `src/narration/narrator.js:929` — same audit. Likely reads sector name and trouble (both kept), but verify before merging.
+
+The Quench test at `tests/integration/quench.js:776/781` reads the `Starforged Sectors` flag — rewrite to read `campaignState.sectors[]`.
 
 ### 4.8 Campaign state
 
@@ -312,11 +360,14 @@ The migrator (§5) is responsible for moving existing sector-record JournalEntri
    2. Create the equivalent Actor (per §3.2 mapping). Preserve `flags[MODULE_ID].<type>._id` (the existing custom GUID) so context-card cross-references survive. Place under the resolved folder.
    3. Replace the campaignState ID list entry (`shipIds[]`, etc.) with the new actor ID. Replace `currentLocationId` if it points at this entry.
    4. Mark the source JournalEntry with `flags[MODULE_ID].migrated = { toActorId, at }`. **Do not delete** in this pass — a deferred reaper command (`!migrate-entities --cleanup`) deletes documents that have been marked for >7 days, giving users time to bail out if anything is wrong.
-4. **Adopt the PCs folder.** If `Actors / PCs` doesn't exist, create it and move every `actor.type === 'character'` Actor into it. If a different folder already groups characters (e.g. the ironsworn system has its own), leave them — only act if there's no existing grouping.
-5. **Report** a summary chat card: counts per type, IDs migrated, IDs skipped (e.g. corrupt payloads), sectors with folders created, and any unresolved cross-references (`currentLocationId` pointing at a settlement that wasn't migrated).
-6. Idempotent — re-running skips entries already flagged `migrated`, skips folders that already exist, and skips journal reparenting if the journal is already inside a per-sector subfolder.
+4. **Slim `campaignState.sectors[]`** (per §3.5). For every sector in the array, replace each settlement entry with `{ id, actorId, locationType, planetActorId?, mapCoords? }`. Settlement-instance fields (`population`, `authority`, `projects`, `trouble`, `firstLook`, `initialContact`, `description`, etc.) are first **copied onto the matching Actor's `flags[MODULE].settlement` payload** (if not already there from step 3) and then stripped from the array entry. The settlement entry's pre-existing `id` field is preserved as a backward-compat key for sector-art / sector-map code; the new `actorId` field is the canonical lookup. Apply the same slim treatment to planet and location entries if/when the sector flag ever stores them embedded.
+5. **Rewrite each sector-record JournalEntry** (per §3.6). Delete every embedded JournalEntryPage *except* the sector overview, then rewrite the overview's "Settlements" UL to `@UUID[Actor.<id>]{Name}` links resolved against the just-migrated Actors. Preserve any embedded narrator-stub text on the overview page — only the per-settlement page deletions and the settlements-list rewrite are mechanical.
+6. **Delete the orphan `Starforged Sectors` JournalEntry** (the `sectorsJournal` flag carrier from `saveSectorToJournal`). Production never reads it post-migration; safe to remove immediately rather than waiting on the 7-day cleanup window. Quench tests that referenced it are updated in §6.2.
+7. **Adopt the PCs folder.** If `Actors / PCs` doesn't exist, create it and move every `actor.type === 'character'` Actor into it. If a different folder already groups characters (e.g. the ironsworn system has its own), leave them — only act if there's no existing grouping.
+8. **Report** a summary chat card: counts per type, IDs migrated, IDs skipped (e.g. corrupt payloads), sectors with folders created, slim conversions performed on the sectors array, embedded settlement pages removed, and any unresolved cross-references (`currentLocationId` pointing at a settlement that wasn't migrated).
+9. **Idempotent** — re-running skips entries already flagged `migrated`, skips folders that already exist, skips journal reparenting if the journal is already inside a per-sector subfolder, skips slim operations on sector entries that already have an `actorId`, and skips page deletions on sector-record journals that no longer have non-overview embedded pages.
 
-`!migrate-entities --cleanup` runs after the 7-day window: it walks JournalEntries with `flags[MODULE].migrated.at` older than 7 days and deletes them. The flat `Sectors` folder is auto-deleted only if empty after the cleanup pass.
+`!migrate-entities --cleanup` runs after the 7-day window: it walks JournalEntries with `flags[MODULE].migrated.at` older than 7 days and deletes them. The flat `Sectors` folder is auto-deleted only if empty after the cleanup pass. The orphan `Starforged Sectors` journal is already deleted in step 6, so cleanup doesn't need to touch it.
 
 Migrator lives at `src/entities/migrator.js` and is registered as a chat command in `src/index.js` alongside the existing `!recap` / `!pace` etc. handlers.
 
@@ -376,7 +427,15 @@ After implementing in a Foundry session:
 - Quench batch extended; subtype disambiguation tested.
 - `!migrate-entities --cleanup` shipped.
 
-If any phase blows out, drop the last phase and ship the prior. Each phase leaves the module fully working.
+**Phase 4 — Sector-flag dedup + sector-record overview rewrite (1 session)**
+- `sectorGenerator.js`: drop the per-settlement embedded pages from `createSectorJournal`; rewrite the overview's settlements list as `@UUID[...]` document links; delete `saveSectorToJournal`.
+- `storeSector` (the `campaignState.sectors[]` push) emits slim settlement entries per §3.5.
+- Audit and update `src/context/assembler.js` and `src/narration/narrator.js` active-sector reads (§4.8).
+- Quench tests at `tests/integration/quench.js:776/781` switch to reading `campaignState.sectors[]`.
+- Migrator gains steps 4–6 (slim sector array, rewrite sector-record overview, delete orphan `Starforged Sectors` journal). The `updateActor` debounced hook for overview re-render lands here.
+- Quench `entityActorMigration` batch picks up two new cases: "fresh sector emits slim settlement entries" and "migrator slims a legacy sector and rewrites its overview".
+
+If any phase blows out, drop the last phase and ship the prior. Each phase leaves the module fully working. Phases 1–3 are correct without Phase 4 (the four storage layers continue to exist, just with the Actor as the new mutable source); Phase 4 is purely deduplication.
 
 ---
 
@@ -403,6 +462,10 @@ If any phase blows out, drop the last phase and ship the prior. Each phase leave
 | Folder organisation — Actors and JournalEntries don't share folders (Foundry folders are typed) | Parallel trees per sidebar per §3.4: Journal-side keeps `Sectors / <name> /` for sector records and `Starforged Entities /` for the three remaining journal-backed types; Actor-side adds top-level `Starships / NPCs / PCs / Sectors /` with per-sector subfolders for migrated entities |
 | Sector folder name drift — GM renames a sector after generation | Folder names are looked up by sector id, not name, via `campaignState.sectors[]`. If the sector entry was renamed the folder is renamed via `folder.update({ name })` lazily on next entity creation. A `!migrate-entities --regroup` mode is reserved for post-MVP to consolidate orphans |
 | Two `Sectors` folders in two sidebars look confusing to users | Documented in the in-game help page (Settings Reference → Folder Layout). They're typed differently and Foundry shows them in different tabs, so no actual collision |
+| Slimming `campaignState.sectors[]` could break a reader that pulls settlement-instance fields from the array entry | §4.8 lists the three known readers (`!sector list`, assembler active-sector block, narrator active-sector block). Audit pass during Phase 3; add a unit test that imports each and asserts it only touches sector-level keys |
+| Sector overview re-render hook (debounced `updateActor`) could fire on every meter tick if a settlement Actor has meters | Only `updateActor` events that change `name`, `system.subtype`, or `flags[MODULE].settlement.{locationType,population,authority}` should trigger a re-render. Guard the hook with a key diff before calling render |
+| Migrator step 4 (slim sectors array) could lose data if step 3 (Actor creation) silently skipped an entity | Step 4 runs only over sector entries whose corresponding settlement has a successful Actor (matched by `_id`). Entries without a matching Actor are left unmodified and reported in the summary card under "skipped — orphan sector entry" |
+| Document links in the sector overview break if a settlement Actor is later deleted by the GM | This is acceptable — Foundry's UUID renderer handles broken links gracefully (renders as "Unknown Document"). A future polish pass could add a hook to auto-prune dead links during the debounced re-render |
 | Sector generator (`src/sectors/sectorGenerator.js`) calls `createSettlement` inside `storeSector`'s batched-write block | Confirm the batched-write flag (`persist: false`) still works when the underlying create is an Actor. The existing `persist` short-circuit in `createSettlement` only governs the campaign-state write, not the entity create — should port unchanged |
 
 ---
@@ -418,7 +481,9 @@ Modify:
 - `src/entities/migrator.js` (new)
 - `src/entities/registry.js` (new — `getEntityDocument` helper)
 - `src/entities/entityExtractor.js` (`entityExistsAnyType` cross-search, plus folder helper import)
-- `src/sectors/sectorGenerator.js` (`createSectorJournal` uses the new per-sector journal folder helper; the `createSettlement`/`createPlanet`/`createLocation` calls thread `sectorId`)
+- `src/sectors/sectorGenerator.js` — folder helper + slim sector-flag entries + drop embedded settlement pages + delete `saveSectorToJournal`; rewrite the sector-overview "Settlements" list as UUID links
+- `src/context/assembler.js` (line ~792) — active-sector block reads settlement fields via Actor lookup, not from the sector flag entry
+- `src/narration/narrator.js` (line ~929) — same audit as assembler
 - `src/ui/entityPanel.js` (split `loadAllEntities`, `findEntity`, mutation handlers, hook registration)
 - `src/art/generator.js` (`linkPortraitToEntity` — actor path)
 - `src/index.js` (register `!migrate-entities`)
@@ -457,12 +522,13 @@ Plus a live Foundry session:
    - Location under `Actors / Sectors / <sector name> / Locations /`.
    - Settlement under `Actors / Sectors / <sector name> / Settlements /`.
    - Entity Panel renders all four.
-2. For the ship: open the system sheet, set Battered. Confirm the entity panel reflects it. Run `sufferDamage` via the Foundry console (or a relevant chat command if one exists). Integrity decrement persists.
-3. Generate a portrait for each. Confirm `actor.img` is the new data URI; the sidebar token preview shows it. Drag the settlement Actor onto a Scene — a token appears with the portrait.
-4. Confirm `Journals / Sectors / <sector name> /` contains the sector-record JournalEntry (moved out of the flat parent).
-5. Seed a JournalEntry-backed settlement (`createSettlement` *pre-migration code path*, simulated by direct `JournalEntry.create` with the legacy flag shape). Run `!migrate-entities`. Confirm chat summary card; confirm new Actor with preserved `_id` in the right per-sector subfolder; confirm the journal is flagged `migrated` but not deleted.
-6. Run `!migrate-entities` a second time. Chat card shows 0 new.
-7. Fast-forward `migrated.at` 8 days; run `!migrate-entities --cleanup`. Confirm the original journal is deleted. Confirm the flat `Sectors` Journal folder is empty (or already gone, since the cleanup auto-removes empty residue).
-8. Connection / faction / creature flows untouched — create one of each and confirm they still go to JournalEntry under `Starforged Entities /`.
+2. **Single source of truth, fresh world.** Open the sector-record JournalEntry under `Journals / Sectors / <sector name> /`. Confirm it has exactly **one** embedded page (the sector overview). The "Settlements" list inside that page renders as Foundry document links (`@UUID[Actor...]`). Open `campaignState.sectors[<index>].settlements[0]` via the Foundry console — confirm it has `actorId`, `locationType`, and no inline `population`/`authority`/`projects`/`trouble` payload. Confirm there is no `Starforged Sectors` JournalEntry in the world.
+3. **Edit a settlement, observe drift-free overview.** From the entity panel, rename a seeded settlement. The settlement's link in the sector-record overview should resolve to the new name immediately (or after the debounced re-render fires). The sector flag's `actorId` entry still resolves correctly.
+4. For the ship: open the system sheet, set Battered. Confirm the entity panel reflects it. Run `sufferDamage` via the Foundry console (or a relevant chat command if one exists). Integrity decrement persists.
+5. Generate a portrait for each migrated type. Confirm `actor.img` is the new data URI; the sidebar token preview shows it. Drag the settlement Actor onto a Scene — a token appears with the portrait.
+6. **Migrator dry run on legacy data.** Seed a JournalEntry-backed settlement (`createSettlement` *pre-migration code path*, simulated by direct `JournalEntry.create` with the legacy flag shape) AND a legacy `campaignState.sectors[]` entry with the full embedded settlement payload AND a `Starforged Sectors` journal flag. Run `!migrate-entities`. Confirm chat summary card; confirm new Actor with preserved `_id` in the right per-sector subfolder; confirm the journal is flagged `migrated` but not deleted; confirm the sectors array entry is slimmed; confirm the `Starforged Sectors` journal is gone; confirm the sector-record journal has only the overview page with the settlement list rewritten as document links.
+7. Run `!migrate-entities` a second time. Chat card shows 0 new across every counter.
+8. Fast-forward `migrated.at` 8 days; run `!migrate-entities --cleanup`. Confirm the original journal is deleted. Confirm the flat `Sectors` Journal folder is empty (or already gone, since the cleanup auto-removes empty residue).
+9. Connection / faction / creature flows untouched — create one of each and confirm they still go to JournalEntry under `Starforged Entities /`.
 
 All seven manual steps pass = scope complete. Move scope-index entry to ✅ COMPLETE.
