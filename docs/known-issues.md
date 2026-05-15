@@ -82,6 +82,67 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### RECAP-003 — `!recap` and Chronicle auto-entry silently no-op'd from v1.2.4 → v1.2.10 ✓
+
+**Resolved in:** v1.2.12 (branch `claude/fix-recap-command-cPT8F`)
+
+**Symptom:** `!recap` (and `!recap campaign`) always rendered the empty-state
+card — *"No campaign history available yet. Play some sessions first!"* —
+even after dozens of narrated turns. The Chronicle journal stayed empty
+even with `chronicleAutoEntry: true`. The v1.2.4 fix (cross-PC chronicle
+aggregation) and v1.2.7 fix (automatic chronicle writes) both shipped
+code that ran in unit tests but never actually fired in a live world.
+
+**Root cause:** Both halves of the recap pipeline read
+`campaignState.characterIds` to identify the player character(s):
+
+- `src/character/chronicleWriter.js:228` — `resolveActorId()` returned
+  `characterIds[0] ?? null`. Empty array → `null` → `writeChronicleEntry`
+  short-circuited before `addChronicleEntry` was ever called. No chronicle
+  was ever written.
+- `src/narration/narrator.js:1173` — `_collectAllChronicleEntries()`
+  returned `[]` for empty `characterIds`. Recap reader had nothing to
+  summarise → the empty-state card was always posted.
+
+`campaignState.characterIds` is declared in `src/schemas.js:634` with a
+default of `[]` and **was never written to by anything in the module**.
+The assembler computes a `characterIds` array in its return value
+(`src/context/assembler.js:740`) but only as part of the in-memory context
+packet — it never persists it onto `campaignState`. Existing unit tests
+passed because every fixture explicitly populated `characterIds`; no test
+exercised the real-world condition of an empty stored value.
+
+**Fixes:**
+
+- `src/character/chronicleWriter.js` — `resolveActorId()` falls back to
+  `getPlayerActors()[0]?.id` from `actorBridge` when `characterIds` is empty.
+- `src/narration/narrator.js` — new `_resolveCharacterIds()` helper falls
+  back to `getPlayerActors().map(a => a.id)`. Used by
+  `_collectAllChronicleEntries()` (recap reader) and `getActiveCharacter()`
+  (paced-narration character context) so all three readers share one source.
+
+Both paths now match how the assembler picks PCs, so the writer fires
+on every GM narration and the recap reader sees the resulting entries.
+
+**Coverage:**
+
+- 3 new unit tests:
+  - `tests/unit/chronicleWriter.test.js` — writer falls back to
+    `getPlayerActors()[0]` when `characterIds` is empty; non-character /
+    non-player-owned Actors are excluded.
+  - `tests/unit/recap.test.js` — reader falls back through the API call
+    with a stubbed fetch; seeded chronicle entries reach the user message.
+- New Quench batch `starforged-companion.recapEndToEnd`
+  (STARFORGED: Recap End-to-End) — three live tests against a real Actor +
+  real Chronicle journal with `characterIds=[]` forced: writer fallback,
+  reader fallback through `getCampaignRecap`, and `postCampaignRecap`
+  posting a non-empty card. This live coverage exists specifically
+  because the v1.2.4 and v1.2.7 fixes both passed unit tests but were
+  silently disabled in production — the existing fixtures couldn't
+  surface that.
+
+---
+
 ### SECTOR-001 — Narrator invented new settlements for places already in the active sector ✓
 
 **Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)

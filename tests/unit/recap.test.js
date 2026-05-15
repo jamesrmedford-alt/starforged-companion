@@ -443,6 +443,46 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
     installedB.restore();
     installedA.restore();
   });
+
+  // Regression for v1.2.10 → v1.2.12: campaignState.characterIds is never
+  // populated by the module, so the recap reader must fall back to
+  // actorBridge.getPlayerActors() — the same source the assembler uses.
+  // Without this fallback, the recap card always shows "No campaign history
+  // available yet" no matter how many chronicle entries have been written.
+  it('falls back to player-owned Actors when characterIds is empty', async () => {
+    const pc = makeTestActor({ id: 'pc-fallback-recap', name: 'Wren' });
+    pc.hasPlayerOwner = true;
+    game.actors._set(pc.id, pc);
+
+    const installed = installChronicleJournal('Wren', [
+      { id: 'w1', timestamp: '2026-02-01T00:00:00Z', text: 'Wren left Pol.' },
+      { id: 'w2', timestamp: '2026-02-02T00:00:00Z', text: 'Wren hailed the Resolute.' },
+    ]);
+
+    let captured = null;
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    const origFetch = global.fetch;
+    global.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      captured = body.messages?.[body.messages.length - 1]?.content;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        text: async () => '',
+      };
+    });
+
+    // characterIds intentionally left empty — mirrors the real-world bug.
+    const state = makeCampaignState({ characterIds: [] });
+    const result = await getCampaignRecap(state);
+    expect(result).toBe('recap ok');
+    expect(captured).toContain('Wren left Pol');
+    expect(captured).toContain('Wren hailed the Resolute');
+
+    global.fetch = origFetch;
+    installed.restore();
+  });
 });
 
 

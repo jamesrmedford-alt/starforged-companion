@@ -57,6 +57,10 @@ Hooks.on("quenchReady", (quench) => {
   // can be wired, so they're covered live in this batch rather than via unit
   // tests that mock the hook system.
   registerChatCardActionsTests(quench);
+  // End-to-end recap path against a real Actor + real Chronicle journal.
+  // Pins the fallback that makes !recap work without campaignState.characterIds
+  // ever being populated (the v1.2.4 → v1.2.10 silent regression).
+  registerRecapEndToEndTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4122,5 +4126,283 @@ function registerChatCardActionsTests(quench) {
       }
     },
     { displayName: "STARFORGED: Chat Card Actions" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECAP END-TO-END — chronicleWriter + getCampaignRecap with characterIds=[]
+//
+// History: from v1.2.4 through v1.2.10 the recap feature shipped broken in
+// production. campaignState.characterIds is initialised to [] in schemas.js
+// and never written back anywhere. Both halves of the pipeline read it:
+//   - chronicleWriter.resolveActorId → null → addChronicleEntry never called
+//   - narrator._collectAllChronicleEntries → [] → empty-state recap card
+// Existing unit tests passed because they explicitly set characterIds in
+// their fixture; the live world condition was never exercised. This batch
+// runs the full path against real Foundry documents with characterIds=[] —
+// the exact condition users hit — and asserts the fallback to actorBridge
+// makes both halves work.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerRecapEndToEndTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.recapEndToEnd",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let actor          = null;
+      let stateSnapshot  = null;
+      const seededEntries = [];
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+
+        // Snapshot campaignState — every assertion mutates characterIds.
+        stateSnapshot = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE_ID, "campaignState")));
+
+        actor = await Actor.create({
+          name: `QUENCH RECAP — ${Date.now()}`,
+          type: "character",
+          system: {
+            edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+            health:   { value: 5 },
+            spirit:   { value: 5 },
+            supply:   { value: 3 },
+            momentum: { value: 2, resetValue: 2 },
+          },
+          // hasPlayerOwner: ownership grant — DEFAULT: OWNER makes every
+          // player a player-owner. This is what getPlayerActors() filters on.
+          ownership: { default: 3 },
+        });
+        if (!actor) return;
+
+        const { addChronicleEntry } = await import(
+          `${MODULE_PATH}/character/chronicle.js`);
+        await addChronicleEntry(actor.id, {
+          type: "discovery",
+          text: "QUENCH: set out from the station.",
+          automated: true,
+          sessionId: "quench-recap-session",
+        });
+        await addChronicleEntry(actor.id, {
+          type: "revelation",
+          text: "QUENCH: found the wreck.",
+          automated: true,
+          sessionId: "quench-recap-session",
+        });
+        const { getChronicleEntries } = await import(
+          `${MODULE_PATH}/character/chronicle.js`);
+        const written = await getChronicleEntries(actor.id);
+        for (const e of written) seededEntries.push(e);
+      });
+
+      after(async function () {
+        // Restore campaignState first so a teardown failure on the actor
+        // doesn't leave us in a hybrid state.
+        if (stateSnapshot) {
+          await game.settings.set(MODULE_ID, "campaignState", stateSnapshot)
+            .catch(() => {});
+        }
+        if (actor) {
+          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
+          if (chronicleJournal?.delete) {
+            await chronicleJournal.delete().catch(err =>
+              console.warn(`${MODULE_ID} | quench: recap chronicle cleanup failed:`, err));
+          }
+          if (actor.delete) await actor.delete().catch(() => {});
+        }
+        actor = null;
+      });
+
+      // ──────────────────────────────────────────────────────────────────────
+      // chronicleWriter — fallback to actorBridge when characterIds is empty
+      // ──────────────────────────────────────────────────────────────────────
+
+      describe("chronicleWriter — writes when characterIds is empty", function () {
+        it("falls back to a player-owned Actor and calls addChronicleEntry", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition: characterIds explicitly empty.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds = [];
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          // Auto-entry must be on for the writer to run.
+          const autoBefore = game.settings.get(MODULE_ID, "chronicleAutoEntry");
+          await game.settings.set(MODULE_ID, "chronicleAutoEntry", true);
+
+          // Need an API key for the writer to reach the Haiku call — stub
+          // fetch to return a canned JSON entry so we don't burn credit.
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          const { getChronicleEntries } = await import(
+            `${MODULE_PATH}/character/chronicle.js`);
+          const before = (await getChronicleEntries(actor.id)).length;
+
+          try {
+            const { writeChronicleEntry } = await import(
+              `${MODULE_PATH}/character/chronicleWriter.js`);
+            await withStubbedFetch([[
+              "api.anthropic.com",
+              () => ({ content: [{ type: "text", text: JSON.stringify({
+                type: "moment",
+                text: "QUENCH writer fallback — entry written.",
+              }) }] }),
+            ]], async () => {
+              await writeChronicleEntry({
+                narrationText: "The corridor went quiet as the door sealed.",
+                campaignState: game.settings.get(MODULE_ID, "campaignState"),
+                kind:          "paced",
+              });
+            });
+
+            const after = await getChronicleEntries(actor.id);
+            assert.equal(
+              after.length, before + 1,
+              "writeChronicleEntry should append an entry via actorBridge fallback when characterIds is empty",
+            );
+            assert.equal(
+              after.at(-1).text, "QUENCH writer fallback — entry written.",
+              "the appended entry should match the stubbed Haiku response",
+            );
+          } finally {
+            await game.settings.set(MODULE_ID, "chronicleAutoEntry", autoBefore);
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+      });
+
+      // ──────────────────────────────────────────────────────────────────────
+      // recap reader — _collectAllChronicleEntries via getCampaignRecap
+      // ──────────────────────────────────────────────────────────────────────
+
+      describe("getCampaignRecap — reads when characterIds is empty", function () {
+        it("aggregates chronicle entries via actorBridge fallback and reaches the API", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds          = [];
+          state.campaignRecapCache    = { text: "", generatedAt: null, chronicleLength: 0 };
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          let capturedUserMessage = null;
+          try {
+            const { getCampaignRecap } = await import(
+              `${MODULE_PATH}/narration/narrator.js`);
+
+            const result = await withStubbedFetch([[
+              "api.anthropic.com",
+              (_target, init) => {
+                try {
+                  const body = JSON.parse(init?.body ?? "{}");
+                  const last = body?.messages?.[body.messages.length - 1];
+                  capturedUserMessage = typeof last?.content === "string"
+                    ? last.content
+                    : JSON.stringify(last?.content ?? "");
+                } catch (err) {
+                  console.warn(`${MODULE_ID} | quench: recap body capture failed:`, err);
+                }
+                return { content: [{ type: "text", text: "QUENCH recap text." }] };
+              },
+            ]], async () => {
+              return await getCampaignRecap(
+                game.settings.get(MODULE_ID, "campaignState"),
+                { forceRefresh: true });
+            });
+
+            assert.equal(
+              result, "QUENCH recap text.",
+              "getCampaignRecap should return the stubbed Anthropic response, proving it reached the API",
+            );
+            assert.isNotNull(
+              capturedUserMessage,
+              "the Anthropic call must have been made — empty characterIds used to short-circuit before the API",
+            );
+            assert.include(
+              capturedUserMessage, "set out from the station",
+              "the recap user message must include the seeded chronicle entries (read via actorBridge fallback)",
+            );
+            assert.include(
+              capturedUserMessage, "found the wreck",
+              "the recap user message must include all seeded chronicle entries",
+            );
+          } finally {
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+
+        it("postCampaignRecap with characterIds=[] posts a non-empty card", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition + invalidate cache.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds       = [];
+          state.campaignRecapCache = { text: "", generatedAt: null, chronicleLength: 0 };
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          const recapsBefore = new Set(
+            (game.messages?.contents ?? [])
+              .filter(m => m.flags?.[MODULE_ID]?.recapCard && m.flags[MODULE_ID].recapType === "campaign")
+              .map(m => m.id),
+          );
+
+          let newCards = [];
+          try {
+            const { postCampaignRecap } = await import(
+              `${MODULE_PATH}/narration/narrator.js`);
+
+            await withStubbedFetch([[
+              "api.anthropic.com",
+              () => ({ content: [{ type: "text", text: "QUENCH recap card text." }] }),
+            ]], async () => {
+              await postCampaignRecap(
+                game.settings.get(MODULE_ID, "campaignState"),
+                { forceRefresh: true });
+            });
+
+            const recapsAfter = (game.messages?.contents ?? [])
+              .filter(m => m.flags?.[MODULE_ID]?.recapCard && m.flags[MODULE_ID].recapType === "campaign");
+            newCards = recapsAfter.filter(m => !recapsBefore.has(m.id));
+
+            assert.isAtLeast(
+              newCards.length, 1,
+              "postCampaignRecap must post a card",
+            );
+            const card = newCards[0];
+            assert.isNotTrue(
+              card.flags?.[MODULE_ID]?.recapEmpty,
+              "the posted card must NOT be the empty-state card — chronicle entries exist (via actorBridge fallback)",
+            );
+            assert.include(
+              card.content, "QUENCH recap card text.",
+              "the posted card content must include the recap prose",
+            );
+          } finally {
+            // Clean up the posted card so it doesn't linger across runs.
+            for (const m of newCards) {
+              if (m?.delete) await m.delete().catch(() => {});
+            }
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Recap End-to-End" },
   );
 }

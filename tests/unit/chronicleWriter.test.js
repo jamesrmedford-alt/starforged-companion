@@ -40,10 +40,12 @@ beforeEach(() => {
   game.settings._store.set(`${MODULE_ID}.chronicleAutoEntry`, true);
   game.settings._store.set(`${MODULE_ID}.claudeApiKey`,       'sk-ant-test');
   game.user.isGM = true;
+  game.actors._reset();
 });
 
 afterEach(() => {
   game.user.isGM = true;
+  game.actors._reset();
 });
 
 
@@ -105,9 +107,54 @@ describe('writeChronicleEntry()', () => {
     expect(addChronicleEntry).not.toHaveBeenCalled();
   });
 
-  it('returns null when there are no PCs in characterIds', async () => {
+  it('returns null when there are no PCs in characterIds and no player Actors exist', async () => {
     const entry = await writeChronicleEntry({
       narrationText: 'some prose',
+      campaignState: { ...BASE_STATE, characterIds: [] },
+      kind:          'paced',
+    });
+
+    expect(entry).toBeNull();
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  // Regression for v1.2.10 → v1.2.12: campaignState.characterIds is never
+  // populated by the module, so the writer must fall back to actorBridge to
+  // pick a PC. Without this fallback, chronicle auto-entry never fires and
+  // !recap never has anything to summarise.
+  it('falls back to the first player-owned character Actor when characterIds is empty', async () => {
+    const pc = makeTestActor({ id: 'pc-fallback-1', name: 'Kira' });
+    pc.hasPlayerOwner = true;
+    game.actors._set(pc.id, pc);
+
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'discovery',
+      text: 'Kira found the wreck.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'You crest the ridge and see the wreck.',
+      campaignState: { ...BASE_STATE, characterIds: [] },
+      moveId:        'undertake_an_expedition',
+      outcome:       'strong_hit',
+      kind:          'move',
+    });
+
+    expect(entry).not.toBeNull();
+    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+    expect(addChronicleEntry.mock.calls[0][0]).toBe('pc-fallback-1');
+  });
+
+  it('ignores non-character or non-player-owned Actors when falling back', async () => {
+    const npc = makeTestActor({ id: 'npc-1', name: 'Vex' });
+    npc.hasPlayerOwner = false;
+    const starship = makeTestActor({ id: 'ship-1', type: 'starship', name: 'Resolute' });
+    starship.hasPlayerOwner = true;
+    game.actors._set(npc.id, npc);
+    game.actors._set(starship.id, starship);
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'prose',
       campaignState: { ...BASE_STATE, characterIds: [] },
       kind:          'paced',
     });
