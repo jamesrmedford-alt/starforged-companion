@@ -6,7 +6,19 @@
  * else lives in actor.flags["starforged-companion"].ship.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Hoisted oracle-roller stub. The seed tests below override its behaviour
+// per-test; everything else in the file does not import rollOracle and is
+// unaffected.
+vi.mock("../../src/oracles/roller.js", async (importOriginal) => {
+  const orig = await importOriginal();
+  return {
+    ...orig,
+    rollOracle: vi.fn((id) => ({ tableId: id, result: "—" })),
+  };
+});
+
 import {
   createShip,
   getShip,
@@ -16,7 +28,10 @@ import {
   repairIntegrity,
   clearBattered,
   ShipSchema,
+  starshipHasSeedDetail,
+  seedStarshipActor,
 } from "../../src/entities/ship.js";
+import { rollOracle } from "../../src/oracles/roller.js";
 import { _resetFolderCache } from "../../src/entities/folder.js";
 
 const MODULE = "starforged-companion";
@@ -172,5 +187,148 @@ describe("sufferDamage / repairIntegrity / clearBattered", () => {
     await clearBattered(id);
     expect(getShip(id).battered).toBe(false);
     expect(global.game.actors.get(id).system.debility.battered).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Starship Actor seeding — createActor hook target
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("starshipHasSeedDetail", () => {
+  it("returns false for a brand-new sidebar-created starship", () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Blank" });
+    expect(starshipHasSeedDetail(actor)).toBe(false);
+  });
+
+  it("returns true when system.notes contains visible text", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "User-Annotated",
+      system: { notes: "<p>This is my ship.</p>" },
+    });
+    expect(starshipHasSeedDetail(actor)).toBe(true);
+  });
+
+  it("treats notes containing only HTML tags as empty", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Whitespace",
+      system: { notes: "<p>   </p>" },
+    });
+    expect(starshipHasSeedDetail(actor)).toBe(false);
+  });
+
+  it("returns true when flag.ship.type is already populated", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Pre-seeded",
+      flags: { "starforged-companion": { ship: { type: "Freighter" } } },
+    });
+    expect(starshipHasSeedDetail(actor)).toBe(true);
+  });
+
+  it("returns true when flag.ship.firstLook is already populated", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Pre-seeded First Look",
+      flags: { "starforged-companion": { ship: { firstLook: "Patched hull" } } },
+    });
+    expect(starshipHasSeedDetail(actor)).toBe(true);
+  });
+
+  it("returns false for a non-starship actor", () => {
+    const actor = global.makeTestActor({ type: "character", name: "PC" });
+    expect(starshipHasSeedDetail(actor)).toBe(false);
+  });
+});
+
+describe("seedStarshipActor", () => {
+  const rollMap = {
+    starship_type:             "Heavy Freighter",
+    starship_first_look:       "Patched hull, mismatched plating",
+    starship_mission_terminus: "Smuggle a contraband cargo",
+    starship_mission_outlands: "Survey a derelict system",
+    starship_mission_expanse:  "Map an uncharted star",
+    starship_name:             "Long Memory",
+  };
+
+  beforeEach(() => {
+    rollOracle.mockReset?.();
+    rollOracle.mockImplementation((id) => ({
+      tableId: id,
+      result:  rollMap[id] ?? "—",
+    }));
+    // OpenRouter key absent by default — portrait path is skipped.
+    global.game.settings.get = (_mod, key) => {
+      if (key === "openRouterApiKey") return "";
+      if (key === "autoSeedStarship") return true;
+      return undefined;
+    };
+    global.game.settings.set = async () => {};
+  });
+
+  it("writes oracle-seeded type / firstLook / mission into the flag payload", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Sidebar Create" });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    const ship = actor.flags["starforged-companion"].ship;
+    expect(ship.type).toBe("Heavy Freighter");
+    expect(ship.firstLook).toBe("Patched hull, mismatched plating");
+    expect(ship.mission).toBe("Smuggle a contraband cargo"); // default region: terminus
+    expect(ship.name).toBe("Sidebar Create");                // preserves user-supplied name
+    expect(ship.portraitSourceDescription).toContain("Heavy Freighter");
+    expect(ship.portraitSourceDescription).toContain("Patched hull");
+  });
+
+  it("renders system.notes as HTML containing all rolled fields", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Notes Renderer" });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    const notes = actor.system.notes;
+    expect(notes).toContain("<ul>");
+    expect(notes).toContain("Heavy Freighter");
+    expect(notes).toContain("Patched hull");
+    expect(notes).toContain("Mission");
+    expect(notes).toContain("Smuggle a contraband cargo");
+  });
+
+  it("picks the active sector's region for the mission table", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Outlands Ship" });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, {
+      activeSectorId: "sec-1",
+      sectors:        [{ id: "sec-1", region: "outlands" }],
+    });
+
+    const ship = actor.flags["starforged-companion"].ship;
+    expect(ship.mission).toBe("Survey a derelict system");
+    expect(actor.system.notes).toContain("outlands");
+  });
+
+  it("does not rename the actor", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Pequod" });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, {});
+
+    expect(actor.name).toBe("Pequod");
+  });
+
+  it("registers the actor on campaignState.shipIds when not yet tracked", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Tracker" });
+    global.game.actors._set(actor.id, actor);
+
+    const state = { shipIds: [] };
+    await seedStarshipActor(actor, state);
+
+    expect(state.shipIds).toContain(actor.id);
+  });
+
+  it("returns null for a non-starship actor", async () => {
+    const actor = global.makeTestActor({ type: "character", name: "Not A Ship" });
+    const result = await seedStarshipActor(actor, {});
+    expect(result).toBeNull();
   });
 });

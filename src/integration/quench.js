@@ -52,6 +52,7 @@ Hooks.on("quenchReady", (quench) => {
   // chain that actually runs in production.
   registerConnectionPipelineTests(quench);
   registerConnectionSeedEnrichmentTests(quench);
+  registerStarshipSeedHookTests(quench);
   registerPortraitGenerationTests(quench);
   // GM-action chat-card buttons (setupCard, draftEntityCard Confirm/Dismiss,
   // recapCard Refresh) — a renderChatMessage hook is the only place they
@@ -1790,6 +1791,194 @@ function registerConnectionSeedEnrichmentTests(quench) {
       });
     },
     { displayName: "STARFORGED: Connection Seed Enrichment", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARSHIP SEED — createActor hook + seedStarshipActor() against live Foundry
+//
+// When a user creates a `type='starship'` Actor via the Foundry sidebar
+// (or any path that doesn't already pre-populate the flag payload), the
+// createActor hook should oracle-seed type / first-look / mission into
+// `system.notes` + `flags[MODULE].ship`, and skip silently when the
+// actor already carries detail. This batch exercises both paths against
+// real Foundry document creation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerStarshipSeedHookTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.starshipSeedHook",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) {
+            await a.delete().catch(err =>
+              console.warn(`${MODULE} | quench starshipSeedHook: cleanup failed ${id}:`, err));
+          }
+        }
+      }
+
+      // Wait up to N ms for an assertion predicate to be satisfied.
+      // The createActor hook fires async — seedStarshipActor doesn't block
+      // Actor.create — so the test must poll briefly before asserting.
+      async function waitFor(predicate, timeoutMs = 4000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          if (await predicate()) return true;
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return false;
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushCleanup);
+
+      describe("Sidebar-created starship — auto-seed via createActor hook", function () {
+        it("populates system.notes and flags[MODULE].ship with oracle rolls", async function () {
+          this.timeout(20000);
+
+          // Bypass createShip() entirely — this is what a user clicking
+          // "Create Actor" → "Starship" in the sidebar does.
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP ${Date.now()}`,
+            type: "starship",
+          });
+          assert.isOk(actor, "Actor.create should succeed for type=starship");
+          track(actor.id);
+
+          // Hook runs async; poll for the flag payload to land.
+          const ok = await waitFor(async () => {
+            const fresh = game.actors?.get(actor.id);
+            const ship  = fresh?.flags?.[MODULE]?.ship;
+            return !!(ship?.type || ship?.firstLook);
+          });
+          assert.isTrue(ok, "the createActor hook should populate flags[MODULE].ship within the polling window");
+
+          const fresh = game.actors?.get(actor.id);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.isOk(ship.type || ship.firstLook,
+            "either type or first-look should be set after the seed runs");
+          assert.isOk(fresh.system.notes,
+            "system.notes should be populated so the starship sheet renders the seed");
+          assert.equal(fresh.name, actor.name,
+            "the actor's user-supplied name should not be modified");
+          assert.isOk(fresh.flags[MODULE].entityType === "ship",
+            "entityType routing crumb should be stamped");
+
+        });
+
+        it("registers the seeded starship on campaignState.shipIds", async function () {
+          this.timeout(20000);
+
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-TRACK ${Date.now()}`,
+            type: "starship",
+          });
+          track(actor.id);
+
+          const ok = await waitFor(async () => {
+            const cur = game.settings.get(MODULE, "campaignState") ?? {};
+            return (cur.shipIds ?? []).includes(actor.id);
+          });
+          assert.isTrue(ok, "the seeded starship should be registered on campaignState.shipIds");
+        });
+      });
+
+      describe("Skip clauses — actor already populated", function () {
+        it("does not seed a starship whose Notes field is already non-empty", async function () {
+          this.timeout(20000);
+
+          const userNotes = `<p>I typed these notes myself.</p>`;
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-NOTES ${Date.now()}`,
+            type: "starship",
+            system: { notes: userNotes },
+          });
+          track(actor.id);
+
+          // Wait a bit longer than the hook's seed work would normally need.
+          await new Promise(r => setTimeout(r, 1500));
+
+          const fresh = game.actors?.get(actor.id);
+          assert.equal(fresh.system.notes, userNotes,
+            "user-supplied notes should not be overwritten by the seed");
+          assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+            "no flag payload should be created when the seed was skipped");
+        });
+
+        it("does not seed when autoSeedStarship setting is off", async function () {
+          this.timeout(20000);
+
+          await withTempSetting("autoSeedStarship", false, async () => {
+            const actor = await Actor.create({
+              name: `QUENCH STARSHIP-OPTOUT ${Date.now()}`,
+              type: "starship",
+            });
+            track(actor.id);
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            const fresh = game.actors?.get(actor.id);
+            assert.equal(fresh.system.notes ?? "", "",
+              "notes should remain empty when auto-seed is disabled");
+            assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+              "no flag payload should be created when auto-seed is disabled");
+          });
+        });
+
+        it("does not re-seed a starship created via createShip() with seeded data", async function () {
+          this.timeout(20000);
+
+          const { createShip } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+
+          // createShip with explicit seed data — same shape that the
+          // Confirm-from-draft path produces.
+          await createShip({
+            name:        `QUENCH STARSHIP-PRESEED ${Date.now()}`,
+            type:        "Cutter",
+            firstLook:   "Compact courier, scarred but maintained",
+            description: "A cutter type, scarred but maintained.",
+          }, state);
+
+          const newId = (state.shipIds ?? []).at(-1);
+          track(newId);
+
+          // Give the hook a chance to fire and (correctly) skip.
+          await new Promise(r => setTimeout(r, 1000));
+
+          const fresh = game.actors?.get(newId);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.equal(ship.type, "Cutter",
+            "createShip's seeded type should not be overwritten by the hook");
+          assert.equal(ship.firstLook, "Compact courier, scarred but maintained",
+            "createShip's seeded first-look should not be overwritten");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Starship Seed Hook", timeout: 60000 },
   );
 }
 
