@@ -2164,3 +2164,31 @@
 .sf-draft-entity-hint-done {
   color: var(--color-text-dark-secondary, #888);
 }
+
+/* NWMA "Roll <move>" button — appears beneath the italicized move hint on
+   paced-narrative cards classified as NARRATIVE_WITH_MOVE_AVAILABLE. */
+.sf-paced-actions {
+  display:         flex;
+  justify-content: flex-end;
+  margin-top:      6px;
+}
+
+.sf-paced-roll-btn {
+  font-size:     0.85em;
+  padding:       3px 12px;
+  border-radius: 3px;
+  cursor:        pointer;
+  border:        1px solid var(--sf-suggestion-colour, #B5985A);
+  background:    transparent;
+  color:         var(--sf-suggestion-colour, #B5985A);
+  font-family:   inherit;
+}
+
+.sf-paced-roll-btn:hover:not(:disabled) {
+  background: rgba(181, 152, 90, 0.12);
+}
+
+.sf-paced-roll-btn:disabled {
+  cursor:  default;
+  opacity: 0.6;
+}

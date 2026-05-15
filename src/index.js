@@ -441,21 +441,29 @@ export function registerChatHook() {
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
 
+    // Per-message bypass — the "Roll <move>" button on an NWMA card re-posts
+    // the player's input with `bypassPacing: true` so the classifier is
+    // skipped and the move pipeline runs immediately. Cheaper than the
+    // campaignState-scoped `!roll` flag and avoids any GM-write race.
+    const bypassPacing = message.flags?.[MODULE_ID]?.bypassPacing === true;
+
     // Pacing classifier — decides whether to run the move pipeline, narrate
     // only, or narrate with an inline move suggestion. The classifier runs
     // freely; only the MOVE branch claims the pendingMove lock below.
     const preState  = game.settings.get(MODULE_ID, "campaignState");
     const character = getActiveCharacterForPacing(preState);
     let pacingResult = { runMove: true, decision: "MOVE", suggestedMove: null };
-    try {
-      pacingResult = await routePacedInput({
-        playerText: narration,
-        campaignState: preState,
-        character,
-        apiKey: apiKeyForPacing,
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
+    if (!bypassPacing) {
+      try {
+        pacingResult = await routePacedInput({
+          playerText: narration,
+          campaignState: preState,
+          character,
+          apiKey: apiKeyForPacing,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
+      }
     }
     if (!pacingResult.runMove) return;
 
@@ -645,7 +653,11 @@ export function isPlayerNarration(message) {
   // empty-state recap card had no flag at all and was ingested by the
   // narrator as if the player had said "<div class=...>No campaign history
   // available yet</div>", producing prose like "you speak the HTML aloud".
-  if (message.flags?.[MODULE_ID]) return false;
+  // EXCEPTION: messages re-posted by the NWMA "Roll <move>" button carry
+  // `bypassPacing: true` and ARE player narration (just with the classifier
+  // skipped); they must reach the move pipeline.
+  const flags = message.flags?.[MODULE_ID];
+  if (flags && !flags.bypassPacing) return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
@@ -1421,6 +1433,52 @@ Hooks.on("renderChatMessage", (message, html) => {
       console.error(`${MODULE_ID} | refreshCampaignRecap failed:`, err);
       ui?.notifications?.warn("Campaign recap refresh failed. Check console.");
     } finally {
+      btn.disabled = false;
+    }
+  });
+});
+
+/**
+ * renderChatMessage — wire the "Roll <move>" button on NWMA cards.
+ * The button appears beneath the italicized move hint on paced-narrative
+ * cards whose classifier decision was NARRATIVE_WITH_MOVE_AVAILABLE. On
+ * click we re-post the original player input as a fresh chat message with
+ * `bypassPacing: true` so the classifier is skipped and the move pipeline
+ * runs immediately.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  const f = message.flags?.[MODULE_ID];
+  if (!f?.pacedNarrative || !f?.suggestedMove || !f?.playerText) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  const btn = root?.querySelector('[data-action="sf-paced-roll"]');
+  if (!btn) return;
+
+  // Disable any previously-clicked button after re-render so the same NWMA
+  // card never fires the move twice.
+  if (f.rolled) {
+    btn.disabled = true;
+    btn.textContent = "Rolled";
+    return;
+  }
+
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    btn.disabled = true;
+    try {
+      // Mark the source card as rolled so re-renders don't re-arm the button.
+      // Best-effort: only the GM can mutate other users' messages.
+      try {
+        await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
+      } catch {
+        // Player clients fall back to a local-only disable above.
+      }
+      await ChatMessage.create({
+        content: f.playerText,
+        flags:   { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | NWMA roll button failed:`, err);
       btn.disabled = false;
     }
   });
