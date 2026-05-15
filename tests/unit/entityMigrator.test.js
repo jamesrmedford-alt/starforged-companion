@@ -146,6 +146,104 @@ describe("forward migration — Phase 2: ships", () => {
   });
 });
 
+describe("sector-record overview rewrite (Phase 3.5)", () => {
+  it("rewrites existing overview pages to use UUID links and deletes per-settlement embedded pages", async () => {
+    // Set up a settlement journal that will be migrated, plus a sector-record
+    // journal whose overview still has the pre-migration plain-text settlements
+    // list and a per-settlement embedded page.
+    const settlementJournal = {
+      id:    "j-set",
+      name:  "Outpost 7",
+      flags: { [MODULE]: {} },
+      pages: { contents: [{
+        flags:   { [MODULE]: { settlement: {
+          _id: "s1", name: "Outpost 7", location: "Orbital",
+        } } },
+        getFlag: (mod, key) => (mod === MODULE && key === "settlement") ? {
+          _id: "s1", name: "Outpost 7", location: "Orbital",
+        } : null,
+      }] },
+      setFlag: async function (mod, key, val) {
+        if (!this.flags[mod]) this.flags[mod] = {};
+        this.flags[mod][key] = val;
+      },
+      delete: async () => {},
+    };
+
+    const overviewPage = {
+      id:   "page-overview",
+      name: "Sigma Draconis",
+      text: { content: `<h2>Sigma Draconis</h2>
+<p class="narrator-stub">A trader's haven.</p>
+<h3>Settlements</h3>
+<ul><li>Outpost 7 — Orbital, Pop: Few, Authority: None</li></ul>
+<h3>Passages</h3>
+<p>1 passage charted.</p>` },
+      update: async function (changes) {
+        for (const [path, val] of Object.entries(changes)) {
+          const parts = path.split(".");
+          let cur = this;
+          for (let i = 0; i < parts.length - 1; i += 1) cur = cur[parts[i]];
+          cur[parts[parts.length - 1]] = val;
+        }
+      },
+      delete: async function () { this._deleted = true; },
+    };
+    const extraPage = {
+      id:   "page-extra",
+      name: "Outpost 7",
+      text: { content: "<p>legacy embedded settlement detail</p>" },
+      update: async () => {},
+      delete: async function () { this._deleted = true; },
+    };
+    const sectorPages = [overviewPage, extraPage];
+    const sectorJournal = {
+      id:    "j-sector",
+      name:  "Sigma Draconis — Sector Record",
+      flags: { [MODULE]: { sectorRecord: true, sectorId: "sec-1" } },
+      pages: { contents: sectorPages, find: (fn) => sectorPages.find(fn) },
+      update: async function (changes) { Object.assign(this, changes); },
+    };
+
+    global.game.journal._add(settlementJournal);
+    global.game.journal._add(sectorJournal);
+
+    // Seed campaignState with the sector entry that points at the legacy journal id.
+    const state = global.game.settings.get(MODULE, "campaignState");
+    state.sectors = [{
+      id: "sec-1", name: "Sigma Draconis",
+      settlements: [{ id: "g7", name: "Outpost 7", locationType: "orbital", population: "Few", authority: "None" }],
+      settlementIds:    ["j-set"],
+      entityJournalIds: { g7: "j-set" },
+      activeSectorId:   "sec-1",
+    }];
+    state.settlementIds = ["j-set"];
+    state.activeSectorId = "sec-1";
+
+    await handleMigrateEntitiesCommand({
+      content: "!migrate-entities",
+      author:  { isGM: true },
+    });
+
+    const migrated = global.game.settings.get(MODULE, "campaignState");
+    // settlementIds replaced with actor id
+    const actorId = global.game.actors.filter(a => a.type === "location")[0]?.id;
+    expect(actorId).toBeTruthy();
+    expect(migrated.settlementIds).toEqual([actorId]);
+    expect(migrated.sectors[0].settlementIds).toEqual([actorId]);
+    expect(migrated.sectors[0].entityJournalIds.g7).toBe(actorId);
+
+    // Overview rewritten with the UUID link, narrator stub preserved.
+    expect(overviewPage.text.content).toContain(`@UUID[Actor.${actorId}]{Outpost 7}`);
+    expect(overviewPage.text.content).toContain("trader's haven");
+    expect(overviewPage.text.content).not.toMatch(/<ul><li>Outpost 7 —/);
+
+    // Legacy embedded settlement page deleted; overview survives.
+    expect(extraPage._deleted).toBe(true);
+    expect(overviewPage._deleted).toBeUndefined();
+  });
+});
+
 describe("cleanup pass — --cleanup", () => {
   it("deletes journals migrated more than 7 days ago", async () => {
     const old = makeLegacyShipJournal("j-old", { _id: "s4", name: "Ancient" });

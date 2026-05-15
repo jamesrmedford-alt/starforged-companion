@@ -26,6 +26,10 @@ import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
 import { getOrCreateSectorJournalFolder } from "./folder.js";
+import {
+  rewriteSectorOverviewSettlements,
+  cleanupSectorRecordPages,
+} from "../sectors/sectorOverview.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -114,6 +118,20 @@ async function runMigration() {
     }
   }
 
+  // Step 4 — patch every campaignState.sectors[] entry so its settlement /
+  // planet / location references point at the new Actor ids. The migrator
+  // updated the top-level *Ids[] arrays inside migrateEntityJournal; this
+  // walks the per-sector reference subsets and rewrites any that still hold
+  // a legacy journal id.
+  rewriteSectorEntityReferences(campaignState, summary);
+
+  // Step 5 — for every sector-record JournalEntry, replace the overview's
+  // settlements list with @UUID document links and delete the per-settlement
+  // embedded pages. Idempotent: rewriteSectorOverviewSettlements returns
+  // false when the page is already up to date, and cleanupSectorRecordPages
+  // returns 0 when there's nothing extra to delete.
+  await rewriteSectorOverviews(campaignState, summary);
+
   // Step 6 — delete the orphan "Starforged Sectors" JournalEntry. Nothing
   // reads it post-migration; safe to remove now rather than waiting on the
   // 7-day window.
@@ -177,6 +195,60 @@ async function reparentSectorRecordJournals(campaignState, summary) {
   }
 }
 
+function rewriteSectorEntityReferences(campaignState, summary) {
+  if (!Array.isArray(campaignState?.sectors)) return;
+  let touched = 0;
+  for (const sector of campaignState.sectors) {
+    // Resolve legacy hostId → migrated actor id by walking game.journal for
+    // each id. Faster than scanning all journals once: most sectors hold a
+    // handful of references.
+    const remap = (id) => {
+      if (!id) return id;
+      const actor = globalThis.game?.actors?.get?.(id);
+      if (actor) return id; // already an actor id
+      const journal   = globalThis.game?.journal?.get?.(id) ?? null;
+      const toActorId = journal?.flags?.[MODULE_ID]?.migrated?.toActorId ?? null;
+      return toActorId ?? id;
+    };
+    if (Array.isArray(sector.settlementIds)) {
+      const before = sector.settlementIds.slice();
+      sector.settlementIds = sector.settlementIds.map(remap);
+      if (before.some((v, i) => v !== sector.settlementIds[i])) touched += 1;
+    }
+    if (sector.entityJournalIds && typeof sector.entityJournalIds === "object") {
+      let changed = false;
+      const next = {};
+      for (const [k, v] of Object.entries(sector.entityJournalIds)) {
+        const nv = remap(v);
+        next[k] = nv;
+        if (nv !== v) changed = true;
+      }
+      if (changed) {
+        sector.entityJournalIds = next;
+        touched += 1;
+      }
+    }
+  }
+  if (touched) summary.sectorReferencesUpdated = (summary.sectorReferencesUpdated ?? 0) + touched;
+}
+
+async function rewriteSectorOverviews(campaignState, summary) {
+  if (!Array.isArray(campaignState?.sectors)) return;
+  let rewritten = 0;
+  let pagesRemoved = 0;
+  for (const sector of campaignState.sectors) {
+    try {
+      if (await rewriteSectorOverviewSettlements(sector.id, campaignState)) rewritten += 1;
+      pagesRemoved += await cleanupSectorRecordPages(sector.id, campaignState);
+    } catch (err) {
+      console.error(`${MODULE_ID} | migrator: rewrite sector overview for ${sector.id} failed:`, err);
+      summary.notes.push(`sector "${sector.name ?? sector.id}" overview — ${err.message ?? "rewrite failed"}`);
+    }
+  }
+  if (rewritten)    summary.sectorOverviewsRewritten = rewritten;
+  if (pagesRemoved) summary.sectorEmbeddedPagesRemoved = pagesRemoved;
+}
+
 async function deleteOrphanSectorsJournal(summary) {
   try {
     const journal = globalThis.game?.journal?.getName?.("Starforged Sectors");
@@ -238,6 +310,15 @@ async function postSummaryCard(title, summary) {
   }
   if (summary.sectorJournalsMoved) {
     lines.push(`<li>Sector journals reparented: ${summary.sectorJournalsMoved}</li>`);
+  }
+  if (summary.sectorOverviewsRewritten) {
+    lines.push(`<li>Sector overviews rewritten with @UUID links: ${summary.sectorOverviewsRewritten}</li>`);
+  }
+  if (summary.sectorEmbeddedPagesRemoved) {
+    lines.push(`<li>Legacy embedded settlement pages removed: ${summary.sectorEmbeddedPagesRemoved}</li>`);
+  }
+  if (summary.sectorReferencesUpdated) {
+    lines.push(`<li>Sector entity references repointed at Actors: ${summary.sectorReferencesUpdated}</li>`);
   }
   if (summary.orphanJournalDeleted) {
     lines.push(`<li>Removed legacy "Starforged Sectors" journal.</li>`);

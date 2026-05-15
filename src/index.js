@@ -94,6 +94,7 @@ import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
 } from "./entities/migrator.js";
+import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1248,6 +1249,7 @@ Hooks.once("ready", () => {
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();
+  registerSectorOverviewSync();
   registerSettingsHooks();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a

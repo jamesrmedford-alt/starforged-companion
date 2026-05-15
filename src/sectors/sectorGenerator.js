@@ -13,6 +13,7 @@
 import { createSettlement }    from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
+import { buildSettlementsListHtml } from "./sectorOverview.js";
 import { apiPost }             from "../api-proxy.js";
 import * as SETTLEMENTS        from "../oracles/tables/settlements.js";
 import * as SPACE              from "../oracles/tables/space.js";
@@ -475,19 +476,11 @@ export async function createSectorJournal(sector, stubs = {}, settlementsByGenId
     // §3.6 — Settlement list renders as Foundry document links to the
     // settlement Actors so it stays current when the GM edits an Actor.
     // The settlements map (gen-side id → Actor) is provided by the caller
-    // (storeSector / createEntityJournals); without it, fall back to a plain
-    // text list of names.
-    const settlementListHtml = sector.settlements.map(s => {
-      const actor = settlementsByGenId?.[s.id];
-      const label = `${escapeHtml(s.name)} — ${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
-                    `Pop: ${escapeHtml(s.population)}, Authority: ${escapeHtml(s.authority)}`;
-      if (actor?.id) {
-        return `<li>@UUID[Actor.${actor.id}]{${escapeHtml(s.name)}} — ` +
-               `${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
-               `Pop: ${escapeHtml(s.population)}, Authority: ${escapeHtml(s.authority)}</li>`;
-      }
-      return `<li>${label}</li>`;
-    }).join("");
+    // (storeSector / createEntityJournals); without it, the helper falls
+    // back to a plain text list of names. The wrapper marker comments let
+    // the live updateActor hook and the migrator's sector-rewrite step
+    // replace just this section without disturbing the narrator stub.
+    const settlementListHtml = buildSettlementsListHtml(sector, settlementsByGenId);
 
     const passageCount = sector.passages?.length ?? 0;
     const passageSummary = passageCount === 1 ? "1 passage" : `${passageCount} passages`;
@@ -504,7 +497,7 @@ ${sector.faction ? `<p><strong>Control:</strong> ${escapeHtml(sector.faction)}</
 <p class="narrator-stub">${escapeHtml(stubs.sector ?? "")||"<em>No narrator text generated.</em>"}</p>
 <hr>
 <h3>Settlements</h3>
-<ul>${settlementListHtml}</ul>
+${settlementListHtml}
 <h3>Passages</h3>
 <p>${escapeHtml(passageSummary)} charted.</p>`,
         format: 1,
