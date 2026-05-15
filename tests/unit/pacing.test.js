@@ -198,6 +198,24 @@ describe('classifier system prompt — dial-driven decision guidance', () => {
     const { systemPrompt } = buildClassifierContext(baseArgs());
     expect(systemPrompt).toMatch(/only IF a move is invoked/i);
   });
+
+  it('includes a TIE-BREAK rule forcing MOVE when a suggestedMove exists at dial 9–10', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/TIE-BREAK/);
+    expect(systemPrompt).toMatch(/suggestedMove AND the input's\s+category dial is 9 or 10, the answer is MOVE/);
+  });
+
+  it('limits the "outcome not in doubt" cautious default to dial 0–5', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/outcome not in doubt \/ too small\s+to matter/);
+    expect(systemPrompt).toMatch(/filter only at dial 0[–-]5/);
+  });
+
+  it('describes the 9–10 exception in behavioural terms (no character action)', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toMatch(/9[–-]10:\s*classify as MOVE whenever the player describes a character action/);
+    expect(systemPrompt).toMatch(/inputs that contain NO character action/);
+  });
 });
 
 // ---------------------------------------------------------------------------

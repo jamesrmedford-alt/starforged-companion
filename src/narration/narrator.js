@@ -836,11 +836,15 @@ export async function runPacedDetection(narrationText, campaignState) {
 
 async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
+  const buttonRow = suggestedMove
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
+    : '';
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
+        ${buttonRow}
       </div>
     `.trim(),
     flags: {
@@ -856,6 +860,21 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
       },
     },
   });
+}
+
+function escapeChatHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatMoveLabel(moveId) {
+  return String(moveId ?? '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim() || 'Move';
 }
 
 // ---------------------------------------------------------------------------
