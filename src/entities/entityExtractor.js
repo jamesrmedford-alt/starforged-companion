@@ -26,14 +26,10 @@
 
 import { apiPost } from "../api-proxy.js";
 
-import {
-  getConnection,
-  createConnection,
-  setPortraitSourceDescription as setConnectionPortraitSource,
-} from "./connection.js";
+import { getConnection, createConnection } from "./connection.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
-import { getShip,       createShip,       updateShip } from "./ship.js";
+import { getShip,       createShip }       from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
@@ -381,13 +377,14 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
       try {
         const seedData = buildConnectionSeedData(entity, options.connectionSeed ?? null);
         const record = await createConnection({
-          name:            seedData.name,
-          description:     seedData.description,
-          role:            seedData.role,
-          motivation:      seedData.motivation,
-          firstAppearance: options.sessionId ?? "",
+          name:                      seedData.name,
+          description:               seedData.description,
+          role:                      seedData.role,
+          motivation:                seedData.motivation,
+          portraitSourceDescription: seedData.portraitSource,
+          firstAppearance:           options.sessionId ?? "",
         }, campaignState);
-        await postCreationEnrichment("connection", record, seedData.portraitSource, campaignState);
+        await postCreationEnrichment("connection", record, campaignState);
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -507,41 +504,30 @@ function safeOracleRoll(tableId) {
 }
 
 /**
- * After a connection or ship is created, persist its portraitSourceDescription
- * and silently trigger portrait generation. Portrait generation is gated on the
- * OpenRouter key being configured — when absent, this is a no-op (no
+ * After a connection or ship is created with `portraitSourceDescription`
+ * already on the record, silently trigger portrait generation. Gated on
+ * the OpenRouter key being configured — when absent, this is a no-op (no
  * notification, no chat surface).
  *
- * Lives here (not in connection.js / ship.js) so the seed/portrait policy is
- * applied consistently regardless of which create path runs.
+ * The portraitSourceDescription itself is written by the caller as part
+ * of the create-call data so the journal/actor entry persists atomically
+ * — earlier versions did the portraitSource write here in a follow-up
+ * step, which raced with tests (and other readers) that observed the
+ * journal after createXxx() returned but before this function landed.
+ *
+ * Lives here (not in connection.js / ship.js) so the portrait-generation
+ * policy is applied consistently regardless of which create path runs.
  */
-async function postCreationEnrichment(typeKey, record, portraitSource, campaignState) {
-  if (!record || !portraitSource) return;
+async function postCreationEnrichment(typeKey, record, campaignState) {
+  if (!record || !record.portraitSourceDescription) return;
+  if (!hasOpenRouterKey()) return;
 
   const hostId = findHostDocumentId(typeKey, record._id, campaignState);
   if (!hostId) return;
 
   try {
-    if (typeKey === "connection") {
-      await setConnectionPortraitSource(hostId, portraitSource);
-    } else if (typeKey === "ship") {
-      await updateShip(hostId, { portraitSourceDescription: portraitSource });
-    } else {
-      return;
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | postCreationEnrichment: failed to set portraitSourceDescription:`, err);
-    return;
-  }
-
-  // Silent portrait generation — only when an OpenRouter key is set.
-  // Failures stay silent: a missing portrait is preferable to a broken
-  // scene per the art pipeline policy.
-  if (!hasOpenRouterKey()) return;
-  try {
     const { generatePortrait } = await import("../art/generator.js");
-    const updatedRecord = { ...record, portraitSourceDescription: portraitSource };
-    await generatePortrait(hostId, typeKey, updatedRecord, campaignState);
+    await generatePortrait(hostId, typeKey, record, campaignState ?? {});
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
   }
@@ -1048,31 +1034,30 @@ async function handleDraftConfirm(message, draftIndex) {
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
   let record = null;
-  let portraitSource = "";
   try {
     if (draft.type === "connection") {
       const seedData = buildConnectionSeedData(
         { name: draft.name, description: draft.description ?? "" },
         rollFreshConnectionSeed(),
       );
-      portraitSource = seedData.portraitSource;
       record = await creator({
-        name:        seedData.name,
-        description: seedData.description,
-        role:        seedData.role,
-        motivation:  seedData.motivation,
+        name:                      seedData.name,
+        description:               seedData.description,
+        role:                      seedData.role,
+        motivation:                seedData.motivation,
+        portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
         { name: draft.name, description: draft.description ?? "" },
         rollFreshShipSeed(),
       );
-      portraitSource = seedData.portraitSource;
       record = await creator({
-        name:        seedData.name,
-        description: seedData.description,
-        type:        seedData.type,
-        firstLook:   seedData.firstLook,
+        name:                      seedData.name,
+        description:               seedData.description,
+        type:                      seedData.type,
+        firstLook:                 seedData.firstLook,
+        portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
     } else {
       record = await creator({
@@ -1088,8 +1073,8 @@ async function handleDraftConfirm(message, draftIndex) {
     return;
   }
 
-  if (record && portraitSource) {
-    await postCreationEnrichment(draft.type, record, portraitSource, campaignState);
+  if (record) {
+    await postCreationEnrichment(draft.type, record, campaignState);
   }
 
   drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });

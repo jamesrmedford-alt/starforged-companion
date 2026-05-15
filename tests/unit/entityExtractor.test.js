@@ -1144,6 +1144,12 @@ describe("routeEntityDrafts — connection seed backfill on auto-create", () => 
     expect(rec.motivation).toBe("Settle a debt");
     expect(rec.description).toContain("scarred captain");
     expect(rec.description).toContain("Augmented arm, eyepatch");
+    // portraitSourceDescription must land atomically as part of the create —
+    // not as a follow-up write — otherwise the Quench Confirm-from-draft
+    // test races (saw '' on the journal because the field was set after
+    // connectionIds grew). See v1.2.14 → v1.2.15 fix.
+    expect(rec.portraitSourceDescription).toBeTruthy();
+    expect(rec.portraitSourceDescription).toContain("Augmented arm");
     fixture.restore();
   });
 

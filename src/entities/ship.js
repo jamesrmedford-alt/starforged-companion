@@ -351,18 +351,19 @@ export async function seedStarshipActor(actor, campaignState) {
   });
 
   try {
-    // System field write via actor.update so the starship sheet re-renders
-    // with the new Notes contents.
-    await actor.update({ "system.notes": notesHtml });
-    // Flag writes via setFlag — auto-creates intermediate scopes and avoids
-    // the dot-notation-flag pitfall on actor.update.
-    await actor.setFlag(MODULE_ID, "ship", ship);
-    if (!actor.flags?.[MODULE_ID]?.entityType) {
-      await actor.setFlag(MODULE_ID, "entityType", "ship");
-    }
-    if (!actor.flags?.[MODULE_ID]?.entityId) {
-      await actor.setFlag(MODULE_ID, "entityId", id);
-    }
+    // Single atomic update — writes notes + all three module flag fields
+    // in one document write. Earlier versions split this into a sequence
+    // of `setFlag` calls; that opened a race where any observer (a Quench
+    // test polling on the ship flag, or another hook) could read the
+    // document between the first and last setFlag and see only some of
+    // the fields populated. Foundry V13 auto-creates intermediate paths
+    // in dot-notation flag writes, so this single update form is safe.
+    await actor.update({
+      "system.notes":                      notesHtml,
+      [`flags.${MODULE_ID}.ship`]:         ship,
+      [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
+      [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
+    });
   } catch (err) {
     console.error(`${MODULE_ID} | seedStarshipActor: update failed:`, err);
     return null;
