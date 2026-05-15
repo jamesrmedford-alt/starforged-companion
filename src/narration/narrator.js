@@ -30,7 +30,7 @@ import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -1103,7 +1103,7 @@ function getApiKey() {
 
 function getActiveCharacter(campaignState) {
   try {
-    const ids = campaignState?.characterIds ?? [];
+    const ids = _resolveCharacterIds(campaignState);
     if (!ids.length) return null;
     const actor = game.actors?.get?.(ids[0]);
     if (!actor) return null;
@@ -1160,17 +1160,26 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// campaignState.characterIds is never written by the module, so the stored
+// value is effectively always []. Fall back to actorBridge — the same source
+// the assembler uses — so the recap actually reads chronicle entries.
+function _resolveCharacterIds(campaignState) {
+  const ids = campaignState?.characterIds ?? [];
+  if (ids.length) return ids;
+  try {
+    return getPlayerActors().map(a => a.id);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Aggregate chronicle entries (oldest first) across every PC in the campaign.
  * Each entry is annotated with `actorId` so a single combined sort by
  * timestamp produces a coherent campaign timeline.
- *
- * `characterIds` holds Actor IDs (populated by the assembler from
- * `actors.map(a => a.id)`) — the chronicle journal itself is found by name
- * via `getChronicleEntries`, so callers don't need to know the journal id.
  */
 async function _collectAllChronicleEntries(campaignState) {
-  const ids = campaignState?.characterIds ?? [];
+  const ids = _resolveCharacterIds(campaignState);
   if (!ids.length) return [];
 
   const aggregated = [];
