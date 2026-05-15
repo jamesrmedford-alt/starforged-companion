@@ -1010,6 +1010,7 @@ async function postFallbackCard(resolution) {
     `.trim(),
     flags: {
       [MODULE_ID]: {
+        narratorCard:      true,
         narrationCard:     true,
         narrationFallback: true,
         resolutionId:      resolution?._id ?? '',
