@@ -257,7 +257,10 @@ export function runPostNarrationPasses(
       // in chat at the same moment as the narration.
       return runDiscoveryDetection(
         narrationText, resolution, campaignState,
-        { autoCreateConnection: true },
+        {
+          autoCreateConnection: true,
+          connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
+        },
       );
     }
 
@@ -301,6 +304,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeWorldJournalResults(detection.worldJournal, campaignState);
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
+      connectionSeed:       options.connectionSeed ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
     });
   } catch (err) {

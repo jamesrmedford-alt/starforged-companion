@@ -864,7 +864,15 @@ export function buildOracleSeeds(moveId, outcome, isMatch) {
         if (firstLook) results.push(`Character first look: ${firstLook}`);
         const names = given ? [given] : [];
         if (!results.length && !names.length) return null;
-        return { results, names, context: "make_a_connection" };
+        // connectionSeed carries the same rolls in structured form so the
+        // auto-create path in routeEntityDrafts can populate the journal
+        // fields (role, motivation, description) without re-rolling.
+        return {
+          results,
+          names,
+          context: "make_a_connection",
+          connectionSeed: { role, goal, firstLook, givenName: given },
+        };
       }
 
       case "explore_a_waypoint": {
