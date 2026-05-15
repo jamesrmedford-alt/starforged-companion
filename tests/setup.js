@@ -331,11 +331,19 @@ global.makeTestActor = (overrides = {}) => {
     },
     update: async (changes) => {
       updateHistory.push(changes);
-      // Apply flat dot-notation changes to the actor for test assertions
+      // Apply flat dot-notation changes to the actor for test assertions.
+      // Auto-create intermediate objects so callers writing to e.g.
+      // "flags.starforged-companion.ship" on an actor with no flag scope
+      // succeed (matches Foundry V13 actor.update semantics).
       for (const [path, val] of Object.entries(changes)) {
         const parts = path.split('.');
         let target = actor;
-        for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (target[parts[i]] == null || typeof target[parts[i]] !== 'object') {
+            target[parts[i]] = {};
+          }
+          target = target[parts[i]];
+        }
         target[parts[parts.length - 1]] = val;
       }
     },

@@ -78,6 +78,25 @@ describe("createShip — host document & schema mapping", () => {
     expect(Array.isArray(ship.generativeTier)).toBe(true);
   });
 
+  it("persists portraitSourceDescription as part of the create (atomic)", async () => {
+    // Confirm-from-draft path passes portraitSourceDescription in the data
+    // arg so the field lands together with the rest of the ship payload.
+    // The Quench live test that previously read the field immediately
+    // after createShip's id-push raced because the field was being set
+    // in a post-create write. See v1.2.14 → v1.2.15 fix.
+    const state = { shipIds: [] };
+    await createShip({
+      name:                      "Test Confirm",
+      type:                      "Freighter",
+      firstLook:                 "Patched hull",
+      portraitSourceDescription: "Patched hull. Freighter.",
+    }, state);
+    const ship = global.game.actors.contents[0].flags[MODULE].ship;
+    expect(ship.type).toBe("Freighter");
+    expect(ship.firstLook).toBe("Patched hull");
+    expect(ship.portraitSourceDescription).toBe("Patched hull. Freighter.");
+  });
+
   it("stamps entityType / entityId on the actor flags as a routing crumb", async () => {
     const state = { shipIds: [] };
     await createShip({ name: "Routing" }, state);
