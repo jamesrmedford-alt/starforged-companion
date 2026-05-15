@@ -844,7 +844,13 @@ function registerSectorCreatorTests(quench) {
           const state = game.settings.get("starforged-companion", "campaignState");
           if (!state.activeSectorId) { this.skip(); return; }
 
-          const packet = await assembleContextPacket(null, state);
+          // Inflate the token budget — the test world accumulates character
+          // Actors across batches, and CHARACTER STATE is priority 1 (never
+          // dropped). With the default 1200-token budget the activeSector
+          // section (priority 6) can drop on a busy world. We're asserting
+          // "is this section built when a sector is active", not "does it
+          // fit under the default budget".
+          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
           assert.include(packet.assembled, "ACTIVE SECTOR",
             "assembled packet should contain ACTIVE SECTOR section");
         });
@@ -855,7 +861,7 @@ function registerSectorCreatorTests(quench) {
           const savedId = state.activeSectorId;
           state.activeSectorId = null;
 
-          const packet = await assembleContextPacket(null, state);
+          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
           assert.notInclude(packet.assembled, "ACTIVE SECTOR",
             "assembled packet should not contain ACTIVE SECTOR when no sector is active");
 
@@ -4023,6 +4029,12 @@ function registerChatCardActionsTests(quench) {
       // registered and that it routes to postCampaignRecap with forceRefresh.
       describe("recapCard — Refresh button forces a regeneration", function () {
         it("clicking [data-action=refreshCampaignRecap] calls postCampaignRecap", async function () {
+          // Live Forge: post-v1.2.12 the Refresh handler reaches the
+          // (stubbed) Anthropic call and writes the cache + posts a card
+          // via two server roundtrips. Default 2 s Mocha timeout is too
+          // tight for Forge's network. Pre-fix this test short-circuited
+          // at "no chronicle entries" and finished in milliseconds.
+          this.timeout(20000);
           if (skipNotGM(this)) return;
 
           const narratorMod = await import(`${MODULE_PATH}/narration/narrator.js`);
