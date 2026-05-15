@@ -1,24 +1,34 @@
 /**
  * STARFORGED COMPANION
- * src/entities/ship.js — Ship records (command vehicle + support vehicles)
+ * src/entities/ship.js — Ship records, hosted on foundry-ironsworn `starship`
+ * Actor documents (Entity → Actor Migration Phase 2).
  *
- * Ships have an integrity meter, can suffer battered/cursed impacts,
- * and may have support vehicles nested under the command vehicle.
+ * The native starship schema (vendor/foundry-ironsworn/src/module/actor/
+ * subtypes/starship.ts) carries `notes` (HTMLField) and `debility.{battered,
+ * cursed}` (ImpactField — booleans). Everything else in the Starforged-side
+ * Ship schema lives in `actor.flags["starforged-companion"].ship`.
  *
- * The command ship (STARSHIP asset) is a special case:
- * — It's shared across all players
- * — It can suffer the permanent "cursed" impact
- * — It has a name and portrait that persist across the campaign
- *
- * Support vehicles are secondary ships launched from the command vehicle.
- * They can be battered but not cursed.
- *
- * Incidental vehicles are not tracked here — they're ephemeral.
+ * Field placement:
+ *   actor.name                            ← ship.name (also kept on the flag)
+ *   actor.img                             ← portrait dataUri (set by art pipeline)
+ *   actor.system.notes                    ← ship.notes
+ *   actor.system.debility.battered        ← ship.battered (clearable)
+ *   actor.system.debility.cursed          ← ship.cursed (permanent, command vehicle only)
+ *   actor.flags[MODULE].ship              ← full Starforged payload (see ShipSchema)
+ *   actor.flags[MODULE].entityType        ← "ship" (routing crumb)
+ *   actor.flags[MODULE].entityId          ← the Ship _id (preserved across migrations)
  *
  * Source: Starforged Reference Guide p.121 / Rulebook pp.55-65
  */
 
-import { getOrCreateEntitiesFolder } from "./folder.js";
+import {
+  getOrCreateActorFolder,
+} from "./folder.js";
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+} from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -78,32 +88,41 @@ export async function createShip(data, campaignState) {
     updatedAt: now,
   };
 
-  const entry = await JournalEntry.create({
+  const folderId = await getOrCreateActorFolder("Starships");
+
+  const actor = await Actor.create({
     name:   ship.name || "Unknown Ship",
-    folder: await getOrCreateEntitiesFolder(),
-    flags:  { [MODULE_ID]: { entityType: "ship", entityId: id } },
+    type:   "starship",
+    folder: folderId,
+    system: {
+      notes: ship.notes ?? "",
+      debility: {
+        battered: !!ship.battered,
+        cursed:   !!ship.cursed,
+      },
+    },
+    flags:  {
+      [MODULE_ID]: {
+        [FLAG_KEY]:  ship,
+        entityType:  "ship",
+        entityId:    id,
+      },
+    },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Ship Data",
-    type:  "text",
-    flags: { [MODULE_ID]: { [FLAG_KEY]: ship } },
-  }]);
-
   if (!campaignState.shipIds) campaignState.shipIds = [];
-  if (!campaignState.shipIds.includes(entry.id)) {
-    campaignState.shipIds.push(entry.id);
+  if (!campaignState.shipIds.includes(actor.id)) {
+    campaignState.shipIds.push(actor.id);
     await persistCampaignState(campaignState);
   }
 
   return ship;
 }
 
-export function getShip(journalEntryId) {
+export function getShip(actorId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    const page  = entry?.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
+    const document = getEntityDocument("ship", actorId);
+    return readEntityFlag("ship", document);
   } catch {
     return null;
   }
@@ -119,12 +138,11 @@ export function getCommandVehicle(campaignState) {
   return listShips(campaignState).find(s => s.isCommandVehicle) ?? null;
 }
 
-export async function updateShip(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Ship journal entry not found: ${journalEntryId}`);
+export async function updateShip(actorId, updates) {
+  const document = getEntityDocument("ship", actorId);
+  if (!document) throw new Error(`Ship actor not found: ${actorId}`);
 
-  const page    = entry.pages?.contents?.[0];
-  const current = page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const current = readEntityFlag("ship", document) ?? {};
   const updated = {
     ...current,
     ...updates,
@@ -144,10 +162,19 @@ export async function updateShip(journalEntryId, updates) {
     updated.integrity = Math.max(0, Math.min(updated.integrityMax ?? 5, updated.integrity));
   }
 
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  // Mirror battered/cursed onto the native debility fields so the ironsworn
+  // starship sheet renders them correctly (ImpactField widget). The flag
+  // payload remains the source of truth for everything else.
+  const systemPatch = {};
+  if (updates.notes !== undefined)    systemPatch["system.notes"] = updated.notes ?? "";
+  if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
+  if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
+  if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
+  await writeEntityFlag("ship", document, updated);
+
+  if (updates.name && updates.name !== document.name) {
+    await document.update({ name: updates.name });
   }
 
   return updated;
@@ -158,29 +185,29 @@ export async function updateShip(journalEntryId, updates) {
  * Clamps to 0. If integrity reaches 0, the caller should trigger
  * Withstand Damage.
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @param {number} amount — Damage to apply (positive number)
  * @returns {Promise<Object>}
  */
-export async function sufferDamage(journalEntryId, amount) {
-  const ship = getShip(journalEntryId);
-  if (!ship) throw new Error(`Ship not found: ${journalEntryId}`);
+export async function sufferDamage(actorId, amount) {
+  const ship = getShip(actorId);
+  if (!ship) throw new Error(`Ship not found: ${actorId}`);
 
   const newIntegrity = Math.max(0, ship.integrity - amount);
-  return updateShip(journalEntryId, { integrity: newIntegrity });
+  return updateShip(actorId, { integrity: newIntegrity });
 }
 
 /**
  * Repair integrity (e.g. after a successful Repair move).
  * Does not clear battered — that requires spending repair points.
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @param {number} amount — Points to restore
  * @returns {Promise<Object>}
  */
-export async function repairIntegrity(journalEntryId, amount) {
-  const ship = getShip(journalEntryId);
-  if (!ship) throw new Error(`Ship not found: ${journalEntryId}`);
+export async function repairIntegrity(actorId, amount) {
+  const ship = getShip(actorId);
+  if (!ship) throw new Error(`Ship not found: ${actorId}`);
 
   if (ship.battered) {
     console.warn(`${MODULE_ID} | Ship is battered — integrity cannot be raised until battered is cleared.`);
@@ -188,21 +215,21 @@ export async function repairIntegrity(journalEntryId, amount) {
   }
 
   const newIntegrity = Math.min(ship.integrityMax ?? 5, ship.integrity + amount);
-  return updateShip(journalEntryId, { integrity: newIntegrity });
+  return updateShip(actorId, { integrity: newIntegrity });
 }
 
 /**
  * Clear the battered impact (costs 2 repair points in the Repair move).
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @returns {Promise<Object>}
  */
-export async function clearBattered(journalEntryId) {
-  return updateShip(journalEntryId, { battered: false });
+export async function clearBattered(actorId) {
+  return updateShip(actorId, { battered: false });
 }
 
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updateShip(journalEntryId, { portraitId: artAssetId });
+export async function setPortraitId(actorId, artAssetId) {
+  return updateShip(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(ship) {

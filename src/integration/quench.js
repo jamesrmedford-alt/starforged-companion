@@ -2383,6 +2383,18 @@ function registerEntityPanelActionsTests(quench) {
                          app.element.querySelector('[data-tab="dismissed"][aria-selected="true"]') ??
                          null;
           assert.isTrue(!!active || true, "tab switch should not throw");
+
+          // Restore the panel to the entities tab so later tests in this batch
+          // (selectEntity / toggleCanonicalLock / setCurrentLocation) can find
+          // their seeded rows. Without this, #activeTopTab stays 'dismissed'
+          // and _prepareContext returns the dismissed view instead of the
+          // list view that those tests assume.
+          const entitiesBtn = app.element?.querySelector(
+            '[data-action="switchTopTab"][data-tab="entities"]');
+          if (entitiesBtn) {
+            entitiesBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await awaitRender(app);
+          }
         });
       });
 
@@ -3820,6 +3832,27 @@ function registerChatCardActionsTests(quench) {
           ?? null;
       }
 
+      // Poll a predicate until it returns truthy or the timeout elapses.
+      // On Forge the click → handler → JournalEntry.create → settings.set →
+      // message.update → DOM re-render chain can run longer than a fixed
+      // microtask flush loop allows, so any assertion that depends on the
+      // re-rendered chat DOM must wait for the actual condition.
+      async function waitFor(predicate, { timeoutMs = 3000, intervalMs = 50 } = {}) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          try {
+            if (await predicate()) return true;
+          } catch (err) {
+            // Predicate threw mid-poll — log and keep polling until timeout
+            // rather than masking the failure entirely. Common cause: a
+            // document the predicate reads doesn't exist yet.
+            console.debug(`${MODULE} | waitFor predicate threw:`, err);
+          }
+          await new Promise(r => setTimeout(r, intervalMs));
+        }
+        return false;
+      }
+
       // ───── setupCard → openTruthsDialog ─────
       describe("setupCard — Set World Truths button opens the truths dialog", function () {
         it("clicking [data-action=openTruthsDialog] invokes openSystemTruthsDialog()", async function () {
@@ -3892,9 +3925,16 @@ function registerChatCardActionsTests(quench) {
           await withSilencedNotifications(async () => {
             confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
             // Confirm hits createFaction → JournalEntry.create → setFlag, plus
-            // a follow-up message.update to flip the row to "Confirmed". Wait
-            // a few ticks for the chain to settle.
-            for (let i = 0; i < 10; i += 1) await flushMicrotasks();
+            // a follow-up message.update to flip the row to "Confirmed". Each
+            // step is a socket round-trip on Forge, so poll for the visible
+            // outcome rather than relying on a fixed flush count.
+            await waitFor(() => {
+              const s = game.settings.get(MODULE, "campaignState") ?? {};
+              return (s.factionIds ?? []).some(id => !beforeIds.has(id));
+            });
+            await waitFor(
+              () => (findRenderedCard(msg.id)?.innerHTML ?? "").includes("Confirmed"),
+            );
           });
 
           const stateAfter = game.settings.get(MODULE, "campaignState") ?? {};
@@ -3939,7 +3979,13 @@ function registerChatCardActionsTests(quench) {
           assert.isNotNull(dismissBtn, "Dismiss button should be present in the rendered card");
 
           dismissBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          for (let i = 0; i < 10; i += 1) await flushMicrotasks();
+          // Dismiss skips the JournalEntry.create round-trip but still hits
+          // settings.set + message.update; poll for the persisted name to
+          // appear rather than gambling on flush count.
+          await waitFor(() => {
+            const s = game.settings.get(MODULE, "campaignState") ?? {};
+            return (s.dismissedEntities ?? []).includes(draftName);
+          });
 
           const stateAfter = game.settings.get(MODULE, "campaignState") ?? {};
           const newDismissed = (stateAfter.dismissedEntities ?? []).filter(

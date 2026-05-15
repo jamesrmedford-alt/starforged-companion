@@ -33,6 +33,11 @@
 import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
 import { generateOpenRouterImage }                from "./openRouterImage.js";
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+} from "../entities/registry.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -193,26 +198,20 @@ async function callOpenRouter(prompt, size, entityId, entityType) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Write the generated asset ID back to the entity record.
+ * Write the generated asset ID back to the entity record. Routes through the
+ * entity registry so journal-hosted and (post-migration) actor-hosted entities
+ * share one write path.
  */
 async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    if (!entry) {
-      console.warn(`${MODULE_ID} | Art: journal entry not found for portrait link: ${journalEntryId}`);
+    const document = getEntityDocument(entityType, journalEntryId);
+    if (!document) {
+      console.warn(`${MODULE_ID} | Art: host document not found for portrait link: ${entityType} ${journalEntryId}`);
       return;
     }
 
-    const page = entry.pages?.contents?.[0];
-    if (!page) {
-      console.warn(`${MODULE_ID} | Art: no page found in entry: ${journalEntryId}`);
-      return;
-    }
-
-    // All entity types (connection, ship, settlement, faction, planet) store
-    // their data under page.flags[MODULE_ID][entityType].
-    const existing = page.flags?.[MODULE_ID]?.[entityType] ?? {};
-    await page.setFlag(MODULE_ID, entityType, {
+    const existing = readEntityFlag(entityType, document) ?? {};
+    await writeEntityFlag(entityType, document, {
       ...existing,
       portraitId: artAssetId,
       updatedAt:  new Date().toISOString(),

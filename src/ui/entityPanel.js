@@ -17,6 +17,13 @@
 
 import { generatePortrait, regeneratePortrait } from '../art/generator.js';
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+  iterEntityDocuments,
+  resolveEntityById,
+} from '../entities/registry.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -95,25 +102,18 @@ const DETAIL_FIELDS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Load all entities of every type from the journal, with their art assets.
- * Art is looked up via entity.data.portraitId → loadArtAsset().
+ * Load all entities of every type, with their art assets. Reads through the
+ * entity registry so a later phase can flip ship/planet/settlement/location
+ * onto Actor documents without touching this loader.
  */
 async function loadAllEntities() {
   const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
   const result = {};
 
-  for (const [typeKey, config] of Object.entries(ENTITY_TYPES)) {
+  for (const typeKey of Object.keys(ENTITY_TYPES)) {
     result[typeKey] = [];
 
-    for (const journal of game.journal) {
-      // Entity data lives on the embedded JournalEntryPage flag, not the
-      // JournalEntry itself. Entry-level flags only carry routing crumbs
-      // ({ entityType, entityId }). See src/entities/*.js create paths.
-      const page = journal.pages?.contents?.[0];
-      if (!page) continue;
-      const data = page.getFlag(MODULE_ID, config.flag);
-      if (!data) continue;
-
+    for (const { document, data } of iterEntityDocuments(typeKey)) {
       const art = data.portraitId
         ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
         : null;
@@ -121,8 +121,8 @@ async function loadAllEntities() {
       const dataUri = art ? getDataUri(art) : null;
 
       result[typeKey].push({
-        journalId: journal.id,
-        name:      data.name ?? journal.name,
+        journalId: document.id,
+        name:      data.name ?? document.name,
         typeKey,
         data,
         art:    art   ? { ...art, dataUri } : null,
@@ -136,17 +136,15 @@ async function loadAllEntities() {
 }
 
 /**
- * Find a single entity record across all types.
+ * Find a single entity record across all types. `id` is the host document id
+ * (journal id today, actor id post-migration for the four migrated types).
  */
-async function findEntity(journalId) {
+async function findEntity(id) {
   const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
-  const journal = game.journal.get(journalId);
-  if (!journal) return null;
-  const page = journal.pages?.contents?.[0];
-  if (!page) return null;
-
-  for (const [typeKey, config] of Object.entries(ENTITY_TYPES)) {
-    const data = page.getFlag(MODULE_ID, config.flag);
+  for (const typeKey of Object.keys(ENTITY_TYPES)) {
+    const document = getEntityDocument(typeKey, id);
+    if (!document) continue;
+    const data = readEntityFlag(typeKey, document);
     if (!data) continue;
 
     const art = data.portraitId
@@ -156,8 +154,8 @@ async function findEntity(journalId) {
     const dataUri = art ? getDataUri(art) : null;
 
     return {
-      journalId,
-      name: data.name ?? journal.name,
+      journalId: id,
+      name:      data.name ?? document.name,
       typeKey,
       data,
       art: art ? { ...art, dataUri } : null,
@@ -696,12 +694,10 @@ export class EntityPanelApp extends ApplicationV2 {
     });
     if (!confirmed) return;
 
-    const journal = game.journal?.get(journalId);
-    const page    = journal?.pages?.contents?.[0];
-    if (!page) return;
-    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
-    if (!entityType) return;
-    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
+    const resolved = resolveEntityById(journalId);
+    if (!resolved) return;
+    const { typeKey: entityType, document } = resolved;
+    const data = { ...resolved.data };
 
     const tier = Array.isArray(data.generativeTier) ? [...data.generativeTier] : [];
     const idx  = tier.findIndex(e => (e?.detail ?? '') === detail);
@@ -715,7 +711,7 @@ export class EntityPanelApp extends ApplicationV2 {
       ? `${existingNotes}\n\n${detail}`
       : detail;
 
-    await page.setFlag(MODULE_ID, entityType, {
+    await writeEntityFlag(entityType, document, {
       ...data,
       notes:          appended,
       generativeTier: tier,
@@ -741,14 +737,14 @@ export class EntityPanelApp extends ApplicationV2 {
   static async #onToggleCanonicalLock(event, target) {
     const journalId = target.dataset.journalId;
     if (!journalId) return;
-    const journal = game.journal?.get(journalId);
-    const page    = journal?.pages?.contents?.[0];
-    if (!page) return;
-    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
-    if (!entityType) return;
-    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
+
+    const resolved = resolveEntityById(journalId);
+    if (!resolved) return;
+    const { typeKey: entityType, document } = resolved;
+    const data = { ...resolved.data };
+
     const next = !data.canonicalLocked;
-    await page.setFlag(MODULE_ID, entityType, {
+    await writeEntityFlag(entityType, document, {
       ...data,
       canonicalLocked: next,
       updatedAt:       new Date().toISOString(),
@@ -883,16 +879,14 @@ function escapeHtml(s) {
  */
 async function mutateGenerativeTier(journalId, transform) {
   try {
-    const journal = game.journal?.get(journalId);
-    const page    = journal?.pages?.contents?.[0];
-    if (!page) return null;
-    const entityType = Object.keys(ENTITY_TYPES).find(k => page.flags?.[MODULE_ID]?.[k]);
-    if (!entityType) return null;
+    const resolved = resolveEntityById(journalId);
+    if (!resolved) return null;
+    const { typeKey: entityType, document } = resolved;
+    const data = { ...resolved.data };
 
-    const data = { ...(page.flags[MODULE_ID][entityType] ?? {}) };
     const tier = Array.isArray(data.generativeTier) ? data.generativeTier : [];
     const next = transform(tier) ?? tier;
-    await page.setFlag(MODULE_ID, entityType, {
+    await writeEntityFlag(entityType, document, {
       ...data,
       generativeTier: next,
       updatedAt:      new Date().toISOString(),

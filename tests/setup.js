@@ -163,21 +163,25 @@ global.foundry.utils.deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 // ---------------------------------------------------------------------------
 
 global.game.actors = (() => {
-  let _actors = [];
-  return {
+  const _actors = [];
+  const coll = {
     get: (id) => _actors.find(a => a.id === id) ?? null,
     find: (fn) => _actors.find(fn) ?? null,
     filter: (fn) => _actors.filter(fn),
     contents: _actors,
+    // Iterator so `for (const a of game.actors)` works (Foundry's collection
+    // is iterable; entity-registry uses it).
+    [Symbol.iterator]: () => _actors[Symbol.iterator](),
     // Test helpers — not part of the Foundry API
     _set: (id, actor) => {
       const idx = _actors.findIndex(a => a.id === id);
       if (idx >= 0) _actors[idx] = actor;
       else _actors.push(actor);
     },
-    _setAll: (actors) => { _actors = actors; },
-    _reset: () => { _actors = []; },
+    _setAll: (actors) => { _actors.length = 0; _actors.push(...actors); },
+    _reset:  () => { _actors.length = 0; },
   };
+  return coll;
 })();
 
 // game.user.character — the actor owned by the current user
@@ -262,13 +266,31 @@ afterEach(() => {
 
 global.makeTestActor = (overrides = {}) => {
   const updateHistory = [];
+  const flags = { ...(overrides.flags ?? {}) };
   const sys = overrides.system ?? {};
-  const actor = {
-    id: overrides.id ?? foundry.utils.randomID(),
-    name: overrides.name ?? 'Test Character',
-    type: overrides.type ?? 'character',
-    hasPlayerOwner: overrides.hasPlayerOwner ?? true,
-    system: {
+  const type = overrides.type ?? 'character';
+
+  // Per-type default system shape. character matches the ironsworn v1.27 schema;
+  // starship matches vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts;
+  // location matches subtypes/location.ts.
+  let defaultSystem;
+  if (type === 'starship') {
+    defaultSystem = {
+      notes: sys.notes ?? '',
+      debility: {
+        battered: false,
+        cursed:   false,
+        ...(sys.debility ?? {}),
+      },
+    };
+  } else if (type === 'location') {
+    defaultSystem = {
+      subtype:     sys.subtype     ?? 'star',
+      klass:       sys.klass       ?? null,
+      description: sys.description ?? '',
+    };
+  } else {
+    defaultSystem = {
       edge:   sys.edge   ?? 2,
       heart:  sys.heart  ?? 2,
       iron:   sys.iron   ?? 3,
@@ -288,7 +310,20 @@ global.makeTestActor = (overrides = {}) => {
         ...(sys.debility ?? {}),
       },
       xp: sys.xp ?? 0,
-    },
+    };
+  }
+
+  const actor = {
+    id: overrides.id ?? foundry.utils.randomID(),
+    name: overrides.name ?? (type === 'starship' ? 'Test Starship'
+                              : type === 'location' ? 'Test Location'
+                              : 'Test Character'),
+    type,
+    img: overrides.img ?? null,
+    folder: overrides.folder ?? null,
+    hasPlayerOwner: overrides.hasPlayerOwner ?? (type === 'character'),
+    system: defaultSystem,
+    flags,
     items: {
       find: (fn) => null,
       contents: [],
@@ -296,7 +331,7 @@ global.makeTestActor = (overrides = {}) => {
     },
     update: async (changes) => {
       updateHistory.push(changes);
-      // Apply flat dot-notation changes to actor.system for test assertions
+      // Apply flat dot-notation changes to the actor for test assertions
       for (const [path, val] of Object.entries(changes)) {
         const parts = path.split('.');
         let target = actor;
@@ -304,7 +339,84 @@ global.makeTestActor = (overrides = {}) => {
         target[parts[parts.length - 1]] = val;
       }
     },
+    getFlag: (mod, key) => {
+      const scope = flags[mod];
+      if (!scope) return undefined;
+      // Allow dotted-key reads e.g. getFlag(MODULE, 'ship.foo') if any caller wants
+      const parts = key.split('.');
+      let cur = scope;
+      for (const p of parts) {
+        if (cur == null || typeof cur !== 'object') return undefined;
+        cur = cur[p];
+      }
+      return cur;
+    },
+    setFlag: async (mod, key, val) => {
+      if (!flags[mod]) flags[mod] = {};
+      const parts = key.split('.');
+      let cur = flags[mod];
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = val;
+    },
     _updateHistory: updateHistory,
   };
   return actor;
+};
+
+// ---------------------------------------------------------------------------
+// Actor.create — global stub that mirrors JournalEntry.create. Tests that
+// exercise Actor creation paths (ship/starship migration, etc.) use this.
+// The stub builds the mock via makeTestActor() and registers it in
+// game.actors so subsequent .get() lookups resolve.
+// ---------------------------------------------------------------------------
+
+global.Actor = {
+  create: async (data) => {
+    const actor = global.makeTestActor({
+      id:     data?.id     ?? foundry.utils.randomID(),
+      name:   data?.name   ?? 'Unknown Actor',
+      type:   data?.type   ?? 'character',
+      img:    data?.img    ?? null,
+      folder: data?.folder ?? null,
+      flags:  data?.flags  ?? {},
+      system: data?.system ?? {},
+    });
+    global.game.actors._set(actor.id, actor);
+    return actor;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Folder.create — stub for folder helpers in src/entities/folder.js.
+// Tracks created folders so `game.folders.find` resolves them.
+// ---------------------------------------------------------------------------
+
+global.game.folders = (() => {
+  const _folders = [];
+  return {
+    get:    (id) => _folders.find(f => f.id === id) ?? null,
+    find:   (fn) => _folders.find(fn) ?? null,
+    filter: (fn) => _folders.filter(fn),
+    contents: _folders,
+    [Symbol.iterator]: () => _folders[Symbol.iterator](),
+    _set:    (folder) => { _folders.push(folder); },
+    _reset:  () => { _folders.length = 0; },
+  };
+})();
+
+global.Folder = {
+  create: async (data) => {
+    const folder = {
+      id:     foundry.utils.randomID(),
+      name:   data?.name ?? 'Folder',
+      type:   data?.type ?? 'JournalEntry',
+      color:  data?.color ?? null,
+      folder: data?.folder ?? null,
+    };
+    global.game.folders._set(folder);
+    return folder;
+  },
 };
