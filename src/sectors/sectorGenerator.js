@@ -12,6 +12,8 @@
 // rollOracle is imported for potential future use by panel overrides
 import { createSettlement }    from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
+import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
+import { buildSettlementsListHtml } from "./sectorOverview.js";
 import { apiPost }             from "../api-proxy.js";
 import * as SETTLEMENTS        from "../oracles/tables/settlements.js";
 import * as SPACE              from "../oracles/tables/space.js";
@@ -235,19 +237,24 @@ export async function createEntityJournals(sector, campaignState) {
       projects:   s.projects,
       trouble:    s.trouble ?? null,
       planet:     s.planet ?? null,
+      sectorId:   sector.id,
     }, campaignState, { persist: false });
-    const journalId = campaignState.settlementIds?.[beforeLen] ?? null;
-    const journalEntry = journalId ? (game.journal?.get(journalId) ?? null) : null;
-    settlements[s.id] = journalEntry;
-    if (journalEntry) {
-      const page = journalEntry.pages?.contents?.[0];
-      if (page) {
-        const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
-        await page.setFlag(MODULE_ID, "settlement", {
+    const actorId = campaignState.settlementIds?.[beforeLen] ?? null;
+    const actor   = actorId ? (game.actors?.get(actorId) ?? null) : null;
+    settlements[s.id] = actor;
+    if (actor) {
+      // Settlements created by the sector generator are canonical — narrator
+      // entity discovery must not overwrite them. Flip the lock via the
+      // registry so the actor-host path stays correct.
+      try {
+        const existing = actor.getFlag(MODULE_ID, "settlement") ?? {};
+        await actor.setFlag(MODULE_ID, "settlement", {
           ...existing,
           canonicalLocked: true,
           updatedAt: new Date().toISOString(),
         });
+      } catch (err) {
+        console.error(`${MODULE_ID} | sectorGenerator: failed to lock settlement ${actorId}:`, err);
       }
     }
   }
@@ -340,8 +347,10 @@ export async function storeSector(sector, extras, campaignState) {
   campaignState.sectors.push(stored);
   campaignState.activeSectorId = stored.id;
 
-  // Store sector record to the "Starforged Sectors" journal
-  await saveSectorToJournal(stored);
+  // §3.5: saveSectorToJournal removed — no production code read the
+  // "Starforged Sectors" JournalEntry flag, and campaignState.sectors[] is
+  // the authoritative store. The migrator deletes any orphan journal left
+  // by pre-migration runs.
 
   // TODO: World Journal integration — add sector trouble as threat when WJ ships
   // await recordThreat(sector.trouble, { type: "environmental", severity: "looming", ... })
@@ -441,21 +450,21 @@ export async function applyStubsToSettlementEntities(settlements, stubs) {
  * @param {{ sector: string|null, settlements: Object }} stubs
  * @returns {Promise<JournalEntry|null>}
  */
-export async function createSectorJournal(sector, stubs = {}) {
+export async function createSectorJournal(sector, stubs = {}, settlementsByGenId = {}) {
   try {
     const regionLabel = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
 
-    const sectorsFolder = game.folders?.find(
-      f => f.name === "Sectors" && f.type === "JournalEntry"
-    ) ?? await Folder.create({
-      name:  "Sectors",
-      type:  "JournalEntry",
-      color: "#4A6FA5",
+    // Per docs/entity-actor-migration-scope.md §3.4: sector-record journals
+    // live under per-sector subfolders, not flat under "Sectors". The campaign
+    // state may not have the slim sectors[] entry yet when this is called
+    // during storeSector — pass through what we know.
+    const folderId = await getOrCreateSectorJournalFolder(sector.id, {
+      sectors: [{ id: sector.id, name: sector.name }],
     });
 
     const journal = await JournalEntry.create({
       name:   `${sector.name} — Sector Record`,
-      folder: sectorsFolder.id,
+      folder: folderId,
       flags: {
         [MODULE_ID]: {
           sectorRecord: true,
@@ -464,10 +473,14 @@ export async function createSectorJournal(sector, stubs = {}) {
       },
     });
 
-    const settlementListHtml = sector.settlements.map(s =>
-      `<li>${escapeHtml(s.name)} — ${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
-      `Pop: ${escapeHtml(s.population)}, Authority: ${escapeHtml(s.authority)}</li>`
-    ).join("");
+    // §3.6 — Settlement list renders as Foundry document links to the
+    // settlement Actors so it stays current when the GM edits an Actor.
+    // The settlements map (gen-side id → Actor) is provided by the caller
+    // (storeSector / createEntityJournals); without it, the helper falls
+    // back to a plain text list of names. The wrapper marker comments let
+    // the live updateActor hook and the migrator's sector-rewrite step
+    // replace just this section without disturbing the narrator stub.
+    const settlementListHtml = buildSettlementsListHtml(sector, settlementsByGenId);
 
     const passageCount = sector.passages?.length ?? 0;
     const passageSummary = passageCount === 1 ? "1 passage" : `${passageCount} passages`;
@@ -484,36 +497,15 @@ ${sector.faction ? `<p><strong>Control:</strong> ${escapeHtml(sector.faction)}</
 <p class="narrator-stub">${escapeHtml(stubs.sector ?? "")||"<em>No narrator text generated.</em>"}</p>
 <hr>
 <h3>Settlements</h3>
-<ul>${settlementListHtml}</ul>
+${settlementListHtml}
 <h3>Passages</h3>
 <p>${escapeHtml(passageSummary)} charted.</p>`,
         format: 1,
       },
     }]);
 
-    for (const s of sector.settlements) {
-      const stubText = stubs.settlements?.[s.id] ?? null;
-      await journal.createEmbeddedDocuments("JournalEntryPage", [{
-        name: s.name,
-        type: "text",
-        text: {
-          content: `<h2>${escapeHtml(s.name)}</h2>
-<p><strong>Type:</strong> ${escapeHtml(locationTypeToLabel(s.locationType))}</p>
-<p><strong>Population:</strong> ${escapeHtml(s.population)}</p>
-<p><strong>Authority:</strong> ${escapeHtml(s.authority)}</p>
-<p><strong>Projects:</strong> ${escapeHtml(s.projects?.join(", ") ?? "")}</p>
-${s.trouble ? `<p><strong>Trouble:</strong> ${escapeHtml(s.trouble)}</p>` : ""}
-${s.planet ? `<p><strong>Planet:</strong> ${escapeHtml(s.planet.name)} (${escapeHtml(s.planet.type)})</p>` : ""}
-<hr>
-<p class="narrator-stub">${escapeHtml(stubText ?? "")||"<em>No narrator text generated.</em>"}</p>
-<hr>
-<h3>Notes</h3>
-<p><em>Record discoveries and plot threads here.</em></p>`,
-          format: 1,
-        },
-      }]);
-    }
-
+    // §3.6: per-settlement embedded pages are no longer generated. Settlement
+    // detail lives on the Actor; the overview's UUID links resolve there.
     return journal;
   } catch (err) {
     console.error(`${MODULE_ID} | createSectorJournal failed:`, err);
@@ -522,25 +514,6 @@ ${s.planet ? `<p><strong>Planet:</strong> ${escapeHtml(s.planet.name)} (${escape
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOURNAL STORAGE
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function saveSectorToJournal(sector) {
-  try {
-    let journal = game.journal?.getName("Starforged Sectors");
-    if (!journal) {
-      journal = await JournalEntry.create({
-        name:  "Starforged Sectors",
-        flags: { [MODULE_ID]: { sectorsJournal: true } },
-      });
-    }
-    await journal.setFlag(MODULE_ID, sector.id, sector);
-  } catch (err) {
-    console.error(`${MODULE_ID} | sectorGenerator: saveSectorToJournal(${sector?.id}) failed:`, err);
-    throw err;
-  }
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────

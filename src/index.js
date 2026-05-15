@@ -100,6 +100,11 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import {
+  isMigrateEntitiesCommand,
+  handleMigrateEntitiesCommand,
+} from "./entities/migrator.js";
+import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -456,6 +461,12 @@ export function registerChatHook() {
     // !pace command — GM-only pacing scene override
     if (isPaceCommand(message)) {
       await handlePaceCommand(message);
+      return;
+    }
+
+    // !migrate-entities command — GM-only one-time storage migration
+    if (isMigrateEntitiesCommand(message)) {
+      await handleMigrateEntitiesCommand(message);
       return;
     }
 
@@ -1499,6 +1510,7 @@ Hooks.once("ready", () => {
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();
+  registerSectorOverviewSync();
   registerSettingsHooks();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a

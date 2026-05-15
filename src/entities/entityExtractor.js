@@ -25,6 +25,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
 import { getConnection, createConnection } from "./connection.js";
 import { getSettlement, createSettlement } from "./settlement.js";
@@ -708,11 +709,15 @@ async function persistGenerativeTier(entityRef, tier) {
 export async function appendMigratedTruthToTier(journalId, type, entry) {
   if (!journalId || !type || !entry) return false;
   try {
-    const journalEntry = game.journal?.get(journalId);
-    const page         = journalEntry?.pages?.contents?.[0];
-    if (!page) return false;
+    // Registry-dispatch — PR #100 moved ship/planet/location/settlement onto
+    // native Actor documents while connection/faction/creature stayed
+    // journal-backed. The "journalId" argument name is preserved for
+    // back-compat (Phase C callers built around the old shape) but the value
+    // is the host document id of either flavour. See src/entities/registry.js.
+    const document = getEntityDocument(type, journalId);
+    if (!document) return false;
 
-    const existingFlags = page.flags?.[MODULE_ID]?.[type] ?? {};
+    const existingFlags = readEntityFlag(type, document) ?? {};
     const tier          = Array.isArray(existingFlags.generativeTier)
       ? existingFlags.generativeTier
       : [];
@@ -721,7 +726,7 @@ export async function appendMigratedTruthToTier(journalId, type, entry) {
       generativeTier: [...tier, entry],
       updatedAt:      new Date().toISOString(),
     };
-    await page.setFlag(MODULE_ID, type, updated);
+    await writeEntityFlag(type, document, updated);
     return true;
   } catch (err) {
     console.error(`${MODULE_ID} | entityExtractor: appendMigratedTruthToTier failed:`, err);
