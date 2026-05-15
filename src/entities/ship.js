@@ -270,3 +270,193 @@ async function persistCampaignState(campaignState) {
     throw err;
   }
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED — populate a freshly-created starship Actor from oracle rolls
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Called by the createActor hook in src/index.js when a user creates a
+// `type='starship'` Actor via the Foundry sidebar (or any path that doesn't
+// already pre-populate the flag payload). The hook handles the gating;
+// this function does the actual roll + write + silent portrait.
+//
+// Skip detection lives in the hook (notes / type / firstLook already set).
+// This function assumes seeding is wanted by the time it's called.
+
+/**
+ * Roll oracles to populate a starship's type / first-look / mission,
+ * persist to both the module flag payload and `system.notes` (HTML so
+ * the starship sheet renders it), and trigger a silent portrait
+ * generation when an OpenRouter API key is configured.
+ *
+ * Does not rename the Actor — the user-supplied name is authoritative.
+ *
+ * @param {Actor} actor          — a freshly-created type='starship' Actor
+ * @param {Object} campaignState — current campaign state (used for region
+ *                                 and to thread campaignState through the
+ *                                 art pipeline)
+ * @returns {Promise<Object|null>} — the resulting ship payload, or null
+ *                                   on a non-fatal failure
+ */
+export async function seedStarshipActor(actor, campaignState) {
+  if (!actor || actor.type !== "starship") return null;
+
+  // Dynamic imports keep this file's static import graph small and avoid
+  // a circular pull when entityExtractor pulls in updateShip from here.
+  const { rollOracle } = await import("../oracles/roller.js");
+
+  const region = resolveActiveRegion(campaignState);
+  const missionTable = `starship_mission_${region}`;
+
+  const rolledType      = safeRoll(rollOracle, "starship_type");
+  const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
+  const rolledMission   = safeRoll(rollOracle, missionTable);
+
+  if (!rolledType && !rolledFirstLook && !rolledMission) {
+    console.warn(`${MODULE_ID} | seedStarshipActor: all oracle rolls empty for ${actor.id}`);
+    return null;
+  }
+
+  const portraitSource = [
+    rolledType,
+    rolledFirstLook,
+  ].filter(Boolean).join(". ");
+
+  // Preserve any existing module flag payload (migrator may have set fields
+  // we shouldn't overwrite even when others are empty). Defaults from
+  // ShipSchema fill in anything the migrator left unset.
+  const existing = actor.flags?.[MODULE_ID]?.ship ?? {};
+  const now = new Date().toISOString();
+  const id  = existing._id || generateId();
+  const ship = {
+    ...ShipSchema,
+    ...existing,
+    _id:        id,
+    name:       actor.name,                    // actor.name is authoritative
+    type:       existing.type      || rolledType      || "",
+    firstLook:  existing.firstLook || rolledFirstLook || "",
+    mission:    existing.mission   || rolledMission   || "",
+    description:               existing.description ?? "",
+    portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
+    createdAt:  existing.createdAt ?? now,
+    updatedAt:  now,
+  };
+
+  const notesHtml = buildStarshipNotesHtml({
+    type:      ship.type,
+    firstLook: ship.firstLook,
+    mission:   ship.mission,
+    region,
+  });
+
+  try {
+    // System field write via actor.update so the starship sheet re-renders
+    // with the new Notes contents.
+    await actor.update({ "system.notes": notesHtml });
+    // Flag writes via setFlag — auto-creates intermediate scopes and avoids
+    // the dot-notation-flag pitfall on actor.update.
+    await actor.setFlag(MODULE_ID, "ship", ship);
+    if (!actor.flags?.[MODULE_ID]?.entityType) {
+      await actor.setFlag(MODULE_ID, "entityType", "ship");
+    }
+    if (!actor.flags?.[MODULE_ID]?.entityId) {
+      await actor.setFlag(MODULE_ID, "entityId", id);
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | seedStarshipActor: update failed:`, err);
+    return null;
+  }
+
+  // Register on campaignState.shipIds if not already tracked (e.g. sidebar
+  // creation didn't go through createShip()).
+  if (campaignState) {
+    if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
+    if (!campaignState.shipIds.includes(actor.id)) {
+      campaignState.shipIds.push(actor.id);
+      await persistCampaignState(campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err));
+    }
+  }
+
+  // Silent portrait — gated on OpenRouter key. Failures stay silent.
+  if (portraitSource && hasOpenRouterKey()) {
+    try {
+      const { generatePortrait } = await import("../art/generator.js");
+      await generatePortrait(actor.id, "ship", ship, campaignState ?? {});
+    } catch (err) {
+      console.warn(`${MODULE_ID} | seedStarshipActor: portrait generation failed:`, err);
+    }
+  }
+
+  return ship;
+}
+
+function safeRoll(rollOracle, tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : "";
+  } catch {
+    return "";
+  }
+}
+
+function resolveActiveRegion(campaignState) {
+  const sectors = campaignState?.sectors ?? [];
+  const active  = sectors.find(s => s?.id === campaignState?.activeSectorId);
+  const region  = active?.region ?? "";
+  if (["terminus", "outlands", "expanse"].includes(region)) return region;
+  return "terminus";
+}
+
+function buildStarshipNotesHtml({ type, firstLook, mission, region }) {
+  const lines = [];
+  if (type)      lines.push(`<li><strong>Type:</strong> ${escapeHtml(type)}</li>`);
+  if (firstLook) lines.push(`<li><strong>First look:</strong> ${escapeHtml(firstLook)}</li>`);
+  if (mission)   lines.push(`<li><strong>Mission (${escapeHtml(region)}):</strong> ${escapeHtml(mission)}</li>`);
+  if (!lines.length) return "";
+  return `<p><em>Oracle-seeded starship details:</em></p><ul>${lines.join("")}</ul>`;
+}
+
+function escapeHtml(s) {
+  if (typeof s !== "string") return "";
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function hasOpenRouterKey() {
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Inspect a freshly-created starship Actor and return true when it looks
+ * like it already has detail the user (or another code path) set. The
+ * createActor hook uses this to decide whether to skip the auto-seed.
+ *
+ * Treats any of the following as "already populated":
+ *   - Non-empty `system.notes` (the user typed something into the Notes
+ *     field, OR the system's HTMLField default isn't the empty string —
+ *     we normalise on strip).
+ *   - Non-empty `flags[MODULE].ship.type` (createShip-with-seed already
+ *     produced detail).
+ *   - Non-empty `flags[MODULE].ship.firstLook`.
+ *
+ * @param {Actor} actor
+ * @returns {boolean}
+ */
+export function starshipHasSeedDetail(actor) {
+  if (!actor || actor.type !== "starship") return false;
+  const notes = actor.system?.notes ?? "";
+  if (typeof notes === "string" && notes.replace(/<[^>]*>/g, "").trim()) return true;
+  const flag = actor.flags?.[MODULE_ID]?.ship ?? null;
+  if (flag?.type && String(flag.type).trim()) return true;
+  if (flag?.firstLook && String(flag.firstLook).trim()) return true;
+  return false;
+}

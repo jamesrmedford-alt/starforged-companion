@@ -51,6 +51,8 @@ Hooks.on("quenchReady", (quench) => {
   // pipeline end-to-end so each unit-style seam gets a second check inside the
   // chain that actually runs in production.
   registerConnectionPipelineTests(quench);
+  registerConnectionSeedEnrichmentTests(quench);
+  registerStarshipSeedHookTests(quench);
   registerPortraitGenerationTests(quench);
   // GM-action chat-card buttons (setupCard, draftEntityCard Confirm/Dismiss,
   // recapCard Refresh) — a renderChatMessage hook is the only place they
@@ -1525,6 +1527,458 @@ function registerConnectionPipelineTests(quench) {
       });
     },
     { displayName: "STARFORGED: Connection Pipeline (end-to-end)", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED ENRICHMENT — oracle backfill into the journal entry
+//
+// Before this fix, auto-creation on make_a_connection produced a journal entry
+// with name + (possibly empty) description and nothing else — role, motivation,
+// and the first-look details were dropped on the floor even though the
+// resolver had already rolled them. Confirm-from-draft was the same. This
+// batch asserts those fields actually land on the persisted record.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerConnectionSeedEnrichmentTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.connectionSeedEnrichment",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdJournalIds = [];
+      const createdActorIds   = [];
+
+      function trackJournal(id) { if (id) createdJournalIds.push(id); }
+      function trackActor(id)   { if (id) createdActorIds.push(id); }
+
+      async function flushCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench seedEnrichment: journal cleanup failed ${id}:`, err));
+          }
+        }
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) {
+            await a.delete().catch(err =>
+              console.warn(`${MODULE} | quench seedEnrichment: actor cleanup failed ${id}:`, err));
+          }
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushCleanup);
+
+      describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
+        it("role, motivation, and first-look details all populate on the connection record", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+
+          // Synthesise the oracle seed the way buildOracleSeeds() does for a
+          // make_a_connection roll. We pass it as the connectionSeed option
+          // exactly as runDiscoveryDetection forwards resolution.oracleSeeds.
+          const unique = `Riven Seed-${Date.now()}`;
+          await routeEntityDrafts(
+            [{ type: "connection", name: unique, description: "wiry quartermaster", confidence: "high" }],
+            state,
+            {
+              autoCreateConnection: true,
+              connectionSeed: {
+                role:      "Mercenary",
+                goal:      "Settle a debt with the Covenant",
+                firstLook: "Augmented arm, eye-patch",
+                givenName: unique,
+              },
+            },
+          );
+
+          const after = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (after.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackJournal);
+
+          assert.isAtLeast(newIds.length, 1,
+            "auto-create should register a new connection in campaignState");
+
+          const entry = game.journal?.get(newIds[0]);
+          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "page should carry the connection flag payload");
+
+          assert.equal(conn.role, "Mercenary",
+            "role should be seeded from oracle character_role");
+          assert.equal(conn.motivation, "Settle a debt with the Covenant",
+            "motivation should be seeded from oracle character_goal");
+          assert.include(conn.description, "wiry quartermaster",
+            "description should retain the detector's narration snippet");
+          assert.include(conn.description, "Augmented arm",
+            "description should also carry the oracle first-look");
+          assert.isOk(conn.portraitSourceDescription,
+            "portraitSourceDescription should be populated so the art pipeline can fire");
+          assert.include(conn.portraitSourceDescription, "Augmented arm",
+            "portrait source should include the visual detail from first-look");
+        });
+
+        it("falls back to the rolled given_name when the detector provides no name", async function () {
+          this.timeout(20000);
+
+          // We test the seed builder directly here because routeEntityDrafts
+          // filters out entities with empty names before the auto-create path
+          // even runs — that's a different code path. The seed builder is
+          // what the make_a_connection auto-create relies on; this asserts
+          // the journal-shaped data it produces is correct.
+          const { buildConnectionSeedData } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const seed = {
+            role:      "Drifter",
+            goal:      "Find kin",
+            firstLook: "Heavy coat, hood drawn",
+            givenName: "Vesna",
+          };
+          const data = buildConnectionSeedData(
+            { name: "", description: "" },
+            seed,
+          );
+          assert.equal(data.name, "Vesna",
+            "missing draft name should fall back to oracle given_name");
+          assert.equal(data.role, "Drifter");
+          assert.equal(data.motivation, "Find kin");
+          assert.include(data.description, "Heavy coat");
+        });
+      });
+
+      describe("Confirm-from-draft — rolls fresh oracle on click", function () {
+        it("a confirmed connection draft gets role/motivation/description from a fresh oracle roll", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const unique = `Draft Confirm-${Date.now()}`;
+
+          // Step 1 — queue a draft without auto-create. This posts a draft card.
+          await routeEntityDrafts(
+            [{ type: "connection", name: unique, description: "a figure at the bar", confidence: "high" }],
+            state,
+          );
+
+          // Step 2 — find the most recent draft card and locate the
+          // Confirm button for this draft.
+          const cards = (game.messages?.contents ?? []).filter(m =>
+            m.flags?.[MODULE]?.draftEntityCard);
+          const card = cards.at(-1);
+          assert.isOk(card, "draft entity card should be in chat");
+          const drafts = card.flags?.[MODULE]?.drafts ?? [];
+          const target = drafts.find(d => d.name === unique);
+          assert.isOk(target, "the unique draft should be present on the card");
+
+          // Step 3 — simulate the GM click. The handler is wired in the
+          // entityExtractor's renderChatMessage hook, but we invoke the
+          // path directly: find the [data-action="sf-draft-confirm"] in
+          // the rendered card HTML and dispatch a click.
+          // Render the card via Foundry's chat renderer, get the resulting
+          // HTML container, then click the matching button.
+          const rendered = await card.getHTML();
+          const root = rendered instanceof HTMLElement ? rendered : rendered?.[0];
+          const btn  = root?.querySelector?.(`[data-action="sf-draft-confirm"][data-index="${target.index}"]`);
+          assert.isOk(btn, "Confirm button should be in the rendered card");
+
+          const beforeIds = new Set((game.settings.get(MODULE, "campaignState") ?? {}).connectionIds ?? []);
+          btn.click();
+
+          // Wait for the async handler to land the write.
+          for (let i = 0; i < 40; i += 1) {
+            const cur = (game.settings.get(MODULE, "campaignState") ?? {}).connectionIds ?? [];
+            if (cur.some(id => !beforeIds.has(id))) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+
+          const cur = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (cur.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackJournal);
+          assert.isAtLeast(newIds.length, 1,
+            "Confirm click should auto-create a connection journal entry");
+
+          const entry = game.journal?.get(newIds[0]);
+          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "confirmed connection should carry a payload");
+          // Fresh oracle rolls produce some non-empty role and motivation in
+          // virtually all rolls — we assert at least one of the three
+          // first-look-derived fields is populated to confirm the seed
+          // rolled and applied.
+          const hasSeedDetail = !!(conn.role || conn.motivation || (conn.description && conn.description.includes("First look")));
+          assert.isTrue(hasSeedDetail,
+            "at least one oracle-seeded field (role/motivation/first-look) should be populated after Confirm");
+          assert.isOk(conn.portraitSourceDescription,
+            "Confirm path should also set portraitSourceDescription");
+        });
+
+        it("a confirmed ship draft gets type and first-look from a fresh oracle roll", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const unique = `Test Ship-${Date.now()}`;
+
+          await routeEntityDrafts(
+            [{ type: "ship", name: unique, description: "a freighter at dock", confidence: "high" }],
+            state,
+          );
+
+          const cards = (game.messages?.contents ?? []).filter(m =>
+            m.flags?.[MODULE]?.draftEntityCard);
+          const card = cards.at(-1);
+          assert.isOk(card, "draft entity card should be in chat");
+          const drafts = card.flags?.[MODULE]?.drafts ?? [];
+          const target = drafts.find(d => d.name === unique && d.type === "ship");
+          assert.isOk(target, "the unique ship draft should be present");
+
+          const rendered = await card.getHTML();
+          const root = rendered instanceof HTMLElement ? rendered : rendered?.[0];
+          const btn  = root?.querySelector?.(`[data-action="sf-draft-confirm"][data-index="${target.index}"]`);
+          assert.isOk(btn, "Confirm button should be in the rendered card");
+
+          const beforeIds = new Set((game.settings.get(MODULE, "campaignState") ?? {}).shipIds ?? []);
+          btn.click();
+
+          for (let i = 0; i < 40; i += 1) {
+            const cur = (game.settings.get(MODULE, "campaignState") ?? {}).shipIds ?? [];
+            if (cur.some(id => !beforeIds.has(id))) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+
+          const cur = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (cur.shipIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackActor);
+          assert.isAtLeast(newIds.length, 1,
+            "Confirm click should auto-create a ship actor");
+
+          const actor = game.actors?.get(newIds[0]);
+          const ship  = actor?.flags?.[MODULE]?.ship;
+          assert.isOk(ship, "ship actor should carry the ship flag payload");
+          const hasSeedDetail = !!(ship.type || ship.firstLook || (ship.description && (ship.description.includes("First look") || ship.description.includes("Type"))));
+          assert.isTrue(hasSeedDetail,
+            "at least one oracle-seeded field (type/firstLook/description) should be populated after Confirm");
+          assert.isOk(ship.portraitSourceDescription,
+            "Confirm path should set portraitSourceDescription on the ship");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Connection Seed Enrichment", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARSHIP SEED — createActor hook + seedStarshipActor() against live Foundry
+//
+// When a user creates a `type='starship'` Actor via the Foundry sidebar
+// (or any path that doesn't already pre-populate the flag payload), the
+// createActor hook should oracle-seed type / first-look / mission into
+// `system.notes` + `flags[MODULE].ship`, and skip silently when the
+// actor already carries detail. This batch exercises both paths against
+// real Foundry document creation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerStarshipSeedHookTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.starshipSeedHook",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) {
+            await a.delete().catch(err =>
+              console.warn(`${MODULE} | quench starshipSeedHook: cleanup failed ${id}:`, err));
+          }
+        }
+      }
+
+      // Wait up to N ms for an assertion predicate to be satisfied.
+      // The createActor hook fires async — seedStarshipActor doesn't block
+      // Actor.create — so the test must poll briefly before asserting.
+      async function waitFor(predicate, timeoutMs = 4000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          if (await predicate()) return true;
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return false;
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushCleanup);
+
+      describe("Sidebar-created starship — auto-seed via createActor hook", function () {
+        it("populates system.notes and flags[MODULE].ship with oracle rolls", async function () {
+          this.timeout(20000);
+
+          // Bypass createShip() entirely — this is what a user clicking
+          // "Create Actor" → "Starship" in the sidebar does.
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP ${Date.now()}`,
+            type: "starship",
+          });
+          assert.isOk(actor, "Actor.create should succeed for type=starship");
+          track(actor.id);
+
+          // Hook runs async; poll for the flag payload to land.
+          const ok = await waitFor(async () => {
+            const fresh = game.actors?.get(actor.id);
+            const ship  = fresh?.flags?.[MODULE]?.ship;
+            return !!(ship?.type || ship?.firstLook);
+          });
+          assert.isTrue(ok, "the createActor hook should populate flags[MODULE].ship within the polling window");
+
+          const fresh = game.actors?.get(actor.id);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.isOk(ship.type || ship.firstLook,
+            "either type or first-look should be set after the seed runs");
+          assert.isOk(fresh.system.notes,
+            "system.notes should be populated so the starship sheet renders the seed");
+          assert.equal(fresh.name, actor.name,
+            "the actor's user-supplied name should not be modified");
+          assert.isOk(fresh.flags[MODULE].entityType === "ship",
+            "entityType routing crumb should be stamped");
+
+        });
+
+        it("registers the seeded starship on campaignState.shipIds", async function () {
+          this.timeout(20000);
+
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-TRACK ${Date.now()}`,
+            type: "starship",
+          });
+          track(actor.id);
+
+          const ok = await waitFor(async () => {
+            const cur = game.settings.get(MODULE, "campaignState") ?? {};
+            return (cur.shipIds ?? []).includes(actor.id);
+          });
+          assert.isTrue(ok, "the seeded starship should be registered on campaignState.shipIds");
+        });
+      });
+
+      describe("Skip clauses — actor already populated", function () {
+        it("does not seed a starship whose Notes field is already non-empty", async function () {
+          this.timeout(20000);
+
+          const userNotes = `<p>I typed these notes myself.</p>`;
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-NOTES ${Date.now()}`,
+            type: "starship",
+            system: { notes: userNotes },
+          });
+          track(actor.id);
+
+          // Wait a bit longer than the hook's seed work would normally need.
+          await new Promise(r => setTimeout(r, 1500));
+
+          const fresh = game.actors?.get(actor.id);
+          assert.equal(fresh.system.notes, userNotes,
+            "user-supplied notes should not be overwritten by the seed");
+          assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+            "no flag payload should be created when the seed was skipped");
+        });
+
+        it("does not seed when autoSeedStarship setting is off", async function () {
+          this.timeout(20000);
+
+          await withTempSetting("autoSeedStarship", false, async () => {
+            const actor = await Actor.create({
+              name: `QUENCH STARSHIP-OPTOUT ${Date.now()}`,
+              type: "starship",
+            });
+            track(actor.id);
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            const fresh = game.actors?.get(actor.id);
+            assert.equal(fresh.system.notes ?? "", "",
+              "notes should remain empty when auto-seed is disabled");
+            assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+              "no flag payload should be created when auto-seed is disabled");
+          });
+        });
+
+        it("does not re-seed a starship created via createShip() with seeded data", async function () {
+          this.timeout(20000);
+
+          const { createShip } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+
+          // createShip with explicit seed data — same shape that the
+          // Confirm-from-draft path produces.
+          await createShip({
+            name:        `QUENCH STARSHIP-PRESEED ${Date.now()}`,
+            type:        "Cutter",
+            firstLook:   "Compact courier, scarred but maintained",
+            description: "A cutter type, scarred but maintained.",
+          }, state);
+
+          const newId = (state.shipIds ?? []).at(-1);
+          track(newId);
+
+          // Give the hook a chance to fire and (correctly) skip.
+          await new Promise(r => setTimeout(r, 1000));
+
+          const fresh = game.actors?.get(newId);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.equal(ship.type, "Cutter",
+            "createShip's seeded type should not be overwritten by the hook");
+          assert.equal(ship.firstLook, "Compact courier, scarred but maintained",
+            "createShip's seeded first-look should not be overwritten");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Starship Seed Hook", timeout: 60000 },
   );
 }
 

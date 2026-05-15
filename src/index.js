@@ -186,6 +186,15 @@ function registerCoreSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, "autoSeedStarship", {
+    name:    "Auto-Seed Starship Details",
+    hint:    "When a new starship Actor is created with empty notes, roll the starship Type / First Look / Mission oracles and write them to the actor's Notes field. Triggers a silent portrait generation if an OpenRouter API key is configured. Disable to keep new starships blank.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
     hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
@@ -622,6 +631,51 @@ function registerActorHook() {
       recalculateMomentumBounds(actor).catch(err => {
         console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
       });
+    }
+  });
+}
+
+
+/**
+ * Register the `createActor` hook that oracle-seeds a freshly-created
+ * starship Actor. Lets the user create a starship via the sidebar and
+ * walk away with type / first-look / mission filled in on the Notes
+ * tab, and a portrait if the OpenRouter key is configured.
+ *
+ * Gating:
+ *  - GM only (writes go through actor.update which world-scopes through
+ *    Foundry's permission model)
+ *  - type === "starship"
+ *  - Skipped when `autoSeedStarship` setting is false
+ *  - Skipped when the actor already carries detail (non-empty notes,
+ *    or a populated flag.ship.type / flag.ship.firstLook from
+ *    createShip-with-seed / migrator)
+ *
+ * The hook fires synchronously but the seed work is async and fire-and-
+ * forget — Foundry doesn't await Hooks.on callbacks anyway. Errors
+ * inside seedStarshipActor are logged, not surfaced.
+ */
+function registerStarshipSeedHook() {
+  Hooks.on("createActor", (actor) => {
+    try {
+      if (!game.user?.isGM) return;
+      if (actor?.type !== "starship") return;
+      if (!game.settings.get(MODULE_ID, "autoSeedStarship")) return;
+
+      // Defer the import so this module file stays parse-only at init.
+      // The hook itself returns synchronously; seeding runs after.
+      import("./entities/ship.js").then(async (mod) => {
+        if (mod.starshipHasSeedDetail(actor)) {
+          console.log(`${MODULE_ID} | starship seed: skipping ${actor.id} (already populated)`);
+          return;
+        }
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await mod.seedStarshipActor(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | starship seed failed for ${actor.id}:`, err));
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | starship seed: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | createActor starship-seed hook threw:`, err);
     }
   });
 }
@@ -1258,6 +1312,7 @@ Hooks.once("ready", () => {
 
   registerChatHook();
   registerActorHook();
+  registerStarshipSeedHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();
