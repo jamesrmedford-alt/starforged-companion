@@ -145,11 +145,12 @@ describe('writeChronicleEntry()', () => {
     expect(addChronicleEntry.mock.calls[0][0]).toBe('pc-fallback-1');
   });
 
-  it('ignores non-character or non-player-owned Actors when falling back', async () => {
-    const npc = makeTestActor({ id: 'npc-1', name: 'Vex' });
-    npc.hasPlayerOwner = false;
+  it('ignores non-character Actors when falling back', async () => {
+    // No character-type actor exists; only an NPC and a starship. Even with
+    // the solo-GM fallback in getPlayerActors(), the writer must NOT pick
+    // these up — the chronicle is a PC-only construct.
+    const npc      = makeTestActor({ id: 'npc-1',  type: 'npc',      name: 'Vex' });
     const starship = makeTestActor({ id: 'ship-1', type: 'starship', name: 'Resolute' });
-    starship.hasPlayerOwner = true;
     game.actors._set(npc.id, npc);
     game.actors._set(starship.id, starship);
 
