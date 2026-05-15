@@ -777,13 +777,16 @@ function registerSectorCreatorTests(quench) {
           assert.isNotNull(journal, "Starforged Sectors journal should exist");
         });
 
-        it("stores sector data in journal flags", async function () {
-          const journal = game.journal.getName("Starforged Sectors");
-          if (!journal || !createdSectorId) { this.skip(); return; }
-          const stored = journal.getFlag("starforged-companion", createdSectorId);
-          assert.isObject(stored,        "sector flag should be an object");
-          assert.isString(stored.name,   "sector should have a name");
-          assert.isString(stored.trouble,"sector should have a trouble string");
+        it("stores sector data in campaign state", async function () {
+          // §3.5: saveSectorToJournal was removed; campaignState.sectors[] is
+          // the authoritative store. The "Starforged Sectors" journal no longer
+          // carries per-sector flags.
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!createdSectorId) { this.skip(); return; }
+          const stored = (state.sectors ?? []).find(s => s.id === createdSectorId);
+          assert.isObject(stored,         "sector should be stored in campaignState.sectors");
+          assert.isString(stored?.name,   "sector should have a name");
+          assert.isString(stored?.trouble,"sector should have a trouble string");
         });
 
         it("sets activeSectorId in campaignState", async function () {
@@ -938,11 +941,12 @@ function registerSectorCreatorTests(quench) {
           assert.include(testJournal.name, sector.name,      "journal name should include sector name");
         });
 
-        it("journal has pages for sector overview and each settlement", async function () {
+        it("journal has a sector overview page", async function () {
           if (!testJournal) { this.skip(); return; }
-          // Confirm page count > 1 (overview + at least one settlement page)
+          // §3.6: per-settlement embedded pages removed; the journal now has
+          // exactly one page — the sector overview. Settlement detail lives on Actors.
           const pages = testJournal.pages?.size ?? testJournal.pages?.contents?.length ?? 0;
-          assert.isAbove(pages, 1, "journal should have more than one page");
+          assert.isAbove(pages, 0, "journal should have at least one page (sector overview)");
         });
 
         it("narrator stub text appears in the sector overview page", async function () {
@@ -2439,7 +2443,13 @@ function registerEntityPanelActionsTests(quench) {
             `[data-action="toggleCanonicalLock"][data-journal-id="${testJournalId}"]`);
           assert.isNotNull(lockBtn, "canonical-lock button should be present in detail view");
           lockBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          await flushMicrotasks(); await flushMicrotasks();
+          // writeEntityFlag() is a socket round-trip; poll until the flag lands
+          // (two flushMicrotasks() is not enough for Foundry document updates).
+          const deadline = Date.now() + 2000;
+          while (Date.now() < deadline) {
+            await flushMicrotasks();
+            if (!!page.getFlag(MODULE_ID, "connection")?.canonicalLocked !== before) break;
+          }
           const after = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
           assert.notEqual(after, before, "canonicalLocked should toggle");
         });
