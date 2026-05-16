@@ -47,6 +47,24 @@ export function extractSidecar(rawText) {
 
   const matches = [...rawText.matchAll(FENCE_PATTERN)];
   if (!matches.length) {
+    // Defensive: if the model emitted an opening ```json fence but the
+    // closing ``` never arrived — typically because maxTokens cut the
+    // response mid-sidecar — the regex above will not match. Without this
+    // fallback, the truncated JSON bleeds verbatim into the chat card
+    // (observed on Forge with v1.3.0). Strip from the opening fence
+    // forward, surface a parseError so the caller logs the cause, and
+    // return sidecar=null so partial data is not applied to the ledger.
+    const openIdx = rawText.search(/```json\b/i);
+    if (openIdx >= 0) {
+      const prose = rawText.slice(0, openIdx).replace(/\s+$/u, '');
+      return {
+        prose,
+        sidecar:    null,
+        parseError: new Error(
+          'Sidecar opening fence found but no closing fence — narrator response likely truncated by maxTokens.',
+        ),
+      };
+    }
     return { prose: rawText, sidecar: null, parseError: null };
   }
 

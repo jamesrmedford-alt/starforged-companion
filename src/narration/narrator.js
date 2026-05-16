@@ -56,6 +56,30 @@ const MODULE_ID      = 'starforged-companion';
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
 
+// Extra tokens reserved for the fact-continuity sidecar JSON when it ships
+// alongside narrator prose. A typical sidecar with 2–4 newTruths and 2–4
+// stateChanges runs ~150–250 tokens; we budget 300 to leave the prose its
+// full configured length plus comfortable headroom for the structured
+// block. Without this, maxTokens hits mid-JSON and the truncated fence
+// leaks into the chat card (observed on Forge with v1.3.0).
+const SIDECAR_TOKEN_HEADROOM = 300;
+
+/**
+ * Compute the maxTokens budget for a narrator API call, adding headroom
+ * for the fact-continuity sidecar when the feature is enabled. Reads the
+ * setting defensively (try/catch) so unit tests without registered
+ * settings still get the headroom.
+ */
+function maxTokensWithSidecar(baseMaxTokens) {
+  let fcEnabled = true;
+  try {
+    fcEnabled = globalThis.game?.settings?.get?.(MODULE_ID, 'factContinuity.enabled') ?? true;
+  } catch {
+    fcEnabled = true;
+  }
+  return fcEnabled ? (baseMaxTokens ?? 0) + SIDECAR_TOKEN_HEADROOM : baseMaxTokens;
+}
+
 // Tracks whether a campaign recap has been injected into the narrator prompt
 // for the current session. Reset when the session ID changes.
 let _lastRecapInjectedSessionId = null;
@@ -172,7 +196,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
-      maxTokens: settings.narrationMaxTokens,
+      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
     const narration = applyNarratorSidecar(raw, campaignState, {
       moveId:           resolution?.moveId,
@@ -207,7 +231,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: settings.narrationMaxTokens,
+          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
         const narration = applyNarratorSidecar(raw, campaignState, {
           moveId:           resolution?.moveId,
@@ -533,7 +557,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
-      maxTokens: 600,
+      maxTokens: maxTokensWithSidecar(600),
     });
 
     if (text?.trim() && game.user?.isGM) {
@@ -695,7 +719,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
-      maxTokens: 200,
+      maxTokens: maxTokensWithSidecar(200),
     });
     const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
 
@@ -714,7 +738,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: 200,
+          maxTokens: maxTokensWithSidecar(200),
         });
         const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
         if (response?.trim()) {
@@ -789,7 +813,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
-      maxTokens: settings.narrationMaxTokens,
+      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
 
@@ -810,7 +834,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: settings.narrationMaxTokens,
+          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
         if (text?.trim()) {
