@@ -1466,6 +1466,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       rationale:       interp.rationale ?? '',
       mischiefApplied: !!interp.mischiefApplied,
       mischiefAside:   interp._mischiefAside ?? '',
+      applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
     };
   }
@@ -1477,6 +1478,8 @@ export class MoveConfirmDialog extends ApplicationV2 {
         <p class="mischief-aside-text">${context.mischiefAside}</p>
       </div>
     ` : '';
+
+    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities);
 
     const html = `
       <div class="sf-move-confirm">
@@ -1493,6 +1496,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <p class="confirm-rationale-text">${context.rationale}</p>
         </div>
         ${mischiefBlock}
+        ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
           <button class="settings-btn btn-reject" data-action="reject">Re-interpret</button>
@@ -1530,6 +1534,26 @@ export class MoveConfirmDialog extends ApplicationV2 {
   }
 
   static async #onAccept(_event, _target) {
+    // Sum the adds value from each checked ability before settling so the
+    // pipeline can apply them to interpretation.adds. The interpretation
+    // object is shared by reference with the caller.
+    try {
+      const root = this.element ?? document;
+      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb[data-adds]:checked') ?? [];
+      let total = 0;
+      const applied = [];
+      checked.forEach(cb => {
+        const n = Number(cb.dataset.adds ?? 0);
+        if (Number.isFinite(n) && n > 0) total += n;
+        if (cb.dataset.key) applied.push(cb.dataset.key);
+      });
+      if (this.#interp) {
+        this.#interp.appliedAbilityAdds = total;
+        this.#interp.appliedAbilityKeys = applied;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);
+    }
     this.#settle(true);
     this.close({ animate: false });
   }
@@ -1538,6 +1562,51 @@ export class MoveConfirmDialog extends ApplicationV2 {
     this.#settle(false);
     this.close({ animate: false });
   }
+}
+
+/**
+ * Build the "Applicable abilities" block shown above the dialog's accept
+ * / reject buttons. Each ability gets a checkbox the player can toggle.
+ * Pre-checked when the heuristic / Haiku identified a non-zero adds
+ * value, since the most common reason an ability surfaces is to add to
+ * the roll; player can uncheck if it doesn't apply this turn.
+ */
+function renderApplicableAbilitiesBlock(abilities) {
+  if (!Array.isArray(abilities) || abilities.length === 0) return '';
+  const items = abilities.map(a => {
+    const adds      = Number(a.adds ?? 0);
+    const checked   = adds > 0 ? 'checked' : '';
+    const addsLabel = adds > 0 ? `<span class="sf-ability-adds">+${adds}</span>` : '';
+    const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
+    const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
+    const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
+    return `
+      <label class="sf-applicable-ability-row">
+        <input type="checkbox" class="sf-applicable-ability-cb"
+               data-key="${escapeAttr(a.key)}"
+               data-adds="${adds}"
+               ${checked}>
+        <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
+        <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
+        ${addsLabel}
+        <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
+        ${summary}
+      </label>`;
+  }).join('');
+  return `
+    <div class="confirm-applicable-abilities">
+      <span class="confirm-field-label">Applicable abilities</span>
+      <div class="sf-ability-list">${items}</div>
+      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+    </div>`;
+}
+
+function escapeAttr(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ---------------------------------------------------------------------------

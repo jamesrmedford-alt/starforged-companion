@@ -28,6 +28,15 @@ import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
+import {
+  buildBurnState,
+  renderBurnButtonHtml,
+  registerBurnMomentumHook,
+} from "./moves/burnMomentum.js";
+import {
+  scanForApplicableAbilities,
+  getCommandVehicleActor,
+} from "./moves/abilityScanner.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -35,7 +44,7 @@ import {
   postSessionRecap,
   postCampaignRecap,
 } from "./narration/narrator.js";
-import { invalidateActorCache, recalculateMomentumBounds } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -564,8 +573,34 @@ export function registerChatHook() {
         );
       }
 
+      // Scan the character's assets + the command vehicle's modules for
+      // abilities that apply to the chosen move. Surfaced on the
+      // confirmation dialog as opt-in checkboxes — accepted abilities
+      // add their +N to interpretation.adds before the dice are rolled.
+      const characterActorForScan   = getPlayerActors()[0] ?? null;
+      const commandShipForScan      = getCommandVehicleActor(campaignState);
+      const applicableAbilities = await scanForApplicableAbilities({
+        moveId:           interpretation.moveId,
+        moveName:         interpretation.moveName,
+        narration,
+        characterActor:   characterActorForScan,
+        commandShipActor: commandShipForScan,
+        apiKey,
+      }).catch(err => {
+        console.warn(`${MODULE_ID} | ability scan failed:`, err);
+        return [];
+      });
+      interpretation.applicableAbilities = applicableAbilities;
+
       const accepted = await confirmInterpretation(interpretation);
       if (!accepted) return;
+
+      // Apply opt-in adds from abilities the player kept checked in the
+      // dialog. confirmInterpretation mutates interpretation.appliedAbilityAdds.
+      const abilityAdds = Number(interpretation.appliedAbilityAdds ?? 0);
+      if (abilityAdds > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
+      }
 
       const resolution = resolveMove(interpretation, campaignState);
 
@@ -616,10 +651,15 @@ export function registerChatHook() {
         matchedEntityTypes: relevance.entityTypes,
       });
 
-      // Step 9: post move result card
-      await postMoveResult(
+      // Step 9: post move result card. Determine burn eligibility against the
+      // active character so the card can carry a 🔥 Burn Momentum button when
+      // the dice would actually improve under burn.
+      const burnActor   = getPlayerActors()[0] ?? null;
+      const burnState   = buildBurnState(resolution, burnActor);
+      const moveResultMessage = await postMoveResult(
         resolution,
-        interpretation._mischiefAside ?? null
+        interpretation._mischiefAside ?? null,
+        burnState,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -629,6 +669,16 @@ export function registerChatHook() {
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
         await persistResolution(resolution, campaignState);
+        // Mark the move card so the Burn handler knows the original
+        // consequences have been written to the actor. Without this flag,
+        // a burn click after persistence would double-reverse the meter
+        // change (or, when persistence hasn't fired yet, the click would
+        // assume it had and over-apply).
+        if (burnState && moveResultMessage) {
+          await moveResultMessage.update({
+            [`flags.${MODULE_ID}.burn.originalApplied`]: true,
+          }).catch(err => console.warn(`${MODULE_ID} | burn metadata update failed:`, err));
+        }
       }
 
     } catch (err) {
@@ -1441,13 +1491,14 @@ async function handleSectorCommand(message) {
  * Post the resolved move result to chat.
  * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
-async function postMoveResult(resolution, aside = null) {
+async function postMoveResult(resolution, aside = null, burnState = null) {
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside),
+    content: formatMoveResult(resolution, aside, burnState),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
+        ...(burnState ? { burn: burnState } : {}),
       },
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
@@ -1458,7 +1509,7 @@ async function postMoveResult(resolution, aside = null) {
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null) {
+function formatMoveResult(resolution, aside = null, burnState = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -1485,6 +1536,7 @@ function formatMoveResult(resolution, aside = null) {
       ${aside
         ? `<div class="sf-move-aside">🎲 ${aside}</div>`
         : ""}
+      ${renderBurnButtonHtml(burnState)}
     </div>
   `.trim();
 }
@@ -1619,6 +1671,11 @@ Hooks.once("ready", () => {
   registerDraftCardHooks();
   registerSectorOverviewSync();
   registerSettingsHooks();
+  registerBurnMomentumHook({
+    narrate:  narrateResolution,
+    persist:  persistResolution,
+    assemble: assembleContextPacket,
+  });
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a
   // returning session doesn't inherit the previous run's MOVE count.

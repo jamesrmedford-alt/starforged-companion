@@ -62,6 +62,7 @@ Narrator (✅)
 - **Visual UI polish** — wire the new `statIcon` / `assetIcon` / `oracleIcon` resolvers into the entity panel and chat cards. Helpers shipped in Phase 9; the templates were not touched in that pass and remain a follow-up.
 - **Fact Continuity panel surfaces** — the Entity Panel "Active truths" collapsible and the WJ Panel scene-truth filter row (scope §17 items 26–27) were deferred from the Phase D slice. The correction loop ships without them; they slot naturally into panel-polish work.
 - **Fact Continuity ship positioning (§20)** — separate scope section already designed but not yet implemented. Adds a persistent `ship.position` schema, `inferShipPosition` heuristic, three update triggers (`!at`, `set_a_course` non-miss, narrator sidecar `subject: "ship"`), and a sector-scene token-drag trigger.
+- **Ability scanner — stat substitution support** — `src/moves/abilityScanner.js` (shipped in the v1.3.1 fixes branch) detects abilities that apply to the chosen move and extracts numeric `+N` adds via regex, but stat-substitution abilities like Empath's *"roll +heart"* surface in the dialog with their text only — the player adjusts the stat manually. Follow-up should extend the scanner / dialog to parse and apply stat substitution automatically (likely as a one-shot LLM extraction returning `{ adds, statReplacement }` per matched ability, plus a stat-override radio in the Confirm dialog).
 
 Other possible directions:
 

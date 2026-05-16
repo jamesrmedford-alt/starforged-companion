@@ -20,6 +20,7 @@
 
 import {
   getActor,
+  getPlayerActors,
   applyMeterChanges,
   setDebility,
   awardXP,
@@ -47,9 +48,21 @@ export async function persistResolution(resolution, campaignState) {
   // 1. Append to session move log
   appendToSessionLog(resolution, updated);
 
-  // 2–5: Apply mechanical consequences to the active Actor
-  const actorId = updated.activeCharacterId ?? null;
-  const actor   = getActor(actorId);
+  // 2–5: Apply mechanical consequences to the active Actor.
+  //
+  // `campaignState.activeCharacterId` is set by no path in the current
+  // codebase (the named world setting is registered but never written), so
+  // in solo-GM play this would always fall through to game.user.character,
+  // which is null when no token is assigned — and the entire meter-apply /
+  // debility / progress-mark block would silently no-op. Same shape of
+  // defect as RECAP-003 (v1.2.12): the dominant solo-GM path was reading
+  // a field that's never populated. Fall back to the first player-owned
+  // character (or the first character-typed Actor in solo-GM mode where
+  // hasPlayerOwner is uniformly false).
+  let actor = getActor(updated.activeCharacterId ?? null);
+  if (!actor) {
+    actor = getPlayerActors()[0] ?? null;
+  }
 
   if (actor) {
     // 2. Meter changes
