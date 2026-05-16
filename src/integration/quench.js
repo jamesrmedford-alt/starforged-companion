@@ -2921,6 +2921,12 @@ function registerEntityPanelActionsTests(quench) {
 
       describe("setCurrentLocation — DOM click on a seeded Settlement", function () {
         it("writes campaignState.currentLocationId / currentLocationType, and the toggle clears them", async function () {
+          // Forge round-trip: each set/clear does two world-scoped writes,
+          // and `awaitRender(app)` waits for both. The combined chain
+          // routinely exceeds Mocha's 2 s default on loaded Forge. Same
+          // pattern as the recap-refresh + assembler-sector tests fixed
+          // in PR #105.
+          this.timeout(20000);
           if (!app || !testSettlementId) { this.skip(); return; }
 
           // Make sure we're on the list view, then click into the settlement detail.
@@ -3443,6 +3449,9 @@ function registerSettingsPanelTests(quench) {
 
       describe("setDial — DOM click", function () {
         it("clicking setDial[data-value=chaotic] persists the setting", async function () {
+          // Forge world-scoped write + restore round-trip — see the
+          // setCurrentLocation timeout note above.
+          this.timeout(20000);
           if (!app) { this.skip(); return; }
           const before = game.settings.get(MODULE_ID, "mischiefDial");
           try {
@@ -3457,6 +3466,9 @@ function registerSettingsPanelTests(quench) {
 
       describe("addLine / removeLine — Safety tab", function () {
         it("addLine writes through to globalSafetyLines", async function () {
+          // Forge world-scoped write + restore round-trip — see the
+          // setCurrentLocation timeout note above.
+          this.timeout(20000);
           if (!app) { this.skip(); return; }
           await clickAction(app, "switchTab", { tab: "safety" });
           await awaitRender(app);
