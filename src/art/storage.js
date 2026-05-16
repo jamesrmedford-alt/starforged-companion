@@ -26,8 +26,9 @@
  *   A full campaign with 20 entities ≈ 20–60 MB of journal data. Manageable.
  */
 
-const MODULE_ID = "starforged-companion";
-const FLAG_KEY  = "artAsset";
+const MODULE_ID   = "starforged-companion";
+const FLAG_KEY    = "artAsset";
+const ART_FOLDER_NAME = "Starforged Companion — Art Cache";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,14 +158,17 @@ export async function getPortraitDataUri(portraitId, campaignState) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function createAssetEntry(entryName, asset) {
+  const folderId = await getOrCreateArtFolder();
   const entry = await JournalEntry.create({
-    name:  entryName,
-    flags: { [MODULE_ID]: { entityType: "artAsset", assetId: asset._id } },
+    name:   entryName,
+    folder: folderId,
+    flags:  { [MODULE_ID]: { entityType: "artAsset", assetId: asset._id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
     name:  "Asset Data",
     type:  "text",
+    text:  { content: buildPageContent(asset), format: 1 },
     flags: { [MODULE_ID]: { [FLAG_KEY]: asset } },
   }]);
 
@@ -175,6 +179,50 @@ async function updateAssetEntry(entry, asset) {
   const page = entry.pages?.contents?.[0];
   if (!page) return createAssetEntry(buildEntryName(asset), asset);
   await page.setFlag(MODULE_ID, FLAG_KEY, asset);
+  // Refresh the visible page body so opening the entry shows the image
+  // rather than an empty "Asset Data" heading.
+  try {
+    await page.update({ "text.content": buildPageContent(asset) });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: failed to refresh page content:`, err);
+  }
+}
+
+/**
+ * Render the visible body of an art-asset page. The base64 data lives in a
+ * page flag — historically `text.content` was left empty, so opening the
+ * entry showed nothing. Embedding a data URI here makes the entry render
+ * the portrait when the GM clicks into it.
+ */
+function buildPageContent(asset) {
+  const uri = asset?.b64 ? `data:image/png;base64,${asset.b64}` : null;
+  if (!uri) return "<p><em>Generated portrait — pending image data.</em></p>";
+  return `<figure><img src="${uri}" style="max-width:100%;height:auto;" alt="Generated portrait"></figure>`;
+}
+
+/**
+ * Find or create the dedicated folder for art-asset journal entries. Keeps
+ * the generated "Art: …" entries out of the Starforged Entities folder
+ * where they were previously appearing as gibberish-named orphans.
+ */
+async function getOrCreateArtFolder() {
+  try {
+    const existing = game.folders?.find?.(
+      f => f.name === ART_FOLDER_NAME && f.type === "JournalEntry"
+    );
+    if (existing) return existing.id;
+    const FolderCls = globalThis.Folder;
+    if (!FolderCls?.create) return null;
+    const created = await FolderCls.create({
+      name:    ART_FOLDER_NAME,
+      type:    "JournalEntry",
+      sorting: "a",
+    });
+    return created?.id ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: getOrCreateArtFolder failed:`, err);
+    return null;
+  }
 }
 
 function readAssetFromEntry(entry) {

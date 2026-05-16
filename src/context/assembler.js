@@ -961,7 +961,7 @@ function joinSubsections(parts) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatCharacterBlock(snap, summary, recentEntries) {
-  const { name, stats, meters, momentumMax, debilities } = snap;
+  const { name, stats, meters, momentumMax, debilities, assets } = snap;
   const s = stats;
   const m = meters;
 
@@ -973,6 +973,11 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     `Debilities: ${debList}`,
   ];
 
+  if (assets?.length) {
+    const assetText = assets.map(formatAssetForContext).filter(Boolean).join("\n");
+    if (assetText) lines.push(`Paths & Assets:\n${assetText}`);
+  }
+
   if (summary) {
     lines.push(`Chronicle summary: ${summary}`);
   }
@@ -982,6 +987,16 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     lines.push(`Recent:\n${recentText}`);
   }
 
+  return lines.join("\n");
+}
+
+function formatAssetForContext(asset) {
+  if (!asset?.name) return "";
+  const abilities = (asset.abilities ?? []).slice(0, 4);
+  const lines = [`- **${asset.name}**`];
+  for (const a of abilities) {
+    lines.push(`  • ${a}`);
+  }
   return lines.join("\n");
 }
 

@@ -22,7 +22,7 @@
  *   — Narration runs on whichever client triggered the move
  */
 
-import { CampaignStateSchema }   from "./schemas.js";
+import { CampaignStateSchema, MOVES }   from "./schemas.js";
 import { assembleContextPacket } from "./context/assembler.js";
 import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
@@ -496,6 +496,16 @@ export function registerChatHook() {
     // campaignState-scoped `!roll` flag and avoids any GM-write race.
     const bypassPacing = message.flags?.[MODULE_ID]?.bypassPacing === true;
 
+    // The NWMA card also carries `forcedMoveId` — the move the pacing
+    // classifier nominated. Honoring it skips the LLM interpretation and
+    // prevents the re-classifier from picking a different move (e.g. the
+    // input "search for Doctor Chen" reads as gather_information once the
+    // pacing context is gone, even when the classifier nominated
+    // make_a_connection).
+    const forcedMoveId = typeof message.flags?.[MODULE_ID]?.forcedMoveId === "string"
+      ? message.flags[MODULE_ID].forcedMoveId
+      : null;
+
     // Pacing classifier — decides whether to run the move pipeline, narrate
     // only, or narrate with an inline move suggestion. The classifier runs
     // freely; only the MOVE branch claims the pendingMove lock below.
@@ -537,11 +547,13 @@ export function registerChatHook() {
     const dial   = getMischiefDial();
 
     try {
-      const interpretation = await interpretMove(narration, {
-        campaignState,
-        mischiefLevel: dial,
-        apiKey,
-      });
+      const interpretation = forcedMoveId
+        ? buildForcedInterpretation(forcedMoveId, narration, dial)
+        : await interpretMove(narration, {
+            campaignState,
+            mischiefLevel: dial,
+            apiKey,
+          });
 
       if (interpretation.mischiefApplied) {
         interpretation._mischiefAside = buildMischiefAside(
@@ -1152,6 +1164,34 @@ async function handleJournalCommand(message) {
  * { name, connections } object — the classifier doesn't need full stat
  * state. Returns null when no character is set.
  */
+/**
+ * Build a minimal interpretation when the move ID is supplied by the caller
+ * (the NWMA suggestion button). Skips the Claude API entirely. Stat defaults
+ * to the move's first listed stat; the confirmation dialog still lets the
+ * player override.
+ */
+function buildForcedInterpretation(moveId, narration, mischiefLevel) {
+  const moveData = MOVES[moveId];
+  const statUsed = moveData?.stat?.[0] ?? null;
+  const moveName = moveId.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  return {
+    playerNarration:  narration,
+    inputMethod:      "chat",
+    mischiefLevel,
+    moveId,
+    moveName,
+    statUsed,
+    statValue:        0,
+    adds:             0,
+    isProgressMove:   moveData?.progressMove === true,
+    progressTicks:    0,
+    rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
+    mischiefApplied:  false,
+    confidence:       "high",
+    playerConfirmed:  false,
+  };
+}
+
 function getActiveCharacterForPacing(campaignState) {
   try {
     const ids = campaignState?.characterIds ?? [];
@@ -1827,7 +1867,11 @@ Hooks.on("renderChatMessage", (message, html) => {
       }
       await ChatMessage.create({
         content: f.playerText,
-        flags:   { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true } },
+        flags:   { [MODULE_ID]: {
+          bypassPacing:        true,
+          fromPacedSuggestion: true,
+          forcedMoveId:        f.suggestedMove,
+        } },
       });
     } catch (err) {
       console.error(`${MODULE_ID} | NWMA roll button failed:`, err);
