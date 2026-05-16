@@ -34,6 +34,7 @@ import { getShip,       createShip }       from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
+import { rollOracle }                      from "../oracles/roller.js";
 
 import {
   recordLoreDiscovery,
@@ -375,11 +376,16 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
 
     if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
       try {
+        const seedData = buildConnectionSeedData(entity, options.connectionSeed ?? null);
         const record = await createConnection({
-          name:        entity.name,
-          description: entity.description ?? "",
-          firstAppearance: options.sessionId ?? "",
+          name:                      seedData.name,
+          description:               seedData.description,
+          role:                      seedData.role,
+          motivation:                seedData.motivation,
+          portraitSourceDescription: seedData.portraitSource,
+          firstAppearance:           options.sessionId ?? "",
         }, campaignState);
+        await postCreationEnrichment("connection", record, campaignState);
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -395,6 +401,159 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   return { created, queued };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED ENRICHMENT — oracle backfill + silent portrait generation
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// New entities created from a detector draft (or auto-created on a
+// make_a_connection hit) carry only the detector's surface description.
+// The journal records would otherwise sit with empty role / motivation /
+// description and no portrait. To give the GM a minimal sketch to work
+// with, we backfill the structured fields from the Starforged oracle
+// tables and trigger a silent portrait generation. Output never goes to
+// chat — the resulting detail lives only on the journal/actor record
+// and in the entity panel.
+
+/**
+ * Build connection-creation fields from a draft and an oracle seed.
+ * Re-uses the rolls made by buildOracleSeeds() when a fresh seed is
+ * not provided (e.g. confirm-from-draft path).
+ *
+ * @param {Object} draft           — { name, description }
+ * @param {Object|null} seed       — { role, goal, firstLook, givenName }
+ * @returns {{ name, description, role, motivation, portraitSource }}
+ */
+export function buildConnectionSeedData(draft, seed) {
+  const s = seed ?? {};
+  const name = (draft?.name && draft.name.trim()) || s.givenName || "Unknown Connection";
+  const descriptorParts = [];
+  if (draft?.description && draft.description.trim()) descriptorParts.push(draft.description.trim());
+  if (s.firstLook) descriptorParts.push(`First look: ${s.firstLook}.`);
+  const description = descriptorParts.join(" ");
+  // Portrait source must contain enough visual detail to render. Combine
+  // the detector description (if any) with the first-look oracle so the
+  // model has something concrete to render even when the narrator's prose
+  // was abstract.
+  const portraitParts = [];
+  if (draft?.description && draft.description.trim()) portraitParts.push(draft.description.trim());
+  if (s.firstLook) portraitParts.push(s.firstLook);
+  if (s.role)      portraitParts.push(`role: ${s.role}`);
+  return {
+    name,
+    description,
+    role:           s.role  ?? "",
+    motivation:     s.goal  ?? "",
+    portraitSource: portraitParts.join(". "),
+  };
+}
+
+/**
+ * Build ship-creation fields from a draft and an oracle seed.
+ *
+ * @param {Object} draft  — { name, description }
+ * @param {Object} seed   — { type, firstLook, name }
+ * @returns {{ name, description, type, firstLook, portraitSource }}
+ */
+export function buildShipSeedData(draft, seed) {
+  const s = seed ?? {};
+  const name = (draft?.name && draft.name.trim()) || s.name || "Unknown Ship";
+  const descriptorParts = [];
+  if (draft?.description && draft.description.trim()) descriptorParts.push(draft.description.trim());
+  if (s.firstLook) descriptorParts.push(`First look: ${s.firstLook}.`);
+  if (s.type)      descriptorParts.push(`Type: ${s.type}.`);
+  const description = descriptorParts.join(" ");
+  const portraitParts = [];
+  if (draft?.description && draft.description.trim()) portraitParts.push(draft.description.trim());
+  if (s.firstLook) portraitParts.push(s.firstLook);
+  if (s.type)      portraitParts.push(s.type);
+  return {
+    name,
+    description,
+    type:           s.type      ?? "",
+    firstLook:      s.firstLook ?? "",
+    portraitSource: portraitParts.join(". "),
+  };
+}
+
+function rollFreshConnectionSeed() {
+  return {
+    role:      safeOracleRoll("character_role"),
+    goal:      safeOracleRoll("character_goal"),
+    firstLook: safeOracleRoll("character_first_look"),
+    givenName: safeOracleRoll("given_name"),
+  };
+}
+
+function rollFreshShipSeed() {
+  return {
+    type:      safeOracleRoll("starship_type"),
+    firstLook: safeOracleRoll("starship_first_look"),
+    name:      safeOracleRoll("starship_name"),
+  };
+}
+
+function safeOracleRoll(tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * After a connection or ship is created with `portraitSourceDescription`
+ * already on the record, silently trigger portrait generation. Gated on
+ * the OpenRouter key being configured — when absent, this is a no-op (no
+ * notification, no chat surface).
+ *
+ * The portraitSourceDescription itself is written by the caller as part
+ * of the create-call data so the journal/actor entry persists atomically
+ * — earlier versions did the portraitSource write here in a follow-up
+ * step, which raced with tests (and other readers) that observed the
+ * journal after createXxx() returned but before this function landed.
+ *
+ * Lives here (not in connection.js / ship.js) so the portrait-generation
+ * policy is applied consistently regardless of which create path runs.
+ */
+async function postCreationEnrichment(typeKey, record, campaignState) {
+  if (!record || !record.portraitSourceDescription) return;
+  if (!hasOpenRouterKey()) return;
+
+  const hostId = findHostDocumentId(typeKey, record._id, campaignState);
+  if (!hostId) return;
+
+  try {
+    const { generatePortrait } = await import("../art/generator.js");
+    await generatePortrait(hostId, typeKey, record, campaignState ?? {});
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
+  }
+}
+
+function findHostDocumentId(typeKey, recordId, campaignState) {
+  if (!recordId) return null;
+  const idsField = ENTITY_ID_FIELDS[typeKey];
+  const getter   = ENTITY_GETTERS[typeKey];
+  if (!idsField || !getter) return null;
+  const ids = campaignState?.[idsField] ?? [];
+  for (const hostId of ids) {
+    let rec = null;
+    try { rec = getter(hostId); } catch { continue; }
+    if (rec?._id === recordId) return hostId;
+  }
+  return null;
+}
+
+function hasOpenRouterKey() {
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
+  } catch {
+    return false;
+  }
 }
 
 
@@ -919,17 +1078,48 @@ async function handleDraftConfirm(message, draftIndex) {
 
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
+  let record = null;
   try {
-    await creator({
-      name:        draft.name,
-      description: draft.description ?? "",
-    }, campaignState);
+    if (draft.type === "connection") {
+      const seedData = buildConnectionSeedData(
+        { name: draft.name, description: draft.description ?? "" },
+        rollFreshConnectionSeed(),
+      );
+      record = await creator({
+        name:                      seedData.name,
+        description:               seedData.description,
+        role:                      seedData.role,
+        motivation:                seedData.motivation,
+        portraitSourceDescription: seedData.portraitSource,
+      }, campaignState);
+    } else if (draft.type === "ship") {
+      const seedData = buildShipSeedData(
+        { name: draft.name, description: draft.description ?? "" },
+        rollFreshShipSeed(),
+      );
+      record = await creator({
+        name:                      seedData.name,
+        description:               seedData.description,
+        type:                      seedData.type,
+        firstLook:                 seedData.firstLook,
+        portraitSourceDescription: seedData.portraitSource,
+      }, campaignState);
+    } else {
+      record = await creator({
+        name:        draft.name,
+        description: draft.description ?? "",
+      }, campaignState);
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | draft confirm: createXxx failed:`, err);
     if (globalThis.ui?.notifications?.warn) {
       globalThis.ui.notifications.warn(`Failed to create ${draft.type} "${draft.name}". See console.`);
     }
     return;
+  }
+
+  if (record) {
+    await postCreationEnrichment(draft.type, record, campaignState);
   }
 
   drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });

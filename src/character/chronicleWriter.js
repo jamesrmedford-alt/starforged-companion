@@ -17,6 +17,7 @@
 
 import { apiPost } from '../api-proxy.js';
 import { addChronicleEntry } from './chronicle.js';
+import { getPlayerActors } from './actorBridge.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -225,7 +226,15 @@ function readModel() {
   }
 }
 
+// campaignState.characterIds is never written by the module, so the stored
+// value is effectively always []. Fall back to actorBridge — the same source
+// the assembler uses — so the chronicle writer actually runs.
 function resolveActorId(campaignState) {
   const ids = campaignState?.characterIds ?? [];
-  return ids[0] ?? null;
+  if (ids[0]) return ids[0];
+  try {
+    return getPlayerActors()[0]?.id ?? null;
+  } catch {
+    return null;
+  }
 }

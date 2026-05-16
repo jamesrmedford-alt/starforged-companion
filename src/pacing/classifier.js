@@ -78,15 +78,16 @@ Return ONLY a valid JSON object — no preamble, no markdown, no text outside th
 
 ## DECISION GUIDANCE
 
-A Starforged move triggers from FICTION + UNCERTAINTY. If the outcome is not in
-real doubt, or the action is too small to matter mechanically, prefer NARRATIVE.
-
-The pacing dials below are the primary signal and override your default
+The pacing dials below are the primary signal and override any default
 caution. Treat the dial for the input's category as a strong prior on a 0–10
 scale:
 
-  - 9–10: classify as MOVE unless the input is pure atmosphere, internal
-          thought, or descriptive scene-setting with no actor pressure.
+  - 9–10: classify as MOVE whenever the player describes a character action —
+          reaching, grabbing, hacking, pressing, attempting, speaking with
+          stakes, moving toward an outcome. The ONLY exceptions at this dial
+          are inputs that contain NO character action: pure observation
+          ("I look out the viewport"), internal monologue ("I wonder if…"),
+          or scene-atmosphere description with no character verb.
   - 6–8:  classify as MOVE when the narration depicts the character acting
           with intent toward an outcome — pressing for information, taking a
           risk, attempting something with stakes. Otherwise prefer
@@ -95,7 +96,18 @@ scale:
           reserve MOVE for clear, explicit attempts with stakes.
   - 0–2:  classify as NARRATIVE unless the player has signalled explicit
           intent ("I try to", "I attempt", "I roll to") or stakes are
-          unambiguous.
+          unambiguous. At this dial, prefer NARRATIVE even when the outcome
+          could matter — let the fiction breathe.
+
+TIE-BREAK: if you have identified a clear suggestedMove AND the input's
+category dial is 9 or 10, the answer is MOVE — not NARRATIVE_WITH_MOVE_AVAILABLE.
+NWMA is for borderline dials (3–8) and for genuinely ambiguous high-dial
+input where the character verb is missing or the action is purely observational.
+
+A Starforged move triggers from FICTION + UNCERTAINTY, but at dial 9–10 the
+table has declared this scene type is a high-roll context — do not apply
+default narrative caution there. Apply the "outcome not in doubt / too small
+to matter" filter only at dial 0–5.
 
 Read commitment from what the player describes, not from whether they used a
 specific verb.

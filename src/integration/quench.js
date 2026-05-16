@@ -51,12 +51,18 @@ Hooks.on("quenchReady", (quench) => {
   // pipeline end-to-end so each unit-style seam gets a second check inside the
   // chain that actually runs in production.
   registerConnectionPipelineTests(quench);
+  registerConnectionSeedEnrichmentTests(quench);
+  registerStarshipSeedHookTests(quench);
   registerPortraitGenerationTests(quench);
   // GM-action chat-card buttons (setupCard, draftEntityCard Confirm/Dismiss,
   // recapCard Refresh) — a renderChatMessage hook is the only place they
   // can be wired, so they're covered live in this batch rather than via unit
   // tests that mock the hook system.
   registerChatCardActionsTests(quench);
+  // End-to-end recap path against a real Actor + real Chronicle journal.
+  // Pins the fallback that makes !recap work without campaignState.characterIds
+  // ever being populated (the v1.2.4 → v1.2.10 silent regression).
+  registerRecapEndToEndTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -777,13 +783,16 @@ function registerSectorCreatorTests(quench) {
           assert.isNotNull(journal, "Starforged Sectors journal should exist");
         });
 
-        it("stores sector data in journal flags", async function () {
-          const journal = game.journal.getName("Starforged Sectors");
-          if (!journal || !createdSectorId) { this.skip(); return; }
-          const stored = journal.getFlag("starforged-companion", createdSectorId);
-          assert.isObject(stored,        "sector flag should be an object");
-          assert.isString(stored.name,   "sector should have a name");
-          assert.isString(stored.trouble,"sector should have a trouble string");
+        it("stores sector data in campaign state", async function () {
+          // §3.5: saveSectorToJournal was removed; campaignState.sectors[] is
+          // the authoritative store. The "Starforged Sectors" journal no longer
+          // carries per-sector flags.
+          const state = game.settings.get("starforged-companion", "campaignState");
+          if (!createdSectorId) { this.skip(); return; }
+          const stored = (state.sectors ?? []).find(s => s.id === createdSectorId);
+          assert.isObject(stored,         "sector should be stored in campaignState.sectors");
+          assert.isString(stored?.name,   "sector should have a name");
+          assert.isString(stored?.trouble,"sector should have a trouble string");
         });
 
         it("sets activeSectorId in campaignState", async function () {
@@ -837,7 +846,13 @@ function registerSectorCreatorTests(quench) {
           const state = game.settings.get("starforged-companion", "campaignState");
           if (!state.activeSectorId) { this.skip(); return; }
 
-          const packet = await assembleContextPacket(null, state);
+          // Inflate the token budget — the test world accumulates character
+          // Actors across batches, and CHARACTER STATE is priority 1 (never
+          // dropped). With the default 1200-token budget the activeSector
+          // section (priority 6) can drop on a busy world. We're asserting
+          // "is this section built when a sector is active", not "does it
+          // fit under the default budget".
+          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
           assert.include(packet.assembled, "ACTIVE SECTOR",
             "assembled packet should contain ACTIVE SECTOR section");
         });
@@ -848,7 +863,7 @@ function registerSectorCreatorTests(quench) {
           const savedId = state.activeSectorId;
           state.activeSectorId = null;
 
-          const packet = await assembleContextPacket(null, state);
+          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
           assert.notInclude(packet.assembled, "ACTIVE SECTOR",
             "assembled packet should not contain ACTIVE SECTOR when no sector is active");
 
@@ -938,11 +953,12 @@ function registerSectorCreatorTests(quench) {
           assert.include(testJournal.name, sector.name,      "journal name should include sector name");
         });
 
-        it("journal has pages for sector overview and each settlement", async function () {
+        it("journal has a sector overview page", async function () {
           if (!testJournal) { this.skip(); return; }
-          // Confirm page count > 1 (overview + at least one settlement page)
+          // §3.6: per-settlement embedded pages removed; the journal now has
+          // exactly one page — the sector overview. Settlement detail lives on Actors.
           const pages = testJournal.pages?.size ?? testJournal.pages?.contents?.length ?? 0;
-          assert.isAbove(pages, 1, "journal should have more than one page");
+          assert.isAbove(pages, 0, "journal should have at least one page (sector overview)");
         });
 
         it("narrator stub text appears in the sector overview page", async function () {
@@ -1511,6 +1527,458 @@ function registerConnectionPipelineTests(quench) {
       });
     },
     { displayName: "STARFORGED: Connection Pipeline (end-to-end)", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED ENRICHMENT — oracle backfill into the journal entry
+//
+// Before this fix, auto-creation on make_a_connection produced a journal entry
+// with name + (possibly empty) description and nothing else — role, motivation,
+// and the first-look details were dropped on the floor even though the
+// resolver had already rolled them. Confirm-from-draft was the same. This
+// batch asserts those fields actually land on the persisted record.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerConnectionSeedEnrichmentTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.connectionSeedEnrichment",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdJournalIds = [];
+      const createdActorIds   = [];
+
+      function trackJournal(id) { if (id) createdJournalIds.push(id); }
+      function trackActor(id)   { if (id) createdActorIds.push(id); }
+
+      async function flushCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) {
+            await j.delete().catch(err =>
+              console.warn(`${MODULE} | quench seedEnrichment: journal cleanup failed ${id}:`, err));
+          }
+        }
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) {
+            await a.delete().catch(err =>
+              console.warn(`${MODULE} | quench seedEnrichment: actor cleanup failed ${id}:`, err));
+          }
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushCleanup);
+
+      describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
+        it("role, motivation, and first-look details all populate on the connection record", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+
+          // Synthesise the oracle seed the way buildOracleSeeds() does for a
+          // make_a_connection roll. We pass it as the connectionSeed option
+          // exactly as runDiscoveryDetection forwards resolution.oracleSeeds.
+          const unique = `Riven Seed-${Date.now()}`;
+          await routeEntityDrafts(
+            [{ type: "connection", name: unique, description: "wiry quartermaster", confidence: "high" }],
+            state,
+            {
+              autoCreateConnection: true,
+              connectionSeed: {
+                role:      "Mercenary",
+                goal:      "Settle a debt with the Covenant",
+                firstLook: "Augmented arm, eye-patch",
+                givenName: unique,
+              },
+            },
+          );
+
+          const after = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (after.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackJournal);
+
+          assert.isAtLeast(newIds.length, 1,
+            "auto-create should register a new connection in campaignState");
+
+          const entry = game.journal?.get(newIds[0]);
+          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "page should carry the connection flag payload");
+
+          assert.equal(conn.role, "Mercenary",
+            "role should be seeded from oracle character_role");
+          assert.equal(conn.motivation, "Settle a debt with the Covenant",
+            "motivation should be seeded from oracle character_goal");
+          assert.include(conn.description, "wiry quartermaster",
+            "description should retain the detector's narration snippet");
+          assert.include(conn.description, "Augmented arm",
+            "description should also carry the oracle first-look");
+          assert.isOk(conn.portraitSourceDescription,
+            "portraitSourceDescription should be populated so the art pipeline can fire");
+          assert.include(conn.portraitSourceDescription, "Augmented arm",
+            "portrait source should include the visual detail from first-look");
+        });
+
+        it("falls back to the rolled given_name when the detector provides no name", async function () {
+          this.timeout(20000);
+
+          // We test the seed builder directly here because routeEntityDrafts
+          // filters out entities with empty names before the auto-create path
+          // even runs — that's a different code path. The seed builder is
+          // what the make_a_connection auto-create relies on; this asserts
+          // the journal-shaped data it produces is correct.
+          const { buildConnectionSeedData } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const seed = {
+            role:      "Drifter",
+            goal:      "Find kin",
+            firstLook: "Heavy coat, hood drawn",
+            givenName: "Vesna",
+          };
+          const data = buildConnectionSeedData(
+            { name: "", description: "" },
+            seed,
+          );
+          assert.equal(data.name, "Vesna",
+            "missing draft name should fall back to oracle given_name");
+          assert.equal(data.role, "Drifter");
+          assert.equal(data.motivation, "Find kin");
+          assert.include(data.description, "Heavy coat");
+        });
+      });
+
+      describe("Confirm-from-draft — rolls fresh oracle on click", function () {
+        it("a confirmed connection draft gets role/motivation/description from a fresh oracle roll", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const unique = `Draft Confirm-${Date.now()}`;
+
+          // Step 1 — queue a draft without auto-create. This posts a draft card.
+          await routeEntityDrafts(
+            [{ type: "connection", name: unique, description: "a figure at the bar", confidence: "high" }],
+            state,
+          );
+
+          // Step 2 — find the most recent draft card and locate the
+          // Confirm button for this draft.
+          const cards = (game.messages?.contents ?? []).filter(m =>
+            m.flags?.[MODULE]?.draftEntityCard);
+          const card = cards.at(-1);
+          assert.isOk(card, "draft entity card should be in chat");
+          const drafts = card.flags?.[MODULE]?.drafts ?? [];
+          const target = drafts.find(d => d.name === unique);
+          assert.isOk(target, "the unique draft should be present on the card");
+
+          // Step 3 — simulate the GM click. The handler is wired in the
+          // entityExtractor's renderChatMessage hook, but we invoke the
+          // path directly: find the [data-action="sf-draft-confirm"] in
+          // the rendered card HTML and dispatch a click.
+          // Render the card via Foundry's chat renderer, get the resulting
+          // HTML container, then click the matching button.
+          const rendered = await card.getHTML();
+          const root = rendered instanceof HTMLElement ? rendered : rendered?.[0];
+          const btn  = root?.querySelector?.(`[data-action="sf-draft-confirm"][data-index="${target.index}"]`);
+          assert.isOk(btn, "Confirm button should be in the rendered card");
+
+          const beforeIds = new Set((game.settings.get(MODULE, "campaignState") ?? {}).connectionIds ?? []);
+          btn.click();
+
+          // Wait for the async handler to land the write.
+          for (let i = 0; i < 40; i += 1) {
+            const cur = (game.settings.get(MODULE, "campaignState") ?? {}).connectionIds ?? [];
+            if (cur.some(id => !beforeIds.has(id))) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+
+          const cur = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (cur.connectionIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackJournal);
+          assert.isAtLeast(newIds.length, 1,
+            "Confirm click should auto-create a connection journal entry");
+
+          const entry = game.journal?.get(newIds[0]);
+          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "confirmed connection should carry a payload");
+          // Fresh oracle rolls produce some non-empty role and motivation in
+          // virtually all rolls — we assert at least one of the three
+          // first-look-derived fields is populated to confirm the seed
+          // rolled and applied.
+          const hasSeedDetail = !!(conn.role || conn.motivation || (conn.description && conn.description.includes("First look")));
+          assert.isTrue(hasSeedDetail,
+            "at least one oracle-seeded field (role/motivation/first-look) should be populated after Confirm");
+          assert.isOk(conn.portraitSourceDescription,
+            "Confirm path should also set portraitSourceDescription");
+        });
+
+        it("a confirmed ship draft gets type and first-look from a fresh oracle roll", async function () {
+          this.timeout(20000);
+
+          const { routeEntityDrafts } = await import(
+            `${MODULE_PATH}/entities/entityExtractor.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          const unique = `Test Ship-${Date.now()}`;
+
+          await routeEntityDrafts(
+            [{ type: "ship", name: unique, description: "a freighter at dock", confidence: "high" }],
+            state,
+          );
+
+          const cards = (game.messages?.contents ?? []).filter(m =>
+            m.flags?.[MODULE]?.draftEntityCard);
+          const card = cards.at(-1);
+          assert.isOk(card, "draft entity card should be in chat");
+          const drafts = card.flags?.[MODULE]?.drafts ?? [];
+          const target = drafts.find(d => d.name === unique && d.type === "ship");
+          assert.isOk(target, "the unique ship draft should be present");
+
+          const rendered = await card.getHTML();
+          const root = rendered instanceof HTMLElement ? rendered : rendered?.[0];
+          const btn  = root?.querySelector?.(`[data-action="sf-draft-confirm"][data-index="${target.index}"]`);
+          assert.isOk(btn, "Confirm button should be in the rendered card");
+
+          const beforeIds = new Set((game.settings.get(MODULE, "campaignState") ?? {}).shipIds ?? []);
+          btn.click();
+
+          for (let i = 0; i < 40; i += 1) {
+            const cur = (game.settings.get(MODULE, "campaignState") ?? {}).shipIds ?? [];
+            if (cur.some(id => !beforeIds.has(id))) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+
+          const cur = game.settings.get(MODULE, "campaignState") ?? {};
+          const newIds = (cur.shipIds ?? []).filter(id => !beforeIds.has(id));
+          newIds.forEach(trackActor);
+          assert.isAtLeast(newIds.length, 1,
+            "Confirm click should auto-create a ship actor");
+
+          const actor = game.actors?.get(newIds[0]);
+          const ship  = actor?.flags?.[MODULE]?.ship;
+          assert.isOk(ship, "ship actor should carry the ship flag payload");
+          const hasSeedDetail = !!(ship.type || ship.firstLook || (ship.description && (ship.description.includes("First look") || ship.description.includes("Type"))));
+          assert.isTrue(hasSeedDetail,
+            "at least one oracle-seeded field (type/firstLook/description) should be populated after Confirm");
+          assert.isOk(ship.portraitSourceDescription,
+            "Confirm path should set portraitSourceDescription on the ship");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Connection Seed Enrichment", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARSHIP SEED — createActor hook + seedStarshipActor() against live Foundry
+//
+// When a user creates a `type='starship'` Actor via the Foundry sidebar
+// (or any path that doesn't already pre-populate the flag payload), the
+// createActor hook should oracle-seed type / first-look / mission into
+// `system.notes` + `flags[MODULE].ship`, and skip silently when the
+// actor already carries detail. This batch exercises both paths against
+// real Foundry document creation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerStarshipSeedHookTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.starshipSeedHook",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) {
+            await a.delete().catch(err =>
+              console.warn(`${MODULE} | quench starshipSeedHook: cleanup failed ${id}:`, err));
+          }
+        }
+      }
+
+      // Wait up to N ms for an assertion predicate to be satisfied.
+      // The createActor hook fires async — seedStarshipActor doesn't block
+      // Actor.create — so the test must poll briefly before asserting.
+      async function waitFor(predicate, timeoutMs = 4000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          if (await predicate()) return true;
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return false;
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      afterEach(flushCleanup);
+
+      describe("Sidebar-created starship — auto-seed via createActor hook", function () {
+        it("populates system.notes and flags[MODULE].ship with oracle rolls", async function () {
+          this.timeout(20000);
+
+          // Bypass createShip() entirely — this is what a user clicking
+          // "Create Actor" → "Starship" in the sidebar does.
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP ${Date.now()}`,
+            type: "starship",
+          });
+          assert.isOk(actor, "Actor.create should succeed for type=starship");
+          track(actor.id);
+
+          // Hook runs async; poll for the flag payload to land.
+          const ok = await waitFor(async () => {
+            const fresh = game.actors?.get(actor.id);
+            const ship  = fresh?.flags?.[MODULE]?.ship;
+            return !!(ship?.type || ship?.firstLook);
+          });
+          assert.isTrue(ok, "the createActor hook should populate flags[MODULE].ship within the polling window");
+
+          const fresh = game.actors?.get(actor.id);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.isOk(ship.type || ship.firstLook,
+            "either type or first-look should be set after the seed runs");
+          assert.isOk(fresh.system.notes,
+            "system.notes should be populated so the starship sheet renders the seed");
+          assert.equal(fresh.name, actor.name,
+            "the actor's user-supplied name should not be modified");
+          assert.isOk(fresh.flags[MODULE].entityType === "ship",
+            "entityType routing crumb should be stamped");
+
+        });
+
+        it("registers the seeded starship on campaignState.shipIds", async function () {
+          this.timeout(20000);
+
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-TRACK ${Date.now()}`,
+            type: "starship",
+          });
+          track(actor.id);
+
+          const ok = await waitFor(async () => {
+            const cur = game.settings.get(MODULE, "campaignState") ?? {};
+            return (cur.shipIds ?? []).includes(actor.id);
+          });
+          assert.isTrue(ok, "the seeded starship should be registered on campaignState.shipIds");
+        });
+      });
+
+      describe("Skip clauses — actor already populated", function () {
+        it("does not seed a starship whose Notes field is already non-empty", async function () {
+          this.timeout(20000);
+
+          const userNotes = `<p>I typed these notes myself.</p>`;
+          const actor = await Actor.create({
+            name: `QUENCH STARSHIP-NOTES ${Date.now()}`,
+            type: "starship",
+            system: { notes: userNotes },
+          });
+          track(actor.id);
+
+          // Wait a bit longer than the hook's seed work would normally need.
+          await new Promise(r => setTimeout(r, 1500));
+
+          const fresh = game.actors?.get(actor.id);
+          assert.equal(fresh.system.notes, userNotes,
+            "user-supplied notes should not be overwritten by the seed");
+          assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+            "no flag payload should be created when the seed was skipped");
+        });
+
+        it("does not seed when autoSeedStarship setting is off", async function () {
+          this.timeout(20000);
+
+          await withTempSetting("autoSeedStarship", false, async () => {
+            const actor = await Actor.create({
+              name: `QUENCH STARSHIP-OPTOUT ${Date.now()}`,
+              type: "starship",
+            });
+            track(actor.id);
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            const fresh = game.actors?.get(actor.id);
+            assert.equal(fresh.system.notes ?? "", "",
+              "notes should remain empty when auto-seed is disabled");
+            assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+              "no flag payload should be created when auto-seed is disabled");
+          });
+        });
+
+        it("does not re-seed a starship created via createShip() with seeded data", async function () {
+          this.timeout(20000);
+
+          const { createShip } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+
+          // createShip with explicit seed data — same shape that the
+          // Confirm-from-draft path produces.
+          await createShip({
+            name:        `QUENCH STARSHIP-PRESEED ${Date.now()}`,
+            type:        "Cutter",
+            firstLook:   "Compact courier, scarred but maintained",
+            description: "A cutter type, scarred but maintained.",
+          }, state);
+
+          const newId = (state.shipIds ?? []).at(-1);
+          track(newId);
+
+          // Give the hook a chance to fire and (correctly) skip.
+          await new Promise(r => setTimeout(r, 1000));
+
+          const fresh = game.actors?.get(newId);
+          const ship  = fresh.flags[MODULE].ship;
+          assert.equal(ship.type, "Cutter",
+            "createShip's seeded type should not be overwritten by the hook");
+          assert.equal(ship.firstLook, "Compact courier, scarred but maintained",
+            "createShip's seeded first-look should not be overwritten");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Starship Seed Hook", timeout: 60000 },
   );
 }
 
@@ -2439,7 +2907,13 @@ function registerEntityPanelActionsTests(quench) {
             `[data-action="toggleCanonicalLock"][data-journal-id="${testJournalId}"]`);
           assert.isNotNull(lockBtn, "canonical-lock button should be present in detail view");
           lockBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          await flushMicrotasks(); await flushMicrotasks();
+          // writeEntityFlag() is a socket round-trip; poll until the flag lands
+          // (two flushMicrotasks() is not enough for Foundry document updates).
+          const deadline = Date.now() + 2000;
+          while (Date.now() < deadline) {
+            await flushMicrotasks();
+            if (!!page.getFlag(MODULE_ID, "connection")?.canonicalLocked !== before) break;
+          }
           const after = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
           assert.notEqual(after, before, "canonicalLocked should toggle");
         });
@@ -4009,6 +4483,12 @@ function registerChatCardActionsTests(quench) {
       // registered and that it routes to postCampaignRecap with forceRefresh.
       describe("recapCard — Refresh button forces a regeneration", function () {
         it("clicking [data-action=refreshCampaignRecap] calls postCampaignRecap", async function () {
+          // Live Forge: post-v1.2.12 the Refresh handler reaches the
+          // (stubbed) Anthropic call and writes the cache + posts a card
+          // via two server roundtrips. Default 2 s Mocha timeout is too
+          // tight for Forge's network. Pre-fix this test short-circuited
+          // at "no chronicle entries" and finished in milliseconds.
+          this.timeout(20000);
           if (skipNotGM(this)) return;
 
           const narratorMod = await import(`${MODULE_PATH}/narration/narrator.js`);
@@ -4112,5 +4592,283 @@ function registerChatCardActionsTests(quench) {
       }
     },
     { displayName: "STARFORGED: Chat Card Actions" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECAP END-TO-END — chronicleWriter + getCampaignRecap with characterIds=[]
+//
+// History: from v1.2.4 through v1.2.10 the recap feature shipped broken in
+// production. campaignState.characterIds is initialised to [] in schemas.js
+// and never written back anywhere. Both halves of the pipeline read it:
+//   - chronicleWriter.resolveActorId → null → addChronicleEntry never called
+//   - narrator._collectAllChronicleEntries → [] → empty-state recap card
+// Existing unit tests passed because they explicitly set characterIds in
+// their fixture; the live world condition was never exercised. This batch
+// runs the full path against real Foundry documents with characterIds=[] —
+// the exact condition users hit — and asserts the fallback to actorBridge
+// makes both halves work.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerRecapEndToEndTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.recapEndToEnd",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let actor          = null;
+      let stateSnapshot  = null;
+      const seededEntries = [];
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+
+        // Snapshot campaignState — every assertion mutates characterIds.
+        stateSnapshot = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE_ID, "campaignState")));
+
+        actor = await Actor.create({
+          name: `QUENCH RECAP — ${Date.now()}`,
+          type: "character",
+          system: {
+            edge: 2, heart: 2, iron: 3, shadow: 1, wits: 2,
+            health:   { value: 5 },
+            spirit:   { value: 5 },
+            supply:   { value: 3 },
+            momentum: { value: 2, resetValue: 2 },
+          },
+          // hasPlayerOwner: ownership grant — DEFAULT: OWNER makes every
+          // player a player-owner. This is what getPlayerActors() filters on.
+          ownership: { default: 3 },
+        });
+        if (!actor) return;
+
+        const { addChronicleEntry } = await import(
+          `${MODULE_PATH}/character/chronicle.js`);
+        await addChronicleEntry(actor.id, {
+          type: "discovery",
+          text: "QUENCH: set out from the station.",
+          automated: true,
+          sessionId: "quench-recap-session",
+        });
+        await addChronicleEntry(actor.id, {
+          type: "revelation",
+          text: "QUENCH: found the wreck.",
+          automated: true,
+          sessionId: "quench-recap-session",
+        });
+        const { getChronicleEntries } = await import(
+          `${MODULE_PATH}/character/chronicle.js`);
+        const written = await getChronicleEntries(actor.id);
+        for (const e of written) seededEntries.push(e);
+      });
+
+      after(async function () {
+        // Restore campaignState first so a teardown failure on the actor
+        // doesn't leave us in a hybrid state.
+        if (stateSnapshot) {
+          await game.settings.set(MODULE_ID, "campaignState", stateSnapshot)
+            .catch(() => {});
+        }
+        if (actor) {
+          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
+          if (chronicleJournal?.delete) {
+            await chronicleJournal.delete().catch(err =>
+              console.warn(`${MODULE_ID} | quench: recap chronicle cleanup failed:`, err));
+          }
+          if (actor.delete) await actor.delete().catch(() => {});
+        }
+        actor = null;
+      });
+
+      // ──────────────────────────────────────────────────────────────────────
+      // chronicleWriter — fallback to actorBridge when characterIds is empty
+      // ──────────────────────────────────────────────────────────────────────
+
+      describe("chronicleWriter — writes when characterIds is empty", function () {
+        it("falls back to a player-owned Actor and calls addChronicleEntry", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition: characterIds explicitly empty.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds = [];
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          // Auto-entry must be on for the writer to run.
+          const autoBefore = game.settings.get(MODULE_ID, "chronicleAutoEntry");
+          await game.settings.set(MODULE_ID, "chronicleAutoEntry", true);
+
+          // Need an API key for the writer to reach the Haiku call — stub
+          // fetch to return a canned JSON entry so we don't burn credit.
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          const { getChronicleEntries } = await import(
+            `${MODULE_PATH}/character/chronicle.js`);
+          const before = (await getChronicleEntries(actor.id)).length;
+
+          try {
+            const { writeChronicleEntry } = await import(
+              `${MODULE_PATH}/character/chronicleWriter.js`);
+            await withStubbedFetch([[
+              "api.anthropic.com",
+              () => ({ content: [{ type: "text", text: JSON.stringify({
+                type: "moment",
+                text: "QUENCH writer fallback — entry written.",
+              }) }] }),
+            ]], async () => {
+              await writeChronicleEntry({
+                narrationText: "The corridor went quiet as the door sealed.",
+                campaignState: game.settings.get(MODULE_ID, "campaignState"),
+                kind:          "paced",
+              });
+            });
+
+            const after = await getChronicleEntries(actor.id);
+            assert.equal(
+              after.length, before + 1,
+              "writeChronicleEntry should append an entry via actorBridge fallback when characterIds is empty",
+            );
+            assert.equal(
+              after.at(-1).text, "QUENCH writer fallback — entry written.",
+              "the appended entry should match the stubbed Haiku response",
+            );
+          } finally {
+            await game.settings.set(MODULE_ID, "chronicleAutoEntry", autoBefore);
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+      });
+
+      // ──────────────────────────────────────────────────────────────────────
+      // recap reader — _collectAllChronicleEntries via getCampaignRecap
+      // ──────────────────────────────────────────────────────────────────────
+
+      describe("getCampaignRecap — reads when characterIds is empty", function () {
+        it("aggregates chronicle entries via actorBridge fallback and reaches the API", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds          = [];
+          state.campaignRecapCache    = { text: "", generatedAt: null, chronicleLength: 0 };
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          let capturedUserMessage = null;
+          try {
+            const { getCampaignRecap } = await import(
+              `${MODULE_PATH}/narration/narrator.js`);
+
+            const result = await withStubbedFetch([[
+              "api.anthropic.com",
+              (_target, init) => {
+                try {
+                  const body = JSON.parse(init?.body ?? "{}");
+                  const last = body?.messages?.[body.messages.length - 1];
+                  capturedUserMessage = typeof last?.content === "string"
+                    ? last.content
+                    : JSON.stringify(last?.content ?? "");
+                } catch (err) {
+                  console.warn(`${MODULE_ID} | quench: recap body capture failed:`, err);
+                }
+                return { content: [{ type: "text", text: "QUENCH recap text." }] };
+              },
+            ]], async () => {
+              return await getCampaignRecap(
+                game.settings.get(MODULE_ID, "campaignState"),
+                { forceRefresh: true });
+            });
+
+            assert.equal(
+              result, "QUENCH recap text.",
+              "getCampaignRecap should return the stubbed Anthropic response, proving it reached the API",
+            );
+            assert.isNotNull(
+              capturedUserMessage,
+              "the Anthropic call must have been made — empty characterIds used to short-circuit before the API",
+            );
+            assert.include(
+              capturedUserMessage, "set out from the station",
+              "the recap user message must include the seeded chronicle entries (read via actorBridge fallback)",
+            );
+            assert.include(
+              capturedUserMessage, "found the wreck",
+              "the recap user message must include all seeded chronicle entries",
+            );
+          } finally {
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+
+        it("postCampaignRecap with characterIds=[] posts a non-empty card", async function () {
+          this.timeout(20000);
+          if (!actor) { this.skip(); return; }
+          if (!game.user?.isGM) { this.skip(); return; }
+
+          // Force the bug condition + invalidate cache.
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          state.characterIds       = [];
+          state.campaignRecapCache = { text: "", generatedAt: null, chronicleLength: 0 };
+          await game.settings.set(MODULE_ID, "campaignState", state);
+
+          const realKey = game.settings.get(MODULE_ID, "claudeApiKey");
+          if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-quench-stub");
+
+          const recapsBefore = new Set(
+            (game.messages?.contents ?? [])
+              .filter(m => m.flags?.[MODULE_ID]?.recapCard && m.flags[MODULE_ID].recapType === "campaign")
+              .map(m => m.id),
+          );
+
+          let newCards = [];
+          try {
+            const { postCampaignRecap } = await import(
+              `${MODULE_PATH}/narration/narrator.js`);
+
+            await withStubbedFetch([[
+              "api.anthropic.com",
+              () => ({ content: [{ type: "text", text: "QUENCH recap card text." }] }),
+            ]], async () => {
+              await postCampaignRecap(
+                game.settings.get(MODULE_ID, "campaignState"),
+                { forceRefresh: true });
+            });
+
+            const recapsAfter = (game.messages?.contents ?? [])
+              .filter(m => m.flags?.[MODULE_ID]?.recapCard && m.flags[MODULE_ID].recapType === "campaign");
+            newCards = recapsAfter.filter(m => !recapsBefore.has(m.id));
+
+            assert.isAtLeast(
+              newCards.length, 1,
+              "postCampaignRecap must post a card",
+            );
+            const card = newCards[0];
+            assert.isNotTrue(
+              card.flags?.[MODULE_ID]?.recapEmpty,
+              "the posted card must NOT be the empty-state card — chronicle entries exist (via actorBridge fallback)",
+            );
+            assert.include(
+              card.content, "QUENCH recap card text.",
+              "the posted card content must include the recap prose",
+            );
+          } finally {
+            // Clean up the posted card so it doesn't linger across runs.
+            for (const m of newCards) {
+              if (m?.delete) await m.delete().catch(() => {});
+            }
+            if (!realKey) await game.settings.set(MODULE_ID, "claudeApiKey", "");
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Recap End-to-End" },
   );
 }

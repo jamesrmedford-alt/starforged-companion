@@ -34,7 +34,7 @@ import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -281,7 +281,10 @@ export function runPostNarrationPasses(
       // in chat at the same moment as the narration.
       return runDiscoveryDetection(
         narrationText, resolution, campaignState,
-        { autoCreateConnection: true },
+        {
+          autoCreateConnection: true,
+          connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
+        },
       );
     }
 
@@ -325,6 +328,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeWorldJournalResults(detection.worldJournal, campaignState);
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
+      connectionSeed:       options.connectionSeed ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
     });
   } catch (err) {
@@ -879,11 +883,15 @@ export async function runPacedDetection(narrationText, campaignState) {
 
 async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
+  const buttonRow = suggestedMove
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
+    : '';
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
+        ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
             <i class="fas fa-list-check"></i> Correct a fact
@@ -905,6 +913,21 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
       },
     },
   });
+}
+
+function escapeChatHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatMoveLabel(moveId) {
+  return String(moveId ?? '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim() || 'Move';
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1106,7 @@ async function postFallbackCard(resolution) {
     `.trim(),
     flags: {
       [MODULE_ID]: {
+        narratorCard:      true,
         narrationCard:     true,
         narrationFallback: true,
         resolutionId:      resolution?._id ?? '',
@@ -1253,7 +1277,7 @@ function getApiKey() {
 
 function getActiveCharacter(campaignState) {
   try {
-    const ids = campaignState?.characterIds ?? [];
+    const ids = _resolveCharacterIds(campaignState);
     if (!ids.length) return null;
     const actor = game.actors?.get?.(ids[0]);
     if (!actor) return null;
@@ -1310,17 +1334,26 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// campaignState.characterIds is never written by the module, so the stored
+// value is effectively always []. Fall back to actorBridge — the same source
+// the assembler uses — so the recap actually reads chronicle entries.
+function _resolveCharacterIds(campaignState) {
+  const ids = campaignState?.characterIds ?? [];
+  if (ids.length) return ids;
+  try {
+    return getPlayerActors().map(a => a.id);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Aggregate chronicle entries (oldest first) across every PC in the campaign.
  * Each entry is annotated with `actorId` so a single combined sort by
  * timestamp produces a coherent campaign timeline.
- *
- * `characterIds` holds Actor IDs (populated by the assembler from
- * `actors.map(a => a.id)`) — the chronicle journal itself is found by name
- * via `getChronicleEntries`, so callers don't need to know the journal id.
  */
 async function _collectAllChronicleEntries(campaignState) {
-  const ids = campaignState?.characterIds ?? [];
+  const ids = _resolveCharacterIds(campaignState);
   if (!ids.length) return [];
 
   const aggregated = [];

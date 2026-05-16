@@ -26,8 +26,12 @@
 >    `narratorAsserted`, `annotations`, `promotedAt`. It does NOT have
 >    explicit `subject` or `fact` fields. The scope adds them in §4 as a
 >    backwards-compatible page-flag extension — no migration breakage.
-> 4. ✅ NED entity IDs are Foundry `JournalEntry` IDs, stable across
->    sessions and referenceable from external storage.
+> 4. ✅ NED entity IDs are stable Foundry document IDs, referenceable from
+>    external storage. After PR #100 (Entity → Actor Migration, Phases 2–3),
+>    `connection` / `faction` / `creature` IDs are `JournalEntry` IDs and
+>    `ship` / `planet` / `settlement` / `location` IDs are `Actor` IDs. The
+>    `src/entities/registry.js` dispatch shim hides the distinction from
+>    every caller (see §4.2 and §13.1 for fact-continuity usage).
 > 5. ✅ The contradiction surface exists: `applyStateTransition` in
 >    `worldJournal.js` consumes `{ entryType, name, change, newValue }` and
 >    posts a GM-only chat card on `change === "contradicted"`. The
@@ -271,7 +275,7 @@ The array is cleared on scene end **after migration completes**.
 
 | Subject kind | On scene end | Storage |
 |---|---|---|
-| `entity` | Append to that entity's `generativeTier` array | Existing NED structure on the entity JournalEntry flags |
+| `entity` | Append to that entity's `generativeTier` array | Existing NED structure on the entity's host-document flags — `JournalEntryPage` for connection/faction/creature; native `Actor` for ship/planet/settlement/location post-PR #100. The Phase C `appendMigratedTruthToTier` helper in `src/entities/entityExtractor.js` dispatches via `src/entities/registry.js` so the same call works for either host. |
 | `text` (free-text subject) | Archive to WJ Lore | `recordLoreDiscovery` with synthetic title `"<subject>: <fact>"`, `narratorAsserted: true`, the scene ID tagged in annotations |
 | `scene` (scene-scoped) | Archive to WJ Lore | Same as `text`, prefix title with `"Scene <sceneId>: "` |
 
@@ -795,8 +799,14 @@ colocated with the Pacing and World Journal sections.
 - **Subject resolution** reuses `relevanceResolver.buildNameIndex` and
   dismissed-entities filtering. No duplication.
 - **Migration target** for entity-scoped truths is the existing
-  `generativeTier` array on entity JournalEntry flags. No new field on
-  the entity schema.
+  `generativeTier` array on the entity's host-document flags. For
+  connection/faction/creature this is the `JournalEntryPage` flag; for
+  ship/planet/settlement/location it is the native `Actor` flag after
+  PR #100. No new field on the entity schema. The
+  `appendMigratedTruthToTier` helper in `src/entities/entityExtractor.js`
+  dispatches through `src/entities/registry.js` (`getEntityDocument` /
+  `readEntityFlag` / `writeEntityFlag`) so callers stay correct
+  regardless of host.
 - **Entity panel** gains an "Active truths" collapsible per entity. UI
   reuses the existing generativeTier list components.
 
@@ -1351,8 +1361,8 @@ same fallback shape the assembler uses for missing optional sections.
 ```js
 position: {
   sectorId:            null,   // campaignState.sectors[*].id
-  nearestPlanetId:     null,   // JournalEntry ID of nearest planet
-  nearestSettlementId: null,   // JournalEntry ID of nearest settlement
+  nearestPlanetId:     null,   // Actor ID of nearest planet (Actor-backed post-PR #100)
+  nearestSettlementId: null,   // Actor ID of nearest settlement (Actor-backed post-PR #100)
   freeText:            "",     // free-text fallback when no canonical
                                //   entity exists (e.g. "drifting in
                                //   the outer Bleakhold expanse")
@@ -1363,7 +1373,7 @@ position: {
 }
 ```
 
-Storage: persists on the Ship JournalEntry page flag alongside the
+Storage: persists on the Ship Actor flag (post-PR #100) alongside the
 rest of `ShipSchema`. `updateShip(id, { position })` already handles
 arbitrary field extension — no new persistence wiring needed. Back-
 compatible: existing ships without a `position` block read as all-null

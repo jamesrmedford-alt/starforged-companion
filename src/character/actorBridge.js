@@ -18,10 +18,21 @@ const _snapshotCache = new Map();
 
 /**
  * Get all player-owned character Actors in the world.
+ *
+ * In multi-user games this returns only characters with at least one non-GM
+ * owner (`hasPlayerOwner === true`). In solo-GM play — the dominant use case
+ * for this module — there are no non-GM users, so `hasPlayerOwner` is always
+ * false on every character. Falling back to all `character`-type Actors keeps
+ * the recap pipeline, paced-narration character context, and the chronicle
+ * panel working in solo play. Safe because foundry-ironsworn reserves the
+ * `character` type for PCs — NPCs/foes/connections use different types.
+ *
  * @returns {Actor[]}
  */
 export function getPlayerActors() {
-  return game.actors?.filter(a => a.type === 'character' && a.hasPlayerOwner) ?? [];
+  const characters = game.actors?.filter(a => a.type === 'character') ?? [];
+  const playerOwned = characters.filter(a => a.hasPlayerOwner);
+  return playerOwned.length > 0 ? playerOwned : characters;
 }
 
 /**

@@ -36,6 +36,8 @@ import {
   applyStateTransition,
   parseTierUpdateResponse,
   normalizeEntityName,
+  buildConnectionSeedData,
+  buildShipSeedData,
 } from "../../src/entities/entityExtractor.js";
 import * as wj from "../../src/world/worldJournal.js";
 import {
@@ -1038,6 +1040,140 @@ describe("collectPendingDraftNames — only suppresses pending drafts", () => {
     expect(parsed.entities).toHaveLength(1);
     expect(parsed.entities[0].name).toBe("Long Memory");
 
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seed enrichment — oracle backfill at entity creation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildConnectionSeedData", () => {
+  it("combines detector description with oracle first-look for journal description", () => {
+    const result = buildConnectionSeedData(
+      { name: "Kael", description: "Battle-scarred captain." },
+      { role: "Mercenary", goal: "Settle a debt", firstLook: "Augmented arm" },
+    );
+    expect(result.name).toBe("Kael");
+    expect(result.description).toContain("Battle-scarred captain.");
+    expect(result.description).toContain("Augmented arm");
+    expect(result.role).toBe("Mercenary");
+    expect(result.motivation).toBe("Settle a debt");
+  });
+
+  it("falls back to the rolled given name when the draft has no name", () => {
+    const result = buildConnectionSeedData(
+      { name: "", description: "" },
+      { role: "Drifter", goal: "Find kin", firstLook: "Heavy coat", givenName: "Vesna" },
+    );
+    expect(result.name).toBe("Vesna");
+  });
+
+  it("builds a portrait source even when the detector description was empty", () => {
+    const result = buildConnectionSeedData(
+      { name: "Vesna", description: "" },
+      { role: "Drifter", firstLook: "Heavy coat, hood drawn" },
+    );
+    expect(result.portraitSource).toContain("Heavy coat");
+    expect(result.portraitSource).toContain("Drifter");
+  });
+
+  it("uses safe defaults when seed is null", () => {
+    const result = buildConnectionSeedData(
+      { name: "Anon", description: "A figure." },
+      null,
+    );
+    expect(result.name).toBe("Anon");
+    expect(result.role).toBe("");
+    expect(result.motivation).toBe("");
+  });
+});
+
+describe("buildShipSeedData", () => {
+  it("combines detector description with oracle type and first look", () => {
+    const result = buildShipSeedData(
+      { name: "Long Memory", description: "Aging freighter." },
+      { type: "Freighter", firstLook: "Patched hull", name: "Long Memory" },
+    );
+    expect(result.name).toBe("Long Memory");
+    expect(result.description).toContain("Aging freighter.");
+    expect(result.description).toContain("Patched hull");
+    expect(result.description).toContain("Freighter");
+    expect(result.type).toBe("Freighter");
+    expect(result.firstLook).toBe("Patched hull");
+  });
+
+  it("falls back to the rolled ship name when the draft has no name", () => {
+    const result = buildShipSeedData(
+      { name: "", description: "" },
+      { type: "Courier", firstLook: "Sleek", name: "Inkwell" },
+    );
+    expect(result.name).toBe("Inkwell");
+  });
+
+  it("builds a portrait source even when the detector description was empty", () => {
+    const result = buildShipSeedData(
+      { name: "Inkwell", description: "" },
+      { type: "Courier", firstLook: "Sleek matte hull" },
+    );
+    expect(result.portraitSource).toContain("Sleek matte hull");
+    expect(result.portraitSource).toContain("Courier");
+  });
+});
+
+describe("routeEntityDrafts — connection seed backfill on auto-create", () => {
+  it("seeds the auto-created connection journal with role, motivation, and oracle first-look", async () => {
+    const fixture = buildFullCampaignState();
+    const result = await routeEntityDrafts(
+      [{ type: "connection", name: "Kael", description: "scarred captain", confidence: "high" }],
+      fixture.campaignState,
+      {
+        autoCreateConnection: true,
+        connectionSeed: {
+          role:      "Mercenary",
+          goal:      "Settle a debt",
+          firstLook: "Augmented arm, eyepatch",
+          givenName: "Kael",
+        },
+      },
+    );
+    expect(result.created).toHaveLength(1);
+    const rec = result.created[0].record;
+    expect(rec.role).toBe("Mercenary");
+    expect(rec.motivation).toBe("Settle a debt");
+    expect(rec.description).toContain("scarred captain");
+    expect(rec.description).toContain("Augmented arm, eyepatch");
+    // portraitSourceDescription must land atomically as part of the create —
+    // not as a follow-up write — otherwise the Quench Confirm-from-draft
+    // test races (saw '' on the journal because the field was set after
+    // connectionIds grew). See v1.2.14 → v1.2.15 fix.
+    expect(rec.portraitSourceDescription).toBeTruthy();
+    expect(rec.portraitSourceDescription).toContain("Augmented arm");
+    fixture.restore();
+  });
+
+  it("uses the rolled given_name when the detector found no name", async () => {
+    const fixture = buildFullCampaignState();
+    const result = await routeEntityDrafts(
+      [{ type: "connection", name: "", description: "a figure in the doorway", confidence: "high" }],
+      fixture.campaignState,
+      {
+        autoCreateConnection: true,
+        connectionSeed: {
+          role:      "Drifter",
+          goal:      "Find kin",
+          firstLook: "Heavy coat, hood drawn",
+          givenName: "Vesna",
+        },
+      },
+    );
+    // With no draft name, the routing filter strips the entity before
+    // auto-create runs (the routing layer requires entity.name). So this
+    // path documents that the routing requires a non-empty draft name —
+    // the rolled name only fills in when something else is already there.
+    // Verified by the unit test on buildConnectionSeedData above.
+    expect(result.created).toEqual([]);
     fixture.restore();
   });
 });

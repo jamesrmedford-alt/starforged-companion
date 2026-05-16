@@ -208,6 +208,15 @@ function registerCoreSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, "autoSeedStarship", {
+    name:    "Auto-Seed Starship Details",
+    hint:    "When a new starship Actor is created with empty notes, roll the starship Type / First Look / Mission oracles and write them to the actor's Notes field. Triggers a silent portrait generation if an OpenRouter API key is configured. Disable to keep new starships blank.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
     hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
@@ -481,21 +490,29 @@ export function registerChatHook() {
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
 
+    // Per-message bypass — the "Roll <move>" button on an NWMA card re-posts
+    // the player's input with `bypassPacing: true` so the classifier is
+    // skipped and the move pipeline runs immediately. Cheaper than the
+    // campaignState-scoped `!roll` flag and avoids any GM-write race.
+    const bypassPacing = message.flags?.[MODULE_ID]?.bypassPacing === true;
+
     // Pacing classifier — decides whether to run the move pipeline, narrate
     // only, or narrate with an inline move suggestion. The classifier runs
     // freely; only the MOVE branch claims the pendingMove lock below.
     const preState  = game.settings.get(MODULE_ID, "campaignState");
     const character = getActiveCharacterForPacing(preState);
     let pacingResult = { runMove: true, decision: "MOVE", suggestedMove: null };
-    try {
-      pacingResult = await routePacedInput({
-        playerText: narration,
-        campaignState: preState,
-        character,
-        apiKey: apiKeyForPacing,
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
+    if (!bypassPacing) {
+      try {
+        pacingResult = await routePacedInput({
+          playerText: narration,
+          campaignState: preState,
+          character,
+          apiKey: apiKeyForPacing,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
+      }
     }
     if (!pacingResult.runMove) return;
 
@@ -658,6 +675,51 @@ function registerActorHook() {
   });
 }
 
+
+/**
+ * Register the `createActor` hook that oracle-seeds a freshly-created
+ * starship Actor. Lets the user create a starship via the sidebar and
+ * walk away with type / first-look / mission filled in on the Notes
+ * tab, and a portrait if the OpenRouter key is configured.
+ *
+ * Gating:
+ *  - GM only (writes go through actor.update which world-scopes through
+ *    Foundry's permission model)
+ *  - type === "starship"
+ *  - Skipped when `autoSeedStarship` setting is false
+ *  - Skipped when the actor already carries detail (non-empty notes,
+ *    or a populated flag.ship.type / flag.ship.firstLook from
+ *    createShip-with-seed / migrator)
+ *
+ * The hook fires synchronously but the seed work is async and fire-and-
+ * forget — Foundry doesn't await Hooks.on callbacks anyway. Errors
+ * inside seedStarshipActor are logged, not surfaced.
+ */
+function registerStarshipSeedHook() {
+  Hooks.on("createActor", (actor) => {
+    try {
+      if (!game.user?.isGM) return;
+      if (actor?.type !== "starship") return;
+      if (!game.settings.get(MODULE_ID, "autoSeedStarship")) return;
+
+      // Defer the import so this module file stays parse-only at init.
+      // The hook itself returns synchronously; seeding runs after.
+      import("./entities/ship.js").then(async (mod) => {
+        if (mod.starshipHasSeedDetail(actor)) {
+          console.log(`${MODULE_ID} | starship seed: skipping ${actor.id} (already populated)`);
+          return;
+        }
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await mod.seedStarshipActor(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | starship seed failed for ${actor.id}:`, err));
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | starship seed: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | createActor starship-seed hook threw:`, err);
+    }
+  });
+}
+
 /**
  * Determine whether a chat message is player narration that should be
  * routed through the move interpretation pipeline.
@@ -685,7 +747,11 @@ export function isPlayerNarration(message) {
   // empty-state recap card had no flag at all and was ingested by the
   // narrator as if the player had said "<div class=...>No campaign history
   // available yet</div>", producing prose like "you speak the HTML aloud".
-  if (message.flags?.[MODULE_ID]) return false;
+  // EXCEPTION: messages re-posted by the NWMA "Roll <move>" button carry
+  // `bypassPacing: true` and ARE player narration (just with the classifier
+  // skipped); they must reach the move pipeline.
+  const flags = message.flags?.[MODULE_ID];
+  if (flags && !flags.bypassPacing) return false;
 
   // Ironsworn system messages posted by sendToChat() in chat-alert.ts
   if (message.flags?.['foundry-ironsworn']) return false;
@@ -1507,6 +1573,7 @@ Hooks.once("ready", () => {
 
   registerChatHook();
   registerActorHook();
+  registerStarshipSeedHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();
@@ -1718,6 +1785,52 @@ Hooks.on("renderChatMessage", (message, html) => {
       console.error(`${MODULE_ID} | refreshCampaignRecap failed:`, err);
       ui?.notifications?.warn("Campaign recap refresh failed. Check console.");
     } finally {
+      btn.disabled = false;
+    }
+  });
+});
+
+/**
+ * renderChatMessage — wire the "Roll <move>" button on NWMA cards.
+ * The button appears beneath the italicized move hint on paced-narrative
+ * cards whose classifier decision was NARRATIVE_WITH_MOVE_AVAILABLE. On
+ * click we re-post the original player input as a fresh chat message with
+ * `bypassPacing: true` so the classifier is skipped and the move pipeline
+ * runs immediately.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  const f = message.flags?.[MODULE_ID];
+  if (!f?.pacedNarrative || !f?.suggestedMove || !f?.playerText) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  const btn = root?.querySelector('[data-action="sf-paced-roll"]');
+  if (!btn) return;
+
+  // Disable any previously-clicked button after re-render so the same NWMA
+  // card never fires the move twice.
+  if (f.rolled) {
+    btn.disabled = true;
+    btn.textContent = "Rolled";
+    return;
+  }
+
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    btn.disabled = true;
+    try {
+      // Mark the source card as rolled so re-renders don't re-arm the button.
+      // Best-effort: only the GM can mutate other users' messages.
+      try {
+        await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
+      } catch {
+        // Player clients fall back to a local-only disable above.
+      }
+      await ChatMessage.create({
+        content: f.playerText,
+        flags:   { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | NWMA roll button failed:`, err);
       btn.disabled = false;
     }
   });

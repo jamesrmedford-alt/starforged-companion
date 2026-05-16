@@ -126,6 +126,14 @@ describe('isPlayerNarration()', () => {
     });
     expect(isPlayerNarration(msg)).toBe(true);
   });
+
+  it('returns true for messages with bypassPacing flag (NWMA Roll button re-post)', () => {
+    const msg = makeMessage({
+      content: 'I press her on what she heard.',
+      flags:   { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true } },
+    });
+    expect(isPlayerNarration(msg)).toBe(true);
+  });
 });
 
 
