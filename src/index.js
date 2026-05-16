@@ -33,6 +33,10 @@ import {
   renderBurnButtonHtml,
   registerBurnMomentumHook,
 } from "./moves/burnMomentum.js";
+import {
+  scanForApplicableAbilities,
+  getCommandVehicleActor,
+} from "./moves/abilityScanner.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -569,8 +573,34 @@ export function registerChatHook() {
         );
       }
 
+      // Scan the character's assets + the command vehicle's modules for
+      // abilities that apply to the chosen move. Surfaced on the
+      // confirmation dialog as opt-in checkboxes — accepted abilities
+      // add their +N to interpretation.adds before the dice are rolled.
+      const characterActorForScan   = getPlayerActors()[0] ?? null;
+      const commandShipForScan      = getCommandVehicleActor(campaignState);
+      const applicableAbilities = await scanForApplicableAbilities({
+        moveId:           interpretation.moveId,
+        moveName:         interpretation.moveName,
+        narration,
+        characterActor:   characterActorForScan,
+        commandShipActor: commandShipForScan,
+        apiKey,
+      }).catch(err => {
+        console.warn(`${MODULE_ID} | ability scan failed:`, err);
+        return [];
+      });
+      interpretation.applicableAbilities = applicableAbilities;
+
       const accepted = await confirmInterpretation(interpretation);
       if (!accepted) return;
+
+      // Apply opt-in adds from abilities the player kept checked in the
+      // dialog. confirmInterpretation mutates interpretation.appliedAbilityAdds.
+      const abilityAdds = Number(interpretation.appliedAbilityAdds ?? 0);
+      if (abilityAdds > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
+      }
 
       const resolution = resolveMove(interpretation, campaignState);
 
