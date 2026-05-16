@@ -12,6 +12,10 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
+import { extractSidecar } from '../factContinuity/sidecarParser.js';
+import { applySidecar }   from '../factContinuity/ledgers.js';
+import { startScene }     from '../factContinuity/sceneLifecycle.js';
+import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -88,6 +92,10 @@ export async function narrateResolution(resolution, contextPacket, campaignState
 
   const character    = getActiveCharacter(campaignState);
 
+  // First narration of a session implicitly starts a scene if none is active.
+  // See docs/fact-continuity-scope.md §9.1.
+  await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
+
   // Inject campaign recap into the system prompt for the first narration of a session
   let recapContext = '';
   if (shouldInjectRecapThisCall(campaignState)) {
@@ -135,6 +143,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
     return '';
   });
+  const entityNamesById = collectEntityNamesById(relevance.entityIds, relevance.entityTypes);
 
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, recapContext,
@@ -146,6 +155,9 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       activeSectorBlock,
       oracleSeeds:         resolution.oracleSeeds ?? null,
       campaignTruthsBlock,
+      matchedEntityIds:    relevance.entityIds ?? [],
+      playerNarration:     resolution.playerNarration ?? '',
+      entityNamesById,
     },
   );
   const userMessage  = buildNarratorUserMessage(
@@ -155,12 +167,17 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   );
 
   try {
-    const narration = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey,
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
+    });
+    const narration = applyNarratorSidecar(raw, campaignState, {
+      moveId:           resolution?.moveId,
+      matchedEntityIds: relevance.entityIds ?? [],
+      playerNarration:  resolution.playerNarration ?? '',
     });
 
     if (!narration?.trim()) {
@@ -169,7 +186,9 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     }
 
     if (recapContext) markRecapInjected(campaignState?.currentSessionId);
-    await postNarrationCard(narration, resolution, campaignState);
+    await postNarrationCard(narration, resolution, campaignState, {
+      matchedEntityIds: relevance.entityIds ?? [],
+    });
     await runPostNarrationPasses(narration, resolution, relevance, campaignState);
     scheduleChronicleEntry({
       narrationText: narration,
@@ -185,10 +204,15 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const narration = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
+        });
+        const narration = applyNarratorSidecar(raw, campaignState, {
+          moveId:           resolution?.moveId,
+          matchedEntityIds: relevance.entityIds ?? [],
+          playerNarration:  resolution.playerNarration ?? '',
         });
         if (narration?.trim()) {
           if (recapContext) markRecapInjected(campaignState?.currentSessionId);
@@ -321,25 +345,32 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
  * @param {Object} [campaignState] — CampaignStateSchema (provides session fields)
  * @returns {Promise<ChatMessage>}
  */
-export async function postNarrationCard(narrationText, resolution, campaignState) {
+export async function postNarrationCard(narrationText, resolution, campaignState, options = {}) {
+  const matchedEntityIds = Array.isArray(options.matchedEntityIds) ? options.matchedEntityIds : [];
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
+        <div class="sf-narration-footer">
+          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
+            <i class="fas fa-list-check"></i> Correct a fact
+          </button>
+        </div>
       </div>
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        narratorCard:  true,
-        narrationCard: true,                              // kept for backwards compat
-        narrationText: narrationText,
-        sessionId:     campaignState?.currentSessionId ?? null,
-        sessionNumber: campaignState?.sessionNumber     ?? null,
-        moveId:        resolution?.moveId               ?? null,
-        outcome:       resolution?.outcome              ?? null,
-        resolutionId:  resolution?._id                  ?? '',
-        timestamp:     new Date().toISOString(),
+        narratorCard:     true,
+        narrationCard:    true,                              // kept for backwards compat
+        narrationText:    narrationText,
+        sessionId:        campaignState?.currentSessionId ?? null,
+        sessionNumber:    campaignState?.sessionNumber     ?? null,
+        moveId:           resolution?.moveId               ?? null,
+        outcome:          resolution?.outcome              ?? null,
+        resolutionId:     resolution?._id                  ?? '',
+        matchedEntityIds,
+        timestamp:        new Date().toISOString(),
       },
     },
   });
@@ -635,13 +666,19 @@ export async function interrogateScene(question, campaignState, _options = {}) {
 
   const settings = getNarratorSettings();
   const character    = getActiveCharacter(campaignState);
-  // Same anchors as paced narration — see formatActiveSector() above.
+  // The @scene intercept in index.js already calls startScene; this guard
+  // covers any direct interrogateScene callers that bypass the chat hook.
+  await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
+  // SECTOR-001 anchors (see formatActiveSector() above) ensure paced and
+  // scene-query paths get the same establishments + current-location
+  // context as the move-pipeline path.
   const currentLocationCard = formatCurrentLocation(campaignState);
   const activeSectorBlock   = formatActiveSector(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
-      mode: 'scene_interrogation',
+      mode:            'scene_interrogation',
+      playerNarration: question,
       currentLocationCard,
       activeSectorBlock,
     },
@@ -653,13 +690,14 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   const userMessage   = buildSceneUserMessage(question, recentContext, sentenceTarget);
 
   try {
-    const response = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey,
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
       maxTokens: 200,
     });
+    const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
 
     if (!response?.trim()) {
       await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
@@ -673,11 +711,12 @@ export async function interrogateScene(question, campaignState, _options = {}) {
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const response = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: 200,
         });
+        const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
           return response;
@@ -724,15 +763,17 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   }
 
   const character    = getActiveCharacter(campaignState);
+  await ensureSceneStarted(campaignState, 'first_narration_paced');
   // Paced narrator previously had zero sector / current-location context and
-  // would invent new settlement names for places that already exist. Both
-  // anchors closed in the same pass — see formatActiveSector() above.
+  // would invent new settlement names for places that already exist (SECTOR-001).
+  // Both anchors closed in the same pass — see formatActiveSector() above.
   const currentLocationCard = formatCurrentLocation(campaignState);
   const activeSectorBlock   = formatActiveSector(campaignState);
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
-      mode: 'paced_narrative',
+      mode:            'paced_narrative',
+      playerNarration: playerText,
       currentLocationCard,
       activeSectorBlock,
     },
@@ -745,11 +786,12 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   );
 
   try {
-    const text = await callNarratorAPI({
+    const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: settings.narrationMaxTokens,
     });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
 
     if (!text?.trim()) return null;
 
@@ -765,11 +807,12 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const text = await callNarratorAPI({
+        const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: settings.narrationMaxTokens,
         });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
           schedulePacedDetection(text, campaignState);
@@ -849,18 +892,24 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
         ${buttonRow}
+        <div class="sf-narration-footer">
+          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
+            <i class="fas fa-list-check"></i> Correct a fact
+          </button>
+        </div>
       </div>
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        narratorCard:   true,
-        narrationCard:  true,                  // back-compat
-        pacedNarrative: true,
-        narrationText:  narrationText,
-        playerText:     playerText,
-        suggestedMove:  suggestedMove ?? null,
-        sessionId:      sessionId ?? null,
-        timestamp:      new Date().toISOString(),
+        narratorCard:     true,
+        narrationCard:    true,                  // back-compat
+        pacedNarrative:   true,
+        narrationText:    narrationText,
+        playerText:       playerText,
+        suggestedMove:    suggestedMove ?? null,
+        sessionId:        sessionId ?? null,
+        matchedEntityIds: [],
+        timestamp:        new Date().toISOString(),
       },
     },
   });
@@ -911,6 +960,30 @@ function collectEntityCards(ids, types) {
     if (card) cards.push(card);
   }
   return cards;
+}
+
+/**
+ * Build a { entityId → name } map for the matched entities. Used by the
+ * fact-continuity ledger block in narratorPrompt.js so entity-subject lines
+ * render with display names rather than journal IDs.
+ */
+function collectEntityNamesById(ids, types) {
+  const map = new Map();
+  if (!Array.isArray(ids) || !ids.length) return map;
+  for (let i = 0; i < ids.length; i++) {
+    const journalId = ids[i];
+    const type      = types?.[i];
+    if (!journalId || !type) continue;
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    try {
+      const e = getter(journalId);
+      if (e?.name) map.set(journalId, e.name);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: collectEntityNamesById (${type} ${journalId}) failed:`, err);
+    }
+  }
+  return map;
 }
 
 /**
@@ -1042,6 +1115,97 @@ async function postFallbackCard(resolution) {
   });
 }
 
+/**
+ * Process a raw narrator API response: strip the fenced JSON sidecar from
+ * the prose, apply it to the active-scene ledgers in campaignState, and
+ * persist campaignState in the background. Returns the prose with the
+ * sidecar removed. See docs/fact-continuity-scope.md §7–8.
+ *
+ * Failures (missing block, JSON parse error, persistence write rejected)
+ * never block the narrator: the prose is always returned, only ledger
+ * updates are skipped.
+ *
+ * @param {string} rawText
+ * @param {Object} campaignState
+ * @param {Object} [ctx]
+ * @param {string|null} [ctx.moveId]
+ * @returns {string} prose with the sidecar block removed
+ */
+/**
+ * Ensure an active fact-continuity scene exists before a narrator call.
+ * If `currentSceneId` is null, assigns one by calling startScene with the
+ * given reason. Tolerates failure (player clients can't write world
+ * settings; the in-memory mutation still happens).
+ *
+ * @param {Object} campaignState
+ * @param {string} reason — diagnostic only ("first_narration", "paced_narrative", …)
+ */
+async function ensureSceneStarted(campaignState, reason) {
+  if (!campaignState) return;
+  let enabled = true;
+  try {
+    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | ensureSceneStarted: setting lookup failed; defaulting to enabled:`, err);
+  }
+  if (!enabled) return;
+  if (campaignState.currentSceneId) return;
+  await startScene(campaignState, { reason });
+}
+
+function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
+  // Master gate — when fact-continuity is disabled, return the raw text
+  // unchanged. The sidecar instruction is also suppressed at the prompt
+  // layer so well-behaved narrators won't emit a fence in this state, but
+  // skip the parse just in case to avoid mutating ledgers silently.
+  let enabled = true;
+  try {
+    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
+  } catch (err) {
+    // Setting not registered (unit tests, very early init). Default to on.
+    console.debug?.(`${MODULE_ID} | factContinuity: setting lookup failed; defaulting to enabled:`, err);
+  }
+  if (!enabled) return rawText;
+
+  const { prose, sidecar, parseError } = extractSidecar(rawText);
+
+  if (parseError) {
+    console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);
+  }
+
+  if (sidecar && campaignState) {
+    try {
+      applySidecar(sidecar, {
+        campaignState,
+        sessionId: campaignState.currentSessionId ?? null,
+        sceneId:   campaignState.currentSceneId   ?? null,
+        moveId:    ctx.moveId ?? null,
+        asserter:  'narrator',
+      });
+      game.settings.set(MODULE_ID, 'campaignState', campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
+      );
+    } catch (err) {
+      console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
+    }
+  }
+
+  // Phase E — optional Haiku audit of the prose against the active-scene
+  // ledger. Gated inside runConsistencyCheck on the
+  // factContinuity.consistencyCheck setting; fire-and-forget.
+  if (campaignState && prose?.trim()) {
+    runConsistencyCheck(prose, campaignState, {
+      matchedEntityIds:  ctx.matchedEntityIds ?? [],
+      currentLocationId: campaignState.currentLocationId ?? null,
+      playerNarration:   ctx.playerNarration ?? '',
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
+    );
+  }
+
+  return prose ?? rawText;
+}
+
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens }) {
   const body = {
     model,
@@ -1073,24 +1237,30 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
 function getNarratorSettings() {
   try {
     return {
-      narrationEnabled:      game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
-      narrationModel:        game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
-      narrationPerspective:  game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
-      narrationTone:         game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
-      narrationLength:       game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
-      narrationInstructions: game.settings.get(MODULE_ID, 'narrationInstructions') ?? '',
-      narrationMaxTokens:    game.settings.get(MODULE_ID, 'narrationMaxTokens')    ?? 300,
+      narrationEnabled:        game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
+      narrationModel:          game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
+      narrationPerspective:    game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
+      narrationTone:           game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
+      narrationLength:         game.settings.get(MODULE_ID, 'narrationLength')       ?? 3,
+      narrationInstructions:   game.settings.get(MODULE_ID, 'narrationInstructions') ?? '',
+      narrationMaxTokens:      game.settings.get(MODULE_ID, 'narrationMaxTokens')    ?? 300,
+      factContinuityEnabled:        game.settings.get(MODULE_ID, 'factContinuity.enabled')          ?? true,
+      factContinuityLedgerInContext:game.settings.get(MODULE_ID, 'factContinuity.ledgerInContext')  ?? true,
+      factContinuityMaxLedgerTokens:game.settings.get(MODULE_ID, 'factContinuity.maxLedgerTokens')  ?? 400,
     };
   } catch (err) {
     console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
     return {
-      narrationEnabled:      true,
-      narrationModel:        'claude-sonnet-4-5-20250929',
-      narrationPerspective:  'auto',
-      narrationTone:         'wry',
-      narrationLength:       3,
-      narrationInstructions: '',
-      narrationMaxTokens:    300,
+      narrationEnabled:        true,
+      narrationModel:          'claude-sonnet-4-5-20250929',
+      narrationPerspective:    'auto',
+      narrationTone:           'wry',
+      narrationLength:         3,
+      narrationInstructions:   '',
+      narrationMaxTokens:      300,
+      factContinuityEnabled:         true,
+      factContinuityLedgerInContext: true,
+      factContinuityMaxLedgerTokens: 400,
       _error:                err,
     };
   }

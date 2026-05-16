@@ -26,8 +26,12 @@
 >    `narratorAsserted`, `annotations`, `promotedAt`. It does NOT have
 >    explicit `subject` or `fact` fields. The scope adds them in §4 as a
 >    backwards-compatible page-flag extension — no migration breakage.
-> 4. ✅ NED entity IDs are Foundry `JournalEntry` IDs, stable across
->    sessions and referenceable from external storage.
+> 4. ✅ NED entity IDs are stable Foundry document IDs, referenceable from
+>    external storage. After PR #100 (Entity → Actor Migration, Phases 2–3),
+>    `connection` / `faction` / `creature` IDs are `JournalEntry` IDs and
+>    `ship` / `planet` / `settlement` / `location` IDs are `Actor` IDs. The
+>    `src/entities/registry.js` dispatch shim hides the distinction from
+>    every caller (see §4.2 and §13.1 for fact-continuity usage).
 > 5. ✅ The contradiction surface exists: `applyStateTransition` in
 >    `worldJournal.js` consumes `{ entryType, name, change, newValue }` and
 >    posts a GM-only chat card on `change === "contradicted"`. The
@@ -271,7 +275,7 @@ The array is cleared on scene end **after migration completes**.
 
 | Subject kind | On scene end | Storage |
 |---|---|---|
-| `entity` | Append to that entity's `generativeTier` array | Existing NED structure on the entity JournalEntry flags |
+| `entity` | Append to that entity's `generativeTier` array | Existing NED structure on the entity's host-document flags — `JournalEntryPage` for connection/faction/creature; native `Actor` for ship/planet/settlement/location post-PR #100. The Phase C `appendMigratedTruthToTier` helper in `src/entities/entityExtractor.js` dispatches via `src/entities/registry.js` so the same call works for either host. |
 | `text` (free-text subject) | Archive to WJ Lore | `recordLoreDiscovery` with synthetic title `"<subject>: <fact>"`, `narratorAsserted: true`, the scene ID tagged in annotations |
 | `scene` (scene-scoped) | Archive to WJ Lore | Same as `text`, prefix title with `"Scene <sceneId>: "` |
 
@@ -397,6 +401,11 @@ You established the following facts during this scene. They are
 binding. Subsequent narration must honour them and may add to them,
 but must not contradict them.
 
+SHIP POSITION (the command vehicle Solace):       ← when set; see §20
+  Sector:          Bleakhold (Outlands)
+  Near planet:     Vesta IV
+  Near settlement: Bleakhold Station
+
 TRUTHS:
   Vance — Walks with a slight limp
   Vance — Was a Covenant marine before the Founding
@@ -428,11 +437,12 @@ pressure. The drop order under pressure is appended to the existing
 assembler tier:
 
 ```
-12 → 10 → 9 → 11 → 8 → 7(partial) → 6.5(state only) → 4(looming) → 3(asserted) → 6.5(truths) — never dropped
+12 → 10 → 9 → 11 → 8 → 7(partial) → 6.5(state only) → 4(looming) → 3(asserted) → 6.5(truths) → 6.5(ship position) — never dropped
 ```
 
 Truths are treated with the same priority as confirmed lore: never
-dropped. State is treated as faction landscape priority.
+dropped. State is treated as faction landscape priority. Ship position
+(§20) is treated as confirmed-lore tier: never dropped.
 
 **Token estimate.** Typical scene: ~10–20 truths and ~5–10 state
 values across all subjects. ~250–400 tokens. Well within the 1,200
@@ -476,6 +486,11 @@ Rules:
   prior state for the same subject + attribute.
 - A subject is the name as it appears in the scene. If the subject is
   the scene itself (lighting, weather, ambient sound) use "scene".
+- The "ship" subject is reserved for the player's command vehicle. A
+  stateChange like `{ "subject": "ship", "attribute": "position",
+  "value": "Vesta IV" }` is recognised and updates the ship's
+  persistent position (see §20). Use it only when narration actually
+  moves the ship.
 - Do not declare a truth that contradicts the ACTIVE SCENE block. If you
   must walk one back, the player or GM will retract it via the
   correction affordance.
@@ -763,6 +778,10 @@ points to telemetry.
 "factContinuityShowSceneEndSummary"     Boolean  false   // GM-only summary card on scene end
 "factContinuityCorrectionButton"        Boolean  true    // button on narrator cards
 "factContinuityMaxLedgerTokens"         Number   400     // soft cap for Section 6.5
+"factContinuityShipPositioning"         Boolean  true    // §20 master toggle
+"factContinuityShipAutoMoveOnCourse"    Boolean  true    // §20.4 set_a_course updates ship.position
+"factContinuityShipTokenEnabled"        Boolean  true    // §20.4b scene-Token drag trigger
+"factContinuityShipTokenSnapRadius"     Number   1       // §20.4b snap radius (grid cells)
 ```
 
 All world-scoped. `factContinuitySidecarRequired = false` allows
@@ -780,8 +799,14 @@ colocated with the Pacing and World Journal sections.
 - **Subject resolution** reuses `relevanceResolver.buildNameIndex` and
   dismissed-entities filtering. No duplication.
 - **Migration target** for entity-scoped truths is the existing
-  `generativeTier` array on entity JournalEntry flags. No new field on
-  the entity schema.
+  `generativeTier` array on the entity's host-document flags. For
+  connection/faction/creature this is the `JournalEntryPage` flag; for
+  ship/planet/settlement/location it is the native `Actor` flag after
+  PR #100. No new field on the entity schema. The
+  `appendMigratedTruthToTier` helper in `src/entities/entityExtractor.js`
+  dispatches through `src/entities/registry.js` (`getEntityDocument` /
+  `readEntityFlag` / `writeEntityFlag`) so callers stay correct
+  regardless of host.
 - **Entity panel** gains an "Active truths" collapsible per entity. UI
   reuses the existing generativeTier list components.
 
@@ -952,6 +977,32 @@ consistencyCheck.parse
   ✓ extracts contradictions array
   ✓ filters to high-confidence only
   ✓ routes each via applyStateTransition with change: "contradicted"
+
+shipPosition.inferShipPosition (§20)
+  ✓ resolves a settlement name to {sector, planet, settlement} triple
+  ✓ resolves a planet name to {sector, planet, null}
+  ✓ resolves an unmapped string to freeText with all IDs null
+  ✓ honours sector hierarchy via PlanetSchema.settlementIds linkage
+  ✓ falls back to campaignState.activeSectorId when entity has no sectorId
+
+shipPosition.update triggers (§20.4)
+  ✓ !at <settlement> updates command vehicle position
+  ✓ set_a_course strong_hit with moveTarget updates position
+  ✓ set_a_course weak_hit with moveTarget updates position
+  ✓ set_a_course miss leaves position unchanged
+  ✓ sidecar { subject: "ship", attribute: "position" } writes to ship
+    entity, not to sceneState
+  ✓ no command vehicle present → all triggers no-op silently
+
+shipTokenTrigger (§20.4b)
+  ✓ token drag within snap radius of a Note resolves to that Note's
+    settlement and enqueues a set_a_course interpretation
+  ✓ drag outside snap radius sets position.freeText only, no roll fires
+  ✓ miss outcome snaps token back to preDragXY
+  ✓ player decline of confirmation card snaps token back
+  ✓ pendingMove lock rejects concurrent drag with UI toast + snap-back
+  ✓ no command vehicle / non-sector-Scene / non-flagged Token → no-op
+  ✓ snap radius respects factContinuityShipTokenSnapRadius setting
 ```
 
 ### 16.2 Quench — `starforged-companion.factContinuity`
@@ -983,6 +1034,20 @@ Integration with existing pipeline
   ✓ paced NARRATIVE response emits sidecar and updates ledger
   ✓ @scene interrogation emits sidecar and updates ledger
   ✓ World Truths digest and Section 6.5 both appear in prompt (distinct headings)
+
+Ship positioning — live Foundry (§20)
+  ✓ set_a_course resolution updates ship.position.nearestSettlementId
+  ✓ Section 6.5 SHIP POSITION block appears on next narration
+  ✓ disabling factContinuityShipAutoMoveOnCourse falls back to manual
+
+Ship-token drag — live Foundry (§20.4b)
+  ✓ sceneBuilder places a flagged command-vehicle Token on a new sector Scene
+  ✓ dragging the Token onto a settlement Note opens the move
+    confirmation card with set_a_course + correct destination
+  ✓ rolling a miss after a drag snaps the Token back to its prior
+    coordinates
+  ✓ dragging beyond the snap radius produces no roll and sets
+    position.freeText only
 ```
 
 ### 16.3 Fixtures
@@ -1034,6 +1099,30 @@ this addition. The slot recommendation is recorded here.
 14. Unit tests for `buildLedgerBlock`.
 15. Quench batch — round-trip narration → ledger → next-call prompt.
 
+**Phase G — Ship positioning (see §20)**
+
+G1. Extend `ShipSchema.position` in `src/entities/ship.js`.
+G2. Write `src/factContinuity/shipPosition.js` — `inferShipPosition`.
+G3. Wire the three persistent triggers: `!at` (post-write hook in
+    `handleAtCommand`), `set_a_course` non-miss outcome (in
+    `resolver.js` / outcome consumer), narrator sidecar special-case
+    on `subject: "ship"` in `ledgers.applySidecar`.
+G4. Extend the move interpreter prompt and parser with `moveTarget`.
+G5. Add the SHIP POSITION line to `buildLedgerBlock`; update the
+    drop-order in §6.5 (already documented as never-dropped).
+G6. Add `factContinuityShipPositioning` and
+    `factContinuityShipAutoMoveOnCourse` settings.
+G7. Place the command-vehicle Token in `sceneBuilder.js` and flag the
+    Note pins with `flags[MODULE_ID].settlementId`.
+G8. Write `src/factContinuity/shipTokenTrigger.js` — `preUpdateToken`
+    hook, nearest-Note resolution, snap-back on miss / decline,
+    `pendingMove` guard.
+G9. Add `factContinuityShipTokenEnabled` and
+    `factContinuityShipTokenSnapRadius` settings.
+G10. Unit tests for `inferShipPosition`, the three update triggers,
+     and `shipTokenTrigger`. Quench batches for both live paths.
+G11. `npm test && npm run lint` — all green.
+
 **Phase C — Scene lifecycle and migration**
 
 16. Write `src/factContinuity/sceneLifecycle.js`.
@@ -1077,14 +1166,13 @@ this addition. The slot recommendation is recorded here.
 
 ## 18. Design decisions — Q1–Q7 positions
 
-Each position below is taken as a recommendation. **Confirm before
-implementation** — the user may override any of these and the scope
-should be revised before code lands.
+All seven positions below were confirmed by the user on 2026-05-12 and
+are LOCKED. Subsequent revisions require explicit user agreement and a
+note in `docs/decisions.md`.
 
 ### Q1. Truths ledger ↔ unconfirmed-lore queue relationship
 
-**Position: two pipelines.** Position taken — confirm before
-implementation.
+**Decision: two pipelines.** LOCKED 2026-05-12.
 
 The truths ledger captures every narrator-asserted fact during a scene
 without GM gating. The existing WJ unconfirmed-lore queue
@@ -1106,8 +1194,7 @@ trades drift for friction without obvious net gain.
 
 ### Q2. Auto-detected contradictions vs. existing contradiction-flag surface
 
-**Position: feed the existing surface.** Position taken — confirm
-before implementation.
+**Decision: feed the existing surface.** LOCKED 2026-05-12.
 
 `applyStateTransition` with `change: "contradicted"` already posts the
 "◈ Narrative Review" card. The consistency-check pass calls into the
@@ -1118,8 +1205,8 @@ existing call sites.
 
 ### Q3. Scene-scoped truths on scene end — archive or discard
 
-**Position: archive to the existing WJ Lore journal with scene-ID
-tagging.** Position taken — confirm before implementation.
+**Decision: archive to the existing WJ Lore journal with scene-ID
+tagging.** LOCKED 2026-05-12.
 
 The lore journal's page-flag schema (`loreEntry`) accommodates the
 extension (`subject`, `fact`, `sceneId` as nullable fields) with no
@@ -1132,8 +1219,7 @@ cheaply.
 
 ### Q4. Correction affordance — button vs. command vs. both
 
-**Position: button is primary, commands secondary.** Position taken —
-confirm before implementation.
+**Decision: button is primary, commands secondary.** LOCKED 2026-05-12.
 
 The button is discoverable and doesn't require recall — that's the
 right default. Commands (`!truth strike`, `!state set`, …) exist for
@@ -1143,8 +1229,7 @@ chat-history-greppable). The button's dialog uses the same
 
 ### Q5. Consistency-check pass — opt-in, opt-out, or mandatory
 
-**Position: opt-in, default off.** Position taken — confirm before
-implementation.
+**Decision: opt-in, default off.** LOCKED 2026-05-12.
 
 The cheaper layers (ledger in context, sidecar discipline, correction
 affordance) handle the bulk of observed drift. Auto-detection adds
@@ -1158,8 +1243,7 @@ in a subsequent release.
 
 ### Q6. Sidecar format — pure JSON or markup tags
 
-**Position: fenced JSON block.** Position taken — confirm before
-implementation.
+**Decision: fenced JSON block.** LOCKED 2026-05-12.
 
 The move interpreter already uses raw JSON (`parseInterpretation` in
 `src/moves/interpreter.js`). Reusing that pattern keeps two parsers
@@ -1175,9 +1259,11 @@ and a bug here, where the chat card should read as plain prose.
 
 ### Q7. Where in the implementation ordering does this slot
 
-**Position: a new scope after Pacing in `scope-index.md`. No revision
-to `implementation-ordering.md` required** — that document covers NED
-and WJ phasing only and is unaffected by this addition.
+**Decision: a new scope after Pacing in `scope-index.md`. No revision
+to `implementation-ordering.md` required.** LOCKED 2026-05-12.
+
+That document covers NED and WJ phasing only and is unaffected by
+this addition.
 
 Dependencies: NED Phase 1 (entity IDs and generative tier), WJ Phase 3
 (`recordLoreDiscovery` and the contradiction surface), and Pacing
@@ -1234,6 +1320,270 @@ fields. Out of scope here because the interpreter's job is move
 classification, not narration. Folding both into one call would muddy
 two prompts. Worth revisiting if interpreter→narrator latency becomes
 a complaint.
+
+---
+
+## 20. Ship positioning
+
+This section gives the narrator spatial awareness of the player's
+command vehicle. The narrator today has no notion of where the ship
+is — it relies on `campaignState.currentLocationId` set manually via
+`!at`. The `ShipSchema` (`src/entities/ship.js`) has no position field
+at all. As a result, narration about "the ship" can drift away from
+the established sector, `set_a_course` resolves with consequences text
+but no side effect on any tracked location, and the narrator cannot
+ground travel descriptions in nearby canon.
+
+This addition gives the command vehicle a persistent position record
+and ties it into Section 6.5 (§6). It is gated behind the
+`factContinuityShipPositioning` setting (§12) so it can be disabled
+wholesale.
+
+### 20.1 Command vehicle resolution
+
+The "ship character" is the command vehicle — the ship in
+`campaignState.shipIds` with `isCommandVehicle: true`. The helper
+already exists:
+
+```js
+// src/entities/ship.js:118
+export function getCommandVehicle(campaignState) { … }
+```
+
+No new resolution logic. If `getCommandVehicle()` returns `null`, the
+ship-positioning data block is omitted from narrator context — the
+same fallback shape the assembler uses for missing optional sections.
+
+### 20.2 Ship position fields (persistent, on the Ship entity)
+
+`ShipSchema` gains a `position` sub-object:
+
+```js
+position: {
+  sectorId:            null,   // campaignState.sectors[*].id
+  nearestPlanetId:     null,   // Actor ID of nearest planet (Actor-backed post-PR #100)
+  nearestSettlementId: null,   // Actor ID of nearest settlement (Actor-backed post-PR #100)
+  freeText:            "",     // free-text fallback when no canonical
+                               //   entity exists (e.g. "drifting in
+                               //   the outer Bleakhold expanse")
+  updatedAt:           null,
+  updatedBy:           null,   // "at_command" | "set_a_course" |
+                               //   "narrator_sidecar" | "scene_token" |
+                               //   "manual"
+}
+```
+
+Storage: persists on the Ship Actor flag (post-PR #100) alongside the
+rest of `ShipSchema`. `updateShip(id, { position })` already handles
+arbitrary field extension — no new persistence wiring needed. Back-
+compatible: existing ships without a `position` block read as all-null
+and skip injection.
+
+**Why persistent, not scene-scoped.** A starship's position doesn't
+reset when the scene changes. All three ID slots can be null
+simultaneously — a ship adrift in unmapped space is valid; `freeText`
+covers it.
+
+### 20.3 Position inference — `inferShipPosition(seedRef, campaignState)`
+
+New helper in `src/factContinuity/shipPosition.js`. Given a seed
+reference (a name string, an entity ID, or a `currentLocationId`),
+returns the populated position record by:
+
+1. Resolving the seed to a settlement, planet, or location entity via
+   the existing `relevanceResolver.buildNameIndex` machinery (already
+   cited in §4.3 — no new index).
+2. If a settlement is matched: `nearestSettlementId = its ID`,
+   `nearestPlanetId =` its parent planet (settlements link via
+   `PlanetSchema.settlementIds`; reverse-resolve by scanning
+   `campaignState.planetIds`), `sectorId =` the parent sector from
+   `LocationSchema.sectorId` if sector-creator-authored, else
+   `campaignState.activeSectorId`.
+3. If a planet is matched: `nearestPlanetId = its ID`, `sectorId =
+   activeSectorId`, settlement left `null`.
+4. If a location (derelict, station, anomaly) is matched: `sectorId =
+   location.sectorId`, planet/settlement left `null`, `freeText`
+   mirrors the location name.
+5. If no match: `freeText = seedRef`, all IDs `null`.
+
+The helper is pure (no Foundry write). All writes go through
+`updateShip(commandVehicleId, { position })`.
+
+### 20.4 Update triggers
+
+Three persistent triggers update `position`. Each marks `updatedBy`
+so the narrator block can show provenance during early playtesting.
+
+| Trigger | Source | Behaviour |
+|---|---|---|
+| `!at <name>` | `handleAtCommand` in `src/index.js` | After setting `currentLocationId`, call `inferShipPosition(name, …)` and `updateShip(cv.id, { position })`. The GM's `!at` is treated as "the party (and their ship) is here." |
+| `set_a_course` resolution, non-miss outcome | `src/moves/resolver.js:436` `set_a_course` entry | On `strong_hit` or `weak_hit`, destination comes from the interpretation's new `moveTarget` field (§20.6) and is inferred. On `miss`, position is unchanged (the ship was waylaid). |
+| Narrator sidecar | `ledgers.applySidecar` in §8 | A `stateChange` with `{ subject: "ship", attribute: "position", value: <destination> }` calls `inferShipPosition` and writes to the ship entity, **not** to `sceneState`. The "ship" subject is special-cased — position is persistent. |
+
+A fourth parallel trigger — **ship-token manipulation on the sector
+Scene** — is specified in §20.4b.
+
+Trigger ordering: `set_a_course` resolution writes before the
+narrator call assembles its next context packet, so the new position
+appears in Section 6.5 on the very next turn. The narrator sidecar
+trigger is a backstop — if the player describes movement without
+rolling `set_a_course`, the narrator can still update position via
+sidecar.
+
+### 20.4b Ship-token trigger on the sector Scene
+
+A Token representing the command vehicle is placed on the sector
+Scene. When the GM or a player drags it within snap radius of a
+settlement Note pin, the drop fires a `set_a_course` roll targeting
+that settlement — the same pipeline a chat-typed move follows, with
+the standard confirmation card. This gives a spatial UI in parallel
+to text input.
+
+**Token placement.** `src/sectors/sceneBuilder.js` already builds the
+sector Scene with Note pins per settlement. It is extended to also
+place a single Token for the command vehicle, flagged
+`flags[MODULE_ID].commandVehicle = true` and using the ironsworn
+starship icon from `src/system/ironswornAssets.js`. The Token's
+`actorId` references the command vehicle's underlying Actor if one
+exists (foundry-ironsworn `type: "starship"`); otherwise it's a free-
+standing Token with the ship's name. Initial position: on the Note
+pin matching `position.nearestSettlementId`, or the sector centre if
+none.
+
+If a sector Scene already exists without a command-vehicle Token
+(pre-existing sectors), the trigger handler no-ops cleanly and a one-
+time GM dialog offers to place a Token.
+
+**Drag detection.** Hook into Foundry's `preUpdateToken` hook
+(read-only inspection — confirm signature against
+`docs/foundry-api-reference.md` before implementation; v13 hook
+parameters can change between minor versions). On the update, check:
+
+1. The Token is flagged as the command vehicle.
+2. The Scene is the active sector Scene.
+3. The new `(x, y)` differs from the previous `(x, y)`.
+4. The dragger is a GM or the command-vehicle owner (player drag
+   allowed — preserves the existing player-driven move pipeline
+   model).
+
+On positive match, run **nearest-Note resolution**:
+
+- Iterate `scene.notes`.
+- Compute Euclidean distance from the Token's new centre to each
+  Note's centre in scene-pixel space.
+- The closest Note within `factContinuityShipTokenSnapRadius`
+  (default one grid cell = `scene.grid.size` pixels) is the
+  candidate.
+- If no Note is within radius, the drop is treated as a free-text
+  reposition — `position.freeText` is set to a deterministic
+  synthetic string (e.g. "drifting in <sector name>") and **no roll
+  fires**. The GM can still re-drag onto a Note.
+
+The candidate Note's `flags[MODULE_ID].settlementId` (set by
+`sceneBuilder.js` when it places the pin) gives the destination
+entity. Fall back to name-matching the Note's text against
+`buildNameIndex` if the flag is absent.
+
+**Roll pipeline.** Candidate in hand, the handler enqueues the same
+path the chat pipeline takes:
+
+1. Build a synthetic interpretation `{ moveId: "set_a_course",
+   moveTarget: <settlement name>, playerNarration: "<ship name> sets
+   a course for <settlement name>", inputMethod: "scene_drag",
+   statUsed: "supply", confidence: "high", … }`.
+2. Surface the standard move-confirmation card (existing UI path).
+   Player presses Roll; resolver runs.
+3. On non-miss outcome, the existing §20.4 `set_a_course` trigger
+   updates `position`. On miss, the Token is **snapped back** to its
+   previous coordinates — the ship was waylaid and didn't arrive.
+
+**Snap-back on miss / decline.** If the player declines the
+confirmation card or rolls a miss, the Token reverts to its pre-drag
+coordinates via `token.update({ x: prevX, y: prevY })`. This avoids
+the visual lie where the Token sits at the destination but the
+persistent `position` says otherwise. Pre-drag coords are stashed in
+`flags[MODULE_ID].preDragXY` at the start of the `preUpdateToken`
+handler and cleared on resolution.
+
+**Race avoidance.** Two simultaneous drags by different clients are
+not a real concern (Foundry serialises Token updates), but the
+existing `campaignState.pendingMove` lock (`src/schemas.js:659`)
+guards against the player rolling chat-`set_a_course` while a token
+drag is mid-resolution. If `pendingMove === true`, the drag is
+rejected with a UI toast and the Token snaps back.
+
+**Cross-sector drags** (Token moved across sector Scenes) are out of
+scope for v1 — flagged for follow-up. Cross-sector travel should
+probably fire `undertake_an_expedition` instead of `set_a_course`.
+
+### 20.5 Narrator context — Section 6.5 ship line
+
+`buildLedgerBlock` grows a leading "SHIP POSITION" line whenever a
+command vehicle exists with a non-empty position. See the updated
+example in §6.5. The block is included regardless of whether
+`sceneTruths` / `sceneState` are empty. It is **never dropped** under
+budget pressure (confirmed-lore tier — see updated drop order in §6).
+Estimated token cost: ~30–50 tokens.
+
+The narrator sidecar instruction (§7) gains the "ship" subject rule —
+already documented inline in §7.
+
+### 20.6 Move interpreter — `moveTarget` field
+
+The interpreter prompt (`buildMovePrompt` in
+`src/moves/interpreter.js`) grows an optional output field:
+
+```
+moveTarget: string | null   — for movement moves (set_a_course,
+                              undertake_an_expedition,
+                              finish_an_expedition), the named
+                              destination the player stated.
+                              null when not a movement move or no
+                              destination is implied.
+```
+
+`parseInterpretation` reads the field; the resolver and the §20.4b
+token handler consume it. No breakage for other moves — field
+defaults to `null`.
+
+### 20.7 Settings
+
+See §12 for the full settings table. The four new entries are:
+
+- `factContinuityShipPositioning` (Boolean, default `true`) — master
+  toggle for §20.
+- `factContinuityShipAutoMoveOnCourse` (Boolean, default `true`) —
+  off forces manual `!at` after `set_a_course` (current behaviour).
+- `factContinuityShipTokenEnabled` (Boolean, default `true`) —
+  master toggle for §20.4b; off = no Token placement, no drag hook.
+- `factContinuityShipTokenSnapRadius` (Number, default `1`) — grid
+  cells; `0` = exact-cell overlap; `2` = forgiving.
+
+When `factContinuityShipTokenEnabled = true` and
+`factContinuityShipAutoMoveOnCourse = false`, Token drag still fires
+the move pipeline; the second setting only suppresses the position-
+update side effect on resolution.
+
+### 20.8 Help and changelog
+
+`packs/help.json` gains rows in the Settings Reference table for the
+four new settings. The Fact Continuity help page (added in §13.7)
+grows a "Ship positioning" subsection covering the command-vehicle
+requirement, the auto-update behaviour on `set_a_course`, and the
+sector-Scene Token drag affordance (incl. miss-snap-back).
+`CHANGELOG.md` gets a `[Unreleased]` line.
+
+### 20.9 Tests
+
+Unit and Quench tests are listed inline in §16.1 and §16.2 under the
+`shipPosition.*` and `shipTokenTrigger` headings.
+
+### 20.10 Implementation phasing
+
+This section's work is **Phase G** in §17, slotted after Phase B and
+before Phase C. It does not depend on Phases C/D/E, and they do not
+read or write the new fields — positions persist by design across
+scene boundaries.
 
 ---
 

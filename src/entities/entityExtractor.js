@@ -25,6 +25,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
 import { getConnection, createConnection } from "./connection.js";
 import { getSettlement, createSettlement } from "./settlement.js";
@@ -845,6 +846,50 @@ async function persistGenerativeTier(entityRef, tier) {
     await page.setFlag(MODULE_ID, entityRef.type, updated);
   } catch (err) {
     console.error(`${MODULE_ID} | entityExtractor: persistGenerativeTier failed:`, err);
+  }
+}
+
+/**
+ * Append a fact-continuity scene-end migration entry to an entity's
+ * generative tier. See docs/fact-continuity-scope.md §9.2 step 1.
+ *
+ * Lower-level than `appendDetailToTier` — does not dedupe against existing
+ * entries (migration entries are tagged source: "scene_truth_migration"
+ * and may legitimately repeat narrator-extracted detail wording).
+ *
+ * Returns true on success, false when the entity's journal/page cannot be
+ * resolved.
+ *
+ * @param {string} journalId
+ * @param {string} type — "connection" | "ship" | "settlement" | …
+ * @param {Object} entry — fully-formed generative-tier entry
+ * @returns {Promise<boolean>}
+ */
+export async function appendMigratedTruthToTier(journalId, type, entry) {
+  if (!journalId || !type || !entry) return false;
+  try {
+    // Registry-dispatch — PR #100 moved ship/planet/location/settlement onto
+    // native Actor documents while connection/faction/creature stayed
+    // journal-backed. The "journalId" argument name is preserved for
+    // back-compat (Phase C callers built around the old shape) but the value
+    // is the host document id of either flavour. See src/entities/registry.js.
+    const document = getEntityDocument(type, journalId);
+    if (!document) return false;
+
+    const existingFlags = readEntityFlag(type, document) ?? {};
+    const tier          = Array.isArray(existingFlags.generativeTier)
+      ? existingFlags.generativeTier
+      : [];
+    const updated = {
+      ...existingFlags,
+      generativeTier: [...tier, entry],
+      updatedAt:      new Date().toISOString(),
+    };
+    await writeEntityFlag(type, document, updated);
+    return true;
+  } catch (err) {
+    console.error(`${MODULE_ID} | entityExtractor: appendMigratedTruthToTier failed:`, err);
+    return false;
   }
 }
 

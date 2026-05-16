@@ -44,7 +44,7 @@
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
 import { getPlayerActors, readCharacterSnapshot } from "../character/actorBridge.js";
 import { getChronicleForContext } from "../character/chronicle.js";
-import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock } from "../narration/narratorPrompt.js";
+import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock, buildLedgerBlock } from "../narration/narratorPrompt.js";
 import { getConnection } from "../entities/connection.js";
 import { getSettlement } from "../entities/settlement.js";
 import { getFaction }    from "../entities/faction.js";
@@ -130,6 +130,24 @@ export async function assembleContextPacket(resolution, campaignState, options =
   // ── Section 6: Current location card ──────────────────────────────────────
   const currentLocationContent = buildCurrentLocationSection(campaignState);
 
+  // ── Section 6.5: Active scene ledger (fact-continuity scope §6) ──────────
+  // Truths are never dropped; state may truncate. Returns sub-blocks so the
+  // budget enforcer can drop the state half independently of truths.
+  const ledger = factContinuityActive()
+    ? buildLedgerBlock(campaignState, {
+        matchedEntityIds,
+        currentLocationId: campaignState?.currentLocationId ?? null,
+        playerNarration:   resolution?.playerNarration ?? "",
+        maxTokens:         factContinuityMaxLedgerTokens(),
+      })
+    : { combined: "", header: "", truths: "", state: "", shipPosition: "", tokenEstimates: {} };
+  // The header + truths render together so the header stays attached to the
+  // never-dropped portion; state renders standalone and may drop on its own.
+  const ledgerTruthsContent = ledger.combined
+    ? [ledger.header, ledger.truths].filter(Boolean).join("\n\n")
+    : "";
+  const ledgerStateContent  = ledger.state ?? "";
+
   // ── Section 7: Matched entity cards ───────────────────────────────────────
   const entityCardsContent = buildEntityCardsSection(matchedEntityIds, matchedEntityTypes);
 
@@ -186,12 +204,14 @@ export async function assembleContextPacket(resolution, campaignState, options =
       currentLocation:      { content: currentLocationContent,     priority: 1 },
       characterState:       { content: characterContent,           priority: 1 },
       connections:          { content: connectionsContent,         priority: 1 },
+      ledgerTruths:         { content: ledgerTruthsContent,        priority: 1 },
       assertedLore:         { content: assertedLoreContent,        priority: 2 },
       nonImmediateThreats:  { content: nonImmediateThreatsContent, priority: 3 },
       entityCards:          { content: entityCardsContent,         priority: 4 },
       progressTracks:       { content: tracksContent,              priority: 5 },
       activeSector:         { content: sectorContent,              priority: 6 },
       recentOracles:        { content: oraclesContent,             priority: 7 },
+      ledgerState:          { content: ledgerStateContent,         priority: 8 },
       factionLandscape:     { content: factionLandscapeContent,    priority: 8 },
       recentDiscoveries:    { content: recentDiscoveriesContent,   priority: 9 },
       sessionNotes:         { content: sessionNotesContent,        priority: 10 },
@@ -213,6 +233,13 @@ export async function assembleContextPacket(resolution, campaignState, options =
     budgetResult.included.nonImmediateThreats,
   ]);
 
+  // Section 6.5 renders header+truths followed by state, both filtered by
+  // the budget enforcer.
+  const section65 = joinSubsections([
+    budgetResult.included.ledgerTruths,
+    budgetResult.included.ledgerState,
+  ]);
+
   const parts = [
     safetyContent,
     permissionsContent,
@@ -221,6 +248,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     section4,
     budgetResult.included.worldTruths       ?? "",
     budgetResult.included.currentLocation   ?? "",
+    section65,
     budgetResult.included.entityCards       ?? "",
     budgetResult.included.connections       ?? "",
     budgetResult.included.characterState    ?? "",
@@ -604,6 +632,25 @@ function threatsInContextEnabled() {
 function factionLandscapeInContextEnabled() {
   try   { return game.settings?.get(MODULE_ID, "factionLandscapeInContext") !== false; }
   catch { return true; }
+}
+
+function factContinuityActive() {
+  try {
+    const master = game.settings?.get(MODULE_ID, "factContinuity.enabled") !== false;
+    const ledger = game.settings?.get(MODULE_ID, "factContinuity.ledgerInContext") !== false;
+    return master && ledger;
+  } catch {
+    return true;
+  }
+}
+
+function factContinuityMaxLedgerTokens() {
+  try {
+    const v = game.settings?.get(MODULE_ID, "factContinuity.maxLedgerTokens");
+    return Number.isFinite(v) ? v : 400;
+  } catch {
+    return 400;
+  }
 }
 
 

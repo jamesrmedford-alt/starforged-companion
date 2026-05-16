@@ -5,6 +5,251 @@
 import { formatSafetyContext } from '../context/safety.js';
 
 // ---------------------------------------------------------------------------
+// Fact-continuity sidecar instruction — fact-continuity scope §7
+// ---------------------------------------------------------------------------
+
+/**
+ * Mandatory sidecar response-format instruction appended to every narrator
+ * system prompt. Tells the narrator to emit prose followed by a single
+ * fenced JSON block describing new truths and state changes. The block is
+ * parsed off-screen by src/factContinuity/sidecarParser.js and stripped
+ * before the prose reaches chat.
+ *
+ * Returns a single string ready to push onto the system-prompt parts array.
+ */
+export function appendSidecarInstruction() {
+  return [
+    '## RESPONSE FORMAT — MANDATORY SIDECAR',
+    '',
+    'Respond with prose followed by a single fenced JSON code block, in this',
+    'exact shape:',
+    '',
+    '    <your prose narration here, no JSON inside the prose>',
+    '',
+    '    ```json',
+    '    {',
+    '      "newTruths": [',
+    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
+    '      ],',
+    '      "stateChanges": [',
+    '        { "subject": "scene",     "attribute": "lighting", "value": "stable" },',
+    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
+    '      ]',
+    '    }',
+    '    ```',
+    '',
+    'The JSON block MUST be present. Both arrays MAY be empty. The block is',
+    'how this turn\'s bookkeeping is captured — the prose itself stays pure',
+    'fiction (no mention of truths, state, the block itself, or any other',
+    'tooling concern).',
+    '',
+    'Rules:',
+    '- A "newTruth" is binding — a fact that, if asserted again later, must',
+    '  not change. Use it for established physical traits, named history,',
+    '  declared backstory.',
+    '- A "stateChange" is what is true right now. Use it for posture, mood,',
+    '  visible state, door positions, lighting, weather. These supersede',
+    '  prior state for the same subject + attribute.',
+    '- A subject is the name as it appears in the scene. If the subject is',
+    '  the scene itself (lighting, weather, ambient sound) use "scene".',
+    '- The "ship" subject is reserved for the player\'s command vehicle.',
+    '  Use it only when narration actually moves the ship.',
+    '- Do not declare a truth that diverges from the active scene block. If',
+    '  a fact needs to change, the player or GM will retract the old one.',
+  ].join('\n');
+}
+
+/**
+ * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6.
+ *
+ * Returns an object with separately budgetable sub-blocks so the assembler
+ * can drop state under budget pressure while keeping truths:
+ *
+ *   {
+ *     header:        '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE\n\n…',
+ *     truths:        'TRUTHS:\n  Vance — Walks with a slight limp\n  …',
+ *     state:         'CURRENT STATE (right now in this scene):\n  Vance — …',
+ *     shipPosition:  '',                        // populated in §20
+ *     combined:      header + truths + state,   // for direct prompt use
+ *     tokenEstimates:{ header, truths, state, ship },
+ *   }
+ *
+ * Returns `{ combined: '' }` (all fields empty strings) when there is nothing
+ * to render — both ledgers empty for the in-scope subjects.
+ *
+ * Filtering (fact-continuity scope §6 — "Filtering"). A subject is in scope
+ * for this turn if any of:
+ *   - the scene itself (`subject.kind === "scene"`)               — always
+ *   - the entity ID appears in `options.matchedEntityIds`         — always
+ *   - the entity ID equals `options.currentLocationId`            — always
+ *   - the free-text subject is mentioned in `options.playerNarration`
+ *
+ * @param {Object} campaignState     — CampaignStateSchema
+ * @param {Object} [options]
+ * @param {string[]} [options.matchedEntityIds]
+ * @param {string|null} [options.currentLocationId]
+ * @param {string} [options.playerNarration]
+ * @param {number} [options.maxTokens] — soft cap; state drops first when exceeded
+ * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
+ * @returns {{ header: string, truths: string, state: string,
+ *             shipPosition: string, combined: string,
+ *             tokenEstimates: { header: number, truths: number, state: number, ship: number } }}
+ */
+export function buildLedgerBlock(campaignState, options = {}) {
+  const truths = Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : [];
+  const stateBySubject = (campaignState?.sceneState && typeof campaignState.sceneState === 'object'
+    ? campaignState.sceneState.bySubject
+    : null) ?? {};
+
+  const matchedIds        = new Set(options?.matchedEntityIds ?? []);
+  const currentLocationId = options?.currentLocationId ?? null;
+  if (currentLocationId) matchedIds.add(currentLocationId);
+  // Sanitize the narration before substring-matching free-text subjects so
+  // stray HTML from chat enrichment never produces false matches (see PR #94).
+  const narration         = sanitizePlayerText(options?.playerNarration ?? '').toLowerCase();
+  const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
+  const nameLookup        = normaliseNameLookup(options?.entityNamesById);
+
+  // ── Filter truths ────────────────────────────────────────────────────────
+  const truthLines = [];
+  for (const t of truths) {
+    if (!t || t.retracted) continue;
+    if (!isSubjectInScope(t.subject, matchedIds, narration)) continue;
+    const label = formatSubjectLabel(t.subject, nameLookup);
+    const fact  = String(t.fact ?? '').trim();
+    if (!fact) continue;
+    truthLines.push(`  ${label} — ${fact}`);
+  }
+
+  // ── Filter state ─────────────────────────────────────────────────────────
+  const stateLines = [];
+  for (const [key, entries] of Object.entries(stateBySubject)) {
+    if (!Array.isArray(entries) || !entries.length) continue;
+    const subjectForKey = subjectFromStateKey(key);
+    if (!isSubjectInScope(subjectForKey, matchedIds, narration)) continue;
+    const label = formatSubjectLabel(subjectForKey, nameLookup);
+    for (const e of entries) {
+      const attr  = String(e?.attribute ?? '').trim();
+      const value = e?.value;
+      if (!attr || value === undefined || value === null || value === '') continue;
+      stateLines.push(`  ${label} — ${attr}: ${value}`);
+    }
+  }
+
+  // ── Empty short-circuit ──────────────────────────────────────────────────
+  if (!truthLines.length && !stateLines.length) {
+    return {
+      header: '', truths: '', state: '', shipPosition: '', combined: '',
+      tokenEstimates: { header: 0, truths: 0, state: 0, ship: 0 },
+    };
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  const header = [
+    '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
+    '',
+    'You established the following facts during this scene. They are',
+    'binding. Subsequent narration must honour them and may add to them,',
+    'but must not diverge from them.',
+  ].join('\n');
+
+  const truthsBlock = truthLines.length
+    ? ['TRUTHS:', ...truthLines].join('\n')
+    : '';
+
+  let stateBlock = stateLines.length
+    ? ['CURRENT STATE (right now in this scene):', ...stateLines].join('\n')
+    : '';
+
+  // ── Soft-cap enforcement: drop state when over budget ────────────────────
+  const tokenEstimates = {
+    header: estimateTokens(header),
+    truths: estimateTokens(truthsBlock),
+    state:  estimateTokens(stateBlock),
+    ship:   0,
+  };
+  let total = tokenEstimates.header + tokenEstimates.truths + tokenEstimates.state;
+  if (total > maxTokens && stateBlock) {
+    stateBlock = '';
+    tokenEstimates.state = 0;
+    total = tokenEstimates.header + tokenEstimates.truths;
+  }
+
+  const combined = [header, truthsBlock, stateBlock].filter(Boolean).join('\n\n');
+
+  return {
+    header,
+    truths: truthsBlock,
+    state:  stateBlock,
+    shipPosition: '',
+    combined,
+    tokenEstimates,
+  };
+}
+
+/**
+ * Cheap ~4-chars-per-token estimate, identical to assembler.js. Inline so this
+ * module stays free of cross-module imports beyond safety formatting.
+ */
+function estimateTokens(s) {
+  if (!s) return 0;
+  return Math.ceil(s.length / 4);
+}
+
+/**
+ * Render a ledger subject as the human-readable prefix used in the block.
+ *   entity → display name from the lookup, or the entity ID as fallback.
+ *   scene  → "scene"
+ *   text   → the original text
+ */
+function formatSubjectLabel(subject, nameLookup) {
+  if (!subject || typeof subject !== 'object') return 'unknown';
+  switch (subject.kind) {
+    case 'entity': {
+      const id = subject.entityId ?? '';
+      const fromMap = nameLookup?.get?.(id);
+      return fromMap || id || 'entity';
+    }
+    case 'scene': return 'scene';
+    case 'text':  return String(subject.text ?? '').trim() || 'unknown';
+    default:      return 'unknown';
+  }
+}
+
+/**
+ * Accept either a Map or a plain object for entityNamesById and return a
+ * Map-like with a .get() method so the renderer can stay agnostic.
+ */
+function normaliseNameLookup(input) {
+  if (!input) return new Map();
+  if (input instanceof Map) return input;
+  if (typeof input === 'object') return new Map(Object.entries(input));
+  return new Map();
+}
+
+function isSubjectInScope(subject, matchedIds, lowerCaseNarration) {
+  if (!subject || typeof subject !== 'object') return false;
+  if (subject.kind === 'scene') return true;
+  if (subject.kind === 'entity') return matchedIds.has(subject.entityId);
+  if (subject.kind === 'text') {
+    const text = String(subject.text ?? '').trim().toLowerCase();
+    if (!text) return false;
+    return lowerCaseNarration.includes(text);
+  }
+  return false;
+}
+
+function subjectFromStateKey(key) {
+  if (key === 'scene') return { kind: 'scene' };
+  // Heuristic: a key that looks like a Foundry ID (no spaces, mixed-case)
+  // is an entity. Anything else is a free-text key.
+  if (/^[A-Za-z0-9._-]+$/u.test(key) && key !== key.toLowerCase()) {
+    return { kind: 'entity', entityId: key };
+  }
+  return { kind: 'text', text: key };
+}
+
+// ---------------------------------------------------------------------------
 // Narrator permissions — narrator-entity-discovery scope §8
 // ---------------------------------------------------------------------------
 
@@ -347,10 +592,13 @@ export function buildNarratorSystemPrompt(
   extras = {},
 ) {
   const {
-    narrationTone         = 'wry',
-    narrationPerspective  = 'auto',
-    narrationLength       = 3,
-    narrationInstructions = '',
+    narrationTone                 = 'wry',
+    narrationPerspective          = 'auto',
+    narrationLength               = 3,
+    narrationInstructions         = '',
+    factContinuityEnabled         = true,
+    factContinuityLedgerInContext = true,
+    factContinuityMaxLedgerTokens = 400,
   } = narratorSettings ?? {};
 
   const {
@@ -361,6 +609,9 @@ export function buildNarratorSystemPrompt(
     oracleSeeds          = null,
     campaignTruthsBlock  = '',
     mode                 = 'move_resolution',
+    matchedEntityIds     = [],
+    playerNarration      = '',
+    entityNamesById      = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -442,12 +693,33 @@ export function buildNarratorSystemPrompt(
     }
   }
 
+  // [6.5] Active scene ledger — binding truths + current state for in-scope
+  //       subjects. Gated by both the master fact-continuity toggle and the
+  //       ledger-in-context sub-toggle (fact-continuity scope §6).
+  if (factContinuityEnabled && factContinuityLedgerInContext) {
+    const ledger = buildLedgerBlock(campaignState, {
+      matchedEntityIds,
+      currentLocationId: campaignState?.currentLocationId ?? null,
+      playerNarration,
+      maxTokens:         factContinuityMaxLedgerTokens,
+      entityNamesById,
+    });
+    if (ledger.combined) parts.push(ledger.combined);
+  }
+
   // [7] Active connections summary (legacy — connection names/roles only)
   const connections = buildConnectionsSummary(campaignState);
   if (connections) parts.push(connections);
 
   // [8] Character
   if (character) parts.push(buildCharacterBlock(character));
+
+  // [9] Fact-continuity sidecar instruction — appended last so it is the most
+  // recent guidance the model sees before generating. Applies to every mode,
+  // gated by the master Fact Continuity setting.
+  if (factContinuityEnabled) {
+    parts.push(appendSidecarInstruction());
+  }
 
   return parts.join('\n\n---\n\n');
 }

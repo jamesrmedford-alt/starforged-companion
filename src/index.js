@@ -74,6 +74,16 @@ import {
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
+import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
+import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
+import {
+  strikeTruth as fcStrikeTruth,
+  setTruth as fcSetTruth,
+  strikeStateValue as fcStrikeStateValue,
+  setStateValue as fcSetStateValue,
+  resolveSubject as fcResolveSubject,
+  subjectKey as fcSubjectKey,
+} from "./factContinuity/ledgers.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -106,6 +116,18 @@ const MODULE_ID = "starforged-companion";
 let _lastJournalCommandWork = null;
 export function getLastJournalCommandPromise() {
   return _lastJournalCommandWork;
+}
+
+/**
+ * Read the fact-continuity master toggle. Defaults to enabled when the
+ * setting hasn't been registered (early init, unit-test contexts).
+ */
+function factContinuityEnabledFromSettings() {
+  try {
+    return game.settings?.get(MODULE_ID, "factContinuity.enabled") !== false;
+  } catch {
+    return true;
+  }
 }
 
 
@@ -339,6 +361,12 @@ export function registerChatHook() {
       if (!question) return;
       const campaignState = game.settings.get(MODULE_ID, "campaignState");
       resetRecentDensity();
+      // Fact continuity: every @scene begins a new scene moment. Flush any
+      // unended prior scene and assign a fresh scene ID before narration.
+      // See docs/fact-continuity-scope.md §9.1.
+      if (factContinuityEnabledFromSettings()) {
+        await startScene(campaignState, { reason: "@scene_intercept" });
+      }
       await interrogateScene(question, campaignState, {
         actorId: message.author?.character?.id,
       });
@@ -374,6 +402,18 @@ export function registerChatHook() {
       // journal write chain. See getLastJournalCommandPromise().
       _lastJournalCommandWork = handleJournalCommand(message);
       await _lastJournalCommandWork;
+      return;
+    }
+
+    // !scene start | !scene end — fact-continuity scene lifecycle (GM only)
+    if (isSceneCommand(message)) {
+      await handleSceneCommand(message);
+      return;
+    }
+
+    // !truth strike|set, !state strike|set — fact-continuity corrections
+    if (isFactContinuityCommand(message)) {
+      await handleFactContinuityCommand(message);
       return;
     }
 
@@ -843,6 +883,227 @@ export function isRollCommand(message) {
   if (text !== "!roll") return false;
   if (message.flags?.[MODULE_ID]?.rollCommandCard) return false;
   return true;
+}
+
+/**
+ * Determine whether a chat message is a !scene command.
+ *   !scene start | !scene end
+ * GM-only. fact-continuity scope §9.1 / §9.2.
+ */
+export function isSceneCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sceneCommand) return false;
+  return /^!scene\s+(start|end)\b/i.test(text);
+}
+
+/**
+ * Determine whether a chat message is a !truth or !state correction
+ * command. fact-continuity scope §10.3.
+ *
+ *   !truth strike <id-prefix>
+ *   !truth set <subject> <fact>
+ *   !state strike <subject> <attribute>
+ *   !state set <subject> <attribute>=<value>
+ */
+export function isFactContinuityCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.factContinuityCommand) return false;
+  return /^!(truth|state)\s+/i.test(text);
+}
+
+/**
+ * Handle a !scene command. GM-only. Posts a confirmation card flagged
+ * `sceneCommand: true` so it never bleeds through isPlayerNarration on the
+ * next turn (PR #94).
+ */
+async function handleSceneCommand(message) {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!scene is GM-only (writes campaign state).");
+    return;
+  }
+  if (!factContinuityEnabledFromSettings()) {
+    ui.notifications.warn("!scene requires Fact Continuity to be enabled in Companion Settings.");
+    return;
+  }
+
+  const text = (message.content ?? "").trim();
+  const verb = /^!scene\s+(start|end)\b/i.exec(text)?.[1]?.toLowerCase();
+  if (verb !== "start" && verb !== "end") return;
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  let resultLine = "";
+  try {
+    if (verb === "start") {
+      const id = await startScene(campaignState, { reason: "scene_command" });
+      resultLine = id
+        ? `Scene started — <code>${id}</code>.`
+        : "Scene start failed.";
+    } else {
+      const summary = await endScene(campaignState, { reason: "scene_command" });
+      resultLine =
+        `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
+        `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);
+    resultLine = "!scene failed — see the browser console.";
+  }
+
+  await ChatMessage.create({
+    content: `
+      <div class="sf-scene-command-card">
+        <div class="sf-scene-command-label">◈ Scene Lifecycle</div>
+        <div class="sf-scene-command-body">${resultLine}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        sceneCommand: true,
+        verb,
+      },
+    },
+  });
+}
+
+/**
+ * Handle !truth / !state correction commands. fact-continuity scope §10.3.
+ *
+ * Grammar:
+ *   !truth strike <id-prefix>
+ *   !truth set <subject> <fact-text>
+ *   !state strike <subject> <attribute>
+ *   !state set <subject> <attribute>=<value>
+ *
+ * Subjects accepted as bare words ("Vance", "scene") or as quoted strings
+ * for multi-word subjects ("\"Covenant officer\"", "\"cargo bay\""). For
+ * !state set, the attribute and value are separated by an unquoted `=`.
+ */
+async function handleFactContinuityCommand(message) {
+  const text = (message.content ?? "").trim();
+  const isGM = !!game.user?.isGM;
+
+  if (!factContinuityEnabledFromSettings()) {
+    ui.notifications.warn("Fact Continuity is disabled in Companion Settings.");
+    return;
+  }
+
+  const verbMatch = /^!(truth|state)\s+(strike|set)\s+(.*)$/i.exec(text);
+  if (!verbMatch) {
+    ui.notifications.warn('Usage: !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>');
+    return;
+  }
+  const [, domain, verb, restRaw] = verbMatch;
+  const rest = restRaw.trim();
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  const ctx = { isGM, actor: isGM ? "gm" : "player" };
+
+  let resultLine = "";
+  try {
+    if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "strike") {
+      const struck = fcStrikeTruth(rest, campaignState, ctx);
+      resultLine = struck
+        ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
+        : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
+    } else if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "set") {
+      const parsed = parseSubjectAndRest(rest);
+      if (!parsed) {
+        ui.notifications.warn('Usage: !truth set <subject> <fact-text>');
+        return;
+      }
+      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const truth   = fcSetTruth(subject, parsed.rest, campaignState, ctx);
+      resultLine = truth
+        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest)}</em>.`
+        : `Truth not recorded — empty subject or fact.`;
+    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "strike") {
+      const parsed = parseSubjectAndRest(rest);
+      if (!parsed?.rest) {
+        ui.notifications.warn('Usage: !state strike <subject> <attribute>');
+        return;
+      }
+      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const ok      = fcStrikeStateValue(fcSubjectKey(subject), parsed.rest.trim(), campaignState);
+      resultLine = ok
+        ? `State <code>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest.trim())}</code> struck.`
+        : `No matching state entry.`;
+    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "set") {
+      const parsed = parseSubjectAndRest(rest);
+      const eqIdx  = parsed?.rest?.indexOf("=") ?? -1;
+      if (!parsed || eqIdx < 1) {
+        ui.notifications.warn('Usage: !state set <subject> <attribute>=<value>');
+        return;
+      }
+      const attribute = parsed.rest.slice(0, eqIdx).trim();
+      const value     = parsed.rest.slice(eqIdx + 1).trim();
+      const subject   = fcResolveSubject(parsed.subject, campaignState);
+      const result    = fcSetStateValue(fcSubjectKey(subject), attribute, value, campaignState);
+      resultLine = result
+        ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(attribute)}: ${escapeHtml(value)}</em>.`
+        : `State not recorded — empty attribute or value.`;
+    } else {
+      ui.notifications.warn('Unrecognised !truth / !state form.');
+      return;
+    }
+
+    if (resultLine) {
+      // Persist after a successful mutation.
+      try {
+        await game.settings.set(MODULE_ID, "campaignState", campaignState);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | handleFactContinuityCommand: persist failed:`, err);
+      }
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | handleFactContinuityCommand failed:`, err);
+    resultLine = "Command failed — see the browser console.";
+  }
+
+  await ChatMessage.create({
+    content: `
+      <div class="sf-fc-command-card">
+        <div class="sf-fc-command-label">◈ Fact Continuity</div>
+        <div class="sf-fc-command-body">${resultLine}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        factContinuityCommand: true,
+        domain: domain.toLowerCase(),
+        verb:   verb.toLowerCase(),
+      },
+    },
+  });
+}
+
+/**
+ * Parse "<subject> <rest>" with subject either a quoted string or a single
+ * bare word. Returns { subject, rest } or null on malformed input.
+ */
+function parseSubjectAndRest(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('"')) {
+    const close = trimmed.indexOf('"', 1);
+    if (close < 0) return null;
+    const subject = trimmed.slice(1, close).trim();
+    const rest    = trimmed.slice(close + 1).trim();
+    return subject ? { subject, rest } : null;
+  }
+  const space = trimmed.search(/\s/);
+  if (space < 0) return { subject: trimmed, rest: '' };
+  const subject = trimmed.slice(0, space).trim();
+  const rest    = trimmed.slice(space + 1).trim();
+  return subject ? { subject, rest } : null;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -1331,6 +1592,16 @@ Hooks.once("ready", () => {
 Hooks.once("closeWorld", async () => {
   if (!game.user.isGM) return;
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // Fact continuity: flush any active scene before the world closes so
+  // truths migrate to entity tiers / WJ Lore rather than vanishing on the
+  // next world load. See docs/fact-continuity-scope.md §9.2.
+  if (factContinuityEnabledFromSettings() && campaignState?.currentSceneId) {
+    try {
+      await endScene(campaignState, { reason: "session_close" });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | closeWorld: endScene failed:`, err);
+    }
+  }
   campaignState.lastSessionTimestamp = new Date().toISOString();
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
@@ -1459,6 +1730,32 @@ Hooks.on("renderChatMessage", (message, html) => {
   const root = html instanceof HTMLElement ? html : html[0];
   root?.querySelector('[data-action="openTruthsDialog"]')
     ?.addEventListener("click", () => openSystemTruthsDialog());
+});
+
+/**
+ * renderChatMessage — wire the "Correct a fact" button on narrator cards
+ * (fact-continuity scope §10.2). Two-hook pattern per CLAUDE.md: the card
+ * HTML is rendered with the button in postNarrationCard /
+ * postPacedNarrativeCard; click handlers are attached here at render time.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  if (!message.flags?.[MODULE_ID]?.narratorCard) return;
+  if (!factContinuityEnabledFromSettings()) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  const btn = root.querySelector('[data-action="openCorrectionDialog"]');
+  if (!btn) return;
+  // Clone-replace to drop any listener attached on a prior render.
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openCorrectionDialog(message).catch(err =>
+      console.error(`${MODULE_ID} | openCorrectionDialog failed:`, err),
+    );
+  });
 });
 
 /**

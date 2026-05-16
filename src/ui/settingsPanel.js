@@ -83,6 +83,12 @@ const SETTING = {
   PACING_DIAL_EXPLORATION:     'pacing.dial.exploration',
   PACING_DIAL_SOCIAL:          'pacing.dial.social',
   PACING_DIAL_DOWNTIME:        'pacing.dial.downtime',
+  // ── Fact continuity ──────────────────────────────────────────────────────
+  FC_ENABLED:                  'factContinuity.enabled',
+  FC_LEDGER_IN_CONTEXT:        'factContinuity.ledgerInContext',
+  FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
+  FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
+  FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
 };
 
 const PACING_DEFAULTS = {
@@ -451,6 +457,53 @@ export function registerSettings() {
     type:    Number,
     default: PACING_DEFAULTS.downtime,
   });
+
+  // ── Fact continuity — see docs/fact-continuity-scope.md §12 ──────────────
+
+  game.settings.register(MODULE_ID, SETTING.FC_ENABLED, {
+    name:    'Fact Continuity Enabled',
+    hint:    'Master switch. When enabled, the narrator records scene truths and current state via a structured sidecar, and the active-scene ledger is fed back into subsequent narrator calls.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT, {
+    name:    'Inject Active-Scene Ledger Into Narrator Context',
+    hint:    'When enabled, the narrator system prompt receives a Section 6.5 block listing binding truths and current state for in-scope subjects. Has no effect when Fact Continuity is disabled.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED, {
+    name:    'Sidecar Required',
+    hint:    'When enabled, the narrator response is expected to contain a fenced JSON sidecar after every reply. When disabled, missing sidecars are tolerated silently (rare in practice).',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS, {
+    name:    'Max Ledger Tokens',
+    hint:    'Soft cap on the size of the active-scene ledger block in the narrator system prompt. State entries are truncated first when the cap is exceeded; binding truths are never dropped.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 400,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK, {
+    name:    'Consistency Check (experimental)',
+    hint:    'After every narration, run a Haiku audit pass that checks the prose against the active-scene ledger. High-confidence contradictions surface on the existing GM-only Narrative Review card. Adds ~$0.0004 and 200–500ms per narration; off by default.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: false,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -491,6 +544,13 @@ function getPacingDials() {
     downtime:      game.settings.get(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME)      ?? PACING_DEFAULTS.downtime,
   };
 }
+
+// ── Fact continuity ──────────────────────────────────────────────────────
+export function getFactContinuityEnabled()        { return game.settings.get(MODULE_ID, SETTING.FC_ENABLED)             ?? true; }
+export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
+export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
+export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
+export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -628,10 +688,11 @@ export class SettingsPanelApp extends ApplicationV2 {
       removeVeil:             SettingsPanelApp.#onRemoveVeil,
       addPrivateLine:         SettingsPanelApp.#onAddPrivateLine,
       removePrivateLine:      SettingsPanelApp.#onRemovePrivateLine,
-      setDial:                SettingsPanelApp.#onSetDial,
-      saveNarratorSettings:   SettingsPanelApp.#onSaveNarratorSettings,
-      savePacingSettings:     SettingsPanelApp.#onSavePacingSettings,
-      saveApiKeys:            SettingsPanelApp.#onSaveApiKeys,
+      setDial:                     SettingsPanelApp.#onSetDial,
+      saveNarratorSettings:        SettingsPanelApp.#onSaveNarratorSettings,
+      savePacingSettings:          SettingsPanelApp.#onSavePacingSettings,
+      saveFactContinuitySettings:  SettingsPanelApp.#onSaveFactContinuitySettings,
+      saveApiKeys:                 SettingsPanelApp.#onSaveApiKeys,
     },
   };
 
@@ -678,6 +739,13 @@ export class SettingsPanelApp extends ApplicationV2 {
       pacingDensityWindow:   getPacingDensityWindow(),
       pacingDials:           getPacingDials(),
       pacingSceneOverride:   campaignState?.pacing?.sceneOverride ?? null,
+      factContinuity: {
+        enabled:           getFactContinuityEnabled(),
+        ledgerInContext:   getFactContinuityLedgerInContext(),
+        sidecarRequired:   getFactContinuitySidecarRequired(),
+        maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
+        consistencyCheck:  getFactContinuityConsistencyCheck(),
+      },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
@@ -877,6 +945,55 @@ export class SettingsPanelApp extends ApplicationV2 {
         ${ctx.isGM ? `
           <div class="pacing-actions">
             <button class="settings-btn btn-save-pacing" data-action="savePacingSettings">Save Pacing Settings</button>
+          </div>
+        ` : ''}
+
+        <hr class="mischief-divider">
+        <h4 class="mischief-section-heading">Fact Continuity</h4>
+        <p class="pacing-pane-intro">
+          The narrator records binding scene truths and current state via a structured sidecar
+          attached to every response. The active-scene ledger is fed back into subsequent
+          narrator calls so established facts stay consistent.
+        </p>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.enabled"
+                   ${ctx.factContinuity.enabled ? 'checked' : ''} ${dis}>
+            Enable fact continuity
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.ledgerInContext"
+                   ${ctx.factContinuity.ledgerInContext ? 'checked' : ''} ${dis}>
+            Inject the active-scene ledger into the narrator system prompt
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.sidecarRequired"
+                   ${ctx.factContinuity.sidecarRequired ? 'checked' : ''} ${dis}>
+            Require a sidecar on every narrator response
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label" for="sf-fc-max-tokens">Max ledger tokens</label>
+          <input class="settings-input pacing-dial-input" id="sf-fc-max-tokens"
+                 name="factContinuity.maxLedgerTokens" type="number" min="100" max="2000" step="50"
+                 value="${ctx.factContinuity.maxLedgerTokens}" ${dis}>
+          <span class="pacing-field-hint">Soft cap on the Section 6.5 block. State drops first when the cap is exceeded; truths are never dropped.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.consistencyCheck"
+                   ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
+            Consistency check (experimental)
+          </label>
+          <span class="pacing-field-hint">Run a Haiku audit pass after every narration. High-confidence contradictions surface on the GM Narrative Review card. ~$0.0004 and 200–500ms per call; off by default.</span>
+        </div>
+        ${ctx.isGM ? `
+          <div class="pacing-actions">
+            <button class="settings-btn btn-save-pacing" data-action="saveFactContinuitySettings">Save Fact Continuity Settings</button>
           </div>
         ` : ''}
       </div>
@@ -1227,6 +1344,33 @@ export class SettingsPanelApp extends ApplicationV2 {
       ]);
 
       ui.notifications?.info('Starforged Companion: Pacing settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  static #onSaveFactContinuitySettings(_event, _target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const el = this.element;
+
+      const enabled          = el.querySelector('[name="factContinuity.enabled"]')?.checked          ?? true;
+      const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
+      const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
+      const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
+      const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
+      const maxTokens        = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
+
+      await Promise.all([
+        game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
+        game.settings.set(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT,   ledgerInContext),
+        game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
+        game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
+        game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
+      ]);
+
+      ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');
       this.render();
     })();
     this._lastAction = work;
