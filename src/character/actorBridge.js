@@ -4,6 +4,8 @@
 // This isolates the foundry-ironsworn API surface so system changes only require
 // updates in one place.
 
+const MODULE_ID = "starforged-companion";
+
 // Condition debilities that affect momentum max and reset.
 // Each marked condition reduces momentumMax by 1 and momentumReset by 1 (floor -2).
 const CONDITION_DEBILITIES = ['wounded', 'shaken', 'unprepared', 'encumbered'];
@@ -85,10 +87,45 @@ export function readCharacterSnapshot(actor) {
       value: sys.xp ?? 0,
       max:   30,
     },
+    assets: readAssets(actor),
   };
 
   _snapshotCache.set(actor.id, snapshot);
   return snapshot;
+}
+
+/**
+ * Read the character's ironsworn `asset`-type Items (Paths, Companions,
+ * Modules, Rituals, Combat Talents, etc) as plain-data snapshots for
+ * narrator context. Only enabled abilities are surfaced — disabled
+ * abilities aren't yet "unlocked" and shouldn't inform the narrator.
+ *
+ * Strips HTML tags from ability text so the prompt stays clean — the
+ * ironsworn schema stores rich text in HTMLField.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ name: string, abilities: string[], description: string }>}
+ */
+export function readAssets(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list = Array.isArray(items) ? items : [];
+  return list
+    .filter(i => i?.type === 'asset')
+    .map(i => {
+      const abilities = (i.system?.abilities ?? [])
+        .filter(a => a?.enabled)
+        .map(a => stripHtml(a?.text ?? ''))
+        .filter(Boolean);
+      return {
+        name:        i.name ?? '',
+        description: stripHtml(i.system?.description ?? ''),
+        abilities,
+      };
+    });
+}
+
+function stripHtml(s) {
+  return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -260,6 +297,98 @@ export async function markVowProgress(actor, vowItemId, ticks) {
   if (next !== current) {
     await item.update({ 'system.progress': next });
     invalidateActorCache(actor.id);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER ITEM REGISTRATION (Connections + Vows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
+
+/**
+ * Create a `progress`-typed Item on the character Actor representing a
+ * Connection. The ironsworn character sheet's Connections tab is populated
+ * by progress Items with any subtype other than "vow" or "progress" (see
+ * vendor/foundry-ironsworn/.../sf-connections.vue), so we use "bond" to
+ * match the system's own "+ Connection" button behaviour.
+ *
+ * Passes `{ suppressLog: true }` so the ironsworn preCreateItem chat-alert
+ * hook does not emit an "Added <name>" emote message in chat — those
+ * messages were leaking between narrator turns.
+ *
+ * Idempotent: if an Item flagged with this connection's id already exists
+ * on the actor, returns it without creating a duplicate.
+ *
+ * @param {Actor} actor
+ * @param {{ name: string, rank?: string, connectionId?: string }} data
+ * @returns {Promise<Item|null>}
+ */
+export async function createCharacterBondItem(actor, data) {
+  return createCharacterProgressItem(actor, {
+    subtype:    "bond",
+    name:       data?.name || "Unknown Connection",
+    rank:       data?.rank,
+    flagKey:    "connectionId",
+    flagValue:  data?.connectionId ?? null,
+  });
+}
+
+/**
+ * Create a `progress`-typed Item on the character Actor representing a Vow.
+ * The Connections tab filters subtype "vow" out — vows show up in the
+ * Progress tab on the character sheet.
+ *
+ * @param {Actor} actor
+ * @param {{ name: string, rank?: string, vowId?: string }} data
+ * @returns {Promise<Item|null>}
+ */
+export async function createCharacterVowItem(actor, data) {
+  return createCharacterProgressItem(actor, {
+    subtype:    "vow",
+    name:       data?.name || "Unnamed Vow",
+    rank:       data?.rank,
+    flagKey:    "vowId",
+    flagValue:  data?.vowId ?? null,
+  });
+}
+
+async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue }) {
+  if (!actor) return null;
+  const ItemCls = globalThis.Item;
+  if (!ItemCls?.create) {
+    console.warn(`actorBridge | Item.create unavailable; skipping ${subtype} registration on ${actor.id}`);
+    return null;
+  }
+
+  // Idempotency — don't create a duplicate when called twice for the same
+  // source record (e.g. confirm-from-draft then re-confirm).
+  if (flagValue) {
+    const existing = (actor.items?.contents ?? []).find(
+      i => i.type === "progress"
+        && i.flags?.[MODULE_ID]?.[flagKey] === flagValue,
+    );
+    if (existing) return existing;
+  }
+
+  const resolvedRank = VALID_RANKS.includes(rank) ? rank : "dangerous";
+
+  try {
+    const item = await ItemCls.create(
+      {
+        name,
+        type:   "progress",
+        system: { subtype, rank: resolvedRank, current: 0 },
+        flags:  flagValue ? { [MODULE_ID]: { [flagKey]: flagValue } } : {},
+      },
+      { parent: actor, suppressLog: true },
+    );
+    invalidateActorCache(actor.id);
+    return item ?? null;
+  } catch (err) {
+    console.error(`actorBridge | createCharacterProgressItem (${subtype}) failed:`, err);
+    return null;
   }
 }
 

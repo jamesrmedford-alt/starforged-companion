@@ -28,6 +28,7 @@ import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
 import { getConnection, createConnection } from "./connection.js";
+import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
 import { getShip,       createShip }       from "./ship.js";
@@ -386,6 +387,8 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           firstAppearance:           options.sessionId ?? "",
         }, campaignState);
         await postCreationEnrichment("connection", record, campaignState);
+        await registerConnectionOnActiveCharacter(record).catch(err =>
+          console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -1092,6 +1095,8 @@ async function handleDraftConfirm(message, draftIndex) {
         motivation:                seedData.motivation,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
+      await registerConnectionOnActiveCharacter(record).catch(err =>
+        console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
         { name: draft.name, description: draft.description ?? "" },
@@ -1306,4 +1311,24 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Register a confirmed Connection on the active character Actor as an
+ * ironsworn `progress` Item with subtype "bond". This is what makes the
+ * Connection appear under the character sheet's Connections tab with its
+ * own progress track — mirroring what the system's built-in "+ Connection"
+ * button does. With no active character (sector seeding, multi-PC setups
+ * with no obvious target), this is a no-op.
+ */
+async function registerConnectionOnActiveCharacter(record) {
+  if (!record?._id) return;
+  const actors = getPlayerActors();
+  const actor = actors?.[0];
+  if (!actor) return;
+  await createCharacterBondItem(actor, {
+    name:         record.name,
+    rank:         record.rank,
+    connectionId: record._id,
+  });
 }

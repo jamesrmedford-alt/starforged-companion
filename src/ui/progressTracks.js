@@ -14,6 +14,8 @@
 // Constants
 // ---------------------------------------------------------------------------
 
+import { getPlayerActors, createCharacterVowItem } from '../character/actorBridge.js';
+
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
 const FLAG_KEY = 'tracks';
@@ -625,6 +627,25 @@ export async function addProgressTrack(data) {
   const tracks = await loadTracks();
   tracks.push(track);
   await saveTracks(tracks);
+
+  // Mirror vows onto the active character as ironsworn `progress` Items with
+  // subtype "vow" so they appear on the character sheet's Progress tab.
+  // Connections are mirrored as subtype "bond" by entityExtractor when the
+  // connection itself is created; this is the vow-only path.
+  if (track.type === 'vow') {
+    try {
+      const actor = getPlayerActors()[0];
+      if (actor) {
+        await createCharacterVowItem(actor, {
+          name:  track.label,
+          rank:  track.rank,
+          vowId: track.id,
+        });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | addProgressTrack: vow item registration failed:`, err);
+    }
+  }
 
   // Refresh the panel if it's open.
   const instance = ProgressTrackApp._ProgressTrackApp__instance;  // access private via name mangling

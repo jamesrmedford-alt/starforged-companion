@@ -29,6 +29,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
 } from "./registry.js";
+import { pickStarshipIcon } from "../system/ironswornAssets.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -90,10 +91,20 @@ export async function createShip(data, campaignState) {
 
   const folderId = await getOrCreateActorFolder("Starships");
 
+  // Seed non-command ships with a deterministic system starship token so the
+  // actor row in the directory and the canvas token are not the default
+  // Foundry silhouette. Command vehicles defer to the art pipeline / the
+  // STARSHIP asset and intentionally leave img unset here.
+  const seedImg = ship.isCommandVehicle ? null : pickStarshipIcon(id);
+
   const actor = await Actor.create({
     name:   ship.name || "Unknown Ship",
     type:   "starship",
     folder: folderId,
+    ...(seedImg ? {
+      img:            seedImg,
+      prototypeToken: { texture: { src: seedImg } },
+    } : {}),
     system: {
       notes: ship.notes ?? "",
       debility: {

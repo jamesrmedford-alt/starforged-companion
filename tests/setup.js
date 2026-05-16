@@ -324,11 +324,20 @@ global.makeTestActor = (overrides = {}) => {
     hasPlayerOwner: overrides.hasPlayerOwner ?? (type === 'character'),
     system: defaultSystem,
     flags,
-    items: {
-      find: (fn) => null,
-      contents: [],
-      ...(overrides.items ?? {}),
-    },
+    items: (() => {
+      const overrideItems = overrides.items ?? {};
+      const seedContents = Array.isArray(overrideItems.contents) ? overrideItems.contents : [];
+      const contents = [...seedContents];
+      return {
+        contents,
+        get size() { return contents.length; },
+        find:   (fn) => contents.find(fn) ?? null,
+        filter: (fn) => contents.filter(fn),
+        [Symbol.iterator]: () => contents[Symbol.iterator](),
+        ...overrideItems,
+        // overrides above can replace find/contents wholesale if needed
+      };
+    })(),
     update: async (changes) => {
       updateHistory.push(changes);
       // Apply flat dot-notation changes to the actor for test assertions.
@@ -414,6 +423,32 @@ global.game.folders = (() => {
     _reset:  () => { _folders.length = 0; },
   };
 })();
+
+// ---------------------------------------------------------------------------
+// Item.create — minimal global stub. Tests that exercise character-item
+// registration (bonds, vows) read from actor.items.contents to verify the
+// new Item was attached. Tracks the second-arg options (e.g. suppressLog)
+// on the returned Item via __createOptions so tests can assert that flows
+// silence the ironsworn chat-alert hook.
+// ---------------------------------------------------------------------------
+
+global.Item = {
+  create: async (data, options = {}) => {
+    const item = {
+      id:     data?.id     ?? foundry.utils.randomID(),
+      name:   data?.name   ?? 'Unknown Item',
+      type:   data?.type   ?? 'progress',
+      system: data?.system ?? {},
+      flags:  data?.flags  ?? {},
+      parent: options?.parent ?? null,
+      __createOptions: { ...options },
+    };
+    if (options?.parent?.items?.contents) {
+      options.parent.items.contents.push(item);
+    }
+    return item;
+  },
+};
 
 global.Folder = {
   create: async (data) => {

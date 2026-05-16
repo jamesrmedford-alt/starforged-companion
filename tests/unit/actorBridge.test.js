@@ -11,10 +11,13 @@ import {
   getActor,
   readCharacterSnapshot,
   readDebilities,
+  readAssets,
   applyMeterChanges,
   setDebility,
   awardXP,
   invalidateActorCache,
+  createCharacterBondItem,
+  createCharacterVowItem,
 } from '../../src/character/actorBridge.js';
 
 
@@ -373,5 +376,123 @@ describe('awardXP', () => {
 
   it('does not throw if actor is null', async () => {
     await expect(awardXP(null, 2)).resolves.toBeUndefined();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// readAssets
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('readAssets', () => {
+  it('returns enabled-only abilities for asset-type items, stripping HTML', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          {
+            type:   'asset',
+            name:   'Firebrand',
+            system: {
+              description: '<p>Path of fire.</p>',
+              abilities: [
+                { enabled: true,  text: '<p>Burn <em>everything</em>.</p>' },
+                { enabled: false, text: '<p>Locked ability.</p>' },
+              ],
+            },
+          },
+          // non-asset items are ignored
+          { type: 'progress', name: 'A vow', system: { subtype: 'vow' } },
+        ],
+      },
+    });
+
+    const out = readAssets(actor);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('Firebrand');
+    expect(out[0].description).toBe('Path of fire.');
+    expect(out[0].abilities).toEqual(['Burn everything.']);
+  });
+
+  it('surfaces assets through readCharacterSnapshot', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          {
+            type: 'asset', name: 'Scoundrel',
+            system: { abilities: [{ enabled: true, text: 'Bluff your way out.' }] },
+          },
+        ],
+      },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.assets).toHaveLength(1);
+    expect(snap.assets[0].name).toBe('Scoundrel');
+  });
+
+  it('returns empty array when no asset items present', () => {
+    const actor = freshActor();
+    expect(readAssets(actor)).toEqual([]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createCharacterBondItem / createCharacterVowItem
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('createCharacterBondItem', () => {
+  it('creates a progress Item with subtype "bond" on the actor', async () => {
+    const actor = freshActor();
+    const item = await createCharacterBondItem(actor, {
+      name: 'Dr Chen', rank: 'dangerous', connectionId: 'conn1',
+    });
+    expect(item).not.toBeNull();
+    expect(item.type).toBe('progress');
+    expect(item.system.subtype).toBe('bond');
+    expect(item.system.rank).toBe('dangerous');
+    expect(item.name).toBe('Dr Chen');
+    expect(actor.items.contents).toContain(item);
+  });
+
+  it('passes suppressLog:true to silence the ironsworn chat-alert hook', async () => {
+    const actor = freshActor();
+    const item = await createCharacterBondItem(actor, {
+      name: 'Mae', connectionId: 'c1',
+    });
+    expect(item.__createOptions.suppressLog).toBe(true);
+    expect(item.__createOptions.parent).toBe(actor);
+  });
+
+  it('falls back to a valid rank when given an invalid one', async () => {
+    const actor = freshActor();
+    const item = await createCharacterBondItem(actor, {
+      name: 'X', rank: 'invalid', connectionId: 'c2',
+    });
+    expect(item.system.rank).toBe('dangerous');
+  });
+
+  it('is idempotent when connectionId already exists on the actor', async () => {
+    const actor = freshActor();
+    const first  = await createCharacterBondItem(actor, { name: 'A', connectionId: 'same' });
+    const second = await createCharacterBondItem(actor, { name: 'A', connectionId: 'same' });
+    expect(second).toBe(first);
+    expect(actor.items.contents).toHaveLength(1);
+  });
+
+  it('returns null when actor is missing', async () => {
+    const item = await createCharacterBondItem(null, { name: 'X' });
+    expect(item).toBeNull();
+  });
+});
+
+describe('createCharacterVowItem', () => {
+  it('creates a progress Item with subtype "vow"', async () => {
+    const actor = freshActor();
+    const item = await createCharacterVowItem(actor, {
+      name: 'Find the Beacon', rank: 'formidable', vowId: 'v1',
+    });
+    expect(item.system.subtype).toBe('vow');
+    expect(item.system.rank).toBe('formidable');
+    expect(item.__createOptions.suppressLog).toBe(true);
   });
 });
