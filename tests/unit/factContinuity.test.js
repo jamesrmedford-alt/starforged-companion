@@ -101,6 +101,28 @@ describe('extractSidecar', () => {
     expect(prose).not.toMatch(/```/);
   });
 
+  it('strips an unterminated ```json opening (truncated by maxTokens) and surfaces parseError', () => {
+    // Reproduces the v1.3.0 Forge bug: maxTokens cut the response mid-JSON
+    // so the closing ``` never arrived. Without this fallback, the regex
+    // failed to match and the partial JSON bled into the chat card as
+    // visible prose.
+    const text = [
+      'The bridge hatch slides open to reveal Vray.',
+      '',
+      '```json',
+      '{ "newTruths": [{ "subject": "Vray", "fact": "Compact build" }],',
+      '  "stateChanges": [{ "subject": "scene", "attribute": "location", "value": "',
+    ].join('\n');
+
+    const { prose, sidecar, parseError } = extractSidecar(text);
+    expect(prose).toBe('The bridge hatch slides open to reveal Vray.');
+    expect(prose).not.toMatch(/```/);
+    expect(prose).not.toMatch(/newTruths/);
+    expect(sidecar).toBeNull();
+    expect(parseError).toBeInstanceOf(Error);
+    expect(parseError.message).toMatch(/truncated/i);
+  });
+
   it('returns empty arrays when sidecar omits one of the keys', () => {
     const text = [
       'Prose.',

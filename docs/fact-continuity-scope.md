@@ -512,6 +512,7 @@ ledger updates. See §18 Q6 for the alternative considered.
 | Sidecar references subjects with no scope match | Truths still recorded — the player named someone we don't have a card for, which is the point of free-text subjects. |
 | Sidecar declares a truth that contradicts an existing truth | Recorded as-is; the consistency-check pass (§11), if enabled, flags it. Manual override remains the GM's call. |
 | Sidecar arrives without prose | Treat as failure; post fallback card; do not record. |
+| Sidecar truncated mid-JSON by `maxTokens` (opening `` ```json `` fence but no closing `` ``` ``) | Strip from the opening fence forward in `extractSidecar` so the partial JSON does not bleed into the chat card. Log a parseError with "truncated by maxTokens" hint; do not apply partial data to the ledger. The narrator caller adds `SIDECAR_TOKEN_HEADROOM = 300` to every `maxTokens` budget when fact-continuity is enabled, so this should be rare — the defensive strip is the safety net for unusually long narrations. (Bug observed on Forge with v1.3.0; fix in `src/factContinuity/sidecarParser.js` + `narrator.js maxTokensWithSidecar`.) |
 
 Failure must not block the move pipeline. The narrator's prose is the
 contract with the player; ledger updates are best-effort downstream of
