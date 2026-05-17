@@ -179,7 +179,22 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
       }
     }
 
-    await scene.createEmbeddedDocuments("Note", noteData, { render: false });
+    // Each batch in its own try/catch — pre-v1.3.5 a Note validation error
+    // (Actor id passed as entryId after Phase 3) threw out of the whole
+    // function, taking the Drawing batch with it. Even after that root cause
+    // was fixed (entryId is now omitted; flag.actorId carries the link), the
+    // independent batches must not block one another for any future v13
+    // schema tightening. Log loudly so the next failure surfaces in console
+    // instead of silently leaving the scene empty.
+    try {
+      await scene.createEmbeddedDocuments("Note", noteData, { render: false });
+      console.log(`${MODULE_ID} | createSectorScene: ${noteData.length} Notes placed`);
+    } catch (err) {
+      console.error(
+        `${MODULE_ID} | createSectorScene: Note batch failed (${noteData.length} pins) — see error for v13 schema mismatch:`,
+        err,
+      );
+    }
   }
 
   // Place Drawing lines for passages
@@ -190,11 +205,9 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
         const from = mapSettlements.find(s => s.id === p.fromId || String(s.id) === String(p.fromId));
         if (!from) return null;
 
-        // FIX 1: Use grid cell origin — no +0.5 centre offset
         const fromX = from.gridX * gridCellSize;
         const fromY = from.gridY * gridCellSize;
 
-        // FIX 2: Edge passages draw from settlement to nearest scene boundary
         if (p.toEdge) {
           const cx     = SCENE_CONFIG.sceneWidth  / 2;
           const cy     = SCENE_CONFIG.sceneHeight / 2;
@@ -207,25 +220,10 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
           const edgeY  = cy + dy * scale;
           const ex     = edgeX - fromX;
           const ey     = edgeY - fromY;
-          return {
-            x:           fromX,
-            y:           fromY,
-            shape: {
-              type:   "p",
-              width:  Math.max(Math.abs(ex), 1),
-              height: Math.max(Math.abs(ey), 1),
-              points: [0, 0, ex, ey],
-            },
-            strokeWidth: 1,
-            strokeColor: "#7EB8F7",
-            strokeAlpha: 0.4,
-            fillType:    0,
-            fillAlpha:   0,
-            hidden:      false,
-            flags: {
-              [MODULE_ID]: { sectorPassage: true, toEdge: true, fromId: p.fromId },
-            },
-          };
+          return makeDrawingData({
+            x: fromX, y: fromY, dx: ex, dy: ey, strokeAlpha: 0.4,
+            flags: { sectorPassage: true, toEdge: true, fromId: p.fromId },
+          });
         }
 
         const to = mapSettlements.find(s => s.id === p.toId || String(s.id) === String(p.toId));
@@ -233,12 +231,24 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
 
         const toX = to.gridX * gridCellSize;
         const toY = to.gridY * gridCellSize;
-        return makePassageLine(fromX, fromY, toX, toY, p);
+        return makeDrawingData({
+          x: fromX, y: fromY, dx: toX - fromX, dy: toY - fromY, strokeAlpha: 0.8,
+          flags: { sectorPassage: true, fromId: p.fromId, toId: p.toId ?? null },
+        });
       })
       .filter(Boolean);
 
     if (drawingData.length) {
-      await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
+      try {
+        await scene.createEmbeddedDocuments("Drawing", drawingData, { render: false });
+        console.log(`${MODULE_ID} | createSectorScene: ${drawingData.length} passage Drawings placed`);
+      } catch (err) {
+        console.error(
+          `${MODULE_ID} | createSectorScene: Drawing batch failed (${drawingData.length} passages) — likely a v13 DrawingDocument schema mismatch. First entry payload:`,
+          drawingData[0],
+          err,
+        );
+      }
     }
   }
 
@@ -254,34 +264,45 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePassageLine(x1, y1, x2, y2, passage) {
-  // v13 BaseDrawing rejects shapes whose bounding box has zero width AND height
-  // even when stroke is visible — so derive shape.width/shape.height from the
-  // segment deltas. Math.max(..., 1) guards against degenerate same-point pairs.
-  const dx = x2 - x1;
-  const dy = y2 - y1;
+/**
+ * Build a passage Drawing payload with every v13-mandatory field set.
+ *
+ * v13 BaseDrawing has tightened validation: a payload missing
+ * `text`/`fontFamily`/`fontSize` (even for non-text shapes), or with
+ * `shape.width` / `shape.height` left at 0 for a polygon, is rejected with
+ * "Drawings must have visible text, a visible fill, or a visible line." The
+ * underlying invariant is that the bounding box must be non-zero AND every
+ * field the schema declares as required must be present. We default every
+ * required field rather than relying on Foundry's defaults — defaults have
+ * changed twice between v11 → v12 → v13.
+ */
+function makeDrawingData({ x, y, dx, dy, strokeAlpha = 0.8, flags }) {
   return {
-    x:           x1,
-    y:           y1,
+    x,
+    y,
     shape: {
-      type:   "p",
+      type:   "p",                          // polygon (used for lines)
       width:  Math.max(Math.abs(dx), 1),
       height: Math.max(Math.abs(dy), 1),
       points: [0, 0, dx, dy],
     },
     strokeWidth: 2,
     strokeColor: "#7EB8F7",
-    strokeAlpha: 0.8,
-    fillType:    0,
+    strokeAlpha: strokeAlpha,
+    fillType:    0,                         // no fill
+    fillColor:   "#000000",                 // v13: required even when fillType is 0
     fillAlpha:   0,
+    text:        "",                        // v13: required string field
+    fontFamily:  "Signika",
+    fontSize:    48,
+    textColor:   "#FFFFFF",
+    textAlpha:   1,
+    rotation:    0,
+    z:           0,
+    bezierFactor: 0,
+    locked:      false,
     hidden:      false,
-    flags: {
-      [MODULE_ID]: {
-        sectorPassage: true,
-        fromId: passage.fromId,
-        toId:   passage.toId ?? null,
-      },
-    },
+    flags: { [MODULE_ID]: flags },
   };
 }
 

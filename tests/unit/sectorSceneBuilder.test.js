@@ -124,6 +124,25 @@ describe('createSectorScene — Phase 3 entryId regression', () => {
     expect(createdDrawings.length).toBe(2);   // one normal passage + one edge passage
   });
 
+  it('passage drawings carry every v13-mandatory field (text, fontFamily, fillColor, etc.)', async () => {
+    // Even when fillType is 0 and the shape is a polyline, v13 BaseDrawing
+    // validates the presence of every field the schema declares as
+    // required. Setting them defensively rather than relying on Foundry's
+    // own defaults — those have churned across v11 → v12 → v13.
+    await createSectorScene(makeSector(), null, makeEntityActors());
+
+    expect(createdDrawings.length).toBeGreaterThan(0);
+    for (const d of createdDrawings) {
+      expect(typeof d.text).toBe('string');
+      expect(typeof d.fontFamily).toBe('string');
+      expect(typeof d.fontSize).toBe('number');
+      expect(typeof d.fillColor).toBe('string');
+      expect(typeof d.strokeColor).toBe('string');
+      expect(d.shape.width).toBeGreaterThan(0);
+      expect(d.shape.height).toBeGreaterThan(0);
+    }
+  });
+
   it('still works when entityActors is empty (sector created with no actors)', async () => {
     await createSectorScene(makeSector(), null, {});
 

@@ -674,6 +674,15 @@ export function entityExistsForName(name, type, campaignState) {
 export function entityExistsAnyType(name, campaignState) {
   const target = normalizeEntityName(name);
   if (!target) return false;
+
+  // Cross-check player characters first. The entity-type registry above
+  // covers connection/settlement/faction/ship/planet/location/creature
+  // but NOT the foundry-ironsworn `character`-type Actors that PCs are
+  // stored on. In a 2-player session this meant any narration that named
+  // Player B's PC was flagged as a "new connection" draft, since the
+  // dedup gate had no way to recognise PC names.
+  if (isPlayerCharacterName(target)) return true;
+
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     if (!getter) continue;
@@ -684,6 +693,35 @@ export function entityExistsAnyType(name, campaignState) {
       catch { continue; }
       if (rec?.name && normalizeEntityName(rec.name) === target) return true;
     }
+  }
+  return false;
+}
+
+/**
+ * @param {string} normalisedName — output of normalizeEntityName(rawName)
+ * @returns {boolean} true if any character-type Actor in the world
+ *   matches this name (case-insensitive, honorific-stripped).
+ *
+ * Includes both player-owned PCs and any GM-created character actor
+ * (e.g. an Ironsworn co-op campaign with multiple PC actors not all
+ * formally "owned" by a player User). The detector's existing
+ * normalizeEntityName already strips honorifics and lowercases, so a
+ * PC named "Doctor Chen" matches a detection of "Chen" or "Dr. Chen".
+ */
+function isPlayerCharacterName(normalisedName) {
+  if (!normalisedName) return false;
+  try {
+    const actors = globalThis.game?.actors ?? [];
+    for (const a of actors) {
+      if (a?.type !== "character") continue;
+      if (!a?.name) continue;
+      if (normalizeEntityName(a.name) === normalisedName) return true;
+    }
+  } catch (err) {
+    // Test environments without game.actors land here. Best-effort dedup —
+    // returning false just lets the detector propose the entity, which the
+    // GM can dismiss; not catastrophic.
+    console.warn(`${MODULE_ID} | isPlayerCharacterName: actor lookup failed:`, err?.message ?? err);
   }
   return false;
 }

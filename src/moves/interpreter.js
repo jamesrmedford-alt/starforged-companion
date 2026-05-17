@@ -146,7 +146,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 }
 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
-statValue: leave as 0 — filled in from character sheet by the calling code.
+statValue: leave as 0 — filled in from the character sheet by the calling code (enrichInterpretationStatValue in src/moves/statEnrichment.js).
 progressTicks: only relevant for progress moves — leave as 0 otherwise.`;
 }
 
@@ -358,7 +358,7 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
     moveId:                 parsed.moveId,
     moveName:               toDisplayName(parsed.moveId),
     statUsed:               parsed.statUsed,
-    statValue:              parsed.statValue ?? 0,       // Filled from character sheet in pipeline
+    statValue:              parsed.statValue ?? 0,       // Filled in by enrichInterpretationStatValue (see src/moves/statEnrichment.js); model is instructed to leave it 0
     adds:                   parsed.adds ?? 0,
     isProgressMove:         moveData.progressMove === true,
     progressTicks:          parsed.progressTicks ?? 0,
