@@ -119,14 +119,19 @@ export function resolveStatValue(actor, statUsed, campaignState) {
     return Number(integrity);
   }
 
-  // Companion health — lives on a Companion-asset Item's track. Not yet
-  // wired through. Log so the next "companion takes a hit" roll surfaces
-  // the gap exactly rather than silently 0-ing.
+  // Companion health — lives on the Companion-asset Item's track
+  // (system.track.value). foundry-ironsworn stores it on the asset
+  // schema's AssetConditionMeterField — see vendor/foundry-ironsworn/
+  // src/module/item/subtypes/asset.ts. We can't ask the player which
+  // companion is being hit mid-pipeline, so the heuristic is: of the
+  // character's Companion-category assets with an enabled track,
+  // pick the one with the highest current track value. That's the
+  // most charitable resolution and matches the typical single-
+  // companion case exactly; multi-companion characters get an info
+  // notification naming which one was used so they can adjust the
+  // narration if it's wrong.
   if (statUsed === "companion_health") {
-    console.warn(
-      `${MODULE_ID} | statEnrichment: companion_health enrichment not yet implemented — defaulting to 0. Companion health lives on a Companion-asset Item's track; threading that through is a follow-up.`,
-    );
-    return 0;
+    return resolveCompanionHealth(actor);
   }
 
   console.warn(
@@ -139,4 +144,55 @@ function warnMissingActor(statUsed) {
   console.warn(
     `${MODULE_ID} | statEnrichment: cannot resolve "${statUsed}" — no speaker actor available. Defaulting to 0.`,
   );
+}
+
+/**
+ * Resolve the character's companion_health to the highest enabled
+ * Companion-asset track value. Notifies on multi-companion ambiguity.
+ *
+ * Exported for test coverage.
+ */
+export function resolveCompanionHealth(actor) {
+  if (!actor) {
+    warnMissingActor("companion_health");
+    return 0;
+  }
+
+  const items = actor.items?.contents ?? actor.items ?? [];
+  const assetItems = Array.isArray(items) ? items.filter(i => i?.type === "asset") : [];
+
+  // The system stores the asset family on system.category. The string
+  // is "Companion" (capital C) for companion assets out of the asset
+  // tables, but match case-insensitively so user-renamed categories
+  // or future localisation don't silently drop matches.
+  const companions = assetItems.filter(i => {
+    const category = String(i.system?.category ?? "").toLowerCase();
+    return category.includes("companion") && i.system?.track?.enabled !== false;
+  });
+
+  if (!companions.length) {
+    console.warn(
+      `${MODULE_ID} | statEnrichment: companion_health rolled but no enabled Companion-category asset found on ${actor.name ?? actor.id}. Defaulting to 0.`,
+    );
+    return 0;
+  }
+
+  // Pick the companion with the highest current track value — the most
+  // charitable resolution. For single-companion characters (the common
+  // case) this is exact; for multi-companion characters we surface
+  // which one we used so the player can re-narrate if they intended a
+  // different companion.
+  let chosen = companions[0];
+  for (const c of companions) {
+    if ((c.system?.track?.value ?? 0) > (chosen.system?.track?.value ?? 0)) chosen = c;
+  }
+  const value = Number(chosen.system?.track?.value ?? 0);
+
+  if (companions.length > 1) {
+    globalThis.ui?.notifications?.info?.(
+      `Starforged Companion: companion_health rolled with ${companions.length} active Companion assets — using "${chosen.name}" (track ${value}). Re-narrate if you meant a different companion.`,
+    );
+  }
+
+  return value;
 }

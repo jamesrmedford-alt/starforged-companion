@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveStatValue, enrichInterpretationStatValue } from '../../src/moves/statEnrichment.js';
+import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth } from '../../src/moves/statEnrichment.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -121,10 +121,81 @@ describe('resolveStatValue — vehicle integrity', () => {
 
 
 describe('resolveStatValue — companion_health', () => {
-  it('returns 0 + warns — companion_health enrichment is a follow-up', () => {
+  function actorWithCompanions(companions) {
+    const base = makeActor();
+    base.items = {
+      contents: companions.map((c, idx) => ({
+        type: 'asset',
+        name: c.name ?? `Companion-${idx}`,
+        system: {
+          category: c.category ?? 'Companion',
+          track:    { enabled: c.enabled ?? true, value: c.value ?? 0, name: 'health', min: 0, max: 5 },
+          abilities: [],
+        },
+      })),
+    };
+    return base;
+  }
+
+  it('returns the single Companion asset track value', () => {
+    const actor = actorWithCompanions([{ name: 'Rover', value: 4 }]);
+    expect(resolveStatValue(actor, 'companion_health', {})).toBe(4);
+  });
+
+  it('picks the highest track value across multiple companions and notifies', () => {
+    const info = vi.fn();
+    global.ui.notifications.info = info;
+    const actor = actorWithCompanions([
+      { name: 'Rover', value: 2 },
+      { name: 'Kestrel', value: 5 },
+      { name: 'Drake', value: 3 },
+    ]);
+    expect(resolveStatValue(actor, 'companion_health', {})).toBe(5);
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('Kestrel'));
+    expect(info.mock.calls[0][0]).toMatch(/track 5/);
+  });
+
+  it('does NOT notify when there is exactly one companion (no ambiguity)', () => {
+    const info = vi.fn();
+    global.ui.notifications.info = info;
+    const actor = actorWithCompanions([{ name: 'Rover', value: 4 }]);
+    resolveStatValue(actor, 'companion_health', {});
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it('skips Companion assets with track.enabled === false', () => {
+    const actor = actorWithCompanions([
+      { name: 'Disabled', value: 5, enabled: false },
+      { name: 'Active',   value: 2, enabled: true  },
+    ]);
+    expect(resolveStatValue(actor, 'companion_health', {})).toBe(2);
+  });
+
+  it('matches category case-insensitively (covers user-renamed or localised categories)', () => {
+    const actor = actorWithCompanions([
+      { name: 'Rover', value: 3, category: 'COMPANION' },
+    ]);
+    expect(resolveStatValue(actor, 'companion_health', {})).toBe(3);
+  });
+
+  it('ignores non-Companion assets that happen to have a track', () => {
+    const actor = actorWithCompanions([
+      { name: 'Module', value: 9, category: 'Module' },
+    ]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(resolveStatValue(actor, 'companion_health', {})).toBe(0);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('returns 0 + warns when the actor has no Companion assets', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(resolveStatValue(makeActor(), 'companion_health', {})).toBe(0);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('companion_health'));
+  });
+
+  it('returns 0 + warns when actor is null', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(resolveCompanionHealth(null)).toBe(0);
   });
 });
 
