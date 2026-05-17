@@ -42,10 +42,11 @@ const RANKS = {
 };
 
 const TRACK_TYPES = {
-  vow:        'Vow',
-  expedition: 'Expedition',
-  connection: 'Connection',
-  combat:     'Combat',
+  vow:             'Vow',
+  expedition:      'Expedition',
+  connection:      'Connection',
+  combat:          'Combat',
+  scene_challenge: 'Scene Challenge',
 };
 
 // ---------------------------------------------------------------------------

@@ -51,6 +51,11 @@ import {
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
 import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
+import {
+  isOracleAddCommand,
+  handleOracleAddCommand,
+  rehydrateCustomOracles,
+} from "./oracles/customOracles.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -527,6 +532,12 @@ export function registerChatHook() {
     // !clock command — create / advance / list campaign and tension clocks
     if (isClockCommand(message)) {
       await handleClockCommand(message);
+      return;
+    }
+
+    // !oracle-add command — GM-only; opens a dialog to define a custom table
+    if (isOracleAddCommand(message)) {
+      await handleOracleAddCommand(message);
       return;
     }
 
@@ -1948,6 +1959,12 @@ Hooks.once("ready", () => {
   if (game.user.isGM) {
     logArtBackendStatus();
   }
+
+  // Re-register any custom oracle tables defined in previous sessions
+  // (campaignState.customOracles). Memory-only registration; persistence
+  // is via campaignState.
+  try { rehydrateCustomOracles(); }
+  catch (err) { console.warn(`${MODULE_ID} | rehydrateCustomOracles failed:`, err); }
 
   // Session ID — GM writes to world-scoped settings; players read from state
   if (game.user.isGM) {

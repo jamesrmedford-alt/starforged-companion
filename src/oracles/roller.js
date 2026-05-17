@@ -184,6 +184,35 @@ export const ORACLE_TABLES = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Register a custom oracle table at runtime. Player-defined tables added
+ * via the !oracle-add chat command land here; the table is held in memory
+ * only (caller is responsible for any persistence). Throws if the tableId
+ * collides with a built-in table.
+ *
+ * @param {string} tableId
+ * @param {{ name: string, table: Array, category?: string }} entry
+ */
+export function registerOracleTable(tableId, entry) {
+  if (!tableId) throw new Error("registerOracleTable: tableId required");
+  if (!entry || !Array.isArray(entry.table) || !entry.table.length) {
+    throw new Error("registerOracleTable: entry.table must be a non-empty array");
+  }
+  if (Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId)) {
+    throw new Error(`registerOracleTable: tableId "${tableId}" already exists`);
+  }
+  ORACLE_TABLES[tableId] = {
+    name:     entry.name ?? tableId,
+    table:    entry.table,
+    category: entry.category ?? "custom",
+  };
+}
+
+/** Remove a previously registered custom oracle table. */
+export function unregisterOracleTable(tableId) {
+  delete ORACLE_TABLES[tableId];
+}
+
+/**
  * Roll on an oracle table by ID.
  *
  * @param {string} tableId   — key from ORACLE_TABLES
