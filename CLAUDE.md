@@ -57,21 +57,22 @@ Before doing any work, read these files in order:
 
 ---
 
-## Third-party schema references
+## External system reference — foundry-ironsworn
 
-The foundry-ironsworn system source is available at `vendor/foundry-ironsworn/`.
-This is a git submodule pinned to the currently installed system version.
+The foundry-ironsworn system source is public and attached to this project
+as a git submodule at `vendor/foundry-ironsworn/`, pinned to the currently
+installed system version. Before writing ANY code that reads or writes
+Actor documents, Item documents, or any `actor.system.*` field, you MUST
+read the relevant source file first. Never guess at schema paths — they
+have changed between versions and cost significant debugging time when
+wrong.
 
-**Before writing any code that reads from or writes to a foundry-ironsworn
-Actor, Item, or other document**, read the DataModel definitions in:
-```
-vendor/foundry-ironsworn/src/module/model/actor/
-vendor/foundry-ironsworn/src/module/model/item/
-```
+**Repository:** https://github.com/ben/foundry-ironsworn  
+**Confirmed schema doc:** `docs/ironsworn-api-scope.md` — read this first,
+then verify against live source if the version may have changed.
 
-Never assume field paths for third-party documents. Always verify against
-the vendor source. If the vendor folder is empty (submodule not initialised),
-run:
+**Submodule mechanics.** If the vendor folder is empty (submodule not
+initialised), run:
 ```bash
 git submodule update --init --recursive
 ```
@@ -82,6 +83,54 @@ cd vendor/foundry-ironsworn && git pull origin main && cd ../..
 git add vendor/foundry-ironsworn
 git commit -m "chore: update ironsworn vendor to v{new version}"
 ```
+
+**Key source files — read from vendor submodule (preferred) or fetch:**
+
+```bash
+# If vendor submodule is initialised (preferred — no network required):
+cat vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts
+cat vendor/foundry-ironsworn/src/module/fields/MeterField.ts
+cat vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts
+cat vendor/foundry-ironsworn/src/module/actor/config.ts
+
+# If vendor submodule is not initialised, fetch from GitHub:
+# Character schema — all stat, meter, debility, legacy field paths
+curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/character.ts
+
+# Momentum field — MAX, MIN, INITIAL, RESET_MIN constants, burnMomentum()
+curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/fields/MeterField.ts
+
+# Starship schema — debility.battered, debility.cursed
+curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/starship.ts
+
+# All actor types — character, shared, treasury, foe, site, starship, location
+curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/config.ts
+```
+
+The DataModel definitions for Actor / Item documents also live at:
+```
+vendor/foundry-ironsworn/src/module/model/actor/
+vendor/foundry-ironsworn/src/module/model/item/
+```
+
+**Rules for ironsworn actor work — non-negotiable:**
+
+1. Read `docs/ironsworn-api-scope.md` before touching `actorBridge.js`
+2. If the system version may have changed, fetch the source files above
+3. Never assume field paths from memory or documentation — verify from source
+4. Use computed getters on the system model when available:
+   - `actor.system.momentumMax` — not manual calculation
+   - `actor.system.momentumReset` — not manual calculation
+   - `actor.system.burnMomentum()` — not `actor.update({ momentum.value: x })`
+5. All debilities are under `system.debility` (singular) — never `system.debilities`
+6. Stats are flat on system: `system.edge`, not `system.stats.edge`
+7. XP is a flat number: `system.xp`, not `system.xp.value`
+8. Starship is a separate Actor (`type: "starship"`), not an embedded item
+
+**When updating `tests/setup.js` actor mock:**
+The `makeTestActor` factory must match the real schema exactly.
+After any schema correction, run `npm test` and confirm the mock
+produces the same paths that live Foundry does.
 
 ---
 
@@ -152,71 +201,6 @@ This gives reviewers — and future Claude Code sessions investigating the same
 area — the original framing without having to hunt through chat history.
 Skipping this section is treated the same as skipping the test/lint gate:
 do not open the PR until it is included.
-
----
-
-## External API reference — Foundry VTT
-
-Before writing any code that uses Foundry VTT APIs, check the live API
-documentation for the target Foundry version (currently v13). Never rely
-on memory or training data for Foundry API signatures — they change between
-versions and have been the source of multiple bugs in this project.
-
-**Base URL:** https://foundryvtt.com/api/v13/
-
-**Rule:** If you are about to write a Hooks.on(), ChatMessage.create(),
-actor.update(), game.settings.register(), or any ApplicationV2 method —
-fetch the relevant docs page first. This takes seconds and prevents hours
-of debugging.
-
-**Key pages to fetch before common tasks:**
-
-```bash
-# ApplicationV2 — before ANY UI panel work
-# Covers: _prepareContext, _renderHTML, _replaceHTML, DEFAULT_OPTIONS,
-#         actions, lifecycle hooks, render/close
-curl https://foundryvtt.com/api/v13/classes/foundry.applications.api.ApplicationV2.html
-
-# ChatMessage — before creating or reading chat messages
-# Covers: type values, flags, create(), speaker, content
-curl https://foundryvtt.com/api/v13/classes/ChatMessage.html
-
-# Hooks — before registering any hook
-# Covers: on(), once(), off(), callAll(), hook names and signatures
-curl https://foundryvtt.com/api/v13/classes/Hooks.html
-
-# Actor — before any actor read/write (supplement with ironsworn source)
-# Covers: update(), getFlag(), setFlag(), items, effects
-curl https://foundryvtt.com/api/v13/classes/Actor.html
-
-# ClientSettings — before registering or reading settings
-# Covers: register(), get(), set(), scope, config, type
-curl https://foundryvtt.com/api/v13/classes/ClientSettings.html
-
-# JournalEntry / JournalEntryPage — before journal operations
-curl https://foundryvtt.com/api/v13/classes/JournalEntry.html
-curl https://foundryvtt.com/api/v13/classes/JournalEntryPage.html
-
-# SceneControls — before toolbar button registration
-curl https://foundryvtt.com/api/v13/classes/SceneControls.html
-
-# DialogV2 — for confirmation dialogs (Dialog is deprecated in v13)
-curl https://foundryvtt.com/api/v13/classes/foundry.applications.api.DialogV2.html
-```
-
-**Known v12 → v13 breaking changes (already fixed in this codebase):**
-- `Application` → `ApplicationV2` (v1 deprecated, removed v16)
-- `Dialog` → `DialogV2` (deprecated, DIALOG-001 still open in entityPanel.js)
-- `message.user` → `message.author`
-- `CONST.CHAT_MESSAGE_TYPES` → string literals (`"ooc"`, `"roll"` etc)
-- `ChatMessage.type = "other"` → removed, use `"base"` or omit
-- `getSceneControlButtons` hook: `controls` is now Object not Array
-- jQuery (`$`) removed — use DOM API throughout
-
-**When the docs are insufficient:**
-The Foundry source is on GitHub at https://github.com/foundryvtt/foundryvtt
-but it is not public for the core codebase. Use the API docs + the error
-messages in the Foundry console as your source of truth.
 
 ---
 
@@ -308,7 +292,7 @@ Use `CONFIG.debug.hooks = true` in the console to trace hook firing.
 | `getSceneControlButtons` | Array | Object keyed by group name | ✅ Fixed |
 | `Dialog.confirm()` | valid | deprecated → use `DialogV2.confirm()` | ⚠️ Not yet fixed |
 | jQuery `$` / `.find()` | available | removed — use DOM API | ✅ Fixed |
-| `Application` (v1) | valid | deprecated → use `ApplicationV2` | ✅ Fixed in our code |
+| `Application` (v1) | valid | deprecated → `ApplicationV2` (removed v16) | ✅ Fixed in our code |
 
 **Before implementing any new Foundry hook or API:**
 1. Fetch the relevant docs page above
@@ -316,6 +300,11 @@ Use `CONFIG.debug.hooks = true` in the console to trace hook firing.
 3. Check the method signature — argument order and types change between versions
 4. Check for deprecation notices — if deprecated, use the replacement
 5. Note whether the API is available in both renderer and server contexts
+
+**When the docs are insufficient:** the Foundry source is on GitHub at
+https://github.com/foundryvtt/foundryvtt but the core codebase is not
+public. Use the API docs + the error messages in the Foundry console as
+your source of truth.
 
 ---
 
@@ -402,62 +391,6 @@ const MODULE_PATH = "/modules/starforged-companion/src";
 await import(`${MODULE_PATH}/context/safety.js`)  // works
 ```
 Static imports at file top resolve correctly. Only dynamic import() has this behaviour.
-
----
-
-## External system reference — foundry-ironsworn
-
-The foundry-ironsworn system source is public and attached to this project.
-Before writing ANY code that reads or writes Actor documents, Item documents,
-or any `actor.system.*` field, you MUST read the relevant source file first.
-Never guess at schema paths — they have changed between versions and cost
-significant debugging time when wrong.
-
-**Repository:** https://github.com/ben/foundry-ironsworn  
-**Confirmed schema doc:** `docs/ironsworn-api-scope.md` — read this first,
-then verify against live source if the version may have changed.
-
-**Key source files — read from vendor submodule (preferred) or fetch:**
-
-```bash
-# If vendor submodule is initialised (preferred — no network required):
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts
-cat vendor/foundry-ironsworn/src/module/fields/MeterField.ts
-cat vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts
-cat vendor/foundry-ironsworn/src/module/actor/config.ts
-
-# If vendor submodule is not initialised, fetch from GitHub:
-# Character schema — all stat, meter, debility, legacy field paths
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/character.ts
-
-# Momentum field — MAX, MIN, INITIAL, RESET_MIN constants, burnMomentum()
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/fields/MeterField.ts
-
-# Starship schema — debility.battered, debility.cursed
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/subtypes/starship.ts
-
-# All actor types — character, shared, treasury, foe, site, starship, location
-curl https://raw.githubusercontent.com/ben/foundry-ironsworn/main/src/module/actor/config.ts
-```
-
-**Rules for ironsworn actor work — non-negotiable:**
-
-1. Read `docs/ironsworn-api-scope.md` before touching `actorBridge.js`
-2. If the system version may have changed, fetch the source files above
-3. Never assume field paths from memory or documentation — verify from source
-4. Use computed getters on the system model when available:
-   - `actor.system.momentumMax` — not manual calculation
-   - `actor.system.momentumReset` — not manual calculation
-   - `actor.system.burnMomentum()` — not `actor.update({ momentum.value: x })`
-5. All debilities are under `system.debility` (singular) — never `system.debilities`
-6. Stats are flat on system: `system.edge`, not `system.stats.edge`
-7. XP is a flat number: `system.xp`, not `system.xp.value`
-8. Starship is a separate Actor (`type: "starship"`), not an embedded item
-
-**When updating `tests/setup.js` actor mock:**
-The `makeTestActor` factory must match the real schema exactly.
-After any schema correction, run `npm test` and confirm the mock
-produces the same paths that live Foundry does.
 
 ---
 
