@@ -104,6 +104,7 @@ export function readCharacterSnapshot(actor) {
       max:   30,
     },
     assets: readAssets(actor),
+    vows:   readVows(actor),
   };
 
   _snapshotCache.set(actor.id, snapshot);
@@ -142,6 +143,41 @@ export function readAssets(actor) {
 
 function stripHtml(s) {
   return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Read the character's progress-typed vow Items (foundry-ironsworn stores
+ * vows as `type: "progress"` with `system.subtype: "vow"`) and return them
+ * as plain-data snapshots. The first item in actor.items.contents is the
+ * earliest one created; we surface it as `isBackground: true` so the
+ * narrator context can spotlight the founding vow.
+ *
+ * Starforged's play-kit character sheet has a labelled "BACKGROUND VOW"
+ * area but the system has no dedicated field for it — the convention
+ * across the foundry-ironsworn community is to create the founding vow
+ * as the first vow item on the character. This helper makes that
+ * convention explicit.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, isBackground }>}
+ */
+export function readVows(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  const vows  = list.filter(i => i?.type === 'progress' && i?.system?.subtype === 'vow');
+
+  return vows.map((v, i) => {
+    const ticks = Number(v.system?.progress ?? v.system?.current ?? 0);
+    return {
+      id:           v.id ?? v._id ?? null,
+      name:         v.name ?? '',
+      rank:         v.system?.rank ?? 'dangerous',
+      ticks,
+      progress:     Math.floor(ticks / 4),
+      completed:    !!v.system?.completed,
+      isBackground: i === 0,
+    };
+  });
 }
 
 /**

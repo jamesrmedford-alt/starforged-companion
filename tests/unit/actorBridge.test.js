@@ -12,6 +12,7 @@ import {
   readCharacterSnapshot,
   readDebilities,
   readAssets,
+  readVows,
   applyMeterChanges,
   setDebility,
   awardXP,
@@ -522,6 +523,51 @@ describe('createCharacterBondItem', () => {
   it('returns null when actor is missing', async () => {
     const item = await createCharacterBondItem(null, { name: 'X' });
     expect(item).toBeNull();
+  });
+});
+
+describe('readVows', () => {
+  it('returns vow-subtyped progress items with isBackground on the first one', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          { id: 'v1', type: 'progress', name: 'Find the Beacon',
+            system: { subtype: 'vow', rank: 'formidable', progress: 16 } },
+          { id: 'v2', type: 'progress', name: 'Reclaim the Throne',
+            system: { subtype: 'vow', rank: 'epic',       progress: 4  } },
+          { id: 'b1', type: 'progress', name: 'A Connection',
+            system: { subtype: 'bond', rank: 'dangerous' } },
+        ],
+      },
+    });
+
+    const vows = readVows(actor);
+    expect(vows).toHaveLength(2);
+    expect(vows[0]).toMatchObject({
+      id: 'v1', name: 'Find the Beacon', rank: 'formidable',
+      ticks: 16, progress: 4, isBackground: true,
+    });
+    expect(vows[1]).toMatchObject({
+      id: 'v2', name: 'Reclaim the Throne', rank: 'epic',
+      ticks: 4, progress: 1, isBackground: false,
+    });
+  });
+
+  it('returns empty array when actor has no vow items', () => {
+    const actor = freshActor();
+    expect(readVows(actor)).toEqual([]);
+  });
+
+  it('surfaces vows through readCharacterSnapshot', () => {
+    const actor = freshActor({
+      items: {
+        contents: [{ id: 'v1', type: 'progress', name: 'Test',
+                     system: { subtype: 'vow', rank: 'dangerous', progress: 0 } }],
+      },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.vows).toHaveLength(1);
+    expect(snap.vows[0].isBackground).toBe(true);
   });
 });
 
