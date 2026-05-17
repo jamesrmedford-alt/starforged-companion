@@ -13,6 +13,7 @@ For the full source tree (src/, tests/, styles/, etc.) see the root
 | File | Purpose |
 |------|---------|
 | [`scope-index.md`](scope-index.md) | **Start here** — single-table status of all feature scopes; dependency graph and next-steps |
+| [`playkit-rules-and-coverage.md`](playkit-rules-and-coverage.md) | Authoritative play-kit rules reference + per-feature code coverage map + mismatch punch list |
 | [`decisions.md`](decisions.md) | Architecture decisions and their rationale; read before changing any constrained pattern |
 | [`known-issues.md`](known-issues.md) | Open bugs, accepted workarounds, and resolved issues |
 | [`narrator-scope.md`](narrator-scope.md) | ✅ Narrator feature — direct Claude narration replacing Loremaster |
