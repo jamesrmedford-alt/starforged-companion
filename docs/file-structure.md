@@ -13,7 +13,8 @@ For the full source tree (src/, tests/, styles/, etc.) see the root
 | File | Purpose |
 |------|---------|
 | [`scope-index.md`](scope-index.md) | **Start here** — single-table status of all feature scopes; dependency graph and next-steps |
-| [`playkit-rules-and-coverage.md`](playkit-rules-and-coverage.md) | Authoritative play-kit rules reference + per-feature code coverage map + mismatch punch list |
+| [`playkit-rules-and-coverage.md`](playkit-rules-and-coverage.md) | Authoritative play-kit rules reference + per-feature code coverage map + mismatch punch list. Read before implementing or fixing a specific move, table, or mechanic. |
+| [`rulebook-summary.md`](rulebook-summary.md) | Section-by-section paraphrased summary of the *Starforged* rulebook — conceptual model, mechanical structure, design principles, "Implications for module design". Read before designing narrator behaviour, classifier prompts, or scene mechanics. |
 | [`decisions.md`](decisions.md) | Architecture decisions and their rationale; read before changing any constrained pattern |
 | [`known-issues.md`](known-issues.md) | Open bugs, accepted workarounds, and resolved issues |
 | [`narrator-scope.md`](narrator-scope.md) | ✅ Narrator feature — direct Claude narration replacing Loremaster |
