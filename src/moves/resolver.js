@@ -327,7 +327,7 @@ const CONSEQUENCE_MAP = {
 
   reach_a_milestone: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 0,   // Ticks applied by caller based on vow rank — rank not known here
+    progressMarked: 1,   // One mark; persistence layer multiplies by track's ticksPerMark
     otherEffect: "Mark progress on your vow per its rank.",
   }),
 
@@ -364,7 +364,7 @@ const CONSEQUENCE_MAP = {
 
   develop_your_relationship: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 0,   // Ticks per connection rank — applied by caller
+    progressMarked: 1,   // One mark; persistence multiplies by track's ticksPerMark
     otherEffect: "Mark progress on connection track per connection rank.",
   }),
 
@@ -481,9 +481,9 @@ const CONSEQUENCE_MAP = {
 
   strike: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2,
         otherEffect: "Mark progress twice. Dominate foe, stay in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 2,
         otherEffect: "Mark progress twice, but expose yourself to danger. You are in a bad spot." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Fight turns against you. You are in a bad spot. Pay the Price." };
@@ -492,9 +492,9 @@ const CONSEQUENCE_MAP = {
 
   clash: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2,
         otherEffect: "Mark progress twice. Overwhelm foe, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 1,
         otherEffect: "Mark progress, but dealt a counterblow. Stay in a bad spot. Pay the Price." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Foe dominates. Stay in a bad spot. Pay the Price." };
