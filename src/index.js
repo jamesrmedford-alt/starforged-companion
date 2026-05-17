@@ -51,6 +51,7 @@ import {
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
 import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
+import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isOracleAddCommand,
   handleOracleAddCommand,
@@ -533,6 +534,12 @@ export function registerChatHook() {
     // !clock command — create / advance / list campaign and tension clocks
     if (isClockCommand(message)) {
       await handleClockCommand(message);
+      return;
+    }
+
+    // !repair — vehicle repair point-spend dialog (play kit p. 7)
+    if (isRepairCommand(message)) {
+      await handleRepairCommand(message);
       return;
     }
 
