@@ -40,18 +40,39 @@ export async function apiPost(url, headers, body) {
     console.warn(`${MODULE_ID} | api-proxy: unexpected host in URL: ${url}`);
   }
 
+  // Defensive trim on the API key header. The save flow in settingsPanel.js
+  // already trims at write time, but a stored key from an older save (or one
+  // set via a chat command / direct settings.set) can carry trailing
+  // whitespace or a stray newline that turns into an opaque 401 from
+  // Anthropic. Trimming here normalises every call site cheaply.
+  const normalisedHeaders = { ...headers };
+  if (typeof normalisedHeaders["x-api-key"] === "string") {
+    normalisedHeaders["x-api-key"] = normalisedHeaders["x-api-key"].trim();
+  }
+
   const res = await fetch(url, {
     method:  "POST",
     headers: {
       "Content-Type":                              "application/json",
       "anthropic-dangerous-direct-browser-access": "true",
-      ...headers,
+      ...normalisedHeaders,
     },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => `HTTP ${res.status}`);
+    // 401 specifically usually means a bad / wrong-provider key. Surface a
+    // one-line hint so the caller's error log makes the cause obvious.
+    if (res.status === 401) {
+      const key = normalisedHeaders["x-api-key"] ?? "";
+      const prefix = key ? `${key.slice(0, 7)}…` : "(empty)";
+      console.warn(
+        `${MODULE_ID} | api-proxy: 401 from Anthropic (key prefix: ${prefix}). ` +
+        `Verify the key in Companion Settings → About. Anthropic keys start with "sk-ant-"; ` +
+        `OpenRouter keys start with "sk-or-v1-" and will not authenticate here.`,
+      );
+    }
     throw new Error(`Anthropic API error ${res.status}: ${errText}`);
   }
 

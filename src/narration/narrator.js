@@ -110,7 +110,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | narrateResolution: Claude API key not configured`);
-    await postFallbackCard(resolution);
+    await postFallbackCard(resolution, campaignState);
     return null;
   }
 
@@ -205,7 +205,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     });
 
     if (!narration?.trim()) {
-      await postFallbackCard(resolution);
+      await postFallbackCard(resolution, campaignState);
       return null;
     }
 
@@ -257,7 +257,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     }
 
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
-    await postFallbackCard(resolution);
+    await postFallbackCard(resolution, campaignState);
     return null;
   }
 }
@@ -1115,10 +1115,11 @@ async function postSceneFallbackCard(question, reason, sessionId) {
   });
 }
 
-async function postFallbackCard(resolution) {
+async function postFallbackCard(resolution, campaignState = null) {
   const moveInfo = resolution?.moveName && resolution?.outcomeLabel
     ? `${resolution.moveName}: ${resolution.outcomeLabel}`
     : 'Move resolved.';
+  const fallbackProse = `${moveInfo} — narration unavailable.`;
 
   return ChatMessage.create({
     content: `
@@ -1130,10 +1131,21 @@ async function postFallbackCard(resolution) {
     `.trim(),
     flags: {
       [MODULE_ID]: {
+        // Match the success-path narratorCard flag shape so recap readers
+        // (`getRecentNarrationContext`, `_collectAllChronicleEntries`) and
+        // the live-Quench narrator-card assertion can locate the fallback
+        // alongside real narrations.
         narratorCard:      true,
         narrationCard:     true,
         narrationFallback: true,
-        resolutionId:      resolution?._id ?? '',
+        narrationText:     fallbackProse,
+        sessionId:         campaignState?.currentSessionId ?? null,
+        sessionNumber:     campaignState?.sessionNumber     ?? null,
+        moveId:            resolution?.moveId               ?? null,
+        outcome:           resolution?.outcome              ?? null,
+        resolutionId:      resolution?._id                  ?? '',
+        matchedEntityIds:  [],
+        timestamp:         new Date().toISOString(),
       },
     },
   });

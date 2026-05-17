@@ -1242,6 +1242,37 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel) {
   };
 }
 
+/**
+ * Emit a console warning when the stored Claude API key obviously isn't
+ * an Anthropic key. Anthropic keys are `sk-ant-…`; OpenRouter keys are
+ * `sk-or-v1-…` and a common copy-paste mistake. This is best-effort —
+ * we never block module load on key format.
+ */
+function warnIfClaudeKeyLooksWrong() {
+  try {
+    const raw = game.settings.get(MODULE_ID, "claudeApiKey") ?? "";
+    const key = String(raw).trim();
+    if (!key) return;                                  // empty is fine — caller will surface
+    if (key.startsWith("sk-ant-")) return;             // looks right
+    const prefix = `${key.slice(0, 9)}…`;
+    if (key.startsWith("sk-or-v1-")) {
+      console.warn(
+        `${MODULE_ID} | The stored Claude API key starts with "sk-or-v1-" ` +
+        `(OpenRouter format). This will 401 against Anthropic. ` +
+        `Move it to the OpenRouter field in Companion Settings → About.`,
+      );
+      return;
+    }
+    console.warn(
+      `${MODULE_ID} | The stored Claude API key does not start with "sk-ant-" ` +
+      `(prefix: ${prefix}). Anthropic keys begin with "sk-ant-". ` +
+      `Verify in Companion Settings → About.`,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | warnIfClaudeKeyLooksWrong failed:`, err?.message ?? err);
+  }
+}
+
 function getActiveCharacterForPacing(campaignState) {
   try {
     const ids = campaignState?.characterIds ?? [];
@@ -1680,6 +1711,12 @@ Hooks.once("ready", () => {
   // Pacing recent-density buffer is in-memory; clear it on world load so a
   // returning session doesn't inherit the previous run's MOVE count.
   resetRecentDensity();
+
+  // One-time API-key format sanity check. The settings dialog trims on save
+  // but does not validate; an OpenRouter key (`sk-or-v1-…`) pasted into the
+  // Claude field will silently store and 401 every call. A one-line warn
+  // here makes that obvious in the console without blocking module load.
+  warnIfClaudeKeyLooksWrong();
 
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
