@@ -31,6 +31,167 @@ const MODULE_ID = "starforged-companion";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Panel — ApplicationV2 singleton
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _panelClass = null;
+let _panelInstance = null;
+
+function getPanelClass() {
+  if (_panelClass) return _panelClass;
+  const { ApplicationV2 } = foundry.applications.api;
+
+  _panelClass = class ClocksPanelApp extends ApplicationV2 {
+    static DEFAULT_OPTIONS = {
+      id:  "sf-clocks-panel",
+      tag: "div",
+      window: { title: "Clocks", resizable: true, minimizable: true },
+      position: { width: 480, height: "auto" },
+      actions: {
+        addClock:     ClocksPanelApp.#onAddClock,
+        advanceClock: ClocksPanelApp.#onAdvanceClock,
+        fillClock:    ClocksPanelApp.#onFillClock,
+        resetClock:   ClocksPanelApp.#onResetClock,
+        removeClock:  ClocksPanelApp.#onRemoveClock,
+      },
+    };
+
+    async _prepareContext() {
+      const clocks = readState().clocks ?? [];
+      return {
+        clocks: clocks.map(c => ({
+          ...c,
+          triggered: c.filled >= c.segments,
+          isCampaign: c.type === "campaign",
+        })),
+      };
+    }
+
+    async _renderHTML({ clocks }) {
+      const oddsOpts = ["small_chance","unlikely","50_50","likely","almost_certain"]
+        .map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+
+      const row = (c) => {
+        const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
+        return `
+          <div class="clock-row clock-${c.type}${c.triggered ? " is-triggered" : ""}" data-clock-id="${c._id}">
+            <div class="clock-name"><strong>${escapeHtml(c.name)}</strong> · ${c.type} · ${c.filled}/${c.segments}${c.isCampaign ? ` (odds: ${c.advanceOdds})` : ""}${c.triggered ? " <em>TRIGGERED</em>" : ""}</div>
+            <div class="clock-bar"><code>[${bar}]</code></div>
+            <div class="clock-actions">
+              <button data-action="advanceClock" data-clock-id="${c._id}" title="Advance (campaign rolls odds; tension fills 1)">↻</button>
+              <button data-action="fillClock"    data-clock-id="${c._id}" title="Manually fill 1 segment">+</button>
+              <button data-action="resetClock"   data-clock-id="${c._id}" title="Reset to 0">⟲</button>
+              <button data-action="removeClock"  data-clock-id="${c._id}" title="Delete clock">✕</button>
+            </div>
+          </div>
+        `;
+      };
+
+      const html = `
+        <div class="sf-clocks-panel">
+          <section class="add-clock-section">
+            <div class="add-clock-fields">
+              <input  name="newClockName"      type="text" placeholder="Clock name…" maxlength="60">
+              <select name="newClockSegments">
+                <option value="4" selected>4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+              </select>
+              <select name="newClockType">
+                <option value="tension" selected>Tension</option>
+                <option value="campaign">Campaign</option>
+              </select>
+              <select name="newClockOdds">${oddsOpts}</select>
+              <button data-action="addClock">Add</button>
+            </div>
+          </section>
+          <section class="clocks-section">
+            ${clocks.length ? clocks.map(row).join("") : '<p class="empty-state">No clocks yet.</p>'}
+          </section>
+        </div>
+      `;
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html.trim();
+      return tmp.firstElementChild;
+    }
+
+    _replaceHTML(result, content) {
+      content.innerHTML = "";
+      content.append(result);
+    }
+
+    static async #onAddClock(_event, target) {
+      if (!gmGate("Add clock")) return;
+      const root  = target.closest(".sf-clocks-panel");
+      const name  = root.querySelector('[name="newClockName"]').value.trim();
+      const segs  = Number(root.querySelector('[name="newClockSegments"]').value);
+      const type  = root.querySelector('[name="newClockType"]').value;
+      const odds  = root.querySelector('[name="newClockOdds"]').value;
+
+      if (!name) {
+        ui.notifications?.warn("Clock name required.");
+        return;
+      }
+      try { await createClock({ name, segments: segs, type, advanceOdds: odds }); }
+      catch (err) { ui.notifications?.error(`Clock creation failed: ${err.message}`); return; }
+      root.querySelector('[name="newClockName"]').value = "";
+      this.render();
+    }
+
+    static async #onAdvanceClock(_event, target) {
+      if (!gmGate("Advance clock")) return;
+      const id = target.dataset.clockId;
+      const c  = (readState().clocks ?? []).find(x => x._id === id);
+      if (!c) return;
+
+      if (c.type === "campaign") {
+        const r = rollYesNo(c.advanceOdds);
+        if (r.answer === "yes") {
+          await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
+        }
+      } else {
+        await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
+      }
+      this.render();
+    }
+
+    static async #onFillClock(_event, target) {
+      if (!gmGate("Fill clock")) return;
+      const id = target.dataset.clockId;
+      await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
+      this.render();
+    }
+
+    static async #onResetClock(_event, target) {
+      if (!gmGate("Reset clock")) return;
+      const id = target.dataset.clockId;
+      await mutateClock(id, x => { x.filled = 0; });
+      this.render();
+    }
+
+    static async #onRemoveClock(_event, target) {
+      if (!gmGate("Remove clock")) return;
+      const id = target.dataset.clockId;
+      const state = readState();
+      state.clocks = (state.clocks ?? []).filter(c => c._id !== id);
+      await writeState(state);
+      this.render();
+    }
+  };
+
+  return _panelClass;
+}
+
+export function openClocksPanel() {
+  const Cls = getPanelClass();
+  if (!_panelInstance) _panelInstance = new Cls();
+  _panelInstance.render({ force: true });
+  return _panelInstance;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Command dispatch
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -50,8 +50,9 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, openClocksPanel } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
+import { openCustomOraclesPanel } from "./oracles/customOracles.js";
 import {
   isOracleAddCommand,
   handleOracleAddCommand,
@@ -2172,6 +2173,21 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => {},
   };
+  tokenControls.tools.clocks = {
+    name:     "clocks",
+    title:    "Clocks",
+    icon:     "fas fa-clock",
+    button:   true,
+    onChange: () => {},
+  };
+  tokenControls.tools.customOracles = {
+    name:     "customOracles",
+    title:    "Custom Oracles",
+    icon:     "fas fa-table-list",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -2189,6 +2205,8 @@ Hooks.on("renderSceneControls", (app, html) => {
     sectorCreator:  () => openSectorCreator(),
     worldJournal:   () => openWorldJournalPanel(),
     worldTruths:    () => openSystemTruthsDialog(),
+    clocks:         () => openClocksPanel(),
+    customOracles:  () => openCustomOraclesPanel(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {

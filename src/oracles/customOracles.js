@@ -11,7 +11,7 @@
  * re-registers every saved custom oracle with the in-memory roller.
  */
 
-import { registerOracleTable, unregisterOracleTable } from "./roller.js";
+import { registerOracleTable, unregisterOracleTable, rollOracle, ORACLE_TABLES } from "./roller.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -194,4 +194,125 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return escapeHtml(s);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel — ApplicationV2 singleton
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _panelClass = null;
+let _panelInstance = null;
+
+function getPanelClass() {
+  if (_panelClass) return _panelClass;
+  const { ApplicationV2 } = foundry.applications.api;
+
+  _panelClass = class CustomOraclesPanelApp extends ApplicationV2 {
+    static DEFAULT_OPTIONS = {
+      id:  "sf-custom-oracles-panel",
+      tag: "div",
+      window: { title: "Custom Oracles", resizable: true, minimizable: true },
+      position: { width: 520, height: "auto" },
+      actions: {
+        addOracle:    CustomOraclesPanelApp.#onAddOracle,
+        rollOracle:   CustomOraclesPanelApp.#onRollOracle,
+        removeOracle: CustomOraclesPanelApp.#onRemoveOracle,
+      },
+    };
+
+    async _prepareContext() {
+      const tables = [];
+      for (const [id, entry] of Object.entries(ORACLE_TABLES)) {
+        if (entry.category !== "custom") continue;
+        tables.push({
+          id,
+          name:    entry.name ?? id,
+          entries: entry.table?.length ?? 0,
+        });
+      }
+      tables.sort((a, b) => a.name.localeCompare(b.name));
+      return { tables };
+    }
+
+    async _renderHTML({ tables }) {
+      const row = (t) => `
+        <div class="oracle-row" data-oracle-id="${escapeHtml(t.id)}">
+          <div class="oracle-meta"><strong>${escapeHtml(t.name)}</strong> · <code>${escapeHtml(t.id)}</code> · ${t.entries} entries</div>
+          <div class="oracle-actions">
+            <button data-action="rollOracle"   data-oracle-id="${escapeHtml(t.id)}" title="Roll on this table">🎲</button>
+            <button data-action="removeOracle" data-oracle-id="${escapeHtml(t.id)}" title="Delete table">✕</button>
+          </div>
+        </div>
+      `;
+
+      const html = `
+        <div class="sf-custom-oracles-panel">
+          <section class="add-oracle-section">
+            <button data-action="addOracle">+ Add Custom Oracle</button>
+          </section>
+          <section class="oracles-section">
+            ${tables.length ? tables.map(row).join("") : '<p class="empty-state">No custom oracles yet. Click <strong>+ Add Custom Oracle</strong> to define one.</p>'}
+          </section>
+        </div>
+      `;
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html.trim();
+      return tmp.firstElementChild;
+    }
+
+    _replaceHTML(result, content) {
+      content.innerHTML = "";
+      content.append(result);
+    }
+
+    static async #onAddOracle() {
+      if (!game.user?.isGM) {
+        ui.notifications?.warn("Add Custom Oracle is GM-only.");
+        return;
+      }
+      await openOracleAddDialog();
+      this.render();
+    }
+
+    static async #onRollOracle(_event, target) {
+      const id = target.dataset.oracleId;
+      try {
+        const r = rollOracle(id);
+        await ChatMessage.create({
+          content: `<div class="sf-oracle-card"><strong>${escapeHtml(r.tableName)}</strong><p>d100 = <strong>${r.roll}</strong> → ${escapeHtml(r.result)}</p></div>`,
+          flags:   { [MODULE_ID]: { customOracleCard: true } },
+        });
+      } catch (err) {
+        ui.notifications?.error(`Roll failed: ${err.message}`);
+      }
+    }
+
+    static async #onRemoveOracle(_event, target) {
+      if (!game.user?.isGM) {
+        ui.notifications?.warn("Remove Custom Oracle is GM-only.");
+        return;
+      }
+      const { DialogV2 } = foundry.applications.api;
+      const id = target.dataset.oracleId;
+
+      const confirmed = await DialogV2.confirm({
+        window:  { title: "Remove Custom Oracle" },
+        content: `<p>Delete custom oracle <code>${escapeHtml(id)}</code>? This cannot be undone.</p>`,
+      });
+      if (!confirmed) return;
+
+      await removeCustomOracle(id);
+      this.render();
+    }
+  };
+
+  return _panelClass;
+}
+
+export function openCustomOraclesPanel() {
+  const Cls = getPanelClass();
+  if (!_panelInstance) _panelInstance = new Cls();
+  _panelInstance.render({ force: true });
+  return _panelInstance;
 }
