@@ -6,9 +6,19 @@
 
 const MODULE_ID = "starforged-companion";
 
-// Condition debilities that affect momentum max and reset.
-// Each marked condition reduces momentumMax by 1 and momentumReset by 1 (floor -2).
-const CONDITION_DEBILITIES = ['wounded', 'shaken', 'unprepared', 'encumbered'];
+// All debility keys that count as "impacts" for momentum bounds.
+// Per foundry-ironsworn source (#impactCount getter) and the Starforged play kit
+// (p.1 "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH IMPACT"), every marked
+// impact reduces momentumMax by 1 and shifts momentumReset toward 0.
+// First 10 are the Starforged play-kit list; last 3 are Ironsworn-classic extras
+// the vendor system also tracks.
+const IMPACT_KEYS = [
+  'wounded', 'shaken', 'unprepared',                  // misfortunes
+  'permanentlyharmed', 'traumatized',                 // lasting effects
+  'doomed', 'tormented', 'indebted',                  // burdens
+  'battered', 'cursed',                               // current vehicle
+  'corrupted', 'encumbered', 'maimed',                // vendor extras (Ironsworn classic)
+];
 
 // In-memory cache of character snapshots, invalidated by the updateActor hook.
 const _snapshotCache = new Map();
@@ -62,7 +72,13 @@ export function readCharacterSnapshot(actor) {
 
   const sys  = actor.system ?? {};
   const debs = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
+  const impactCount = countImpacts(debs);
+
+  // Prefer the vendor system's computed getters (#impactCount-driven) when
+  // present so any future schema change tracks automatically; otherwise fall
+  // back to the local formula matching the play kit (p.1).
+  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
 
   const snapshot = {
     name:    actor.name,
@@ -80,14 +96,15 @@ export function readCharacterSnapshot(actor) {
       supply:   meterValue(sys.supply),
       momentum: meterValue(sys.momentum),
     },
-    momentumMax:   Math.max(0, 10 - condCount),
-    momentumReset: condCount === 0 ? 0 : Math.max(-2, -condCount),
+    momentumMax,
+    momentumReset,
     debilities: debs,
     xp: {
       value: sys.xp ?? 0,
       max:   30,
     },
     assets: readAssets(actor),
+    vows:   readVows(actor),
   };
 
   _snapshotCache.set(actor.id, snapshot);
@@ -129,28 +146,64 @@ function stripHtml(s) {
 }
 
 /**
+ * Read the character's progress-typed vow Items (foundry-ironsworn stores
+ * vows as `type: "progress"` with `system.subtype: "vow"`) and return them
+ * as plain-data snapshots. The first item in actor.items.contents is the
+ * earliest one created; we surface it as `isBackground: true` so the
+ * narrator context can spotlight the founding vow.
+ *
+ * Starforged's play-kit character sheet has a labelled "BACKGROUND VOW"
+ * area but the system has no dedicated field for it — the convention
+ * across the foundry-ironsworn community is to create the founding vow
+ * as the first vow item on the character. This helper makes that
+ * convention explicit.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, isBackground }>}
+ */
+export function readVows(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  const vows  = list.filter(i => i?.type === 'progress' && i?.system?.subtype === 'vow');
+
+  return vows.map((v, i) => {
+    const ticks = Number(v.system?.progress ?? v.system?.current ?? 0);
+    return {
+      id:           v.id ?? v._id ?? null,
+      name:         v.name ?? '',
+      rank:         v.system?.rank ?? 'dangerous',
+      ticks,
+      progress:     Math.floor(ticks / 4),
+      completed:    !!v.system?.completed,
+      isBackground: i === 0,
+    };
+  });
+}
+
+/**
  * Read active debilities as a flat boolean map.
  * @param {Actor} actor
  * @returns {Object}
  */
 export function readDebilities(actor) {
   const d = actor?.system?.debility ?? {};
+  // 10 canonical Starforged play-kit impacts + 3 Ironsworn-classic extras
+  // the vendor system also tracks. Anything outside this list is ignored —
+  // the previous `custom1` / `custom2` fields were not in the vendor schema.
   return {
-    corrupted:         !!d.corrupted,
-    cursed:            !!d.cursed,
-    tormented:         !!d.tormented,
     wounded:           !!d.wounded,
     shaken:            !!d.shaken,
     unprepared:        !!d.unprepared,
-    encumbered:        !!d.encumbered,
-    maimed:            !!d.maimed,
     permanentlyharmed: !!d.permanentlyharmed,
     traumatized:       !!d.traumatized,
     doomed:            !!d.doomed,
+    tormented:         !!d.tormented,
     indebted:          !!d.indebted,
     battered:          !!d.battered,
-    custom1:           !!d.custom1,
-    custom2:           !!d.custom2,
+    cursed:            !!d.cursed,
+    corrupted:         !!d.corrupted,
+    encumbered:        !!d.encumbered,
+    maimed:            !!d.maimed,
   };
 }
 
@@ -172,10 +225,10 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
+  const impactCount = countImpacts(debs);
 
-  const momentumMax   = Math.max(0, 10 - condCount);
-  const momentumReset = condCount === 0 ? 0 : Math.max(-2, -condCount);
+  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
   const spiritMax  = debs.shaken  ? 3 : 5;
@@ -230,7 +283,7 @@ export async function setDebility(actor, debilityKey, value) {
   await actor.update({ [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
-  if (CONDITION_DEBILITIES.includes(debilityKey)) {
+  if (IMPACT_KEYS.includes(debilityKey)) {
     await recalculateMomentumBounds(actor);
   }
 }
@@ -416,11 +469,12 @@ export function invalidateActorCache(actorId) {
 export async function recalculateMomentumBounds(actor) {
   if (!actor) return;
 
+  const sys       = actor.system ?? {};
   const debs      = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
-  const maxMom    = Math.max(0, 10 - condCount);
-  const resetMom  = condCount === 0 ? 0 : Math.max(-2, -condCount);
-  const current   = meterValue(actor.system?.momentum);
+  const impactCount = countImpacts(debs);
+  const maxMom    = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const resetMom  = sys.momentumReset ?? Math.max(0, 2 - impactCount);
+  const current   = meterValue(sys.momentum);
   const clamped   = clamp(current, resetMom, maxMom);
 
   const updates = {
@@ -446,8 +500,8 @@ function meterValue(meter) {
   return meter.value ?? 0;
 }
 
-function countConditionDebilities(debs) {
-  return CONDITION_DEBILITIES.filter(k => debs[k]).length;
+function countImpacts(debs) {
+  return IMPACT_KEYS.filter(k => debs[k]).length;
 }
 
 function clamp(value, min, max) {

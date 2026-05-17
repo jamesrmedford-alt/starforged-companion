@@ -242,4 +242,48 @@ describe('enrichInterpretationStatValue', () => {
     expect(interp.statValue).toBe(0);
     expect(warn).toHaveBeenCalled();
   });
+
+  // ── Play-kit "whichever is higher" rule (Endure Harm / Stress) ──────────
+  describe('higher-of-two-stat for Endure Harm / Stress', () => {
+    it('picks +iron over +health for Endure Harm when iron is higher', () => {
+      const actor = makeActor({ iron: 4, health: 2 });
+      const interp = { moveId: 'endure_harm', statUsed: 'health', statValue: 0, isProgressMove: false };
+      enrichInterpretationStatValue(actor, interp, {});
+      expect(interp.statUsed).toBe('iron');
+      expect(interp.statValue).toBe(4);
+    });
+
+    it('picks +health over +iron for Endure Harm when health is higher', () => {
+      const actor = makeActor({ iron: 1, health: 5 });
+      const interp = { moveId: 'endure_harm', statUsed: 'iron', statValue: 0, isProgressMove: false };
+      enrichInterpretationStatValue(actor, interp, {});
+      expect(interp.statUsed).toBe('health');
+      expect(interp.statValue).toBe(5);
+    });
+
+    it('picks +heart over +spirit for Endure Stress when heart is higher', () => {
+      const actor = makeActor({ heart: 3, spirit: 1 });
+      const interp = { moveId: 'endure_stress', statUsed: 'spirit', statValue: 0, isProgressMove: false };
+      enrichInterpretationStatValue(actor, interp, {});
+      expect(interp.statUsed).toBe('heart');
+      expect(interp.statValue).toBe(3);
+    });
+
+    it('breaks ties by keeping the first stat in the play-kit ordering', () => {
+      // Endure Harm: ["health", "iron"] — both equal → health (the first listed)
+      const actor = makeActor({ iron: 3, health: 3 });
+      const interp = { moveId: 'endure_harm', statUsed: 'iron', statValue: 0, isProgressMove: false };
+      enrichInterpretationStatValue(actor, interp, {});
+      expect(interp.statUsed).toBe('health');
+      expect(interp.statValue).toBe(3);
+    });
+
+    it('does NOT override stat for moves without the rule (Face Danger)', () => {
+      const actor = makeActor({ iron: 5, heart: 1 });
+      const interp = { moveId: 'face_danger', statUsed: 'heart', statValue: 0, isProgressMove: false };
+      enrichInterpretationStatValue(actor, interp, {});
+      expect(interp.statUsed).toBe('heart');
+      expect(interp.statValue).toBe(1);
+    });
+  });
 });

@@ -28,6 +28,15 @@ import * as DERELICTS   from "./tables/derelicts.js";
 import * as VAULTS      from "./tables/vaults.js";
 import * as THEMES      from "./tables/themes.js";
 import * as MISC        from "./tables/misc.js";
+import { PAY_THE_PRICE }         from "./tables/payThePrice.js";
+import { SPOTLIGHT_VIGNETTE }    from "./tables/sessionVignette.js";
+import { MAKE_A_DISCOVERY,
+         CONFRONT_CHAOS }        from "./tables/discoveryAndChaos.js";
+import { DECISIVE_ACTION_COST,
+         MORTAL_WOUND,
+         DESOLATION,
+         VEHICLE_DAMAGE }        from "./tables/sufferAndCombat.js";
+import { ORACLE_ODDS }           from "../schemas.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,12 +165,52 @@ export const ORACLE_TABLES = {
   anomaly_effect:     { name: "Anomaly Effect",     table: MISC.ANOMALY_EFFECT,     category: "misc" },
   combat_action:      { name: "Combat Action",      table: MISC.COMBAT_ACTION,      category: "misc" },
   sector_trouble:     { name: "Sector Trouble",     table: MISC.SECTOR_TROUBLE,     category: "sectors" },
+
+  // Play-kit move tables — autoseeded by the resolver when the matching
+  // move is rolled; also usable manually via the oracle roller.
+  pay_the_price:         { name: "Pay the Price",            table: PAY_THE_PRICE,         category: "fate" },
+  spotlight_vignette:    { name: "Spotlight Vignette",       table: SPOTLIGHT_VIGNETTE,    category: "session" },
+  make_a_discovery:      { name: "Make a Discovery",         table: MAKE_A_DISCOVERY,      category: "exploration" },
+  confront_chaos:        { name: "Confront Chaos",           table: CONFRONT_CHAOS,        category: "exploration" },
+  decisive_action_cost:  { name: "Take Decisive Action — Weak Hit Cost", table: DECISIVE_ACTION_COST, category: "combat" },
+  mortal_wound:          { name: "Mortal Wound",             table: MORTAL_WOUND,          category: "suffer" },
+  desolation:            { name: "Desolation",               table: DESOLATION,            category: "suffer" },
+  vehicle_damage:        { name: "Vehicle Damage",           table: VEHICLE_DAMAGE,        category: "suffer" },
 };
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROLLER
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Register a custom oracle table at runtime. Player-defined tables added
+ * via the !oracle-add chat command land here; the table is held in memory
+ * only (caller is responsible for any persistence). Throws if the tableId
+ * collides with a built-in table.
+ *
+ * @param {string} tableId
+ * @param {{ name: string, table: Array, category?: string }} entry
+ */
+export function registerOracleTable(tableId, entry) {
+  if (!tableId) throw new Error("registerOracleTable: tableId required");
+  if (!entry || !Array.isArray(entry.table) || !entry.table.length) {
+    throw new Error("registerOracleTable: entry.table must be a non-empty array");
+  }
+  if (Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId)) {
+    throw new Error(`registerOracleTable: tableId "${tableId}" already exists`);
+  }
+  ORACLE_TABLES[tableId] = {
+    name:     entry.name ?? tableId,
+    table:    entry.table,
+    category: entry.category ?? "custom",
+  };
+}
+
+/** Remove a previously registered custom oracle table. */
+export function unregisterOracleTable(tableId) {
+  delete ORACLE_TABLES[tableId];
+}
 
 /**
  * Roll on an oracle table by ID.
@@ -227,6 +276,54 @@ export function rollActionTheme() {
  */
 export function rollDescriptorFocus() {
   return rollPaired("descriptor", "focus");
+}
+
+/**
+ * Ask the Oracle — yes/no with odds (play kit p. 8, "FATE MOVES > ASK THE ORACLE").
+ *
+ * Rolls a d100 and compares to the threshold for the chosen odds:
+ *   small_chance   → yes if ≤ 10
+ *   unlikely       → yes if ≤ 25
+ *   50_50          → yes if ≤ 50
+ *   likely         → yes if ≤ 75
+ *   almost_certain → yes if ≤ 90
+ *
+ * Match logic: the d100 is treated as two d10s (tens + ones). On a match —
+ * both digits the same, including 100 (treated as 0/0) — envision an extreme
+ * result or twist alongside the yes/no answer.
+ *
+ * @param {string} odds — key from ORACLE_ODDS (small_chance | unlikely | 50_50 | likely | almost_certain)
+ * @param {Object} [options]
+ * @param {number} [options.roll] — override the d100 roll (for testing)
+ * @param {string} [options.question] — optional question text to echo in the result
+ * @returns {{ odds, threshold, roll, tens, ones, answer, isMatch, question }}
+ */
+export function rollYesNo(odds, { roll, question = "" } = {}) {
+  const threshold = ORACLE_ODDS[odds];
+  if (threshold === undefined) {
+    throw new Error(
+      `Unknown odds "${odds}". Valid: ${Object.keys(ORACLE_ODDS).join(", ")}`,
+    );
+  }
+
+  const r = roll ?? rollD100();
+  // Decompose 1..100 into tens (10..100 → 1..0 in tens place) and ones.
+  // Match = both d10 dice show the same face: tens digit === ones digit.
+  // 100 is read as "00" so it matches on tens===ones===0.
+  const tens = Math.floor((r % 100) / 10);
+  const ones = r % 10;
+  const isMatch = tens === ones;
+
+  return {
+    odds,
+    threshold,
+    roll:    r,
+    tens,
+    ones,
+    answer:  r <= threshold ? "yes" : "no",
+    isMatch,
+    question,
+  };
 }
 
 /**

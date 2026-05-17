@@ -498,9 +498,22 @@ export const MoveResolutionSchema = {
     healthChange:          0,
     spiritChange:          0,
     supplyChange:          0,
-    progressMarked:        0,   // Ticks to mark on the relevant progress track
+    progressMarked:        0,   // Number of mark-progress operations.
+                                 // For ranked tracks (vow / expedition / connection /
+                                 // combat / scene_challenge) the persistence layer
+                                 // multiplies by the track's ticksPerMark per its rank.
+                                 // For legacy tracks (quests / bonds / discoveries)
+                                 // this is treated as a raw tick count, matching the
+                                 // play kit's per-rank legacy-reward values.
     sufferMoveTriggered:   null,// e.g. { move: "endure_harm", amount: 1 }
     progressTrackId:       null,// Which track to apply progressMarked to
+    combatPosition:        null,// "in_control" | "bad_spot" | null
+                                 // Persisted onto the bound combat track's
+                                 // combat.controlState so subsequent moves
+                                 // know whether to use proactive (Gain Ground,
+                                 // Strike, Take Decisive Action) or reactive
+                                 // (React Under Fire, Clash) moves. Play kit
+                                 // p. 5 "In Control / In a Bad Spot".
     otherEffect:           "",  // Narrative consequence for Loremaster
   },
 

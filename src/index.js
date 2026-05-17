@@ -38,6 +38,26 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
+import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./moves/resolver.js";
+import { rollYesNo }             from "./oracles/roller.js";
+import { ORACLE_ODDS }           from "./schemas.js";
+import {
+  openSetFlagDialog,
+  openChangeYourFateDialog,
+  openTakeABreakDialog,
+} from "./safety/sessionDialogs.js";
+import {
+  openBeginSessionDialog,
+  openEndSessionDialog,
+} from "./safety/sessionLifecycleDialogs.js";
+import { isClockCommand, handleClockCommand, openClocksPanel } from "./clocks/clocks.js";
+import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
+import { openCustomOraclesPanel } from "./oracles/customOracles.js";
+import {
+  isOracleAddCommand,
+  handleOracleAddCommand,
+  rehydrateCustomOracles,
+} from "./oracles/customOracles.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -54,6 +74,7 @@ import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js
 import {
   openProgressTracks,
   registerProgressTrackHooks,
+  getActiveCombatPosition,
 } from "./ui/progressTracks.js";
 
 import {
@@ -492,6 +513,43 @@ export function registerChatHook() {
       return;
     }
 
+    // !oracle yes/no command — any player; no state mutation
+    if (isOracleCommand(message)) {
+      await handleOracleCommand(message);
+      return;
+    }
+
+    // !bond <rank> command — bonded Develop Your Relationship (play kit p. 3)
+    if (isBondCommand(message)) {
+      await handleBondCommand(message);
+      return;
+    }
+
+    // Session safety / lifecycle commands — open DialogV2 surfaces.
+    if (isFlagCommand(message))         { openSetFlagDialog();         return; }
+    if (isFateCommand(message))         { openChangeYourFateDialog();  return; }
+    if (isBreakCommand(message))        { openTakeABreakDialog();      return; }
+    if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
+    if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
+
+    // !clock command — create / advance / list campaign and tension clocks
+    if (isClockCommand(message)) {
+      await handleClockCommand(message);
+      return;
+    }
+
+    // !repair — vehicle repair point-spend dialog (play kit p. 7)
+    if (isRepairCommand(message)) {
+      await handleRepairCommand(message);
+      return;
+    }
+
+    // !oracle-add command — GM-only; opens a dialog to define a custom table
+    if (isOracleAddCommand(message)) {
+      await handleOracleAddCommand(message);
+      return;
+    }
+
     // !roll command — force the next undecorated input through the move pipeline
     if (isRollCommand(message)) {
       await handleRollCommand(message);
@@ -636,7 +694,15 @@ export function registerChatHook() {
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
 
-      const resolution = resolveMove(interpretation, campaignState);
+      // Take Decisive Action — auto-detect the bound combat track's
+      // position so the resolver can apply the bad-spot downgrade
+      // (play kit p. 5). Returns null if there are zero or multiple
+      // active combat tracks; the downgrade is skipped in both cases.
+      const combatPosition = interpretation.moveId === "take_decisive_action"
+        ? await getActiveCombatPosition()
+        : null;
+
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition });
 
       // Step 7: relevance resolver — picks the narrator-permission block
       // and identifies which entity records to inject as cards. For hybrid
@@ -979,6 +1045,72 @@ export function isRollCommand(message) {
   if (text !== "!roll") return false;
   if (message.flags?.[MODULE_ID]?.rollCommandCard) return false;
   return true;
+}
+
+/**
+ * Determine whether a chat message is an !oracle yes/no command.
+ *   !oracle yes [odds] [question text]
+ * Anyone may invoke — no state mutation. Odds default to 50/50 if omitted.
+ * Valid odds keys and shorthand aliases:
+ *   small_chance | small             → ≤ 10
+ *   unlikely                         → ≤ 25
+ *   50_50 | 50/50 | even             → ≤ 50  (default)
+ *   likely                           → ≤ 75
+ *   almost_certain | certain | sure  → ≤ 90
+ */
+export function isOracleCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.oracleCommandCard) return false;
+  return /^!oracle(\s|$)/i.test(text);
+}
+
+/**
+ * Determine whether a chat message is a !bond command — the bonded-path
+ * variant of Develop Your Relationship per play kit p. 3.
+ *   !bond <rank>
+ * Anyone may invoke; the GM-gate only fires when the outcome demands state
+ * changes (legacy track / +momentum), which the handler routes through
+ * the existing campaign-state writer.
+ */
+export function isBondCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.bondCommandCard) return false;
+  return /^!bond(\s|$)/i.test(text);
+}
+
+/** !flag opens the Set a Flag dialog (play kit p. 1). */
+export function isFlagCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.safetyFlagCard) return false;
+  return /^!flag(\s|$)/i.test(text);
+}
+
+/** !fate opens the Change Your Fate dialog (play kit p. 1). */
+export function isFateCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.safetyFateCard) return false;
+  return /^!fate(\s|$)/i.test(text);
+}
+
+/** !break opens the Take a Break dialog (play kit p. 1). */
+export function isBreakCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.takeBreakCard) return false;
+  return /^!break(\s|$)/i.test(text);
+}
+
+/** !begin-session opens the Begin a Session dialog (play kit p. 1). */
+export function isBeginSessionCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sessionLifecycleCard) return false;
+  return /^!begin-session(\s|$)/i.test(text);
+}
+
+/** !end-session opens the End a Session dialog (play kit p. 1). */
+export function isEndSessionCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sessionLifecycleCard) return false;
+  return /^!end-session(\s|$)/i.test(text);
 }
 
 /**
@@ -1359,6 +1491,147 @@ async function handlePaceCommand(message) {
   });
 }
 
+// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys.
+const ODDS_ALIASES = new Map([
+  ["small_chance",  "small_chance"], ["small", "small_chance"],
+  ["unlikely",      "unlikely"],
+  ["50_50",         "50_50"],        ["50/50", "50_50"], ["even", "50_50"],
+  ["likely",        "likely"],
+  ["almost_certain","almost_certain"], ["certain", "almost_certain"], ["sure", "almost_certain"],
+]);
+
+/**
+ * Handle an !oracle yes/no chat command. Any player may invoke.
+ *
+ *   !oracle yes [odds] [question?]
+ *
+ * Posts a card with the d100 result, the threshold for the chosen odds,
+ * the yes/no answer, and (on a match) a "MATCH" badge prompting the
+ * GM/player to envision an extreme result or twist.
+ */
+async function handleOracleCommand(message) {
+  const text  = message.content?.trim() ?? "";
+  const parts = text.slice("!oracle".length).trim().split(/\s+/);
+
+  // Only "yes" / "yes-no" form is implemented; reject anything else with help.
+  if (!parts[0] || !/^yes(-no)?$/i.test(parts[0])) {
+    await ChatMessage.create({
+      content: `<div class="sf-oracle-card"><strong>Oracle</strong> <p>Usage: <code>!oracle yes [odds] [question?]</code><br>Odds: <code>small</code> · <code>unlikely</code> · <code>50/50</code> · <code>likely</code> · <code>certain</code> (default <code>50/50</code>)</p></div>`,
+      flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+    });
+    return;
+  }
+
+  // Resolve odds — if parts[1] is a known odds alias use it, else fall back
+  // to 50/50 and treat parts[1..] as the question.
+  let oddsKey  = "50_50";
+  let question = parts.slice(1).join(" ");
+  if (parts[1]) {
+    const aliased = ODDS_ALIASES.get(parts[1].toLowerCase());
+    if (aliased) {
+      oddsKey  = aliased;
+      question = parts.slice(2).join(" ");
+    }
+  }
+
+  const result = rollYesNo(oddsKey, { question });
+  const oddsLabel = oddsKey === "50_50" ? "50/50" : oddsKey.replace(/_/g, " ");
+  const matchBadge = result.isMatch
+    ? ` <em>· MATCH — envision an extreme result or twist</em>`
+    : "";
+
+  const qBlock = question
+    ? `<p><em>${escapeChatHtml(question)}</em></p>`
+    : "";
+
+  await ChatMessage.create({
+    content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
+    flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+  });
+}
+
+// Rank → +X adds for the bonded-path Develop Your Relationship roll
+// (play kit p. 3: troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5).
+const BOND_ROLL_ADDS = {
+  troublesome: 1,
+  dangerous:   2,
+  formidable:  3,
+  extreme:     4,
+  epic:        5,
+};
+
+/**
+ * Handle a !bond <rank> chat command — bonded Develop Your Relationship.
+ *
+ * Per play kit p. 3: when developing a relationship with a bonded
+ * connection, skip the normal progress mark. Instead, roll +their rank
+ * (troublesome=+1 ... epic=+5) and:
+ *   strong hit → mark 2 ticks on bonds legacy track
+ *   strong + match → also offer to raise the connection's rank by 1
+ *   weak hit → +2 momentum
+ *   miss → no lasting benefit
+ */
+async function handleBondCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const arg  = text.slice("!bond".length).trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+
+  if (!arg || !(arg in BOND_ROLL_ADDS)) {
+    await ChatMessage.create({
+      content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded)</strong> <p>Usage: <code>!bond &lt;rank&gt;</code><br>Rank: <code>troublesome</code> · <code>dangerous</code> · <code>formidable</code> · <code>extreme</code> · <code>epic</code></p></div>`,
+      flags:   { [MODULE_ID]: { bondCommandCard: true } },
+    });
+    return;
+  }
+
+  const adds          = BOND_ROLL_ADDS[arg];
+  const actionDie     = rollActionDie();
+  const challengeDice = rollChallengeDice();
+  const actionScore   = calcActionScore(actionDie, 0, adds);
+  const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
+
+  const matchBadge = isMatch ? " ✦ MATCH" : "";
+  let body, momentumChange = 0, ticksOnBonds = 0;
+
+  switch (outcome) {
+    case "strong_hit":
+      ticksOnBonds = 2;
+      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.${isMatch ? " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic)." : ""}`;
+      break;
+    case "weak_hit":
+      momentumChange = 2;
+      body = `<strong>Weak hit${matchBadge}.</strong> Take +2 momentum.`;
+      break;
+    case "miss":
+      body = `<strong>Miss${matchBadge}.</strong> Take no lasting benefit.`;
+      break;
+  }
+
+  // GM-only state writes — only fire if there's an actual effect.
+  if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0)) {
+    const campaignState = game.settings.get(MODULE_ID, "campaignState");
+    if (ticksOnBonds > 0) {
+      campaignState.legacyTracks ??= {};
+      const t = campaignState.legacyTracks.bonds ?? { ticks: 0, cleared: false };
+      t.ticks = Math.min(t.ticks + ticksOnBonds, 40);
+      campaignState.legacyTracks.bonds = t;
+    }
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+
+    if (momentumChange > 0) {
+      const actor = game.user?.character ?? getPlayerActors()[0];
+      if (actor) {
+        const { applyMeterChanges } = await import("./character/actorBridge.js");
+        await applyMeterChanges(actor, { momentum: momentumChange });
+      }
+    }
+  }
+
+  await ChatMessage.create({
+    content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded, ${escapeChatHtml(arg)})</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
+    flags:   { [MODULE_ID]: { bondCommandCard: true } },
+  });
+}
+
 /**
  * Handle a !roll chat command — forces the next undecorated input through
  * the move pipeline regardless of the classifier's decision. GM-only.
@@ -1704,6 +1977,12 @@ Hooks.once("ready", () => {
     logArtBackendStatus();
   }
 
+  // Re-register any custom oracle tables defined in previous sessions
+  // (campaignState.customOracles). Memory-only registration; persistence
+  // is via campaignState.
+  try { rehydrateCustomOracles(); }
+  catch (err) { console.warn(`${MODULE_ID} | rehydrateCustomOracles failed:`, err); }
+
   // Session ID — GM writes to world-scoped settings; players read from state
   if (game.user.isGM) {
     const prevState = game.settings.get(MODULE_ID, "campaignState");
@@ -1894,6 +2173,21 @@ Hooks.on("getSceneControlButtons", (controls) => {
     visible:  game.user.isGM,
     onChange: () => {},
   };
+  tokenControls.tools.clocks = {
+    name:     "clocks",
+    title:    "Clocks",
+    icon:     "fas fa-clock",
+    button:   true,
+    onChange: () => {},
+  };
+  tokenControls.tools.customOracles = {
+    name:     "customOracles",
+    title:    "Custom Oracles",
+    icon:     "fas fa-table-list",
+    button:   true,
+    visible:  game.user.isGM,
+    onChange: () => {},
+  };
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via
@@ -1911,6 +2205,8 @@ Hooks.on("renderSceneControls", (app, html) => {
     sectorCreator:  () => openSectorCreator(),
     worldJournal:   () => openWorldJournalPanel(),
     worldTruths:    () => openSystemTruthsDialog(),
+    clocks:         () => openClocksPanel(),
+    customOracles:  () => openCustomOraclesPanel(),
   };
 
   for (const [name, handler] of Object.entries(buttonMap)) {

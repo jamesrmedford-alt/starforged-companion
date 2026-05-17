@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { getPlayerActors, createCharacterVowItem } from '../character/actorBridge.js';
+import { createClock } from '../clocks/clocks.js';
 
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
@@ -42,10 +43,11 @@ const RANKS = {
 };
 
 const TRACK_TYPES = {
-  vow:        'Vow',
-  expedition: 'Expedition',
-  connection: 'Connection',
-  combat:     'Combat',
+  vow:             'Vow',
+  expedition:      'Expedition',
+  connection:      'Connection',
+  combat:          'Combat',
+  scene_challenge: 'Scene Challenge',
 };
 
 // ---------------------------------------------------------------------------
@@ -208,12 +210,13 @@ export class ProgressTrackApp extends ApplicationV2 {
       height: 'auto',
     },
     actions: {
-      markProgress:  ProgressTrackApp.#onMarkProgress,
-      clearProgress: ProgressTrackApp.#onClearProgress,
-      rollProgress:  ProgressTrackApp.#onRollProgress,
-      removeTrack:   ProgressTrackApp.#onRemoveTrack,
-      addTrack:      ProgressTrackApp.#onAddTrack,
-      completeTrack: ProgressTrackApp.#onCompleteTrack,
+      markProgress:        ProgressTrackApp.#onMarkProgress,
+      clearProgress:       ProgressTrackApp.#onClearProgress,
+      rollProgress:        ProgressTrackApp.#onRollProgress,
+      removeTrack:         ProgressTrackApp.#onRemoveTrack,
+      addTrack:            ProgressTrackApp.#onAddTrack,
+      completeTrack:       ProgressTrackApp.#onCompleteTrack,
+      toggleCombatState:   ProgressTrackApp.#onToggleCombatState,
     },
   };
 
@@ -237,18 +240,31 @@ export class ProgressTrackApp extends ApplicationV2 {
   async _prepareContext(_options) {
     const tracks = await loadTracks();
 
+    // For scene-challenge tracks, also surface the paired tension clock's
+    // current state so the player can see both progress + danger in one row.
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const clockById     = new Map((campaignState.clocks ?? []).map(c => [c._id, c]));
+
     // Annotate each track with derived display values.
-    const annotated = tracks.map(t => ({
-      ...t,
-      rankLabel: RANKS[t.rank]?.label ?? t.rank,
-      rankClass: RANKS[t.rank]?.cssClass ?? '',
-      typeLabel: TRACK_TYPES[t.type] ?? t.type,
-      filledBoxes: Math.floor(t.ticks / TICKS_PER_BOX),
-      ticksInPartialBox: t.ticks % TICKS_PER_BOX,
-      pct: Math.round((t.ticks / MAX_TICKS) * 100),
-      boxes: ProgressTrackApp.#buildBoxes(t.ticks),
-      canRoll: t.ticks > 0,
-    }));
+    const annotated = tracks.map(t => {
+      const linkedClock = t.tensionClockId ? clockById.get(t.tensionClockId) : null;
+      return {
+        ...t,
+        rankLabel: RANKS[t.rank]?.label ?? t.rank,
+        rankClass: RANKS[t.rank]?.cssClass ?? '',
+        typeLabel: TRACK_TYPES[t.type] ?? t.type,
+        filledBoxes: Math.floor(t.ticks / TICKS_PER_BOX),
+        ticksInPartialBox: t.ticks % TICKS_PER_BOX,
+        pct: Math.round((t.ticks / MAX_TICKS) * 100),
+        boxes: ProgressTrackApp.#buildBoxes(t.ticks),
+        canRoll: t.ticks > 0,
+        combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
+        tensionClock: linkedClock
+          ? { filled: linkedClock.filled, segments: linkedClock.segments,
+              triggered: linkedClock.filled >= linkedClock.segments }
+          : null,
+      };
+    });
 
     // Group: active (not completed) then completed.
     const active = annotated.filter(t => !t.completed);
@@ -305,6 +321,22 @@ export class ProgressTrackApp extends ApplicationV2 {
         <div class="track-footer">
           <span class="track-pct">${t.pct}%</span>
           <span class="track-ticks">${t.ticks} / ${MAX_TICKS} ticks</span>
+          ${t.type === 'combat' && !t.completed ? `
+            <button class="track-btn btn-combat-state combat-${t.combatState ?? 'neutral'}"
+                    data-action="toggleCombatState"
+                    data-track-id="${t.id}"
+                    title="Toggle combat position (in control / in a bad spot)">
+              ${t.combatState === 'in_control' ? 'In control'
+                : t.combatState === 'bad_spot' ? 'In a bad spot'
+                : 'Neutral'}
+            </button>
+          ` : ''}
+          ${t.tensionClock ? `
+            <span class="tension-clock-meta${t.tensionClock.triggered ? ' is-triggered' : ''}"
+                  title="Linked tension clock — advance via !clock advance &quot;${t.label}&quot;">
+              Tension: ${t.tensionClock.filled}/${t.tensionClock.segments}${t.tensionClock.triggered ? ' ⚠' : ''}
+            </span>
+          ` : ''}
         </div>
       </div>
     `;
@@ -469,6 +501,28 @@ export class ProgressTrackApp extends ApplicationV2 {
   }
 
   /**
+   * Cycle a combat track's position: neutral → in_control → bad_spot → neutral.
+   * Per play kit p. 5, combat moves write this automatically on resolution;
+   * the toggle here lets the player correct it manually.
+   */
+  static #onToggleCombatState(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track || track.type !== 'combat') return;
+
+      const cycle = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
+      track.combatState = cycle[track.combatState ?? 'null'];
+
+      await saveTracks(tracks);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  /**
    * Remove a track permanently (with a confirm dialog for safety).
    */
   static #onRemoveTrack(event, target) {
@@ -513,6 +567,18 @@ export class ProgressTrackApp extends ApplicationV2 {
         type: typeSelect.value,
         rank: rankSelect.value,
       });
+
+      // Scene Challenge auto-creates a paired 4-segment tension clock
+      // (rulebook pp. 239–241). The clock's _id is stored on the track
+      // so the panel can surface progress against the danger.
+      if (track.type === 'scene_challenge') {
+        try {
+          const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
+          track.tensionClockId = clock._id;
+        } catch (err) {
+          console.warn(`${MODULE_ID} | addTrack: scene_challenge tension-clock creation failed:`, err);
+        }
+      }
 
       const tracks = await loadTracks();
       tracks.push(track);
@@ -607,6 +673,33 @@ export class ProgressTrackApp extends ApplicationV2 {
  * Called from the PTT button or a chat command hook.
  * @returns {ProgressTrackApp}
  */
+/**
+ * Return the combat position of the unique active combat track, or null
+ * if there are zero or multiple active combat tracks. Used by the resolver
+ * to apply the play-kit "bad spot downgrade" on Take Decisive Action
+ * (p. 5: "if you are in a bad spot, count a strong hit without a match
+ * as a weak hit, and a weak hit as a miss").
+ *
+ * If the player has more than one active combat track, the resolver
+ * can't unambiguously pick which combatState applies, so we return null
+ * and skip the downgrade.
+ *
+ * @returns {Promise<"in_control"|"bad_spot"|null>}
+ */
+export async function getActiveCombatPosition() {
+  try {
+    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    if (!journal) return null;
+    const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
+    const combatTracks = tracks.filter(t => t.type === 'combat' && !t.completed);
+    if (combatTracks.length !== 1) return null;
+    const state = combatTracks[0].combatState;
+    return state === 'in_control' || state === 'bad_spot' ? state : null;
+  } catch {
+    return null;
+  }
+}
+
 export function openProgressTracks() {
   return ProgressTrackApp.open();
 }
@@ -624,6 +717,19 @@ export function openProgressTracks() {
  */
 export async function addProgressTrack(data) {
   const track = createTrack(data);
+
+  // Scene Challenge auto-creates a paired 4-segment tension clock per
+  // rulebook pp. 239–241. The clock id is stored on the track for
+  // back-reference. Failures are logged but don't block track creation.
+  if (track.type === 'scene_challenge') {
+    try {
+      const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
+      track.tensionClockId = clock._id;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | addProgressTrack: scene_challenge tension-clock creation failed:`, err);
+    }
+  }
+
   const tracks = await loadTracks();
   tracks.push(track);
   await saveTracks(tracks);

@@ -780,6 +780,91 @@ describe("resolveMove", () => {
 
     expect(result.oracleSeeds).toBeNull();
   });
+
+  // ── Take Decisive Action bad-spot downgrade (play kit p. 5) ────────────
+  describe("Take Decisive Action — bad-spot downgrade", () => {
+    function takeDecisiveAction(ticks, { combatPosition } = {}) {
+      return resolveMove(
+        {
+          moveId:          "take_decisive_action",
+          moveName:        "Take Decisive Action",
+          statUsed:        null,
+          statValue:       ticks,
+          adds:            0,
+          mischiefApplied: false,
+          mischiefLevel:   "serious",
+          playerNarration: "I commit.",
+          isProgressMove:  true,
+        },
+        { currentSessionId: "x" },
+        { combatPosition },
+      );
+    }
+
+    it("strong hit without match → weak hit when in a bad spot", () => {
+      // Need: progressScore (= floor(ticks/4)) > both challenge dice, no match.
+      // With 28 ticks → score 7. fixDiceSequence([0.0, 0.1]) → dice [1, 2].
+      // No match (1 ≠ 2), score 7 > both → strong_hit.
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("weak_hit");
+      expect(result.isMatch).toBe(false);
+      expect(result.consequences.otherEffect).toMatch(/bad spot/i);
+    });
+
+    it("strong hit WITH match — NOT downgraded even in a bad spot", () => {
+      // Match → both dice equal. fixDiceSequence([0.0, 0.0]) → [1, 1].
+      // 28 ticks → score 7 > both → strong_hit + match. Per rules, only
+      // "strong hit without a match" is downgraded.
+      fixDiceSequence([0.0, 0.0]);
+      const result = takeDecisiveAction(28, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.isMatch).toBe(true);
+    });
+
+    it("weak hit → miss when in a bad spot", () => {
+      // weak_hit: score beats one die only. 12 ticks → score 3.
+      // fixDiceSequence([0.1, 0.5]) → [2, 6]. 3 > 2 but 3 ≤ 6 → weak_hit.
+      fixDiceSequence([0.1, 0.5]);
+      const result = takeDecisiveAction(12, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("miss");
+      expect(result.consequences.otherEffect).toMatch(/bad spot/i);
+    });
+
+    it("does NOT downgrade when in control", () => {
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: "in_control" });
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.consequences.otherEffect).not.toMatch(/bad spot/i);
+    });
+
+    it("does NOT downgrade when combatPosition is null", () => {
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: null });
+      expect(result.outcome).toBe("strong_hit");
+    });
+
+    it("does NOT downgrade for other moves even in a bad spot", () => {
+      fixDiceSequence([0.0, 0.1, 0.99]);   // challenge then action
+      const result = resolveMove(
+        { moveId: "strike", moveName: "Strike", statUsed: "iron",
+          statValue: 4, adds: 0, mischiefApplied: false, mischiefLevel: "serious",
+          playerNarration: "x", isProgressMove: false },
+        { currentSessionId: "x" },
+        { combatPosition: "bad_spot" },
+      );
+      // Strike strong_hit should stand on its own
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.consequences.otherEffect).not.toMatch(/downgraded/i);
+    });
+
+    it("miss stays a miss regardless of position", () => {
+      // 0 ticks → score 0. Any roll → miss.
+      fixDiceSequence([0.5, 0.5]);
+      const result = takeDecisiveAction(0, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("miss");
+    });
+  });
 });
 
 
@@ -912,6 +997,84 @@ describe("buildOracleSeeds", () => {
     it("returns null when paired roll yields nothing", () => {
       rollPaired.mockReturnValue({});
       expect(buildOracleSeeds("ask_the_oracle", "strong_hit", false)).toBeNull();
+    });
+  });
+
+  describe("play-kit consequence tables", () => {
+    it("seeds Pay the Price on miss for moves in the PTP set", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("face_danger", "miss", false);
+      expect(seeds).not.toBeNull();
+      expect(seeds.results[0]).toContain("Pay the Price: You are harmed");
+    });
+
+    it("does NOT seed Pay the Price on hits", () => {
+      rollOracle.mockReturnValue({ result: "anything" });
+      expect(buildOracleSeeds("face_danger", "strong_hit", false)).toBeNull();
+      expect(buildOracleSeeds("face_danger", "weak_hit",   false)).toBeNull();
+    });
+
+    it("seeds Spotlight Vignette on begin_a_session", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "spotlight_vignette" ? { result: "Flashback reveals X" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("begin_a_session", "strong_hit", false);
+      expect(seeds.results[0]).toContain("Spotlight vignette: Flashback reveals X");
+    });
+
+    it("seeds Decisive Action Cost only on weak hit", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "decisive_action_cost" ? { result: "Victory short-lived" } : { result: "—" }
+      );
+      const onWeak   = buildOracleSeeds("take_decisive_action", "weak_hit", false);
+      const onStrong = buildOracleSeeds("take_decisive_action", "strong_hit", false);
+      expect(onWeak.results[0]).toContain("Victory short-lived");
+      expect(onStrong).toBeNull();
+    });
+
+    it("seeds Mortal Wound on endure_harm miss", () => {
+      rollOracle.mockImplementation((t) => {
+        if (t === "mortal_wound") return { result: "You are reeling" };
+        if (t === "pay_the_price") return { result: "—" };
+        return { result: "—" };
+      });
+      const seeds = buildOracleSeeds("endure_harm", "miss", false);
+      expect(seeds.results.some(r => r.includes("Mortal wound"))).toBe(true);
+    });
+
+    it("seeds Desolation on endure_stress miss", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "desolation" ? { result: "You give up" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("endure_stress", "miss", false);
+      expect(seeds.results.some(r => r.includes("Desolation"))).toBe(true);
+    });
+
+    it("seeds Vehicle Damage on withstand_damage miss", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "vehicle_damage" ? { result: "Rough ride" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("withstand_damage", "miss", false);
+      expect(seeds.results.some(r => r.includes("Vehicle damage"))).toBe(true);
+    });
+
+    it("seeds Make a Discovery play-kit table on explore_a_waypoint strong-with-match", () => {
+      rollPaired.mockReturnValue({ combined: "Reveal · Wonder" });
+      rollOracle.mockImplementation((t) =>
+        t === "make_a_discovery" ? { result: "Ancient archive" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("explore_a_waypoint", "strong_hit", true);
+      expect(seeds.results.some(r => r.includes("Make a Discovery: Ancient archive"))).toBe(true);
+    });
+
+    it("seeds Confront Chaos play-kit table on explore_a_waypoint miss-with-match", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "confront_chaos" ? { result: "Dread hallucinations" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("explore_a_waypoint", "miss", true);
+      expect(seeds.results.some(r => r.includes("Confront Chaos: Dread hallucinations"))).toBe(true);
     });
   });
 });

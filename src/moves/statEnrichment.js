@@ -42,6 +42,14 @@ const MODULE_ID = "starforged-companion";
 const ACTION_STATS = new Set(["edge", "heart", "iron", "shadow", "wits"]);
 const PLAYER_METERS = new Set(["health", "spirit", "supply", "momentum"]);
 
+// Moves whose play-kit rule is "roll +X or +Y, whichever is higher".
+// statEnrichment resolves both options and overrides interpretation.statUsed
+// with the higher one so the move card reflects the actual roll.
+const PICK_HIGHER_OF = {
+  endure_harm:   ["health", "iron"],
+  endure_stress: ["spirit", "heart"],
+};
+
 /**
  * Look up the numeric value of `statUsed` for this character.
  *
@@ -58,6 +66,19 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   // Progress moves carry their tick count in `progressTicks` and the
   // resolver reads that field separately. Leave statValue alone.
   if (interpretation?.isProgressMove) return interpretation.statValue ?? 0;
+
+  // Play-kit "whichever is higher" rule for Endure Harm / Stress —
+  // override the interpreter's pick with the higher of the two stats.
+  const moveId = interpretation?.moveId;
+  if (moveId && PICK_HIGHER_OF[moveId]) {
+    const [a, b] = PICK_HIGHER_OF[moveId];
+    const va = resolveStatValue(actor, a, campaignState);
+    const vb = resolveStatValue(actor, b, campaignState);
+    const winner = vb > va ? b : a;
+    interpretation.statUsed  = winner;
+    interpretation.statValue = Math.max(va, vb);
+    return interpretation.statValue;
+  }
 
   const statUsed = interpretation?.statUsed ?? null;
   if (!statUsed) {

@@ -961,7 +961,7 @@ function joinSubsections(parts) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatCharacterBlock(snap, summary, recentEntries) {
-  const { name, stats, meters, momentumMax, debilities, assets } = snap;
+  const { name, stats, meters, momentumMax, debilities, assets, vows } = snap;
   const s = stats;
   const m = meters;
 
@@ -972,6 +972,21 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     `Meters: Health ${m.health}/5 | Spirit ${m.spirit}/5 | Supply ${m.supply}/5 | Momentum ${m.momentum}/${momentumMax}`,
     `Debilities: ${debList}`,
   ];
+
+  // Background vow = the first vow item on the character per play-kit
+  // convention. Active vows beyond the background one are listed under
+  // "Other vows" so the narrator can reflect ongoing quests.
+  if (vows?.length) {
+    const background = vows.find(v => v.isBackground);
+    const others     = vows.filter(v => !v.isBackground && !v.completed);
+    if (background) {
+      lines.push(`Background Vow: **${background.name}** [${background.rank}] — ${background.progress}/10 boxes${background.completed ? " (FULFILLED)" : ""}`);
+    }
+    if (others.length) {
+      const list = others.map(v => `- **${v.name}** [${v.rank}] — ${v.progress}/10 boxes`).join("\n");
+      lines.push(`Other vows:\n${list}`);
+    }
+  }
 
   if (assets?.length) {
     const assetText = assets.map(formatAssetForContext).filter(Boolean).join("\n");

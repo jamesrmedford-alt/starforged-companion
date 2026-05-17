@@ -131,4 +131,57 @@ describe('persistResolution — active character fallback', () => {
     expect(out.campaignState.sessionLogs['sess-1']).toHaveLength(1);
     expect(out.campaignState.sessionLogs['sess-1'][0].moveId).toBe('gather_information');
   });
+
+  // ── progressMarked semantics ─────────────────────────────────────────────
+  // Per play kit, "mark progress twice" on a Strike strong hit applies two
+  // marks of the track's per-rank ticksPerMark. The resolver sets
+  // progressMarked: 2 and the persistence layer multiplies by rank.
+  describe('progressMarked (mark-progress operations)', () => {
+    it('applies marks × ticksPerMark to a vow item on the actor', async () => {
+      const actor = makeTestActor({
+        id: 'pc-strike', type: 'character', hasPlayerOwner: true,
+        items: {
+          contents: [{
+            id: 'vow-1',
+            type: 'progress',
+            system: { subtype: 'vow', rank: 'dangerous', progress: 0 },
+            update: async function (changes) { Object.assign(this.system, { progress: changes['system.progress'] }); },
+          }],
+        },
+      });
+      game.actors._set('pc-strike', actor);
+
+      const resolution = baseResolution({
+        moveId: 'strike',
+        consequences: {
+          ...baseResolution().consequences,
+          progressMarked: 2,   // Mark progress twice
+          progressTrackId: 'vow-1',
+        },
+      });
+      await persistResolution(resolution, baseCampaignState({ activeCharacterId: 'pc-strike' }));
+
+      // dangerous rank = 8 ticks per mark; 2 marks → 16 ticks
+      const vow = actor.items.contents.find(i => i.id === 'vow-1');
+      expect(vow.system.progress).toBe(16);
+    });
+
+    it('treats legacy-track progressMarked as raw ticks (play-kit reward values)', async () => {
+      const actor = makeTestActor({ id: 'pc-leg', type: 'character', hasPlayerOwner: true });
+      game.actors._set('pc-leg', actor);
+
+      // Make a Discovery: per play kit, mark 2 ticks on discoveries legacy.
+      const resolution = baseResolution({
+        moveId: 'make_a_discovery',
+        consequences: {
+          ...baseResolution().consequences,
+          progressMarked: 2,            // raw ticks for legacy tracks
+          progressTrackId: 'discoveries',
+        },
+      });
+      const out = await persistResolution(resolution, baseCampaignState({ activeCharacterId: 'pc-leg' }));
+
+      expect(out.campaignState.legacyTracks.discoveries.ticks).toBe(2);
+    });
+  });
 });

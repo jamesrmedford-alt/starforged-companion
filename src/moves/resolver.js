@@ -201,6 +201,7 @@ function emptyConsequences() {
     progressMarked:      0,
     sufferMoveTriggered: null,
     progressTrackId:     null,
+    combatPosition:      null,
     otherEffect:         "",
   };
 }
@@ -327,7 +328,7 @@ const CONSEQUENCE_MAP = {
 
   reach_a_milestone: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 0,   // Ticks applied by caller based on vow rank — rank not known here
+    progressMarked: 1,   // One mark; persistence layer multiplies by track's ticksPerMark
     otherEffect: "Mark progress on your vow per its rank.",
   }),
 
@@ -364,7 +365,7 @@ const CONSEQUENCE_MAP = {
 
   develop_your_relationship: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 0,   // Ticks per connection rank — applied by caller
+    progressMarked: 1,   // One mark; persistence multiplies by track's ticksPerMark
     otherEffect: "Mark progress on connection track per connection rank.",
   }),
 
@@ -459,66 +460,73 @@ const CONSEQUENCE_MAP = {
 
   enter_the_fray: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, combatPosition: "in_control",
         otherEffect: "Strong hit: take both — +2 momentum AND you are in control." };
       case "weak_hit": return { ...emptyConsequences(),
+        // Player-choice outcome; do not pre-set position. The player picks
+        // +2 momentum (no position change) or "you are in control".
         otherEffect: "Weak hit: choose one — +2 momentum OR you are in control." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };
     }
   },
 
   gain_ground: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, progressMarked: 0, combatPosition: "in_control",
         otherEffect: "In control. Strong hit: choose two — mark progress / +2 momentum / +1 on next move." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), combatPosition: "in_control",
         otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe gains upper hand. You are in a bad spot. Pay the Price." };
     }
   },
 
   strike: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Dominate foe, stay in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "bad_spot",
         otherEffect: "Mark progress twice, but expose yourself to danger. You are in a bad spot." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight turns against you. You are in a bad spot. Pay the Price." };
     }
   },
 
   clash: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Overwhelm foe, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 1, combatPosition: "bad_spot",
         otherEffect: "Mark progress, but dealt a counterblow. Stay in a bad spot. Pay the Price." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe dominates. Stay in a bad spot. Pay the Price." };
     }
   },
 
   react_under_fire: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
         otherEffect: "Succeed and are in control. Take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(),
         sufferMoveTriggered: { move: "suffer", amount: 1 },
+        combatPosition: "bad_spot",
         otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Situation worsens. Stay in a bad spot. Pay the Price." };
     }
   },
 
   take_decisive_action: (outcome, _isMatch) => {
-    // Progress move — control state affects outcome interpretation (handled by caller)
+    // Progress move — per play kit, "if in a bad spot, count a strong hit
+    // without a match as a weak hit, and a weak hit as a miss." That
+    // downgrade is applied by the caller (resolveMove) when the bound
+    // combat track's controlState is "bad_spot"; this handler maps the
+    // post-downgrade outcome to consequences.
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
         otherEffect: "Prevail. Take +1 momentum. If fight continues, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Objective achieved but at cost. Roll or choose from weak hit table. If fight continues, you are in a bad spot." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Defeated or objective lost. Pay the Price." };
@@ -527,6 +535,7 @@ const CONSEQUENCE_MAP = {
 
   face_defeat: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    combatPosition: "bad_spot",
     otherEffect: "Objective abandoned or deprived. Clear objective and Pay the Price. Fight continues in a bad spot.",
   }),
 
@@ -746,7 +755,7 @@ const CONSEQUENCE_MAP = {
  * @param {Object} campaignState   — current CampaignStateSchema
  * @returns {Object}               — MoveResolutionSchema (minus _id/timestamp, set by caller)
  */
-export function resolveMove(interpretation, campaignState) {
+export function resolveMove(interpretation, campaignState, options = {}) {
   const {
     moveId,
     moveName,
@@ -782,8 +791,28 @@ export function resolveMove(interpretation, campaignState) {
     ({ outcome, isMatch } = calcOutcome(actionScore, challengeDice));
   }
 
+  // Take Decisive Action — play kit p. 5: "If you are in control, check the
+  // result as normal. If you are in a bad spot, count a strong hit without
+  // a match as a weak hit, and a weak hit as a miss." The caller is
+  // responsible for passing the bound combat track's combatState in
+  // options.combatPosition (typically resolved via
+  // getActiveCombatPosition() from the progress-tracks panel).
+  let downgradeApplied = null;
+  if (moveId === "take_decisive_action" && options.combatPosition === "bad_spot") {
+    if (outcome === "strong_hit" && !isMatch) {
+      outcome = "weak_hit";
+      downgradeApplied = "strong_hit→weak_hit";
+    } else if (outcome === "weak_hit") {
+      outcome = "miss";
+      downgradeApplied = "weak_hit→miss";
+    }
+  }
+
   const outcomeLabel   = buildOutcomeLabel(outcome, isMatch);
   const consequences   = mapConsequences(moveId, outcome, isMatch);
+  if (downgradeApplied) {
+    consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
+  }
   const loremasterContext = buildLoremasterContext({
     moveName, statUsed, statValue, adds,
     actionDie, actionScore, challengeDice,
@@ -849,8 +878,25 @@ export function resolveMove(interpretation, campaignState) {
  * @param {boolean} isMatch
  * @returns {Object|null}
  */
+// Moves whose miss outcome triggers a Pay the Price prompt per the play kit.
+// Listed by moveId so the resolver can auto-roll the d100 table and surface
+// it as an advisory seed on the move card.
+const PAY_THE_PRICE_ON_MISS = new Set([
+  "face_danger", "secure_an_advantage", "gather_information", "compel",
+  "check_your_gear", "set_a_course", "gain_ground", "react_under_fire",
+  "strike", "clash", "take_decisive_action", "battle", "hearten",
+  "resupply", "repair", "heal", "sojourn", "make_a_connection",
+  "explore_a_waypoint",
+]);
+
 export function buildOracleSeeds(moveId, outcome, isMatch) {
   try {
+    const results = [];
+    const names   = [];
+    let context   = moveId;
+    let connectionSeed = null;
+
+    // ── PER-MOVE SEEDS ─────────────────────────────────────────────────────
     switch (moveId) {
 
       case "make_a_connection": {
@@ -858,72 +904,123 @@ export function buildOracleSeeds(moveId, outcome, isMatch) {
         const goal      = safeRoll("character_goal");
         const firstLook = safeRoll("character_first_look");
         const given     = safeRoll("given_name");
-        const results = [];
         if (role)      results.push(`Character role: ${role}`);
         if (goal)      results.push(`Character goal: ${goal}`);
         if (firstLook) results.push(`Character first look: ${firstLook}`);
-        const names = given ? [given] : [];
-        if (!results.length && !names.length) return null;
+        if (given)     names.push(given);
         // connectionSeed carries the same rolls in structured form so the
         // auto-create path in routeEntityDrafts can populate the journal
-        // fields (role, motivation, description) without re-rolling.
-        return {
-          results,
-          names,
-          context: "make_a_connection",
-          connectionSeed: { role, goal, firstLook, givenName: given },
-        };
+        // fields (role, motivation, description) without re-rolling. Only
+        // emit the structured seed if at least one field came back populated.
+        if (role || goal || firstLook || given) {
+          connectionSeed = { role, goal, firstLook, givenName: given };
+        }
+        break;
       }
 
       case "explore_a_waypoint": {
         // Per the Reference Guide: "If you roll a match on a strong hit,
         // envision a notable encounter or aspect of this place." Use Action +
-        // Theme as the prompt.
-        if (outcome !== "strong_hit" || !isMatch) return null;
-        const pair = safeRollPaired("action", "theme");
-        if (!pair) return null;
-        return {
-          results: [`Notable aspect of this waypoint: ${pair}`],
-          names:   [],
-          context: "explore_a_waypoint",
-        };
+        // Theme as the prompt, plus the play-kit Make a Discovery table.
+        if (outcome === "strong_hit" && isMatch) {
+          const pair = safeRollPaired("action", "theme");
+          if (pair) results.push(`Notable aspect of this waypoint: ${pair}`);
+          const disc = safeRoll("make_a_discovery");
+          if (disc) results.push(`Make a Discovery: ${disc}`);
+        }
+        if (outcome === "miss" && isMatch) {
+          const chaos = safeRoll("confront_chaos");
+          if (chaos) results.push(`Confront Chaos: ${chaos}`);
+        }
+        break;
       }
 
       case "make_a_discovery": {
         const pair = safeRollPaired("descriptor", "focus");
-        if (!pair) return null;
-        return {
-          results: [`Discovery descriptor and focus: ${pair}`],
-          names:   [],
-          context: "make_a_discovery",
-        };
+        if (pair) results.push(`Discovery descriptor and focus: ${pair}`);
+        const disc = safeRoll("make_a_discovery");
+        if (disc) results.push(`Make a Discovery: ${disc}`);
+        break;
       }
 
       case "confront_chaos": {
         const pair = safeRollPaired("action", "theme");
-        if (!pair) return null;
-        return {
-          results: [`Chaos prompt (action + theme): ${pair}`],
-          names:   [],
-          context: "confront_chaos",
-        };
+        if (pair) results.push(`Chaos prompt (action + theme): ${pair}`);
+        const chaos = safeRoll("confront_chaos");
+        if (chaos) results.push(`Confront Chaos: ${chaos}`);
+        break;
       }
 
       case "ask_the_oracle": {
         // Default fallback — Action + Theme provides a flexible prompt that
         // suits free-form oracle questions.
         const pair = safeRollPaired("action", "theme");
-        if (!pair) return null;
-        return {
-          results: [`Oracle prompt (action + theme): ${pair}`],
-          names:   [],
-          context: "ask_the_oracle",
-        };
+        if (pair) results.push(`Oracle prompt (action + theme): ${pair}`);
+        break;
       }
 
-      default:
-        return null;
+      case "begin_a_session": {
+        // Optional spotlight vignette (play kit p. 1). Always rolled so the
+        // GM/player can use it; +1 momentum applies if they opt in.
+        const vignette = safeRoll("spotlight_vignette");
+        if (vignette) results.push(`Spotlight vignette: ${vignette}`);
+        break;
+      }
+
+      case "pay_the_price": {
+        // Pay the Price as a deliberate fate move — always roll the d100 table.
+        const ptp = safeRoll("pay_the_price");
+        if (ptp) results.push(`Pay the Price: ${ptp}`);
+        break;
+      }
+
+      case "take_decisive_action": {
+        if (outcome === "weak_hit") {
+          const cost = safeRoll("decisive_action_cost");
+          if (cost) results.push(`Decisive-action cost: ${cost}`);
+        }
+        break;
+      }
+
+      case "endure_harm": {
+        if (outcome === "miss") {
+          const wound = safeRoll("mortal_wound");
+          if (wound) results.push(`Mortal wound (if health at 0): ${wound}`);
+        }
+        break;
+      }
+
+      case "endure_stress": {
+        if (outcome === "miss") {
+          const deso = safeRoll("desolation");
+          if (deso) results.push(`Desolation (if spirit at 0): ${deso}`);
+        }
+        break;
+      }
+
+      case "withstand_damage": {
+        if (outcome === "miss") {
+          const dmg = safeRoll("vehicle_damage");
+          if (dmg) results.push(`Vehicle damage (if integrity at 0): ${dmg}`);
+        }
+        break;
+      }
     }
+
+    // ── PAY THE PRICE ON MISS (advisory for any move whose miss text says so)
+    if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId)) {
+      const ptp = safeRoll("pay_the_price");
+      if (ptp) results.push(`Pay the Price: ${ptp}`);
+    }
+
+    if (!results.length && !names.length && !connectionSeed) return null;
+
+    return {
+      results,
+      names,
+      context,
+      ...(connectionSeed ? { connectionSeed } : {}),
+    };
   } catch (err) {
     console.warn("starforged-companion | buildOracleSeeds failed:", err);
     return null;

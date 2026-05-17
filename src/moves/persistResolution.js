@@ -26,9 +26,19 @@ import {
   awardXP,
   markVowProgress,
 } from '../character/actorBridge.js';
+import { RANK_TICKS } from '../schemas.js';
 
 const MODULE_ID  = 'starforged-companion';
 const TRACK_FLAG = 'progressTrack';
+
+/**
+ * Multiply a "number of mark-progress operations" by the track's per-rank
+ * ticks-per-mark. Falls back to formidable (4 ticks) when the rank is
+ * unknown — same default the progress panel uses.
+ */
+function marksToTicks(marks, rank) {
+  return marks * (RANK_TICKS[rank] ?? 4);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public entry point
@@ -85,6 +95,15 @@ export async function persistResolution(resolution, campaignState) {
         resolution.consequences.progressTrackId,
         resolution.consequences.progressMarked,
         updated
+      );
+    }
+
+    // 6. Combat position — write to the bound combat track if any.
+    if (resolution.consequences.combatPosition && resolution.consequences.progressTrackId) {
+      await applyCombatPosition(
+        resolution.consequences.progressTrackId,
+        resolution.consequences.combatPosition,
+        updated,
       );
     }
   }
@@ -166,22 +185,27 @@ async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
 const LEGACY_KEYS = ['quests', 'bonds', 'discoveries'];
 const MAX_TICKS   = 40;
 
-async function markProgress(actor, trackId, ticksToMark, campaignState) {
-  // Legacy tracks grant XP (2 XP per box, 1 if track was previously cleared)
+async function markProgress(actor, trackId, marks, campaignState) {
+  // Legacy tracks grant XP (2 XP per box, 1 if track was previously cleared).
+  // Per play kit, legacy rewards are quoted as raw ticks/boxes (e.g. "1 tick"
+  // for troublesome, "3 boxes" for epic), so legacy uses `marks` as raw ticks.
   if (LEGACY_KEYS.includes(trackId)) {
-    await markLegacyProgress(actor, trackId, ticksToMark, campaignState);
+    await markLegacyProgress(actor, trackId, marks, campaignState);
     return;
   }
 
-  // Embedded vow items on the Actor
+  // Embedded vow items on the Actor. Multiply marks by the vow's rank
+  // per the play kit ("mark progress per its rank").
   const vowItem = actor.items?.find(i => i.id === trackId || i.system?.trackId === trackId);
   if (vowItem) {
-    await markVowProgress(actor, vowItem.id, ticksToMark);
+    const ticks = marksToTicks(marks, vowItem.system?.rank);
+    await markVowProgress(actor, vowItem.id, ticks);
     return;
   }
 
-  // Fallback: journal-based progress track (existing pipeline)
-  await markProgressOnJournalTrack(trackId, ticksToMark, campaignState);
+  // Journal-based progress track (vow, expedition, connection, combat,
+  // scene_challenge). Resolve the track first so we can look up its rank.
+  await markProgressOnJournalTrack(trackId, marks, campaignState);
 }
 
 async function markLegacyProgress(actor, legacyKey, ticksToMark, campaignState) {
@@ -202,7 +226,25 @@ async function markLegacyProgress(actor, legacyKey, ticksToMark, campaignState) 
   }
 }
 
-async function markProgressOnJournalTrack(trackId, ticksToMark, campaignState) {
+/**
+ * Persist combat position (in_control / bad_spot) onto a combat-type
+ * progress track in the Progress Tracks journal (single JournalEntry with
+ * a `tracks` array flag, matching src/ui/progressTracks.js). No-op for
+ * vow / legacy / unknown track IDs.
+ */
+async function applyCombatPosition(trackId, position, _campaignState) {
+  const journal = game.journal?.find?.(j => j.name === "Starforged Progress Tracks");
+  if (!journal) return;
+
+  const tracks = journal.getFlag(MODULE_ID, "tracks") ?? [];
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track || track.type !== "combat") return;
+
+  track.combatState = position;
+  await journal.setFlag(MODULE_ID, "tracks", tracks);
+}
+
+async function markProgressOnJournalTrack(trackId, marks, campaignState) {
   const journalId = (campaignState.progressTrackIds ?? []).find(jid => {
     const entry = game.journal.get(jid);
     const page  = entry?.pages?.contents?.[0];
@@ -219,8 +261,9 @@ async function markProgressOnJournalTrack(trackId, ticksToMark, campaignState) {
   const page  = entry?.pages?.contents?.[0];
   if (!page) return;
 
-  const track    = foundry.utils.deepClone(page.flags[MODULE_ID][TRACK_FLAG]);
-  track.ticks    = Math.min(track.ticks + ticksToMark, MAX_TICKS);
+  const track     = foundry.utils.deepClone(page.flags[MODULE_ID][TRACK_FLAG]);
+  const ticks     = marksToTicks(marks, track.rank);
+  track.ticks     = Math.min(track.ticks + ticks, MAX_TICKS);
   track.updatedAt = new Date().toISOString();
 
   await page.setFlag(MODULE_ID, TRACK_FLAG, track);

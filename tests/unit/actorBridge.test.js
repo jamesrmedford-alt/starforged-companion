@@ -12,6 +12,7 @@ import {
   readCharacterSnapshot,
   readDebilities,
   readAssets,
+  readVows,
   applyMeterChanges,
   setDebility,
   awardXP,
@@ -189,18 +190,46 @@ describe('readCharacterSnapshot', () => {
     expect(snap.momentumMax).toBe(8); // 10 - 2
   });
 
-  it('calculates momentumReset correctly (0 - debility count, min -2)', () => {
+  it('calculates momentumReset correctly per play kit: 2+ impacts → 0', () => {
     const actor = freshActor({
       system: { debility: { wounded: true, shaken: true, unprepared: true } },
     });
     const snap = readCharacterSnapshot(actor);
-    expect(snap.momentumReset).toBe(-2); // max(-2, -3) = -2
+    expect(snap.momentumReset).toBe(0); // max(0, 2-3) = 0
   });
 
-  it('momentumReset is 0 when no condition debilities', () => {
+  it('momentumReset is +2 with no impacts', () => {
     const actor = freshActor();
     const snap  = readCharacterSnapshot(actor);
-    expect(snap.momentumReset).toBe(0); // max(-2, 0)
+    expect(snap.momentumReset).toBe(2); // max(0, 2-0) = 2
+  });
+
+  it('momentumReset is +1 with exactly one impact', () => {
+    const actor = freshActor({ system: { debility: { wounded: true } } });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumReset).toBe(1); // max(0, 2-1) = 1
+  });
+
+  it('counts non-condition impacts toward momentum bounds (battered, doomed, etc.)', () => {
+    const actor = freshActor({
+      system: { debility: { battered: true, doomed: true } },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumMax).toBe(8);   // 10 - 2
+    expect(snap.momentumReset).toBe(0); // max(0, 2-2)
+  });
+
+  it('prefers vendor-system computed getters when present', () => {
+    const actor = freshActor({
+      system: {
+        momentumMax:   6,   // computed getter from vendor schema
+        momentumReset: -1,  // computed getter from vendor schema (different floor)
+        debility: { wounded: true },
+      },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumMax).toBe(6);
+    expect(snap.momentumReset).toBe(-1);
   });
 });
 
@@ -287,7 +316,7 @@ describe('applyMeterChanges', () => {
   });
 
   it('clamps momentum to momentumReset–momentumMax', async () => {
-    // With 2 condition debilities: max = 8, reset = -2
+    // With 2 impacts: max = 8, reset = 0
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
@@ -297,9 +326,10 @@ describe('applyMeterChanges', () => {
     // Try to set momentum to +20 (above max)
     await applyMeterChanges(actor, { momentum: 20 });
     expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
+    expect(actor._updateHistory[0]['system.momentum.resetValue']).toBe(0);
   });
 
-  it('reduces momentumMax by 1 per active condition debility', async () => {
+  it('reduces momentumMax by 1 per active impact (all categories count)', async () => {
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
@@ -308,6 +338,17 @@ describe('applyMeterChanges', () => {
     });
     await applyMeterChanges(actor, { momentum: 1 });
     expect(actor._updateHistory[0]['system.momentum.max']).toBe(7);
+  });
+
+  it('counts vehicle and burden impacts toward momentum max too', async () => {
+    const actor = freshActor({
+      system: {
+        momentum: { value: 2, max: 10, resetValue: 2 },
+        debility: { battered: true, doomed: true },
+      },
+    });
+    await applyMeterChanges(actor, { momentum: 1 });
+    expect(actor._updateHistory[0]['system.momentum.max']).toBe(8);
   });
 
   it('does not call actor.update() if no changes', async () => {
@@ -482,6 +523,51 @@ describe('createCharacterBondItem', () => {
   it('returns null when actor is missing', async () => {
     const item = await createCharacterBondItem(null, { name: 'X' });
     expect(item).toBeNull();
+  });
+});
+
+describe('readVows', () => {
+  it('returns vow-subtyped progress items with isBackground on the first one', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          { id: 'v1', type: 'progress', name: 'Find the Beacon',
+            system: { subtype: 'vow', rank: 'formidable', progress: 16 } },
+          { id: 'v2', type: 'progress', name: 'Reclaim the Throne',
+            system: { subtype: 'vow', rank: 'epic',       progress: 4  } },
+          { id: 'b1', type: 'progress', name: 'A Connection',
+            system: { subtype: 'bond', rank: 'dangerous' } },
+        ],
+      },
+    });
+
+    const vows = readVows(actor);
+    expect(vows).toHaveLength(2);
+    expect(vows[0]).toMatchObject({
+      id: 'v1', name: 'Find the Beacon', rank: 'formidable',
+      ticks: 16, progress: 4, isBackground: true,
+    });
+    expect(vows[1]).toMatchObject({
+      id: 'v2', name: 'Reclaim the Throne', rank: 'epic',
+      ticks: 4, progress: 1, isBackground: false,
+    });
+  });
+
+  it('returns empty array when actor has no vow items', () => {
+    const actor = freshActor();
+    expect(readVows(actor)).toEqual([]);
+  });
+
+  it('surfaces vows through readCharacterSnapshot', () => {
+    const actor = freshActor({
+      items: {
+        contents: [{ id: 'v1', type: 'progress', name: 'Test',
+                     system: { subtype: 'vow', rank: 'dangerous', progress: 0 } }],
+      },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.vows).toHaveLength(1);
+    expect(snap.vows[0].isBackground).toBe(true);
   });
 });
 
