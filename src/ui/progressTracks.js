@@ -642,6 +642,33 @@ export class ProgressTrackApp extends ApplicationV2 {
  * Called from the PTT button or a chat command hook.
  * @returns {ProgressTrackApp}
  */
+/**
+ * Return the combat position of the unique active combat track, or null
+ * if there are zero or multiple active combat tracks. Used by the resolver
+ * to apply the play-kit "bad spot downgrade" on Take Decisive Action
+ * (p. 5: "if you are in a bad spot, count a strong hit without a match
+ * as a weak hit, and a weak hit as a miss").
+ *
+ * If the player has more than one active combat track, the resolver
+ * can't unambiguously pick which combatState applies, so we return null
+ * and skip the downgrade.
+ *
+ * @returns {Promise<"in_control"|"bad_spot"|null>}
+ */
+export async function getActiveCombatPosition() {
+  try {
+    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    if (!journal) return null;
+    const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
+    const combatTracks = tracks.filter(t => t.type === 'combat' && !t.completed);
+    if (combatTracks.length !== 1) return null;
+    const state = combatTracks[0].combatState;
+    return state === 'in_control' || state === 'bad_spot' ? state : null;
+  } catch {
+    return null;
+  }
+}
+
 export function openProgressTracks() {
   return ProgressTrackApp.open();
 }

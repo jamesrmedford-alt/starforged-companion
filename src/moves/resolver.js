@@ -755,7 +755,7 @@ const CONSEQUENCE_MAP = {
  * @param {Object} campaignState   — current CampaignStateSchema
  * @returns {Object}               — MoveResolutionSchema (minus _id/timestamp, set by caller)
  */
-export function resolveMove(interpretation, campaignState) {
+export function resolveMove(interpretation, campaignState, options = {}) {
   const {
     moveId,
     moveName,
@@ -791,8 +791,28 @@ export function resolveMove(interpretation, campaignState) {
     ({ outcome, isMatch } = calcOutcome(actionScore, challengeDice));
   }
 
+  // Take Decisive Action — play kit p. 5: "If you are in control, check the
+  // result as normal. If you are in a bad spot, count a strong hit without
+  // a match as a weak hit, and a weak hit as a miss." The caller is
+  // responsible for passing the bound combat track's combatState in
+  // options.combatPosition (typically resolved via
+  // getActiveCombatPosition() from the progress-tracks panel).
+  let downgradeApplied = null;
+  if (moveId === "take_decisive_action" && options.combatPosition === "bad_spot") {
+    if (outcome === "strong_hit" && !isMatch) {
+      outcome = "weak_hit";
+      downgradeApplied = "strong_hit→weak_hit";
+    } else if (outcome === "weak_hit") {
+      outcome = "miss";
+      downgradeApplied = "weak_hit→miss";
+    }
+  }
+
   const outcomeLabel   = buildOutcomeLabel(outcome, isMatch);
   const consequences   = mapConsequences(moveId, outcome, isMatch);
+  if (downgradeApplied) {
+    consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
+  }
   const loremasterContext = buildLoremasterContext({
     moveName, statUsed, statValue, adds,
     actionDie, actionScore, challengeDice,

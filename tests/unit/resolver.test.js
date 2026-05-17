@@ -780,6 +780,91 @@ describe("resolveMove", () => {
 
     expect(result.oracleSeeds).toBeNull();
   });
+
+  // ── Take Decisive Action bad-spot downgrade (play kit p. 5) ────────────
+  describe("Take Decisive Action — bad-spot downgrade", () => {
+    function takeDecisiveAction(ticks, { combatPosition } = {}) {
+      return resolveMove(
+        {
+          moveId:          "take_decisive_action",
+          moveName:        "Take Decisive Action",
+          statUsed:        null,
+          statValue:       ticks,
+          adds:            0,
+          mischiefApplied: false,
+          mischiefLevel:   "serious",
+          playerNarration: "I commit.",
+          isProgressMove:  true,
+        },
+        { currentSessionId: "x" },
+        { combatPosition },
+      );
+    }
+
+    it("strong hit without match → weak hit when in a bad spot", () => {
+      // Need: progressScore (= floor(ticks/4)) > both challenge dice, no match.
+      // With 28 ticks → score 7. fixDiceSequence([0.0, 0.1]) → dice [1, 2].
+      // No match (1 ≠ 2), score 7 > both → strong_hit.
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("weak_hit");
+      expect(result.isMatch).toBe(false);
+      expect(result.consequences.otherEffect).toMatch(/bad spot/i);
+    });
+
+    it("strong hit WITH match — NOT downgraded even in a bad spot", () => {
+      // Match → both dice equal. fixDiceSequence([0.0, 0.0]) → [1, 1].
+      // 28 ticks → score 7 > both → strong_hit + match. Per rules, only
+      // "strong hit without a match" is downgraded.
+      fixDiceSequence([0.0, 0.0]);
+      const result = takeDecisiveAction(28, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.isMatch).toBe(true);
+    });
+
+    it("weak hit → miss when in a bad spot", () => {
+      // weak_hit: score beats one die only. 12 ticks → score 3.
+      // fixDiceSequence([0.1, 0.5]) → [2, 6]. 3 > 2 but 3 ≤ 6 → weak_hit.
+      fixDiceSequence([0.1, 0.5]);
+      const result = takeDecisiveAction(12, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("miss");
+      expect(result.consequences.otherEffect).toMatch(/bad spot/i);
+    });
+
+    it("does NOT downgrade when in control", () => {
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: "in_control" });
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.consequences.otherEffect).not.toMatch(/bad spot/i);
+    });
+
+    it("does NOT downgrade when combatPosition is null", () => {
+      fixDiceSequence([0.0, 0.1]);
+      const result = takeDecisiveAction(28, { combatPosition: null });
+      expect(result.outcome).toBe("strong_hit");
+    });
+
+    it("does NOT downgrade for other moves even in a bad spot", () => {
+      fixDiceSequence([0.0, 0.1, 0.99]);   // challenge then action
+      const result = resolveMove(
+        { moveId: "strike", moveName: "Strike", statUsed: "iron",
+          statValue: 4, adds: 0, mischiefApplied: false, mischiefLevel: "serious",
+          playerNarration: "x", isProgressMove: false },
+        { currentSessionId: "x" },
+        { combatPosition: "bad_spot" },
+      );
+      // Strike strong_hit should stand on its own
+      expect(result.outcome).toBe("strong_hit");
+      expect(result.consequences.otherEffect).not.toMatch(/downgraded/i);
+    });
+
+    it("miss stays a miss regardless of position", () => {
+      // 0 ticks → score 0. Any roll → miss.
+      fixDiceSequence([0.5, 0.5]);
+      const result = takeDecisiveAction(0, { combatPosition: "bad_spot" });
+      expect(result.outcome).toBe("miss");
+    });
+  });
 });
 
 

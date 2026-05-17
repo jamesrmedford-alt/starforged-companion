@@ -72,6 +72,7 @@ import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js
 import {
   openProgressTracks,
   registerProgressTrackHooks,
+  getActiveCombatPosition,
 } from "./ui/progressTracks.js";
 
 import {
@@ -685,7 +686,15 @@ export function registerChatHook() {
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
 
-      const resolution = resolveMove(interpretation, campaignState);
+      // Take Decisive Action — auto-detect the bound combat track's
+      // position so the resolver can apply the bad-spot downgrade
+      // (play kit p. 5). Returns null if there are zero or multiple
+      // active combat tracks; the downgrade is skipped in both cases.
+      const combatPosition = interpretation.moveId === "take_decisive_action"
+        ? await getActiveCombatPosition()
+        : null;
+
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition });
 
       // Step 7: relevance resolver — picks the narrator-permission block
       // and identifies which entity records to inject as cards. For hybrid
