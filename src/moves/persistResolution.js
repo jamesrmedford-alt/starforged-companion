@@ -97,6 +97,15 @@ export async function persistResolution(resolution, campaignState) {
         updated
       );
     }
+
+    // 6. Combat position — write to the bound combat track if any.
+    if (resolution.consequences.combatPosition && resolution.consequences.progressTrackId) {
+      await applyCombatPosition(
+        resolution.consequences.progressTrackId,
+        resolution.consequences.combatPosition,
+        updated,
+      );
+    }
   }
 
   // 6. Persist campaign state
@@ -215,6 +224,24 @@ async function markLegacyProgress(actor, legacyKey, ticksToMark, campaignState) 
     const xpPerBox = track.cleared ? 1 : 2;
     await awardXP(actor, newBoxes * xpPerBox);
   }
+}
+
+/**
+ * Persist combat position (in_control / bad_spot) onto a combat-type
+ * progress track in the Progress Tracks journal (single JournalEntry with
+ * a `tracks` array flag, matching src/ui/progressTracks.js). No-op for
+ * vow / legacy / unknown track IDs.
+ */
+async function applyCombatPosition(trackId, position, _campaignState) {
+  const journal = game.journal?.find?.(j => j.name === "Starforged Progress Tracks");
+  if (!journal) return;
+
+  const tracks = journal.getFlag(MODULE_ID, "tracks") ?? [];
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track || track.type !== "combat") return;
+
+  track.combatState = position;
+  await journal.setFlag(MODULE_ID, "tracks", tracks);
 }
 
 async function markProgressOnJournalTrack(trackId, marks, campaignState) {

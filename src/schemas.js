@@ -507,6 +507,13 @@ export const MoveResolutionSchema = {
                                  // play kit's per-rank legacy-reward values.
     sufferMoveTriggered:   null,// e.g. { move: "endure_harm", amount: 1 }
     progressTrackId:       null,// Which track to apply progressMarked to
+    combatPosition:        null,// "in_control" | "bad_spot" | null
+                                 // Persisted onto the bound combat track's
+                                 // combat.controlState so subsequent moves
+                                 // know whether to use proactive (Gain Ground,
+                                 // Strike, Take Decisive Action) or reactive
+                                 // (React Under Fire, Clash) moves. Play kit
+                                 // p. 5 "In Control / In a Bad Spot".
     otherEffect:           "",  // Narrative consequence for Loremaster
   },
 

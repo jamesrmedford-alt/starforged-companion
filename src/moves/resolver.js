@@ -201,6 +201,7 @@ function emptyConsequences() {
     progressMarked:      0,
     sufferMoveTriggered: null,
     progressTrackId:     null,
+    combatPosition:      null,
     otherEffect:         "",
   };
 }
@@ -459,66 +460,73 @@ const CONSEQUENCE_MAP = {
 
   enter_the_fray: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, combatPosition: "in_control",
         otherEffect: "Strong hit: take both — +2 momentum AND you are in control." };
       case "weak_hit": return { ...emptyConsequences(),
+        // Player-choice outcome; do not pre-set position. The player picks
+        // +2 momentum (no position change) or "you are in control".
         otherEffect: "Weak hit: choose one — +2 momentum OR you are in control." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };
     }
   },
 
   gain_ground: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, progressMarked: 0, combatPosition: "in_control",
         otherEffect: "In control. Strong hit: choose two — mark progress / +2 momentum / +1 on next move." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), combatPosition: "in_control",
         otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe gains upper hand. You are in a bad spot. Pay the Price." };
     }
   },
 
   strike: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Dominate foe, stay in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 2,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "bad_spot",
         otherEffect: "Mark progress twice, but expose yourself to danger. You are in a bad spot." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight turns against you. You are in a bad spot. Pay the Price." };
     }
   },
 
   clash: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2,
+      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Overwhelm foe, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 1,
+      case "weak_hit": return { ...emptyConsequences(), progressMarked: 1, combatPosition: "bad_spot",
         otherEffect: "Mark progress, but dealt a counterblow. Stay in a bad spot. Pay the Price." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe dominates. Stay in a bad spot. Pay the Price." };
     }
   },
 
   react_under_fire: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
         otherEffect: "Succeed and are in control. Take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(),
         sufferMoveTriggered: { move: "suffer", amount: 1 },
+        combatPosition: "bad_spot",
         otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Situation worsens. Stay in a bad spot. Pay the Price." };
     }
   },
 
   take_decisive_action: (outcome, _isMatch) => {
-    // Progress move — control state affects outcome interpretation (handled by caller)
+    // Progress move — per play kit, "if in a bad spot, count a strong hit
+    // without a match as a weak hit, and a weak hit as a miss." That
+    // downgrade is applied by the caller (resolveMove) when the bound
+    // combat track's controlState is "bad_spot"; this handler maps the
+    // post-downgrade outcome to consequences.
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
+      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
         otherEffect: "Prevail. Take +1 momentum. If fight continues, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Objective achieved but at cost. Roll or choose from weak hit table. If fight continues, you are in a bad spot." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Defeated or objective lost. Pay the Price." };
@@ -527,6 +535,7 @@ const CONSEQUENCE_MAP = {
 
   face_defeat: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    combatPosition: "bad_spot",
     otherEffect: "Objective abandoned or deprived. Clear objective and Pay the Price. Fight continues in a bad spot.",
   }),
 

@@ -208,12 +208,13 @@ export class ProgressTrackApp extends ApplicationV2 {
       height: 'auto',
     },
     actions: {
-      markProgress:  ProgressTrackApp.#onMarkProgress,
-      clearProgress: ProgressTrackApp.#onClearProgress,
-      rollProgress:  ProgressTrackApp.#onRollProgress,
-      removeTrack:   ProgressTrackApp.#onRemoveTrack,
-      addTrack:      ProgressTrackApp.#onAddTrack,
-      completeTrack: ProgressTrackApp.#onCompleteTrack,
+      markProgress:        ProgressTrackApp.#onMarkProgress,
+      clearProgress:       ProgressTrackApp.#onClearProgress,
+      rollProgress:        ProgressTrackApp.#onRollProgress,
+      removeTrack:         ProgressTrackApp.#onRemoveTrack,
+      addTrack:            ProgressTrackApp.#onAddTrack,
+      completeTrack:       ProgressTrackApp.#onCompleteTrack,
+      toggleCombatState:   ProgressTrackApp.#onToggleCombatState,
     },
   };
 
@@ -248,6 +249,7 @@ export class ProgressTrackApp extends ApplicationV2 {
       pct: Math.round((t.ticks / MAX_TICKS) * 100),
       boxes: ProgressTrackApp.#buildBoxes(t.ticks),
       canRoll: t.ticks > 0,
+      combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
     }));
 
     // Group: active (not completed) then completed.
@@ -305,6 +307,16 @@ export class ProgressTrackApp extends ApplicationV2 {
         <div class="track-footer">
           <span class="track-pct">${t.pct}%</span>
           <span class="track-ticks">${t.ticks} / ${MAX_TICKS} ticks</span>
+          ${t.type === 'combat' && !t.completed ? `
+            <button class="track-btn btn-combat-state combat-${t.combatState ?? 'neutral'}"
+                    data-action="toggleCombatState"
+                    data-track-id="${t.id}"
+                    title="Toggle combat position (in control / in a bad spot)">
+              ${t.combatState === 'in_control' ? 'In control'
+                : t.combatState === 'bad_spot' ? 'In a bad spot'
+                : 'Neutral'}
+            </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -460,6 +472,28 @@ export class ProgressTrackApp extends ApplicationV2 {
 
       track.completed = true;
       track.completedAt = Date.now();
+
+      await saveTracks(tracks);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  /**
+   * Cycle a combat track's position: neutral → in_control → bad_spot → neutral.
+   * Per play kit p. 5, combat moves write this automatically on resolution;
+   * the toggle here lets the player correct it manually.
+   */
+  static #onToggleCombatState(event, target) {
+    const work = (async () => {
+      const trackId = target.dataset.trackId;
+      const tracks = await loadTracks();
+      const track = tracks.find(t => t.id === trackId);
+      if (!track || track.type !== 'combat') return;
+
+      const cycle = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
+      track.combatState = cycle[track.combatState ?? 'null'];
 
       await saveTracks(tracks);
       this.render();
