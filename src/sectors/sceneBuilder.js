@@ -41,11 +41,15 @@ const SCENE_CONFIG = {
  * Create a Foundry Scene for the sector.
  *
  * @param {SectorResult} sector
- * @param {string|null}  backgroundPath   — Foundry data file path, or null
- * @param {Object}       entityJournals   — { settlementId: JournalEntry }
+ * @param {string|null}  backgroundPath — Foundry data file path, or null
+ * @param {Object}       entityActors   — { settlementId: Actor }
+ *   Phase 3 (commit b65175a) migrated Settlement entities from JournalEntry
+ *   to a location-typed Actor. The value at each key is now an Actor, not
+ *   a JournalEntry. Notes link via flag.actorId (see registerSectorSceneHooks)
+ *   rather than the native entryId, since Notes only accept JournalEntry ids.
  * @returns {Promise<Scene>}
  */
-export async function createSectorScene(sector, backgroundPath, entityJournals) {
+export async function createSectorScene(sector, backgroundPath, entityActors) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
 
   // Foundry v13 scene background.src requires a path from the server root.
@@ -90,10 +94,18 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
     const noteData = [];
 
     for (const s of mapSettlements) {
-      const journal      = entityJournals?.[s.id] ?? null;
-      const locationType = s.locationType ?? s.type;
+      // entityActors[s.id] is the location-typed settlement Actor created by
+      // createEntityJournals. We deliberately do NOT pass actor.id as
+      // `entryId` — Foundry v13 validates entryId against game.journal and
+      // rejects the whole createEmbeddedDocuments batch on the first
+      // mismatch. Pre-Phase-3 this slot held a JournalEntry id; post-Phase-3
+      // it would resolve to nothing, abort the Note batch, and also block
+      // the Drawing batch below (which is the v1.3.4 "Sector Creator failed
+      // to populate map" bug). Link via flag.actorId instead — the click
+      // handler in registerSectorSceneHooks() opens the Actor sheet.
+      const settlementActor = entityActors?.[s.id] ?? null;
+      const locationType    = s.locationType ?? s.type;
       noteData.push({
-        entryId:    journal?.id ?? null,
         x:          s.gridX * gridCellSize,
         y:          s.gridY * gridCellSize,
         texture: {
@@ -110,6 +122,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
           [MODULE_ID]: {
             sectorNote:   true,
             settlementId: s.id,
+            actorId:      settlementActor?.id ?? null,
             locationType,
           },
         },
@@ -117,7 +130,10 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
 
       const full = fullSettlementById[s.id];
 
-      // FIX 3: Planet note — offset (+70, +40) from settlement pin
+      // Planet note — offset (+70, +40) from settlement pin. The sector
+      // generator embeds planet metadata on the settlement Actor's flag
+      // (no separate Planet Actor is created in this flow), so the planet
+      // pin's click target is the parent settlement Actor.
       if (full?.planet) {
         noteData.push({
           x:         (s.gridX * gridCellSize) + 70,
@@ -133,12 +149,15 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
               planetNote:   true,
               planetType:   full.planet.type,
               settlementId: s.id,
+              actorId:      settlementActor?.id ?? null,
             },
           },
         });
       }
 
-      // FIX 4: Stellar object note — offset (-60, +30) from settlement pin
+      // Stellar object note — offset (-60, +30) from settlement pin.
+      // Stellar objects have no Actor representation (decorative only);
+      // the click handler intentionally no-ops on these.
       if (full?.stellar) {
         noteData.push({
           x:         (s.gridX * gridCellSize) - 60,
@@ -153,6 +172,7 @@ export async function createSectorScene(sector, backgroundPath, entityJournals) 
               sectorNote:   true,
               stellarNote:  true,
               settlementId: s.id,
+              // No actorId: stellar objects have no Actor representation.
             },
           },
         });

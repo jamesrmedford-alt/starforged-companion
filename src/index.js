@@ -114,6 +114,7 @@ import {
   handleMigrateEntitiesCommand,
 } from "./entities/migrator.js";
 import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
+import { registerSectorSceneHooks }   from "./sectors/sectorSceneHooks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1701,6 +1702,7 @@ Hooks.once("ready", () => {
   registerEntityPanelHooks();
   registerDraftCardHooks();
   registerSectorOverviewSync();
+  registerSectorSceneHooks();
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,
