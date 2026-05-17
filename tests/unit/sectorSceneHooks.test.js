@@ -103,16 +103,49 @@ describe('handleSectorNoteClick', () => {
 });
 
 describe('registerSectorSceneHooks', () => {
-  it('registers a clickNote hook handler', () => {
+  it('registers handlers for BOTH clickNote and activateNote (v12 + v13 hook names)', () => {
     registerSectorSceneHooks();
-    const handlers = Hooks._handlers.get('clickNote') ?? [];
-    expect(handlers.length).toBe(1);
+    expect(Hooks._handlers.get('clickNote')?.length).toBe(1);
+    expect(Hooks._handlers.get('activateNote')?.length).toBe(1);
   });
 
-  it('is idempotent — calling twice registers only one handler', () => {
+  it('is idempotent — calling twice registers only one handler per event', () => {
     registerSectorSceneHooks();
     registerSectorSceneHooks();
-    const handlers = Hooks._handlers.get('clickNote') ?? [];
-    expect(handlers.length).toBe(1);
+    expect(Hooks._handlers.get('clickNote')?.length).toBe(1);
+    expect(Hooks._handlers.get('activateNote')?.length).toBe(1);
+  });
+
+  it('patches Note.prototype._onClickLeft2 so sector pins bypass the JournalEntry path', () => {
+    // The user's v1.3.4 follow-up bug ("no linkage from clicking on the note")
+    // happened because Foundry v13 does not reliably fire clickNote. The
+    // prototype patch is the cross-version-safe mechanism.
+    const original = vi.fn();
+    globalThis.foundry = globalThis.foundry ?? {};
+    globalThis.foundry.canvas = { placeables: {
+      Note: class { _onClickLeft2() { original(); } },
+    }};
+
+    registerSectorSceneHooks();
+    const Note = globalThis.foundry.canvas.placeables.Note;
+    expect(Note.prototype._sfSectorClickPatched).toBe(true);
+
+    // Simulate a click on a sector pin — sheet should render, original
+    // _onClickLeft2 should NOT be called.
+    const actor = makeActor('actor-patched');
+    global.game.actors._set('actor-patched', actor);
+    const instance = Object.assign(new Note(), {
+      document: { flags: { [MODULE_ID]: { sectorNote: true, actorId: 'actor-patched' } } },
+    });
+    instance._onClickLeft2({});
+    expect(actor.sheet.render).toHaveBeenCalledWith(true);
+    expect(original).not.toHaveBeenCalled();
+
+    // Simulate a click on a non-sector pin — original should be called.
+    const plain = Object.assign(new Note(), { document: { flags: {} } });
+    plain._onClickLeft2({});
+    expect(original).toHaveBeenCalledTimes(1);
+
+    delete globalThis.foundry.canvas;
   });
 });
