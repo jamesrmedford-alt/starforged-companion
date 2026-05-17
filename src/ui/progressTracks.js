@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { getPlayerActors, createCharacterVowItem } from '../character/actorBridge.js';
+import { createClock } from '../clocks/clocks.js';
 
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
@@ -239,19 +240,31 @@ export class ProgressTrackApp extends ApplicationV2 {
   async _prepareContext(_options) {
     const tracks = await loadTracks();
 
+    // For scene-challenge tracks, also surface the paired tension clock's
+    // current state so the player can see both progress + danger in one row.
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const clockById     = new Map((campaignState.clocks ?? []).map(c => [c._id, c]));
+
     // Annotate each track with derived display values.
-    const annotated = tracks.map(t => ({
-      ...t,
-      rankLabel: RANKS[t.rank]?.label ?? t.rank,
-      rankClass: RANKS[t.rank]?.cssClass ?? '',
-      typeLabel: TRACK_TYPES[t.type] ?? t.type,
-      filledBoxes: Math.floor(t.ticks / TICKS_PER_BOX),
-      ticksInPartialBox: t.ticks % TICKS_PER_BOX,
-      pct: Math.round((t.ticks / MAX_TICKS) * 100),
-      boxes: ProgressTrackApp.#buildBoxes(t.ticks),
-      canRoll: t.ticks > 0,
-      combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
-    }));
+    const annotated = tracks.map(t => {
+      const linkedClock = t.tensionClockId ? clockById.get(t.tensionClockId) : null;
+      return {
+        ...t,
+        rankLabel: RANKS[t.rank]?.label ?? t.rank,
+        rankClass: RANKS[t.rank]?.cssClass ?? '',
+        typeLabel: TRACK_TYPES[t.type] ?? t.type,
+        filledBoxes: Math.floor(t.ticks / TICKS_PER_BOX),
+        ticksInPartialBox: t.ticks % TICKS_PER_BOX,
+        pct: Math.round((t.ticks / MAX_TICKS) * 100),
+        boxes: ProgressTrackApp.#buildBoxes(t.ticks),
+        canRoll: t.ticks > 0,
+        combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
+        tensionClock: linkedClock
+          ? { filled: linkedClock.filled, segments: linkedClock.segments,
+              triggered: linkedClock.filled >= linkedClock.segments }
+          : null,
+      };
+    });
 
     // Group: active (not completed) then completed.
     const active = annotated.filter(t => !t.completed);
@@ -317,6 +330,12 @@ export class ProgressTrackApp extends ApplicationV2 {
                 : t.combatState === 'bad_spot' ? 'In a bad spot'
                 : 'Neutral'}
             </button>
+          ` : ''}
+          ${t.tensionClock ? `
+            <span class="tension-clock-meta${t.tensionClock.triggered ? ' is-triggered' : ''}"
+                  title="Linked tension clock — advance via !clock advance &quot;${t.label}&quot;">
+              Tension: ${t.tensionClock.filled}/${t.tensionClock.segments}${t.tensionClock.triggered ? ' ⚠' : ''}
+            </span>
           ` : ''}
         </div>
       </div>
@@ -549,6 +568,18 @@ export class ProgressTrackApp extends ApplicationV2 {
         rank: rankSelect.value,
       });
 
+      // Scene Challenge auto-creates a paired 4-segment tension clock
+      // (rulebook pp. 239–241). The clock's _id is stored on the track
+      // so the panel can surface progress against the danger.
+      if (track.type === 'scene_challenge') {
+        try {
+          const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
+          track.tensionClockId = clock._id;
+        } catch (err) {
+          console.warn(`${MODULE_ID} | addTrack: scene_challenge tension-clock creation failed:`, err);
+        }
+      }
+
       const tracks = await loadTracks();
       tracks.push(track);
       await saveTracks(tracks);
@@ -686,6 +717,19 @@ export function openProgressTracks() {
  */
 export async function addProgressTrack(data) {
   const track = createTrack(data);
+
+  // Scene Challenge auto-creates a paired 4-segment tension clock per
+  // rulebook pp. 239–241. The clock id is stored on the track for
+  // back-reference. Failures are logged but don't block track creation.
+  if (track.type === 'scene_challenge') {
+    try {
+      const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
+      track.tensionClockId = clock._id;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | addProgressTrack: scene_challenge tension-clock creation failed:`, err);
+    }
+  }
+
   const tracks = await loadTracks();
   tracks.push(track);
   await saveTracks(tracks);

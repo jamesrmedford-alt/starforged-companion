@@ -40,6 +40,52 @@ export function isClockCommand(message) {
   return /^!clock(\s|$)/i.test(text);
 }
 
+/**
+ * Programmatic clock creation — used by Scene Challenge tracks to
+ * auto-create a paired tension clock at the same time the track is
+ * registered. Returns the created clock object (with its _id) so the
+ * caller can store a back-reference.
+ *
+ * Validates segments (4 / 6 / 8 / 10) and odds; throws on invalid input
+ * rather than silently dropping the clock — the caller is doing this
+ * inside a try/catch so the parent operation can decide to surface or
+ * swallow the failure.
+ *
+ * @param {{ name: string, segments?: number, type?: "campaign"|"tension", advanceOdds?: string }} input
+ * @returns {Promise<object>} the created clock record
+ */
+export async function createClock(input) {
+  const name = String(input?.name ?? "").trim();
+  if (!name) throw new Error("createClock: name required");
+
+  const segments = input?.segments ?? 4;
+  if (![4, 6, 8, 10].includes(segments)) {
+    throw new Error(`createClock: segments must be 4/6/8/10 (got ${segments})`);
+  }
+  const type        = input?.type === "campaign" ? "campaign" : "tension";
+  const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(input?.advanceOdds)
+                      ? input.advanceOdds : "likely";
+
+  const state = readState();
+  state.clocks ??= [];
+  const clock = {
+    _id:       foundry.utils.randomID(),
+    name,
+    type,
+    segments,
+    filled:    0,
+    active:    true,
+    advanceOdds,
+    description: "",
+    notes:       "",
+    createdAt:   new Date().toISOString(),
+    updatedAt:   new Date().toISOString(),
+  };
+  state.clocks.push(clock);
+  await writeState(state);
+  return clock;
+}
+
 export async function handleClockCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!clock".length).trim().split(/\s+/);
