@@ -38,6 +38,7 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
+import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./moves/resolver.js";
 import { rollYesNo }             from "./oracles/roller.js";
 import { ORACLE_ODDS }           from "./schemas.js";
 import { initSpeechInput }       from "./input/speechInput.js";
@@ -497,6 +498,12 @@ export function registerChatHook() {
     // !oracle yes/no command — any player; no state mutation
     if (isOracleCommand(message)) {
       await handleOracleCommand(message);
+      return;
+    }
+
+    // !bond <rank> command — bonded Develop Your Relationship (play kit p. 3)
+    if (isBondCommand(message)) {
+      await handleBondCommand(message);
       return;
     }
 
@@ -1007,6 +1014,20 @@ export function isOracleCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is a !bond command — the bonded-path
+ * variant of Develop Your Relationship per play kit p. 3.
+ *   !bond <rank>
+ * Anyone may invoke; the GM-gate only fires when the outcome demands state
+ * changes (legacy track / +momentum), which the handler routes through
+ * the existing campaign-state writer.
+ */
+export function isBondCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.bondCommandCard) return false;
+  return /^!bond(\s|$)/i.test(text);
+}
+
+/**
  * Determine whether a chat message is a !scene command.
  *   !scene start | !scene end
  * GM-only. fact-continuity scope §9.1 / §9.2.
@@ -1440,6 +1461,88 @@ async function handleOracleCommand(message) {
   await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
     flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+  });
+}
+
+// Rank → +X adds for the bonded-path Develop Your Relationship roll
+// (play kit p. 3: troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5).
+const BOND_ROLL_ADDS = {
+  troublesome: 1,
+  dangerous:   2,
+  formidable:  3,
+  extreme:     4,
+  epic:        5,
+};
+
+/**
+ * Handle a !bond <rank> chat command — bonded Develop Your Relationship.
+ *
+ * Per play kit p. 3: when developing a relationship with a bonded
+ * connection, skip the normal progress mark. Instead, roll +their rank
+ * (troublesome=+1 ... epic=+5) and:
+ *   strong hit → mark 2 ticks on bonds legacy track
+ *   strong + match → also offer to raise the connection's rank by 1
+ *   weak hit → +2 momentum
+ *   miss → no lasting benefit
+ */
+async function handleBondCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const arg  = text.slice("!bond".length).trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+
+  if (!arg || !(arg in BOND_ROLL_ADDS)) {
+    await ChatMessage.create({
+      content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded)</strong> <p>Usage: <code>!bond &lt;rank&gt;</code><br>Rank: <code>troublesome</code> · <code>dangerous</code> · <code>formidable</code> · <code>extreme</code> · <code>epic</code></p></div>`,
+      flags:   { [MODULE_ID]: { bondCommandCard: true } },
+    });
+    return;
+  }
+
+  const adds          = BOND_ROLL_ADDS[arg];
+  const actionDie     = rollActionDie();
+  const challengeDice = rollChallengeDice();
+  const actionScore   = calcActionScore(actionDie, 0, adds);
+  const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
+
+  const matchBadge = isMatch ? " ✦ MATCH" : "";
+  let body, momentumChange = 0, ticksOnBonds = 0;
+
+  switch (outcome) {
+    case "strong_hit":
+      ticksOnBonds = 2;
+      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.${isMatch ? " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic)." : ""}`;
+      break;
+    case "weak_hit":
+      momentumChange = 2;
+      body = `<strong>Weak hit${matchBadge}.</strong> Take +2 momentum.`;
+      break;
+    case "miss":
+      body = `<strong>Miss${matchBadge}.</strong> Take no lasting benefit.`;
+      break;
+  }
+
+  // GM-only state writes — only fire if there's an actual effect.
+  if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0)) {
+    const campaignState = game.settings.get(MODULE_ID, "campaignState");
+    if (ticksOnBonds > 0) {
+      campaignState.legacyTracks ??= {};
+      const t = campaignState.legacyTracks.bonds ?? { ticks: 0, cleared: false };
+      t.ticks = Math.min(t.ticks + ticksOnBonds, 40);
+      campaignState.legacyTracks.bonds = t;
+    }
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+
+    if (momentumChange > 0) {
+      const actor = game.user?.character ?? getPlayerActors()[0];
+      if (actor) {
+        const { applyMeterChanges } = await import("./character/actorBridge.js");
+        await applyMeterChanges(actor, { momentum: momentumChange });
+      }
+    }
+  }
+
+  await ChatMessage.create({
+    content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded, ${escapeChatHtml(arg)})</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
+    flags:   { [MODULE_ID]: { bondCommandCard: true } },
   });
 }
 
