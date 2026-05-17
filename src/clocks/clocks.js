@@ -1,0 +1,262 @@
+/**
+ * STARFORGED COMPANION
+ * src/clocks/clocks.js
+ *
+ * Chat-command Clock management (play kit p. 1 / Reference Guide pp. 122–123).
+ *
+ * Two clock types:
+ *   campaign — slow-burn faction/world projects. Advanced at Begin a Session
+ *              via Ask the Oracle with the clock's advanceOdds (default likely).
+ *   tension  — scene-bound danger or deadline. Advanced when you Pay the Price
+ *              or a complication is rolled.
+ *
+ * Clocks are stored as an array on campaignState.clocks. Each clock has an
+ * _id, name, type, segments (4 / 6 / 8 / 10), filled (0..segments), active,
+ * and advanceOdds. Filled === segments means the clock has triggered.
+ *
+ * Chat commands (anyone may invoke for list; GM-only for new / advance / fill / reset):
+ *   !clock new <name> <segments> [campaign|tension] [odds]
+ *   !clock advance <name>     — campaign clocks auto-roll their advanceOdds
+ *   !clock fill <name>        — manually fill one segment (tension default)
+ *   !clock reset <name>
+ *   !clock remove <name>
+ *   !clock list
+ *
+ * The handler exports below are wired from src/index.js.
+ */
+
+import { rollYesNo } from "../oracles/roller.js";
+
+const MODULE_ID = "starforged-companion";
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Command dispatch
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function isClockCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.clockCard) return false;
+  return /^!clock(\s|$)/i.test(text);
+}
+
+export async function handleClockCommand(message) {
+  const text  = message.content?.trim() ?? "";
+  const parts = text.slice("!clock".length).trim().split(/\s+/);
+  const verb  = (parts.shift() ?? "").toLowerCase();
+
+  switch (verb) {
+    case "":
+    case "list":   return postClockList();
+    case "new":    return cmdNew(parts);
+    case "advance":return cmdAdvance(parts);
+    case "fill":   return cmdFill(parts);
+    case "reset":  return cmdReset(parts);
+    case "remove": return cmdRemove(parts);
+    default:
+      return postCard(
+        `<strong>Clocks</strong><p>Usage: <code>!clock list | new | advance | fill | reset | remove</code></p>`,
+      );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-commands
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function cmdNew(parts) {
+  if (!gmGate("!clock new")) return;
+
+  // !clock new "Name with spaces" 6 campaign likely
+  // OR    new Plainname 8 tension
+  const { rest, name } = peelQuotedName(parts);
+  if (!name) return postCard(`<strong>Clocks</strong><p>Usage: <code>!clock new &lt;name&gt; &lt;segments&gt; [campaign|tension] [odds]</code></p>`);
+
+  const segments = Number(rest[0]);
+  if (![4, 6, 8, 10].includes(segments)) {
+    return postCard(`<strong>Clocks</strong><p>Segments must be 4, 6, 8, or 10.</p>`);
+  }
+
+  const type        = rest[1]?.toLowerCase() === "campaign" ? "campaign" : "tension";
+  const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(rest[2]?.toLowerCase())
+                       ? rest[2].toLowerCase() : "likely";
+
+  const state = readState();
+  state.clocks ??= [];
+  const clock = {
+    _id:       foundry.utils.randomID(),
+    name,
+    type,
+    segments,
+    filled:    0,
+    active:    true,
+    advanceOdds,
+    description: "",
+    notes:       "",
+    createdAt:   new Date().toISOString(),
+    updatedAt:   new Date().toISOString(),
+  };
+  state.clocks.push(clock);
+  await writeState(state);
+
+  await postCard(`<strong>Clock created</strong><p>${renderClock(clock)}</p>`);
+}
+
+async function cmdAdvance(parts) {
+  if (!gmGate("!clock advance")) return;
+  const clock = await findClockByArg(parts);
+  if (!clock) return;
+
+  // Campaign clocks: roll the configured odds. Tension clocks: just fill one.
+  if (clock.type === "campaign") {
+    const r = rollYesNo(clock.advanceOdds);
+    if (r.answer === "yes") {
+      await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
+      const updated = readState().clocks.find(c => c._id === clock._id);
+      return postCard(
+        `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
+      );
+    }
+    return postCard(
+      `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
+    );
+  }
+
+  await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
+  const updated = readState().clocks.find(c => c._id === clock._id);
+  await postCard(
+    `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
+  );
+}
+
+async function cmdFill(parts) {
+  if (!gmGate("!clock fill")) return;
+  const clock = await findClockByArg(parts);
+  if (!clock) return;
+  await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
+  const updated = readState().clocks.find(c => c._id === clock._id);
+  await postCard(
+    `<strong>Clock filled</strong><p>${escapeHtml(clock.name)} — <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
+  );
+}
+
+async function cmdReset(parts) {
+  if (!gmGate("!clock reset")) return;
+  const clock = await findClockByArg(parts);
+  if (!clock) return;
+  await mutateClock(clock._id, c => { c.filled = 0; });
+  await postCard(`<strong>Clock reset</strong><p>${escapeHtml(clock.name)} — 0/${clock.segments}.</p>`);
+}
+
+async function cmdRemove(parts) {
+  if (!gmGate("!clock remove")) return;
+  const clock = await findClockByArg(parts);
+  if (!clock) return;
+  const state = readState();
+  state.clocks = (state.clocks ?? []).filter(c => c._id !== clock._id);
+  await writeState(state);
+  await postCard(`<strong>Clock removed</strong><p>${escapeHtml(clock.name)}.</p>`);
+}
+
+async function postClockList() {
+  const clocks = readState().clocks ?? [];
+  if (!clocks.length) return postCard(`<strong>Clocks</strong><p>None yet. Create one with <code>!clock new &lt;name&gt; &lt;segments&gt; [campaign|tension] [odds]</code>.</p>`);
+
+  const rows = clocks.map(renderClock).join("<br>");
+  await postCard(`<strong>Clocks (${clocks.length})</strong><div>${rows}</div>`);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function gmGate(cmd) {
+  if (game.user?.isGM) return true;
+  ui.notifications?.warn(`${cmd} is GM-only (writes campaign state).`);
+  return false;
+}
+
+function readState() {
+  return game.settings.get(MODULE_ID, "campaignState") ?? {};
+}
+
+async function writeState(state) {
+  state.updatedAt = new Date().toISOString();
+  await game.settings.set(MODULE_ID, "campaignState", state);
+}
+
+async function mutateClock(id, fn) {
+  const state = readState();
+  const clock = (state.clocks ?? []).find(c => c._id === id);
+  if (!clock) return;
+  fn(clock);
+  clock.updatedAt = new Date().toISOString();
+  await writeState(state);
+}
+
+async function findClockByArg(parts) {
+  const { name } = peelQuotedName(parts);
+  if (!name) {
+    await postCard(`<strong>Clocks</strong><p>Specify a clock name (use quotes if it contains spaces).</p>`);
+    return null;
+  }
+  const clocks = readState().clocks ?? [];
+  // Prefix-match case-insensitive.
+  const lc = name.toLowerCase();
+  const exact = clocks.find(c => c.name.toLowerCase() === lc);
+  if (exact) return exact;
+  const prefix = clocks.filter(c => c.name.toLowerCase().startsWith(lc));
+  if (prefix.length === 1) return prefix[0];
+  if (prefix.length > 1) {
+    await postCard(`<strong>Clocks</strong><p>Ambiguous prefix "${escapeHtml(name)}": ${prefix.map(c => escapeHtml(c.name)).join(", ")}.</p>`);
+    return null;
+  }
+  await postCard(`<strong>Clocks</strong><p>No clock matches "${escapeHtml(name)}".</p>`);
+  return null;
+}
+
+/**
+ * Pop a (possibly quoted) name from the front of parts and return the rest.
+ *   ["\"Faction", "Project\"", "8"]  → name: "Faction Project", rest: ["8"]
+ *   ["Plainname", "8"]                → name: "Plainname",       rest: ["8"]
+ */
+function peelQuotedName(parts) {
+  if (!parts.length) return { name: "", rest: [] };
+  const first = parts[0];
+  if (!first.startsWith('"')) {
+    return { name: first, rest: parts.slice(1) };
+  }
+  // Quoted name; concatenate parts until the closing quote.
+  let name = first.slice(1);
+  let i = 1;
+  while (i < parts.length && !parts[i - 1].endsWith('"')) {
+    name += " " + parts[i];
+    i++;
+  }
+  // Strip trailing quote off the last fragment if it slipped past the loop guard.
+  if (name.endsWith('"')) name = name.slice(0, -1);
+  return { name: name.trim(), rest: parts.slice(i) };
+}
+
+function renderClock(c) {
+  const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
+  const triggered = c.filled >= c.segments ? " <em>(TRIGGERED)</em>" : "";
+  return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}`;
+}
+
+async function postCard(html) {
+  await ChatMessage.create({
+    content: `<div class="sf-clock-card">${html}</div>`,
+    flags:   { [MODULE_ID]: { clockCard: true } },
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

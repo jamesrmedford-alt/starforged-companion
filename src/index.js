@@ -50,6 +50,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
+import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -522,6 +523,12 @@ export function registerChatHook() {
     if (isBreakCommand(message))        { openTakeABreakDialog();      return; }
     if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
     if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
+
+    // !clock command — create / advance / list campaign and tension clocks
+    if (isClockCommand(message)) {
+      await handleClockCommand(message);
+      return;
+    }
 
     // !roll command — force the next undecorated input through the move pipeline
     if (isRollCommand(message)) {
