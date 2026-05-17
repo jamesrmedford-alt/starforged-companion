@@ -38,6 +38,8 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
+import { rollYesNo }             from "./oracles/roller.js";
+import { ORACLE_ODDS }           from "./schemas.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -489,6 +491,12 @@ export function registerChatHook() {
     // !migrate-entities command — GM-only one-time storage migration
     if (isMigrateEntitiesCommand(message)) {
       await handleMigrateEntitiesCommand(message);
+      return;
+    }
+
+    // !oracle yes/no command — any player; no state mutation
+    if (isOracleCommand(message)) {
+      await handleOracleCommand(message);
       return;
     }
 
@@ -982,6 +990,23 @@ export function isRollCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is an !oracle yes/no command.
+ *   !oracle yes [odds] [question text]
+ * Anyone may invoke — no state mutation. Odds default to 50/50 if omitted.
+ * Valid odds keys and shorthand aliases:
+ *   small_chance | small             → ≤ 10
+ *   unlikely                         → ≤ 25
+ *   50_50 | 50/50 | even             → ≤ 50  (default)
+ *   likely                           → ≤ 75
+ *   almost_certain | certain | sure  → ≤ 90
+ */
+export function isOracleCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.oracleCommandCard) return false;
+  return /^!oracle(\s|$)/i.test(text);
+}
+
+/**
  * Determine whether a chat message is a !scene command.
  *   !scene start | !scene end
  * GM-only. fact-continuity scope §9.1 / §9.2.
@@ -1356,6 +1381,65 @@ async function handlePaceCommand(message) {
   await ChatMessage.create({
     content: `<div class="sf-pace-card"><strong>Pacing</strong> ${body}</div>`,
     flags:   { [MODULE_ID]: { paceCommandCard: true } },
+  });
+}
+
+// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys.
+const ODDS_ALIASES = new Map([
+  ["small_chance",  "small_chance"], ["small", "small_chance"],
+  ["unlikely",      "unlikely"],
+  ["50_50",         "50_50"],        ["50/50", "50_50"], ["even", "50_50"],
+  ["likely",        "likely"],
+  ["almost_certain","almost_certain"], ["certain", "almost_certain"], ["sure", "almost_certain"],
+]);
+
+/**
+ * Handle an !oracle yes/no chat command. Any player may invoke.
+ *
+ *   !oracle yes [odds] [question?]
+ *
+ * Posts a card with the d100 result, the threshold for the chosen odds,
+ * the yes/no answer, and (on a match) a "MATCH" badge prompting the
+ * GM/player to envision an extreme result or twist.
+ */
+async function handleOracleCommand(message) {
+  const text  = message.content?.trim() ?? "";
+  const parts = text.slice("!oracle".length).trim().split(/\s+/);
+
+  // Only "yes" / "yes-no" form is implemented; reject anything else with help.
+  if (!parts[0] || !/^yes(-no)?$/i.test(parts[0])) {
+    await ChatMessage.create({
+      content: `<div class="sf-oracle-card"><strong>Oracle</strong> <p>Usage: <code>!oracle yes [odds] [question?]</code><br>Odds: <code>small</code> · <code>unlikely</code> · <code>50/50</code> · <code>likely</code> · <code>certain</code> (default <code>50/50</code>)</p></div>`,
+      flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+    });
+    return;
+  }
+
+  // Resolve odds — if parts[1] is a known odds alias use it, else fall back
+  // to 50/50 and treat parts[1..] as the question.
+  let oddsKey  = "50_50";
+  let question = parts.slice(1).join(" ");
+  if (parts[1]) {
+    const aliased = ODDS_ALIASES.get(parts[1].toLowerCase());
+    if (aliased) {
+      oddsKey  = aliased;
+      question = parts.slice(2).join(" ");
+    }
+  }
+
+  const result = rollYesNo(oddsKey, { question });
+  const oddsLabel = oddsKey === "50_50" ? "50/50" : oddsKey.replace(/_/g, " ");
+  const matchBadge = result.isMatch
+    ? ` <em>· MATCH — envision an extreme result or twist</em>`
+    : "";
+
+  const qBlock = question
+    ? `<p><em>${escapeChatHtml(question)}</em></p>`
+    : "";
+
+  await ChatMessage.create({
+    content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
+    flags:   { [MODULE_ID]: { oracleCommandCard: true } },
   });
 }
 
