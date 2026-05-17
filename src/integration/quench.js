@@ -989,6 +989,17 @@ function registerSectorCreatorTests(quench) {
           const sector = generateSector("expanse");
           const stubs  = await generateNarratorStubs(sector, { perspective: "second" });
 
+          // generateNarratorStubs returns { sector: null, settlements: {} }
+          // when the underlying Claude call fails (network error, 401 on a
+          // stale key, server-side error). Surface that as a skip rather
+          // than a fail — the test is gated on the key BEING set but cannot
+          // verify the key is *valid* until Anthropic responds.
+          if (stubs.sector == null) {
+            console.warn("starforged-companion | quench: generateNarratorStubs returned null — likely an API error (key invalid or upstream failure). Skipping.");
+            this.skip();
+            return;
+          }
+
           assert.isString(stubs.sector,              "sector stub should be a string");
           assert.isNotEmpty(stubs.sector,             "sector stub should not be empty");
           assert.isObject(stubs.settlements,          "settlements stubs should be an object");
@@ -4342,6 +4353,13 @@ function registerChatCardActionsTests(quench) {
       // ───── setupCard → openTruthsDialog ─────
       describe("setupCard — Set World Truths button opens the truths dialog", function () {
         it("clicking [data-action=openTruthsDialog] invokes openSystemTruthsDialog()", async function () {
+          // openSystemTruthsDialog mounts the foundry-ironsworn
+          // SFSettingTruthsDialog (a Vue app), and the cleanup loop awaits
+          // .close() on any window the click opened. On Forge this
+          // regularly exceeds the default 2s mocha timeout — same
+          // Forge-latency shape as the three settings-write tests that
+          // already bump to 30s.
+          this.timeout(30000);
           if (skipNotGM(this)) return;
 
           // Stub openSystemTruthsDialog by intercepting the truths/generator
