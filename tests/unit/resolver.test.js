@@ -914,4 +914,82 @@ describe("buildOracleSeeds", () => {
       expect(buildOracleSeeds("ask_the_oracle", "strong_hit", false)).toBeNull();
     });
   });
+
+  describe("play-kit consequence tables", () => {
+    it("seeds Pay the Price on miss for moves in the PTP set", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("face_danger", "miss", false);
+      expect(seeds).not.toBeNull();
+      expect(seeds.results[0]).toContain("Pay the Price: You are harmed");
+    });
+
+    it("does NOT seed Pay the Price on hits", () => {
+      rollOracle.mockReturnValue({ result: "anything" });
+      expect(buildOracleSeeds("face_danger", "strong_hit", false)).toBeNull();
+      expect(buildOracleSeeds("face_danger", "weak_hit",   false)).toBeNull();
+    });
+
+    it("seeds Spotlight Vignette on begin_a_session", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "spotlight_vignette" ? { result: "Flashback reveals X" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("begin_a_session", "strong_hit", false);
+      expect(seeds.results[0]).toContain("Spotlight vignette: Flashback reveals X");
+    });
+
+    it("seeds Decisive Action Cost only on weak hit", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "decisive_action_cost" ? { result: "Victory short-lived" } : { result: "—" }
+      );
+      const onWeak   = buildOracleSeeds("take_decisive_action", "weak_hit", false);
+      const onStrong = buildOracleSeeds("take_decisive_action", "strong_hit", false);
+      expect(onWeak.results[0]).toContain("Victory short-lived");
+      expect(onStrong).toBeNull();
+    });
+
+    it("seeds Mortal Wound on endure_harm miss", () => {
+      rollOracle.mockImplementation((t) => {
+        if (t === "mortal_wound") return { result: "You are reeling" };
+        if (t === "pay_the_price") return { result: "—" };
+        return { result: "—" };
+      });
+      const seeds = buildOracleSeeds("endure_harm", "miss", false);
+      expect(seeds.results.some(r => r.includes("Mortal wound"))).toBe(true);
+    });
+
+    it("seeds Desolation on endure_stress miss", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "desolation" ? { result: "You give up" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("endure_stress", "miss", false);
+      expect(seeds.results.some(r => r.includes("Desolation"))).toBe(true);
+    });
+
+    it("seeds Vehicle Damage on withstand_damage miss", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "vehicle_damage" ? { result: "Rough ride" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("withstand_damage", "miss", false);
+      expect(seeds.results.some(r => r.includes("Vehicle damage"))).toBe(true);
+    });
+
+    it("seeds Make a Discovery play-kit table on explore_a_waypoint strong-with-match", () => {
+      rollPaired.mockReturnValue({ combined: "Reveal · Wonder" });
+      rollOracle.mockImplementation((t) =>
+        t === "make_a_discovery" ? { result: "Ancient archive" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("explore_a_waypoint", "strong_hit", true);
+      expect(seeds.results.some(r => r.includes("Make a Discovery: Ancient archive"))).toBe(true);
+    });
+
+    it("seeds Confront Chaos play-kit table on explore_a_waypoint miss-with-match", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "confront_chaos" ? { result: "Dread hallucinations" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("explore_a_waypoint", "miss", true);
+      expect(seeds.results.some(r => r.includes("Confront Chaos: Dread hallucinations"))).toBe(true);
+    });
+  });
 });

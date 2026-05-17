@@ -28,6 +28,14 @@ import * as DERELICTS   from "./tables/derelicts.js";
 import * as VAULTS      from "./tables/vaults.js";
 import * as THEMES      from "./tables/themes.js";
 import * as MISC        from "./tables/misc.js";
+import { PAY_THE_PRICE }         from "./tables/payThePrice.js";
+import { SPOTLIGHT_VIGNETTE }    from "./tables/sessionVignette.js";
+import { MAKE_A_DISCOVERY,
+         CONFRONT_CHAOS }        from "./tables/discoveryAndChaos.js";
+import { DECISIVE_ACTION_COST,
+         MORTAL_WOUND,
+         DESOLATION,
+         VEHICLE_DAMAGE }        from "./tables/sufferAndCombat.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +164,17 @@ export const ORACLE_TABLES = {
   anomaly_effect:     { name: "Anomaly Effect",     table: MISC.ANOMALY_EFFECT,     category: "misc" },
   combat_action:      { name: "Combat Action",      table: MISC.COMBAT_ACTION,      category: "misc" },
   sector_trouble:     { name: "Sector Trouble",     table: MISC.SECTOR_TROUBLE,     category: "sectors" },
+
+  // Play-kit move tables — autoseeded by the resolver when the matching
+  // move is rolled; also usable manually via the oracle roller.
+  pay_the_price:         { name: "Pay the Price",            table: PAY_THE_PRICE,         category: "fate" },
+  spotlight_vignette:    { name: "Spotlight Vignette",       table: SPOTLIGHT_VIGNETTE,    category: "session" },
+  make_a_discovery:      { name: "Make a Discovery",         table: MAKE_A_DISCOVERY,      category: "exploration" },
+  confront_chaos:        { name: "Confront Chaos",           table: CONFRONT_CHAOS,        category: "exploration" },
+  decisive_action_cost:  { name: "Take Decisive Action — Weak Hit Cost", table: DECISIVE_ACTION_COST, category: "combat" },
+  mortal_wound:          { name: "Mortal Wound",             table: MORTAL_WOUND,          category: "suffer" },
+  desolation:            { name: "Desolation",               table: DESOLATION,            category: "suffer" },
+  vehicle_damage:        { name: "Vehicle Damage",           table: VEHICLE_DAMAGE,        category: "suffer" },
 };
 
 
