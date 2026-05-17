@@ -189,18 +189,46 @@ describe('readCharacterSnapshot', () => {
     expect(snap.momentumMax).toBe(8); // 10 - 2
   });
 
-  it('calculates momentumReset correctly (0 - debility count, min -2)', () => {
+  it('calculates momentumReset correctly per play kit: 2+ impacts → 0', () => {
     const actor = freshActor({
       system: { debility: { wounded: true, shaken: true, unprepared: true } },
     });
     const snap = readCharacterSnapshot(actor);
-    expect(snap.momentumReset).toBe(-2); // max(-2, -3) = -2
+    expect(snap.momentumReset).toBe(0); // max(0, 2-3) = 0
   });
 
-  it('momentumReset is 0 when no condition debilities', () => {
+  it('momentumReset is +2 with no impacts', () => {
     const actor = freshActor();
     const snap  = readCharacterSnapshot(actor);
-    expect(snap.momentumReset).toBe(0); // max(-2, 0)
+    expect(snap.momentumReset).toBe(2); // max(0, 2-0) = 2
+  });
+
+  it('momentumReset is +1 with exactly one impact', () => {
+    const actor = freshActor({ system: { debility: { wounded: true } } });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumReset).toBe(1); // max(0, 2-1) = 1
+  });
+
+  it('counts non-condition impacts toward momentum bounds (battered, doomed, etc.)', () => {
+    const actor = freshActor({
+      system: { debility: { battered: true, doomed: true } },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumMax).toBe(8);   // 10 - 2
+    expect(snap.momentumReset).toBe(0); // max(0, 2-2)
+  });
+
+  it('prefers vendor-system computed getters when present', () => {
+    const actor = freshActor({
+      system: {
+        momentumMax:   6,   // computed getter from vendor schema
+        momentumReset: -1,  // computed getter from vendor schema (different floor)
+        debility: { wounded: true },
+      },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.momentumMax).toBe(6);
+    expect(snap.momentumReset).toBe(-1);
   });
 });
 
@@ -287,7 +315,7 @@ describe('applyMeterChanges', () => {
   });
 
   it('clamps momentum to momentumReset–momentumMax', async () => {
-    // With 2 condition debilities: max = 8, reset = -2
+    // With 2 impacts: max = 8, reset = 0
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
@@ -297,9 +325,10 @@ describe('applyMeterChanges', () => {
     // Try to set momentum to +20 (above max)
     await applyMeterChanges(actor, { momentum: 20 });
     expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
+    expect(actor._updateHistory[0]['system.momentum.resetValue']).toBe(0);
   });
 
-  it('reduces momentumMax by 1 per active condition debility', async () => {
+  it('reduces momentumMax by 1 per active impact (all categories count)', async () => {
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
@@ -308,6 +337,17 @@ describe('applyMeterChanges', () => {
     });
     await applyMeterChanges(actor, { momentum: 1 });
     expect(actor._updateHistory[0]['system.momentum.max']).toBe(7);
+  });
+
+  it('counts vehicle and burden impacts toward momentum max too', async () => {
+    const actor = freshActor({
+      system: {
+        momentum: { value: 2, max: 10, resetValue: 2 },
+        debility: { battered: true, doomed: true },
+      },
+    });
+    await applyMeterChanges(actor, { momentum: 1 });
+    expect(actor._updateHistory[0]['system.momentum.max']).toBe(8);
   });
 
   it('does not call actor.update() if no changes', async () => {

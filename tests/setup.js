@@ -301,15 +301,18 @@ global.makeTestActor = (overrides = {}) => {
       supply:   { value: 3, max: 5,  min: 0,  ...(sys.supply   ?? {}) },
       momentum: { value: 2, max: 10, min: -6, resetValue: 2, ...(sys.momentum ?? {}) },
       debility: {
-        corrupted: false, cursed: false, tormented: false,
         wounded: false, shaken: false, unprepared: false,
-        encumbered: false, maimed: false,
         permanentlyharmed: false, traumatized: false,
-        doomed: false, indebted: false, battered: false,
-        custom1: false, custom2: false,
+        doomed: false, tormented: false, indebted: false,
+        battered: false, cursed: false,
+        corrupted: false, encumbered: false, maimed: false,
         ...(sys.debility ?? {}),
       },
       xp: sys.xp ?? 0,
+      // Vendor system computed getters — tests may override these to simulate
+      // foundry-ironsworn's #impactCount-driven momentumMax / momentumReset.
+      ...(sys.momentumMax   !== undefined ? { momentumMax:   sys.momentumMax   } : {}),
+      ...(sys.momentumReset !== undefined ? { momentumReset: sys.momentumReset } : {}),
     };
   }
 
