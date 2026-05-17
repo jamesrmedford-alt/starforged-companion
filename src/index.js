@@ -41,6 +41,15 @@ import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
 import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./moves/resolver.js";
 import { rollYesNo }             from "./oracles/roller.js";
 import { ORACLE_ODDS }           from "./schemas.js";
+import {
+  openSetFlagDialog,
+  openChangeYourFateDialog,
+  openTakeABreakDialog,
+} from "./safety/sessionDialogs.js";
+import {
+  openBeginSessionDialog,
+  openEndSessionDialog,
+} from "./safety/sessionLifecycleDialogs.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -506,6 +515,13 @@ export function registerChatHook() {
       await handleBondCommand(message);
       return;
     }
+
+    // Session safety / lifecycle commands — open DialogV2 surfaces.
+    if (isFlagCommand(message))         { openSetFlagDialog();         return; }
+    if (isFateCommand(message))         { openChangeYourFateDialog();  return; }
+    if (isBreakCommand(message))        { openTakeABreakDialog();      return; }
+    if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
+    if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
 
     // !roll command — force the next undecorated input through the move pipeline
     if (isRollCommand(message)) {
@@ -1025,6 +1041,41 @@ export function isBondCommand(message) {
   const text = message.content?.trim() ?? "";
   if (message.flags?.[MODULE_ID]?.bondCommandCard) return false;
   return /^!bond(\s|$)/i.test(text);
+}
+
+/** !flag opens the Set a Flag dialog (play kit p. 1). */
+export function isFlagCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.safetyFlagCard) return false;
+  return /^!flag(\s|$)/i.test(text);
+}
+
+/** !fate opens the Change Your Fate dialog (play kit p. 1). */
+export function isFateCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.safetyFateCard) return false;
+  return /^!fate(\s|$)/i.test(text);
+}
+
+/** !break opens the Take a Break dialog (play kit p. 1). */
+export function isBreakCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.takeBreakCard) return false;
+  return /^!break(\s|$)/i.test(text);
+}
+
+/** !begin-session opens the Begin a Session dialog (play kit p. 1). */
+export function isBeginSessionCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sessionLifecycleCard) return false;
+  return /^!begin-session(\s|$)/i.test(text);
+}
+
+/** !end-session opens the End a Session dialog (play kit p. 1). */
+export function isEndSessionCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.sessionLifecycleCard) return false;
+  return /^!end-session(\s|$)/i.test(text);
 }
 
 /**
