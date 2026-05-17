@@ -37,6 +37,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
+import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
 import { initSpeechInput }       from "./input/speechInput.js";
 import {
   narrateResolution,
@@ -625,6 +626,15 @@ export function registerChatHook() {
       if (abilityAdds > 0) {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
+
+      // Fill in statValue from the speaker's character sheet. The
+      // interpreter system prompt explicitly tells the model to leave
+      // statValue at 0 and have the calling code fill it in (see
+      // interpreter.js line 149); pre-this-fix nothing did, so every
+      // action move resolved as actionDie + 0 + adds — players saw
+      // "+iron (0)" and "Action: 6 + 0 = 6" on every chat card.
+      const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
+      enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
 
       const resolution = resolveMove(interpretation, campaignState);
 
