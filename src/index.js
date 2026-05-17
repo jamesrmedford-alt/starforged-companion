@@ -115,6 +115,8 @@ import {
 } from "./entities/migrator.js";
 import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 import { registerSectorSceneHooks }   from "./sectors/sectorSceneHooks.js";
+import { isCanonicalGM }              from "./multiplayer/gmGate.js";
+import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -497,6 +499,26 @@ export function registerChatHook() {
 
     if (!isPlayerNarration(message)) return;
 
+    // Single-emitter gate. The createChatMessage hook fires on every
+    // connected client; without this gate, every client ran pacing →
+    // interpretation → narration → persistence, producing duplicate
+    // narrator cards (real + fallback, since players' BYOK keys were
+    // empty) and red permission toasts on non-GM clients trying to
+    // write campaignState / create JournalEntryPages. The canonical
+    // GM (lowest-userId active GM) is now the sole pipeline runner;
+    // players just type and watch the narration appear.
+    if (!isCanonicalGM()) return;
+
+    // Resolve the speaking player's character — message.author.character
+    // first, then ownership scan, then campaignState fallback. Pre-gate,
+    // the pipeline always picked campaignState.characterIds[0] regardless
+    // of who spoke; the narrator described Player A's PC even when Player
+    // B was the one typing.
+    const speakerActorId = resolveSpeakerActorId(
+      message,
+      game.settings.get(MODULE_ID, "campaignState"),
+    );
+
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
 
@@ -520,7 +542,7 @@ export function registerChatHook() {
     // only, or narrate with an inline move suggestion. The classifier runs
     // freely; only the MOVE branch claims the pendingMove lock below.
     const preState  = game.settings.get(MODULE_ID, "campaignState");
-    const character = getActiveCharacterForPacing(preState);
+    const character = getActiveCharacterForPacing(preState, speakerActorId);
     let pacingResult = { runMove: true, decision: "MOVE", suggestedMove: null };
     if (!bypassPacing) {
       try {
@@ -529,6 +551,7 @@ export function registerChatHook() {
           campaignState: preState,
           character,
           apiKey: apiKeyForPacing,
+          speakerActorId,
         });
       } catch (err) {
         console.error(`${MODULE_ID} | pacing router failed; falling through to move pipeline:`, err);
@@ -664,7 +687,7 @@ export function registerChatHook() {
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, packet, campaignState, { relevance });
+      await narrateResolution(resolution, packet, campaignState, { relevance, speakerActorId });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -1274,15 +1297,29 @@ function warnIfClaudeKeyLooksWrong() {
   }
 }
 
-function getActiveCharacterForPacing(campaignState) {
+/**
+ * Resolve the character snapshot the pacing classifier should see.
+ *
+ * @param {Object}        campaignState
+ * @param {string|null}   speakerActorId — preferred actor; falls back to
+ *   campaignState.characterIds[0] then the first player-owned PC.
+ *
+ * Previously this read `game.journal.get(characterIds[0])`, which was
+ * wrong on two counts: characters are Actors (not Journal entries), and
+ * `characterIds` is never written by the module (always []). The function
+ * therefore always returned null, leaving the pacing classifier without
+ * any character context.
+ */
+function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
   try {
-    const ids = campaignState?.characterIds ?? [];
-    if (!ids.length) return null;
-    const entry = game.journal?.get?.(ids[0]);
-    const page  = entry?.pages?.contents?.[0];
-    const data  = page?.flags?.[MODULE_ID]?.character;
-    if (!data) return null;
-    return { name: data.name ?? null };
+    const actorId = speakerActorId
+                 ?? campaignState?.characterIds?.[0]
+                 ?? null;
+    const actor = actorId
+      ? game.actors?.get(actorId)
+      : (game.actors?.find(a => a?.type === "character" && a?.hasPlayerOwner) ?? null);
+    if (!actor) return null;
+    return { name: actor.name ?? null };
   } catch {
     return null;
   }
@@ -1578,15 +1615,47 @@ function formatMoveResult(resolution, aside = null, burnState = null) {
  *
  * Rewritten without jQuery — Foundry v13 removed jQuery from the global scope.
  * The renderChatLog hook now passes a plain HTMLElement, not a jQuery object.
- * Uses the standard DOM API throughout.
+ *
+ * v13 sidebar restructure: the `#chat-controls` id is no longer present in
+ * the ApplicationV2 chat tab. v13 wraps the input form in `<section
+ * class="chat-controls">` (note: class, not id) inside the chat panel.
+ * The selector chain below tries the v13 class selector first, then falls
+ * back to a chain of older / alternate selectors so the button still
+ * appears across version churn. A console warning fires when no selector
+ * matches — without it, the function used to return silently and the user
+ * thought the feature was broken.
  */
+const PTT_HOST_SELECTORS = [
+  ".chat-controls",            // v13: <section class="chat-controls">
+  "#chat-controls",            // v12 legacy id
+  "#chat form",                // any nested form under the chat container
+  '[data-application-part="input"]',  // ApplicationV2 input part
+  "section.chat-form",
+];
+
 function injectPushToTalkButton(html) {
   // html may be an HTMLElement (v13) or jQuery object (v12) — normalise to Element
   const root = html instanceof HTMLElement ? html : html[0] ?? html;
   if (!root) return;
 
-  const controls = root.querySelector("#chat-controls");
-  if (!controls) return;
+  // Idempotent: if the button is already injected (e.g. renderChatLog
+  // fires multiple times across re-renders), bail.
+  if (root.querySelector?.("#sf-ptt-button")) return;
+
+  let controls = null;
+  for (const sel of PTT_HOST_SELECTORS) {
+    controls = root.querySelector(sel);
+    if (controls) break;
+  }
+  if (!controls) {
+    console.warn(
+      `${MODULE_ID} | PTT button: no chat-controls container found in renderChatLog ` +
+      `root. Tried: ${PTT_HOST_SELECTORS.join(", ")}. Speech-input setting is enabled ` +
+      `but the button will not appear. Please report the Foundry version so the ` +
+      `selector list can be updated.`,
+    );
+    return;
+  }
 
   const button = document.createElement("button");
   button.type        = "button";
@@ -1848,14 +1917,20 @@ Hooks.on("renderSceneControls", (app, html) => {
 });
 
 /**
- * renderChatLog — inject PTT button when speech is enabled.
- * html is HTMLElement in v13, jQuery object in v12 — injectPushToTalkButton handles both.
+ * Inject the PTT button when speech is enabled. The v13 ApplicationV2 chat
+ * sidebar fires multiple hook names depending on Foundry build (renderChatLog
+ * stayed for back-compat, renderChatPanel and renderChatTab show up on some
+ * builds). Bind to all known candidates — the function is idempotent (returns
+ * early if the button already exists), so multiple fires are safe.
  */
-Hooks.on("renderChatLog", (_chatLog, html, _data) => {
-  if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
-    injectPushToTalkButton(html);
-  }
-});
+const PTT_RENDER_HOOKS = ["renderChatLog", "renderChatPanel", "renderChatTab"];
+for (const hookName of PTT_RENDER_HOOKS) {
+  Hooks.on(hookName, (_app, html, _data) => {
+    if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
+      injectPushToTalkButton(html);
+    }
+  });
+}
 
 /**
  * renderChatMessage — wire the "Set World Truths" button on setup notification cards.

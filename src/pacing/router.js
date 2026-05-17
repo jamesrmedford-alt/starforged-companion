@@ -160,7 +160,7 @@ function defaultDial(category) {
  * }>}
  */
 export async function routePacedInput({
-  playerText, campaignState, character, apiKey,
+  playerText, campaignState, character, apiKey, speakerActorId = null,
 }) {
   const pacingConfig = readPacingConfig(campaignState);
 
@@ -219,7 +219,7 @@ export async function routePacedInput({
     ? result.suggestedMove
     : null;
 
-  await narratePacedInput(playerText, campaignState, { suggestedMove })
+  await narratePacedInput(playerText, campaignState, { suggestedMove, speakerActorId })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {

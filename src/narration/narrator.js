@@ -114,7 +114,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     return null;
   }
 
-  const character    = getActiveCharacter(campaignState);
+  const character    = getActiveCharacter(campaignState, options?.speakerActorId);
 
   // First narration of a session implicitly starts a scene if none is active.
   // See docs/fact-continuity-scope.md §9.1.
@@ -786,7 +786,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     return null;
   }
 
-  const character    = getActiveCharacter(campaignState);
+  const character    = getActiveCharacter(campaignState, options?.speakerActorId);
   await ensureSceneStarted(campaignState, 'first_narration_paced');
   // Paced narrator previously had zero sector / current-location context and
   // would invent new settlement names for places that already exist (SECTOR-001).
@@ -1311,9 +1311,15 @@ function getApiKey() {
   }
 }
 
-function getActiveCharacter(campaignState) {
+function getActiveCharacter(campaignState, speakerActorId = null) {
   try {
-    const ids = _resolveCharacterIds(campaignState);
+    // Prefer the speaker if one was resolved upstream from the chat
+    // message author — without this, every narration in a 2-player
+    // session described whichever PC happened to be first in
+    // campaignState, regardless of who actually typed.
+    const ids = speakerActorId
+      ? [speakerActorId]
+      : _resolveCharacterIds(campaignState);
     if (!ids.length) return null;
     const actor = game.actors?.get?.(ids[0]);
     if (!actor) return null;

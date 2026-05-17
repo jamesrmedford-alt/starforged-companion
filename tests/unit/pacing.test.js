@@ -466,7 +466,10 @@ describe('routePacedInput()', () => {
 
     expect(result.runMove).toBe(false);
     expect(narratePacedInput).toHaveBeenCalledTimes(1);
-    expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: null });
+    // routePacedInput now also threads speakerActorId through so paced
+    // narration describes the speaking PC. Tests that don't pass one in
+    // see null — same fallback chain as solo-GM play.
+    expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: null, speakerActorId: null });
   });
 
   it('passes suggestedMove to narrator on NARRATIVE_WITH_MOVE_AVAILABLE', async () => {
@@ -486,7 +489,7 @@ describe('routePacedInput()', () => {
     });
 
     expect(result.runMove).toBe(false);
-    expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: 'compel' });
+    expect(narratePacedInput.mock.calls[0][2]).toEqual({ suggestedMove: 'compel', speakerActorId: null });
   });
 
   it('does not forward any mischief signal to the classifier', async () => {
