@@ -315,8 +315,8 @@ describe('applyMeterChanges', () => {
     expect(actor._updateHistory[0]['system.supply.value']).toBe(0);
   });
 
-  it('clamps momentum to momentumReset–momentumMax', async () => {
-    // With 2 impacts: max = 8, reset = 0
+  it('clamps momentum to −6–momentumMax (reset is the burn target, not a floor)', async () => {
+    // With 2 impacts: max = 8, reset = 0. Floor stays at the play-kit MIN of −6.
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
@@ -327,6 +327,23 @@ describe('applyMeterChanges', () => {
     await applyMeterChanges(actor, { momentum: 20 });
     expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
     expect(actor._updateHistory[0]['system.momentum.resetValue']).toBe(0);
+  });
+
+  it('allows momentum to drop below momentumReset down to the −6 floor', async () => {
+    // Fresh PC: max = 10, reset = +2. A −1 from +2 must land at +1, not stick at +2.
+    const actor = freshActor({
+      system: { momentum: { value: 2, max: 10, resetValue: 2 } },
+    });
+    await applyMeterChanges(actor, { momentum: -1 });
+    expect(actor._updateHistory[0]['system.momentum.value']).toBe(1);
+  });
+
+  it('clamps momentum at the −6 floor regardless of how large the negative delta is', async () => {
+    const actor = freshActor({
+      system: { momentum: { value: 2, max: 10, resetValue: 2 } },
+    });
+    await applyMeterChanges(actor, { momentum: -100 });
+    expect(actor._updateHistory[0]['system.momentum.value']).toBe(-6);
   });
 
   it('reduces momentumMax by 1 per active impact (all categories count)', async () => {

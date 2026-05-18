@@ -6,6 +6,12 @@
 
 const MODULE_ID = "starforged-companion";
 
+// Hard floor for momentum during regular play. Matches the Starforged play kit
+// ("MOMENTUM: -6 TO +10") and the vendor system's `MomentumField.MIN`. Note
+// this is distinct from `momentumReset` — reset is the value momentum is set
+// to when burned (starts at +2, drops with impacts) and is NOT a clamp floor.
+const MOMENTUM_MIN = -6;
+
 // All debility keys that count as "impacts" for momentum bounds.
 // Per foundry-ironsworn source (#impactCount getter) and the Starforged play kit
 // (p.1 "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH IMPACT"), every marked
@@ -256,7 +262,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   }
 
   if (meterChanges.momentum !== undefined && meterChanges.momentum !== 0) {
-    const next = clamp(currentMomentum + meterChanges.momentum, momentumReset, momentumMax);
+    const next = clamp(currentMomentum + meterChanges.momentum, MOMENTUM_MIN, momentumMax);
     updates['system.momentum.value']      = next;
     updates['system.momentum.max']        = momentumMax;
     updates['system.momentum.resetValue'] = momentumReset;
@@ -475,7 +481,7 @@ export async function recalculateMomentumBounds(actor) {
   const maxMom    = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
   const resetMom  = sys.momentumReset ?? Math.max(0, 2 - impactCount);
   const current   = meterValue(sys.momentum);
-  const clamped   = clamp(current, resetMom, maxMom);
+  const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
 
   const updates = {
     'system.momentum.max':        maxMom,

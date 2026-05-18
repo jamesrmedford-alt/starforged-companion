@@ -1195,6 +1195,16 @@ async function handleDraftDismiss(message, draftIndex) {
 }
 
 async function updateDraftCard(message, drafts) {
+  // The Confirm/Dismiss click handler chains: createEntity → settings.set →
+  // updateDraftCard. The first two steps can take multiple socket round-trips
+  // on Forge, and a GM (or test cleanup) can delete the draft card during
+  // that window. When the message has already been deleted, message.update
+  // raises "ChatMessage <id> does not exist!" and the resulting failed
+  // ui.notifications.error on Foundry's side throws an uncaught TypeError
+  // when no notification host is mounted. Skip silently when the message has
+  // been removed from the collection.
+  if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
+
   const content = renderDraftCardHtml(drafts);
   try {
     // Update content first, then flags via setFlag so we don't accidentally
@@ -1203,6 +1213,11 @@ async function updateDraftCard(message, drafts) {
     await message.update({ content });
     await message.setFlag(MODULE_ID, "drafts", drafts);
   } catch (err) {
+    // Same race as above — the message may be deleted between the existence
+    // check and the update. Swallow "does not exist" quietly and only log
+    // other failure modes.
+    const msg = String(err?.message ?? err);
+    if (msg.includes("does not exist")) return;
     console.error(`${MODULE_ID} | updateDraftCard failed:`, err);
   }
 }
