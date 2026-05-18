@@ -382,15 +382,17 @@ function registerActorBridgeTests(quench) {
             "momentum should be restored to original value");
         });
 
-        it("respects momentum minimum (does not go below momentumReset)", async function () {
+        it("respects the −6 momentum floor (the play-kit hard minimum)", async function () {
           if (!actor) { this.skip(); return; }
           const { applyMeterChanges } = await import(`${MODULE_PATH}/character/actorBridge.js`);
-          const resetValue = actor.system.momentumReset;
 
-          // Try to set momentum way below the minimum
+          // Try to drive momentum way below the minimum. Per the Starforged
+          // play kit ("MOMENTUM: −6 TO +10") and the vendor MomentumField,
+          // −6 is the floor — momentumReset is the burn-target value, not a
+          // clamp boundary on regular play.
           await applyMeterChanges(actor, { momentum: -100 });
-          assert.isAtLeast(actor.system.momentum.value, resetValue,
-            "momentum should not go below momentumReset");
+          assert.isAtLeast(actor.system.momentum.value, -6,
+            "momentum should not go below −6");
           // Meter restore is handled by the batch-level after() hook
         });
 
@@ -4484,12 +4486,18 @@ function registerChatCardActionsTests(quench) {
 
           dismissBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
           // Dismiss skips the JournalEntry.create round-trip but still hits
-          // settings.set + message.update; poll for the persisted name to
-          // appear rather than gambling on flush count.
+          // settings.set + message.update; poll for the persisted name AND
+          // the re-rendered card. Waiting only for the persisted name lets
+          // the test finish — and the afterEach cleanup delete the message —
+          // before handleDraftDismiss's trailing updateDraftCard call lands,
+          // which then surfaced as "ChatMessage <id> does not exist!" on Forge.
           await waitFor(() => {
             const s = game.settings.get(MODULE, "campaignState") ?? {};
             return (s.dismissedEntities ?? []).includes(draftName);
           });
+          await waitFor(
+            () => (findRenderedCard(msg.id)?.innerHTML ?? "").includes("Dismissed"),
+          );
 
           const stateAfter = game.settings.get(MODULE, "campaignState") ?? {};
           const newDismissed = (stateAfter.dismissedEntities ?? []).filter(

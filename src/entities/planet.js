@@ -89,7 +89,7 @@ export async function createPlanet(data, campaignState, { persist = true } = {})
     updatedAt: now,
   };
 
-  const folderId = await getOrCreateSectorActorFolder(planet.sectorId, "Planets", campaignState);
+  const folderId = await getOrCreateSectorActorFolder(planet.sectorId, campaignState);
 
   const actor = await Actor.create({
     name:   planet.name || "Unknown Planet",

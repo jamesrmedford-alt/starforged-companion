@@ -5,23 +5,29 @@
  * Pre-migration, every entity type lives as a JournalEntry under a single
  * flat "Starforged Entities" folder. The Entity → Actor Migration (Phase 2/3,
  * see docs/entity-actor-migration-scope.md) moves four types onto native
- * foundry-ironsworn Actor documents, organised in a different folder layout:
+ * foundry-ironsworn Actor documents, organised in a flat per-sector layout:
  *
  *   Actors/
  *     Starships/                  ← ship Actors (cross-sector)
  *     NPCs/                       ← reserved for future connection migration
  *     PCs/                        ← adopted/created during migration
  *     Sectors/
- *       <Sector Name>/
- *         Settlements/            ← settlement Actors
- *         Locations/              ← POI Actors
- *         Planets/                ← planet Actors
+ *       <Sector Name>/            ← every settlement / planet / location for
+ *                                   that sector lands directly here, no
+ *                                   per-type subfolder
  *
  * Connection / faction / creature stay journal-backed and continue to land
  * in the existing "Starforged Entities" Journal folder.
  *
  * Foundry folders are typed — a folder is either an Actor folder OR a
  * JournalEntry folder, not both — so each typed tree is independent.
+ *
+ * Earlier versions of this module added a per-type subfolder under each
+ * `<Sector Name>` ("Settlements", "Planets", "Locations"). That sub-tier
+ * produced "next folder down is named 'Settlements' for every sector"
+ * confusion in the Actors sidebar; the per-type level was removed and
+ * existing entities are reparented by `flattenSectorActorFolders` in
+ * migrator.js.
  */
 
 const FOLDER_NAME = "Starforged Entities";
@@ -123,25 +129,24 @@ export async function getOrCreateActorFolder(name) {
 }
 
 /**
- * Per-sector Actor subfolder for migrated entity types. The leaf path is
- * `Sectors / <Sector Name> / <typePlural>` (e.g. "Settlements"). The sector
- * name is resolved from campaignState.sectors[sectorId].name; if unavailable
- * the helper falls back to the top-level type folder under Sectors (no
- * per-sector grouping) and emits a single console warning.
+ * Per-sector Actor folder. Every entity type (settlement / planet / location)
+ * for a given sector lands directly in `Sectors / <Sector Name>`. The sector
+ * name is resolved from `campaignState.sectors[sectorId].name`; if it can't
+ * be resolved the helper falls back to a shared `Sectors / Unsorted` folder
+ * and emits a single console warning so the missing sector record is visible.
  *
  * @param {string} sectorId
- * @param {"Settlements"|"Locations"|"Planets"} typePlural
  * @param {Object} [campaignState]
  * @returns {Promise<string|null>}
  */
-export async function getOrCreateSectorActorFolder(sectorId, typePlural, campaignState) {
+export async function getOrCreateSectorActorFolder(sectorId, campaignState) {
   const state = campaignState ?? globalThis.game?.settings?.get?.("starforged-companion", "campaignState") ?? {};
   const sector = (state.sectors ?? []).find(s => s.id === sectorId);
   if (!sector?.name) {
-    console.warn(`starforged-companion | folder: sector ${sectorId} not found in campaignState; falling back to flat type folder`);
-    return ensureFolderPath("Actor", ["Sectors", typePlural]);
+    console.warn(`starforged-companion | folder: sector ${sectorId} not found in campaignState; falling back to Sectors / Unsorted`);
+    return ensureFolderPath("Actor", ["Sectors", "Unsorted"]);
   }
-  return ensureFolderPath("Actor", ["Sectors", sector.name, typePlural]);
+  return ensureFolderPath("Actor", ["Sectors", sector.name]);
 }
 
 /**
