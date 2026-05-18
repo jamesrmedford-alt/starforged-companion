@@ -206,7 +206,12 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
   try {
     const document = getEntityDocument(entityType, journalEntryId);
     if (!document) {
-      console.warn(`${MODULE_ID} | Art: host document not found for portrait link: ${entityType} ${journalEntryId}`);
+      // The host can legitimately disappear between the OpenRouter call
+      // starting and the link write — e.g. seedStarshipActor's fire-and-
+      // forget portrait gen running after the user (or a Quench cleanup)
+      // deletes the actor. That's a race, not a defect; log at debug so
+      // the console isn't littered with warnings on every Quench run.
+      console.debug(`${MODULE_ID} | Art: host document gone before portrait link landed: ${entityType} ${journalEntryId}`);
       return;
     }
 
