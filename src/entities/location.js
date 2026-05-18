@@ -81,7 +81,7 @@ export async function createLocation(data, campaignState, { persist = true } = {
     updatedAt: now,
   };
 
-  const folderId = await getOrCreateSectorActorFolder(location.sectorId, "Locations", campaignState);
+  const folderId = await getOrCreateSectorActorFolder(location.sectorId, campaignState);
 
   const actor = await Actor.create({
     name:   location.name || "Unknown Location",

@@ -9,8 +9,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   handleMigrateEntitiesCommand,
   isMigrateEntitiesCommand,
+  flattenSectorActorFolders,
 } from "../../src/entities/migrator.js";
-import { _resetFolderCache } from "../../src/entities/folder.js";
+import {
+  _resetFolderCache,
+  ensureFolderPath,
+} from "../../src/entities/folder.js";
 
 const MODULE = "starforged-companion";
 
@@ -275,5 +279,158 @@ describe("cleanup pass — --cleanup", () => {
     });
 
     expect(global.game.journal._items).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// flattenSectorActorFolders — move legacy per-type subfolders to flat layout
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("flattenSectorActorFolders", () => {
+  // The Folder stub in tests/setup.js doesn't ship a delete() method. Patch
+  // it onto every folder created in this block so the migration's empty-
+  // folder cleanup can run end-to-end.
+  function enableFolderDelete() {
+    for (const folder of global.game.folders) {
+      if (!folder.delete) {
+        folder.delete = async () => {
+          const items = global.game.folders.contents;
+          const idx = items.findIndex(f => f.id === folder.id);
+          if (idx >= 0) items.splice(idx, 1);
+        };
+      }
+    }
+  }
+
+  it("moves a settlement Actor from Sectors/<Name>/Settlements into Sectors/<Name>", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "Sigma Draconis" }] };
+    const legacyLeaf = await ensureFolderPath("Actor", ["Sectors", "Sigma Draconis", "Settlements"]);
+    const actor = await global.Actor.create({
+      type:   "location",
+      name:   "Bleakhold",
+      folder: legacyLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-1" } } },
+    });
+    enableFolderDelete();
+
+    const summary = await flattenSectorActorFolders(state);
+
+    const sectorFolder = global.game.folders.find(f => f.name === "Sigma Draconis");
+    expect(actor.folder).toBe(sectorFolder.id);
+    expect(summary.moved).toBe(1);
+  });
+
+  it("removes an empty legacy Settlements subfolder once its only actor has moved", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "Sigma Draconis" }] };
+    const legacyLeaf = await ensureFolderPath("Actor", ["Sectors", "Sigma Draconis", "Settlements"]);
+    await global.Actor.create({
+      type:   "location",
+      name:   "Bleakhold",
+      folder: legacyLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-1" } } },
+    });
+    enableFolderDelete();
+
+    const summary = await flattenSectorActorFolders(state);
+
+    expect(global.game.folders.find(f => f.id === legacyLeaf)).toBe(null);
+    expect(summary.foldersDeleted).toBe(1);
+  });
+
+  it("rewrites the fallback Sectors/Settlements path to Sectors/<Sector Name> when the sectorId now resolves", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "Sigma Draconis" }] };
+    const fallbackLeaf = await ensureFolderPath("Actor", ["Sectors", "Settlements"]);
+    const actor = await global.Actor.create({
+      type:   "location",
+      name:   "Orphan",
+      folder: fallbackLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-1" } } },
+    });
+    enableFolderDelete();
+
+    await flattenSectorActorFolders(state);
+
+    const sectorFolder = global.game.folders.find(f => f.name === "Sigma Draconis");
+    expect(actor.folder).toBe(sectorFolder.id);
+    expect(global.game.folders.find(f => f.id === fallbackLeaf)).toBe(null);
+  });
+
+  it("routes actors with an unresolvable sectorId into Sectors / Unsorted", async () => {
+    const state = { sectors: [] };
+    const fallbackLeaf = await ensureFolderPath("Actor", ["Sectors", "Settlements"]);
+    const actor = await global.Actor.create({
+      type:   "location",
+      name:   "Drifter",
+      folder: fallbackLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: null } } },
+    });
+    enableFolderDelete();
+
+    await flattenSectorActorFolders(state);
+
+    const unsorted = global.game.folders.find(f => f.name === "Unsorted");
+    expect(actor.folder).toBe(unsorted.id);
+  });
+
+  it("is idempotent — a second run moves nothing", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "X" }] };
+    const legacyLeaf = await ensureFolderPath("Actor", ["Sectors", "X", "Settlements"]);
+    await global.Actor.create({
+      type:   "location",
+      name:   "A",
+      folder: legacyLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-1" } } },
+    });
+    enableFolderDelete();
+
+    await flattenSectorActorFolders(state);
+    const second = await flattenSectorActorFolders(state);
+
+    expect(second.moved).toBe(0);
+    expect(second.foldersDeleted).toBe(0);
+  });
+
+  it("leaves non-entity actors alone", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "X" }] };
+    const someFolder = await ensureFolderPath("Actor", ["Starships"]);
+    const ship = await global.Actor.create({
+      type:   "starship",
+      name:   "Tantive",
+      folder: someFolder,
+      flags:  { [MODULE]: { entityType: "ship", ship: { sectorId: "sec-1" } } },
+    });
+    enableFolderDelete();
+
+    const summary = await flattenSectorActorFolders(state);
+
+    expect(ship.folder).toBe(someFolder);  // unchanged
+    expect(summary.moved).toBe(0);
+  });
+
+  it("does not delete a legacy Settlements folder if it still has children", async () => {
+    const state = { sectors: [{ id: "sec-1", name: "X" }] };
+    const legacyLeaf = await ensureFolderPath("Actor", ["Sectors", "X", "Settlements"]);
+    // Two actors in the legacy folder; one has no sectorId so it can't be
+    // remapped to a non-Unsorted target. We assert the legacy folder
+    // survives if anything stays behind that the migrator can't relocate.
+    await global.Actor.create({
+      type:   "location",
+      name:   "Movable",
+      folder: legacyLeaf,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-1" } } },
+    });
+    // Stuff a non-managed actor into the legacy folder so the migrator
+    // refuses to delete it.
+    await global.Actor.create({
+      type:   "location",
+      name:   "Stranger",
+      folder: legacyLeaf,
+      flags:  {},  // no entityType — migrator must skip + leave it where it is
+    });
+    enableFolderDelete();
+
+    await flattenSectorActorFolders(state);
+
+    expect(global.game.folders.find(f => f.id === legacyLeaf)).toBeTruthy();
   });
 });

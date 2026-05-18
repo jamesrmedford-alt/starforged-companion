@@ -2051,6 +2051,26 @@ Hooks.once("ready", () => {
     initWorldJournals().catch(err =>
       console.warn(`${MODULE_ID} | World Journal init failed:`, err?.message ?? err)
     );
+
+    // One-time sector-folder flatten — moves every settlement / planet /
+    // location Actor out of the legacy per-type subfolder (Sectors/<Name>/
+    // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
+    // when nothing needs moving the function walks the actor list once and
+    // returns. Reports counts to the console so the GM can see what changed.
+    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders }) => {
+      try {
+        const state   = game.settings.get(MODULE_ID, "campaignState");
+        const summary = await flattenSectorActorFolders(state);
+        if (summary.moved || summary.foldersDeleted) {
+          console.log(
+            `${MODULE_ID} | sector-folder flatten: ` +
+            `moved ${summary.moved} actor(s), removed ${summary.foldersDeleted} empty legacy folder(s)`
+          );
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | sector-folder flatten failed:`, err?.message ?? err);
+      }
+    }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }
 
   registerChatHook();

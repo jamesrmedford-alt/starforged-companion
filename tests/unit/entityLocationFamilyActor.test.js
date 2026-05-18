@@ -38,26 +38,23 @@ describe("createSettlement", () => {
     expect(state.settlementIds).toEqual([actor.id]);
   });
 
-  it("lands the actor under Sectors / <Sector Name> / Settlements", async () => {
+  it("lands the actor directly under Sectors / <Sector Name>", async () => {
     const state = { settlementIds: [], sectors: [{ id: "sec-1", name: "Sigma Draconis" }], activeSectorId: "sec-1" };
     await createSettlement({ name: "Bleakhold" }, state);
-    const actor   = global.game.actors.contents[0];
-    const leaf    = global.game.folders.get(actor.folder);
-    expect(leaf?.name).toBe("Settlements");
-    expect(leaf?.type).toBe("Actor");
-    // Walk parents — should be Sectors / Sigma Draconis / Settlements
-    const sectorFolder = global.game.folders.get(leaf.folder);
+    const actor       = global.game.actors.contents[0];
+    const sectorFolder = global.game.folders.get(actor.folder);
     expect(sectorFolder?.name).toBe("Sigma Draconis");
+    expect(sectorFolder?.type).toBe("Actor");
     const rootFolder = global.game.folders.get(sectorFolder.folder);
     expect(rootFolder?.name).toBe("Sectors");
   });
 
-  it("falls back to a flat Sectors / Settlements folder when sector isn't found", async () => {
+  it("falls back to Sectors / Unsorted when the sector record isn't found", async () => {
     const state = { settlementIds: [], sectors: [], activeSectorId: null };
     await createSettlement({ name: "Floating" }, state);
     const actor      = global.game.actors.contents[0];
     const leafFolder = global.game.folders.get(actor.folder);
-    expect(leafFolder?.name).toBe("Settlements");
+    expect(leafFolder?.name).toBe("Unsorted");
     const root = global.game.folders.get(leafFolder.folder);
     expect(root?.name).toBe("Sectors");
   });
@@ -92,12 +89,14 @@ describe("createPlanet", () => {
     expect(state.planetIds).toEqual([actor.id]);
   });
 
-  it("lands under Sectors / <Sector Name> / Planets", async () => {
+  it("lands directly under Sectors / <Sector Name>", async () => {
     const state = { planetIds: [], sectors: [{ id: "s", name: "X" }], activeSectorId: "s" };
     await createPlanet({ name: "Cinderworld" }, state);
     const actor = global.game.actors.contents[0];
     const leaf  = global.game.folders.get(actor.folder);
-    expect(leaf?.name).toBe("Planets");
+    expect(leaf?.name).toBe("X");
+    const root = global.game.folders.get(leaf.folder);
+    expect(root?.name).toBe("Sectors");
   });
 
   it("getPlanet returns null for an unknown id without throwing", () => {
@@ -128,12 +127,14 @@ describe("createLocation", () => {
     expect(global.game.actors.contents[0].system.subtype).toBe("other");
   });
 
-  it("lands under Sectors / <Sector Name> / Locations", async () => {
+  it("lands directly under Sectors / <Sector Name>", async () => {
     const state = { locationIds: [], sectors: [{ id: "s", name: "X" }], activeSectorId: "s" };
     await createLocation({ name: "Site" }, state);
     const actor = global.game.actors.contents[0];
     const leaf  = global.game.folders.get(actor.folder);
-    expect(leaf?.name).toBe("Locations");
+    expect(leaf?.name).toBe("X");
+    const root = global.game.folders.get(leaf.folder);
+    expect(root?.name).toBe("Sectors");
   });
 
   it("listLocations resolves campaignState.locationIds", async () => {

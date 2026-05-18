@@ -105,7 +105,7 @@ export async function createSettlement(data, campaignState, { persist = true } =
     updatedAt: now,
   };
 
-  const folderId = await getOrCreateSectorActorFolder(settlement.sectorId, "Settlements", campaignState);
+  const folderId = await getOrCreateSectorActorFolder(settlement.sectorId, campaignState);
 
   const actor = await Actor.create({
     name:   settlement.name || "Unknown Settlement",

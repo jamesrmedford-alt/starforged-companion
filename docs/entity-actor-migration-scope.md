@@ -156,10 +156,12 @@ PCs/                        ← player characters (foundry-ironsworn manages the
                               and tag it with flags[MODULE].pcRoot so the system
                               and the module don't fight over it)
 Sectors/
-  <Sector Name>/
-    Settlements/            ← settlements scoped to this sector (Actors)
-    Locations/              ← points-of-interest scoped to this sector (Actors)
-    Planets/                ← planets scoped to this sector (Actors)
+  <Sector Name>/            ← every settlement / planet / location Actor for
+                              this sector lands directly here. Earlier builds
+                              nested a per-type "Settlements" / "Planets" /
+                              "Locations" subfolder; that level was removed
+                              and `flattenSectorActorFolders` in migrator.js
+                              relocates any existing entities on first ready.
 ```
 
 **JournalEntry sidebar (unchanged top-level "Sectors", but newly hierarchical):**

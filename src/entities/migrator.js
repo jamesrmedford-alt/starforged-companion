@@ -25,7 +25,7 @@ import { createShip }       from "./ship.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
-import { getOrCreateSectorJournalFolder } from "./folder.js";
+import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
   cleanupSectorRecordPages,
@@ -136,6 +136,15 @@ async function runMigration() {
   // reads it post-migration; safe to remove now rather than waiting on the
   // 7-day window.
   await deleteOrphanSectorsJournal(summary);
+
+  // Step 7 — flatten the per-sector Actor folder structure. Earlier builds
+  // wrote settlement/planet/location actors into
+  // `Sectors / <Sector Name> / Settlements` (and Planets/Locations); they
+  // now live directly in `Sectors / <Sector Name>`. Move any actors still
+  // sitting in the legacy subfolder, then drop empty subfolders.
+  const flat = await flattenSectorActorFolders(campaignState);
+  summary.actorsReparented        = flat.moved;
+  summary.legacyTypeFoldersRemoved = flat.foldersDeleted;
 
   const anyMigrated = TYPES.some(t => summary[t.key].migrated > 0);
   if (anyMigrated) {
@@ -323,6 +332,12 @@ async function postSummaryCard(title, summary) {
   if (summary.orphanJournalDeleted) {
     lines.push(`<li>Removed legacy "Starforged Sectors" journal.</li>`);
   }
+  if (summary.actorsReparented) {
+    lines.push(`<li>Actors moved into per-sector folder: ${summary.actorsReparented}</li>`);
+  }
+  if (summary.legacyTypeFoldersRemoved) {
+    lines.push(`<li>Empty legacy Settlements/Planets/Locations folders removed: ${summary.legacyTypeFoldersRemoved}</li>`);
+  }
   if ("deleted" in summary) {
     lines.push(`<li>Legacy journals deleted: <strong>${summary.deleted}</strong></li>`);
     if (summary.kept) lines.push(`<li>Still within 7-day grace window: ${summary.kept}</li>`);
@@ -366,6 +381,105 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sector folder flatten — Settlements/Planets/Locations → flat per-sector
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FLATTEN_ENTITY_TYPES = ["settlement", "planet", "location"];
+const LEGACY_TYPE_FOLDER_NAMES = ["Settlements", "Planets", "Locations"];
+
+/**
+ * Move every settlement / planet / location Actor out of the legacy per-type
+ * subfolder (`Sectors / <Sector Name> / Settlements`, or the no-sector
+ * fallback `Sectors / Settlements`) and into a flat per-sector folder
+ * (`Sectors / <Sector Name>`). Then delete any now-empty legacy
+ * "Settlements" / "Planets" / "Locations" Actor folders.
+ *
+ * Idempotent — actors already sitting in the right folder are skipped, and a
+ * run that finds nothing to do is a no-op. Safe to invoke on every world
+ * load.
+ *
+ * Folders are only deleted when they are empty AND parented either directly
+ * under `Sectors` (the no-sector fallback path) or one level deeper under a
+ * sector subfolder. Folders with the same name parked anywhere else in the
+ * tree are left alone.
+ *
+ * @param {Object} [campaignState]
+ * @returns {Promise<{moved: number, foldersDeleted: number, skipped: number}>}
+ */
+export async function flattenSectorActorFolders(campaignState) {
+  const state = campaignState
+    ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")
+    ?? {};
+  const summary = { moved: 0, foldersDeleted: 0, skipped: 0 };
+
+  // Foundry's Collection is iterable but not an Array, so spread to a real
+  // array before reaching for array methods (some / filter / etc).
+  const allActors = [...(globalThis.game?.actors ?? [])];
+
+  // Step 1 — reparent every entity-typed Actor that isn't already directly
+  // under its sector folder. Actors with a resolvable sectorId go to
+  // `Sectors / <Name>`; actors whose sector can't be resolved go to the
+  // shared `Sectors / Unsorted` fallback (via getOrCreateSectorActorFolder).
+  for (const actor of allActors) {
+    const flags     = actor.flags?.[MODULE_ID];
+    const typeKey   = flags?.entityType;
+    if (!typeKey || !FLATTEN_ENTITY_TYPES.includes(typeKey)) continue;
+
+    const sectorId = flags?.[typeKey]?.sectorId ?? null;
+    const targetFolderId = await getOrCreateSectorActorFolder(sectorId, state);
+    if (!targetFolderId) {
+      summary.skipped += 1;
+      continue;
+    }
+    if (actor.folder === targetFolderId || actor.folder?.id === targetFolderId) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    try {
+      await actor.update?.({ folder: targetFolderId });
+      summary.moved += 1;
+    } catch (err) {
+      console.error(`${MODULE_ID} | flattenSectorActorFolders: move failed for ${actor.id}:`, err);
+    }
+  }
+
+  // Step 2 — delete now-empty legacy type folders. Re-snapshot actors so the
+  // emptiness check sees the post-move state.
+  const actorsAfterMove = [...(globalThis.game?.actors ?? [])];
+  const allFolders      = [...(globalThis.game?.folders ?? [])];
+  const sectorsRoot     = allFolders.find(
+    f => f.type === "Actor" && f.name === "Sectors" && !f.folder
+  );
+
+  for (const folder of allFolders) {
+    if (folder.type !== "Actor") continue;
+    if (!LEGACY_TYPE_FOLDER_NAMES.includes(folder.name)) continue;
+
+    // Parent must be Sectors itself OR a folder whose parent is Sectors
+    // (i.e. a sector subfolder). Refuse to delete anything else, even if the
+    // name matches — the user may have made their own.
+    const parent = folder.folder ? globalThis.game?.folders?.get?.(folder.folder) : null;
+    const isUnderSectors          = sectorsRoot && parent?.id === sectorsRoot.id;
+    const isUnderSectorSubfolder  = sectorsRoot && parent?.folder === sectorsRoot.id;
+    if (!isUnderSectors && !isUnderSectorSubfolder) continue;
+
+    const hasActors   = actorsAfterMove.some(a => a.folder === folder.id || a.folder?.id === folder.id);
+    const hasChildren = allFolders.some(f => f.folder === folder.id);
+    if (hasActors || hasChildren) continue;
+
+    try {
+      await folder.delete?.();
+      summary.foldersDeleted += 1;
+    } catch (err) {
+      console.error(`${MODULE_ID} | flattenSectorActorFolders: delete folder ${folder.id} failed:`, err);
+    }
+  }
+
+  return summary;
 }
 
 /**
