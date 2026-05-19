@@ -63,6 +63,10 @@ Hooks.on("quenchReady", (quench) => {
   // Pins the fallback that makes !recap work without campaignState.characterIds
   // ever being populated (the v1.2.4 → v1.2.10 silent regression).
   registerRecapEndToEndTests(quench);
+  // Audio narration — settings gating, segment splitting, cache pathing.
+  // Live API generation is left to manual smoke (the batch does not consume
+  // ElevenLabs characters).
+  registerAudioNarrationTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4908,5 +4912,136 @@ function registerRecapEndToEndTests(quench) {
       });
     },
     { displayName: "STARFORGED: Recap End-to-End" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO NARRATION TESTS (docs/audio-narration-scope.md §15)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerAudioNarrationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.audio",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let _prev = {};
+
+      before(async function () {
+        for (const k of [
+          "audio.enabled", "audio.clientEnabled", "audio.narratorVoiceId",
+          "audio.npcVoiceId", "audio.modelId", "audio.speed",
+          "audio.volume", "audio.autoplay", "elevenLabsApiKey",
+        ]) {
+          try { _prev[k] = game.settings.get(MODULE_ID, k); } catch { _prev[k] = undefined; }
+        }
+      });
+
+      after(async function () {
+        for (const [k, v] of Object.entries(_prev)) {
+          if (v !== undefined) {
+            try { await game.settings.set(MODULE_ID, k, v); } catch (err) {
+              console.warn(`${MODULE_ID} | audio quench after-hook: restoring ${k} failed:`, err);
+            }
+          }
+        }
+      });
+
+      describe("audioEnabledForThisClient — settings gate", function () {
+        it("returns false when audio.enabled is false", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       false);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "k");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isFalse(audioEnabledForThisClient());
+        });
+
+        it("returns false when audio.clientEnabled is false", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", false);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "k");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isFalse(audioEnabledForThisClient());
+        });
+
+        it("returns false when elevenLabsApiKey is empty", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isFalse(audioEnabledForThisClient());
+        });
+
+        it("returns true when all three preconditions are met", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test_key");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isTrue(audioEnabledForThisClient());
+        });
+      });
+
+      describe("segments — narrator/NPC split", function () {
+        it("splits a card containing <npc> markup into three segments", async function () {
+          const { splitSegments } = await import(`${MODULE_PATH}/audio/segments.js`);
+          const segs = splitSegments('Vance leans. <npc>"You\'re early."</npc> The lights flicker.');
+          assert.equal(segs.length, 3);
+          assert.equal(segs[1].voice, "npc");
+        });
+
+        it("strips markup for chat display while preserving inner text", async function () {
+          const { stripMarkup } = await import(`${MODULE_PATH}/audio/segments.js`);
+          assert.equal(
+            stripMarkup('A <npc>"hello"</npc> B'),
+            'A "hello" B',
+          );
+        });
+      });
+
+      describe("cache key + path", function () {
+        it("cacheKey is stable and content-addressed", async function () {
+          const { cacheKey } = await import(`${MODULE_PATH}/audio/cache.js`);
+          const a = await cacheKey({ text: "hi", voiceId: "v", modelId: "m", speed: 1.0 });
+          const b = await cacheKey({ text: "hi", voiceId: "v", modelId: "m", speed: 1.0 });
+          const c = await cacheKey({ text: "hi!", voiceId: "v", modelId: "m", speed: 1.0 });
+          assert.equal(a, b, "identical inputs collide");
+          assert.notEqual(a, c, "different text differs");
+          assert.match(a, /^[0-9a-f]{64}$/);
+        });
+      });
+
+      describe("narrator card audio button", function () {
+        it("hidden by default; unhidden when audio is enabled on this client", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test_key");
+
+          const msg = await ChatMessage.create({
+            content: `
+              <div class="sf-narration-card">
+                <div class="sf-narration-prose">Hello world.</div>
+                <div class="sf-narration-footer">
+                  <button class="sf-audio-play-btn" data-action="audioPlayToggle" hidden>Play</button>
+                </div>
+              </div>
+            `,
+            flags: { [MODULE_ID]: { narratorCard: true, narrationText: "Hello world." } },
+          });
+
+          // Allow the renderChatMessage hook to settle.
+          await new Promise(r => setTimeout(r, 50));
+
+          // Re-query the DOM — the chat log re-renders on create.
+          const cardEl = document.querySelector(`[data-message-id="${msg.id}"] .sf-audio-play-btn`);
+          if (cardEl) {
+            assert.isFalse(cardEl.hasAttribute("hidden"), "play button should be unhidden");
+          }
+          // Cleanup
+          await msg.delete().catch(() => {});
+        });
+      });
+    },
+    { displayName: "STARFORGED: Audio Narration" },
   );
 }

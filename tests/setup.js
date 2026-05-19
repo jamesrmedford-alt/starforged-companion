@@ -30,6 +30,30 @@ global.game = {
     };
   })(),
   user: { isGM: true, id: 'test-user-gm' },
+  world: { id: 'test-world' },
+  socket: {
+    _handlers: new Map(),
+    on(event, fn) {
+      if (!this._handlers.has(event)) this._handlers.set(event, []);
+      this._handlers.get(event).push(fn);
+    },
+    emit(event, payload) {
+      // Tests can override emit; default just records for inspection.
+      (this._emitted ??= []).push({ event, payload });
+    },
+    _reset() {
+      this._handlers.clear();
+      if (this._emitted) this._emitted.length = 0;
+    },
+  },
+  users: (() => {
+    const list = [{ id: 'test-user-gm', isGM: true, active: true }];
+    return {
+      [Symbol.iterator]: () => list[Symbol.iterator](),
+      get: (id) => list.find(u => u.id === id) ?? null,
+      _set: (users) => { list.length = 0; list.push(...users); },
+    };
+  })(),
   journal: {
     find: () => null,
     get: () => null,
@@ -81,6 +105,75 @@ global.foundry = {
         close() {}
       },
     },
+    apps: {
+      FilePicker: {
+        implementation: {
+          // In-memory fake filesystem for tests. The cache module browses,
+          // creates, and uploads via these calls; tests can inspect
+          // _files / _dirs directly.
+          _files: new Set(),     // string paths
+          _dirs:  new Set(),     // string paths
+          _uploads: [],          // [{ source, dir, file }, …]
+          createDirectory: async (source, path) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            if (fp._dirs.has(path)) throw new Error(`Directory ${path} already exists`);
+            fp._dirs.add(path);
+          },
+          browse: async (source, path) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            // Return files whose dirname matches `path`.
+            const files = Array.from(fp._files).filter(p => {
+              const idx = p.lastIndexOf('/');
+              return idx >= 0 && p.slice(0, idx) === path;
+            });
+            const dirs = Array.from(fp._dirs).filter(d =>
+              d !== path && d.startsWith(path + '/') && d.slice(path.length + 1).indexOf('/') === -1
+            );
+            return { files, dirs };
+          },
+          upload: async (source, dir, file) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            fp._dirs.add(dir);
+            fp._files.add(`${dir}/${file.name}`);
+            fp._uploads.push({ source, dir, file });
+            return { status: 'success', path: `${dir}/${file.name}` };
+          },
+          _reset: () => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            fp._files.clear();
+            fp._dirs.clear();
+            fp._uploads.length = 0;
+          },
+        },
+      },
+    },
+    // Foundry audio module — minimal Sound stub for unit tests of
+    // src/audio/playback.js. Real playback is integration-tested only.
+    // The stub records calls for assertion via Sound._instances.
+  },
+};
+
+// foundry.audio.Sound — defined after the assignment above so the property
+// can hold a class without the surrounding `applications` object holding
+// it.
+global.foundry.audio = {
+  Sound: class FoundrySoundStub {
+    static _instances = [];
+    static _reset() { this._instances.length = 0; }
+    constructor(src) {
+      this.src = src;
+      this._listeners = {};
+      this._state = 'idle';
+      global.foundry.audio.Sound._instances.push(this);
+    }
+    async load()  { /* no-op */ }
+    async play(opts = {}) { this._state = 'playing'; this._lastVolume = opts.volume; }
+    async pause() { this._state = 'paused';  }
+    async stop()  { this._state = 'stopped'; this._fire('stop'); }
+    addEventListener(event, cb, _opts) {
+      (this._listeners[event] ??= []).push(cb);
+    }
+    _fire(event) { (this._listeners[event] ?? []).forEach(cb => cb()); }
   },
 };
 

@@ -183,6 +183,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       matchedEntityIds:    relevance.entityIds ?? [],
       playerNarration:     resolution.playerNarration ?? '',
       entityNamesById,
+      audioMarkupEnabled:  audioMarkupEnabledFromSettings(),
     },
   );
   const userMessage  = buildNarratorUserMessage(
@@ -378,6 +379,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${narrationText}</div>
         <div class="sf-narration-footer">
+          <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
+            <i class="fas fa-play"></i> Play
+          </button>
           <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
             <i class="fas fa-list-check"></i> Correct a fact
           </button>
@@ -706,6 +710,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       playerNarration: question,
       currentLocationCard,
       activeSectorBlock,
+      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
 
@@ -801,6 +806,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       playerNarration: playerText,
       currentLocationCard,
       activeSectorBlock,
+      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
 
@@ -918,6 +924,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         <div class="sf-narration-prose">${narrationText}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
+          <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
+            <i class="fas fa-play"></i> Play
+          </button>
           <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
             <i class="fas fa-list-check"></i> Correct a fact
           </button>
@@ -1294,6 +1303,19 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
 
   if (!text) throw new Error('Narrator API returned no text content.');
   return text;
+}
+
+/**
+ * Read the audio.enabled world toggle. Used by buildNarratorSystemPrompt
+ * call sites to conditionally include the NPC-markup instruction.
+ * Defaults to false (audio is opt-in).
+ */
+function audioMarkupEnabledFromSettings() {
+  try {
+    return game.settings.get(MODULE_ID, 'audio.enabled') === true;
+  } catch {
+    return false;
+  }
 }
 
 function getNarratorSettings() {
