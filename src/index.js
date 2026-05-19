@@ -685,6 +685,19 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
 
+      // Stat substitution — when an asset ability (e.g. Empath's
+      // "roll +heart in place of the listed stat") was offered AND the
+      // player picked it on the confirm dialog, swap the move stat
+      // before stat-value enrichment reads the actor sheet. The dialog
+      // has already gated the value to one of the offered stats.
+      const subStat = typeof interpretation.appliedStatReplacement === 'string'
+        ? interpretation.appliedStatReplacement.trim()
+        : '';
+      if (subStat) {
+        interpretation.statSubstitutedFrom = interpretation.statUsed;
+        interpretation.statUsed = subStat;
+      }
+
       // Fill in statValue from the speaker's character sheet. The
       // interpreter system prompt explicitly tells the model to leave
       // statValue at 0 and have the calling code fill it in (see

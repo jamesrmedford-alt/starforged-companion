@@ -1479,7 +1479,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       </div>
     ` : '';
 
-    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities);
+    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities, context.statUsed);
 
     const html = `
       <div class="sf-move-confirm">
@@ -1539,17 +1539,30 @@ export class MoveConfirmDialog extends ApplicationV2 {
     // object is shared by reference with the caller.
     try {
       const root = this.element ?? document;
-      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb[data-adds]:checked') ?? [];
+      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
       let total = 0;
       const applied = [];
+      const offeredStats = new Set();
       checked.forEach(cb => {
         const n = Number(cb.dataset.adds ?? 0);
         if (Number.isFinite(n) && n > 0) total += n;
         if (cb.dataset.key) applied.push(cb.dataset.key);
+        const stat = cb.dataset.statReplacement;
+        if (stat) offeredStats.add(stat);
       });
+      // Stat substitution — apply only when the selected radio matches one
+      // of the offered stats and at least one ability advertising that
+      // substitution is currently checked. Otherwise the user has
+      // unchecked the gating ability and the substitution must not fire.
+      let pickedStat = '';
+      const picked = root.querySelector?.('input[name="sf-stat-sub"]:checked');
+      const candidate = String(picked?.value ?? '').trim();
+      if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
+
       if (this.#interp) {
-        this.#interp.appliedAbilityAdds = total;
-        this.#interp.appliedAbilityKeys = applied;
+        this.#interp.appliedAbilityAdds  = total;
+        this.#interp.appliedAbilityKeys  = applied;
+        this.#interp.appliedStatReplacement = pickedStat || null;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);
@@ -1571,12 +1584,17 @@ export class MoveConfirmDialog extends ApplicationV2 {
  * value, since the most common reason an ability surfaces is to add to
  * the roll; player can uncheck if it doesn't apply this turn.
  */
-function renderApplicableAbilitiesBlock(abilities) {
+function renderApplicableAbilitiesBlock(abilities, currentStat) {
   if (!Array.isArray(abilities) || abilities.length === 0) return '';
   const items = abilities.map(a => {
     const adds      = Number(a.adds ?? 0);
-    const checked   = adds > 0 ? 'checked' : '';
+    const stat      = typeof a.statReplacement === 'string' ? a.statReplacement : '';
+    // Pre-check when there's a numeric add OR a stat substitution — both
+    // are concrete mechanical effects the player will almost always want
+    // to apply when the ability fires.
+    const checked   = (adds > 0 || stat) ? 'checked' : '';
     const addsLabel = adds > 0 ? `<span class="sf-ability-adds">+${adds}</span>` : '';
+    const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
     const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
@@ -1585,19 +1603,47 @@ function renderApplicableAbilitiesBlock(abilities) {
         <input type="checkbox" class="sf-applicable-ability-cb"
                data-key="${escapeAttr(a.key)}"
                data-adds="${adds}"
+               data-stat-replacement="${escapeAttr(stat)}"
                ${checked}>
         <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
         ${addsLabel}
+        ${statLabel}
         <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
         ${summary}
       </label>`;
   }).join('');
+
+  // Build the stat-override block — one radio per unique replacement stat
+  // advertised by the ability list, plus a "Keep listed stat" default.
+  const uniqueStats = Array.from(new Set(
+    abilities
+      .map(a => (typeof a.statReplacement === 'string' ? a.statReplacement : ''))
+      .filter(Boolean),
+  ));
+  const statSubBlock = uniqueStats.length ? `
+    <div class="confirm-stat-substitution" data-current-stat="${escapeAttr(currentStat || '')}">
+      <span class="confirm-field-label">Stat substitution</span>
+      <div class="sf-stat-sub-row">
+        <label class="sf-stat-sub-option">
+          <input type="radio" name="sf-stat-sub" value="" checked>
+          Keep listed (+${escapeAttr(currentStat || '?')})
+        </label>
+        ${uniqueStats.map(stat => `
+          <label class="sf-stat-sub-option">
+            <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
+            Substitute +${escapeAttr(stat)}
+          </label>`).join('')}
+      </div>
+      <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>
+    </div>` : '';
+
   return `
     <div class="confirm-applicable-abilities">
       <span class="confirm-field-label">Applicable abilities</span>
       <div class="sf-ability-list">${items}</div>
       <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+      ${statSubBlock}
     </div>`;
 }
 

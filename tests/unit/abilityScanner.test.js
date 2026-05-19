@@ -14,6 +14,7 @@ import {
   haikuFallback,
   scanForApplicableAbilities,
   extractAdds,
+  extractStatReplacement,
   getCommandVehicleActor,
 } from '../../src/moves/abilityScanner.js';
 
@@ -171,6 +172,52 @@ describe('extractAdds', () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// extractStatReplacement
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('extractStatReplacement', () => {
+  it('returns the substituted stat for "roll +<stat>" phrasing', () => {
+    expect(extractStatReplacement('When you act, you may roll +heart.')).toBe('heart');
+    expect(extractStatReplacement('Roll +shadow when sneaking.')).toBe('shadow');
+  });
+
+  it('handles "roll +<stat> in place of the listed stat" (Empath)', () => {
+    expect(extractStatReplacement(
+      'When you face an emotion-laden challenge, you may roll +heart in place of the listed stat.',
+    )).toBe('heart');
+  });
+
+  it('handles "roll +<stat> instead"', () => {
+    expect(extractStatReplacement('Roll +iron instead of +edge.')).toBe('iron');
+  });
+
+  it('handles "use +<stat> instead" and similar cues', () => {
+    expect(extractStatReplacement('You may use +wits instead of the listed stat.')).toBe('wits');
+  });
+
+  it('returns null for casual stat mentions ("heart of the matter")', () => {
+    expect(extractStatReplacement('In the heart of the matter, take +1 momentum.')).toBeNull();
+  });
+
+  it('returns null for situational stats (supply, integrity, etc.)', () => {
+    expect(extractStatReplacement('Roll +supply when checking your gear.')).toBeNull();
+  });
+
+  it('returns null on empty / null input', () => {
+    expect(extractStatReplacement('')).toBeNull();
+    expect(extractStatReplacement(null)).toBeNull();
+  });
+
+  it('picks the cued stat even when other stat words appear nearby', () => {
+    // edge mentioned in passing but heart is the explicit cue
+    expect(extractStatReplacement(
+      'Edge cases aside, you may roll +heart in place of the listed stat.',
+    )).toBe('heart');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // haikuFallback (DI-mocked)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -207,6 +254,35 @@ describe('haikuFallback', () => {
     const _call = vi.fn().mockResolvedValue('```json\n{"matches":[{"key":"a:0","summary":"ok"}]}\n```');
     const out = await haikuFallback([{ key: 'a:0', text: 'x' }], 'm', 'M', 'n', 'k', { _call });
     expect(out).toHaveLength(1);
+  });
+
+  it('threads statReplacement through the Haiku response', async () => {
+    const abilities = [{ key: 'a:0', assetName: 'Empath', text: 'You may roll +heart…' }];
+    const _call = vi.fn().mockResolvedValue(JSON.stringify({
+      matches: [{ key: 'a:0', summary: 'Roll heart instead', statReplacement: 'heart' }],
+    }));
+    const out = await haikuFallback(abilities, 'gather_information', 'Gather Information', 'I read them', 'k', { _call });
+    expect(out[0].statReplacement).toBe('heart');
+  });
+
+  it('rejects invalid stat replacements (supply, garbage, etc.)', async () => {
+    const abilities = [{ key: 'a:0', assetName: 'X', text: 'plain text with no cue' }];
+    const _call = vi.fn().mockResolvedValue(JSON.stringify({
+      matches: [{ key: 'a:0', summary: 's', statReplacement: 'supply' }],
+    }));
+    const out = await haikuFallback(abilities, 'm', 'M', 'n', 'k', { _call });
+    // Haiku returned an invalid stat; parser scrubs it to null AND the
+    // regex fallback on the plain text doesn't find a substitution either.
+    expect(out[0].statReplacement).toBeNull();
+  });
+
+  it('falls back to regex extraction when Haiku omits statReplacement', async () => {
+    const abilities = [{ key: 'a:0', assetName: 'Empath', text: 'You may roll +heart in place of the listed stat.' }];
+    const _call = vi.fn().mockResolvedValue(JSON.stringify({
+      matches: [{ key: 'a:0', summary: 's' }],
+    }));
+    const out = await haikuFallback(abilities, 'm', 'M', 'n', 'k', { _call });
+    expect(out[0].statReplacement).toBe('heart');
   });
 });
 
