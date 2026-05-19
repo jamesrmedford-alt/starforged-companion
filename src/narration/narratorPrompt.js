@@ -3,6 +3,7 @@
 // No Foundry API calls — all inputs are passed in; safe to call in tests.
 
 import { formatSafetyContext } from '../context/safety.js';
+import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -53,7 +54,11 @@ export function appendSidecarInstruction() {
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
     '- The "ship" subject is reserved for the player\'s command vehicle.',
-    '  Use it only when narration actually moves the ship.',
+    '  Use it only when narration actually moves the ship. Persistent',
+    '  position updates use the exact shape',
+    '  { "subject": "ship", "attribute": "position", "value": "<destination',
+    '  name>" } — the value is matched against known settlements,',
+    '  planets, and locations.',
     '- Do not declare a truth that diverges from the active scene block. If',
     '  a fact needs to change, the player or GM will retract the old one.',
   ].join('\n');
@@ -136,8 +141,15 @@ export function buildLedgerBlock(campaignState, options = {}) {
     }
   }
 
+  // ── Ship position (§20) ──────────────────────────────────────────────────
+  // The command vehicle's persistent position record is fact-continuity
+  // confirmed-lore tier — it is never dropped under budget pressure and
+  // renders even when truths / state are otherwise empty. Returns "" when
+  // no command vehicle exists or its position record is blank.
+  const shipPositionLine = buildShipPositionLine(campaignState);
+
   // ── Empty short-circuit ──────────────────────────────────────────────────
-  if (!truthLines.length && !stateLines.length) {
+  if (!truthLines.length && !stateLines.length && !shipPositionLine) {
     return {
       header: '', truths: '', state: '', shipPosition: '', combined: '',
       tokenEstimates: { header: 0, truths: 0, state: 0, ship: 0 },
@@ -145,13 +157,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  const header = [
-    '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
-    '',
-    'You established the following facts during this scene. They are',
-    'binding. Subsequent narration must honour them and may add to them,',
-    'but must not diverge from them.',
-  ].join('\n');
+  // Header only renders when there are truths or state to introduce —
+  // the SHIP POSITION line stands on its own when it's the only thing
+  // in the block (§20).
+  const header = (truthLines.length || stateLines.length)
+    ? [
+        '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
+        '',
+        'You established the following facts during this scene. They are',
+        'binding. Subsequent narration must honour them and may add to them,',
+        'but must not diverge from them.',
+      ].join('\n')
+    : '';
 
   const truthsBlock = truthLines.length
     ? ['TRUTHS:', ...truthLines].join('\n')
@@ -162,29 +179,71 @@ export function buildLedgerBlock(campaignState, options = {}) {
     : '';
 
   // ── Soft-cap enforcement: drop state when over budget ────────────────────
+  // Ship position counts toward the budget for telemetry but is never
+  // dropped — it's confirmed-lore tier per scope §20.5. State drops first
+  // when the cap is exceeded.
   const tokenEstimates = {
     header: estimateTokens(header),
     truths: estimateTokens(truthsBlock),
     state:  estimateTokens(stateBlock),
-    ship:   0,
+    ship:   estimateTokens(shipPositionLine),
   };
-  let total = tokenEstimates.header + tokenEstimates.truths + tokenEstimates.state;
+  let total = tokenEstimates.header + tokenEstimates.truths
+            + tokenEstimates.state + tokenEstimates.ship;
   if (total > maxTokens && stateBlock) {
     stateBlock = '';
     tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.truths;
+    total = tokenEstimates.header + tokenEstimates.truths + tokenEstimates.ship;
   }
 
-  const combined = [header, truthsBlock, stateBlock].filter(Boolean).join('\n\n');
+  const combined = [header, truthsBlock, stateBlock, shipPositionLine]
+    .filter(Boolean)
+    .join('\n\n');
 
   return {
     header,
-    truths: truthsBlock,
-    state:  stateBlock,
-    shipPosition: '',
+    truths:       truthsBlock,
+    state:        stateBlock,
+    shipPosition: shipPositionLine,
     combined,
     tokenEstimates,
   };
+}
+
+/**
+ * Render the SHIP POSITION line for the section-6.5 ledger block, when
+ * the campaign state has a registered command vehicle with a non-empty
+ * position record. Returns "" when no information is available —
+ * callers treat this as the "omit" signal.
+ *
+ * Reads the command vehicle directly off the global game.actors / the
+ * campaign state shipIds list. Wrapped in try/catch so the assembler
+ * never throws because of a stale Actor reference.
+ *
+ * Exported for unit testing.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+export function buildShipPositionLine(campaignState) {
+  if (!campaignState) return '';
+  try {
+    const ids   = Array.isArray(campaignState.shipIds) ? campaignState.shipIds : [];
+    const MID   = 'starforged-companion';
+    let payload = null;
+    let actor   = null;
+    for (const id of ids) {
+      const a = globalThis.game?.actors?.get?.(id);
+      const p = a?.flags?.[MID]?.ship;
+      if (p?.isCommandVehicle) { payload = p; actor = a; break; }
+    }
+    if (!payload) return '';
+    const name = actor?.name ?? payload?.name ?? '';
+    return formatShipPositionLine(payload.position, campaignState, name);
+  } catch (err) {
+    console.warn?.('starforged-companion | buildShipPositionLine failed:', err?.message ?? err);
+    return '';
+  }
 }
 
 /**

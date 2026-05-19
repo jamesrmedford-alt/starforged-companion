@@ -89,6 +89,11 @@ const SETTING = {
   FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
   FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
+  // ── Fact continuity — ship positioning (§20) ─────────────────────────────
+  FC_SHIP_POSITIONING:         'factContinuity.shipPositioning',
+  FC_SHIP_AUTO_MOVE:           'factContinuity.shipAutoMoveOnCourse',
+  FC_SHIP_TOKEN_ENABLED:       'factContinuity.shipTokenEnabled',
+  FC_SHIP_TOKEN_SNAP_RADIUS:   'factContinuity.shipTokenSnapRadius',
 };
 
 const PACING_DEFAULTS = {
@@ -504,6 +509,45 @@ export function registerSettings() {
     type:    Boolean,
     default: false,
   });
+
+  // Fact-continuity §20 — ship positioning. Four settings gate the full
+  // feature: master toggle, the set_a_course auto-update, the sector-
+  // Scene Token affordance, and the Token snap radius.
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_POSITIONING, {
+    name:    'Ship Positioning',
+    hint:    'Track the command vehicle’s position (sector / planet / nearest settlement) and surface it in the narrator’s system prompt. Position updates from `!at`, non-miss `set_a_course`, narrator sidecar, and (when enabled) sector-Scene Token drag.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE, {
+    name:    'Auto-Move Ship on Set a Course',
+    hint:    'When enabled, a strong / weak hit on Set a Course updates the command vehicle’s position to the destination named in the player’s narration. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED, {
+    name:    'Sector-Scene Ship Token',
+    hint:    'Place a Token representing the command vehicle on the sector Scene. Dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would. The Token snaps back to its previous position on a miss.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS, {
+    name:    'Ship Token Snap Radius (grid cells)',
+    hint:    'How close the Token must come to a settlement Note pin to count as a destination drop. 0 = exact-cell overlap; 2 = forgiving. Default 1.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 1,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +595,27 @@ export function getFactContinuityLedgerInContext(){ return game.settings.get(MOD
 export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
 export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
+
+// Ship positioning (§20) — feature-gated via a master toggle plus three
+// per-trigger toggles. All four default to "on" so a fresh world that
+// upgrades to this version gets the full experience without configuration.
+// Reads tolerate the settings being unregistered (unit tests, early init).
+export function getShipPositioningEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_POSITIONING) !== false; } catch { return true; }
+}
+export function getShipAutoMoveOnCourse() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE) !== false; } catch { return true; }
+}
+export function getShipTokenEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED) !== false; } catch { return true; }
+}
+export function getShipTokenSnapRadius() {
+  try {
+    const v = Number(game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS));
+    if (!Number.isFinite(v) || v < 0) return 1;
+    return v;
+  } catch { return 1; }
+}
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)

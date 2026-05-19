@@ -72,6 +72,23 @@ export const ShipSchema = {
   canonicalLocked: false,
   generativeTier:  [],
 
+  // Persistent ship position (fact-continuity scope §20). The command
+  // vehicle's spatial state — surfaced in narrator Section 6.5 and
+  // updated by `!at`, non-miss `set_a_course`, narrator sidecar
+  // `subject: "ship"`, and the sector-Scene Token drag. All IDs may
+  // be null simultaneously (ship adrift in unmapped space); `freeText`
+  // covers that case.
+  position: {
+    sectorId:            null,   // campaignState.sectors[*].id
+    nearestPlanetId:     null,   // Actor / record id of nearest planet
+    nearestSettlementId: null,   // Actor / record id of nearest settlement
+    freeText:            "",     // free-text fallback
+    updatedAt:           null,
+    updatedBy:           null,   // "at_command" | "set_a_course" |
+                                 //   "narrator_sidecar" | "scene_token" |
+                                 //   "manual"
+  },
+
   createdAt: null,
   updatedAt: null,
 };

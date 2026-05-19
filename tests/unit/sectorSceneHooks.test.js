@@ -12,6 +12,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   registerSectorSceneHooks,
   handleSectorNoteClick,
+  handleCommandVehicleTokenDrag,
+  nearestSettlementNote,
 } from '../../src/sectors/sectorSceneHooks.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -147,5 +149,155 @@ describe('registerSectorSceneHooks', () => {
     expect(original).toHaveBeenCalledTimes(1);
 
     delete globalThis.foundry.canvas;
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// Token-drag set_a_course — fact-continuity §20.4b
+// ────────────────────────────────────────────────────────────────────
+
+function makeSettlementNote(id, x, y, name = id, extraFlags = {}) {
+  return {
+    id, x, y, text: name,
+    flags: { [MODULE_ID]: { sectorNote: true, settlementId: id, ...extraFlags } },
+  };
+}
+
+function makeSectorScene({ id = 'scene1', notes = [], gridSize = 100 } = {}) {
+  return {
+    id,
+    grid: { size: gridSize },
+    notes,
+    flags: { [MODULE_ID]: { sectorScene: true } },
+  };
+}
+
+describe('nearestSettlementNote', () => {
+  it('returns the closest settlement Note within radius', () => {
+    const scene = makeSectorScene({
+      notes: [
+        makeSettlementNote('near', 100, 100),
+        makeSettlementNote('far',  500, 500),
+      ],
+    });
+    const hit = nearestSettlementNote(scene, 110, 110, 200);
+    expect(hit?.id).toBe('near');
+  });
+
+  it('returns null when no Note is within radius', () => {
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('s1', 500, 500)],
+    });
+    expect(nearestSettlementNote(scene, 0, 0, 100)).toBeNull();
+  });
+
+  it('ignores planet and stellar Notes (settlement Notes only)', () => {
+    const scene = makeSectorScene({
+      notes: [
+        makeSettlementNote('p1', 100, 100, 'Planet', { planetNote: true }),
+        makeSettlementNote('s1', 200, 100),
+      ],
+    });
+    const hit = nearestSettlementNote(scene, 110, 110, 200);
+    expect(hit?.id).toBe('s1');
+  });
+
+  it('ignores Notes without a settlementId flag', () => {
+    const noFlag = { id: 'x', x: 100, y: 100, text: 'X', flags: { [MODULE_ID]: { sectorNote: true } } };
+    const scene = makeSectorScene({ notes: [noFlag] });
+    expect(nearestSettlementNote(scene, 100, 100, 200)).toBeNull();
+  });
+
+  it('returns null on empty / malformed scene', () => {
+    expect(nearestSettlementNote(null, 0, 0, 100)).toBeNull();
+    expect(nearestSettlementNote({}, 0, 0, 100)).toBeNull();
+    expect(nearestSettlementNote({ notes: [] }, 0, 0, 100)).toBeNull();
+  });
+});
+
+describe('handleCommandVehicleTokenDrag', () => {
+  let originalChatMessageCreate;
+  let createCalls;
+
+  beforeEach(() => {
+    createCalls = [];
+    originalChatMessageCreate = globalThis.ChatMessage?.create;
+    globalThis.ChatMessage = globalThis.ChatMessage ?? {};
+    globalThis.ChatMessage.create = vi.fn(async (data) => {
+      createCalls.push(data);
+      return { id: 'msg1', ...data };
+    });
+    // Settings: shipTokenEnabled defaults to "enabled" when the read returns
+    // undefined (the registration default), and shipTokenSnapRadius defaults
+    // to 1 cell. Both fall through cleanly without setup.
+  });
+
+  function restore() {
+    if (originalChatMessageCreate !== undefined) {
+      globalThis.ChatMessage.create = originalChatMessageCreate;
+    }
+  }
+
+  it('passes through when the Token is not flagged as the command vehicle', () => {
+    const result = handleCommandVehicleTokenDrag(
+      { flags: {}, x: 0, y: 0 },
+      { x: 100, y: 100 },
+    );
+    expect(result).toBeUndefined();
+    restore();
+  });
+
+  it('passes through when no position change is in the diff', () => {
+    const result = handleCommandVehicleTokenDrag(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: 100, y: 100 },
+      { name: 'renamed' },
+    );
+    expect(result).toBeUndefined();
+    restore();
+  });
+
+  it('passes through when the parent Scene is not a sector Scene', () => {
+    const scene = { id: 's', flags: { [MODULE_ID]: {} }, notes: [] };
+    const result = handleCommandVehicleTokenDrag(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 100, y: 100 },
+    );
+    expect(result).toBeUndefined();
+    restore();
+  });
+
+  it('passes through (free-text reposition) when no settlement Note is within radius', () => {
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('s1', 1000, 1000)],
+    });
+    const result = handleCommandVehicleTokenDrag(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 50, y: 50 },
+    );
+    expect(result).toBeUndefined();
+    restore();
+  });
+
+  it('returns false (cancels drag) and dispatches set_a_course when drop is near a settlement', async () => {
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('s1', 100, 100, 'Bleakhold')],
+    });
+    const result = handleCommandVehicleTokenDrag(
+      { id: 'tok1', flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 110, y: 110 },
+    );
+    expect(result).toBe(false);
+    // Dispatch is via setTimeout(…, 0) — flush the microtask queue.
+    await new Promise(r => setTimeout(r, 5));
+    expect(createCalls).toHaveLength(1);
+    const flag = createCalls[0].flags?.[MODULE_ID];
+    expect(flag?.bypassPacing).toBe(true);
+    expect(flag?.forcedMoveId).toBe('set_a_course');
+    expect(flag?.forcedMoveTarget).toBe('Bleakhold');
+    expect(flag?.tokenDragSetCourse?.destNoteId).toBe('s1');
+    expect(flag?.tokenDragSetCourse?.destX).toBe(100);
+    expect(flag?.tokenDragSetCourse?.destY).toBe(100);
+    restore();
   });
 });

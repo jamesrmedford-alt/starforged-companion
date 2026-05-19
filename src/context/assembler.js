@@ -143,10 +143,14 @@ export async function assembleContextPacket(resolution, campaignState, options =
     : { combined: "", header: "", truths: "", state: "", shipPosition: "", tokenEstimates: {} };
   // The header + truths render together so the header stays attached to the
   // never-dropped portion; state renders standalone and may drop on its own.
+  // Ship position (§20) is its own never-dropped chunk — it surfaces even
+  // when truths / state are empty so the narrator always knows where the
+  // ship is.
   const ledgerTruthsContent = ledger.combined
     ? [ledger.header, ledger.truths].filter(Boolean).join("\n\n")
     : "";
   const ledgerStateContent  = ledger.state ?? "";
+  const ledgerShipContent   = ledger.shipPosition ?? "";
 
   // ── Section 7: Matched entity cards ───────────────────────────────────────
   const entityCardsContent = buildEntityCardsSection(matchedEntityIds, matchedEntityTypes);
@@ -205,6 +209,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
       characterState:       { content: characterContent,           priority: 1 },
       connections:          { content: connectionsContent,         priority: 1 },
       ledgerTruths:         { content: ledgerTruthsContent,        priority: 1 },
+      ledgerShipPosition:   { content: ledgerShipContent,           priority: 1 },
       assertedLore:         { content: assertedLoreContent,        priority: 2 },
       nonImmediateThreats:  { content: nonImmediateThreatsContent, priority: 3 },
       entityCards:          { content: entityCardsContent,         priority: 4 },
@@ -234,10 +239,13 @@ export async function assembleContextPacket(resolution, campaignState, options =
   ]);
 
   // Section 6.5 renders header+truths followed by state, both filtered by
-  // the budget enforcer.
+  // the budget enforcer. Ship position (§20) renders last in the block so
+  // the narrator reads "where the ship is" after the binding truths and
+  // current state — closest to the moment of acting.
   const section65 = joinSubsections([
     budgetResult.included.ledgerTruths,
     budgetResult.included.ledgerState,
+    budgetResult.included.ledgerShipPosition,
   ]);
 
   const parts = [

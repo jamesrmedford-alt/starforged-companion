@@ -19,6 +19,7 @@
 import {
   iconForPlanetType,
   iconForStellarObject,
+  pickStarshipIcon,
 } from "../system/ironswornAssets.js";
 
 const MODULE_ID = "starforged-companion";
@@ -252,11 +253,119 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     }
   }
 
+  // Fact-continuity scope §20.4b — place a Token for the command vehicle
+  // if one is registered. Subsequent drags onto a settlement Note pin
+  // trigger a Set a Course pipeline. Failure here never breaks the sector
+  // creation; the Token is a parallel input affordance and the position
+  // still updates from `!at` / `set_a_course` regardless.
+  try {
+    await placeCommandVehicleTokenIfPresent(scene, sector);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | createSectorScene: command-vehicle Token placement failed:`, err);
+  }
+
   // Note: scene.activate() is intentionally NOT called.
   // The GM navigates to the new scene manually.
   // Auto-activation would disrupt all connected clients mid-session.
 
   return scene;
+}
+
+
+/**
+ * Place a Token on the sector Scene representing the command vehicle, if
+ * one exists. Idempotent — does nothing when the scene already carries a
+ * command-vehicle Token, or when no command vehicle has been registered
+ * yet. Exported so a `ready`-hook retrofit can add the Token to scenes
+ * that were created before this feature shipped.
+ *
+ * Position: centered on the settlement Note matching
+ * `position.nearestSettlementId` if present, else the scene's centre.
+ *
+ * @param {Scene} scene
+ * @param {Object} sector — the SectorResult the scene was built from
+ * @returns {Promise<TokenDocument|null>}
+ */
+export async function placeCommandVehicleTokenIfPresent(scene, sector) {
+  if (!scene || !game?.settings) return null;
+
+  // Skip when the feature is disabled or the Token affordance is off.
+  // Reads are defensive — settings may be unregistered in tests.
+  try {
+    const positioningEnabled =
+      game.settings.get(MODULE_ID, "factContinuity.shipPositioning") !== false;
+    const tokenEnabled =
+      game.settings.get(MODULE_ID, "factContinuity.shipTokenEnabled") !== false;
+    if (!positioningEnabled || !tokenEnabled) return null;
+  } catch (err) {
+    // Settings not registered (unit tests, very early init). Default-on
+    // behaviour matches the module's setting defaults; log at debug.
+    console.debug?.(`${MODULE_ID} | placeCommandVehicleTokenIfPresent: settings read failed:`, err?.message ?? err);
+  }
+
+  // Existing Token? Don't duplicate.
+  const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
+  const existing = Array.isArray(tokens)
+    ? tokens.find(t => t?.flags?.[MODULE_ID]?.commandVehicle)
+    : null;
+  if (existing) return existing;
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const cvIds         = Array.isArray(campaignState.shipIds) ? campaignState.shipIds : [];
+  let commandActorId  = null;
+  let commandPayload  = null;
+  for (const id of cvIds) {
+    const actor = game.actors?.get?.(id);
+    const ship  = actor?.flags?.[MODULE_ID]?.ship;
+    if (ship?.isCommandVehicle) { commandActorId = actor.id; commandPayload = ship; break; }
+  }
+  if (!commandActorId) return null;             // No command vehicle yet — skip.
+
+  // Anchor coordinates: the matching settlement pin, or scene centre.
+  const mapSettlements   = sector?.mapData?.settlements ?? [];
+  const anchorSettlement = commandPayload?.position?.nearestSettlementId
+    ? mapSettlements.find(s => s.id === commandPayload.position.nearestSettlementId)
+    : null;
+
+  const { gridCellSize, sceneWidth, sceneHeight } = SCENE_CONFIG;
+  const tokenX = anchorSettlement
+    ? anchorSettlement.gridX * gridCellSize
+    : Math.floor(sceneWidth  / 2 / gridCellSize) * gridCellSize;
+  const tokenY = anchorSettlement
+    ? anchorSettlement.gridY * gridCellSize
+    : Math.floor(sceneHeight / 2 / gridCellSize) * gridCellSize;
+
+  const cvActor = game.actors?.get?.(commandActorId);
+  const iconSrc = cvActor?.img && !cvActor.img.endsWith("mystery-man.svg")
+    ? cvActor.img
+    : pickStarshipIcon(commandActorId);
+
+  const tokenData = {
+    name:        cvActor?.name ?? commandPayload?.name ?? "Command Vehicle",
+    actorId:     commandActorId,
+    actorLink:   true,           // Drag-on-scene updates the prototype, not a copy.
+    x:           tokenX,
+    y:           tokenY,
+    width:       1,
+    height:      1,
+    texture:     { src: iconSrc },
+    disposition: 1,              // Friendly (CONST.TOKEN_DISPOSITIONS.FRIENDLY)
+    flags: {
+      [MODULE_ID]: {
+        commandVehicle: true,
+        sectorId:       sector?.id ?? null,
+      },
+    },
+  };
+
+  try {
+    const created = await scene.createEmbeddedDocuments("Token", [tokenData], { render: false });
+    console.log(`${MODULE_ID} | createSectorScene: command-vehicle Token placed`);
+    return Array.isArray(created) ? created[0] : created;
+  } catch (err) {
+    console.error(`${MODULE_ID} | createSectorScene: Token placement failed:`, err);
+    return null;
+  }
 }
 
 
