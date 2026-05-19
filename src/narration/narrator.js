@@ -12,9 +12,10 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance } from '../context/relevanceResolver.js';
-import { extractSidecar } from '../factContinuity/sidecarParser.js';
-import { applySidecar }   from '../factContinuity/ledgers.js';
-import { startScene }     from '../factContinuity/sceneLifecycle.js';
+import { extractSidecar }     from '../factContinuity/sidecarParser.js';
+import { applySidecar }       from '../factContinuity/ledgers.js';
+import { inferShipPosition }  from '../factContinuity/shipPosition.js';
+import { startScene }         from '../factContinuity/sceneLifecycle.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -1210,8 +1211,27 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   }
 
   if (sidecar && campaignState) {
+    // Fact-continuity §20 — the "ship" subject is special-cased. A
+    // stateChange with subject === "ship" and attribute === "position"
+    // is routed to the command vehicle's persistent position field,
+    // NOT to sceneState. We pull those entries out before applySidecar
+    // sees them so the ledger stays clean and the assembler reads the
+    // new position from the Ship Actor on the next turn.
+    const shipPositionChanges = [];
+    const otherChanges = [];
+    for (const c of sidecar.stateChanges ?? []) {
+      const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
+      const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
+      if (subject === 'ship' && attribute === 'position') {
+        shipPositionChanges.push(c);
+      } else {
+        otherChanges.push(c);
+      }
+    }
+    const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
+
     try {
-      applySidecar(sidecar, {
+      applySidecar(filteredSidecar, {
         campaignState,
         sessionId: campaignState.currentSessionId ?? null,
         sceneId:   campaignState.currentSceneId   ?? null,
@@ -1223,6 +1243,12 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
       );
     } catch (err) {
       console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
+    }
+
+    if (shipPositionChanges.length) {
+      applyShipPositionChanges(shipPositionChanges, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
+      );
     }
   }
 
@@ -1448,5 +1474,41 @@ async function _getChronicleEntries(campaignState) {
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: _getChronicleEntries failed:`, err);
     return [];
+  }
+}
+
+/**
+ * Apply sidecar state changes with subject === "ship" and attribute ===
+ * "position" to the command vehicle's persistent position record
+ * (fact-continuity scope §20.4). Multiple entries collapse to the last
+ * — the narrator only meaningfully asserts one position per turn, and
+ * preserving every intermediate is noise.
+ *
+ * Quietly no-ops when no command vehicle is registered or the feature
+ * is gated off. Errors are swallowed at debug — the narrator's
+ * primary output (the prose) has already posted by this point.
+ */
+async function applyShipPositionChanges(changes, campaignState) {
+  if (!Array.isArray(changes) || !changes.length) return;
+  // Feature gate is checked lazily so this module stays import-safe in
+  // unit tests where `game.settings` may be partial.
+  let enabled = true;
+  try { enabled = game.settings.get(MODULE_ID, 'factContinuity.shipPositioning') !== false; }
+  catch { enabled = true; }
+  if (!enabled) return;
+  if (!game.user?.isGM) return;
+
+  const last = changes[changes.length - 1];
+  const dest = typeof last?.value === 'string' ? last.value.trim() : '';
+  if (!dest) return;
+
+  try {
+    const { getCommandVehicle, updateShip } = await import('../entities/ship.js');
+    const cv = getCommandVehicle(campaignState);
+    if (!cv?._id) return;
+    const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    await updateShip(cv._id, { position });
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | shipPosition: sidecar update for "${dest}" failed:`, err?.message ?? err);
   }
 }

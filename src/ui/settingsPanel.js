@@ -89,6 +89,11 @@ const SETTING = {
   FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
   FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
+  // ── Fact continuity — ship positioning (§20) ─────────────────────────────
+  FC_SHIP_POSITIONING:         'factContinuity.shipPositioning',
+  FC_SHIP_AUTO_MOVE:           'factContinuity.shipAutoMoveOnCourse',
+  FC_SHIP_TOKEN_ENABLED:       'factContinuity.shipTokenEnabled',
+  FC_SHIP_TOKEN_SNAP_RADIUS:   'factContinuity.shipTokenSnapRadius',
 };
 
 const PACING_DEFAULTS = {
@@ -504,6 +509,45 @@ export function registerSettings() {
     type:    Boolean,
     default: false,
   });
+
+  // Fact-continuity §20 — ship positioning. Four settings gate the full
+  // feature: master toggle, the set_a_course auto-update, the sector-
+  // Scene Token affordance, and the Token snap radius.
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_POSITIONING, {
+    name:    'Ship Positioning',
+    hint:    'Track the command vehicle’s position (sector / planet / nearest settlement) and surface it in the narrator’s system prompt. Position updates from `!at`, non-miss `set_a_course`, narrator sidecar, and (when enabled) sector-Scene Token drag.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE, {
+    name:    'Auto-Move Ship on Set a Course',
+    hint:    'When enabled, a strong / weak hit on Set a Course updates the command vehicle’s position to the destination named in the player’s narration. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED, {
+    name:    'Sector-Scene Ship Token',
+    hint:    'Place a Token representing the command vehicle on the sector Scene. Dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would. The Token snaps back to its previous position on a miss.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS, {
+    name:    'Ship Token Snap Radius (grid cells)',
+    hint:    'How close the Token must come to a settlement Note pin to count as a destination drop. 0 = exact-cell overlap; 2 = forgiving. Default 1.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 1,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +595,27 @@ export function getFactContinuityLedgerInContext(){ return game.settings.get(MOD
 export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
 export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
+
+// Ship positioning (§20) — feature-gated via a master toggle plus three
+// per-trigger toggles. All four default to "on" so a fresh world that
+// upgrades to this version gets the full experience without configuration.
+// Reads tolerate the settings being unregistered (unit tests, early init).
+export function getShipPositioningEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_POSITIONING) !== false; } catch { return true; }
+}
+export function getShipAutoMoveOnCourse() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE) !== false; } catch { return true; }
+}
+export function getShipTokenEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED) !== false; } catch { return true; }
+}
+export function getShipTokenSnapRadius() {
+  try {
+    const v = Number(game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS));
+    if (!Number.isFinite(v) || v < 0) return 1;
+    return v;
+  } catch { return 1; }
+}
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -1479,7 +1544,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       </div>
     ` : '';
 
-    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities);
+    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities, context.statUsed);
 
     const html = `
       <div class="sf-move-confirm">
@@ -1539,17 +1604,30 @@ export class MoveConfirmDialog extends ApplicationV2 {
     // object is shared by reference with the caller.
     try {
       const root = this.element ?? document;
-      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb[data-adds]:checked') ?? [];
+      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
       let total = 0;
       const applied = [];
+      const offeredStats = new Set();
       checked.forEach(cb => {
         const n = Number(cb.dataset.adds ?? 0);
         if (Number.isFinite(n) && n > 0) total += n;
         if (cb.dataset.key) applied.push(cb.dataset.key);
+        const stat = cb.dataset.statReplacement;
+        if (stat) offeredStats.add(stat);
       });
+      // Stat substitution — apply only when the selected radio matches one
+      // of the offered stats and at least one ability advertising that
+      // substitution is currently checked. Otherwise the user has
+      // unchecked the gating ability and the substitution must not fire.
+      let pickedStat = '';
+      const picked = root.querySelector?.('input[name="sf-stat-sub"]:checked');
+      const candidate = String(picked?.value ?? '').trim();
+      if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
+
       if (this.#interp) {
-        this.#interp.appliedAbilityAdds = total;
-        this.#interp.appliedAbilityKeys = applied;
+        this.#interp.appliedAbilityAdds  = total;
+        this.#interp.appliedAbilityKeys  = applied;
+        this.#interp.appliedStatReplacement = pickedStat || null;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);
@@ -1571,12 +1649,17 @@ export class MoveConfirmDialog extends ApplicationV2 {
  * value, since the most common reason an ability surfaces is to add to
  * the roll; player can uncheck if it doesn't apply this turn.
  */
-function renderApplicableAbilitiesBlock(abilities) {
+function renderApplicableAbilitiesBlock(abilities, currentStat) {
   if (!Array.isArray(abilities) || abilities.length === 0) return '';
   const items = abilities.map(a => {
     const adds      = Number(a.adds ?? 0);
-    const checked   = adds > 0 ? 'checked' : '';
+    const stat      = typeof a.statReplacement === 'string' ? a.statReplacement : '';
+    // Pre-check when there's a numeric add OR a stat substitution — both
+    // are concrete mechanical effects the player will almost always want
+    // to apply when the ability fires.
+    const checked   = (adds > 0 || stat) ? 'checked' : '';
     const addsLabel = adds > 0 ? `<span class="sf-ability-adds">+${adds}</span>` : '';
+    const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
     const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
@@ -1585,19 +1668,47 @@ function renderApplicableAbilitiesBlock(abilities) {
         <input type="checkbox" class="sf-applicable-ability-cb"
                data-key="${escapeAttr(a.key)}"
                data-adds="${adds}"
+               data-stat-replacement="${escapeAttr(stat)}"
                ${checked}>
         <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
         ${addsLabel}
+        ${statLabel}
         <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
         ${summary}
       </label>`;
   }).join('');
+
+  // Build the stat-override block — one radio per unique replacement stat
+  // advertised by the ability list, plus a "Keep listed stat" default.
+  const uniqueStats = Array.from(new Set(
+    abilities
+      .map(a => (typeof a.statReplacement === 'string' ? a.statReplacement : ''))
+      .filter(Boolean),
+  ));
+  const statSubBlock = uniqueStats.length ? `
+    <div class="confirm-stat-substitution" data-current-stat="${escapeAttr(currentStat || '')}">
+      <span class="confirm-field-label">Stat substitution</span>
+      <div class="sf-stat-sub-row">
+        <label class="sf-stat-sub-option">
+          <input type="radio" name="sf-stat-sub" value="" checked>
+          Keep listed (+${escapeAttr(currentStat || '?')})
+        </label>
+        ${uniqueStats.map(stat => `
+          <label class="sf-stat-sub-option">
+            <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
+            Substitute +${escapeAttr(stat)}
+          </label>`).join('')}
+      </div>
+      <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>
+    </div>` : '';
+
   return `
     <div class="confirm-applicable-abilities">
       <span class="confirm-field-label">Applicable abilities</span>
       <div class="sf-ability-list">${items}</div>
       <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+      ${statSubBlock}
     </div>`;
 }
 

@@ -91,6 +91,8 @@ import {
   getAutoRecapEnabled,
   getSessionGapHours,
   getRecapGmOnly,
+  getShipPositioningEnabled,
+  getShipAutoMoveOnCourse,
 } from "./ui/settingsPanel.js";
 
 import {
@@ -115,6 +117,7 @@ import {
   resolveSubject as fcResolveSubject,
   subjectKey as fcSubjectKey,
 } from "./factContinuity/ledgers.js";
+import { inferShipPosition } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -136,7 +139,10 @@ import {
   handleMigrateEntitiesCommand,
 } from "./entities/migrator.js";
 import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
-import { registerSectorSceneHooks }   from "./sectors/sectorSceneHooks.js";
+import {
+  registerSectorSceneHooks,
+  moveCommandVehicleTokenToDestination,
+} from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM }              from "./multiplayer/gmGate.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
@@ -597,6 +603,15 @@ export function registerChatHook() {
       ? message.flags[MODULE_ID].forcedMoveId
       : null;
 
+    // The Token-drag set_a_course affordance (fact-continuity §20.4b)
+    // also forces a move. The destination name flows in via
+    // `forcedMoveTarget` so the resolver / position-update path can
+    // pick it up without re-interpreting the prose.
+    const forcedMoveTarget = typeof message.flags?.[MODULE_ID]?.forcedMoveTarget === "string"
+      ? message.flags[MODULE_ID].forcedMoveTarget
+      : null;
+    const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
+
     // Pacing classifier — decides whether to run the move pipeline, narrate
     // only, or narrate with an inline move suggestion. The classifier runs
     // freely; only the MOVE branch claims the pendingMove lock below.
@@ -640,7 +655,7 @@ export function registerChatHook() {
 
     try {
       const interpretation = forcedMoveId
-        ? buildForcedInterpretation(forcedMoveId, narration, dial)
+        ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget)
         : await interpretMove(narration, {
             campaignState,
             mischiefLevel: dial,
@@ -685,6 +700,19 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
 
+      // Stat substitution — when an asset ability (e.g. Empath's
+      // "roll +heart in place of the listed stat") was offered AND the
+      // player picked it on the confirm dialog, swap the move stat
+      // before stat-value enrichment reads the actor sheet. The dialog
+      // has already gated the value to one of the offered stats.
+      const subStat = typeof interpretation.appliedStatReplacement === 'string'
+        ? interpretation.appliedStatReplacement.trim()
+        : '';
+      if (subStat) {
+        interpretation.statSubstitutedFrom = interpretation.statUsed;
+        interpretation.statUsed = subStat;
+      }
+
       // Fill in statValue from the speaker's character sheet. The
       // interpreter system prompt explicitly tells the model to leave
       // statValue at 0 and have the calling code fill it in (see
@@ -703,6 +731,36 @@ export function registerChatHook() {
         : null;
 
       const resolution = resolveMove(interpretation, campaignState, { combatPosition });
+
+      // Fact-continuity §20 — when set_a_course resolves to a non-miss,
+      // the ship arrived at the destination the player named. Infer the
+      // new position and write it onto the command vehicle BEFORE the
+      // assembler builds the context packet so Section 6.5 reflects
+      // the arrival on this same turn.
+      if (
+        resolution.moveId === "set_a_course"
+        && resolution.outcome !== "miss"
+        && getShipPositioningEnabled()
+        && getShipAutoMoveOnCourse()
+        && game.user.isGM
+      ) {
+        await maybeUpdateShipPositionFromName(
+          interpretation.moveTarget,
+          campaignState,
+          tokenDragSetCourse ? "scene_token" : "set_a_course",
+        );
+
+        // §20.4b — when the move was initiated by a Token drag and we
+        // succeeded, also move the Token to the destination Note's
+        // coordinates. On a miss the Token never moved (the drag was
+        // cancelled in the preUpdateToken hook), so no snap-back is
+        // needed.
+        if (tokenDragSetCourse) {
+          await moveCommandVehicleTokenToDestination(tokenDragSetCourse).catch(err =>
+            console.warn(`${MODULE_ID} | Token-drag commit failed:`, err),
+          );
+        }
+      }
 
       // Step 7: relevance resolver — picks the narrator-permission block
       // and identifies which entity records to inject as cards. For hybrid
@@ -1386,7 +1444,7 @@ async function handleJournalCommand(message) {
  * to the move's first listed stat; the confirmation dialog still lets the
  * player override.
  */
-function buildForcedInterpretation(moveId, narration, mischiefLevel) {
+function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null) {
   const moveData = MOVES[moveId];
   const statUsed = moveData?.stat?.[0] ?? null;
   const moveName = moveId.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
@@ -1401,6 +1459,7 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel) {
     adds:             0,
     isProgressMove:   moveData?.progressMove === true,
     progressTicks:    0,
+    moveTarget:       typeof moveTarget === "string" && moveTarget.trim() ? moveTarget.trim() : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
     confidence:       "high",
@@ -1772,10 +1831,46 @@ async function handleAtCommand(message) {
   campaignState.currentLocationId   = match.id;
   campaignState.currentLocationType = match.type;
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
+
+  // Fact-continuity §20 — when ship positioning is enabled, treat the
+  // GM's `!at` as "the party (and their ship) is here." Infer the
+  // position from the same name the player typed and persist it on
+  // the command vehicle.
+  await maybeUpdateShipPositionFromName(arg, campaignState, "at_command");
+
   await ChatMessage.create({
     content: `<p>Current location set to <strong>${match.entity.name}</strong> (${match.type}).</p>`,
     flags:   { [MODULE_ID]: { atCommandCard: true } },
   });
+}
+
+/**
+ * Update the command vehicle's persistent position from a free-text
+ * destination name. Quietly no-ops when the feature is disabled or no
+ * command vehicle is registered. Errors are logged at debug level —
+ * a missed position write does not block the originating chat command
+ * (`!at`, `set_a_course`) and does not throw into the pipeline.
+ *
+ * Exported so the move-resolution path and the future Token-drag
+ * handler can both reach the same logic.
+ */
+export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual") {
+  if (!getShipPositioningEnabled()) return null;
+  const ref = typeof name === "string" ? name.trim() : "";
+  if (!ref) return null;
+  if (!game.user?.isGM) return null;            // world-scoped write — GM only
+
+  try {
+    const { getCommandVehicle, updateShip } = await import("./entities/ship.js");
+    const cv = getCommandVehicle(campaignState);
+    if (!cv?._id) return null;
+    const position = inferShipPosition(ref, campaignState, { source });
+    await updateShip(cv._id, { position });
+    return position;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | shipPosition: update from "${ref}" failed:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**

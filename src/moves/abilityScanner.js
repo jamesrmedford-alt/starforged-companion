@@ -48,6 +48,13 @@ const KNOWN_CHARACTER_CATEGORIES = [
 
 const MAX_ABILITY_TEXT_CHARS = 600;
 
+// Stats that an asset ability may substitute for the listed move stat
+// (e.g. Empath's "roll +heart in place of the listed stat"). Only the five
+// canonical stats are valid substitutions per the play kit — supply /
+// integrity / health / spirit / companion_health are situational stats
+// scoped to specific moves and never substitute.
+const SUBSTITUTABLE_STATS = ["edge", "heart", "iron", "shadow", "wits"];
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLLECTION
@@ -178,9 +185,16 @@ export async function haikuFallback(abilities, moveId, moveName, narration, apiK
   // Map LLM-returned keys back to the original ability records.
   const byKey = new Map(abilities.map(a => [a.key, a]));
   return parsed
-    .map(({ key, summary }) => {
+    .map(({ key, summary, statReplacement }) => {
       const ab = byKey.get(key);
-      return ab ? { ...ab, summary: summary ?? "" } : null;
+      if (!ab) return null;
+      return {
+        ...ab,
+        summary:         summary ?? "",
+        // Prefer the LLM's read when present; fall back to regex on the
+        // ability text so structured-match abilities also get a clean signal.
+        statReplacement: statReplacement ?? extractStatReplacement(ab.text),
+      };
     })
     .filter(Boolean);
 }
@@ -199,12 +213,13 @@ function buildHaikuPrompt(abilities, moveId, moveName, narration) {
     list,
     ``,
     `Return ONLY a JSON object of the form:`,
-    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>" }, ... ] }`,
+    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>", "statReplacement": "<one of edge|heart|iron|shadow|wits, or null>" }, ... ] }`,
     ``,
     `Rules:`,
     `- Include an ability only when its trigger condition genuinely applies to this move and this narration.`,
     `- Do NOT include abilities whose trigger is unrelated (e.g. an "Endure Harm" ability when the move is "Gather Information").`,
     `- "matches" may be an empty array. Prefer false negatives over false positives.`,
+    `- statReplacement: set to one of the five stats ONLY when the ability text explicitly lets the player roll a different stat than the move's listed one (e.g. Empath's "roll +heart in place of the listed stat"). Otherwise return null. Numeric +N adds are reported via the adds extractor, not here.`,
     `- Output JSON only, no prose, no markdown fences.`,
   ].join("\n");
 }
@@ -217,7 +232,11 @@ function parseHaikuResponse(raw) {
     const arr = Array.isArray(parsed?.matches) ? parsed.matches : [];
     return arr
       .filter(m => m && typeof m.key === "string")
-      .map(m => ({ key: m.key, summary: String(m.summary ?? "").trim() }));
+      .map(m => ({
+        key:             m.key,
+        summary:         String(m.summary ?? "").trim(),
+        statReplacement: SUBSTITUTABLE_STATS.includes(m.statReplacement) ? m.statReplacement : null,
+      }));
   } catch (err) {
     console.warn(`${MODULE_ID} | abilityScanner: Haiku JSON parse failed:`, err.message);
     return [];
@@ -278,16 +297,60 @@ export async function scanForApplicableAbilities({
 
 function annotate(detection) {
   return (ab) => ({
-    key:          ab.key,
-    assetName:    ab.assetName,
-    category:     ab.category,
-    source:       ab.source,
-    abilityName:  ab.abilityName,
-    summary:      ab.summary ?? "",
-    text:         ab.text,
-    adds:         extractAdds(ab.text),
+    key:             ab.key,
+    assetName:       ab.assetName,
+    category:        ab.category,
+    source:          ab.source,
+    abilityName:     ab.abilityName,
+    summary:         ab.summary ?? "",
+    text:            ab.text,
+    adds:            extractAdds(ab.text),
+    // The Haiku path already populated statReplacement on its return shape;
+    // the structured path lands here with no such field, so derive it from
+    // the ability text via the regex fallback.
+    statReplacement: ab.statReplacement ?? extractStatReplacement(ab.text),
     detection,
   });
+}
+
+/**
+ * Best-effort stat-substitution extraction. Looks for patterns that signal
+ * the ability lets the player roll a different stat than the move's
+ * listed one (e.g. Empath: "you may roll +heart in place of the listed
+ * stat"). Returns one of the five canonical stat keys
+ * (edge / heart / iron / shadow / wits) or null when nothing matches.
+ *
+ * Patterns recognised:
+ *   - "roll +<stat>"                  → Empath's classic phrasing
+ *   - "roll +<stat> instead"
+ *   - "roll +<stat> in place of"
+ *   - "may roll +<stat>"
+ *   - "use +<stat> in place of"
+ *   - "use <stat> instead"
+ *
+ * Numeric +N adds are reported by extractAdds — those are roll modifiers,
+ * not stat replacements.
+ */
+export function extractStatReplacement(text) {
+  const s = String(text ?? "").toLowerCase();
+  if (!s) return null;
+  const statRe = SUBSTITUTABLE_STATS.join("|");
+  // Cue + "+stat" form — the leading + is what distinguishes a substitute
+  // from a casual mention ("heart of the matter"). Strict order of cues
+  // matters: longer cues first so "in place of" beats "place".
+  const cued = new RegExp(
+    `(?:roll|use|may\\s+roll|may\\s+use)\\s+\\+?(${statRe})\\b(?:\\s+(?:instead|in\\s+place\\s+of))?`,
+    "i",
+  );
+  const cuedMatch = s.match(cued);
+  if (cuedMatch) return cuedMatch[1];
+  // "in place of the listed stat" / "instead of" with a stat earlier in
+  // the sentence — looser fallback. Only accepts the +<stat> form so we
+  // don't pick up the casual mentions.
+  const looseRe = new RegExp(`\\+(${statRe})\\b[^.]*(?:instead|in\\s+place\\s+of)`, "i");
+  const loose = s.match(looseRe);
+  if (loose) return loose[1];
+  return null;
 }
 
 /**
