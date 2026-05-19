@@ -18,6 +18,43 @@ import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
  *
  * Returns a single string ready to push onto the system-prompt parts array.
  */
+/**
+ * NPC-dialogue markup instruction — audio-narration scope §6.
+ *
+ * Appended to the narrator system prompt only when the audio.enabled
+ * world setting is true. Tells the model to wrap NPC speech in
+ * `<npc>…</npc>` so the audio pipeline can split the response into
+ * voice-tagged segments. The chat card strips the markers at render
+ * time; players see clean prose.
+ *
+ * Player-character speech is NOT tagged — players hear their own
+ * characters internally; flattening PC dialogue to the narrator voice
+ * is intentional.
+ */
+export function appendNpcMarkupInstruction() {
+  return [
+    '## NPC DIALOGUE MARKUP — required when audio narration is enabled',
+    '',
+    'Wrap each piece of NPC dialogue in <npc>…</npc> tags. Examples:',
+    '',
+    '  Vance pauses. <npc>"You can\'t be serious."</npc> The lights flicker.',
+    '  <npc>"You won\'t find them there,"</npc> Kira says, not looking up.',
+    '',
+    'Rules:',
+    '- Only NPC speech. Player-character speech does NOT get tagged',
+    '  (players hear their own characters in their own heads; flatten to',
+    '  the narrator voice).',
+    '- One tag pair per dialogue chunk. Do not nest. Do not split a single',
+    '  spoken line across multiple tag pairs.',
+    '- Quoted text that is NOT spoken dialogue (a sign, a comm transmission',
+    '  read aloud, a remembered phrase) is NOT tagged.',
+    '- The narrator voice handles everything outside <npc> tags, including',
+    '  attribution ("Vance says", "she replies"), action beats, and',
+    '  description.',
+    '- Tags appear inside the prose body only, not inside the sidecar JSON.',
+  ].join('\n');
+}
+
 export function appendSidecarInstruction() {
   return [
     '## RESPONSE FORMAT — MANDATORY SIDECAR',
@@ -778,6 +815,15 @@ export function buildNarratorSystemPrompt(
   // gated by the master Fact Continuity setting.
   if (factContinuityEnabled) {
     parts.push(appendSidecarInstruction());
+  }
+
+  // [10] Audio NPC-dialogue markup instruction — appended only when audio
+  // narration is enabled. Tells the narrator to wrap NPC speech with
+  // <npc>…</npc> so the audio pipeline can dispatch a distinct voice. See
+  // docs/audio-narration-scope.md §6.
+  const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
+  if (audioMarkupEnabled) {
+    parts.push(appendNpcMarkupInstruction());
   }
 
   return parts.join('\n\n---\n\n');

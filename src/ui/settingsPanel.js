@@ -758,6 +758,8 @@ export class SettingsPanelApp extends ApplicationV2 {
       savePacingSettings:          SettingsPanelApp.#onSavePacingSettings,
       saveFactContinuitySettings:  SettingsPanelApp.#onSaveFactContinuitySettings,
       saveApiKeys:                 SettingsPanelApp.#onSaveApiKeys,
+      saveAudioSettings:           SettingsPanelApp.#onSaveAudioSettings,
+      refreshAudioBudget:          SettingsPanelApp.#onRefreshAudioBudget,
     },
   };
 
@@ -817,7 +819,18 @@ export class SettingsPanelApp extends ApplicationV2 {
       apiKeys: game.user.isGM ? {
         claudeKeySet:     !!game.settings.get(MODULE_ID, 'claudeApiKey'),
         openRouterKeySet: !!game.settings.get(MODULE_ID, 'openRouterApiKey'),
+        elevenLabsKeySet: !!game.settings.get(MODULE_ID, 'elevenLabsApiKey'),
       } : null,
+      audio: {
+        enabled:         (() => { try { return game.settings.get(MODULE_ID, 'audio.enabled') === true; } catch { return false; } })(),
+        narratorVoiceId: (() => { try { return game.settings.get(MODULE_ID, 'audio.narratorVoiceId') ?? ''; } catch { return ''; } })(),
+        npcVoiceId:      (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceId') ?? ''; } catch { return ''; } })(),
+        modelId:         (() => { try { return game.settings.get(MODULE_ID, 'audio.modelId') ?? 'eleven_flash_v2_5'; } catch { return 'eleven_flash_v2_5'; } })(),
+        speed:           (() => { try { return Number(game.settings.get(MODULE_ID, 'audio.speed') ?? 1.0); } catch { return 1.0; } })(),
+        clientEnabled:   (() => { try { return game.settings.get(MODULE_ID, 'audio.clientEnabled') === true; } catch { return false; } })(),
+        autoplay:        (() => { try { return game.settings.get(MODULE_ID, 'audio.autoplay') === true; } catch { return false; } })(),
+        volume:          (() => { try { return Number(game.settings.get(MODULE_ID, 'audio.volume') ?? 0.8); } catch { return 0.8; } })(),
+      },
     };
   }
 
@@ -826,6 +839,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       { id: 'safety',   label: 'Safety'   },
       { id: 'mischief', label: 'Mischief' },
       { id: 'narrator', label: 'Narrator' },
+      { id: 'audio',    label: 'Audio'    },
       { id: 'about',    label: 'About'    },
     ];
 
@@ -841,6 +855,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       case 'safety':   paneHtml = this.#renderSafetyPane(context);   break;
       case 'mischief': paneHtml = this.#renderMischiefPane(context); break;
       case 'narrator': paneHtml = this.#renderNarratorPane(context); break;
+      case 'audio':    paneHtml = this.#renderAudioPane(context);    break;
       case 'about':    paneHtml = this.#renderAboutPane(context);    break;
     }
 
@@ -1140,6 +1155,125 @@ export class SettingsPanelApp extends ApplicationV2 {
     `;
   }
 
+  // -----------------------------------------------------------------------
+  // Audio pane — docs/audio-narration-scope.md §5
+  //
+  // GM section: world-scoped voice/model/speed/master toggle + budget
+  // refresh button. Player section: per-client enable / volume / autoplay.
+  // -----------------------------------------------------------------------
+  #renderAudioPane(ctx = {}) {
+    const a = ctx.audio ?? {};
+    const escAttr = (s) => String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+    const MODEL_OPTIONS = [
+      { id: 'eleven_flash_v2_5',      label: 'Flash v2.5 — fastest, lowest cost'   },
+      { id: 'eleven_turbo_v2_5',      label: 'Turbo v2.5 — balanced'                },
+      { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — long-form quality'  },
+      { id: 'eleven_v3',              label: 'Eleven v3 — highest expressiveness'   },
+    ];
+
+    const modelOptionsHtml = MODEL_OPTIONS.map(m => `
+      <option value="${escAttr(m.id)}" ${a.modelId === m.id ? 'selected' : ''}>${m.label}</option>
+    `).join('');
+
+    const gmBlock = ctx.isGM ? `
+      <fieldset class="settings-fieldset">
+        <legend>World audio settings (GM)</legend>
+        <p class="settings-field-hint">
+          These controls are shared across all players. Voice IDs come from your
+          ElevenLabs voice library — paste the ID, not the display name.
+        </p>
+        <div class="settings-field">
+          <label class="settings-field-label">
+            <input type="checkbox" name="audio.enabled" ${a.enabled ? 'checked' : ''}>
+            Enable audio narration for this world
+          </label>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-narrator-voice">Narrator voice ID</label>
+          <input class="settings-input" type="text" id="sf-audio-narrator-voice"
+                 name="audio.narratorVoiceId" value="${escAttr(a.narratorVoiceId)}"
+                 placeholder="e.g. 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-npc-voice">NPC voice ID</label>
+          <input class="settings-input" type="text" id="sf-audio-npc-voice"
+                 name="audio.npcVoiceId" value="${escAttr(a.npcVoiceId)}"
+                 placeholder="e.g. pNInz6obpgDQGcFmaJgB" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-model">Model</label>
+          <select class="settings-input" id="sf-audio-model" name="audio.modelId">
+            ${modelOptionsHtml}
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-speed">Playback speed: ${Number(a.speed).toFixed(2)}×</label>
+          <input class="settings-input" type="range" id="sf-audio-speed"
+                 name="audio.speed" min="0.7" max="1.5" step="0.05"
+                 value="${escAttr(a.speed)}">
+        </div>
+        <div class="settings-field">
+          <button class="settings-btn" data-action="refreshAudioBudget">
+            ⟳ Check ElevenLabs usage
+          </button>
+          <p class="settings-field-hint">
+            Shows characters used / limit in a toast. Read-only; no hard cutoff.
+          </p>
+        </div>
+      </fieldset>
+    ` : `
+      <p class="safety-readonly-note">
+        Voice and model selection are configured by the GM.
+      </p>
+    `;
+
+    return `
+      <div class="audio-pane">
+        ${gmBlock}
+
+        <fieldset class="settings-fieldset">
+          <legend>Your client</legend>
+          <p class="settings-field-hint">
+            Each player decides whether audio plays on their own client. The
+            ElevenLabs API key is entered in the About tab.
+          </p>
+          <div class="settings-field">
+            <label class="settings-field-label">
+              <input type="checkbox" name="audio.clientEnabled"
+                     ${a.clientEnabled ? 'checked' : ''}>
+              Enable audio narration on this client
+            </label>
+          </div>
+          <div class="settings-field">
+            <label class="settings-field-label" for="sf-audio-volume">
+              Volume: ${Math.round(Number(a.volume) * 100)}%
+            </label>
+            <input class="settings-input" type="range" id="sf-audio-volume"
+                   name="audio.volume" min="0" max="1" step="0.05"
+                   value="${escAttr(a.volume)}">
+          </div>
+          <div class="settings-field">
+            <label class="settings-field-label">
+              <input type="checkbox" name="audio.autoplay"
+                     ${a.autoplay ? 'checked' : ''}>
+              Auto-play narrator audio when a card appears
+            </label>
+            <p class="settings-field-hint">
+              Off by default. Browsers require a user gesture before audio can
+              play — the first card after a page load shows a brief
+              "click anywhere" overlay.
+            </p>
+          </div>
+        </fieldset>
+
+        <div class="settings-actions">
+          <button class="settings-btn" data-action="saveAudioSettings">Save Audio Settings</button>
+        </div>
+      </div>
+    `;
+  }
+
   #renderAboutPane(ctx = {}) {
     const sessionLabel = ctx.sessionNumber
       ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
@@ -1210,6 +1344,18 @@ export class SettingsPanelApp extends ApplicationV2 {
               <input class="settings-input api-key-input" type="password"
                      id="sf-openrouter-key" name="openRouterApiKey"
                      placeholder="sk-or-v1-..."
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <div class="api-key-field">
+              <label class="api-key-label" for="sf-elevenlabs-key">
+                ElevenLabs API Key (audio narration)
+                ${ctx.apiKeys.elevenLabsKeySet
+                  ? '<span class="api-key-status api-key-set">● Set</span>'
+                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+              </label>
+              <input class="settings-input api-key-input" type="password"
+                     id="sf-elevenlabs-key" name="elevenLabsApiKey"
+                     placeholder="sk_..."
                      autocomplete="off" spellcheck="false">
             </div>
             <div class="api-key-actions">
@@ -1449,6 +1595,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const panel          = this.element;
       const claudeKey      = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
       const openRouterKey  = panel.querySelector('[name="openRouterApiKey"]')?.value?.trim();
+      const elevenLabsKey  = panel.querySelector('[name="elevenLabsApiKey"]')?.value?.trim();
 
       if (claudeKey) {
         await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
@@ -1456,12 +1603,78 @@ export class SettingsPanelApp extends ApplicationV2 {
       if (openRouterKey) {
         await game.settings.set(MODULE_ID, 'openRouterApiKey', openRouterKey);
       }
+      if (elevenLabsKey) {
+        await game.settings.set(MODULE_ID, 'elevenLabsApiKey', elevenLabsKey);
+      }
 
-      if (claudeKey || openRouterKey) {
+      if (claudeKey || openRouterKey || elevenLabsKey) {
         ui.notifications.info('Starforged Companion: API keys saved.');
       }
 
       this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  // -----------------------------------------------------------------------
+  // Audio tab — audio narration settings (docs/audio-narration-scope.md §5).
+  // Action handler defined as static private; the audio pane renderer
+  // composes the markup based on isGM (world fields hidden for non-GMs).
+  // -----------------------------------------------------------------------
+
+  static #onSaveAudioSettings(_event, _target) {
+    const work = (async () => {
+      const panel = this.element;
+
+      // World-scoped (GM only).
+      if (game.user.isGM) {
+        const enabled       = !!panel.querySelector('[name="audio.enabled"]')?.checked;
+        const narratorVoice = panel.querySelector('[name="audio.narratorVoiceId"]')?.value?.trim();
+        const npcVoice      = panel.querySelector('[name="audio.npcVoiceId"]')?.value?.trim();
+        const modelId       = panel.querySelector('[name="audio.modelId"]')?.value?.trim();
+        const speed         = Number(panel.querySelector('[name="audio.speed"]')?.value);
+
+        await game.settings.set(MODULE_ID, 'audio.enabled', enabled);
+        if (narratorVoice) await game.settings.set(MODULE_ID, 'audio.narratorVoiceId', narratorVoice);
+        if (npcVoice)      await game.settings.set(MODULE_ID, 'audio.npcVoiceId',      npcVoice);
+        if (modelId)       await game.settings.set(MODULE_ID, 'audio.modelId',         modelId);
+        if (Number.isFinite(speed)) await game.settings.set(MODULE_ID, 'audio.speed', speed);
+      }
+
+      // Client-scoped (anyone).
+      const clientEnabled = !!panel.querySelector('[name="audio.clientEnabled"]')?.checked;
+      const autoplay      = !!panel.querySelector('[name="audio.autoplay"]')?.checked;
+      const volume        = Number(panel.querySelector('[name="audio.volume"]')?.value);
+
+      await game.settings.set(MODULE_ID, 'audio.clientEnabled', clientEnabled);
+      await game.settings.set(MODULE_ID, 'audio.autoplay',      autoplay);
+      if (Number.isFinite(volume)) await game.settings.set(MODULE_ID, 'audio.volume', volume);
+
+      ui.notifications.info('Starforged Companion: Audio settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  static #onRefreshAudioBudget(_event, _target) {
+    const work = (async () => {
+      try {
+        const { fetchSubscription } = await import('../audio/elevenlabs.js');
+        const key = game.settings.get(MODULE_ID, 'elevenLabsApiKey') ?? '';
+        if (!key) {
+          ui.notifications.warn('Starforged Companion: ElevenLabs key not set.');
+          return;
+        }
+        const { used, limit } = await fetchSubscription(key);
+        ui.notifications.info(
+          `ElevenLabs usage: ${used.toLocaleString()} / ${limit.toLocaleString()} characters`,
+        );
+      } catch (err) {
+        console.warn(`${MODULE_ID} | audio budget refresh failed:`, err);
+        ui.notifications.error('Starforged Companion: Could not read ElevenLabs usage.');
+      }
     })();
     this._lastAction = work;
     return work;

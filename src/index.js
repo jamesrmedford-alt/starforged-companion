@@ -277,6 +277,58 @@ function registerCoreSettings() {
     type:    String,
     default: "en-US",
   });
+
+  // -------------------------------------------------------------------------
+  // Audio narration (docs/audio-narration-scope.md)
+  //
+  // World-scoped GM controls: master toggle, voice IDs, model, speed, cache
+  // cap. Client-scoped per-player controls: API key, client enable, volume,
+  // autoplay. The Companion Settings panel surfaces these through a dedicated
+  // Audio tab; none of them appear in Foundry's default Configure Settings
+  // dialog.
+  // -------------------------------------------------------------------------
+  game.settings.register(MODULE_ID, "audio.enabled", {
+    name: "Audio narration enabled", scope: "world", config: false,
+    type: Boolean, default: false,
+  });
+  game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
+    name: "Narrator voice ID", scope: "world", config: false,
+    type: String, default: "21m00Tcm4TlvDq8ikWAM",
+  });
+  game.settings.register(MODULE_ID, "audio.npcVoiceId", {
+    name: "NPC voice ID", scope: "world", config: false,
+    type: String, default: "pNInz6obpgDQGcFmaJgB",
+  });
+  game.settings.register(MODULE_ID, "audio.modelId", {
+    name: "ElevenLabs model", scope: "world", config: false,
+    type: String, default: "eleven_flash_v2_5",
+  });
+  game.settings.register(MODULE_ID, "audio.speed", {
+    name: "Playback speed", scope: "world", config: false,
+    type: Number, default: 1.0, range: { min: 0.7, max: 1.5, step: 0.1 },
+  });
+  game.settings.register(MODULE_ID, "audio.cacheMaxBytes", {
+    name: "Audio cache size cap (bytes)", scope: "world", config: false,
+    type: Number, default: 200 * 1024 * 1024,
+  });
+
+  game.settings.register(MODULE_ID, "elevenLabsApiKey", {
+    name: "ElevenLabs API Key",
+    hint: "Your ElevenLabs API key. Stored locally in your browser — never sent to Foundry's server.",
+    scope: "client", config: false, type: String, default: "",
+  });
+  game.settings.register(MODULE_ID, "audio.clientEnabled", {
+    name: "Enable audio narration on this client", scope: "client",
+    config: false, type: Boolean, default: false,
+  });
+  game.settings.register(MODULE_ID, "audio.volume", {
+    name: "Audio volume", scope: "client", config: false,
+    type: Number, default: 0.8, range: { min: 0, max: 1, step: 0.05 },
+  });
+  game.settings.register(MODULE_ID, "audio.autoplay", {
+    name: "Auto-play narrator audio", scope: "client", config: false,
+    type: Boolean, default: false,
+  });
 }
 
 
@@ -2176,6 +2228,10 @@ Hooks.once("ready", () => {
   registerDraftCardHooks();
   registerSectorOverviewSync();
   registerSectorSceneHooks();
+  // Audio narration — socket relay for cache writes from non-GM clients.
+  import("./audio/index.js").then(({ registerAudioSocket }) => {
+    registerAudioSocket();
+  }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,
@@ -2388,6 +2444,25 @@ Hooks.on("renderChatMessage", (message, html) => {
       console.error(`${MODULE_ID} | openCorrectionDialog failed:`, err),
     );
   });
+});
+
+/**
+ * renderChatMessage — wire the "▶ Play" audio button on narrator cards
+ * (docs/audio-narration-scope.md §9). The button is rendered hidden by
+ * postNarrationCard / postPacedNarrativeCard; this hook unhides it and
+ * binds playback when the player has opted in on this client.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  if (!message.flags?.[MODULE_ID]?.narratorCard) return;
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+  // Dynamic import keeps module load order tolerant — audio code is
+  // optional and shouldn't block chat rendering if it fails to load.
+  import("./audio/index.js").then(({ onNarratorCardRendered }) => {
+    onNarratorCardRendered(message, root).catch(err =>
+      console.warn(`${MODULE_ID} | audio render failed:`, err),
+    );
+  }).catch(err => console.warn(`${MODULE_ID} | audio module load failed:`, err));
 });
 
 /**

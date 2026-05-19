@@ -48,7 +48,10 @@ export default [
         MouseEvent:  "readonly",
         Response:    "readonly",
         Uint8Array: "readonly",
+        ArrayBuffer: "readonly",
         AbortSignal: "readonly",
+        TextEncoder: "readonly",
+        crypto:      "readonly",
 
         // ── The Forge globals ────────────────────────────────────────────
         ForgeVTT:  "readonly",
