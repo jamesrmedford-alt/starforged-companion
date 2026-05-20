@@ -569,14 +569,18 @@ export class EntityPanelApp extends ApplicationV2 {
   // Action handlers
   // -----------------------------------------------------------------------
 
-  static async #onSelectEntity(event, target) {
+  static #onSelectEntity(event, target) {
     this.#selectedId = target.dataset.journalId;
-    this.render();
+    const work = this.render();
+    this._lastAction = work;
+    return work;
   }
 
-  static async #onBackToList(_event, _target) {
+  static #onBackToList(_event, _target) {
     this.#selectedId = null;
-    this.render();
+    const work = this.render();
+    this._lastAction = work;
+    return work;
   }
 
   /**
@@ -752,21 +756,29 @@ export class EntityPanelApp extends ApplicationV2 {
     this.render();
   }
 
-  static async #onSetCurrentLocation(event, target) {
-    const journalId = target.dataset.journalId;
-    const type      = target.dataset.type;
-    if (!journalId || !type) return;
-    if (!game.user.isGM) {
-      ui?.notifications?.warn('Setting the current location is GM-only (writes campaign state).');
-      return;
-    }
+  static #onSetCurrentLocation(event, target) {
+    const work = (async () => {
+      const journalId = target.dataset.journalId;
+      const type      = target.dataset.type;
+      if (!journalId || !type) return;
+      if (!game.user.isGM) {
+        ui?.notifications?.warn('Setting the current location is GM-only (writes campaign state).');
+        return;
+      }
 
-    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
-    const isAlreadyCurrent = campaignState.currentLocationId === journalId;
-    campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
-    campaignState.currentLocationType = isAlreadyCurrent ? null : type;
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
-    this.render();
+      const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+      const isAlreadyCurrent = campaignState.currentLocationId === journalId;
+      campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
+      campaignState.currentLocationType = isAlreadyCurrent ? null : type;
+      await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      this.render();
+    })();
+    // Expose the in-flight promise so integration tests (clickAction) can
+    // await the full async chain. ApplicationV2 dispatches actions
+    // fire-and-forget; without this, the second click in the toggle test
+    // can race against the first click's settings.set socket round-trip.
+    this._lastAction = work;
+    return work;
   }
 
   // -----------------------------------------------------------------------

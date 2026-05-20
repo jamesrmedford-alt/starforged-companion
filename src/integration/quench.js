@@ -20,6 +20,7 @@ const MODULE_PATH = "/modules/starforged-companion/src";
 // quenchReady only fires when Quench is installed and active
 // no guard needed here
 Hooks.on("quenchReady", (quench) => {
+  installAutoChatCleanup(quench);
   registerSafetyTests(quench);
   registerActorBridgeTests(quench);
   registerProgressTrackTests(quench);
@@ -89,6 +90,57 @@ async function withTempSetting(key, value, fn) {
   await game.settings.set(MODULE_ID, key, value);
   try { return await fn(); }
   finally { await game.settings.set(MODULE_ID, key, original); }
+}
+
+/**
+ * Wrap quench.registerBatch so every registered batch automatically:
+ *   1. Snapshots the set of existing ChatMessage ids at suite start.
+ *   2. Deletes every ChatMessage that did NOT exist in that snapshot at
+ *      suite end, leaving chat exactly as it was before the batch ran.
+ *
+ * Catches both direct posts (narrator cards, draft entity cards, GM
+ * whispers, recap cards, …) and indirect side-effects — most notably
+ * the foundry-ironsworn system's automatic "+N momentum (now X)" cards
+ * that fire whenever a meter changes on a character Actor.
+ *
+ * Registered before the user body so our `before` hook runs first
+ * (snapshot taken before any per-batch seeding) and our `after` hook
+ * runs last (after user `after` hooks complete their own cleanup, so
+ * messages created during teardown are still swept).
+ *
+ * Non-GM clients skip cleanup — `ChatMessage#delete` requires permissions
+ * the player won't have for cards another user created.
+ */
+function installAutoChatCleanup(quench) {
+  const realRegister = quench.registerBatch.bind(quench);
+  quench.registerBatch = function patchedRegisterBatch(name, body, options) {
+    return realRegister(name, (context) => {
+      let baselineIds = null;
+      context.before(function () {
+        baselineIds = new Set(game.messages?.contents?.map(m => m.id) ?? []);
+      });
+      try {
+        body(context);
+      } finally {
+        // Register our `after` regardless of whether the batch body threw
+        // synchronously during registration, so chat is still swept clean.
+        context.after(async function () {
+          if (!baselineIds) return;
+          if (!game.user?.isGM) { baselineIds = null; return; }
+          const toDelete = (game.messages?.contents ?? []).filter(
+            m => !baselineIds.has(m.id),
+          );
+          for (const m of toDelete) {
+            if (m?.delete) {
+              await m.delete().catch(err =>
+                console.warn(`${MODULE_ID} | quench: auto-cleanup delete failed for ${m.id}:`, err));
+            }
+          }
+          baselineIds = null;
+        });
+      }
+    }, options);
+  };
 }
 
 /** Yield to the microtask queue and one animation frame so async handlers settle. */
@@ -2947,15 +2999,12 @@ function registerEntityPanelActionsTests(quench) {
           if (!app || !testSettlementId) { this.skip(); return; }
 
           // Make sure we're on the list view, then click into the settlement detail.
-          let backBtn = app.element.querySelector('[data-action="backToList"]');
+          const backBtn = app.element.querySelector('[data-action="backToList"]');
           if (backBtn) {
-            backBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await clickAction(app, "backToList");
             await awaitRender(app);
           }
-          const row = app.element.querySelector(
-            `[data-action="selectEntity"][data-journal-id="${testSettlementId}"]`);
-          assert.isNotNull(row, "seeded Settlement row should be present in the panel");
-          row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          await clickAction(app, "selectEntity", { journalId: testSettlementId });
           await awaitRender(app);
 
           const setBtn = app.element.querySelector(
@@ -2966,9 +3015,10 @@ function registerEntityPanelActionsTests(quench) {
             "the button's data-type should match the entity type",
           );
 
-          // First click — set as current location.
-          setBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          await flushMicrotasks(); await flushMicrotasks();
+          // First click — set as current location. clickAction awaits the
+          // handler's `_lastAction` promise, so settings.set has fully
+          // propagated to the local cache by the time we read state.
+          await clickAction(app, "setCurrentLocation", { journalId: testSettlementId });
           await awaitRender(app);
 
           let state = game.settings.get(MODULE_ID, "campaignState");
@@ -2981,12 +3031,8 @@ function registerEntityPanelActionsTests(quench) {
             "campaignState.currentLocationType should be 'settlement'",
           );
 
-          // Second click — toggling clears both pointers.
-          const setBtn2 = app.element.querySelector(
-            `[data-action="setCurrentLocation"][data-journal-id="${testSettlementId}"]`);
-          assert.isNotNull(setBtn2, "setCurrentLocation button should still be present after re-render");
-          setBtn2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          await flushMicrotasks(); await flushMicrotasks();
+          // Second click — toggling clears both pointers. Same await flow.
+          await clickAction(app, "setCurrentLocation", { journalId: testSettlementId });
           await awaitRender(app);
 
           state = game.settings.get(MODULE_ID, "campaignState");
