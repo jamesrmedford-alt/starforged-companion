@@ -203,6 +203,49 @@ describe('cache.lookup / cache.write', () => {
     const hash = '4'.repeat(64);
     await expect(cacheWrite(hash, { not: 'bytes' })).rejects.toThrow(/ArrayBuffer/);
   });
+
+  // AUDIO-002 — The Forge stores uploaded files in the user's Assets
+  // Library and returns an absolute https://assets.forge-vtt.com/... URL
+  // in the upload response. The constructed local path does not exist
+  // on Forge and 404s on playback. write() must return the upload
+  // response's path so playback uses the Forge URL.
+  it('write() returns the upload response path when present (Forge)', async () => {
+    const fp = globalThis.foundry.applications.apps.FilePicker.implementation;
+    const origUpload = fp.upload;
+    const forgeUrl = 'https://assets.forge-vtt.com/abc/audio/55/55'.padEnd(95, '5') + '.mp3';
+    fp.upload = async (source, dir, file) => {
+      fp._dirs.add(dir);
+      fp._files.add(forgeUrl);
+      fp._uploads.push({ source, dir, file });
+      return { status: 'success', path: forgeUrl };
+    };
+    try {
+      const hash = '5'.repeat(64);
+      const path = await cacheWrite(hash, new ArrayBuffer(8));
+      expect(path).toBe(forgeUrl);
+    } finally {
+      fp.upload = origUpload;
+    }
+  });
+
+  it('lookup() returns the browse listing path verbatim (Forge URL passthrough)', async () => {
+    const fp = globalThis.foundry.applications.apps.FilePicker.implementation;
+    const hash = '6'.repeat(64);
+    const forgeUrl = `https://assets.forge-vtt.com/abc/audio/66/${hash}.mp3`;
+    fp._files.add(forgeUrl);
+    const origBrowse = fp.browse;
+    fp.browse = async (source, path) => {
+      if (path === `worlds/test-world/audio/${hash.slice(0, 2)}`) {
+        return { files: [forgeUrl], dirs: [] };
+      }
+      return { files: [], dirs: [] };
+    };
+    try {
+      expect(await cacheLookup(hash)).toBe(forgeUrl);
+    } finally {
+      fp.browse = origBrowse;
+    }
+  });
 });
 
 
@@ -396,6 +439,46 @@ describe('PlaybackSession', () => {
     });
     await session.stop();
     expect(session.state).toBe(PLAYBACK_STATE.STOPPED);
+  });
+
+  // AUDIO-001 — Foundry v13 Sound.addEventListener throws for unsupported
+  // events. _playOneSound previously attached an "error" listener and went
+  // straight to the ERROR state before play() ran. The fix removes the
+  // listener and relies on play()'s promise rejection; this test pins
+  // both the no-attach behaviour and the rejection-routed failure path.
+  it('_playOneSound does not attach an "error" listener (Foundry v13 throws on unsupported events)', async () => {
+    const session = new PlaybackSession({
+      cardId: 'c4',
+      segments: [{ voice: 'narrator', src: '/x.mp3', text: 'x' }],
+    });
+    const playPromise = session.play();
+    await new Promise(r => setTimeout(r, 0));
+    const sound = globalThis.foundry.audio.Sound._instances[0];
+    expect(sound).toBeDefined();
+    expect(sound._listeners.error).toBeUndefined();
+    expect(Object.keys(sound._listeners)).toEqual(expect.arrayContaining(['end', 'stop']));
+    sound._fire('end');
+    await playPromise;
+    expect(session.state).toBe(PLAYBACK_STATE.IDLE);
+  });
+
+  it('routes a play() rejection to the ERROR state instead of throwing synchronously', async () => {
+    const SoundClass = globalThis.foundry.audio.Sound;
+    const origPlay = SoundClass.prototype.play;
+    SoundClass.prototype.play = async function() {
+      this._state = 'playing';
+      throw new Error('404 not found');
+    };
+    try {
+      const session = new PlaybackSession({
+        cardId: 'c5',
+        segments: [{ voice: 'narrator', src: '/missing.mp3', text: 'x' }],
+      });
+      await session.play();
+      expect(session.state).toBe(PLAYBACK_STATE.ERROR);
+    } finally {
+      SoundClass.prototype.play = origPlay;
+    }
   });
 });
 
