@@ -15,19 +15,42 @@ Do not introduce Cypress or CI workflows here — those belong in later phases.
 
 ## Prerequisites
 
-- Docker Desktop (macOS) with file sharing for your repo path enabled
+- **macOS** (this stack stores credentials in the macOS Keychain)
+- Docker Desktop with file sharing for your repo path enabled
 - A foundryvtt.com account that owns a Foundry license
 - About 1 GB of free disk for the Foundry zip + Node runtime + worlds
+
+## Credentials
+
+There is no `.env` file. foundryvtt.com username/password and the dev
+admin key all live in your **macOS Keychain** under service
+`starforged-ci-foundry`. They never touch disk in plaintext and can't be
+accidentally committed.
+
+`start.sh` will prompt for any missing values on first run and store
+them automatically. You can also manage them explicitly:
+
+```bash
+./scripts/credentials.sh set       # prompt + store all three
+./scripts/credentials.sh status    # show which are present (masked)
+./scripts/credentials.sh clear     # remove all three from Keychain
+```
+
+The Keychain stores three accounts under that service: `username`,
+`password`, `admin-key`. Look them up in Keychain Access.app if you want
+to inspect or edit them by hand.
+
+On first read after a fresh store, macOS may pop a dialog asking
+whether `security` (or `bash`) can access the Keychain item — pick
+**Always Allow** so subsequent boots are silent.
 
 ## Quick start
 
 ```bash
 cd test/ci
-cp .env.example .env
-$EDITOR .env                        # fill in FOUNDRY_USERNAME, FOUNDRY_PASSWORD
 ./scripts/install-deps.sh           # downloads ironsworn + Quench, copies the module
 ./scripts/setup-test-world.sh       # installs the world template
-./scripts/start.sh                  # boots Foundry, tails logs
+./scripts/start.sh                  # prompts for creds on first run, then boots
 ```
 
 Then open <http://localhost:30000> in your browser.
@@ -38,8 +61,10 @@ When you hit `http://localhost:30000` the first time you should see, in
 order:
 
 1. **EULA acceptance** — accept it.
-2. **Admin password prompt** — enter the value of `FOUNDRY_ADMIN_KEY` from
-   your `.env` (default: `atropos-dev`).
+2. **Admin password prompt** — enter the admin key you set in Keychain
+   (default suggestion: `atropos-dev`). If you forget what you set,
+   `./scripts/credentials.sh status` shows a masked preview; `clear` +
+   `set` lets you replace it.
 3. **Setup screen — World list** — `Starforged CI Test World` should be
    listed. Click **Launch World**.
 4. **Join screen** — pick the **Gamemaster** user, leave password blank
@@ -63,9 +88,10 @@ and start the stack freely without redoing it.
 |---|---|
 | `scripts/install-deps.sh` | Pre-populates `./data/Data/{systems,modules}` with foundry-ironsworn v1.27.0, latest Quench, and Starforged Companion (copied from the working tree). Re-run any time you change module source. |
 | `scripts/setup-test-world.sh` | Copies the world template into `./data/Data/worlds/starforged-ci-world/`. Idempotent — pass `--force` to wipe and reinstall. |
-| `scripts/start.sh` | `docker compose up -d` then tails logs. Ctrl+C detaches; the server keeps running. |
+| `scripts/credentials.sh` | Manage Keychain entries (`set`, `status`, `clear`, `export`). |
+| `scripts/start.sh` | Loads creds from Keychain (prompts on first run), `docker compose up -d`, tails logs. Ctrl+C detaches; the server keeps running. |
 | `scripts/stop.sh` | `docker compose down`. Preserves `./data/`. |
-| `scripts/reset.sh --yes` | Destroys the container and `./data/`. Use after a botched setup. |
+| `scripts/reset.sh --yes` | Destroys the container and `./data/`. Does **not** touch Keychain — use `scripts/credentials.sh clear` for that. |
 
 ## Refreshing the module under test
 

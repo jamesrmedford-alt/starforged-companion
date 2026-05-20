@@ -5,6 +5,11 @@
 # Quench pre-installed. The user logs in via http://localhost:30000 to run
 # integration tests manually.
 #
+# Credentials (FOUNDRY_USERNAME, FOUNDRY_PASSWORD, FOUNDRY_ADMIN_KEY)
+# come from macOS Keychain — start.sh exports them before invoking
+# compose. The ${VAR:?...} syntax below makes compose fail loudly if
+# you bypass start.sh and run `docker compose up` directly.
+#
 # Phase 1 of the CI work — no Cypress / no GitHub Actions yet.
 
 services:
@@ -24,11 +29,12 @@ services:
       # Logs, container_cache) across restarts. install-deps.sh writes
       # the systems/, modules/, and worlds/ trees here before boot.
       - ./data:/data
-    env_file:
-      - .env
     environment:
+      FOUNDRY_USERNAME:  ${FOUNDRY_USERNAME:?run scripts/start.sh — credentials come from macOS Keychain}
+      FOUNDRY_PASSWORD:  ${FOUNDRY_PASSWORD:?run scripts/start.sh — credentials come from macOS Keychain}
+      FOUNDRY_ADMIN_KEY: ${FOUNDRY_ADMIN_KEY:?run scripts/start.sh — credentials come from macOS Keychain}
       FOUNDRY_TELEMETRY: "false"
-      CONTAINER_CACHE: /data/container_cache
+      CONTAINER_CACHE:   /data/container_cache
       # Hostname Foundry advertises to clients. Matches the docker
       # hostname so license fingerprinting stays consistent.
-      FOUNDRY_HOSTNAME: starforged-ci-host
+      FOUNDRY_HOSTNAME:  starforged-ci-host

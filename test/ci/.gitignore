@@ -1,4 +1,5 @@
-# Real credentials — committed-credentials are a hard NO.
+# Credentials live in macOS Keychain (see scripts/credentials.sh), not in
+# any file. .env is ignored as defense-in-depth in case someone makes one.
 .env
 
 # Bind-mounted Foundry userData. Contains the licensed Foundry zip,
