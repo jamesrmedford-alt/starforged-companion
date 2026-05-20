@@ -112,7 +112,36 @@ jobs:
           EOF
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Job 3 — Release packaging
+  # Job 3 — Help site build check
+  # Renders the GitHub Pages site from src/help/helpJournal.js on every push
+  # and PR so a syntax error in PAGES is caught before merge. Does not deploy.
+  # ────────────────────────────────────────────────────────────────────────────
+  build-help-site:
+    name: Build Help Site
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build static help site
+        run: node scripts/build-help-site.mjs
+
+      - name: Verify output
+        run: |
+          test -f site/index.html
+          test -f site/styles.css
+          test -f site/.nojekyll
+          echo "Pages built:"
+          ls site/*.html | wc -l
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 4 — Release packaging
   # Only runs on version tags (v*). Creates a zip and GitHub release.
   # IMPORTANT: module.json version and URLs are updated BEFORE building the zip
   # so both the zip contents and the loose manifest attachment are consistent.

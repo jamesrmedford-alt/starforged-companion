@@ -2063,3 +2063,225 @@
 .sf-wj-entity-link-btn:hover {
   background: rgba(124, 92, 191, 0.1);
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* DRAFT ENTITY CARD — chat-card Confirm/Dismiss buttons                       */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.sf-draft-entity-card {
+  font-size: 0.95em;
+}
+
+.sf-draft-entity-label {
+  font-weight:   600;
+  margin-bottom: 0.4rem;
+}
+
+.sf-draft-entity-list {
+  list-style: none;
+  padding:    0;
+  margin:     0 0 0.4rem 0;
+}
+
+.sf-draft-row {
+  display:         flex;
+  align-items:     flex-start;
+  justify-content: space-between;
+  gap:             0.5rem;
+  padding:         4px 0;
+  border-bottom:   1px dashed var(--color-border-light, #eee);
+}
+
+.sf-draft-row:last-child {
+  border-bottom: none;
+}
+
+.sf-draft-row-confirmed,
+.sf-draft-row-dismissed {
+  opacity: 0.7;
+}
+
+.sf-draft-row-info {
+  flex:        1 1 auto;
+  line-height: 1.35;
+}
+
+.sf-draft-row-actions {
+  flex:        0 0 auto;
+  display:     flex;
+  gap:         4px;
+  align-items: center;
+}
+
+.sf-draft-btn {
+  font-size:     0.82em;
+  padding:       2px 8px;
+  border-radius: 3px;
+  cursor:        pointer;
+  border:        1px solid var(--color-border-light, #ccc);
+  background:    transparent;
+  color:         var(--color-text-dark-primary, #111);
+}
+
+.sf-draft-confirm {
+  border-color: #2c5e2c;
+  color:        #2c5e2c;
+}
+
+.sf-draft-confirm:hover {
+  background: rgba(44, 94, 44, 0.1);
+}
+
+.sf-draft-dismiss {
+  border-color: #8a3a3a;
+  color:        #8a3a3a;
+}
+
+.sf-draft-dismiss:hover {
+  background: rgba(138, 58, 58, 0.1);
+}
+
+.sf-draft-status {
+  font-size:   0.82em;
+  font-weight: 600;
+}
+
+.sf-draft-status-confirmed {
+  color: #2c5e2c;
+}
+
+.sf-draft-status-dismissed {
+  color: #8a3a3a;
+}
+
+.sf-draft-entity-hint {
+  font-size:  0.85em;
+  color:      var(--color-text-dark-secondary, #555);
+  font-style: italic;
+}
+
+.sf-draft-entity-hint-done {
+  color: var(--color-text-dark-secondary, #888);
+}
+
+/* NWMA "Roll <move>" button — appears beneath the italicized move hint on
+   paced-narrative cards classified as NARRATIVE_WITH_MOVE_AVAILABLE. */
+.sf-paced-actions {
+  display:         flex;
+  justify-content: flex-end;
+  margin-top:      6px;
+}
+
+.sf-paced-roll-btn {
+  font-size:     0.85em;
+  padding:       3px 12px;
+  border-radius: 3px;
+  cursor:        pointer;
+  border:        1px solid var(--sf-suggestion-colour, #B5985A);
+  background:    transparent;
+  color:         var(--sf-suggestion-colour, #B5985A);
+  font-family:   inherit;
+}
+
+.sf-paced-roll-btn:hover:not(:disabled) {
+  background: rgba(181, 152, 90, 0.12);
+}
+
+.sf-paced-roll-btn:disabled {
+  cursor:  default;
+  opacity: 0.6;
+}
+
+
+/* ============================================================================
+   AUDIO NARRATION (docs/audio-narration-scope.md §11)
+   ============================================================================ */
+
+.sf-narration-footer {
+  display:     flex;
+  align-items: center;
+  gap:         0.5em;
+  flex-wrap:   wrap;
+}
+
+.sf-audio-play-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.4em;
+  padding:       0.2em 0.6em;
+  background:    var(--sf-card-bg, #1a1a1a);
+  border:        1px solid var(--sf-card-border, #444);
+  color:         var(--sf-card-fg, #ddd);
+  border-radius: 3px;
+  cursor:        pointer;
+  font-family:   inherit;
+  font-size:     0.85em;
+}
+
+.sf-audio-play-btn:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sf-audio-play-btn[disabled] {
+  opacity: 0.5;
+  cursor:  not-allowed;
+}
+
+.sf-audio-play-btn[data-state="playing"] {
+  background:   var(--sf-accent-bg, #2a2a3a);
+  border-color: var(--sf-suggestion-colour, #B5985A);
+}
+
+.sf-audio-play-btn[data-state="error"] {
+  border-color: #884444;
+  color:        #cc8888;
+}
+
+.sf-audio-gesture-overlay {
+  position:        absolute;
+  inset:           0;
+  display:         grid;
+  place-items:     center;
+  background:      rgba(0, 0, 0, 0.55);
+  cursor:          pointer;
+  font-size:       0.9em;
+  color:           #eee;
+  border-radius:   inherit;
+  z-index:         10;
+  pointer-events:  auto;
+}
+
+/* Audio tab in the Companion Settings panel. */
+.audio-pane .settings-fieldset {
+  margin-bottom: 1em;
+  padding:       0.6em 1em;
+  border:        1px solid var(--sf-card-border, #444);
+  border-radius: 4px;
+}
+
+.audio-pane .settings-fieldset legend {
+  padding:     0 0.4em;
+  font-weight: bold;
+}
+
+.audio-pane .settings-field {
+  margin: 0.4em 0;
+}
+
+.audio-pane .settings-field-label {
+  display:     block;
+  font-weight: bold;
+  margin:      0.2em 0;
+}
+
+.audio-pane .settings-field-hint {
+  font-size:  0.85em;
+  opacity:    0.75;
+  margin:     0.2em 0 0.4em;
+}
+
+.audio-pane .settings-actions {
+  display: flex;
+  gap:     0.4em;
+}

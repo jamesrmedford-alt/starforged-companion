@@ -75,6 +75,33 @@ const SETTING = {
   WJ_FACTION_IN_CONTEXT:       'factionLandscapeInContext',
   WJ_CONTRADICTION_NOTIFY:     'contradictionNotifications',
   WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
+  // ── Pacing classifier ────────────────────────────────────────────────────
+  PACING_ENABLED:              'pacing.enabled',
+  PACING_DENSITY_WINDOW:       'pacing.densityWindow',
+  PACING_DIAL_COMBAT:          'pacing.dial.combat',
+  PACING_DIAL_INVESTIGATION:   'pacing.dial.investigation',
+  PACING_DIAL_EXPLORATION:     'pacing.dial.exploration',
+  PACING_DIAL_SOCIAL:          'pacing.dial.social',
+  PACING_DIAL_DOWNTIME:        'pacing.dial.downtime',
+  // ── Fact continuity ──────────────────────────────────────────────────────
+  FC_ENABLED:                  'factContinuity.enabled',
+  FC_LEDGER_IN_CONTEXT:        'factContinuity.ledgerInContext',
+  FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
+  FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
+  FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
+  // ── Fact continuity — ship positioning (§20) ─────────────────────────────
+  FC_SHIP_POSITIONING:         'factContinuity.shipPositioning',
+  FC_SHIP_AUTO_MOVE:           'factContinuity.shipAutoMoveOnCourse',
+  FC_SHIP_TOKEN_ENABLED:       'factContinuity.shipTokenEnabled',
+  FC_SHIP_TOKEN_SNAP_RADIUS:   'factContinuity.shipTokenSnapRadius',
+};
+
+const PACING_DEFAULTS = {
+  combat:        9,
+  investigation: 6,
+  exploration:   6,
+  social:        5,
+  downtime:      1,
 };
 
 const NARRATION_MODELS = {
@@ -370,6 +397,157 @@ export function registerSettings() {
     type:    Boolean,
     default: true,
   });
+
+  // ── Pacing classifier ────────────────────────────────────────────────────
+
+  game.settings.register(MODULE_ID, SETTING.PACING_ENABLED, {
+    name:    'Pacing Classifier Enabled',
+    hint:    'Master switch. When enabled, a Haiku pre-classifier decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DENSITY_WINDOW, {
+    name:    'Pacing Density Window',
+    hint:    'Number of recent inputs considered for the recent-move-density signal. Higher values smooth pacing, lower values react faster. Range: 3–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 5,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_COMBAT, {
+    name:    'Pacing Dial — Combat',
+    hint:    'How move-leaning combat scenes should be. 10 = almost every input is a move. 0 = almost never.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.combat,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION, {
+    name:    'Pacing Dial — Investigation',
+    hint:    'How move-leaning investigation scenes should be. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.investigation,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION, {
+    name:    'Pacing Dial — Exploration',
+    hint:    'How move-leaning exploration scenes should be. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.exploration,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_SOCIAL, {
+    name:    'Pacing Dial — Social',
+    hint:    'How move-leaning social scenes should be. Default 5 — pressing a connection on intent or stakes reads as a move; idle chat reads as narrative. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.social,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME, {
+    name:    'Pacing Dial — Downtime',
+    hint:    'How move-leaning downtime scenes should be. Default 1 — downtime is mostly narrative. 0–10.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: PACING_DEFAULTS.downtime,
+  });
+
+  // ── Fact continuity — see docs/fact-continuity-scope.md §12 ──────────────
+
+  game.settings.register(MODULE_ID, SETTING.FC_ENABLED, {
+    name:    'Fact Continuity Enabled',
+    hint:    'Master switch. When enabled, the narrator records scene truths and current state via a structured sidecar, and the active-scene ledger is fed back into subsequent narrator calls.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT, {
+    name:    'Inject Active-Scene Ledger Into Narrator Context',
+    hint:    'When enabled, the narrator system prompt receives a Section 6.5 block listing binding truths and current state for in-scope subjects. Has no effect when Fact Continuity is disabled.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED, {
+    name:    'Sidecar Required',
+    hint:    'When enabled, the narrator response is expected to contain a fenced JSON sidecar after every reply. When disabled, missing sidecars are tolerated silently (rare in practice).',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS, {
+    name:    'Max Ledger Tokens',
+    hint:    'Soft cap on the size of the active-scene ledger block in the narrator system prompt. State entries are truncated first when the cap is exceeded; binding truths are never dropped.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 400,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK, {
+    name:    'Consistency Check (experimental)',
+    hint:    'After every narration, run a Haiku audit pass that checks the prose against the active-scene ledger. High-confidence contradictions surface on the existing GM-only Narrative Review card. Adds ~$0.0004 and 200–500ms per narration; off by default.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: false,
+  });
+
+  // Fact-continuity §20 — ship positioning. Four settings gate the full
+  // feature: master toggle, the set_a_course auto-update, the sector-
+  // Scene Token affordance, and the Token snap radius.
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_POSITIONING, {
+    name:    'Ship Positioning',
+    hint:    'Track the command vehicle’s position (sector / planet / nearest settlement) and surface it in the narrator’s system prompt. Position updates from `!at`, non-miss `set_a_course`, narrator sidecar, and (when enabled) sector-Scene Token drag.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE, {
+    name:    'Auto-Move Ship on Set a Course',
+    hint:    'When enabled, a strong / weak hit on Set a Course updates the command vehicle’s position to the destination named in the player’s narration. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED, {
+    name:    'Sector-Scene Ship Token',
+    hint:    'Place a Token representing the command vehicle on the sector Scene. Dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would. The Token snaps back to its previous position on a miss.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS, {
+    name:    'Ship Token Snap Radius (grid cells)',
+    hint:    'How close the Token must come to a settlement Note pin to count as a destination drop. 0 = exact-cell overlap; 2 = forgiving. Default 1.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 1,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +575,47 @@ function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTIN
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
 function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
 function getRecapGmOnly()      { return game.settings.get(MODULE_ID, SETTING.RECAP_GM_ONLY)      ?? true; }
+
+// ── Pacing classifier ────────────────────────────────────────────────────
+function getPacingEnabled()       { return game.settings.get(MODULE_ID, SETTING.PACING_ENABLED) ?? true; }
+function getPacingDensityWindow() { return game.settings.get(MODULE_ID, SETTING.PACING_DENSITY_WINDOW) ?? 5; }
+function getPacingDials() {
+  return {
+    combat:        game.settings.get(MODULE_ID, SETTING.PACING_DIAL_COMBAT)        ?? PACING_DEFAULTS.combat,
+    investigation: game.settings.get(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION) ?? PACING_DEFAULTS.investigation,
+    exploration:   game.settings.get(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION)   ?? PACING_DEFAULTS.exploration,
+    social:        game.settings.get(MODULE_ID, SETTING.PACING_DIAL_SOCIAL)        ?? PACING_DEFAULTS.social,
+    downtime:      game.settings.get(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME)      ?? PACING_DEFAULTS.downtime,
+  };
+}
+
+// ── Fact continuity ──────────────────────────────────────────────────────
+export function getFactContinuityEnabled()        { return game.settings.get(MODULE_ID, SETTING.FC_ENABLED)             ?? true; }
+export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
+export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
+export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
+export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
+
+// Ship positioning (§20) — feature-gated via a master toggle plus three
+// per-trigger toggles. All four default to "on" so a fresh world that
+// upgrades to this version gets the full experience without configuration.
+// Reads tolerate the settings being unregistered (unit tests, early init).
+export function getShipPositioningEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_POSITIONING) !== false; } catch { return true; }
+}
+export function getShipAutoMoveOnCourse() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE) !== false; } catch { return true; }
+}
+export function getShipTokenEnabled() {
+  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED) !== false; } catch { return true; }
+}
+export function getShipTokenSnapRadius() {
+  try {
+    const v = Number(game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS));
+    if (!Number.isFinite(v) || v < 0) return 1;
+    return v;
+  } catch { return 1; }
+}
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)
@@ -534,9 +753,13 @@ export class SettingsPanelApp extends ApplicationV2 {
       removeVeil:             SettingsPanelApp.#onRemoveVeil,
       addPrivateLine:         SettingsPanelApp.#onAddPrivateLine,
       removePrivateLine:      SettingsPanelApp.#onRemovePrivateLine,
-      setDial:                SettingsPanelApp.#onSetDial,
-      saveNarratorSettings:   SettingsPanelApp.#onSaveNarratorSettings,
-      saveApiKeys:            SettingsPanelApp.#onSaveApiKeys,
+      setDial:                     SettingsPanelApp.#onSetDial,
+      saveNarratorSettings:        SettingsPanelApp.#onSaveNarratorSettings,
+      savePacingSettings:          SettingsPanelApp.#onSavePacingSettings,
+      saveFactContinuitySettings:  SettingsPanelApp.#onSaveFactContinuitySettings,
+      saveApiKeys:                 SettingsPanelApp.#onSaveApiKeys,
+      saveAudioSettings:           SettingsPanelApp.#onSaveAudioSettings,
+      refreshAudioBudget:          SettingsPanelApp.#onRefreshAudioBudget,
     },
   };
 
@@ -579,13 +802,35 @@ export class SettingsPanelApp extends ApplicationV2 {
       autoRecapEnabled:      getAutoRecapEnabled(),
       sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
+      pacingEnabled:         getPacingEnabled(),
+      pacingDensityWindow:   getPacingDensityWindow(),
+      pacingDials:           getPacingDials(),
+      pacingSceneOverride:   campaignState?.pacing?.sceneOverride ?? null,
+      factContinuity: {
+        enabled:           getFactContinuityEnabled(),
+        ledgerInContext:   getFactContinuityLedgerInContext(),
+        sidecarRequired:   getFactContinuitySidecarRequired(),
+        maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
+        consistencyCheck:  getFactContinuityConsistencyCheck(),
+      },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
       apiKeys: game.user.isGM ? {
-        claudeKeySet: !!game.settings.get(MODULE_ID, 'claudeApiKey'),
-        artKeySet:    !!game.settings.get(MODULE_ID, 'artApiKey'),
+        claudeKeySet:     !!game.settings.get(MODULE_ID, 'claudeApiKey'),
+        openRouterKeySet: !!game.settings.get(MODULE_ID, 'openRouterApiKey'),
+        elevenLabsKeySet: !!game.settings.get(MODULE_ID, 'elevenLabsApiKey'),
       } : null,
+      audio: {
+        enabled:         (() => { try { return game.settings.get(MODULE_ID, 'audio.enabled') === true; } catch { return false; } })(),
+        narratorVoiceId: (() => { try { return game.settings.get(MODULE_ID, 'audio.narratorVoiceId') ?? ''; } catch { return ''; } })(),
+        npcVoiceId:      (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceId') ?? ''; } catch { return ''; } })(),
+        modelId:         (() => { try { return game.settings.get(MODULE_ID, 'audio.modelId') ?? 'eleven_flash_v2_5'; } catch { return 'eleven_flash_v2_5'; } })(),
+        speed:           (() => { try { return Number(game.settings.get(MODULE_ID, 'audio.speed') ?? 1.0); } catch { return 1.0; } })(),
+        clientEnabled:   (() => { try { return game.settings.get(MODULE_ID, 'audio.clientEnabled') === true; } catch { return false; } })(),
+        autoplay:        (() => { try { return game.settings.get(MODULE_ID, 'audio.autoplay') === true; } catch { return false; } })(),
+        volume:          (() => { try { return Number(game.settings.get(MODULE_ID, 'audio.volume') ?? 0.8); } catch { return 0.8; } })(),
+      },
     };
   }
 
@@ -594,6 +839,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       { id: 'safety',   label: 'Safety'   },
       { id: 'mischief', label: 'Mischief' },
       { id: 'narrator', label: 'Narrator' },
+      { id: 'audio',    label: 'Audio'    },
       { id: 'about',    label: 'About'    },
     ];
 
@@ -609,6 +855,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       case 'safety':   paneHtml = this.#renderSafetyPane(context);   break;
       case 'mischief': paneHtml = this.#renderMischiefPane(context); break;
       case 'narrator': paneHtml = this.#renderNarratorPane(context); break;
+      case 'audio':    paneHtml = this.#renderAudioPane(context);    break;
       case 'about':    paneHtml = this.#renderAboutPane(context);    break;
     }
 
@@ -713,12 +960,28 @@ export class SettingsPanelApp extends ApplicationV2 {
     `).join('');
 
     const gmNote = ctx.isGM ? '' : `
-      <p class="dial-player-note">Mischief dial is controlled by the GM.</p>
+      <p class="dial-player-note">Mischief and pacing are controlled by the GM.</p>
     `;
+
+    const dis = ctx.isGM ? '' : 'disabled';
+    const dials = ctx.pacingDials ?? {};
+    const dialRow = (name, label, value) => `
+      <div class="pacing-dial-row">
+        <label class="pacing-dial-label" for="sf-pacing-${name}">${label}</label>
+        <input class="settings-input pacing-dial-input" id="sf-pacing-${name}"
+               name="pacing.dial.${name}" type="number" min="0" max="10" step="1"
+               value="${value}" ${dis}>
+      </div>
+    `;
+
+    const overrideLabel = ctx.pacingSceneOverride?.label
+      ? `${ctx.pacingSceneOverride.label} (${ctx.pacingSceneOverride.modifier >= 0 ? '+' : ''}${ctx.pacingSceneOverride.modifier})`
+      : 'none';
 
     return `
       <div class="mischief-pane">
         ${gmNote}
+        <h4 class="mischief-section-heading">Mischief Dial</h4>
         <div class="dial-options ${!ctx.isGM ? 'dial-readonly' : ''}">
           ${dialHtml}
         </div>
@@ -726,6 +989,93 @@ export class SettingsPanelApp extends ApplicationV2 {
           <strong>Note:</strong> Safety configuration is always a hard ceiling on the mischief layer.
           Active Lines and Veils are injected before any mischief is applied, regardless of dial setting.
         </div>
+
+        <hr class="mischief-divider">
+        <h4 class="mischief-section-heading">Pacing Classifier</h4>
+        <p class="pacing-pane-intro">
+          When enabled, a small Haiku call decides whether each undecorated chat input should
+          trigger a move, be handled as pure narration, or end with an inline move suggestion.
+          Dials below set how move-leaning each scene type should be on a 0–10 scale.
+        </p>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="pacing.enabled"
+                   ${ctx.pacingEnabled ? 'checked' : ''} ${dis}>
+            Enable pacing classifier
+          </label>
+        </div>
+        <div class="pacing-dials-grid">
+          ${dialRow('combat',        'Combat',        dials.combat        ?? PACING_DEFAULTS.combat)}
+          ${dialRow('investigation', 'Investigation', dials.investigation ?? PACING_DEFAULTS.investigation)}
+          ${dialRow('exploration',   'Exploration',   dials.exploration   ?? PACING_DEFAULTS.exploration)}
+          ${dialRow('social',        'Social',        dials.social        ?? PACING_DEFAULTS.social)}
+          ${dialRow('downtime',      'Downtime',      dials.downtime      ?? PACING_DEFAULTS.downtime)}
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label" for="sf-pacing-window">Density window</label>
+          <input class="settings-input pacing-dial-input" id="sf-pacing-window"
+                 name="pacing.densityWindow" type="number" min="3" max="10" step="1"
+                 value="${ctx.pacingDensityWindow ?? 5}" ${dis}>
+          <span class="pacing-field-hint">Number of recent inputs considered for pacing recovery. 3–10.</span>
+        </div>
+        <p class="pacing-override-line">
+          <strong>Scene override:</strong> ${overrideLabel}
+          <span class="pacing-field-hint">— change with <code>!pace hot</code>, <code>!pace quiet</code>, or <code>!pace clear</code>.</span>
+        </p>
+        ${ctx.isGM ? `
+          <div class="pacing-actions">
+            <button class="settings-btn btn-save-pacing" data-action="savePacingSettings">Save Pacing Settings</button>
+          </div>
+        ` : ''}
+
+        <hr class="mischief-divider">
+        <h4 class="mischief-section-heading">Fact Continuity</h4>
+        <p class="pacing-pane-intro">
+          The narrator records binding scene truths and current state via a structured sidecar
+          attached to every response. The active-scene ledger is fed back into subsequent
+          narrator calls so established facts stay consistent.
+        </p>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.enabled"
+                   ${ctx.factContinuity.enabled ? 'checked' : ''} ${dis}>
+            Enable fact continuity
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.ledgerInContext"
+                   ${ctx.factContinuity.ledgerInContext ? 'checked' : ''} ${dis}>
+            Inject the active-scene ledger into the narrator system prompt
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.sidecarRequired"
+                   ${ctx.factContinuity.sidecarRequired ? 'checked' : ''} ${dis}>
+            Require a sidecar on every narrator response
+          </label>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label" for="sf-fc-max-tokens">Max ledger tokens</label>
+          <input class="settings-input pacing-dial-input" id="sf-fc-max-tokens"
+                 name="factContinuity.maxLedgerTokens" type="number" min="100" max="2000" step="50"
+                 value="${ctx.factContinuity.maxLedgerTokens}" ${dis}>
+          <span class="pacing-field-hint">Soft cap on the Section 6.5 block. State drops first when the cap is exceeded; truths are never dropped.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.consistencyCheck"
+                   ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
+            Consistency check (experimental)
+          </label>
+          <span class="pacing-field-hint">Run a Haiku audit pass after every narration. High-confidence contradictions surface on the GM Narrative Review card. ~$0.0004 and 200–500ms per call; off by default.</span>
+        </div>
+        ${ctx.isGM ? `
+          <div class="pacing-actions">
+            <button class="settings-btn btn-save-pacing" data-action="saveFactContinuitySettings">Save Fact Continuity Settings</button>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -805,6 +1155,125 @@ export class SettingsPanelApp extends ApplicationV2 {
     `;
   }
 
+  // -----------------------------------------------------------------------
+  // Audio pane — docs/audio-narration-scope.md §5
+  //
+  // GM section: world-scoped voice/model/speed/master toggle + budget
+  // refresh button. Player section: per-client enable / volume / autoplay.
+  // -----------------------------------------------------------------------
+  #renderAudioPane(ctx = {}) {
+    const a = ctx.audio ?? {};
+    const escAttr = (s) => String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+    const MODEL_OPTIONS = [
+      { id: 'eleven_flash_v2_5',      label: 'Flash v2.5 — fastest, lowest cost'   },
+      { id: 'eleven_turbo_v2_5',      label: 'Turbo v2.5 — balanced'                },
+      { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — long-form quality'  },
+      { id: 'eleven_v3',              label: 'Eleven v3 — highest expressiveness'   },
+    ];
+
+    const modelOptionsHtml = MODEL_OPTIONS.map(m => `
+      <option value="${escAttr(m.id)}" ${a.modelId === m.id ? 'selected' : ''}>${m.label}</option>
+    `).join('');
+
+    const gmBlock = ctx.isGM ? `
+      <fieldset class="settings-fieldset">
+        <legend>World audio settings (GM)</legend>
+        <p class="settings-field-hint">
+          These controls are shared across all players. Voice IDs come from your
+          ElevenLabs voice library — paste the ID, not the display name.
+        </p>
+        <div class="settings-field">
+          <label class="settings-field-label">
+            <input type="checkbox" name="audio.enabled" ${a.enabled ? 'checked' : ''}>
+            Enable audio narration for this world
+          </label>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-narrator-voice">Narrator voice ID</label>
+          <input class="settings-input" type="text" id="sf-audio-narrator-voice"
+                 name="audio.narratorVoiceId" value="${escAttr(a.narratorVoiceId)}"
+                 placeholder="e.g. 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-npc-voice">NPC voice ID</label>
+          <input class="settings-input" type="text" id="sf-audio-npc-voice"
+                 name="audio.npcVoiceId" value="${escAttr(a.npcVoiceId)}"
+                 placeholder="e.g. pNInz6obpgDQGcFmaJgB" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-model">Model</label>
+          <select class="settings-input" id="sf-audio-model" name="audio.modelId">
+            ${modelOptionsHtml}
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-speed">Playback speed: ${Number(a.speed).toFixed(2)}×</label>
+          <input class="settings-input" type="range" id="sf-audio-speed"
+                 name="audio.speed" min="0.7" max="1.5" step="0.05"
+                 value="${escAttr(a.speed)}">
+        </div>
+        <div class="settings-field">
+          <button class="settings-btn" data-action="refreshAudioBudget">
+            ⟳ Check ElevenLabs usage
+          </button>
+          <p class="settings-field-hint">
+            Shows characters used / limit in a toast. Read-only; no hard cutoff.
+          </p>
+        </div>
+      </fieldset>
+    ` : `
+      <p class="safety-readonly-note">
+        Voice and model selection are configured by the GM.
+      </p>
+    `;
+
+    return `
+      <div class="audio-pane">
+        ${gmBlock}
+
+        <fieldset class="settings-fieldset">
+          <legend>Your client</legend>
+          <p class="settings-field-hint">
+            Each player decides whether audio plays on their own client. The
+            ElevenLabs API key is entered in the About tab.
+          </p>
+          <div class="settings-field">
+            <label class="settings-field-label">
+              <input type="checkbox" name="audio.clientEnabled"
+                     ${a.clientEnabled ? 'checked' : ''}>
+              Enable audio narration on this client
+            </label>
+          </div>
+          <div class="settings-field">
+            <label class="settings-field-label" for="sf-audio-volume">
+              Volume: ${Math.round(Number(a.volume) * 100)}%
+            </label>
+            <input class="settings-input" type="range" id="sf-audio-volume"
+                   name="audio.volume" min="0" max="1" step="0.05"
+                   value="${escAttr(a.volume)}">
+          </div>
+          <div class="settings-field">
+            <label class="settings-field-label">
+              <input type="checkbox" name="audio.autoplay"
+                     ${a.autoplay ? 'checked' : ''}>
+              Auto-play narrator audio when a card appears
+            </label>
+            <p class="settings-field-hint">
+              Off by default. Browsers require a user gesture before audio can
+              play — the first card after a page load shows a brief
+              "click anywhere" overlay.
+            </p>
+          </div>
+        </fieldset>
+
+        <div class="settings-actions">
+          <button class="settings-btn" data-action="saveAudioSettings">Save Audio Settings</button>
+        </div>
+      </div>
+    `;
+  }
+
   #renderAboutPane(ctx = {}) {
     const sessionLabel = ctx.sessionNumber
       ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
@@ -839,7 +1308,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
-            <dd>DALL-E 3 · standard quality · natural style</dd>
+            <dd>OpenRouter · FLUX.2 Pro by default · model configurable in module settings</dd>
           </div>
           <div class="about-field">
             <dt>Foundry target</dt>
@@ -866,15 +1335,27 @@ export class SettingsPanelApp extends ApplicationV2 {
                      autocomplete="off" spellcheck="false">
             </div>
             <div class="api-key-field">
-              <label class="api-key-label" for="sf-art-key">
-                Art Generation API Key (OpenAI)
-                ${ctx.apiKeys.artKeySet
+              <label class="api-key-label" for="sf-openrouter-key">
+                OpenRouter API Key (image generation)
+                ${ctx.apiKeys.openRouterKeySet
                   ? '<span class="api-key-status api-key-set">● Set</span>'
                   : '<span class="api-key-status api-key-unset">○ Not set</span>'}
               </label>
               <input class="settings-input api-key-input" type="password"
-                     id="sf-art-key" name="artApiKey"
-                     placeholder="sk-..."
+                     id="sf-openrouter-key" name="openRouterApiKey"
+                     placeholder="sk-or-v1-..."
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <div class="api-key-field">
+              <label class="api-key-label" for="sf-elevenlabs-key">
+                ElevenLabs API Key (audio narration)
+                ${ctx.apiKeys.elevenLabsKeySet
+                  ? '<span class="api-key-status api-key-set">● Set</span>'
+                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+              </label>
+              <input class="settings-input api-key-input" type="password"
+                     id="sf-elevenlabs-key" name="elevenLabsApiKey"
+                     placeholder="sk_..."
                      autocomplete="off" spellcheck="false">
             </div>
             <div class="api-key-actions">
@@ -1042,26 +1523,158 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
+  static #onSavePacingSettings(_event, _target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const el = this.element;
+
+      const enabled = el.querySelector('[name="pacing.enabled"]')?.checked ?? true;
+      const windowRaw = el.querySelector('[name="pacing.densityWindow"]')?.value;
+      const densityWindow = Math.max(3, Math.min(10, Number(windowRaw) || 5));
+
+      const read = (name, fallback) => {
+        const v = Number(el.querySelector(`[name="pacing.dial.${name}"]`)?.value);
+        return Math.max(0, Math.min(10, Number.isFinite(v) ? v : fallback));
+      };
+      const dials = {
+        combat:        read('combat',        PACING_DEFAULTS.combat),
+        investigation: read('investigation', PACING_DEFAULTS.investigation),
+        exploration:   read('exploration',   PACING_DEFAULTS.exploration),
+        social:        read('social',        PACING_DEFAULTS.social),
+        downtime:      read('downtime',      PACING_DEFAULTS.downtime),
+      };
+
+      await Promise.all([
+        game.settings.set(MODULE_ID, SETTING.PACING_ENABLED,             enabled),
+        game.settings.set(MODULE_ID, SETTING.PACING_DENSITY_WINDOW,      densityWindow),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_COMBAT,         dials.combat),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_INVESTIGATION,  dials.investigation),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_EXPLORATION,    dials.exploration),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_SOCIAL,         dials.social),
+        game.settings.set(MODULE_ID, SETTING.PACING_DIAL_DOWNTIME,       dials.downtime),
+      ]);
+
+      ui.notifications?.info('Starforged Companion: Pacing settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  static #onSaveFactContinuitySettings(_event, _target) {
+    const work = (async () => {
+      if (!game.user.isGM) return;
+      const el = this.element;
+
+      const enabled          = el.querySelector('[name="factContinuity.enabled"]')?.checked          ?? true;
+      const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
+      const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
+      const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
+      const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
+      const maxTokens        = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
+
+      await Promise.all([
+        game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
+        game.settings.set(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT,   ledgerInContext),
+        game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
+        game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
+        game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
+      ]);
+
+      ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
   static #onSaveApiKeys(_event, _target) {
     const work = (async () => {
       if (!game.user.isGM) return;
 
-      const panel      = this.element;
-      const claudeKey  = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
-      const artKey     = panel.querySelector('[name="artApiKey"]')?.value?.trim();
+      const panel          = this.element;
+      const claudeKey      = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
+      const openRouterKey  = panel.querySelector('[name="openRouterApiKey"]')?.value?.trim();
+      const elevenLabsKey  = panel.querySelector('[name="elevenLabsApiKey"]')?.value?.trim();
 
       if (claudeKey) {
         await game.settings.set(MODULE_ID, 'claudeApiKey', claudeKey);
       }
-      if (artKey) {
-        await game.settings.set(MODULE_ID, 'artApiKey', artKey);
+      if (openRouterKey) {
+        await game.settings.set(MODULE_ID, 'openRouterApiKey', openRouterKey);
+      }
+      if (elevenLabsKey) {
+        await game.settings.set(MODULE_ID, 'elevenLabsApiKey', elevenLabsKey);
       }
 
-      if (claudeKey || artKey) {
+      if (claudeKey || openRouterKey || elevenLabsKey) {
         ui.notifications.info('Starforged Companion: API keys saved.');
       }
 
       this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  // -----------------------------------------------------------------------
+  // Audio tab — audio narration settings (docs/audio-narration-scope.md §5).
+  // Action handler defined as static private; the audio pane renderer
+  // composes the markup based on isGM (world fields hidden for non-GMs).
+  // -----------------------------------------------------------------------
+
+  static #onSaveAudioSettings(_event, _target) {
+    const work = (async () => {
+      const panel = this.element;
+
+      // World-scoped (GM only).
+      if (game.user.isGM) {
+        const enabled       = !!panel.querySelector('[name="audio.enabled"]')?.checked;
+        const narratorVoice = panel.querySelector('[name="audio.narratorVoiceId"]')?.value?.trim();
+        const npcVoice      = panel.querySelector('[name="audio.npcVoiceId"]')?.value?.trim();
+        const modelId       = panel.querySelector('[name="audio.modelId"]')?.value?.trim();
+        const speed         = Number(panel.querySelector('[name="audio.speed"]')?.value);
+
+        await game.settings.set(MODULE_ID, 'audio.enabled', enabled);
+        if (narratorVoice) await game.settings.set(MODULE_ID, 'audio.narratorVoiceId', narratorVoice);
+        if (npcVoice)      await game.settings.set(MODULE_ID, 'audio.npcVoiceId',      npcVoice);
+        if (modelId)       await game.settings.set(MODULE_ID, 'audio.modelId',         modelId);
+        if (Number.isFinite(speed)) await game.settings.set(MODULE_ID, 'audio.speed', speed);
+      }
+
+      // Client-scoped (anyone).
+      const clientEnabled = !!panel.querySelector('[name="audio.clientEnabled"]')?.checked;
+      const autoplay      = !!panel.querySelector('[name="audio.autoplay"]')?.checked;
+      const volume        = Number(panel.querySelector('[name="audio.volume"]')?.value);
+
+      await game.settings.set(MODULE_ID, 'audio.clientEnabled', clientEnabled);
+      await game.settings.set(MODULE_ID, 'audio.autoplay',      autoplay);
+      if (Number.isFinite(volume)) await game.settings.set(MODULE_ID, 'audio.volume', volume);
+
+      ui.notifications.info('Starforged Companion: Audio settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  static #onRefreshAudioBudget(_event, _target) {
+    const work = (async () => {
+      try {
+        const { fetchSubscription } = await import('../audio/elevenlabs.js');
+        const key = game.settings.get(MODULE_ID, 'elevenLabsApiKey') ?? '';
+        if (!key) {
+          ui.notifications.warn('Starforged Companion: ElevenLabs key not set.');
+          return;
+        }
+        const { used, limit } = await fetchSubscription(key);
+        ui.notifications.info(
+          `ElevenLabs usage: ${used.toLocaleString()} / ${limit.toLocaleString()} characters`,
+        );
+      } catch (err) {
+        console.warn(`${MODULE_ID} | audio budget refresh failed:`, err);
+        ui.notifications.error('Starforged Companion: Could not read ElevenLabs usage.');
+      }
     })();
     this._lastAction = work;
     return work;
@@ -1131,6 +1744,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       rationale:       interp.rationale ?? '',
       mischiefApplied: !!interp.mischiefApplied,
       mischiefAside:   interp._mischiefAside ?? '',
+      applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
     };
   }
@@ -1142,6 +1756,8 @@ export class MoveConfirmDialog extends ApplicationV2 {
         <p class="mischief-aside-text">${context.mischiefAside}</p>
       </div>
     ` : '';
+
+    const abilitiesBlock = renderApplicableAbilitiesBlock(context.applicableAbilities, context.statUsed);
 
     const html = `
       <div class="sf-move-confirm">
@@ -1158,6 +1774,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <p class="confirm-rationale-text">${context.rationale}</p>
         </div>
         ${mischiefBlock}
+        ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
           <button class="settings-btn btn-reject" data-action="reject">Re-interpret</button>
@@ -1195,6 +1812,39 @@ export class MoveConfirmDialog extends ApplicationV2 {
   }
 
   static async #onAccept(_event, _target) {
+    // Sum the adds value from each checked ability before settling so the
+    // pipeline can apply them to interpretation.adds. The interpretation
+    // object is shared by reference with the caller.
+    try {
+      const root = this.element ?? document;
+      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
+      let total = 0;
+      const applied = [];
+      const offeredStats = new Set();
+      checked.forEach(cb => {
+        const n = Number(cb.dataset.adds ?? 0);
+        if (Number.isFinite(n) && n > 0) total += n;
+        if (cb.dataset.key) applied.push(cb.dataset.key);
+        const stat = cb.dataset.statReplacement;
+        if (stat) offeredStats.add(stat);
+      });
+      // Stat substitution — apply only when the selected radio matches one
+      // of the offered stats and at least one ability advertising that
+      // substitution is currently checked. Otherwise the user has
+      // unchecked the gating ability and the substitution must not fire.
+      let pickedStat = '';
+      const picked = root.querySelector?.('input[name="sf-stat-sub"]:checked');
+      const candidate = String(picked?.value ?? '').trim();
+      if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
+
+      if (this.#interp) {
+        this.#interp.appliedAbilityAdds  = total;
+        this.#interp.appliedAbilityKeys  = applied;
+        this.#interp.appliedStatReplacement = pickedStat || null;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);
+    }
     this.#settle(true);
     this.close({ animate: false });
   }
@@ -1203,6 +1853,84 @@ export class MoveConfirmDialog extends ApplicationV2 {
     this.#settle(false);
     this.close({ animate: false });
   }
+}
+
+/**
+ * Build the "Applicable abilities" block shown above the dialog's accept
+ * / reject buttons. Each ability gets a checkbox the player can toggle.
+ * Pre-checked when the heuristic / Haiku identified a non-zero adds
+ * value, since the most common reason an ability surfaces is to add to
+ * the roll; player can uncheck if it doesn't apply this turn.
+ */
+function renderApplicableAbilitiesBlock(abilities, currentStat) {
+  if (!Array.isArray(abilities) || abilities.length === 0) return '';
+  const items = abilities.map(a => {
+    const adds      = Number(a.adds ?? 0);
+    const stat      = typeof a.statReplacement === 'string' ? a.statReplacement : '';
+    // Pre-check when there's a numeric add OR a stat substitution — both
+    // are concrete mechanical effects the player will almost always want
+    // to apply when the ability fires.
+    const checked   = (adds > 0 || stat) ? 'checked' : '';
+    const addsLabel = adds > 0 ? `<span class="sf-ability-adds">+${adds}</span>` : '';
+    const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
+    const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
+    const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
+    const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
+    return `
+      <label class="sf-applicable-ability-row">
+        <input type="checkbox" class="sf-applicable-ability-cb"
+               data-key="${escapeAttr(a.key)}"
+               data-adds="${adds}"
+               data-stat-replacement="${escapeAttr(stat)}"
+               ${checked}>
+        <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
+        <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
+        ${addsLabel}
+        ${statLabel}
+        <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
+        ${summary}
+      </label>`;
+  }).join('');
+
+  // Build the stat-override block — one radio per unique replacement stat
+  // advertised by the ability list, plus a "Keep listed stat" default.
+  const uniqueStats = Array.from(new Set(
+    abilities
+      .map(a => (typeof a.statReplacement === 'string' ? a.statReplacement : ''))
+      .filter(Boolean),
+  ));
+  const statSubBlock = uniqueStats.length ? `
+    <div class="confirm-stat-substitution" data-current-stat="${escapeAttr(currentStat || '')}">
+      <span class="confirm-field-label">Stat substitution</span>
+      <div class="sf-stat-sub-row">
+        <label class="sf-stat-sub-option">
+          <input type="radio" name="sf-stat-sub" value="" checked>
+          Keep listed (+${escapeAttr(currentStat || '?')})
+        </label>
+        ${uniqueStats.map(stat => `
+          <label class="sf-stat-sub-option">
+            <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
+            Substitute +${escapeAttr(stat)}
+          </label>`).join('')}
+      </div>
+      <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>
+    </div>` : '';
+
+  return `
+    <div class="confirm-applicable-abilities">
+      <span class="confirm-field-label">Applicable abilities</span>
+      <div class="sf-ability-list">${items}</div>
+      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+      ${statSubBlock}
+    </div>`;
+}
+
+function escapeAttr(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ---------------------------------------------------------------------------

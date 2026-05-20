@@ -1,11 +1,53 @@
 # Starforged Companion — Pacing Scope
 ## Pre-classifier for move-vs-narrative routing — "not everything is a roll"
 
-**Status:** 📋 PLANNED
-**Priority:** High — addresses pacing/exhaustion observed in playtesting
-**Estimated Claude Code sessions:** 2
+**Status:** ✅ COMPLETE — shipped in v1.1.0
+**Priority:** High — addressed pacing/exhaustion observed in playtesting
 **Dependencies:** Move interpreter (✅), narrator (✅), settings infrastructure (✅)
 **Related:** Mischief dial (existing — distinct concept, colocated UI)
+
+> **Implementation notes (post-review).** The original draft of this scope
+> had several gaps that were caught in review before implementation; the
+> sections below have been updated to match the shipped code. Substantive
+> changes from the original draft:
+>
+> - **§3 transport.** All Anthropic calls route through `src/api-proxy.js`
+>   per CLAUDE.md. The classifier uses the same `apiPost(...)` helper as
+>   `src/moves/interpreter.js`. The local proxy was removed in v0.6.6.
+> - **§5 router.** The classifier runs freely; the existing `pendingMove`
+>   lock in `src/index.js` is only claimed on the MOVE branch, since
+>   NARRATIVE responses don't mutate persisted state. This also reduces the
+>   surface area of PERSIST-001 — NARRATIVE inputs need no GM-client write.
+> - **§6 intercept ordering.** The pipeline integration point is after
+>   every existing `!`/`@scene` intercept (sector, x, at, journal, truths,
+>   lore, sfc encounter, recap, pace, roll) and only when
+>   `isPlayerNarration(message)` returns true. The original draft listed
+>   only `!lore`/`!truths`/`!sector`/`!recap`/`@scene`.
+> - **§6 `@scene` interaction.** The `@scene` intercept now calls
+>   `resetRecentDensity()` so the rolling move-density window does not
+>   carry MOVE counts from the previous scene into the next.
+> - **§2.4 `!roll`.** Originally specified but the command did not exist.
+>   It is now a real intercept that sets
+>   `campaignState.pacing.forceNextAsMove`; the router consumes the flag
+>   on the next undecorated input and clears it.
+> - **§5 narrator-only path.** Implemented as `narratePacedInput` in
+>   `src/narration/narrator.js`, sharing `buildNarratorSystemPrompt` with
+>   `narrateResolution` and `interrogateScene`. A `pacedNarrative: true`
+>   flag is set on the card so `isPlayerNarration` skips it. The original
+>   draft proposed `runNarrativeOnlyResponse` without specifying reuse;
+>   `interrogateScene` is left untouched because its question/answer
+>   framing differs from a paced narrative continuation.
+> - **§12 telemetry.** Now a journal entry named `Pacing Telemetry` under
+>   the existing "Starforged Companion" folder (matching the World Journal
+>   v2 folder convention), with one page per session and a rendered HTML
+>   table for human review.
+> - **§16 help auto-update.** The help compendium auto-updates from
+>   `src/help/helpJournal.js` whenever `CONTENT_VERSION` changes (added in
+>   v0.6.1, fix in v0.6.7). Bump that constant; no manual LevelDB rebuild
+>   needed.
+> - **§13 cost.** Pricing should be spot-checked before any future change.
+>   The figures below are from the original draft and were not re-verified
+>   against Anthropic's current pricing page.
 
 ---
 
@@ -293,21 +335,40 @@ card. Distinguishable in main chat by the absence of the move/roll header.
 
 ## 6. Pipeline integration
 
-Insertion point in `src/index.js`, after existing intercepts but before
-move interpretation:
+Insertion point in `src/index.js`, after every existing intercept but
+before the existing `pendingMove` lock + move interpretation. The intercept
+chain that runs first:
 
-```js
-// existing intercepts: !lore, !truths, !sector, !recap, @scene, etc.
-
-// Pacing classifier — only for undecorated player narration
-if (isPlayerNarration(message) && !isSceneAssertion(message)) {
-  return routePacedInput(message, campaignState);
-}
-
-// fallback to existing pipeline (should now be unreachable for player input)
+```
+@scene → !sector → !x → !at → !journal → !truths → !lore →
+  !sfc encounter → !recap → !pace → !roll
 ```
 
-`@scene` is checked before the classifier and remains the hard override.
+Each early-return is unchanged. After that block:
+
+```js
+if (!isPlayerNarration(message)) return;
+
+const apiKey   = game.settings.get(MODULE_ID, "claudeApiKey");
+const preState = game.settings.get(MODULE_ID, "campaignState");
+
+// Pacing classifier — runs freely; only the MOVE branch claims the lock.
+const pacingResult = await routePacedInput({
+  playerText: message.content,
+  campaignState: preState,
+  character: getActiveCharacterForPacing(preState),
+  apiKey,
+}).catch(err => {
+  console.error(`${MODULE_ID} | pacing router failed; falling through:`, err);
+  return { runMove: true };
+});
+if (!pacingResult.runMove) return;
+
+// existing move pipeline below — claim pendingMove, interpret, confirm, …
+```
+
+`@scene` is checked before the classifier and also calls
+`resetRecentDensity()` so the rolling window doesn't bleed across scenes.
 All `!`-prefixed admin commands are unaffected.
 
 ---
@@ -325,8 +386,8 @@ Five dials, each `0–10`, default values:
 |---|---|
 | Combat | 9 |
 | Investigation | 6 |
-| Exploration | 5 |
-| Social | 3 |
+| Exploration | 6 |
+| Social | 5 |
 | Downtime | 1 |
 
 ```js
@@ -511,8 +572,24 @@ With caching:
 
 **Per classification: ~$0.0006.**
 
-A typical session might see 30–50 classifier calls. Per-session cost:
-**~$0.02–0.03.** Below the noise floor of the existing main pipeline cost.
+**Telemetry update (v1.2.7).** Real session data — 11 decisions over 22.6
+minutes of play, sampled from a live session — gives ~60 inputs per 2-hour
+session, materially higher than the original 30–50/session guess. The
+per-call figure above still holds; the per-session figure should be:
+
+| Window | Decisions | Classifier cost |
+|---|---|---|
+| 1 hour | ~30 | ~$0.018 |
+| 2 hours | ~60 | ~$0.036 |
+| 3 hours | ~90 | ~$0.054 |
+
+The classifier remains below the noise floor of the main pipeline (the
+narrator dominates), but the pipeline total per 2-hour session is now
+roughly **$0.20 on Haiku narrator / $0.30 on Sonnet narrator** — see
+`README.md` "Per-input breakdown" for the full component table. The shift
+is driven by every chat input now triggering classifier + narrator +
+chronicle writer + (non-MOVE) paced detection, not by classifier cost
+alone.
 
 The cache write happens once per session at first call (~$0.00088), then
 reads dominate. Cache TTL is sufficient for a session of normal length.

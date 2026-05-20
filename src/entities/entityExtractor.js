@@ -25,14 +25,17 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
-import { getConnection,  createConnection }  from "./connection.js";
-import { getSettlement } from "./settlement.js";
-import { getFaction }    from "./faction.js";
-import { getShip }       from "./ship.js";
-import { getPlanet }     from "./planet.js";
-import { getLocation }   from "./location.js";
-import { getCreature }   from "./creature.js";
+import { getConnection, createConnection } from "./connection.js";
+import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
+import { getSettlement, createSettlement } from "./settlement.js";
+import { getFaction,    createFaction }    from "./faction.js";
+import { getShip,       createShip }       from "./ship.js";
+import { getPlanet,     createPlanet }     from "./planet.js";
+import { getLocation,   createLocation }   from "./location.js";
+import { getCreature,   createCreature }   from "./creature.js";
+import { rollOracle }                      from "../oracles/roller.js";
 
 import {
   recordLoreDiscovery,
@@ -70,6 +73,33 @@ const ENTITY_ID_FIELDS = {
   location:   "locationIds",
   creature:   "creatureIds",
 };
+
+// Honorifics that the detector may strip when extracting a name from prose.
+// We strip the same set so "Dr. Chen" stored as a connection matches a "Chen"
+// detection on the next narration, instead of being treated as a new NPC.
+const HONORIFIC_PREFIXES = new Set([
+  "dr", "mr", "mrs", "ms", "mx", "miss",
+  "cmdr", "commander", "captain", "capt", "cap", "cpt",
+  "lt", "lieutenant", "sgt", "sergeant",
+  "gen", "general", "col", "colonel", "maj", "major",
+  "prof", "professor", "rev", "reverend",
+  "sir", "dame", "lord", "lady",
+]);
+
+/**
+ * Reduce an entity name to a canonical form for dedup comparisons.
+ * Lowercases, trims, collapses interior whitespace, and strips a single
+ * leading honorific (with optional trailing period). Returns `""` for
+ * non-string / empty input.
+ */
+export function normalizeEntityName(name) {
+  if (typeof name !== "string") return "";
+  let n = name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!n) return "";
+  const m = n.match(/^([a-z]+)\.?\s+(.+)$/);
+  if (m && HONORIFIC_PREFIXES.has(m[1])) n = m[2];
+  return n.trim();
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,22 +143,54 @@ export async function runCombinedDetectionPass(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Sentinel `moveId` value used by the paced-narrative detection path
+ * (narrator-suggestion-loop remediation §C). Triggers the conditional
+ * "no move was rolled" framing in `buildCombinedDetectionPrompt`. Not a
+ * real foundry-ironsworn move id; using a snake_case sentinel keeps the
+ * shape compatible with the existing string parameter without changing
+ * the call signature.
+ */
+export const PACED_NARRATIVE_MOVE_ID = "paced_narrative";
+
+/**
+ * Sentinel `outcome` value paired with PACED_NARRATIVE_MOVE_ID. The
+ * paced path has no roll outcome; the prompt builder omits the
+ * `Outcome:` line entirely when this sentinel is seen so the model
+ * doesn't get confused by `Outcome: n/a` masquerading as a real result.
+ */
+export const PACED_NARRATIVE_OUTCOME = "n/a";
+
+/**
  * Build the single Haiku prompt covering both entity extraction (scope §9)
  * and World Journal state updates (WJ scope §5). The base entity-extraction
  * prompt is prefixed with the current WJ state so the model can detect
  * state transitions. Scopes for established entity names + dismissed names
  * are appended so the model does not re-suggest them.
+ *
+ * When `moveId === PACED_NARRATIVE_MOVE_ID` the move/outcome lines are
+ * rendered as a "no move was rolled" framing instead of literal values,
+ * so paced-narrative detection calls get a clearer prompt without
+ * confusing the model with a fake move id (suggestion-loop remediation §C).
  */
 export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState) {
   const established = collectEstablishedEntityNames(campaignState);
   const dismissed   = (campaignState?.dismissedEntities ?? []).filter(Boolean);
+  const pending     = collectPendingDraftNames();
 
   const wjState = describeWorldJournalState(campaignState);
 
+  const isPaced = moveId === PACED_NARRATIVE_MOVE_ID;
+  const moveLine = isPaced
+    ? `Move: (paced narration — no move was rolled).`
+    : `Move: ${moveId}.`;
+  const outcomeLine = isPaced || outcome === PACED_NARRATIVE_OUTCOME
+    ? null
+    : `Outcome: ${outcome}.`;
+
   return [
     `You are analysing an Ironsworn: Starforged narration.`,
-    `Move: ${moveId}.`,
-    `Outcome: ${outcome}.`,
+    moveLine,
+    ...(outcomeLine ? [outcomeLine] : []),
     ``,
     `ENTITY TYPES TO DETECT:`,
     `- connection: named individual (NPC, person, AI)`,
@@ -140,6 +202,14 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     ``,
     `ESTABLISHED ENTITIES (do not return these as new entities):`,
     established.length ? established.join(", ") : "(none)",
+    `Treat honorifics and titles as equivalent to the bare name —`,
+    `"Dr. Chen" and "Chen" refer to the same person; "Captain Reyes" and`,
+    `"Reyes" refer to the same person. Match against this list by stripping`,
+    `any leading title before comparing.`,
+    ``,
+    `PENDING DRAFTS (already proposed in earlier narration, not yet confirmed —`,
+    `do not return these again, the GM has them under review):`,
+    pending.length ? pending.join(", ") : "(none)",
     ``,
     `DISMISSED NAMES (do not return these — the GM has already rejected them):`,
     dismissed.length ? dismissed.join(", ") : "(none)",
@@ -228,17 +298,24 @@ export function parseDetectionResponse(text, campaignState) {
   const dismissed = new Set(
     (campaignState?.dismissedEntities ?? [])
       .filter(n => typeof n === "string")
-      .map(n => n.trim().toLowerCase()),
+      .map(normalizeEntityName)
+      .filter(Boolean),
   );
   const established = new Set(
-    collectEstablishedEntityNames(campaignState).map(n => n.toLowerCase()),
+    collectEstablishedEntityNames(campaignState)
+      .map(normalizeEntityName)
+      .filter(Boolean),
+  );
+  const pending = new Set(
+    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
 
   const filteredEntities = entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
     .filter(e => (e.confidence ?? "high") !== "low")
-    .filter(e => !dismissed.has(e.name.trim().toLowerCase()))
-    .filter(e => !established.has(e.name.trim().toLowerCase()));
+    .filter(e => !dismissed.has(normalizeEntityName(e.name)))
+    .filter(e => !established.has(normalizeEntityName(e.name)))
+    .filter(e => !pending.has(normalizeEntityName(e.name)));
 
   return {
     entities: filteredEntities,
@@ -267,25 +344,51 @@ export function parseDetectionResponse(text, campaignState) {
  * @param {boolean} [options.autoCreateConnection]  — when true, the first
  *   connection-typed draft is auto-created via createConnection() rather
  *   than queued on the GM card. Used by make_a_connection on a hit.
+ *   The paced-narrative detection path explicitly sets this to false
+ *   so detected NPCs always go through GM review (suggestion-loop
+ *   remediation §C — see docs/narrator-suggestion-loop-group-c-design-memo.md).
  * @param {string}  [options.sessionId]
+ * @param {string}  [options.source]  — telemetry flag attached to the
+ *   GM draft card. "paced_narrative" for paced-path detection;
+ *   anything else / omitted is treated as "move_resolution" (default).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const created = [];
   const queued  = [];
+  const pendingNormalized = new Set(
+    collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
+  );
 
   for (const entity of entities ?? []) {
     if (!entity?.name || !entity?.type) continue;
     if (!ENTITY_GETTERS[entity.type]) continue;
-    if (entityExistsForName(entity.name, entity.type, campaignState)) continue;
+    // Cross-type dedup. A name that already exists anywhere in
+    // campaignState — settlement, location, faction, anything — should not
+    // be re-proposed as a different entity type. The detector classifies
+    // entities by surface form ("Oxidized Kettle cantina" can read as a
+    // Location even though the parent settlement is also called Oxidized
+    // Kettle), so the type-scoped entityExistsForName(name, type, …) lets
+    // duplicates through. entityExistsAnyType catches the cross-type case.
+    if (entityExistsAnyType(entity.name, campaignState)) continue;
+    // Skip names already sitting in an unresolved draft card — the GM is
+    // already reviewing them; re-flagging causes the suggestion loop.
+    if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
 
     if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
       try {
+        const seedData = buildConnectionSeedData(entity, options.connectionSeed ?? null);
         const record = await createConnection({
-          name:        entity.name,
-          description: entity.description ?? "",
-          firstAppearance: options.sessionId ?? "",
+          name:                      seedData.name,
+          description:               seedData.description,
+          role:                      seedData.role,
+          motivation:                seedData.motivation,
+          portraitSourceDescription: seedData.portraitSource,
+          firstAppearance:           options.sessionId ?? "",
         }, campaignState);
+        await postCreationEnrichment("connection", record, campaignState);
+        await registerConnectionOnActiveCharacter(record).catch(err =>
+          console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -297,10 +400,163 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState);
+    await postDraftEntityCard(queued, campaignState, { source: options.source });
   }
 
   return { created, queued };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED ENRICHMENT — oracle backfill + silent portrait generation
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// New entities created from a detector draft (or auto-created on a
+// make_a_connection hit) carry only the detector's surface description.
+// The journal records would otherwise sit with empty role / motivation /
+// description and no portrait. To give the GM a minimal sketch to work
+// with, we backfill the structured fields from the Starforged oracle
+// tables and trigger a silent portrait generation. Output never goes to
+// chat — the resulting detail lives only on the journal/actor record
+// and in the entity panel.
+
+/**
+ * Build connection-creation fields from a draft and an oracle seed.
+ * Re-uses the rolls made by buildOracleSeeds() when a fresh seed is
+ * not provided (e.g. confirm-from-draft path).
+ *
+ * @param {Object} draft           — { name, description }
+ * @param {Object|null} seed       — { role, goal, firstLook, givenName }
+ * @returns {{ name, description, role, motivation, portraitSource }}
+ */
+export function buildConnectionSeedData(draft, seed) {
+  const s = seed ?? {};
+  const name = (draft?.name && draft.name.trim()) || s.givenName || "Unknown Connection";
+  const descriptorParts = [];
+  if (draft?.description && draft.description.trim()) descriptorParts.push(draft.description.trim());
+  if (s.firstLook) descriptorParts.push(`First look: ${s.firstLook}.`);
+  const description = descriptorParts.join(" ");
+  // Portrait source must contain enough visual detail to render. Combine
+  // the detector description (if any) with the first-look oracle so the
+  // model has something concrete to render even when the narrator's prose
+  // was abstract.
+  const portraitParts = [];
+  if (draft?.description && draft.description.trim()) portraitParts.push(draft.description.trim());
+  if (s.firstLook) portraitParts.push(s.firstLook);
+  if (s.role)      portraitParts.push(`role: ${s.role}`);
+  return {
+    name,
+    description,
+    role:           s.role  ?? "",
+    motivation:     s.goal  ?? "",
+    portraitSource: portraitParts.join(". "),
+  };
+}
+
+/**
+ * Build ship-creation fields from a draft and an oracle seed.
+ *
+ * @param {Object} draft  — { name, description }
+ * @param {Object} seed   — { type, firstLook, name }
+ * @returns {{ name, description, type, firstLook, portraitSource }}
+ */
+export function buildShipSeedData(draft, seed) {
+  const s = seed ?? {};
+  const name = (draft?.name && draft.name.trim()) || s.name || "Unknown Ship";
+  const descriptorParts = [];
+  if (draft?.description && draft.description.trim()) descriptorParts.push(draft.description.trim());
+  if (s.firstLook) descriptorParts.push(`First look: ${s.firstLook}.`);
+  if (s.type)      descriptorParts.push(`Type: ${s.type}.`);
+  const description = descriptorParts.join(" ");
+  const portraitParts = [];
+  if (draft?.description && draft.description.trim()) portraitParts.push(draft.description.trim());
+  if (s.firstLook) portraitParts.push(s.firstLook);
+  if (s.type)      portraitParts.push(s.type);
+  return {
+    name,
+    description,
+    type:           s.type      ?? "",
+    firstLook:      s.firstLook ?? "",
+    portraitSource: portraitParts.join(". "),
+  };
+}
+
+function rollFreshConnectionSeed() {
+  return {
+    role:      safeOracleRoll("character_role"),
+    goal:      safeOracleRoll("character_goal"),
+    firstLook: safeOracleRoll("character_first_look"),
+    givenName: safeOracleRoll("given_name"),
+  };
+}
+
+function rollFreshShipSeed() {
+  return {
+    type:      safeOracleRoll("starship_type"),
+    firstLook: safeOracleRoll("starship_first_look"),
+    name:      safeOracleRoll("starship_name"),
+  };
+}
+
+function safeOracleRoll(tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * After a connection or ship is created with `portraitSourceDescription`
+ * already on the record, silently trigger portrait generation. Gated on
+ * the OpenRouter key being configured — when absent, this is a no-op (no
+ * notification, no chat surface).
+ *
+ * The portraitSourceDescription itself is written by the caller as part
+ * of the create-call data so the journal/actor entry persists atomically
+ * — earlier versions did the portraitSource write here in a follow-up
+ * step, which raced with tests (and other readers) that observed the
+ * journal after createXxx() returned but before this function landed.
+ *
+ * Lives here (not in connection.js / ship.js) so the portrait-generation
+ * policy is applied consistently regardless of which create path runs.
+ */
+async function postCreationEnrichment(typeKey, record, campaignState) {
+  if (!record || !record.portraitSourceDescription) return;
+  if (!hasOpenRouterKey()) return;
+
+  const hostId = findHostDocumentId(typeKey, record._id, campaignState);
+  if (!hostId) return;
+
+  try {
+    const { generatePortrait } = await import("../art/generator.js");
+    await generatePortrait(hostId, typeKey, record, campaignState ?? {});
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
+  }
+}
+
+function findHostDocumentId(typeKey, recordId, campaignState) {
+  if (!recordId) return null;
+  const idsField = ENTITY_ID_FIELDS[typeKey];
+  const getter   = ENTITY_GETTERS[typeKey];
+  if (!idsField || !getter) return null;
+  const ids = campaignState?.[idsField] ?? [];
+  for (const hostId of ids) {
+    let rec = null;
+    try { rec = getter(hostId); } catch { continue; }
+    if (rec?._id === recordId) return hostId;
+  }
+  return null;
+}
+
+function hasOpenRouterKey() {
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
+  } catch {
+    return false;
+  }
 }
 
 
@@ -387,13 +643,85 @@ export function entityExistsForName(name, type, campaignState) {
   const getter   = ENTITY_GETTERS[type];
   if (!idsField || !getter) return false;
 
-  const target = name.trim().toLowerCase();
+  const target = normalizeEntityName(name);
+  if (!target) return false;
   const ids    = campaignState?.[idsField] ?? [];
   for (const journalId of ids) {
     let rec = null;
     try { rec = getter(journalId); }
     catch { continue; }
-    if (rec?.name && rec.name.trim().toLowerCase() === target) return true;
+    if (rec?.name && normalizeEntityName(rec.name) === target) return true;
+  }
+  return false;
+}
+
+/**
+ * Cross-type variant of entityExistsForName — returns true if any entity of
+ * any type already carries this name. Used as the primary dedup gate in
+ * routeEntityDrafts so the detector's type classification cannot smuggle a
+ * duplicate through (e.g. proposing Location "Oxidized Kettle" when the
+ * Settlement of the same name is already established in the active sector).
+ *
+ * The WJ routing rules in routeWorldJournalResults still use the type-scoped
+ * entityExistsForName because faction/location WJ entries are deliberately
+ * scoped — a faction WJ note about "Blue Star Compact" should not be blocked
+ * by an unrelated settlement-typed entity that happens to share a name.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+export function entityExistsAnyType(name, campaignState) {
+  const target = normalizeEntityName(name);
+  if (!target) return false;
+
+  // Cross-check player characters first. The entity-type registry above
+  // covers connection/settlement/faction/ship/planet/location/creature
+  // but NOT the foundry-ironsworn `character`-type Actors that PCs are
+  // stored on. In a 2-player session this meant any narration that named
+  // Player B's PC was flagged as a "new connection" draft, since the
+  // dedup gate had no way to recognise PC names.
+  if (isPlayerCharacterName(target)) return true;
+
+  for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    const ids = campaignState?.[idsField] ?? [];
+    for (const journalId of ids) {
+      let rec = null;
+      try { rec = getter(journalId); }
+      catch { continue; }
+      if (rec?.name && normalizeEntityName(rec.name) === target) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} normalisedName — output of normalizeEntityName(rawName)
+ * @returns {boolean} true if any character-type Actor in the world
+ *   matches this name (case-insensitive, honorific-stripped).
+ *
+ * Includes both player-owned PCs and any GM-created character actor
+ * (e.g. an Ironsworn co-op campaign with multiple PC actors not all
+ * formally "owned" by a player User). The detector's existing
+ * normalizeEntityName already strips honorifics and lowercases, so a
+ * PC named "Doctor Chen" matches a detection of "Chen" or "Dr. Chen".
+ */
+function isPlayerCharacterName(normalisedName) {
+  if (!normalisedName) return false;
+  try {
+    const actors = globalThis.game?.actors ?? [];
+    for (const a of actors) {
+      if (a?.type !== "character") continue;
+      if (!a?.name) continue;
+      if (normalizeEntityName(a.name) === normalisedName) return true;
+    }
+  } catch (err) {
+    // Test environments without game.actors land here. Best-effort dedup —
+    // returning false just lets the detector propose the entity, which the
+    // GM can dismiss; not catastrophic.
+    console.warn(`${MODULE_ID} | isPlayerCharacterName: actor lookup failed:`, err?.message ?? err);
   }
   return false;
 }
@@ -562,6 +890,50 @@ async function persistGenerativeTier(entityRef, tier) {
   }
 }
 
+/**
+ * Append a fact-continuity scene-end migration entry to an entity's
+ * generative tier. See docs/fact-continuity-scope.md §9.2 step 1.
+ *
+ * Lower-level than `appendDetailToTier` — does not dedupe against existing
+ * entries (migration entries are tagged source: "scene_truth_migration"
+ * and may legitimately repeat narrator-extracted detail wording).
+ *
+ * Returns true on success, false when the entity's journal/page cannot be
+ * resolved.
+ *
+ * @param {string} journalId
+ * @param {string} type — "connection" | "ship" | "settlement" | …
+ * @param {Object} entry — fully-formed generative-tier entry
+ * @returns {Promise<boolean>}
+ */
+export async function appendMigratedTruthToTier(journalId, type, entry) {
+  if (!journalId || !type || !entry) return false;
+  try {
+    // Registry-dispatch — PR #100 moved ship/planet/location/settlement onto
+    // native Actor documents while connection/faction/creature stayed
+    // journal-backed. The "journalId" argument name is preserved for
+    // back-compat (Phase C callers built around the old shape) but the value
+    // is the host document id of either flavour. See src/entities/registry.js.
+    const document = getEntityDocument(type, journalId);
+    if (!document) return false;
+
+    const existingFlags = readEntityFlag(type, document) ?? {};
+    const tier          = Array.isArray(existingFlags.generativeTier)
+      ? existingFlags.generativeTier
+      : [];
+    const updated = {
+      ...existingFlags,
+      generativeTier: [...tier, entry],
+      updatedAt:      new Date().toISOString(),
+    };
+    await writeEntityFlag(type, document, updated);
+    return true;
+  } catch (err) {
+    console.error(`${MODULE_ID} | entityExtractor: appendMigratedTruthToTier failed:`, err);
+    return false;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DRAFT CARD
@@ -587,25 +959,25 @@ const TYPE_LABELS = {
   creature:   "Creature",
 };
 
-async function postDraftEntityCard(entities, _campaignState) {
+async function postDraftEntityCard(entities, _campaignState, options = {}) {
   if (!globalThis.ChatMessage?.create) return null;
   if (!entities?.length) return null;
 
-  const items = entities.map(e => {
-    const glyph = TYPE_GLYPHS[e.type] ?? "◇";
-    const label = TYPE_LABELS[e.type] ?? e.type;
-    const desc  = e.description ? ` — ${escapeHtml(e.description)}` : "";
-    return `<li>[${glyph} ${escapeHtml(label)}] <strong>${escapeHtml(e.name)}</strong>${desc}</li>`;
-  }).join("");
+  // Stable index lets click handlers identify the right draft after re-render.
+  // We never reorder the array so the index in the flag matches the index in
+  // the rendered DOM.
+  const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: "pending" }));
 
-  const html =
-    `<div class="sf-draft-entity-card">` +
-    `<div class="sf-draft-entity-label">◈ New Entities Detected</div>` +
-    `<ul class="sf-draft-entity-list">${items}</ul>` +
-    `<div class="sf-draft-entity-hint">Open the Entities panel to confirm or dismiss.</div>` +
-    `</div>`;
+  const html = renderDraftCardHtml(drafts);
 
   const whisper = collectGmIds();
+
+  // `source` is purely a telemetry flag — "paced_narrative" when the drafts
+  // came from runPacedDetection, otherwise defaults to "move_resolution"
+  // (the legacy / Path 2 path). Lets operators audit how often paced
+  // detection is firing and what the GM does with those drafts without
+  // adding an explicit UI.
+  const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
 
   try {
     return await ChatMessage.create({
@@ -614,13 +986,239 @@ async function postDraftEntityCard(entities, _campaignState) {
       flags: {
         [MODULE_ID]: {
           draftEntityCard: true,
-          drafts:          entities,
+          drafts,
+          source,
         },
       },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | entityExtractor: postDraftEntityCard failed:`, err);
     return null;
+  }
+}
+
+/**
+ * Render the HTML body of the draft entity card from a `drafts` array.
+ * Pure / re-runnable so the renderChatMessage hook can rebuild after each
+ * Confirm/Dismiss click.
+ */
+function renderDraftCardHtml(drafts) {
+  const items = drafts.map((e) => {
+    const glyph = TYPE_GLYPHS[e.type] ?? "◇";
+    const label = TYPE_LABELS[e.type] ?? e.type;
+    const desc  = e.description ? ` — ${escapeHtml(e.description)}` : "";
+    const status = e.status ?? "pending";
+
+    let actions;
+    if (status === "confirmed") {
+      actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>`;
+    } else if (status === "dismissed") {
+      actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
+    } else {
+      actions =
+        `<button class="sf-draft-btn sf-draft-confirm" ` +
+        `data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>` +
+        `<button class="sf-draft-btn sf-draft-dismiss" ` +
+        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
+    }
+
+    const rowClass = `sf-draft-row sf-draft-row-${status}`;
+    return (
+      `<li class="${rowClass}">` +
+      `<div class="sf-draft-row-info">` +
+      `[${glyph} ${escapeHtml(label)}] <strong>${escapeHtml(e.name)}</strong>${desc}` +
+      `</div>` +
+      `<div class="sf-draft-row-actions">${actions}</div>` +
+      `</li>`
+    );
+  }).join("");
+
+  const allResolved = drafts.every(d => d.status && d.status !== "pending");
+  const hint = allResolved
+    ? `<div class="sf-draft-entity-hint sf-draft-entity-hint-done">All entities reviewed.</div>`
+    : `<div class="sf-draft-entity-hint">Confirm to add to the Entities panel; Dismiss to suppress this name.</div>`;
+
+  return (
+    `<div class="sf-draft-entity-card">` +
+    `<div class="sf-draft-entity-label">◈ New Entities Detected</div>` +
+    `<ul class="sf-draft-entity-list">${items}</ul>` +
+    hint +
+    `</div>`
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAFT CARD — Confirm / Dismiss handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ENTITY_CREATORS = {
+  connection: createConnection,
+  ship:       createShip,
+  settlement: createSettlement,
+  faction:    createFaction,
+  planet:     createPlanet,
+  location:   createLocation,
+  creature:   createCreature,
+};
+
+/**
+ * Wire Confirm/Dismiss button clicks on draft entity chat cards. Idempotent:
+ * registers a single renderChatMessage hook that re-attaches listeners every
+ * render. Call once at module ready.
+ */
+export function registerDraftCardHooks() {
+  Hooks.on("renderChatMessage", (message, html) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard) return;
+
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    if (!root) return;
+
+    // Non-GMs see the card (they're whispered in) but cannot mutate state.
+    // Hide buttons rather than wire dead handlers.
+    if (!globalThis.game?.user?.isGM) {
+      root.querySelectorAll(".sf-draft-btn").forEach(btn => { btn.style.display = "none"; });
+      return;
+    }
+
+    root.querySelectorAll('[data-action="sf-draft-confirm"]').forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.index);
+        handleDraftConfirm(message, idx).catch(err =>
+          console.error(`${MODULE_ID} | draft confirm failed:`, err));
+      });
+    });
+
+    root.querySelectorAll('[data-action="sf-draft-dismiss"]').forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.index);
+        handleDraftDismiss(message, idx).catch(err =>
+          console.error(`${MODULE_ID} | draft dismiss failed:`, err));
+      });
+    });
+  });
+}
+
+async function handleDraftConfirm(message, draftIndex) {
+  const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
+    ? [...message.flags[MODULE_ID].drafts]
+    : [];
+  const draft = drafts.find(d => d.index === draftIndex);
+  if (!draft || draft.status !== "pending") return;
+
+  const creator = ENTITY_CREATORS[draft.type];
+  if (!creator) {
+    console.warn(`${MODULE_ID} | draft confirm: no creator for type "${draft.type}"`);
+    return;
+  }
+
+  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+
+  let record = null;
+  try {
+    if (draft.type === "connection") {
+      const seedData = buildConnectionSeedData(
+        { name: draft.name, description: draft.description ?? "" },
+        rollFreshConnectionSeed(),
+      );
+      record = await creator({
+        name:                      seedData.name,
+        description:               seedData.description,
+        role:                      seedData.role,
+        motivation:                seedData.motivation,
+        portraitSourceDescription: seedData.portraitSource,
+      }, campaignState);
+      await registerConnectionOnActiveCharacter(record).catch(err =>
+        console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+    } else if (draft.type === "ship") {
+      const seedData = buildShipSeedData(
+        { name: draft.name, description: draft.description ?? "" },
+        rollFreshShipSeed(),
+      );
+      record = await creator({
+        name:                      seedData.name,
+        description:               seedData.description,
+        type:                      seedData.type,
+        firstLook:                 seedData.firstLook,
+        portraitSourceDescription: seedData.portraitSource,
+      }, campaignState);
+    } else {
+      record = await creator({
+        name:        draft.name,
+        description: draft.description ?? "",
+      }, campaignState);
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | draft confirm: createXxx failed:`, err);
+    if (globalThis.ui?.notifications?.warn) {
+      globalThis.ui.notifications.warn(`Failed to create ${draft.type} "${draft.name}". See console.`);
+    }
+    return;
+  }
+
+  if (record) {
+    await postCreationEnrichment(draft.type, record, campaignState);
+  }
+
+  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });
+  await updateDraftCard(message, drafts);
+}
+
+async function handleDraftDismiss(message, draftIndex) {
+  const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
+    ? [...message.flags[MODULE_ID].drafts]
+    : [];
+  const draft = drafts.find(d => d.index === draftIndex);
+  if (!draft || draft.status !== "pending") return;
+
+  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+  const list = Array.isArray(campaignState.dismissedEntities)
+    ? [...campaignState.dismissedEntities]
+    : [];
+  if (draft.name && !list.includes(draft.name)) list.push(draft.name);
+  campaignState.dismissedEntities = list;
+
+  try {
+    await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+  } catch (err) {
+    console.error(`${MODULE_ID} | draft dismiss: settings.set failed:`, err);
+    return;
+  }
+
+  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "dismissed" });
+  await updateDraftCard(message, drafts);
+}
+
+async function updateDraftCard(message, drafts) {
+  // The Confirm/Dismiss click handler chains: createEntity → settings.set →
+  // updateDraftCard. The first two steps can take multiple socket round-trips
+  // on Forge, and a GM (or test cleanup) can delete the draft card during
+  // that window. When the message has already been deleted, message.update
+  // raises "ChatMessage <id> does not exist!" and the resulting failed
+  // ui.notifications.error on Foundry's side throws an uncaught TypeError
+  // when no notification host is mounted. Skip silently when the message has
+  // been removed from the collection.
+  if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
+
+  const content = renderDraftCardHtml(drafts);
+  try {
+    // Update content first, then flags via setFlag so we don't accidentally
+    // clobber sibling flags (draftEntityCard, source) by passing a partial
+    // flags object to message.update.
+    await message.update({ content });
+    await message.setFlag(MODULE_ID, "drafts", drafts);
+  } catch (err) {
+    // Same race as above — the message may be deleted between the existence
+    // check and the update. Swallow "does not exist" quietly and only log
+    // other failure modes.
+    const msg = String(err?.message ?? err);
+    if (msg.includes("does not exist")) return;
+    console.error(`${MODULE_ID} | updateDraftCard failed:`, err);
   }
 }
 
@@ -713,6 +1311,38 @@ function collectEstablishedEntityNames(campaignState) {
   return [...names];
 }
 
+/**
+ * Collect names that have been proposed in a still-pending "New Entities
+ * Detected" draft card but not yet accepted into an entity record or
+ * dismissed. Reading from chat is sufficient — the draft card carries the
+ * full `drafts` array as a flag, and deleting the card (the de-facto
+ * "dismiss" gesture) naturally drops the names from this list.
+ *
+ * Suppresses the same NPC being re-flagged on every subsequent narration
+ * that mentions them.
+ */
+function collectPendingDraftNames() {
+  try {
+    const messages = globalThis.game?.messages?.contents ?? [];
+    const names = new Set();
+    for (const m of messages) {
+      const f = m?.flags?.[MODULE_ID];
+      if (!f?.draftEntityCard) continue;
+      const drafts = Array.isArray(f.drafts) ? f.drafts : [];
+      for (const d of drafts) {
+        // Only "pending" drafts should suppress re-detection. Confirmed
+        // drafts are now established entities (caught by collectEstablished-
+        // EntityNames). Dismissed drafts are now in dismissedEntities.
+        if (d?.status && d.status !== "pending") continue;
+        if (d?.name && typeof d.name === "string") names.add(d.name.trim());
+      }
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
+}
+
 function describeWorldJournalState(campaignState) {
   const safe = (fn) => { try { return fn() ?? []; } catch { return []; } };
 
@@ -734,4 +1364,24 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Register a confirmed Connection on the active character Actor as an
+ * ironsworn `progress` Item with subtype "bond". This is what makes the
+ * Connection appear under the character sheet's Connections tab with its
+ * own progress track — mirroring what the system's built-in "+ Connection"
+ * button does. With no active character (sector seeding, multi-PC setups
+ * with no obvious target), this is a no-op.
+ */
+async function registerConnectionOnActiveCharacter(record) {
+  if (!record?._id) return;
+  const actors = getPlayerActors();
+  const actor = actors?.[0];
+  if (!actor) return;
+  await createCharacterBondItem(actor, {
+    name:         record.name,
+    rank:         record.rank,
+    connectionId: record._id,
+  });
 }

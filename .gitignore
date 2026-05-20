@@ -2,6 +2,7 @@
 .env
 node_modules/
 coverage/
+site/
 
 # Local Foundry CI stack — see test/ci/README.md
 test/ci/.env

@@ -10,9 +10,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
+  buildPacedNarrativeUserMessage,
+  buildSceneUserMessage,
   resolveNarrationPerspective,
   formatEntityCard,
   formatOracleSeedsBlock,
+  sanitizePlayerText,
+  stripHtml,
   NARRATOR_PERMISSIONS,
 } from '../../src/narration/narratorPrompt.js';
 
@@ -175,6 +179,128 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Wary of strangers');
     expect(prompt).toContain('Health 4/5');
   });
+
+  // Narrator suggestion-loop remediation §A1 — role description must match
+  // the call-site mode so the paced-narrative path does not inherit the
+  // "narrate the mechanical consequences of move outcomes" framing.
+  describe('mode parameter (suggestion-loop remediation §A1)', () => {
+    it('defaults to move_resolution role description when mode is omitted', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null,
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+
+    it('move_resolution mode mentions mechanical consequences', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'move_resolution' },
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+
+    it('paced_narrative mode does not mention move outcomes', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'paced_narrative' },
+      );
+      expect(prompt).not.toContain('mechanical consequences of move outcomes');
+      expect(prompt).toContain('continue the fiction');
+      expect(prompt).toContain('No move was rolled');
+    });
+
+    it('scene_interrogation mode frames the narrator as a camera', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'scene_interrogation' },
+      );
+      expect(prompt).not.toContain('mechanical consequences of move outcomes');
+      expect(prompt).toContain('camera');
+      expect(prompt).toContain("player's question");
+    });
+
+    it('falls back to move_resolution for an unknown mode value', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'not_a_real_mode' },
+      );
+      expect(prompt).toContain('mechanical consequences of move outcomes');
+    });
+  });
+
+  // Narrator suggestion-loop remediation §A2 — anti-suggestion clause must
+  // appear in every mode. Fixes the H6 finding (model generalizing the
+  // closing-italic-hint pattern into inline bracketed suggestions).
+  describe('anti-suggestion clause (suggestion-loop remediation §A2)', () => {
+    it.each(['move_resolution', 'paced_narrative', 'scene_interrogation'])(
+      '%s mode includes DEPICT, DO NOT OFFER section',
+      (mode) => {
+        const prompt = buildNarratorSystemPrompt(
+          makeCampaignState(), makeNarratorSettings(), null, '', { mode },
+        );
+        expect(prompt).toContain('DEPICT, DO NOT OFFER');
+        expect(prompt).toContain('Depict, do not offer');
+        expect(prompt).toContain('Do not propose actions to the player');
+      },
+    );
+
+    it('forbids parenthetical and italicized asides in the prose body', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null, '',
+        { mode: 'paced_narrative' },
+      );
+      expect(prompt).toContain('parenthetical');
+      expect(prompt).toContain('italicized asides');
+    });
+
+    it('appears in the default-mode (omitted extras) call too', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null,
+      );
+      expect(prompt).toContain('DEPICT, DO NOT OFFER');
+    });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildPacedNarrativeUserMessage — italic carve-out
+// (Narrator suggestion-loop remediation §A2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildPacedNarrativeUserMessage()', () => {
+  it('omits the SUGGESTED MOVE block when no move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I lean against the bulkhead and watch.', '', 3, null,
+    );
+    expect(msg).not.toContain('SUGGESTED MOVE');
+    expect(msg).toContain('Continue the fiction');
+  });
+
+  it('includes the suggested move block when a move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I press her on what she heard.', '', 3, 'Gather Information',
+    );
+    expect(msg).toContain('SUGGESTED MOVE');
+    expect(msg).toContain('Gather Information');
+  });
+
+  it('reinforces the "italic only at the close" carve-out when a move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I press her on what she heard.', '', 3, 'Gather Information',
+    );
+    expect(msg).toContain('ONE permitted exception');
+    expect(msg).toContain('"depict, do not offer"');
+    expect(msg).toContain('at the very end of the narration');
+    expect(msg).toMatch(/inside the[\s\n]+body of the prose/);
+  });
+
+  it('does not mention the italic carve-out when no move is suggested', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      'I look out the viewport.', '', 3, null,
+    );
+    expect(msg).not.toContain('ONE permitted exception');
+  });
 });
 
 
@@ -301,8 +427,19 @@ describe('NARRATOR_PERMISSIONS', () => {
     expect(NARRATOR_PERMISSIONS.discovery).toContain('You MAY introduce');
   });
 
-  it('interaction block contains "do not contradict"', () => {
-    expect(NARRATOR_PERMISSIONS.interaction.toLowerCase()).toContain('do not contradict');
+  it('interaction block instructs the narrator to honour established facts', () => {
+    expect(NARRATOR_PERMISSIONS.interaction.toLowerCase()).toContain('established');
+  });
+
+  it('every permission block bans referencing module mechanics in prose', () => {
+    for (const key of ['discovery', 'interaction', 'embellishment']) {
+      expect(NARRATOR_PERMISSIONS[key].toLowerCase()).toContain('speak only as the fiction');
+    }
+  });
+
+  it('discovery block no longer leaks "captured for the campaign record"', () => {
+    expect(NARRATOR_PERMISSIONS.discovery.toLowerCase())
+      .not.toContain('captured for the campaign record');
   });
 
   it('embellishment block forbids new named entities', () => {
@@ -414,14 +551,15 @@ describe('formatEntityCard', () => {
     expect(recentIdx).toBeGreaterThan(pinnedIdx);
   });
 
-  it('canonicalLocked: true → "do not contradict" label', () => {
+  it('canonicalLocked: true → "established facts (fixed)" label', () => {
     const card = formatEntityCard(makeConnection({ canonicalLocked: true }), 'connection');
-    expect(card.toLowerCase()).toContain('do not contradict');
+    expect(card.toLowerCase()).toContain('established facts');
+    expect(card.toLowerCase()).toContain('fixed');
   });
 
-  it('canonicalLocked: false → "established — prefer consistency" label', () => {
+  it('canonicalLocked: false → "established facts — prefer consistency" label', () => {
     const card = formatEntityCard(makeConnection({ canonicalLocked: false }), 'connection');
-    expect(card.toLowerCase()).toContain('established');
+    expect(card.toLowerCase()).toContain('established facts');
     expect(card.toLowerCase()).toContain('prefer consistency');
   });
 
@@ -522,5 +660,142 @@ describe('buildNarratorSystemPrompt extras', () => {
     );
     expect(prompt).toContain('CURRENT LOCATION');
     expect(prompt).toContain('BLEAKHOLD');
+  });
+
+  it('injects active sector anchor under ACTIVE SECTOR header', () => {
+    const block =
+      'Active sector: Bleakhold Reach\n' +
+      'Region: Terminus\n' +
+      'Trouble: Exodus relic\n' +
+      'Established settlements in this sector: Bleakhold, Sable Crossing.\n' +
+      'When the scene is set in a settlement, reuse one of the established ' +
+      'names above. Do not invent a new settlement name for the same place.';
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { activeSectorBlock: block },
+    );
+    expect(prompt).toContain('## ACTIVE SECTOR');
+    expect(prompt).toContain('Bleakhold Reach');
+    expect(prompt).toContain('Established settlements in this sector: Bleakhold, Sable Crossing.');
+    expect(prompt).toContain('Do not invent a new settlement name');
+  });
+
+  it('omits the active sector header when the block is empty', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { activeSectorBlock: '' },
+    );
+    expect(prompt).not.toContain('## ACTIVE SECTOR');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sanitizePlayerText / stripHtml — HTML leak fix
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('sanitizePlayerText()', () => {
+  it('returns empty string for non-string input', () => {
+    expect(sanitizePlayerText(null)).toBe('');
+    expect(sanitizePlayerText(undefined)).toBe('');
+    expect(sanitizePlayerText(42)).toBe('');
+  });
+
+  it('strips paragraph tags Foundry adds to chat content', () => {
+    expect(sanitizePlayerText('<p>I peer at the screen.</p>'))
+      .toBe('I peer at the screen.');
+  });
+
+  it('strips nested and attributed tags', () => {
+    expect(sanitizePlayerText(
+      '<div class="message-content"><span>She speaks slowly.</span></div>',
+    )).toBe('She speaks slowly.');
+  });
+
+  it('decodes core HTML entities', () => {
+    expect(sanitizePlayerText('Chen &amp; I look at the data.'))
+      .toBe('Chen & I look at the data.');
+    expect(sanitizePlayerText('She said &quot;run&quot; &mdash; we ran.'))
+      .toContain('"run"');
+    expect(sanitizePlayerText('Tab&nbsp;over&nbsp;here'))
+      .toBe('Tab over here');
+  });
+
+  it('collapses whitespace to a single space', () => {
+    expect(sanitizePlayerText('I   look\n\nlong  at   the   panel.'))
+      .toBe('I look long at the panel.');
+  });
+
+  it('handles a realistic enriched chat message', () => {
+    const input = '<p>Chen&apos;s expression shifts. &quot;What did you find?&quot;</p>';
+    // &apos; is decoded too via the &#0?39; rule when written as &#39; — keep
+    // the more common &apos; literal to make the assertion explicit.
+    const out = sanitizePlayerText(input);
+    expect(out).not.toContain('<');
+    expect(out).not.toContain('>');
+    expect(out).toContain('What did you find?');
+  });
+});
+
+describe('stripHtml()', () => {
+  it('preserves paragraph breaks for multi-paragraph context', () => {
+    const input = '<p>First paragraph.</p>\n\n<p>Second paragraph.</p>';
+    const out = stripHtml(input);
+    expect(out).toContain('First paragraph.');
+    expect(out).toContain('Second paragraph.');
+    expect(out.split(/\n\n/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('returns empty string for non-string input', () => {
+    expect(stripHtml(null)).toBe('');
+  });
+});
+
+describe('user-message builders strip HTML at the intake', () => {
+  it('buildPacedNarrativeUserMessage does not leak tags from playerText', () => {
+    const msg = buildPacedNarrativeUserMessage(
+      '<p>I lean toward the artifact.</p>',
+      '',
+      3,
+      null,
+    );
+    expect(msg).toContain('I lean toward the artifact.');
+    expect(msg).not.toContain('<p>');
+    expect(msg).not.toContain('</p>');
+  });
+
+  it('buildSceneUserMessage does not leak tags from a scene question', () => {
+    const msg = buildSceneUserMessage(
+      '<p>What does the room smell like?</p>',
+      '',
+      2,
+    );
+    expect(msg).toContain('What does the room smell like?');
+    expect(msg).not.toContain('<p>');
+  });
+
+  it('buildNarratorUserMessage does not leak tags from playerNarration', () => {
+    const msg = buildNarratorUserMessage(
+      { loremasterContext: 'Strong hit.' },
+      '<div>She tries to keep her hands steady.</div>',
+      2,
+    );
+    expect(msg).toContain('She tries to keep her hands steady.');
+    expect(msg).not.toContain('<div>');
+  });
+
+  it('regression — narrator no longer sees the word "HTML" if user content has tags', () => {
+    // Reproduces the v1.2.3 bug: Foundry chat content carries <p>...</p>;
+    // the prompt formerly included the tags verbatim and the narrator
+    // wrote prose like "Chen's expression shifts when you speak the HTML
+    // aloud". With sanitization the tags are gone and the model has
+    // nothing markup-shaped to riff on.
+    const msg = buildPacedNarrativeUserMessage(
+      '<p>I open my mouth to ask but nothing comes out.</p>',
+      '',
+      3,
+    );
+    expect(msg.toLowerCase()).not.toContain('<p');
+    expect(msg.toLowerCase()).not.toContain('html');
   });
 });

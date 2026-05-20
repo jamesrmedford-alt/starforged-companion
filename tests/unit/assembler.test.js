@@ -491,6 +491,37 @@ describe("buildCharacterStateSection", () => {
     expect(packet.assembled).not.toMatch(/CHARACTER STATE/i);
     game.settings._store.delete("starforged-companion.characterContextEnabled");
   });
+
+  it("surfaces 'Paths & Assets' with enabled abilities when the actor has asset items", async () => {
+    game.actors._set("char-paths", makeTestActor({
+      id:   "char-paths",
+      name: "Mae Kobayashi",
+      items: {
+        contents: [
+          {
+            type: "asset", name: "Firebrand",
+            system: {
+              abilities: [
+                { enabled: true,  text: "<p>Take +1 momentum when you press an enemy.</p>" },
+                { enabled: false, text: "<p>Locked.</p>" },
+              ],
+            },
+          },
+          {
+            type: "asset", name: "Scoundrel",
+            system: { abilities: [{ enabled: true, text: "Bluff with edge." }] },
+          },
+        ],
+      },
+    }));
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 4000 });
+    expect(packet.assembled).toMatch(/Paths & Assets/);
+    expect(packet.assembled).toMatch(/Firebrand/);
+    expect(packet.assembled).toMatch(/Scoundrel/);
+    expect(packet.assembled).toMatch(/Take \+1 momentum/);
+    // Disabled abilities must not surface
+    expect(packet.assembled).not.toMatch(/Locked\./);
+  });
 });
 
 
@@ -692,15 +723,18 @@ describe("assembler — current location card (Section 6)", () => {
   });
 
   it("injects CURRENT LOCATION block when currentLocationId is set", async () => {
-    game.journal.get = (id) => {
-      if (id !== "j-bleak") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { settlement: {
+    // Settlement is now actor-hosted (Phase 3 of the Entity → Actor Migration);
+    // seed via game.actors instead of game.journal.
+    global.game.actors._set("a-bleak", global.makeTestActor({
+      id: "a-bleak", type: "location", name: "Bleakhold",
+      system: { subtype: "settlement", klass: "Planetside", description: "" },
+      flags: { "starforged-companion": { settlement: {
         _id: "loc-1", name: "Bleakhold", location: "Planetside",
         canonicalLocked: false, generativeTier: [],
-      }}}}] }};
-    };
+      } } },
+    }));
     const state = baseCampaignState({
-      currentLocationId:   "j-bleak",
+      currentLocationId:   "a-bleak",
       currentLocationType: "settlement",
     });
     const packet = await assembleContextPacket(

@@ -203,9 +203,13 @@ export const IMPACTS = {
 
 /**
  * External art generation backends.
- * Local generation is not supported — backend is always an external API.
+ *
+ * Image generation goes through OpenRouter; the specific model is selected
+ * via the `openRouterImageModel` setting (default `black-forest-labs/flux.2-pro`).
+ * This constant is retained for ArtAssetSchema metadata fields that record
+ * which provider produced a stored asset.
  */
-export const ART_BACKENDS = ["replicate", "fal", "dalle"];
+export const ART_BACKENDS = ["openrouter"];
 
 /**
  * Ask the Oracle yes/no odds and their threshold rolls.
@@ -494,9 +498,22 @@ export const MoveResolutionSchema = {
     healthChange:          0,
     spiritChange:          0,
     supplyChange:          0,
-    progressMarked:        0,   // Ticks to mark on the relevant progress track
+    progressMarked:        0,   // Number of mark-progress operations.
+                                 // For ranked tracks (vow / expedition / connection /
+                                 // combat / scene_challenge) the persistence layer
+                                 // multiplies by the track's ticksPerMark per its rank.
+                                 // For legacy tracks (quests / bonds / discoveries)
+                                 // this is treated as a raw tick count, matching the
+                                 // play kit's per-rank legacy-reward values.
     sufferMoveTriggered:   null,// e.g. { move: "endure_harm", amount: 1 }
     progressTrackId:       null,// Which track to apply progressMarked to
+    combatPosition:        null,// "in_control" | "bad_spot" | null
+                                 // Persisted onto the bound combat track's
+                                 // combat.controlState so subsequent moves
+                                 // know whether to use proactive (Gain Ground,
+                                 // Strike, Take Decisive Action) or reactive
+                                 // (React Under Fire, Clash) moves. Play kit
+                                 // p. 5 "In Control / In a Bad Spot".
     otherEffect:           "",  // Narrative consequence for Loremaster
   },
 
@@ -666,8 +683,8 @@ export const CampaignStateSchema = {
 
   // Art generation — external API only
   art: {
-    // ART_BACKENDS: "replicate" | "fal" | "dalle"
-    // null until configured in module settings during setup
+    // ART_BACKENDS: "openrouter"
+    // null until first generation records a value
     backend: null,
     // API key stored in Foundry's client settings (not here — never serialise credentials)
     enabled: false,
@@ -702,6 +719,28 @@ export const CampaignStateSchema = {
     generatedAt:     null,
     chronicleLength: 0,
   },
+
+  // Pacing classifier state (see docs/pacing-scope.md)
+  //   sceneOverride   — { modifier, label } when GM has set !pace hot/quiet; null otherwise
+  //   forceNextAsMove — set by !roll, consumed by router before classification
+  // Recent-decision rolling window lives in-memory in src/pacing/router.js;
+  // it resets when the scene tag changes and does not need to persist.
+  pacing: {
+    sceneOverride:   null,
+    forceNextAsMove: false,
+  },
+
+  // Fact-continuity active-scene ledgers (see docs/fact-continuity-scope.md §4–5).
+  //   currentSceneId — assigned on scene start, cleared on scene end
+  //   sceneTruths    — append-only ledger of narrator-asserted truths
+  //                    { id, subject: { kind, ... }, fact, sessionId, sceneId,
+  //                      moveId, source, asserter, createdAt, retracted,
+  //                      retractedBy, retractedAt, correctedTo, migratedTo }
+  //   sceneState     — supersede-on-attribute state ledger
+  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt }] }, sceneId }
+  currentSceneId: null,
+  sceneTruths:    [],
+  sceneState:     { bySubject: {}, sceneId: null },
 
   createdAt: null,
   updatedAt: null,

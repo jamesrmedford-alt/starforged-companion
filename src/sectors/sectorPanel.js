@@ -224,10 +224,22 @@ export class SectorCreatorApp extends ApplicationV2 {
       const [entityData, backgroundPath, stubs] = await Promise.all([
         createEntityJournals(this.#sector, campaignState),
         artEnabled
-          ? generateSectorBackground(this.#sector, campaignState).catch(() => null)
+          ? generateSectorBackground(this.#sector, campaignState).catch(err => {
+              // generateSectorBackground notifies its own failure paths; this
+              // catch is the safety net for anything that bubbled out.
+              console.warn(`${MODULE_ID} | Sector art unhandled rejection:`, err?.message ?? err);
+              ui.notifications?.error(
+                `Starforged Companion: Sector art failed unexpectedly: ${err?.message ?? err}`,
+                { permanent: true }
+              );
+              return null;
+            })
           : Promise.resolve(null),
         stubsEnabled
-          ? generateNarratorStubs(this.#sector, narratorSettings).catch(() => ({ sector: null, settlements: {} }))
+          ? generateNarratorStubs(this.#sector, narratorSettings).catch(err => {
+              console.warn(`${MODULE_ID} | Narrator stubs unhandled rejection:`, err?.message ?? err);
+              return { sector: null, settlements: {} };
+            })
           : Promise.resolve({ sector: null, settlements: {} }),
       ]);
 
@@ -235,8 +247,10 @@ export class SectorCreatorApp extends ApplicationV2 {
       // entity description matches what the sector journal page shows.
       await applyStubsToSettlementEntities(entityData.settlements, stubs);
 
-      // Sector journal (needs stubs); scene sequential after background resolves
-      const sectorJournal = await createSectorJournal(this.#sector, stubs);
+      // Sector journal (needs stubs + the gen-id→Actor map so the overview can
+      // emit @UUID document links to each settlement Actor — see scope §3.6);
+      // scene sequential after background resolves.
+      const sectorJournal = await createSectorJournal(this.#sector, stubs, entityData.settlements);
       const scene         = await createSectorScene(this.#sector, backgroundPath, entityData.settlements);
 
       const stored = await storeSector(this.#sector, {

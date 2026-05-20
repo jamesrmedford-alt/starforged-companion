@@ -1,13 +1,34 @@
 /**
  * STARFORGED COMPANION
- * src/entities/settlement.js — Settlement records
+ * src/entities/settlement.js — Settlement records, hosted on foundry-ironsworn
+ * `location` Actor documents with `system.subtype='settlement'` (Phase 3 of
+ * the Entity → Actor Migration).
  *
- * Settlements are locations, not characters. They don't have progress tracks
- * but they do have oracle-derived details, a projects list, a trouble state,
- * and context injection for scenes set at that location.
+ * Native location-actor schema (vendor/foundry-ironsworn/src/module/actor/
+ * subtypes/location.ts) carries `subtype`, `klass`, `description` only.
+ * `klass` carries our location-class enum (Planetside / Orbital / Deep Space);
+ * everything else lives in flags.
  *
- * Storage: JournalEntry + JournalEntryPage, same pattern as connections.
+ * Field placement (per docs/entity-actor-migration-scope.md §3.2):
+ *   actor.system.subtype  = "settlement"
+ *   actor.system.klass    = settlement.location  (Planetside/Orbital/Deep Space)
+ *   actor.system.description ← settlement.description
+ *   actor.flags[MODULE].settlement  ← full Starforged payload
+ *   actor.flags[MODULE].entityType  ← "settlement"
+ *   actor.flags[MODULE].entityId    ← preserved _id
+ *
+ * Storage moved off of JournalEntry pages — the legacy duplication of
+ * settlement-instance fields across the sector-record JournalEntry's embedded
+ * pages and the `campaignState.sectors[].settlements[]` array entries is
+ * resolved by §3.5: the Actor is now the single mutable source.
  */
+
+import { getOrCreateSectorActorFolder } from "./folder.js";
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+} from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "settlement";
@@ -18,37 +39,40 @@ export const SettlementSchema = {
   active:   true,
 
   // Oracle-derived details (populated progressively)
-  location:       "",    // "Planetside" | "Orbital" | "Deep Space"
+  location:       "",    // "Planetside" | "Orbital" | "Deep Space" — also mirrored to system.klass
   population:     "",    // "Few" | "Dozens" | "Hundreds" | "Thousands" | "Tens of thousands"
-  firstLook:      "",    // Settlement First Look oracle result
-  initialContact: "",    // Initial Contact oracle result
-  authority:      "",    // Authority oracle result
-  projects:       [],    // Settlement Projects oracle results (array of strings)
-  trouble:        "",    // Settlement Trouble oracle result
+  firstLook:      "",
+  initialContact: "",
+  authority:      "",
+  projects:       [],
+  trouble:        "",
 
   // Narrative
-  description:    "",    // Physical description / atmosphere
-  history:        "",    // Known backstory
-  notes:          "",    // GM notes
+  description: "",
+  history:     "",
+  notes:       "",
 
   // Art
   portraitId:                  null,
   portraitSourceDescription:   "",
 
   // Context injection
-  sceneRelevant: false,  // true = inject into current scene context packet
-  loremasterNotes: "",   // Setting/atmosphere notes for Loremaster
+  sceneRelevant:   false,
+  loremasterNotes: "",
 
   // Linked entities
-  connectionIds: [],     // Connection _ids of notable inhabitants
+  connectionIds: [],
 
-  // Set true when this entity was authored by the sector creator (or any other
-  // canonical source) and should not be overwritten by narrator entity discovery.
-  // No-op until the entity discovery system reads it.
+  // Sector membership — drives per-sector folder placement
+  sectorId: null,
+
+  // Set true when this entity was authored by the sector creator (or any
+  // other canonical source) and should not be overwritten by narrator
+  // entity discovery.
   canonicalLocked: false,
 
-  // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
-  generativeTier:  [],
+  // Narrator entity-discovery flags
+  generativeTier: [],
 
   createdAt: null,
   updatedAt: null,
@@ -56,11 +80,11 @@ export const SettlementSchema = {
 
 
 /**
- * Create a settlement entity (JournalEntry + page) and register its ID in
- * campaign state.
+ * Create a settlement Actor and register its id in campaignState.settlementIds.
  *
- * @param {Object} data — Partial SettlementSchema fields
- * @param {Object} campaignState — CampaignStateSchema (will be mutated)
+ * @param {Object} data — Partial SettlementSchema fields. `sectorId` (optional)
+ *   determines folder placement; defaults to `campaignState.activeSectorId`.
+ * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {boolean} [opts.persist=true] — When false, mutate campaignState in
  *   place but skip the game.settings.set write. Used by sectorGenerator's
@@ -76,37 +100,45 @@ export async function createSettlement(data, campaignState, { persist = true } =
     ...data,
     _id:       id,
     projects:  data.projects ?? [],
+    sectorId:  data.sectorId ?? campaignState?.activeSectorId ?? null,
     createdAt: now,
     updatedAt: now,
   };
 
-  const entry = await JournalEntry.create({
-    name:  settlement.name || "Unknown Settlement",
-    flags: { [MODULE_ID]: { entityType: "settlement", entityId: id } },
+  const folderId = await getOrCreateSectorActorFolder(settlement.sectorId, campaignState);
+
+  const actor = await Actor.create({
+    name:   settlement.name || "Unknown Settlement",
+    type:   "location",
+    folder: folderId,
+    system: {
+      subtype:     "settlement",
+      klass:       settlement.location ?? null,
+      description: settlement.description ?? "",
+    },
+    flags:  {
+      [MODULE_ID]: {
+        [FLAG_KEY]:  settlement,
+        entityType:  "settlement",
+        entityId:    id,
+      },
+    },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Settlement Data",
-    type:  "text",
-    flags: { [MODULE_ID]: { [FLAG_KEY]: settlement } },
-  }]);
-
   if (!campaignState.settlementIds) campaignState.settlementIds = [];
-  if (!campaignState.settlementIds.includes(entry.id)) {
-    campaignState.settlementIds.push(entry.id);
+  if (!campaignState.settlementIds.includes(actor.id)) {
+    campaignState.settlementIds.push(actor.id);
     if (persist) await persistCampaignState(campaignState);
   }
 
   return settlement;
 }
 
-export function getSettlement(journalEntryId) {
+export function getSettlement(actorId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    const page  = entry?.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
+    return readEntityFlag("settlement", getEntityDocument("settlement", actorId));
   } catch (err) {
-    console.error(`${MODULE_ID} | getSettlement(${journalEntryId}) failed:`, err);
+    console.error(`${MODULE_ID} | getSettlement(${actorId}) failed:`, err);
     return null;
   }
 }
@@ -117,12 +149,11 @@ export function listSettlements(campaignState) {
     .filter(Boolean);
 }
 
-export async function updateSettlement(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Settlement journal entry not found: ${journalEntryId}`);
+export async function updateSettlement(actorId, updates) {
+  const document = getEntityDocument("settlement", actorId);
+  if (!document) throw new Error(`Settlement actor not found: ${actorId}`);
 
-  const page    = entry.pages?.contents?.[0];
-  const current = page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const current = readEntityFlag("settlement", document) ?? {};
   const updated = {
     ...current,
     ...updates,
@@ -131,21 +162,26 @@ export async function updateSettlement(journalEntryId, updates) {
     updatedAt: new Date().toISOString(),
   };
 
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  const systemPatch = {};
+  if (updates.location !== undefined)    systemPatch["system.klass"]       = updated.location ?? null;
+  if (updates.description !== undefined) systemPatch["system.description"] = updated.description ?? "";
+  if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
+  await writeEntityFlag("settlement", document, updated);
+
+  if (updates.name && updates.name !== document.name) {
+    await document.update({ name: updates.name });
   }
 
   return updated;
 }
 
-export async function setSceneRelevant(journalEntryId, value) {
-  return updateSettlement(journalEntryId, { sceneRelevant: value });
+export async function setSceneRelevant(actorId, value) {
+  return updateSettlement(actorId, { sceneRelevant: value });
 }
 
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updateSettlement(journalEntryId, { portraitId: artAssetId });
+export async function setPortraitId(actorId, artAssetId) {
+  return updateSettlement(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(settlement) {

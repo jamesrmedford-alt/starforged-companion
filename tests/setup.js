@@ -30,6 +30,30 @@ global.game = {
     };
   })(),
   user: { isGM: true, id: 'test-user-gm' },
+  world: { id: 'test-world' },
+  socket: {
+    _handlers: new Map(),
+    on(event, fn) {
+      if (!this._handlers.has(event)) this._handlers.set(event, []);
+      this._handlers.get(event).push(fn);
+    },
+    emit(event, payload) {
+      // Tests can override emit; default just records for inspection.
+      (this._emitted ??= []).push({ event, payload });
+    },
+    _reset() {
+      this._handlers.clear();
+      if (this._emitted) this._emitted.length = 0;
+    },
+  },
+  users: (() => {
+    const list = [{ id: 'test-user-gm', isGM: true, active: true }];
+    return {
+      [Symbol.iterator]: () => list[Symbol.iterator](),
+      get: (id) => list.find(u => u.id === id) ?? null,
+      _set: (users) => { list.length = 0; list.push(...users); },
+    };
+  })(),
   journal: {
     find: () => null,
     get: () => null,
@@ -81,6 +105,82 @@ global.foundry = {
         close() {}
       },
     },
+    apps: {
+      FilePicker: {
+        implementation: {
+          // In-memory fake filesystem for tests. The cache module browses,
+          // creates, and uploads via these calls; tests can inspect
+          // _files / _dirs directly.
+          _files: new Set(),     // string paths
+          _dirs:  new Set(),     // string paths
+          _uploads: [],          // [{ source, dir, file }, …]
+          createDirectory: async (source, path) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            if (fp._dirs.has(path)) throw new Error(`Directory ${path} already exists`);
+            fp._dirs.add(path);
+          },
+          browse: async (source, path) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            // Return files whose dirname matches `path`.
+            const files = Array.from(fp._files).filter(p => {
+              const idx = p.lastIndexOf('/');
+              return idx >= 0 && p.slice(0, idx) === path;
+            });
+            const dirs = Array.from(fp._dirs).filter(d =>
+              d !== path && d.startsWith(path + '/') && d.slice(path.length + 1).indexOf('/') === -1
+            );
+            return { files, dirs };
+          },
+          upload: async (source, dir, file) => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            fp._dirs.add(dir);
+            fp._files.add(`${dir}/${file.name}`);
+            fp._uploads.push({ source, dir, file });
+            return { status: 'success', path: `${dir}/${file.name}` };
+          },
+          _reset: () => {
+            const fp = global.foundry.applications.apps.FilePicker.implementation;
+            fp._files.clear();
+            fp._dirs.clear();
+            fp._uploads.length = 0;
+          },
+        },
+      },
+    },
+    // Foundry audio module — minimal Sound stub for unit tests of
+    // src/audio/playback.js. Real playback is integration-tested only.
+    // The stub records calls for assertion via Sound._instances.
+  },
+};
+
+// foundry.audio.Sound — defined after the assignment above so the property
+// can hold a class without the surrounding `applications` object holding
+// it.
+global.foundry.audio = {
+  // Foundry v13 Sound only supports these events; addEventListener throws
+  // synchronously for anything else. Mirror that so unit tests catch
+  // unsupported event names instead of silently masking the bug.
+  _SUPPORTED_SOUND_EVENTS: ['pause', 'start', 'stop', 'end', 'load'],
+  Sound: class FoundrySoundStub {
+    static _instances = [];
+    static _reset() { this._instances.length = 0; }
+    constructor(src) {
+      this.src = src;
+      this._listeners = {};
+      this._state = 'idle';
+      global.foundry.audio.Sound._instances.push(this);
+    }
+    async load()  { /* no-op */ }
+    async play(opts = {}) { this._state = 'playing'; this._lastVolume = opts.volume; }
+    async pause() { this._state = 'paused';  }
+    async stop()  { this._state = 'stopped'; this._fire('stop'); }
+    addEventListener(event, cb, _opts) {
+      if (!global.foundry.audio._SUPPORTED_SOUND_EVENTS.includes(event)) {
+        throw new Error(`"${event}" is not a supported event of the Sound class`);
+      }
+      (this._listeners[event] ??= []).push(cb);
+    }
+    _fire(event) { (this._listeners[event] ?? []).forEach(cb => cb()); }
   },
 };
 
@@ -163,21 +263,25 @@ global.foundry.utils.deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 // ---------------------------------------------------------------------------
 
 global.game.actors = (() => {
-  let _actors = [];
-  return {
+  const _actors = [];
+  const coll = {
     get: (id) => _actors.find(a => a.id === id) ?? null,
     find: (fn) => _actors.find(fn) ?? null,
     filter: (fn) => _actors.filter(fn),
     contents: _actors,
+    // Iterator so `for (const a of game.actors)` works (Foundry's collection
+    // is iterable; entity-registry uses it).
+    [Symbol.iterator]: () => _actors[Symbol.iterator](),
     // Test helpers — not part of the Foundry API
     _set: (id, actor) => {
       const idx = _actors.findIndex(a => a.id === id);
       if (idx >= 0) _actors[idx] = actor;
       else _actors.push(actor);
     },
-    _setAll: (actors) => { _actors = actors; },
-    _reset: () => { _actors = []; },
+    _setAll: (actors) => { _actors.length = 0; _actors.push(...actors); },
+    _reset:  () => { _actors.length = 0; },
   };
+  return coll;
 })();
 
 // game.user.character — the actor owned by the current user
@@ -262,13 +366,31 @@ afterEach(() => {
 
 global.makeTestActor = (overrides = {}) => {
   const updateHistory = [];
+  const flags = { ...(overrides.flags ?? {}) };
   const sys = overrides.system ?? {};
-  const actor = {
-    id: overrides.id ?? foundry.utils.randomID(),
-    name: overrides.name ?? 'Test Character',
-    type: overrides.type ?? 'character',
-    hasPlayerOwner: overrides.hasPlayerOwner ?? true,
-    system: {
+  const type = overrides.type ?? 'character';
+
+  // Per-type default system shape. character matches the ironsworn v1.27 schema;
+  // starship matches vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts;
+  // location matches subtypes/location.ts.
+  let defaultSystem;
+  if (type === 'starship') {
+    defaultSystem = {
+      notes: sys.notes ?? '',
+      debility: {
+        battered: false,
+        cursed:   false,
+        ...(sys.debility ?? {}),
+      },
+    };
+  } else if (type === 'location') {
+    defaultSystem = {
+      subtype:     sys.subtype     ?? 'star',
+      klass:       sys.klass       ?? null,
+      description: sys.description ?? '',
+    };
+  } else {
+    defaultSystem = {
       edge:   sys.edge   ?? 2,
       heart:  sys.heart  ?? 2,
       iron:   sys.iron   ?? 3,
@@ -279,32 +401,168 @@ global.makeTestActor = (overrides = {}) => {
       supply:   { value: 3, max: 5,  min: 0,  ...(sys.supply   ?? {}) },
       momentum: { value: 2, max: 10, min: -6, resetValue: 2, ...(sys.momentum ?? {}) },
       debility: {
-        corrupted: false, cursed: false, tormented: false,
         wounded: false, shaken: false, unprepared: false,
-        encumbered: false, maimed: false,
         permanentlyharmed: false, traumatized: false,
-        doomed: false, indebted: false, battered: false,
-        custom1: false, custom2: false,
+        doomed: false, tormented: false, indebted: false,
+        battered: false, cursed: false,
+        corrupted: false, encumbered: false, maimed: false,
         ...(sys.debility ?? {}),
       },
       xp: sys.xp ?? 0,
-    },
-    items: {
-      find: (fn) => null,
-      contents: [],
-      ...(overrides.items ?? {}),
-    },
+      // Vendor system computed getters — tests may override these to simulate
+      // foundry-ironsworn's #impactCount-driven momentumMax / momentumReset.
+      ...(sys.momentumMax   !== undefined ? { momentumMax:   sys.momentumMax   } : {}),
+      ...(sys.momentumReset !== undefined ? { momentumReset: sys.momentumReset } : {}),
+    };
+  }
+
+  const actor = {
+    id: overrides.id ?? foundry.utils.randomID(),
+    name: overrides.name ?? (type === 'starship' ? 'Test Starship'
+                              : type === 'location' ? 'Test Location'
+                              : 'Test Character'),
+    type,
+    img: overrides.img ?? null,
+    folder: overrides.folder ?? null,
+    hasPlayerOwner: overrides.hasPlayerOwner ?? (type === 'character'),
+    system: defaultSystem,
+    flags,
+    items: (() => {
+      const overrideItems = overrides.items ?? {};
+      const seedContents = Array.isArray(overrideItems.contents) ? overrideItems.contents : [];
+      const contents = [...seedContents];
+      return {
+        contents,
+        get size() { return contents.length; },
+        find:   (fn) => contents.find(fn) ?? null,
+        filter: (fn) => contents.filter(fn),
+        [Symbol.iterator]: () => contents[Symbol.iterator](),
+        ...overrideItems,
+        // overrides above can replace find/contents wholesale if needed
+      };
+    })(),
     update: async (changes) => {
       updateHistory.push(changes);
-      // Apply flat dot-notation changes to actor.system for test assertions
+      // Apply flat dot-notation changes to the actor for test assertions.
+      // Auto-create intermediate objects so callers writing to e.g.
+      // "flags.starforged-companion.ship" on an actor with no flag scope
+      // succeed (matches Foundry V13 actor.update semantics).
       for (const [path, val] of Object.entries(changes)) {
         const parts = path.split('.');
         let target = actor;
-        for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (target[parts[i]] == null || typeof target[parts[i]] !== 'object') {
+            target[parts[i]] = {};
+          }
+          target = target[parts[i]];
+        }
         target[parts[parts.length - 1]] = val;
       }
+    },
+    getFlag: (mod, key) => {
+      const scope = flags[mod];
+      if (!scope) return undefined;
+      // Allow dotted-key reads e.g. getFlag(MODULE, 'ship.foo') if any caller wants
+      const parts = key.split('.');
+      let cur = scope;
+      for (const p of parts) {
+        if (cur == null || typeof cur !== 'object') return undefined;
+        cur = cur[p];
+      }
+      return cur;
+    },
+    setFlag: async (mod, key, val) => {
+      if (!flags[mod]) flags[mod] = {};
+      const parts = key.split('.');
+      let cur = flags[mod];
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = val;
     },
     _updateHistory: updateHistory,
   };
   return actor;
+};
+
+// ---------------------------------------------------------------------------
+// Actor.create — global stub that mirrors JournalEntry.create. Tests that
+// exercise Actor creation paths (ship/starship migration, etc.) use this.
+// The stub builds the mock via makeTestActor() and registers it in
+// game.actors so subsequent .get() lookups resolve.
+// ---------------------------------------------------------------------------
+
+global.Actor = {
+  create: async (data) => {
+    const actor = global.makeTestActor({
+      id:     data?.id     ?? foundry.utils.randomID(),
+      name:   data?.name   ?? 'Unknown Actor',
+      type:   data?.type   ?? 'character',
+      img:    data?.img    ?? null,
+      folder: data?.folder ?? null,
+      flags:  data?.flags  ?? {},
+      system: data?.system ?? {},
+    });
+    global.game.actors._set(actor.id, actor);
+    return actor;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Folder.create — stub for folder helpers in src/entities/folder.js.
+// Tracks created folders so `game.folders.find` resolves them.
+// ---------------------------------------------------------------------------
+
+global.game.folders = (() => {
+  const _folders = [];
+  return {
+    get:    (id) => _folders.find(f => f.id === id) ?? null,
+    find:   (fn) => _folders.find(fn) ?? null,
+    filter: (fn) => _folders.filter(fn),
+    contents: _folders,
+    [Symbol.iterator]: () => _folders[Symbol.iterator](),
+    _set:    (folder) => { _folders.push(folder); },
+    _reset:  () => { _folders.length = 0; },
+  };
+})();
+
+// ---------------------------------------------------------------------------
+// Item.create — minimal global stub. Tests that exercise character-item
+// registration (bonds, vows) read from actor.items.contents to verify the
+// new Item was attached. Tracks the second-arg options (e.g. suppressLog)
+// on the returned Item via __createOptions so tests can assert that flows
+// silence the ironsworn chat-alert hook.
+// ---------------------------------------------------------------------------
+
+global.Item = {
+  create: async (data, options = {}) => {
+    const item = {
+      id:     data?.id     ?? foundry.utils.randomID(),
+      name:   data?.name   ?? 'Unknown Item',
+      type:   data?.type   ?? 'progress',
+      system: data?.system ?? {},
+      flags:  data?.flags  ?? {},
+      parent: options?.parent ?? null,
+      __createOptions: { ...options },
+    };
+    if (options?.parent?.items?.contents) {
+      options.parent.items.contents.push(item);
+    }
+    return item;
+  },
+};
+
+global.Folder = {
+  create: async (data) => {
+    const folder = {
+      id:     foundry.utils.randomID(),
+      name:   data?.name ?? 'Folder',
+      type:   data?.type ?? 'JournalEntry',
+      color:  data?.color ?? null,
+      folder: data?.folder ?? null,
+    };
+    global.game.folders._set(folder);
+    return folder;
+  },
 };

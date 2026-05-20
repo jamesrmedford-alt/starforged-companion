@@ -41,6 +41,13 @@ beforeEach(() => {
   Hooks._handlers.clear();
   // Reset interpreter mock between tests.
   interpretMove.mockClear();
+
+  // The pipeline now gates on isCanonicalGM() to prevent every client
+  // running the same work. These tests exercise the per-client
+  // concurrency guard — they need to LOOK like the canonical GM client
+  // so they actually reach the lock check.
+  global.game.users = [{ id: 'gm-1', isGM: true, active: true }];
+  global.game.user  = global.game.users[0];
 });
 
 

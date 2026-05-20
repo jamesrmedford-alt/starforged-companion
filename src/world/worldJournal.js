@@ -133,12 +133,72 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     narratorAsserted: entry?.narratorAsserted === true,
     annotations:      Array.isArray(existing?.annotations) ? existing.annotations : [],
     promotedAt:       existing?.promotedAt ?? (entry?.confirmed === true ? now : null),
+    // Fact-continuity fields (docs/fact-continuity-scope.md §4.4). Optional;
+    // null for entries that did not originate from a scene-truth migration.
+    subject:          entry?.subject ?? existing?.subject ?? null,
+    fact:             entry?.fact    ?? existing?.fact    ?? null,
+    sceneId:          entry?.sceneId ?? existing?.sceneId ?? null,
     createdAt:        existing?.createdAt ?? now,
     updatedAt:        now,
   };
 
   const page = await upsertPage(journal, cleanTitle, FLAG_KEYS.lore, data);
   return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
+}
+
+/**
+ * Archive a scene-end fact-continuity truth (free-text or scene-scoped) to
+ * the WJ Lore journal. See docs/fact-continuity-scope.md §9.2 step 2.
+ *
+ * Composes a synthetic page title:
+ *   - scene subjects → "Scene <sceneId>: <fact>"
+ *   - text  subjects → "<subject>: <fact>"
+ *
+ * Returns the recordLoreDiscovery result, or null if the truth has no fact
+ * or no resolvable subject.
+ *
+ * @param {Object} truth — sceneTruths entry from campaignState
+ * @param {Object} campaignState
+ * @returns {Promise<Object|null>}
+ */
+export async function archiveSceneTruth(truth, campaignState) {
+  const fact = String(truth?.fact ?? '').trim();
+  if (!fact) return null;
+  const subject = truth?.subject;
+  if (!subject || typeof subject !== 'object') return null;
+
+  let subjectLabel = '';
+  let subjectKey   = '';
+  if (subject.kind === 'scene') {
+    subjectLabel = `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
+    subjectKey   = 'scene';
+  } else if (subject.kind === 'text') {
+    subjectLabel = String(subject.text ?? '').trim();
+    subjectKey   = subjectLabel;
+  } else if (subject.kind === 'entity') {
+    // Entity-kind subjects migrate to the entity's generative tier — they
+    // should not reach the lore archival path. Tolerate defensively.
+    return null;
+  } else {
+    return null;
+  }
+  if (!subjectLabel) return null;
+
+  const titleSeed = `${subjectLabel}: ${fact}`;
+  const title     = titleSeed.length > 100 ? `${titleSeed.slice(0, 97)}...` : titleSeed;
+
+  return recordLoreDiscovery(title, {
+    category:         'other',
+    text:             fact,
+    subject:          subjectKey,
+    fact,
+    sceneId:          truth.sceneId ?? null,
+    narratorAsserted: true,
+    confirmed:        false,
+    sessionId:        truth.sessionId ?? null,
+    sessionNumber:    truth.sessionNum ?? null,
+    moveId:           truth.moveId    ?? null,
+  }, campaignState);
 }
 
 /**
@@ -376,6 +436,16 @@ export async function applyStateTransition(transition, campaignState) {
     }
 
     case "lore": {
+      if (transition.change === "contradicted") {
+        await postContradictionNotification(transition);
+        return null;
+      }
+      return null;
+    }
+
+    case "factContinuity": {
+      // fact-continuity scope §11.2 — high-confidence consistency-check
+      // contradictions land on the same GM-only Narrative Review surface.
       if (transition.change === "contradicted") {
         await postContradictionNotification(transition);
         return null;
@@ -730,16 +800,35 @@ async function postContradictionNotification(transition) {
 
   const name   = escapeHtml(transition.name ?? "(unknown)");
   const detail = escapeHtml(transition.summary ?? transition.newValue ?? "");
+  const isFactContinuity = transition.entryType === "factContinuity";
+
+  const retractButton = isFactContinuity
+    ? `<div class="sf-wj-contradiction-actions">` +
+      `<button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Retract the offending fact">` +
+      `<i class="fas fa-list-check"></i> Retract the offending fact</button></div>`
+    : "";
+
   const html =
     `<div class="sf-wj-contradiction"><div class="sf-wj-contradiction-label">◈ Narrative Review</div>` +
     `<p>The narrator may have contradicted an established fact.</p>` +
-    `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p></div>`;
+    `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p>` +
+    retractButton +
+    `</div>`;
 
   try {
     await ChatMessage.create({
       content:  html,
       whisper:  game.users?.filter ? game.users.filter(u => u.isGM).map(u => u.id) : [],
-      flags:    { [MODULE_ID]: { worldJournalContradiction: true } },
+      flags:    {
+        [MODULE_ID]: {
+          worldJournalContradiction: true,
+          narratorCard:              isFactContinuity,             // surfaces the correction renderChatMessage hook
+          factContinuityReview:      isFactContinuity,
+          contradictedSubject:       transition.name ?? null,
+          contradictedTruthId:       transition.truthId ?? null,
+          matchedEntityIds:          transition.matchedEntityIds ?? [],
+        },
+      },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | worldJournal: postContradictionNotification failed:`, err);

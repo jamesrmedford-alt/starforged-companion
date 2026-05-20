@@ -44,7 +44,7 @@
 import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./safety.js";
 import { getPlayerActors, readCharacterSnapshot } from "../character/actorBridge.js";
 import { getChronicleForContext } from "../character/chronicle.js";
-import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock } from "../narration/narratorPrompt.js";
+import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock, buildLedgerBlock } from "../narration/narratorPrompt.js";
 import { getConnection } from "../entities/connection.js";
 import { getSettlement } from "../entities/settlement.js";
 import { getFaction }    from "../entities/faction.js";
@@ -130,6 +130,28 @@ export async function assembleContextPacket(resolution, campaignState, options =
   // ── Section 6: Current location card ──────────────────────────────────────
   const currentLocationContent = buildCurrentLocationSection(campaignState);
 
+  // ── Section 6.5: Active scene ledger (fact-continuity scope §6) ──────────
+  // Truths are never dropped; state may truncate. Returns sub-blocks so the
+  // budget enforcer can drop the state half independently of truths.
+  const ledger = factContinuityActive()
+    ? buildLedgerBlock(campaignState, {
+        matchedEntityIds,
+        currentLocationId: campaignState?.currentLocationId ?? null,
+        playerNarration:   resolution?.playerNarration ?? "",
+        maxTokens:         factContinuityMaxLedgerTokens(),
+      })
+    : { combined: "", header: "", truths: "", state: "", shipPosition: "", tokenEstimates: {} };
+  // The header + truths render together so the header stays attached to the
+  // never-dropped portion; state renders standalone and may drop on its own.
+  // Ship position (§20) is its own never-dropped chunk — it surfaces even
+  // when truths / state are empty so the narrator always knows where the
+  // ship is.
+  const ledgerTruthsContent = ledger.combined
+    ? [ledger.header, ledger.truths].filter(Boolean).join("\n\n")
+    : "";
+  const ledgerStateContent  = ledger.state ?? "";
+  const ledgerShipContent   = ledger.shipPosition ?? "";
+
   // ── Section 7: Matched entity cards ───────────────────────────────────────
   const entityCardsContent = buildEntityCardsSection(matchedEntityIds, matchedEntityTypes);
 
@@ -186,12 +208,15 @@ export async function assembleContextPacket(resolution, campaignState, options =
       currentLocation:      { content: currentLocationContent,     priority: 1 },
       characterState:       { content: characterContent,           priority: 1 },
       connections:          { content: connectionsContent,         priority: 1 },
+      ledgerTruths:         { content: ledgerTruthsContent,        priority: 1 },
+      ledgerShipPosition:   { content: ledgerShipContent,           priority: 1 },
       assertedLore:         { content: assertedLoreContent,        priority: 2 },
       nonImmediateThreats:  { content: nonImmediateThreatsContent, priority: 3 },
       entityCards:          { content: entityCardsContent,         priority: 4 },
       progressTracks:       { content: tracksContent,              priority: 5 },
       activeSector:         { content: sectorContent,              priority: 6 },
       recentOracles:        { content: oraclesContent,             priority: 7 },
+      ledgerState:          { content: ledgerStateContent,         priority: 8 },
       factionLandscape:     { content: factionLandscapeContent,    priority: 8 },
       recentDiscoveries:    { content: recentDiscoveriesContent,   priority: 9 },
       sessionNotes:         { content: sessionNotesContent,        priority: 10 },
@@ -213,6 +238,16 @@ export async function assembleContextPacket(resolution, campaignState, options =
     budgetResult.included.nonImmediateThreats,
   ]);
 
+  // Section 6.5 renders header+truths followed by state, both filtered by
+  // the budget enforcer. Ship position (§20) renders last in the block so
+  // the narrator reads "where the ship is" after the binding truths and
+  // current state — closest to the moment of acting.
+  const section65 = joinSubsections([
+    budgetResult.included.ledgerTruths,
+    budgetResult.included.ledgerState,
+    budgetResult.included.ledgerShipPosition,
+  ]);
+
   const parts = [
     safetyContent,
     permissionsContent,
@@ -221,6 +256,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
     section4,
     budgetResult.included.worldTruths       ?? "",
     budgetResult.included.currentLocation   ?? "",
+    section65,
     budgetResult.included.entityCards       ?? "",
     budgetResult.included.connections       ?? "",
     budgetResult.included.characterState    ?? "",
@@ -606,6 +642,25 @@ function factionLandscapeInContextEnabled() {
   catch { return true; }
 }
 
+function factContinuityActive() {
+  try {
+    const master = game.settings?.get(MODULE_ID, "factContinuity.enabled") !== false;
+    const ledger = game.settings?.get(MODULE_ID, "factContinuity.ledgerInContext") !== false;
+    return master && ledger;
+  } catch {
+    return true;
+  }
+}
+
+function factContinuityMaxLedgerTokens() {
+  try {
+    const v = game.settings?.get(MODULE_ID, "factContinuity.maxLedgerTokens");
+    return Number.isFinite(v) ? v : 400;
+  } catch {
+    return 400;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION BUILDERS
@@ -914,7 +969,7 @@ function joinSubsections(parts) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatCharacterBlock(snap, summary, recentEntries) {
-  const { name, stats, meters, momentumMax, debilities } = snap;
+  const { name, stats, meters, momentumMax, debilities, assets, vows } = snap;
   const s = stats;
   const m = meters;
 
@@ -926,6 +981,26 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     `Debilities: ${debList}`,
   ];
 
+  // Background vow = the first vow item on the character per play-kit
+  // convention. Active vows beyond the background one are listed under
+  // "Other vows" so the narrator can reflect ongoing quests.
+  if (vows?.length) {
+    const background = vows.find(v => v.isBackground);
+    const others     = vows.filter(v => !v.isBackground && !v.completed);
+    if (background) {
+      lines.push(`Background Vow: **${background.name}** [${background.rank}] — ${background.progress}/10 boxes${background.completed ? " (FULFILLED)" : ""}`);
+    }
+    if (others.length) {
+      const list = others.map(v => `- **${v.name}** [${v.rank}] — ${v.progress}/10 boxes`).join("\n");
+      lines.push(`Other vows:\n${list}`);
+    }
+  }
+
+  if (assets?.length) {
+    const assetText = assets.map(formatAssetForContext).filter(Boolean).join("\n");
+    if (assetText) lines.push(`Paths & Assets:\n${assetText}`);
+  }
+
   if (summary) {
     lines.push(`Chronicle summary: ${summary}`);
   }
@@ -935,6 +1010,16 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     lines.push(`Recent:\n${recentText}`);
   }
 
+  return lines.join("\n");
+}
+
+function formatAssetForContext(asset) {
+  if (!asset?.name) return "";
+  const abilities = (asset.abilities ?? []).slice(0, 4);
+  const lines = [`- **${asset.name}**`];
+  for (const a of abilities) {
+    lines.push(`  • ${a}`);
+  }
   return lines.join("\n");
 }
 

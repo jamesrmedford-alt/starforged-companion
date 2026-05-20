@@ -17,6 +17,8 @@
  * Storage: JournalEntry + JournalEntryPage, same pattern as planets.
  */
 
+import { getOrCreateEntitiesFolder } from "./folder.js";
+
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "creature";
 
@@ -72,8 +74,9 @@ export async function createCreature(data, campaignState) {
   };
 
   const entry = await JournalEntry.create({
-    name:  creature.name || "Unknown Creature",
-    flags: { [MODULE_ID]: { entityType: "creature", entityId: id } },
+    name:   creature.name || "Unknown Creature",
+    folder: await getOrCreateEntitiesFolder(),
+    flags:  { [MODULE_ID]: { entityType: "creature", entityId: id } },
   });
 
   await entry.createEmbeddedDocuments("JournalEntryPage", [{

@@ -1,22 +1,35 @@
 /**
  * STARFORGED COMPANION
- * src/entities/ship.js — Ship records (command vehicle + support vehicles)
+ * src/entities/ship.js — Ship records, hosted on foundry-ironsworn `starship`
+ * Actor documents (Entity → Actor Migration Phase 2).
  *
- * Ships have an integrity meter, can suffer battered/cursed impacts,
- * and may have support vehicles nested under the command vehicle.
+ * The native starship schema (vendor/foundry-ironsworn/src/module/actor/
+ * subtypes/starship.ts) carries `notes` (HTMLField) and `debility.{battered,
+ * cursed}` (ImpactField — booleans). Everything else in the Starforged-side
+ * Ship schema lives in `actor.flags["starforged-companion"].ship`.
  *
- * The command ship (STARSHIP asset) is a special case:
- * — It's shared across all players
- * — It can suffer the permanent "cursed" impact
- * — It has a name and portrait that persist across the campaign
- *
- * Support vehicles are secondary ships launched from the command vehicle.
- * They can be battered but not cursed.
- *
- * Incidental vehicles are not tracked here — they're ephemeral.
+ * Field placement:
+ *   actor.name                            ← ship.name (also kept on the flag)
+ *   actor.img                             ← portrait dataUri (set by art pipeline)
+ *   actor.system.notes                    ← ship.notes
+ *   actor.system.debility.battered        ← ship.battered (clearable)
+ *   actor.system.debility.cursed          ← ship.cursed (permanent, command vehicle only)
+ *   actor.flags[MODULE].ship              ← full Starforged payload (see ShipSchema)
+ *   actor.flags[MODULE].entityType        ← "ship" (routing crumb)
+ *   actor.flags[MODULE].entityId          ← the Ship _id (preserved across migrations)
  *
  * Source: Starforged Reference Guide p.121 / Rulebook pp.55-65
  */
+
+import {
+  getOrCreateActorFolder,
+} from "./folder.js";
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+} from "./registry.js";
+import { pickStarshipIcon } from "../system/ironswornAssets.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -59,6 +72,23 @@ export const ShipSchema = {
   canonicalLocked: false,
   generativeTier:  [],
 
+  // Persistent ship position (fact-continuity scope §20). The command
+  // vehicle's spatial state — surfaced in narrator Section 6.5 and
+  // updated by `!at`, non-miss `set_a_course`, narrator sidecar
+  // `subject: "ship"`, and the sector-Scene Token drag. All IDs may
+  // be null simultaneously (ship adrift in unmapped space); `freeText`
+  // covers that case.
+  position: {
+    sectorId:            null,   // campaignState.sectors[*].id
+    nearestPlanetId:     null,   // Actor / record id of nearest planet
+    nearestSettlementId: null,   // Actor / record id of nearest settlement
+    freeText:            "",     // free-text fallback
+    updatedAt:           null,
+    updatedBy:           null,   // "at_command" | "set_a_course" |
+                                 //   "narrator_sidecar" | "scene_token" |
+                                 //   "manual"
+  },
+
   createdAt: null,
   updatedAt: null,
 };
@@ -76,31 +106,51 @@ export async function createShip(data, campaignState) {
     updatedAt: now,
   };
 
-  const entry = await JournalEntry.create({
-    name:  ship.name || "Unknown Ship",
-    flags: { [MODULE_ID]: { entityType: "ship", entityId: id } },
+  const folderId = await getOrCreateActorFolder("Starships");
+
+  // Seed non-command ships with a deterministic system starship token so the
+  // actor row in the directory and the canvas token are not the default
+  // Foundry silhouette. Command vehicles defer to the art pipeline / the
+  // STARSHIP asset and intentionally leave img unset here.
+  const seedImg = ship.isCommandVehicle ? null : pickStarshipIcon(id);
+
+  const actor = await Actor.create({
+    name:   ship.name || "Unknown Ship",
+    type:   "starship",
+    folder: folderId,
+    ...(seedImg ? {
+      img:            seedImg,
+      prototypeToken: { texture: { src: seedImg } },
+    } : {}),
+    system: {
+      notes: ship.notes ?? "",
+      debility: {
+        battered: !!ship.battered,
+        cursed:   !!ship.cursed,
+      },
+    },
+    flags:  {
+      [MODULE_ID]: {
+        [FLAG_KEY]:  ship,
+        entityType:  "ship",
+        entityId:    id,
+      },
+    },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Ship Data",
-    type:  "text",
-    flags: { [MODULE_ID]: { [FLAG_KEY]: ship } },
-  }]);
-
   if (!campaignState.shipIds) campaignState.shipIds = [];
-  if (!campaignState.shipIds.includes(entry.id)) {
-    campaignState.shipIds.push(entry.id);
+  if (!campaignState.shipIds.includes(actor.id)) {
+    campaignState.shipIds.push(actor.id);
     await persistCampaignState(campaignState);
   }
 
   return ship;
 }
 
-export function getShip(journalEntryId) {
+export function getShip(actorId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    const page  = entry?.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
+    const document = getEntityDocument("ship", actorId);
+    return readEntityFlag("ship", document);
   } catch {
     return null;
   }
@@ -116,12 +166,11 @@ export function getCommandVehicle(campaignState) {
   return listShips(campaignState).find(s => s.isCommandVehicle) ?? null;
 }
 
-export async function updateShip(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Ship journal entry not found: ${journalEntryId}`);
+export async function updateShip(actorId, updates) {
+  const document = getEntityDocument("ship", actorId);
+  if (!document) throw new Error(`Ship actor not found: ${actorId}`);
 
-  const page    = entry.pages?.contents?.[0];
-  const current = page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const current = readEntityFlag("ship", document) ?? {};
   const updated = {
     ...current,
     ...updates,
@@ -141,10 +190,19 @@ export async function updateShip(journalEntryId, updates) {
     updated.integrity = Math.max(0, Math.min(updated.integrityMax ?? 5, updated.integrity));
   }
 
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  // Mirror battered/cursed onto the native debility fields so the ironsworn
+  // starship sheet renders them correctly (ImpactField widget). The flag
+  // payload remains the source of truth for everything else.
+  const systemPatch = {};
+  if (updates.notes !== undefined)    systemPatch["system.notes"] = updated.notes ?? "";
+  if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
+  if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
+  if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
+  await writeEntityFlag("ship", document, updated);
+
+  if (updates.name && updates.name !== document.name) {
+    await document.update({ name: updates.name });
   }
 
   return updated;
@@ -155,29 +213,29 @@ export async function updateShip(journalEntryId, updates) {
  * Clamps to 0. If integrity reaches 0, the caller should trigger
  * Withstand Damage.
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @param {number} amount — Damage to apply (positive number)
  * @returns {Promise<Object>}
  */
-export async function sufferDamage(journalEntryId, amount) {
-  const ship = getShip(journalEntryId);
-  if (!ship) throw new Error(`Ship not found: ${journalEntryId}`);
+export async function sufferDamage(actorId, amount) {
+  const ship = getShip(actorId);
+  if (!ship) throw new Error(`Ship not found: ${actorId}`);
 
   const newIntegrity = Math.max(0, ship.integrity - amount);
-  return updateShip(journalEntryId, { integrity: newIntegrity });
+  return updateShip(actorId, { integrity: newIntegrity });
 }
 
 /**
  * Repair integrity (e.g. after a successful Repair move).
  * Does not clear battered — that requires spending repair points.
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @param {number} amount — Points to restore
  * @returns {Promise<Object>}
  */
-export async function repairIntegrity(journalEntryId, amount) {
-  const ship = getShip(journalEntryId);
-  if (!ship) throw new Error(`Ship not found: ${journalEntryId}`);
+export async function repairIntegrity(actorId, amount) {
+  const ship = getShip(actorId);
+  if (!ship) throw new Error(`Ship not found: ${actorId}`);
 
   if (ship.battered) {
     console.warn(`${MODULE_ID} | Ship is battered — integrity cannot be raised until battered is cleared.`);
@@ -185,21 +243,21 @@ export async function repairIntegrity(journalEntryId, amount) {
   }
 
   const newIntegrity = Math.min(ship.integrityMax ?? 5, ship.integrity + amount);
-  return updateShip(journalEntryId, { integrity: newIntegrity });
+  return updateShip(actorId, { integrity: newIntegrity });
 }
 
 /**
  * Clear the battered impact (costs 2 repair points in the Repair move).
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @returns {Promise<Object>}
  */
-export async function clearBattered(journalEntryId) {
-  return updateShip(journalEntryId, { battered: false });
+export async function clearBattered(actorId) {
+  return updateShip(actorId, { battered: false });
 }
 
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updateShip(journalEntryId, { portraitId: artAssetId });
+export async function setPortraitId(actorId, artAssetId) {
+  return updateShip(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(ship) {
@@ -239,4 +297,195 @@ async function persistCampaignState(campaignState) {
     console.error(`${MODULE_ID} | ship: persistCampaignState failed:`, err);
     throw err;
   }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED — populate a freshly-created starship Actor from oracle rolls
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Called by the createActor hook in src/index.js when a user creates a
+// `type='starship'` Actor via the Foundry sidebar (or any path that doesn't
+// already pre-populate the flag payload). The hook handles the gating;
+// this function does the actual roll + write + silent portrait.
+//
+// Skip detection lives in the hook (notes / type / firstLook already set).
+// This function assumes seeding is wanted by the time it's called.
+
+/**
+ * Roll oracles to populate a starship's type / first-look / mission,
+ * persist to both the module flag payload and `system.notes` (HTML so
+ * the starship sheet renders it), and trigger a silent portrait
+ * generation when an OpenRouter API key is configured.
+ *
+ * Does not rename the Actor — the user-supplied name is authoritative.
+ *
+ * @param {Actor} actor          — a freshly-created type='starship' Actor
+ * @param {Object} campaignState — current campaign state (used for region
+ *                                 and to thread campaignState through the
+ *                                 art pipeline)
+ * @returns {Promise<Object|null>} — the resulting ship payload, or null
+ *                                   on a non-fatal failure
+ */
+export async function seedStarshipActor(actor, campaignState) {
+  if (!actor || actor.type !== "starship") return null;
+
+  // Dynamic imports keep this file's static import graph small and avoid
+  // a circular pull when entityExtractor pulls in updateShip from here.
+  const { rollOracle } = await import("../oracles/roller.js");
+
+  const region = resolveActiveRegion(campaignState);
+  const missionTable = `starship_mission_${region}`;
+
+  const rolledType      = safeRoll(rollOracle, "starship_type");
+  const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
+  const rolledMission   = safeRoll(rollOracle, missionTable);
+
+  if (!rolledType && !rolledFirstLook && !rolledMission) {
+    console.warn(`${MODULE_ID} | seedStarshipActor: all oracle rolls empty for ${actor.id}`);
+    return null;
+  }
+
+  const portraitSource = [
+    rolledType,
+    rolledFirstLook,
+  ].filter(Boolean).join(". ");
+
+  // Preserve any existing module flag payload (migrator may have set fields
+  // we shouldn't overwrite even when others are empty). Defaults from
+  // ShipSchema fill in anything the migrator left unset.
+  const existing = actor.flags?.[MODULE_ID]?.ship ?? {};
+  const now = new Date().toISOString();
+  const id  = existing._id || generateId();
+  const ship = {
+    ...ShipSchema,
+    ...existing,
+    _id:        id,
+    name:       actor.name,                    // actor.name is authoritative
+    type:       existing.type      || rolledType      || "",
+    firstLook:  existing.firstLook || rolledFirstLook || "",
+    mission:    existing.mission   || rolledMission   || "",
+    description:               existing.description ?? "",
+    portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
+    createdAt:  existing.createdAt ?? now,
+    updatedAt:  now,
+  };
+
+  const notesHtml = buildStarshipNotesHtml({
+    type:      ship.type,
+    firstLook: ship.firstLook,
+    mission:   ship.mission,
+    region,
+  });
+
+  try {
+    // Single atomic update — writes notes + all three module flag fields
+    // in one document write. Earlier versions split this into a sequence
+    // of `setFlag` calls; that opened a race where any observer (a Quench
+    // test polling on the ship flag, or another hook) could read the
+    // document between the first and last setFlag and see only some of
+    // the fields populated. Foundry V13 auto-creates intermediate paths
+    // in dot-notation flag writes, so this single update form is safe.
+    await actor.update({
+      "system.notes":                      notesHtml,
+      [`flags.${MODULE_ID}.ship`]:         ship,
+      [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
+      [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
+    });
+  } catch (err) {
+    console.error(`${MODULE_ID} | seedStarshipActor: update failed:`, err);
+    return null;
+  }
+
+  // Register on campaignState.shipIds if not already tracked (e.g. sidebar
+  // creation didn't go through createShip()).
+  if (campaignState) {
+    if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
+    if (!campaignState.shipIds.includes(actor.id)) {
+      campaignState.shipIds.push(actor.id);
+      await persistCampaignState(campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err));
+    }
+  }
+
+  // Silent portrait — gated on OpenRouter key. Failures stay silent.
+  if (portraitSource && hasOpenRouterKey()) {
+    try {
+      const { generatePortrait } = await import("../art/generator.js");
+      await generatePortrait(actor.id, "ship", ship, campaignState ?? {});
+    } catch (err) {
+      console.warn(`${MODULE_ID} | seedStarshipActor: portrait generation failed:`, err);
+    }
+  }
+
+  return ship;
+}
+
+function safeRoll(rollOracle, tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : "";
+  } catch {
+    return "";
+  }
+}
+
+function resolveActiveRegion(campaignState) {
+  const sectors = campaignState?.sectors ?? [];
+  const active  = sectors.find(s => s?.id === campaignState?.activeSectorId);
+  const region  = active?.region ?? "";
+  if (["terminus", "outlands", "expanse"].includes(region)) return region;
+  return "terminus";
+}
+
+function buildStarshipNotesHtml({ type, firstLook, mission, region }) {
+  const lines = [];
+  if (type)      lines.push(`<li><strong>Type:</strong> ${escapeHtml(type)}</li>`);
+  if (firstLook) lines.push(`<li><strong>First look:</strong> ${escapeHtml(firstLook)}</li>`);
+  if (mission)   lines.push(`<li><strong>Mission (${escapeHtml(region)}):</strong> ${escapeHtml(mission)}</li>`);
+  if (!lines.length) return "";
+  return `<p><em>Oracle-seeded starship details:</em></p><ul>${lines.join("")}</ul>`;
+}
+
+function escapeHtml(s) {
+  if (typeof s !== "string") return "";
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function hasOpenRouterKey() {
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Inspect a freshly-created starship Actor and return true when it looks
+ * like it already has detail the user (or another code path) set. The
+ * createActor hook uses this to decide whether to skip the auto-seed.
+ *
+ * Treats any of the following as "already populated":
+ *   - Non-empty `system.notes` (the user typed something into the Notes
+ *     field, OR the system's HTMLField default isn't the empty string —
+ *     we normalise on strip).
+ *   - Non-empty `flags[MODULE].ship.type` (createShip-with-seed already
+ *     produced detail).
+ *   - Non-empty `flags[MODULE].ship.firstLook`.
+ *
+ * @param {Actor} actor
+ * @returns {boolean}
+ */
+export function starshipHasSeedDetail(actor) {
+  if (!actor || actor.type !== "starship") return false;
+  const notes = actor.system?.notes ?? "";
+  if (typeof notes === "string" && notes.replace(/<[^>]*>/g, "").trim()) return true;
+  const flag = actor.flags?.[MODULE_ID]?.ship ?? null;
+  if (flag?.type && String(flag.type).trim()) return true;
+  if (flag?.firstLook && String(flag.firstLook).trim()) return true;
+  return false;
 }

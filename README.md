@@ -5,7 +5,8 @@ player narration, identifies the appropriate move via Claude AI, rolls dice,
 resolves outcomes, narrates consequences, and maintains campaign state across
 sessions.
 
-Supports solo and multiplayer campaigns.
+Supports solo and multiplayer campaigns. Works on Foundry desktop and on
+The Forge — no local proxy required.
 
 ---
 
@@ -30,13 +31,13 @@ context — it is never overridden by any other setting.
 tracks. Stored in a dedicated journal, displayed in a sidebar panel.
 
 **Entity management** — Connections, Ships, Settlements, Factions, and Planets
-with AI-generated portraits (DALL-E 3). One portrait per entity, one permitted
-regeneration, then permanently locked.
+with AI-generated portraits via OpenRouter (FLUX.2 Pro by default). One
+portrait per entity, one permitted regeneration, then permanently locked.
 
 **Sector Creator** — guided 11-step sector generation following the Starforged
 rulebook (pp. 114–127). Generates settlements, planets, a local connection, and
 a sector trouble from oracle tables. Creates a Foundry scene with settlement
-markers, passage lines, and a DALL-E 3 background image. Open with `!sector new`
+markers, passage lines, and a generated background image. Open with `!sector new`
 or the toolbar button.
 
 **World Truths** — full oracle tables for all 14 Starforged truth categories
@@ -58,10 +59,15 @@ cached for the session.
 | Requirement | Notes |
 |-------------|-------|
 | Foundry VTT v12+ | Verified on v13 |
-| Node.js 18+ | Required to run the API proxy on desktop |
 | Anthropic API key | For move interpretation and narration — get one at console.anthropic.com |
-| OpenAI API key | Optional — for AI portrait generation (DALL-E 3) and sector background art |
+| OpenRouter API key | Optional — for AI portrait generation and sector background art. Get one at openrouter.ai |
 | foundry-ironsworn system | Strongly recommended — character sheet integration requires it |
+
+There is **no local proxy** — all API calls go directly from the browser.
+Claude requests use Anthropic's documented browser-CORS opt-in
+(`anthropic-dangerous-direct-browser-access`), and image generation uses
+OpenRouter, which supports browser CORS natively. The same code runs on
+Foundry desktop and on The Forge with no setup difference.
 
 ---
 
@@ -75,47 +81,20 @@ https://github.com/jamesrmedford-alt/starforged-companion/releases/latest/downlo
 
 ---
 
-## Before every session (desktop)
-
-The Foundry Electron app enforces browser CORS, blocking direct API calls.
-A local proxy is required. Start it before launching Foundry:
-
-**Mac / Linux:**
-```bash
-cd /path/to/starforged-companion
-./proxy/start.sh
-```
-
-**Windows:**
-```
-proxy\start.bat
-```
-
-**Or manually:**
-```bash
-npm run proxy
-```
-
-Leave this running for the session. When you see:
-```
-starforged-companion | Proxy reachable: Local proxy (http://127.0.0.1:3001)
-```
-in the Foundry console, you're ready.
-
-**On The Forge:** no proxy needed. The Forge's server-side proxy handles
-external API calls automatically.
-
----
-
 ## First-time setup
 
 1. Click the **🛡 Companion Settings** button in the Token Controls toolbar (GM only)
 2. Open the **About** tab
 3. Enter your **Claude API Key** (from console.anthropic.com) and click **Save Keys**
-4. Enter your **Art Generation API Key** (OpenAI, optional — for portraits and sector art) and click **Save Keys**
-5. To change the **Claude Proxy URL**: open **Configure Settings → Starforged Companion** — leave as `http://127.0.0.1:3001` unless using a custom port
+4. (Optional, for art generation) Enter your **OpenRouter API Key** (from openrouter.ai) and click **Save Keys**
 
-API keys are stored in your browser only and are never visible in Configure Settings.
+API keys are stored in your browser only (client-scope setting) and are never
+visible in the standard Configure Settings UI. They are never transmitted to
+Foundry's server.
+
+The Anthropic key is sent only to `api.anthropic.com`. The OpenRouter key is
+sent only to `openrouter.ai/api/v1/chat/completions`. There is no relay,
+proxy, or third-party server in the path.
 
 ---
 
@@ -137,31 +116,56 @@ API keys are stored in your browser only and are never visible in Configure Sett
 | `!journal lore "Title" confirmed — text` | Record a lore discovery |
 | `!journal threat "Name" severity — summary` | Record an active threat |
 
-> **Note:** World Journal commands (`!journal`) are available from v0.2.0 (planned).
-
 ---
 
 ## In-game help
 
-After installing, import the **Starforged Companion — Help & Reference**
-compendium into your world. It contains the full command reference, settings
-documentation, troubleshooting guide, and changelog.
+After installing, the **Starforged Companion — Help & Reference** journal is
+created automatically in the GM's world. It contains the full command
+reference, settings documentation, troubleshooting guide, and changelog.
 
 ---
 
 ## Cost and API usage
 
-Estimated per 3-hour session (~20 moves) with prompt caching:
+Estimated per 2-hour session with prompt caching, based on real session
+telemetry (~60 chat inputs / hour observed in v1.2.7 play, of which roughly
+40 % resolve as a move and 60 % stay as narration under default pacing
+dials):
 
 | Configuration | Per session | Per year (50 sessions) |
 |---------------|-------------|------------------------|
-| Haiku interpretation + Haiku narration | ~$0.02 | ~$1.15 |
-| Haiku interpretation + Sonnet narration | ~$0.08 | ~$4.00 |
-| Portrait generation (DALL-E 3, 1024×1024) | ~$0.04 each | Infrequent |
-| Sector background art (DALL-E 3, 1792×1024) | ~$0.08 per sector | ~3–5 sectors/campaign |
+| Haiku interpretation + Haiku narration | ~$0.20 | ~$10 |
+| Haiku interpretation + Sonnet narration | ~$0.30 | ~$15 |
+| Portrait generation (FLUX.2 Pro via OpenRouter) | a few cents each | Infrequent |
+| Sector background art (FLUX.2 Pro via OpenRouter) | a few cents per sector | ~3–5 sectors/campaign |
 
-Prompt caching significantly reduces interpretation and narration costs within
-a session. Both Haiku and Sonnet narration are practical for regular play.
+Prompt caching brings the cached input rate to ~10 % of the cold rate, and
+every long-lived prompt in the module (narrator system prompt, pacing
+classifier system prompt, chronicle writer system prompt) is cached.
+
+The image model is configurable via the `openRouterImageModel` setting —
+swap to a cheaper FLUX variant (`flux.2-klein`, `flux.2-flex`) or a different
+provider's image model on OpenRouter at any time.
+
+### Per-input breakdown
+
+Unlike the move pipeline (which only fires on a roll), several components in
+v1.2.7 run on **every chat input** — that's the dominant cost driver, not move
+count. Per-call figures with caching:
+
+| Component | When it fires | Per call |
+|---|---|---|
+| Pacing classifier (Haiku) | every undecorated input | ~$0.0006 |
+| Narrator (Haiku) | every input | ~$0.0008 |
+| Narrator (Sonnet) | every input | ~$0.003 |
+| Chronicle writer (Haiku) | every input (GM client only) | ~$0.0006 |
+| Move interpreter (Haiku) | only on MOVE | ~$0.001 |
+| Paced detection (Haiku) | only on non-MOVE | ~$0.001 |
+
+A 2-hour session at the observed ~60-input rate burns roughly **170 K tokens**
+in aggregate across all calls — pacing classifier ~22 K, narrator ~90 K,
+paced detection ~29 K, chronicle writer ~17 K, move interpreter ~14 K.
 
 ### Context packet size
 
@@ -170,9 +174,9 @@ Claude API, regardless of move type. This covers safety configuration, narrator
 permissions, world truths, entity cards for entities present in the scene,
 active progress tracks, and character state.
 
-At current Sonnet pricing this is ~$0.004 per narration input. Output
-(the narration itself) adds ~$0.003–$0.006 depending on length setting.
-Total per move: ~$0.007–$0.010 on Sonnet. Haiku is approximately 10× cheaper.
+At current Sonnet pricing this is ~$0.0004 per narration input with caching.
+Output (the narration itself) adds ~$0.002–$0.005 depending on length setting.
+Total per narration: ~$0.003 on Sonnet, ~$0.0008 on Haiku.
 
 The budget is defined in `src/schemas.js` (`ContextPacketSchema.tokenBudget`).
 

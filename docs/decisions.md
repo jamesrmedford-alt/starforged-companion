@@ -58,23 +58,47 @@ vitest config makes Jest-style implicit globals available for older test files.
 
 ---
 
-## CORS proxy: local Node.js proxy + Forge server-side proxy
+## CORS strategy: direct browser fetch for everything
 
-**Decision:** All external API calls route through `src/api-proxy.js` which detects
-the environment and picks the right proxy path.
+**Decision:** All external API calls go directly from the Foundry renderer
+to the upstream provider. There is no proxy, no relay, and no environment
+branching. The same code runs on Foundry desktop and on The Forge.
 
-**Reason:** Foundry's Electron renderer enforces browser CORS. Module JS runs only
-in the renderer — not in Node.js. Direct calls to `api.anthropic.com` or
-`api.openai.com` are blocked by CORS. Context isolation is enabled (`process`
-undefined, `require` undefined), so Electron's Node APIs are not available.
+**Anthropic — direct browser fetch.** Anthropic supports browser CORS when
+the request carries `anthropic-dangerous-direct-browser-access: true`. The
+Foundry renderer (Electron on desktop, browser on The Forge) is just a
+browser, so direct `fetch` to `api.anthropic.com` works on every platform.
+`apiPost()` in `src/api-proxy.js` injects the header centrally so every
+Anthropic caller gets it automatically.
 
-**Desktop path:** Local Node.js proxy at `proxy/claude-proxy.mjs`. Start with
-`npm run proxy` or `./proxy/start.sh` before each session. Listens on
-`127.0.0.1:3001`. Routes `/v1/*` to Anthropic, `/openai/v1/*` to OpenAI.
+**Image generation — direct browser fetch via OpenRouter.** OpenAI does not
+allow browser CORS for `images/generations`, but OpenRouter does — its
+`chat/completions` endpoint sends `Access-Control-Allow-Origin` and accepts
+`modalities: ["image"]` for image generation. The user supplies their own
+OpenRouter API key (`openRouterApiKey`) and the model id is configurable
+via `openRouterImageModel` (default `black-forest-labs/flux.2-pro`). The
+helper `src/art/openRouterImage.js` handles the request and decodes the
+inline base64 response; both `src/art/generator.js` (entity portraits) and
+`src/sectors/sectorArt.js` (sector backgrounds) call it directly.
 
-**Forge path:** `ForgeAPI.call("proxy", ...)` makes server-side requests from
-The Forge's Node.js process. No local proxy needed. Detected via
-`typeof ForgeVTT !== "undefined" && ForgeVTT.usingTheForge`.
+**No local proxy.** Earlier versions of this module shipped a Node proxy at
+`proxy/claude-proxy.mjs` (started with `npm run proxy`) to bypass desktop
+Foundry's CORS enforcement before Anthropic's browser opt-in existed. That
+proxy has been removed; the same direct-fetch transport now works on both
+desktop and Forge.
+
+**Earlier rescinded claim.** A very early version of this doc claimed The
+Forge exposed a server-side HTTP relay via `ForgeAPI.call("proxy", …)`.
+Inspecting the public Forge module source (`ForgeVTT/fvtt-module-forge-vtt`,
+`ForgeAPI.mjs`) showed `ForgeAPI.call(verb, …)` simply appends `verb` to
+`https://forge-vtt.com/api/`; `/api/proxy` is not a real Forge endpoint.
+The Forge branch in `api-proxy.js` was therefore non-functional and surfaced
+as failing Quench live-API tests, which led to the direct-CORS architecture
+in use today.
+
+**Reference precedent:** The `loremaster-foundry` module makes Anthropic
+requests with the same direct-CORS header from the same Foundry renderer
+context (`scripts/api-client.mjs`, lines 41–50).
 
 **Rejected:** Foundry socket relay (player → GM client → API). Unreliable in
 single-browser sessions where accounts share a socket connection. Also adds

@@ -82,6 +82,242 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### AUDIO-001 — Narrator-card play button errored on every click ✓
+
+**Resolved on:** branch `claude/debug-audio-errors-U5CJK`
+
+**Symptom:** Console warning `starforged-companion | playback failed: Error: "error" is not a supported event of the Sound class` from `playback.js:225` (the `_fail` log) on every click of a narrator card's ▶ Play button. The button flipped to "Unavailable" before any audio request was made.
+
+**Root cause:** `_playOneSound` in `src/audio/playback.js` attached three `Sound.addEventListener` listeners — `end`, `stop`, and `error`. Foundry v13's `foundry.audio.Sound#addEventListener` validates `event` against a fixed allow-list (`pause` / `start` / `stop` / `end` / `load`) and throws synchronously for anything else. The `error` registration threw inside `_playOneSound`, the throw bubbled to `_playFromCurrent`, was caught by `_fail`, and the session went straight to ERROR. `sound.play()` was never called.
+
+**Why unit tests missed it:** the `FoundrySoundStub` in `tests/setup.js` accepted any event name without validation, so the no-op `error` listener registration never threw in tests.
+
+**Fixes:**
+
+- `src/audio/playback.js` — `_playOneSound` no longer attaches an `"error"` listener. Failures during load or decode already surface via `Sound.play()`'s promise rejection (wired into the `fail` branch of `.then(_, fail)`) and `Sound.load()`'s throw from `_createSound`.
+- `tests/setup.js` — `FoundrySoundStub.addEventListener` now mirrors Foundry v13 and throws on unsupported event names. Two new unit tests in `tests/unit/audio.test.js` pin the contract: `_playOneSound` does not attach an `"error"` listener, and a `play()` rejection routes through the ERROR state without throwing synchronously.
+
+---
+
+### AUDIO-002 — 404 on every just-uploaded narrator MP3 on The Forge ✓
+
+**Resolved on:** branch `claude/debug-audio-errors-U5CJK`
+
+**Symptom:** Pattern visible on the Forge browser console — `File Uploaded to your Assets Library successfully` immediately followed by `Failed to load resource: the server responded with a status of 404 ()` on `https://assets.forge…<hash>.mp3`. Every ▶ Play click ran a fresh ElevenLabs synthesis even when the same prose had been played seconds earlier; nothing actually played back.
+
+**Root cause:** `ForgeVTTFilePickerCore` intercepts `FilePicker.upload()` and stores the file in the user's Forge Assets Library (`https://assets.forge-vtt.com/...`) rather than on disk under `worlds/<id>/audio/...`. The upload response carries the absolute Forge URL in its `.path` field.
+
+`src/audio/cache.js` was discarding the upload response and returning the constructed local path. On Forge, that local path does not exist server-side, so `foundry.audio.Sound(src).load()` 404s. The browse-based cache lookup matched correctly against the Forge listing (Forge returns the same files as absolute URLs in `browse().files`) but then returned the constructed `full` path again, so every cache hit also 404'd. Net effect: zero successful playback on Forge and zero cache reuse.
+
+**Fixes:**
+
+- `src/audio/cache.js` `write()` — captures the upload response and returns `response.path` when present, falling back to the constructed local path on native Foundry installs (where the upload return value is undefined or already matches `full`).
+- `src/audio/cache.js` `lookup()` — returns the matched listing path verbatim from `browse().files` instead of returning the constructed local path. On native Foundry this is the local relative path; on Forge it's the absolute `assets.forge-vtt.com` URL — both load correctly via `foundry.audio.Sound`.
+- Two new unit tests in `tests/unit/audio.test.js` pin both halves against a Forge-shaped upload/browse response.
+
+---
+
+### RECAP-003 — `!recap` and Chronicle auto-entry silently no-op'd from v1.2.4 → v1.2.10 ✓
+
+**Resolved in:** v1.2.12 (branch `claude/fix-recap-command-cPT8F`)
+
+**Symptom:** `!recap` (and `!recap campaign`) always rendered the empty-state
+card — *"No campaign history available yet. Play some sessions first!"* —
+even after dozens of narrated turns. The Chronicle journal stayed empty
+even with `chronicleAutoEntry: true`. The v1.2.4 fix (cross-PC chronicle
+aggregation) and v1.2.7 fix (automatic chronicle writes) both shipped
+code that ran in unit tests but never actually fired in a live world.
+
+**Root cause — two compounding defects:**
+
+1. **Missing storage hop.** Both halves of the recap pipeline read
+   `campaignState.characterIds` to identify the player character(s):
+   - `src/character/chronicleWriter.js:228` — `resolveActorId()` returned
+     `characterIds[0] ?? null`. Empty array → `null` → writer short-circuited
+     before `addChronicleEntry` was ever called.
+   - `src/narration/narrator.js:1173` — `_collectAllChronicleEntries()`
+     returned `[]` for empty `characterIds`. Reader had nothing to summarise.
+
+   `campaignState.characterIds` is declared in `src/schemas.js:634` with
+   a default of `[]` and **was never written to by anything in the module**.
+   The assembler computes a `characterIds` array in its return value
+   (`src/context/assembler.js:740`) but only as part of the in-memory
+   context packet — it never persists it onto `campaignState`. Existing
+   unit tests passed because every fixture explicitly populated
+   `characterIds`; no test exercised the real-world condition of an
+   empty stored value.
+
+2. **`hasPlayerOwner` is always false in solo-GM play.** Surfaced only
+   after the first Forge Quench run of the Recap End-to-End batch failed
+   three assertions in v1.2.11 (writer never wrote, reader never reached
+   the API, posted card was the empty-state). `getPlayerActors()` in
+   `src/character/actorBridge.js:23` filtered on `a.type === 'character'
+   && a.hasPlayerOwner`. `Actor#hasPlayerOwner` returns `true` only when
+   at least one **non-GM** User has LIMITED+ ownership. In Ironsworn
+   solo play — the module's primary use case — the GM is also the
+   player; there are no non-GM users; `hasPlayerOwner` is `false` on
+   every character. `getPlayerActors()` silently returned `[]` for
+   every solo-GM session — so the Defect 1 fallback also returned `[]`,
+   and the assembler's CHARACTER STATE section (also gated on
+   `getPlayerActors`, `src/context/assembler.js:717`) was empty on every
+   paced narration too. Character name and meter values never reached
+   the narrator prompt for solo GMs.
+
+**Fixes:**
+
+- `src/character/actorBridge.js` — `getPlayerActors()` falls back to all
+  `character`-type Actors when no player-owned ones exist. Safe because
+  foundry-ironsworn reserves the `character` type for PCs (NPCs / foes /
+  connections / starships use distinct types). Multi-user behaviour
+  unchanged: when any character is player-owned, the filter still wins.
+- `src/character/chronicleWriter.js` — `resolveActorId()` falls back to
+  `getPlayerActors()[0]?.id` when `characterIds` is empty.
+- `src/narration/narrator.js` — new `_resolveCharacterIds()` helper falls
+  back to `getPlayerActors().map(a => a.id)`. Used by
+  `_collectAllChronicleEntries()` (recap reader) and `getActiveCharacter()`
+  (paced-narration character context) so all three readers share one source.
+
+**Coverage:**
+
+- 6 new unit tests:
+  - `tests/unit/actorBridge.test.js` — `getPlayerActors()` falls back to
+    all character-type actors in solo-GM mode; never includes non-character
+    types; prefers player-owned characters when any exist.
+  - `tests/unit/chronicleWriter.test.js` — writer falls back to
+    `getPlayerActors()[0]` when `characterIds` is empty; non-character /
+    non-player-owned Actors are excluded.
+  - `tests/unit/recap.test.js` — reader falls back through the API call
+    with a stubbed fetch; seeded chronicle entries reach the user message.
+- New Quench batch `starforged-companion.recapEndToEnd`
+  (STARFORGED: Recap End-to-End) — three live tests against a real Actor +
+  real Chronicle journal with `characterIds=[]` forced: writer fallback,
+  reader fallback through `getCampaignRecap`, and `postCampaignRecap`
+  posting a non-empty card. This live coverage exists specifically
+  because the v1.2.4 and v1.2.7 fixes both passed unit tests but were
+  silently disabled in production — the existing fixtures couldn't
+  surface that, and Defect 2 above wasn't visible until the live Forge
+  Quench run actually exercised the path.
+
+---
+
+### SECTOR-001 — Narrator invented new settlements for places already in the active sector ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** During paced narration and scene queries, the narrator would
+sometimes set a scene in a settlement name that had nothing to do with the
+active sector — even when the active sector's hub was an obviously
+established location. The detector would then post a draft entity card
+proposing the invented name as a "new" Settlement, pushing the GM toward
+forking the world.
+
+**Root cause — two layers:**
+
+1. **Prompt-side blindness.** The paced-narrative narrator
+   (`narratePacedInput`, `src/narration/narrator.js:686`) and the scene-
+   interrogation narrator (`interrogateScene`, ibid `:596`) did not call
+   the assembler at all. The move-pipeline narrator's `## ACTIVE SECTOR`
+   block — and the `## CURRENT LOCATION` card — only flowed through
+   `narrateResolution`. Both other paths had zero sector or current-
+   location context, so the model had no signal to keep the scene
+   anchored to an established place.
+2. **Detector cross-type gap.** `entityExistsForName(name, type, …)` in
+   `src/entities/entityExtractor.js:470` only walks the ID list for the
+   *one* type passed in. If the narrator wrote "Oxidized Kettle" and the
+   detector classified it as a Location, an existing Settlement of the
+   same name did not block the draft — the type-scoped check returned
+   false, and the same physical place got proposed as a new entity under
+   a different type.
+
+**Fixes:**
+
+- New helper `formatActiveSector(campaignState)` in
+  `src/narration/narrator.js` builds a directive anchor block:
+  *"Active sector: X / Region: Y / Trouble: Z / Established settlements
+  in this sector: A, B, C. When the scene is set in a settlement, reuse
+  one of the established names above. Do not invent a new settlement
+  name for the same place."* This and `formatCurrentLocation(...)` are
+  now threaded into all three narrator call sites
+  (`narrateResolution`, `narratePacedInput`, `interrogateScene`) via a
+  new `extras.activeSectorBlock` parameter on
+  `buildNarratorSystemPrompt`.
+- New `entityExistsAnyType(name, campaignState)` export in
+  `entityExtractor.js` does a cross-type name match against every entity
+  ID list. `routeEntityDrafts` now uses it as the primary dedup gate.
+  The type-scoped `entityExistsForName` is preserved for the WJ routing
+  rules in `routeWorldJournalResults` (faction / location WJ entries
+  remain type-scoped on purpose — a WJ faction note about "Blue Star
+  Compact" should not be blocked by an unrelated settlement entity that
+  happens to share a name).
+
+**Coverage:** 9 new unit tests across `tests/unit/entityExtractor.test.js`
+and `tests/unit/narratorPrompt.test.js`. Pins the cross-type dedup at
+the routing gate (Location, Connection, and Settlement variants), the
+`## ACTIVE SECTOR` header presence/absence in the system prompt, and
+the directive text the model receives.
+
+---
+
+### RECAP-002 — Campaign recap card "↻ Refresh" button did nothing ✓
+
+**Resolved in:** v1.2.7 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Every campaign recap card the GM saw rendered a "↻ Refresh"
+button — but clicking it did nothing. No console error, no toast, no API call.
+
+**Root cause:** The button was added to the recap card HTML in
+`src/narration/narrator.js:547` but no `Hooks.on("renderChatMessage")` was
+ever registered to wire it. Same defect class as ENTITY-001 (the chat-card
+hint that pointed at a non-existent panel flow); same fix pattern as the
+existing `setupCard` "Set World Truths" handler at `src/index.js:1379`.
+
+**Fix:** Added a second `renderChatMessage` hook in `src/index.js` that
+matches `recapCard` + `recapType: "campaign"`, finds the `[data-action=
+"refreshCampaignRecap"]` button, gates on `game.user.isGM`, disables the
+button while in flight, and calls `postCampaignRecap(state, { forceRefresh:
+true })` (the same regen path `!recap` uses). Errors surface as a warn
+toast.
+
+**Coverage:** New Quench batch `starforged-companion.chatCardActions`
+includes a regression test that posts a recap card, clicks the Refresh
+button, and asserts a fresh recap card lands in chat.
+
+---
+
+### ENTITY-001 — Entity panel always empty; draft cards had no Confirm UI ✓
+
+**Resolved in:** v1.2.6 (branch `claude/fix-entity-panel-display-0kjF5`)
+
+**Symptom:** Two compounding issues:
+1. The Entities panel always showed "No entities tracked yet" even after entities
+   had been created (manually, via `make_a_connection`, or via the sector creator).
+2. The "New Entities Detected" chat card told the GM to "Open the Entities panel
+   to confirm or dismiss" — but the panel had no UI to confirm a draft. Drafts
+   could only be implicitly dismissed by deleting the chat card; ship/settlement/
+   planet/location/creature drafts had no way to be promoted to entities at all.
+
+**Root cause (panel):** `loadAllEntities()` and `findEntity()` in
+`src/ui/entityPanel.js` read the entity flag via
+`journal.getFlag(MODULE_ID, config.flag)` — i.e. the JournalEntry's own flags.
+But all seven entity types (`connection.js`, `ship.js`, …, `creature.js`) store
+their data on the embedded `JournalEntryPage` flag. The entry itself only carries
+`{ entityType, entityId }` routing crumbs. Every iteration fell through the
+`if (!data) continue;` guard and the panel rendered the empty state.
+
+**Root cause (draft UX):** The card's hint text claimed the panel had a confirm
+flow, but no such code existed. Only `make_a_connection` auto-created the first
+connection draft; everything else lived on the chat card forever.
+
+**Fixes:**
+- `src/ui/entityPanel.js` — read entity data from `journal.pages.contents[0].getFlag(...)` in both `loadAllEntities()` and `findEntity()`. Added `updateJournalEntryPage` and `createJournalEntryPage` hooks so the panel re-renders when page flags change (entry-level hooks don't fire for embedded page edits).
+- `src/entities/entityExtractor.js` — draft chat cards now render Confirm and Dismiss buttons per row. Confirm calls the appropriate `createXxx()` from the entity modules; Dismiss appends the name to `campaignState.dismissedEntities`. Card content updates in place to show resolved status.
+- `collectPendingDraftNames()` — only "pending" drafts suppress re-detection; resolved drafts are now established (caught by `collectEstablishedEntityNames`) or dismissed (caught by `dismissedEntities`).
+- `src/integration/quench.js` — `entityPanelActions` batch hardened to assert the seeded Connection actually renders a row instead of silently calling `this.skip()`. The skip-on-miss guards were what hid this bug for months.
+
+**Why it wasn't caught:** the existing Quench batch (`registerEntityPanelActionsTests`) skipped every assertion when no row appeared. A code comment in `src/integration/quench.js` even acknowledged "the known journal-vs-page flag read quirk in loadAllEntities() (tracked as a latent issue in known-issues.md)" — but it was never actually tracked here. Bug present since `entityPanel.js` was first created (commit `102a9a3`).
+
+---
+
 ### CONTROLS-001 — Toolbar buttons appeared but did nothing ✓
 
 **Resolved in:** v0.1.34
@@ -193,11 +429,25 @@ which programmatically creates the help journal on first GM world load.
 
 ### CORS-001 — Electron renderer blocks external API calls ✓
 
-**Resolved in:** Post-session-3 hardening
+**Resolved.** Multi-phase: initial post-session-3 hardening added a local Node
+proxy; Phase 1 of the API-key-errors fix introduced direct browser fetch on
+The Forge (Anthropic via the `anthropic-dangerous-direct-browser-access`
+header, image generation via OpenRouter); Phase 2 removed the local proxy
+entirely and unified desktop and Forge on direct browser fetch.
 
-**Fix:** Local Node.js proxy (`proxy/claude-proxy.mjs`) + Forge server-side
-proxy (`ForgeAPI.call("proxy", ...)`). All external API calls routed through
-`src/api-proxy.js`.
+**Final transport:**
+- Anthropic — direct browser fetch from `src/api-proxy.js` with
+  `anthropic-dangerous-direct-browser-access: true`. Works on desktop and
+  Forge identically.
+- Image generation — direct browser fetch to OpenRouter
+  (`openrouter.ai/api/v1/chat/completions`) via `src/art/openRouterImage.js`.
+  Default model `black-forest-labs/flux.2-pro`, configurable via the
+  `openRouterImageModel` setting.
+
+No local proxy, no environment branching. See `docs/decisions.md` for the
+rationale (including the previously rescinded `ForgeAPI.call("proxy", ...)`
+claim) and reference precedent (`loremaster-foundry` uses the same
+direct-fetch approach in production).
 
 ---
 

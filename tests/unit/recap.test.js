@@ -310,6 +310,183 @@ describe('getCampaignRecap() — cache', () => {
 
 
 // ---------------------------------------------------------------------------
+// 4b. Regression — chronicle is actually read when characterIds is populated.
+// Before the v1.2.3 fix, _getChronicleEntries treated characterIds as journal
+// IDs (they are actor IDs). The recap card always rendered the empty-state
+// HTML even when the chronicle had entries.
+// ---------------------------------------------------------------------------
+
+describe('getCampaignRecap() — populated chronicle (regression)', () => {
+  // The setup.js makeTestActor + game.actors mock already gives us actor
+  // lookup. We need to also install a journal mock so chronicle.js can find
+  // "Chronicle — {actor.name}" by name and read its page flag.
+  // Chain-friendly journal installer — keeps existing get/getName behaviour
+  // and adds this journal on top. Tests can install one per PC.
+  function installChronicleJournal(actorName, entries) {
+    const flags = { 'starforged-companion': { chronicle: entries } };
+    const page = {
+      id:     `page-${actorName}`,
+      name:   'Chronicle',
+      flags,
+      getFlag: (mod, key) => flags?.[mod]?.[key],
+      setFlag: async (mod, key, val) => {
+        flags[mod] = flags[mod] ?? {};
+        flags[mod][key] = val;
+      },
+    };
+    const journal = {
+      id:    `journal-chronicle-${actorName}`,
+      name:  `Chronicle — ${actorName}`,
+      pages: { contents: [page] },
+      flags: {},
+    };
+    const previousGet     = game.journal.get;
+    const previousGetName = game.journal.getName;
+    game.journal.get     = (id) => id === journal.id ? journal : previousGet(id);
+    game.journal.getName = (n)  => n === journal.name ? journal : previousGetName(n);
+    return {
+      journal,
+      restore() {
+        game.journal.get     = previousGet;
+        game.journal.getName = previousGetName;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, '');
+    game.actors._reset();
+  });
+
+  afterEach(() => {
+    game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    game.actors._reset();
+  });
+
+  it('_getChronicleLength returns the entry count when chronicle is populated', async () => {
+    const actor = makeTestActor({ id: 'pc-1', name: 'Kira' });
+    game.actors._set('pc-1', actor);
+    const installed = installChronicleJournal('Kira', [
+      { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'Set out from the station.' },
+      { id: 'e2', timestamp: '2026-01-02T00:00:00Z', text: 'Found the derelict.' },
+      { id: 'e3', timestamp: '2026-01-03T00:00:00Z', text: 'Lost the trail.' },
+    ]);
+
+    // No API key → getCampaignRecap returns '' even when chronicle is
+    // populated, but the chronicleLength mismatch should bypass the cached
+    // 'Stale cache' string. This shape of test would have caught the bug:
+    // the broken helper returned 0, so the cache was treated as fresh.
+    const state = makeCampaignState({
+      characterIds: ['pc-1'],
+      campaignRecapCache: {
+        text:            'Stale cache',
+        generatedAt:     new Date().toISOString(),
+        chronicleLength: 0,   // pre-fix the helper would return 0 too — match
+      },
+    });
+    const result = await getCampaignRecap(state);
+    // With the bug, chronicleLength would equal cache.chronicleLength (both 0)
+    // and the test would receive 'Stale cache' verbatim. With the fix, the
+    // chronicle has 3 entries → mismatch → no API key → '' (not the stale text).
+    expect(result).not.toBe('Stale cache');
+    expect(result).toBe('');
+    installed.restore();
+  });
+
+  it('chronicle entries from multiple PCs are merged and sorted by timestamp', async () => {
+    const a = makeTestActor({ id: 'pc-1', name: 'Kira' });
+    const b = makeTestActor({ id: 'pc-2', name: 'Soren' });
+    game.actors._set('pc-1', a);
+    game.actors._set('pc-2', b);
+
+    const installedA = installChronicleJournal('Kira',  [
+      { id: 'k1', timestamp: '2026-01-01T00:00:00Z', text: 'Kira set out.' },
+      { id: 'k2', timestamp: '2026-01-03T00:00:00Z', text: 'Kira found the wreck.' },
+    ]);
+    const installedB = installChronicleJournal('Soren', [
+      { id: 's1', timestamp: '2026-01-02T00:00:00Z', text: 'Soren joined the crew.' },
+    ]);
+
+    // Set the api key so getCampaignRecap will reach the user-message builder.
+    let captured = null;
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+
+    // Stub fetch — capture the user message and return canned text.
+    const origFetch = global.fetch;
+    global.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      captured = body.messages?.[body.messages.length - 1]?.content;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        text: async () => '',
+      };
+    });
+
+    const state = makeCampaignState({ characterIds: ['pc-1', 'pc-2'] });
+    const result = await getCampaignRecap(state);
+    expect(result).toBe('recap ok');
+    // The user message must include entries from BOTH PCs, sorted chronologically.
+    expect(captured).toContain('Kira set out');
+    expect(captured).toContain('Soren joined the crew');
+    expect(captured).toContain('Kira found the wreck');
+    // Soren's entry (2026-01-02) is between Kira's two (01-01 and 01-03).
+    const kira1 = captured.indexOf('Kira set out');
+    const soren = captured.indexOf('Soren joined');
+    const kira2 = captured.indexOf('Kira found');
+    expect(kira1).toBeLessThan(soren);
+    expect(soren).toBeLessThan(kira2);
+
+    global.fetch = origFetch;
+    installedB.restore();
+    installedA.restore();
+  });
+
+  // Regression for v1.2.10 → v1.2.12: campaignState.characterIds is never
+  // populated by the module, so the recap reader must fall back to
+  // actorBridge.getPlayerActors() — the same source the assembler uses.
+  // Without this fallback, the recap card always shows "No campaign history
+  // available yet" no matter how many chronicle entries have been written.
+  it('falls back to player-owned Actors when characterIds is empty', async () => {
+    const pc = makeTestActor({ id: 'pc-fallback-recap', name: 'Wren' });
+    pc.hasPlayerOwner = true;
+    game.actors._set(pc.id, pc);
+
+    const installed = installChronicleJournal('Wren', [
+      { id: 'w1', timestamp: '2026-02-01T00:00:00Z', text: 'Wren left Pol.' },
+      { id: 'w2', timestamp: '2026-02-02T00:00:00Z', text: 'Wren hailed the Resolute.' },
+    ]);
+
+    let captured = null;
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    const origFetch = global.fetch;
+    global.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      captured = body.messages?.[body.messages.length - 1]?.content;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }),
+        text: async () => '',
+      };
+    });
+
+    // characterIds intentionally left empty — mirrors the real-world bug.
+    const state = makeCampaignState({ characterIds: [] });
+    const result = await getCampaignRecap(state);
+    expect(result).toBe('recap ok');
+    expect(captured).toContain('Wren left Pol');
+    expect(captured).toContain('Wren hailed the Resolute');
+
+    global.fetch = origFetch;
+    installed.restore();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
 // 5. buildCampaignRecapUserMessage()
 // ---------------------------------------------------------------------------
 

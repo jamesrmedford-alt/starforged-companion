@@ -1,17 +1,31 @@
 /**
  * STARFORGED COMPANION
- * src/entities/planet.js — Planet records
+ * src/entities/planet.js — Planet records, hosted on foundry-ironsworn
+ * `location` Actor documents with `system.subtype='planet'` (Phase 3 of the
+ * Entity → Actor Migration).
  *
- * Planets are discovered and described over time. They have:
- * — A planet type (from the oracle)
- * — Observed-from-space details and planetside features
- * — Life and atmosphere indicators
- * — An optional settlement list
- * — Context injection when the scene is on or around this planet
+ * Field placement (per docs/entity-actor-migration-scope.md §3.2):
+ *   actor.name                            ← planet.name
+ *   actor.img                             ← portrait dataUri (set by art pipeline)
+ *   actor.system.subtype                  = "planet"
+ *   actor.system.klass                    ← planet.type (Desert / Vital / ...)
+ *   actor.system.description              ← planet.description
+ *   actor.flags[MODULE].planet            ← full Starforged payload
+ *   actor.flags[MODULE].entityType        ← "planet"
+ *   actor.flags[MODULE].entityId          ← preserved _id
  *
- * Planets don't have progress tracks or mechancal meters.
- * They're primarily narrative and context-injection entities.
+ * Native location-actor schema lives at
+ * vendor/foundry-ironsworn/src/module/actor/subtypes/location.ts — schema
+ * carries `subtype`, `klass`, `description` only; everything else lives in
+ * module flags.
  */
+
+import { getOrCreateSectorActorFolder } from "./folder.js";
+import {
+  getEntityDocument,
+  readEntityFlag,
+  writeEntityFlag,
+} from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "planet";
@@ -21,35 +35,37 @@ export const PlanetSchema = {
   name:   "",
   active: true,
 
-  // Oracle-derived classification
-  type:           "",    // e.g. "Desert World", "Vital World"
-  atmosphere:     "",    // e.g. "Breathable", "Toxic", "None / thin"
-  life:           "",    // e.g. "Diverse", "Scarce", "None"
-  observedFromSpace: "", // First look from space oracle result
+  type:    "",        // Planet class oracle result (Desert / Vital / Furnace / ...)
+  atmosphere: "",     // "Breathable" | "Marginal" | "Hostile" | "None"
+  life:       "",     // "Diverse" | "Scarce" | "None"
 
-  // Planetside details (filled in through exploration)
-  features:       [],    // Planetside Feature oracle results
-  biomes:         [],    // Vital World biome results
-  diversity:      "",    // Vital World diversity result
+  // Oracle-derived narrative
+  observedFromSpace: "",   // First look from orbit
+  features:    [],         // Planetside features (array of oracle results)
+  biomes:      [],         // Vital-world biome list
+  diversity:   "",
+  peril:       "",
+  opportunity: "",
 
-  // Settlements and hazards
-  settlementIds:  [],    // Settlement _ids on or orbiting this planet
-  peril:          "",    // Most recent Planetside Peril result
-  opportunity:    "",    // Most recent Planetside Opportunity result
+  // Linked entities
+  settlementIds: [],
+
+  // Sector membership — drives per-sector Actor folder placement
+  sectorId: null,
 
   // Narrative
   description:    "",
   notes:          "",
 
   // Art
-  portraitId:                null,
-  portraitSourceDescription: "",
+  portraitId:                  null,
+  portraitSourceDescription:   "",
 
   // Context injection
   sceneRelevant:   false,
   loremasterNotes: "",
 
-  // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
+  // Narrator entity-discovery flags
   canonicalLocked: false,
   generativeTier:  [],
 
@@ -58,7 +74,7 @@ export const PlanetSchema = {
 };
 
 
-export async function createPlanet(data, campaignState) {
+export async function createPlanet(data, campaignState, { persist = true } = {}) {
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -68,35 +84,43 @@ export async function createPlanet(data, campaignState) {
     _id:       id,
     features:  data.features ?? [],
     biomes:    data.biomes ?? [],
+    sectorId:  data.sectorId ?? campaignState?.activeSectorId ?? null,
     createdAt: now,
     updatedAt: now,
   };
 
-  const entry = await JournalEntry.create({
-    name:  planet.name || "Unknown Planet",
-    flags: { [MODULE_ID]: { entityType: "planet", entityId: id } },
+  const folderId = await getOrCreateSectorActorFolder(planet.sectorId, campaignState);
+
+  const actor = await Actor.create({
+    name:   planet.name || "Unknown Planet",
+    type:   "location",
+    folder: folderId,
+    system: {
+      subtype:     "planet",
+      klass:       planet.type ?? null,
+      description: planet.description ?? "",
+    },
+    flags:  {
+      [MODULE_ID]: {
+        [FLAG_KEY]:  planet,
+        entityType:  "planet",
+        entityId:    id,
+      },
+    },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Planet Data",
-    type:  "text",
-    flags: { [MODULE_ID]: { [FLAG_KEY]: planet } },
-  }]);
-
   if (!campaignState.planetIds) campaignState.planetIds = [];
-  if (!campaignState.planetIds.includes(entry.id)) {
-    campaignState.planetIds.push(entry.id);
-    await persistCampaignState(campaignState);
+  if (!campaignState.planetIds.includes(actor.id)) {
+    campaignState.planetIds.push(actor.id);
+    if (persist) await persistCampaignState(campaignState);
   }
 
   return planet;
 }
 
-export function getPlanet(journalEntryId) {
+export function getPlanet(actorId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    const page  = entry?.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
+    return readEntityFlag("planet", getEntityDocument("planet", actorId));
   } catch {
     return null;
   }
@@ -108,12 +132,11 @@ export function listPlanets(campaignState) {
     .filter(Boolean);
 }
 
-export async function updatePlanet(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Planet journal entry not found: ${journalEntryId}`);
+export async function updatePlanet(actorId, updates) {
+  const document = getEntityDocument("planet", actorId);
+  if (!document) throw new Error(`Planet actor not found: ${actorId}`);
 
-  const page    = entry.pages?.contents?.[0];
-  const current = page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const current = readEntityFlag("planet", document) ?? {};
   const updated = {
     ...current,
     ...updates,
@@ -122,10 +145,16 @@ export async function updatePlanet(journalEntryId, updates) {
     updatedAt: new Date().toISOString(),
   };
 
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  // Mirror native fields onto the Actor document so the system sheet renders.
+  const systemPatch = {};
+  if (updates.type !== undefined)        systemPatch["system.klass"]       = updated.type ?? null;
+  if (updates.description !== undefined) systemPatch["system.description"] = updated.description ?? "";
+  if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
+  await writeEntityFlag("planet", document, updated);
+
+  if (updates.name && updates.name !== document.name) {
+    await document.update({ name: updates.name });
   }
 
   return updated;
@@ -135,24 +164,24 @@ export async function updatePlanet(journalEntryId, updates) {
  * Add a discovered planetside feature.
  * Features accumulate as the planet is explored — append only.
  *
- * @param {string} journalEntryId
+ * @param {string} actorId
  * @param {string} feature — Oracle result or player description
  * @returns {Promise<Object>}
  */
-export async function addFeature(journalEntryId, feature) {
-  const planet = getPlanet(journalEntryId);
-  if (!planet) throw new Error(`Planet not found: ${journalEntryId}`);
+export async function addFeature(actorId, feature) {
+  const planet = getPlanet(actorId);
+  if (!planet) throw new Error(`Planet not found: ${actorId}`);
 
   const features = [...(planet.features ?? []), feature];
-  return updatePlanet(journalEntryId, { features });
+  return updatePlanet(actorId, { features });
 }
 
-export async function setSceneRelevant(journalEntryId, value) {
-  return updatePlanet(journalEntryId, { sceneRelevant: value });
+export async function setSceneRelevant(actorId, value) {
+  return updatePlanet(actorId, { sceneRelevant: value });
 }
 
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updatePlanet(journalEntryId, { portraitId: artAssetId });
+export async function setPortraitId(actorId, artAssetId) {
+  return updatePlanet(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(planet) {

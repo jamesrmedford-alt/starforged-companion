@@ -4,9 +4,27 @@
 // This isolates the foundry-ironsworn API surface so system changes only require
 // updates in one place.
 
-// Condition debilities that affect momentum max and reset.
-// Each marked condition reduces momentumMax by 1 and momentumReset by 1 (floor -2).
-const CONDITION_DEBILITIES = ['wounded', 'shaken', 'unprepared', 'encumbered'];
+const MODULE_ID = "starforged-companion";
+
+// Hard floor for momentum during regular play. Matches the Starforged play kit
+// ("MOMENTUM: -6 TO +10") and the vendor system's `MomentumField.MIN`. Note
+// this is distinct from `momentumReset` — reset is the value momentum is set
+// to when burned (starts at +2, drops with impacts) and is NOT a clamp floor.
+const MOMENTUM_MIN = -6;
+
+// All debility keys that count as "impacts" for momentum bounds.
+// Per foundry-ironsworn source (#impactCount getter) and the Starforged play kit
+// (p.1 "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH IMPACT"), every marked
+// impact reduces momentumMax by 1 and shifts momentumReset toward 0.
+// First 10 are the Starforged play-kit list; last 3 are Ironsworn-classic extras
+// the vendor system also tracks.
+const IMPACT_KEYS = [
+  'wounded', 'shaken', 'unprepared',                  // misfortunes
+  'permanentlyharmed', 'traumatized',                 // lasting effects
+  'doomed', 'tormented', 'indebted',                  // burdens
+  'battered', 'cursed',                               // current vehicle
+  'corrupted', 'encumbered', 'maimed',                // vendor extras (Ironsworn classic)
+];
 
 // In-memory cache of character snapshots, invalidated by the updateActor hook.
 const _snapshotCache = new Map();
@@ -18,10 +36,21 @@ const _snapshotCache = new Map();
 
 /**
  * Get all player-owned character Actors in the world.
+ *
+ * In multi-user games this returns only characters with at least one non-GM
+ * owner (`hasPlayerOwner === true`). In solo-GM play — the dominant use case
+ * for this module — there are no non-GM users, so `hasPlayerOwner` is always
+ * false on every character. Falling back to all `character`-type Actors keeps
+ * the recap pipeline, paced-narration character context, and the chronicle
+ * panel working in solo play. Safe because foundry-ironsworn reserves the
+ * `character` type for PCs — NPCs/foes/connections use different types.
+ *
  * @returns {Actor[]}
  */
 export function getPlayerActors() {
-  return game.actors?.filter(a => a.type === 'character' && a.hasPlayerOwner) ?? [];
+  const characters = game.actors?.filter(a => a.type === 'character') ?? [];
+  const playerOwned = characters.filter(a => a.hasPlayerOwner);
+  return playerOwned.length > 0 ? playerOwned : characters;
 }
 
 /**
@@ -49,7 +78,13 @@ export function readCharacterSnapshot(actor) {
 
   const sys  = actor.system ?? {};
   const debs = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
+  const impactCount = countImpacts(debs);
+
+  // Prefer the vendor system's computed getters (#impactCount-driven) when
+  // present so any future schema change tracks automatically; otherwise fall
+  // back to the local formula matching the play kit (p.1).
+  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
 
   const snapshot = {
     name:    actor.name,
@@ -67,17 +102,88 @@ export function readCharacterSnapshot(actor) {
       supply:   meterValue(sys.supply),
       momentum: meterValue(sys.momentum),
     },
-    momentumMax:   Math.max(0, 10 - condCount),
-    momentumReset: condCount === 0 ? 0 : Math.max(-2, -condCount),
+    momentumMax,
+    momentumReset,
     debilities: debs,
     xp: {
       value: sys.xp ?? 0,
       max:   30,
     },
+    assets: readAssets(actor),
+    vows:   readVows(actor),
   };
 
   _snapshotCache.set(actor.id, snapshot);
   return snapshot;
+}
+
+/**
+ * Read the character's ironsworn `asset`-type Items (Paths, Companions,
+ * Modules, Rituals, Combat Talents, etc) as plain-data snapshots for
+ * narrator context. Only enabled abilities are surfaced — disabled
+ * abilities aren't yet "unlocked" and shouldn't inform the narrator.
+ *
+ * Strips HTML tags from ability text so the prompt stays clean — the
+ * ironsworn schema stores rich text in HTMLField.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ name: string, abilities: string[], description: string }>}
+ */
+export function readAssets(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list = Array.isArray(items) ? items : [];
+  return list
+    .filter(i => i?.type === 'asset')
+    .map(i => {
+      const abilities = (i.system?.abilities ?? [])
+        .filter(a => a?.enabled)
+        .map(a => stripHtml(a?.text ?? ''))
+        .filter(Boolean);
+      return {
+        name:        i.name ?? '',
+        description: stripHtml(i.system?.description ?? ''),
+        abilities,
+      };
+    });
+}
+
+function stripHtml(s) {
+  return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Read the character's progress-typed vow Items (foundry-ironsworn stores
+ * vows as `type: "progress"` with `system.subtype: "vow"`) and return them
+ * as plain-data snapshots. The first item in actor.items.contents is the
+ * earliest one created; we surface it as `isBackground: true` so the
+ * narrator context can spotlight the founding vow.
+ *
+ * Starforged's play-kit character sheet has a labelled "BACKGROUND VOW"
+ * area but the system has no dedicated field for it — the convention
+ * across the foundry-ironsworn community is to create the founding vow
+ * as the first vow item on the character. This helper makes that
+ * convention explicit.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, isBackground }>}
+ */
+export function readVows(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  const vows  = list.filter(i => i?.type === 'progress' && i?.system?.subtype === 'vow');
+
+  return vows.map((v, i) => {
+    const ticks = Number(v.system?.progress ?? v.system?.current ?? 0);
+    return {
+      id:           v.id ?? v._id ?? null,
+      name:         v.name ?? '',
+      rank:         v.system?.rank ?? 'dangerous',
+      ticks,
+      progress:     Math.floor(ticks / 4),
+      completed:    !!v.system?.completed,
+      isBackground: i === 0,
+    };
+  });
 }
 
 /**
@@ -87,22 +193,23 @@ export function readCharacterSnapshot(actor) {
  */
 export function readDebilities(actor) {
   const d = actor?.system?.debility ?? {};
+  // 10 canonical Starforged play-kit impacts + 3 Ironsworn-classic extras
+  // the vendor system also tracks. Anything outside this list is ignored —
+  // the previous `custom1` / `custom2` fields were not in the vendor schema.
   return {
-    corrupted:         !!d.corrupted,
-    cursed:            !!d.cursed,
-    tormented:         !!d.tormented,
     wounded:           !!d.wounded,
     shaken:            !!d.shaken,
     unprepared:        !!d.unprepared,
-    encumbered:        !!d.encumbered,
-    maimed:            !!d.maimed,
     permanentlyharmed: !!d.permanentlyharmed,
     traumatized:       !!d.traumatized,
     doomed:            !!d.doomed,
+    tormented:         !!d.tormented,
     indebted:          !!d.indebted,
     battered:          !!d.battered,
-    custom1:           !!d.custom1,
-    custom2:           !!d.custom2,
+    cursed:            !!d.cursed,
+    corrupted:         !!d.corrupted,
+    encumbered:        !!d.encumbered,
+    maimed:            !!d.maimed,
   };
 }
 
@@ -124,10 +231,10 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
+  const impactCount = countImpacts(debs);
 
-  const momentumMax   = Math.max(0, 10 - condCount);
-  const momentumReset = condCount === 0 ? 0 : Math.max(-2, -condCount);
+  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
   const spiritMax  = debs.shaken  ? 3 : 5;
@@ -155,7 +262,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   }
 
   if (meterChanges.momentum !== undefined && meterChanges.momentum !== 0) {
-    const next = clamp(currentMomentum + meterChanges.momentum, momentumReset, momentumMax);
+    const next = clamp(currentMomentum + meterChanges.momentum, MOMENTUM_MIN, momentumMax);
     updates['system.momentum.value']      = next;
     updates['system.momentum.max']        = momentumMax;
     updates['system.momentum.resetValue'] = momentumReset;
@@ -182,7 +289,7 @@ export async function setDebility(actor, debilityKey, value) {
   await actor.update({ [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
-  if (CONDITION_DEBILITIES.includes(debilityKey)) {
+  if (IMPACT_KEYS.includes(debilityKey)) {
     await recalculateMomentumBounds(actor);
   }
 }
@@ -254,6 +361,98 @@ export async function markVowProgress(actor, vowItemId, ticks) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER ITEM REGISTRATION (Connections + Vows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
+
+/**
+ * Create a `progress`-typed Item on the character Actor representing a
+ * Connection. The ironsworn character sheet's Connections tab is populated
+ * by progress Items with any subtype other than "vow" or "progress" (see
+ * vendor/foundry-ironsworn/.../sf-connections.vue), so we use "bond" to
+ * match the system's own "+ Connection" button behaviour.
+ *
+ * Passes `{ suppressLog: true }` so the ironsworn preCreateItem chat-alert
+ * hook does not emit an "Added <name>" emote message in chat — those
+ * messages were leaking between narrator turns.
+ *
+ * Idempotent: if an Item flagged with this connection's id already exists
+ * on the actor, returns it without creating a duplicate.
+ *
+ * @param {Actor} actor
+ * @param {{ name: string, rank?: string, connectionId?: string }} data
+ * @returns {Promise<Item|null>}
+ */
+export async function createCharacterBondItem(actor, data) {
+  return createCharacterProgressItem(actor, {
+    subtype:    "bond",
+    name:       data?.name || "Unknown Connection",
+    rank:       data?.rank,
+    flagKey:    "connectionId",
+    flagValue:  data?.connectionId ?? null,
+  });
+}
+
+/**
+ * Create a `progress`-typed Item on the character Actor representing a Vow.
+ * The Connections tab filters subtype "vow" out — vows show up in the
+ * Progress tab on the character sheet.
+ *
+ * @param {Actor} actor
+ * @param {{ name: string, rank?: string, vowId?: string }} data
+ * @returns {Promise<Item|null>}
+ */
+export async function createCharacterVowItem(actor, data) {
+  return createCharacterProgressItem(actor, {
+    subtype:    "vow",
+    name:       data?.name || "Unnamed Vow",
+    rank:       data?.rank,
+    flagKey:    "vowId",
+    flagValue:  data?.vowId ?? null,
+  });
+}
+
+async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue }) {
+  if (!actor) return null;
+  const ItemCls = globalThis.Item;
+  if (!ItemCls?.create) {
+    console.warn(`actorBridge | Item.create unavailable; skipping ${subtype} registration on ${actor.id}`);
+    return null;
+  }
+
+  // Idempotency — don't create a duplicate when called twice for the same
+  // source record (e.g. confirm-from-draft then re-confirm).
+  if (flagValue) {
+    const existing = (actor.items?.contents ?? []).find(
+      i => i.type === "progress"
+        && i.flags?.[MODULE_ID]?.[flagKey] === flagValue,
+    );
+    if (existing) return existing;
+  }
+
+  const resolvedRank = VALID_RANKS.includes(rank) ? rank : "dangerous";
+
+  try {
+    const item = await ItemCls.create(
+      {
+        name,
+        type:   "progress",
+        system: { subtype, rank: resolvedRank, current: 0 },
+        flags:  flagValue ? { [MODULE_ID]: { [flagKey]: flagValue } } : {},
+      },
+      { parent: actor, suppressLog: true },
+    );
+    invalidateActorCache(actor.id);
+    return item ?? null;
+  } catch (err) {
+    console.error(`actorBridge | createCharacterProgressItem (${subtype}) failed:`, err);
+    return null;
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CACHE MANAGEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -276,12 +475,13 @@ export function invalidateActorCache(actorId) {
 export async function recalculateMomentumBounds(actor) {
   if (!actor) return;
 
+  const sys       = actor.system ?? {};
   const debs      = readDebilities(actor);
-  const condCount = countConditionDebilities(debs);
-  const maxMom    = Math.max(0, 10 - condCount);
-  const resetMom  = condCount === 0 ? 0 : Math.max(-2, -condCount);
-  const current   = meterValue(actor.system?.momentum);
-  const clamped   = clamp(current, resetMom, maxMom);
+  const impactCount = countImpacts(debs);
+  const maxMom    = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
+  const resetMom  = sys.momentumReset ?? Math.max(0, 2 - impactCount);
+  const current   = meterValue(sys.momentum);
+  const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
 
   const updates = {
     'system.momentum.max':        maxMom,
@@ -306,8 +506,8 @@ function meterValue(meter) {
   return meter.value ?? 0;
 }
 
-function countConditionDebilities(debs) {
-  return CONDITION_DEBILITIES.filter(k => debs[k]).length;
+function countImpacts(debs) {
+  return IMPACT_KEYS.filter(k => debs[k]).length;
 }
 
 function clamp(value, min, max) {
