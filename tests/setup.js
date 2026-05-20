@@ -157,6 +157,10 @@ global.foundry = {
 // can hold a class without the surrounding `applications` object holding
 // it.
 global.foundry.audio = {
+  // Foundry v13 Sound only supports these events; addEventListener throws
+  // synchronously for anything else. Mirror that so unit tests catch
+  // unsupported event names instead of silently masking the bug.
+  _SUPPORTED_SOUND_EVENTS: ['pause', 'start', 'stop', 'end', 'load'],
   Sound: class FoundrySoundStub {
     static _instances = [];
     static _reset() { this._instances.length = 0; }
@@ -171,6 +175,9 @@ global.foundry.audio = {
     async pause() { this._state = 'paused';  }
     async stop()  { this._state = 'stopped'; this._fire('stop'); }
     addEventListener(event, cb, _opts) {
+      if (!global.foundry.audio._SUPPORTED_SOUND_EVENTS.includes(event)) {
+        throw new Error(`"${event}" is not a supported event of the Sound class`);
+      }
       (this._listeners[event] ??= []).push(cb);
     }
     _fire(event) { (this._listeners[event] ?? []).forEach(cb => cb()); }

@@ -70,12 +70,16 @@ async function ensureDir(dir) {
  */
 export async function lookup(hash) {
   if (typeof hash !== "string" || hash.length !== 64) return null;
-  const { dir, filename, full } = pathFor(hash);
+  const { dir, filename } = pathFor(hash);
   try {
     const browse = await foundry.applications.apps.FilePicker.implementation.browse("data", dir);
     const files  = Array.isArray(browse?.files) ? browse.files : [];
-    const hit    = files.some(f => typeof f === "string" && f.endsWith(`/${filename}`));
-    return hit ? full : null;
+    // Return the listing's path directly. On native Foundry this is the
+    // local relative path; on The Forge it's the absolute assets.forge-vtt.com
+    // URL where the file actually lives. Either way, the string here is the
+    // one foundry.audio.Sound can load.
+    const hit = files.find(f => typeof f === "string" && f.endsWith(`/${filename}`));
+    return hit ?? null;
   } catch {
     // Directory doesn't exist yet, or permissions error — both are misses.
     return null;
@@ -108,8 +112,17 @@ export async function write(hash, bytes) {
   }
 
   const file = new File([blob], filename, { type: "audio/mpeg" });
-  await foundry.applications.apps.FilePicker.implementation.upload("data", dir, file, {}, { notify: false });
-  return full;
+  const response = await foundry.applications.apps.FilePicker.implementation.upload(
+    "data", dir, file, {}, { notify: false },
+  );
+  // On The Forge, FilePicker.upload stores the file in the user's Assets
+  // Library and returns the absolute https://assets.forge-vtt.com/... URL
+  // in response.path — the constructed local `full` path does not exist
+  // server-side and would 404 on playback. Prefer the response path when
+  // present; fall back to the local path on native Foundry (where upload
+  // may return { path: full } or an undefined value depending on version).
+  const uploadedPath = typeof response?.path === "string" ? response.path : null;
+  return uploadedPath ?? full;
 }
 
 /**

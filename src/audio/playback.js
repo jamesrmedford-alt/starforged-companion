@@ -200,9 +200,11 @@ export class PlaybackSession {
       let settled = false;
       const finish = () => { if (settled) return; settled = true; resolve(); };
       const fail   = (err) => { if (settled) return; settled = true; reject(err); };
-      sound.addEventListener?.("end",   finish,                  { once: true });
-      sound.addEventListener?.("stop",  finish,                  { once: true });
-      sound.addEventListener?.("error", (e) => fail(e?.error ?? e), { once: true });
+      // Foundry v13 Sound only supports pause/start/stop/end/load events —
+      // attaching an "error" listener throws synchronously. Failures during
+      // load or decode surface via sound.play()'s promise rejection below.
+      sound.addEventListener?.("end",  finish, { once: true });
+      sound.addEventListener?.("stop", finish, { once: true });
       sound.play({ volume: this.volume }).then(
         // Some Sound implementations resolve play() at completion; others at start.
         // If play() resolves AND no 'end' event has fired, we still treat the
