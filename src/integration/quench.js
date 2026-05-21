@@ -1730,7 +1730,14 @@ function registerConnectionSeedEnrichmentTests(quench) {
 
       describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
         it("role, motivation, and first-look details all populate on the connection record", async function () {
-          this.timeout(20000);
+          // routeEntityDrafts → createConnection cascade fires across the
+          // entity panel, sector overview, and (if a player actor exists)
+          // bond-item registration on the active character. With prior-
+          // batch leakage piling up entities in the world, those re-render
+          // hooks compound — 20 s ran out on a Docker host. 60 s gives
+          // headroom; the universal cleanup guard installed alongside
+          // should keep the per-batch baseline near-empty going forward.
+          this.timeout(60000);
 
           const { routeEntityDrafts } = await import(
             `${MODULE_PATH}/entities/entityExtractor.js`);
@@ -3215,6 +3222,10 @@ function registerPortraitGenerationTests(quench) {
       // Reset portrait-related fields on the test connection before each test
       // so we can step through placeholder → ready → generated → locked.
       beforeEach(async function () {
+        // updateConnection triggers updateJournalEntryPage hooks across the
+        // entity panel + portrait pipeline — easily exceeds the default 2 s
+        // beforeEach budget on a Docker host.
+        this.timeout(10000);
         if (!testJournalId) return;
         const { updateConnection } = await import(
           `/modules/${MODULE}/src/entities/connection.js`);
@@ -4781,6 +4792,10 @@ function registerRecapEndToEndTests(quench) {
       const seededEntries = [];
 
       before(async function () {
+        // Actor.create + 2× addChronicleEntry (each writes a JournalEntry
+        // and fires render hooks across the entity panel + sector overview)
+        // routinely exceeds Mocha's default 2 s budget on a Docker host.
+        this.timeout(20000);
         if (!game.user?.isGM) return;
 
         // Snapshot campaignState — every assertion mutates characterIds.
