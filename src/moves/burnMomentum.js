@@ -37,6 +37,7 @@ import {
   getPlayerActors,
   applyMeterChanges,
 } from "../character/actorBridge.js";
+import { onChatMessageRender } from "../system/chatHooks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -136,12 +137,9 @@ function labelForOutcome(outcome) {
  * @param {Function} hooks.assemble   async (resolution, state, opts) => packet
  */
 export function registerBurnMomentumHook({ narrate, persist, assemble }) {
-  Hooks.on("renderChatMessage", (message, html) => {
+  onChatMessageRender((message, root) => {
     const burn = message?.flags?.[MODULE_ID]?.burn;
     if (!burn?.canBurn) return;
-
-    const root = html instanceof HTMLElement ? html : html?.[0];
-    if (!root) return;
 
     const btn = root.querySelector('[data-action="sf-burn-momentum"]');
     if (!btn) return;

@@ -36,6 +36,7 @@ import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
+import { onChatMessageRender }             from "../system/chatHooks.js";
 
 import {
   recordLoreDiscovery,
@@ -1064,16 +1065,13 @@ const ENTITY_CREATORS = {
 
 /**
  * Wire Confirm/Dismiss button clicks on draft entity chat cards. Idempotent:
- * registers a single renderChatMessage hook that re-attaches listeners every
+ * registers a single chat-render hook that re-attaches listeners every
  * render. Call once at module ready.
  */
 export function registerDraftCardHooks() {
-  Hooks.on("renderChatMessage", (message, html) => {
+  onChatMessageRender((message, root) => {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.draftEntityCard) return;
-
-    const root = html instanceof HTMLElement ? html : html?.[0];
-    if (!root) return;
 
     // Non-GMs see the card (they're whispered in) but cannot mutate state.
     // Hide buttons rather than wire dead handlers.
