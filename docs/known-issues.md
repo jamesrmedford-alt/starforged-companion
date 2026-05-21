@@ -82,6 +82,59 @@ Raise threshold if resolver.js is refactored to separate data from logic.
 
 ## Resolved issues
 
+### V13-002 — `renderChatMessage` hook deprecated; all chat-button handlers silently dead in v13 ✓
+
+**Status:** Resolved
+
+**Symptom:** In Foundry v13, every button wired by a chat-render hook did
+nothing on click — recap card Refresh, audio narration ▶ Play, NWMA Roll
+<move>, draft entity Confirm/Dismiss, burn momentum, Correct a fact, and
+Set World Truths. No console errors. Cards rendered correctly.
+
+**Cause:** Foundry v13 deprecated the v12-era `renderChatMessage` hook in
+favor of `renderChatMessageHTML` (HTMLElement, not jQuery). Late-v13
+builds stopped firing the legacy name. All seven handlers in the module
+listened on `renderChatMessage` and were silently bypassed.
+
+**Surfaced by:** First-ever Quench run inside a Docker-hosted v13 — the
+recapCard Refresh test reported "handler may be unwired"; the Audio
+Narration button test timed out waiting for the button to unhide.
+
+**Fix:** Added `src/system/chatHooks.js` exporting
+`onChatMessageRender(handler)` which subscribes to both hook names and
+dedupes by rendered-element identity (WeakSet) to handle transitional
+v13 builds that fire both names. Module.json's `minimum: "12"` keeps the
+legacy name necessary.
+
+---
+
+### QUENCH-004 — Test-document leakage across batches polluted fresh worlds ✓
+
+**Status:** Resolved
+
+**Symptom:** A brand-new world that had only ever run Quench accumulated:
+settlement Actors named "Glimmer" / "Selena", pending-lore pages named
+"Drifter Movement Investigation" / "Hegemony Patrol Pattern" /
+"Syndicate Freighter Activity", a "Sulaco Arch" sector folder, art-cache
+journal entries, connection records, threat entries, etc. Each batch
+made the next one slower (entity panel rescans every JournalEntry on
+each create), eventually pushing test bodies past their timeouts.
+
+**Cause:** Quench tests created real Foundry documents but cleanup was
+ad-hoc — some batches tracked and deleted, some didn't, several used
+plain in-world names indistinguishable from real campaign content (so
+even a name-pattern reaper couldn't safely sweep them).
+
+**Fix:** Replaced `installAutoChatCleanup` with
+`installAutoDocumentCleanup` in `src/integration/quench.js`. Snapshots
+every world collection (actors, items, journal, scenes, macros,
+playlists, tables, cards, folders, messages) plus every existing
+JournalEntry's page IDs at batch start; reaps anything net-new at batch
+end. Children-first, folders-last reap order; GM-only. Per-batch
+explicit cleanup remains in place as the precise layer.
+
+---
+
 ### AUDIO-001 — Narrator-card play button errored on every click ✓
 
 **Resolved on:** branch `claude/debug-audio-errors-U5CJK`
