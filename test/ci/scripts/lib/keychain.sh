@@ -61,11 +61,16 @@ ensure_credential() {
     printf '%s' "${value}"
     return 0
   fi
+  prompt_credential "${account}" "${prompt}" "${hidden}"
+}
 
-  # No stored value — prompt. Write the prompt to stderr so this function
-  # is safe to use in `$(...)` capture.
-  printf '\n[keychain] no %s stored — prompting once and saving to Keychain.\n' "${account}" >&2
-  printf '[keychain] (service: %s, account: %s)\n' "${KEYCHAIN_SERVICE}" "${account}" >&2
+# prompt_credential: ALWAYS prompts and stores, even if a value already exists.
+# Echoes the new value. Used by `credentials.sh set` so users can fix typos.
+prompt_credential() {
+  local account="$1" prompt="$2" hidden="${3:-0}"
+  local value
+
+  printf '\n[keychain] storing %s (service: %s)\n' "${account}" "${KEYCHAIN_SERVICE}" >&2
 
   if [[ "${hidden}" == "1" ]]; then
     read -rsp "  ${prompt}: " value </dev/tty
@@ -80,6 +85,5 @@ ensure_credential() {
   fi
 
   kc_set "${account}" "${value}" >/dev/null
-  printf '[keychain] stored. macOS may prompt for Keychain access on first read — pick "Always Allow".\n' >&2
   printf '%s' "${value}"
 }

@@ -23,9 +23,10 @@ cmd="${1:-}"
 
 case "${cmd}" in
   set)
-    ensure_credential username  "foundryvtt.com username (email or login name)" 0 >/dev/null
-    ensure_credential password  "foundryvtt.com password" 1 >/dev/null
-    ensure_credential admin-key "Foundry admin key (dev value, e.g. atropos-dev)" 0 >/dev/null
+    # Always (re)prompts and overwrites — use this to fix typos.
+    prompt_credential username  "foundryvtt.com username (email or login name)" 0 >/dev/null
+    prompt_credential password  "foundryvtt.com password" 1 >/dev/null
+    prompt_credential admin-key "Foundry admin key (dev value, e.g. atropos-dev)" 0 >/dev/null
     printf '\n[credentials] all three stored under service "%s".\n' "${KEYCHAIN_SERVICE}"
     ;;
 
