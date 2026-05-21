@@ -119,6 +119,31 @@ After completing any feature implementation or bug fix, always update both:
 
 User-facing language only — no file names or internal architecture references.
 
+### Version pinning rule (read before editing the help Changelog)
+
+`module.json` is the only source of truth for the release version — CI
+rewrites it at release time, so the in-repo value typically lags the live
+release. To decide which `<h3>v…</h3>` heading to add or merge into:
+
+1. Look at the most recent live release (the tag, or what the user reports
+   they are running).
+2. The work in `CHANGELOG.md`'s `[Unreleased]` section ships under the
+   **next** version after that release — e.g. running v1.4.1 → next is
+   v1.4.2.
+3. **Only one `<h3>v…</h3>` block in `src/help/helpJournal.js` may correspond
+   to `[Unreleased]`**, and `CONTENT_VERSION` must equal that heading. If
+   prior unreleased work already has its own `<h3>v…</h3>` block (or
+   blocks), merge your bullets into that block — do **not** create a new
+   heading.
+4. Never invent a "next" version by incrementing the latest help heading.
+   The latest help heading is itself unreleased work; incrementing it
+   compounds the drift. Always cross-check against `CHANGELOG.md`'s last
+   non-`[Unreleased]` heading (or the last release tag) before picking
+   the version string.
+
+If you find an existing heading inconsistent with this rule, surface it to
+the user rather than silently bumping past it.
+
 ---
 
 ## Never do without explicit instruction

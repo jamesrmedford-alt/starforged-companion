@@ -134,6 +134,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
@@ -2410,27 +2411,24 @@ for (const hookName of PTT_RENDER_HOOKS) {
 }
 
 /**
- * renderChatMessage — wire the "Set World Truths" button on setup notification cards.
+ * Wire the "Set World Truths" button on setup notification cards.
  * The card is whispered to the GM on ready when no truths are established.
  */
-Hooks.on("renderChatMessage", (message, html) => {
+onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.setupCard) return;
-  const root = html instanceof HTMLElement ? html : html[0];
-  root?.querySelector('[data-action="openTruthsDialog"]')
+  root.querySelector('[data-action="openTruthsDialog"]')
     ?.addEventListener("click", () => openSystemTruthsDialog());
 });
 
 /**
- * renderChatMessage — wire the "Correct a fact" button on narrator cards
+ * Wire the "Correct a fact" button on narrator cards
  * (fact-continuity scope §10.2). Two-hook pattern per CLAUDE.md: the card
  * HTML is rendered with the button in postNarrationCard /
  * postPacedNarrativeCard; click handlers are attached here at render time.
  */
-Hooks.on("renderChatMessage", (message, html) => {
+onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.narratorCard) return;
   if (!factContinuityEnabledFromSettings()) return;
-  const root = html instanceof HTMLElement ? html : html[0];
-  if (!root) return;
 
   const btn = root.querySelector('[data-action="openCorrectionDialog"]');
   if (!btn) return;
@@ -2447,15 +2445,13 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
- * renderChatMessage — wire the "▶ Play" audio button on narrator cards
+ * Wire the "▶ Play" audio button on narrator cards
  * (docs/audio-narration-scope.md §9). The button is rendered hidden by
  * postNarrationCard / postPacedNarrativeCard; this hook unhides it and
  * binds playback when the player has opted in on this client.
  */
-Hooks.on("renderChatMessage", (message, html) => {
+onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.narratorCard) return;
-  const root = html instanceof HTMLElement ? html : html[0];
-  if (!root) return;
   // Dynamic import keeps module load order tolerant — audio code is
   // optional and shouldn't block chat rendering if it fails to load.
   import("./audio/index.js").then(({ onNarratorCardRendered }) => {
@@ -2466,16 +2462,15 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
- * renderChatMessage — wire the "↻ Refresh" button on campaign recap cards.
+ * Wire the "↻ Refresh" button on campaign recap cards.
  * The button is rendered for the GM on every non-empty campaign recap card
  * (`src/narration/narrator.js` postCampaignRecap). Forces a regeneration that
  * bypasses the chronicle-length cache.
  */
-Hooks.on("renderChatMessage", (message, html) => {
+onChatMessageRender((message, root) => {
   const f = message.flags?.[MODULE_ID];
   if (!f?.recapCard || f.recapType !== "campaign") return;
-  const root = html instanceof HTMLElement ? html : html[0];
-  const btn = root?.querySelector('[data-action="refreshCampaignRecap"]');
+  const btn = root.querySelector('[data-action="refreshCampaignRecap"]');
   if (!btn) return;
   btn.addEventListener("click", async (ev) => {
     ev.preventDefault();
@@ -2498,18 +2493,17 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 /**
- * renderChatMessage — wire the "Roll <move>" button on NWMA cards.
+ * Wire the "Roll <move>" button on NWMA cards.
  * The button appears beneath the italicized move hint on paced-narrative
  * cards whose classifier decision was NARRATIVE_WITH_MOVE_AVAILABLE. On
  * click we re-post the original player input as a fresh chat message with
  * `bypassPacing: true` so the classifier is skipped and the move pipeline
  * runs immediately.
  */
-Hooks.on("renderChatMessage", (message, html) => {
+onChatMessageRender((message, root) => {
   const f = message.flags?.[MODULE_ID];
   if (!f?.pacedNarrative || !f?.suggestedMove || !f?.playerText) return;
-  const root = html instanceof HTMLElement ? html : html[0];
-  const btn = root?.querySelector('[data-action="sf-paced-roll"]');
+  const btn = root.querySelector('[data-action="sf-paced-roll"]');
   if (!btn) return;
 
   // Disable any previously-clicked button after re-render so the same NWMA
