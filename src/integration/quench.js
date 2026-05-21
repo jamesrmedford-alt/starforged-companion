@@ -20,7 +20,7 @@ const MODULE_PATH = "/modules/starforged-companion/src";
 // quenchReady only fires when Quench is installed and active
 // no guard needed here
 Hooks.on("quenchReady", (quench) => {
-  installAutoChatCleanup(quench);
+  installAutoDocumentCleanup(quench);
   registerSafetyTests(quench);
   registerActorBridgeTests(quench);
   registerProgressTrackTests(quench);
@@ -93,50 +93,121 @@ async function withTempSetting(key, value, fn) {
 }
 
 /**
- * Wrap quench.registerBatch so every registered batch automatically:
- *   1. Snapshots the set of existing ChatMessage ids at suite start.
- *   2. Deletes every ChatMessage that did NOT exist in that snapshot at
- *      suite end, leaving chat exactly as it was before the batch ran.
+ * Wrap quench.registerBatch so every registered batch automatically
+ * snapshots every world collection's document IDs at suite start, and
+ * deletes any document that didn't exist in that snapshot at suite end.
  *
- * Catches both direct posts (narrator cards, draft entity cards, GM
- * whispers, recap cards, …) and indirect side-effects — most notably
- * the foundry-ironsworn system's automatic "+N momentum (now X)" cards
- * that fire whenever a meter changes on a character Actor.
+ * Catches:
+ *   - ChatMessages (narrator cards, draft cards, recap cards, system-fired
+ *     "+N momentum" cards from foundry-ironsworn meter changes, …)
+ *   - Actors (test characters, settlements created via the sector flow, …)
+ *   - JournalEntries + their pages (entity records, world journal pages,
+ *     chronicle entries, art assets, …)
+ *   - Folders (sector folders, entity folders auto-created on first write)
+ *   - Items, Scenes, Macros, Playlists, RollTables, Cards
+ *
+ * Also snapshots pages on every pre-existing JournalEntry so test-added
+ * pages on long-lived module journals (e.g. World Journal — Lore's
+ * "Pending Lore" entries) get reaped without taking the parent journal.
  *
  * Registered before the user body so our `before` hook runs first
- * (snapshot taken before any per-batch seeding) and our `after` hook
- * runs last (after user `after` hooks complete their own cleanup, so
- * messages created during teardown are still swept).
+ * (snapshot before any per-batch seeding) and our `after` hook runs last
+ * (after user `after` hooks complete, so docs created during teardown
+ * are still swept).
  *
- * Non-GM clients skip cleanup — `ChatMessage#delete` requires permissions
- * the player won't have for cards another user created.
+ * Non-GM clients skip cleanup — `Document#delete` requires permissions
+ * a player won't have for documents another user created.
+ *
+ * Reap order: documents first (children of folders), folders last (so
+ * empty test-created folders are removed once their contents are gone).
  */
-function installAutoChatCleanup(quench) {
+
+// Top-level world collections that we snapshot and diff. Order matters
+// for reap — children before folders. Each entry is `[gameKey, label]`.
+const SNAPSHOTTED_COLLECTIONS = [
+  ["messages",  "ChatMessage"],
+  ["actors",    "Actor"],
+  ["items",     "Item"],
+  ["journal",   "JournalEntry"],
+  ["scenes",    "Scene"],
+  ["macros",    "Macro"],
+  ["playlists", "Playlist"],
+  ["tables",    "RollTable"],
+  ["cards",     "Cards"],
+  // Folders MUST be last — child docs reaped first leaves an empty folder.
+  ["folders",   "Folder"],
+];
+
+function snapshotWorldDocuments() {
+  const snap = { byCollection: {}, pagesByJournal: new Map() };
+  for (const [key] of SNAPSHOTTED_COLLECTIONS) {
+    snap.byCollection[key] = new Set(game[key]?.contents?.map(d => d.id) ?? []);
+  }
+  // Snapshot pages on every existing journal so test-added pages get reaped
+  // even when the parent journal pre-existed and stays.
+  for (const journal of (game.journal?.contents ?? [])) {
+    snap.pagesByJournal.set(
+      journal.id,
+      new Set(journal.pages?.contents?.map(p => p.id) ?? []),
+    );
+  }
+  return snap;
+}
+
+async function reapNewDocuments(snap) {
+  for (const [key, label] of SNAPSHOTTED_COLLECTIONS) {
+    const baseline = snap.byCollection[key];
+    if (!baseline) continue;
+    const current = game[key]?.contents ?? [];
+    const toDelete = current.filter(d => !baseline.has(d.id));
+    for (const doc of toDelete) {
+      if (!doc?.delete) continue;
+      try {
+        await doc.delete();
+      } catch (err) {
+        console.warn(
+          `${MODULE_ID} | quench cleanup: ${label}.delete(${doc.id}) failed:`, err);
+      }
+    }
+  }
+  // Embedded JournalEntryPage reap on every pre-existing journal that's still
+  // around. New journals were already reaped above (which deletes their pages
+  // as a side-effect), so we only look at journals present in the baseline.
+  for (const [journalId, baselinePageIds] of snap.pagesByJournal.entries()) {
+    const journal = game.journal?.get(journalId);
+    if (!journal) continue;
+    const currentPages = journal.pages?.contents ?? [];
+    const newPageIds = currentPages
+      .filter(p => !baselinePageIds.has(p.id))
+      .map(p => p.id);
+    if (!newPageIds.length) continue;
+    try {
+      await journal.deleteEmbeddedDocuments("JournalEntryPage", newPageIds);
+    } catch (err) {
+      console.warn(
+        `${MODULE_ID} | quench cleanup: deleteEmbeddedDocuments(pages) on ${journalId} failed:`, err);
+    }
+  }
+}
+
+function installAutoDocumentCleanup(quench) {
   const realRegister = quench.registerBatch.bind(quench);
   quench.registerBatch = function patchedRegisterBatch(name, body, options) {
     return realRegister(name, (context) => {
-      let baselineIds = null;
+      let snapshot = null;
       context.before(function () {
-        baselineIds = new Set(game.messages?.contents?.map(m => m.id) ?? []);
+        snapshot = snapshotWorldDocuments();
       });
       try {
         body(context);
       } finally {
         // Register our `after` regardless of whether the batch body threw
-        // synchronously during registration, so chat is still swept clean.
+        // synchronously during registration, so docs are still swept.
         context.after(async function () {
-          if (!baselineIds) return;
-          if (!game.user?.isGM) { baselineIds = null; return; }
-          const toDelete = (game.messages?.contents ?? []).filter(
-            m => !baselineIds.has(m.id),
-          );
-          for (const m of toDelete) {
-            if (m?.delete) {
-              await m.delete().catch(err =>
-                console.warn(`${MODULE_ID} | quench: auto-cleanup delete failed for ${m.id}:`, err));
-            }
-          }
-          baselineIds = null;
+          if (!snapshot) return;
+          if (!game.user?.isGM) { snapshot = null; return; }
+          await reapNewDocuments(snapshot);
+          snapshot = null;
         });
       }
     }, options);
@@ -1659,7 +1730,14 @@ function registerConnectionSeedEnrichmentTests(quench) {
 
       describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
         it("role, motivation, and first-look details all populate on the connection record", async function () {
-          this.timeout(20000);
+          // routeEntityDrafts → createConnection cascade fires across the
+          // entity panel, sector overview, and (if a player actor exists)
+          // bond-item registration on the active character. With prior-
+          // batch leakage piling up entities in the world, those re-render
+          // hooks compound — 20 s ran out on a Docker host. 60 s gives
+          // headroom; the universal cleanup guard installed alongside
+          // should keep the per-batch baseline near-empty going forward.
+          this.timeout(60000);
 
           const { routeEntityDrafts } = await import(
             `${MODULE_PATH}/entities/entityExtractor.js`);
@@ -3144,6 +3222,10 @@ function registerPortraitGenerationTests(quench) {
       // Reset portrait-related fields on the test connection before each test
       // so we can step through placeholder → ready → generated → locked.
       beforeEach(async function () {
+        // updateConnection triggers updateJournalEntryPage hooks across the
+        // entity panel + portrait pipeline — easily exceeds the default 2 s
+        // beforeEach budget on a Docker host.
+        this.timeout(10000);
         if (!testJournalId) return;
         const { updateConnection } = await import(
           `/modules/${MODULE}/src/entities/connection.js`);
@@ -4710,6 +4792,10 @@ function registerRecapEndToEndTests(quench) {
       const seededEntries = [];
 
       before(async function () {
+        // Actor.create + 2× addChronicleEntry (each writes a JournalEntry
+        // and fires render hooks across the entity panel + sector overview)
+        // routinely exceeds Mocha's default 2 s budget on a Docker host.
+        this.timeout(20000);
         if (!game.user?.isGM) return;
 
         // Snapshot campaignState — every assertion mutates characterIds.
