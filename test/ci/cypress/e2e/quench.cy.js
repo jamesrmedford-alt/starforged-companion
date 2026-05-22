@@ -302,10 +302,14 @@ describe("Quench full suite", () => {
       // UI paths can be diagnosed from the PR sticky-comment log. Logged
       // first so even a same-tick throw in runBatches doesn't suppress it.
       const quenchModule = win.game?.modules?.get?.("quench");
+      // Object.keys only sees enumerable; Object.getOwnPropertyNames sees
+      // all. Quench's batch registry has been hidden as non-enumerable
+      // on past builds — getOwnPropertyNames catches it.
       const introspection = {
         phase:              "pre-run-introspection",
         hasQuench:          !!win.quench,
         quenchKeys:         win.quench ? Object.keys(win.quench) : [],
+        quenchAllProps:     win.quench ? Object.getOwnPropertyNames(win.quench) : [],
         quenchProtoKeys:    win.quench ? Object.getOwnPropertyNames(Object.getPrototypeOf(win.quench) ?? {}) : [],
         hasGameQuenchMod:   !!quenchModule,
         moduleApiKeys:      quenchModule?.api ? Object.keys(quenchModule.api) : null,
@@ -391,8 +395,15 @@ describe("Quench full suite", () => {
         ? win.quench.reports.length
         : 0;
 
+      // Quench's filter does NOT interpret "module-name.**" as a prefix
+      // glob — that pattern matched literally and only ran 1 batch.
+      // Per Quench v0.10 docs the universal wildcard is `"**"` alone.
+      // That runs every registered batch (ours + any Quench example
+      // batches, which are trivial and meant to pass). The anti-false-
+      // pass floor of 100 still catches a regression where most tests
+      // skip.
       const ret = await win.quench.runBatches(
-        "starforged-companion.**",
+        "**",
         { json: true },
       );
 
