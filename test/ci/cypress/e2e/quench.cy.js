@@ -389,43 +389,70 @@ describe("Quench full suite", () => {
         { json: true },
       );
 
-      // Resolution value varies across Quench builds. Try several
-      // shapes; the json-report shape is what `{ json: true }` is
-      // documented to populate. Fall back to live runner state if
-      // the return is empty (older Quench builds resolve void).
-      let report = null;
-      if (ret && typeof ret === "object" && ret.json && ret.json.stats) {
-        report = ret.json;                            // newer Quench: { json: report, … }
-      } else if (ret && ret.stats) {
-        report = ret;                                 // mocha runner returned directly
-      } else if (win.quench?._mochaRunner?.stats) {
-        report = win.quench._mochaRunner;             // legacy
-      } else if (win.quench?.runner?.stats) {
-        report = win.quench.runner;                   // alternate legacy
+      // Diagnostic: dump what runBatches returned + the shape of
+      // quench.reports (introspection on run #10 showed this exists
+      // as a plural collection, likely the historical report list).
+      const reports = win.quench?.reports;
+      cy.task("logQuenchStats", {
+        phase:           "post-run-shape",
+        retType:         typeof ret,
+        retKeys:         ret && typeof ret === "object" ? Object.keys(ret) : null,
+        retHasStats:     !!ret?.stats,
+        retFailuresType: typeof ret?.failures,
+        retFailuresIsArr: Array.isArray(ret?.failures),
+        reportsType:     Array.isArray(reports) ? "array" : typeof reports,
+        reportsLength:   Array.isArray(reports) ? reports.length : null,
+      });
+
+      // Build a normalized report. Sources, in preference order:
+      //  - ret.json (Quench's `{ json: true }` shape: { json: { stats, failures: [], … } })
+      //  - latest entry in quench.reports (where Quench archives past runs)
+      //  - ret directly (Mocha runner — has stats but failures is a number)
+      // We pick the first candidate that has an Array failures field.
+      const candidates = [];
+      if (ret && typeof ret === "object") {
+        if (ret.json?.stats) candidates.push(ret.json);
+        if (ret.stats)       candidates.push(ret);
+      }
+      if (Array.isArray(reports) && reports.length) {
+        const last = reports[reports.length - 1];
+        if (last?.json?.stats) candidates.push(last.json);
+        else if (last?.stats)  candidates.push(last);
       }
 
-      if (!report || !report.stats) {
-        // Last-ditch diagnostic: dump every key on win.quench so the
-        // next iteration knows where the stats actually live.
+      // Prefer a candidate where `failures` is an array (Mocha JSON report
+      // shape) — that has the failed-test detail we want for diagnostics.
+      let report = candidates.find(c => Array.isArray(c.failures));
+      // Fall back to anything with stats (runner shape — failures is a
+      // count, no per-test detail, but stats.failures still tells us
+      // pass/fail).
+      if (!report) report = candidates.find(c => c.stats);
+
+      if (!report) {
         const keys = win.quench ? Object.keys(win.quench) : [];
         throw new Error(
-          `Quench finished but no stats available. ` +
-          `win.quench keys: [${keys.join(", ")}]. ` +
-          `runBatches returned: ${JSON.stringify(ret)?.slice(0, 200)}`,
+          `Quench finished but no usable report. ` +
+          `candidates=${candidates.length}, win.quench keys: [${keys.join(", ")}], ` +
+          `ret JSON: ${JSON.stringify(ret)?.slice(0, 200)}`,
         );
       }
 
       return report;
     }).then({ timeout: 30000 }, (report) => {
-      const stats    = report?.stats    ?? {};
-      const failures = report?.failures ?? [];
+      const stats       = report?.stats ?? {};
+      const failuresArr = Array.isArray(report?.failures) ? report.failures : [];
 
-      cy.task("logQuenchStats", stats);
-      cy.task("logQuenchFailures", failures.map((f) => ({
-        fullTitle: f.fullTitle ?? f.title,
-        err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
-      })));
+      cy.task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length });
+      if (failuresArr.length) {
+        cy.task("logQuenchFailures", failuresArr.map((f) => ({
+          fullTitle: f.fullTitle ?? f.title,
+          err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
+        })));
+      }
 
+      // stats.failures is a count (number) on both Mocha-runner and
+      // mocha-JSON shapes. Use it for the pass/fail gate; failuresArr
+      // is only the diagnostic-detail surface.
       expect(stats.tests,    "stats.tests").to.be.greaterThan(0);
       expect(stats.failures, "stats.failures").to.equal(0);
     });
