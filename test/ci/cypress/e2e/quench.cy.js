@@ -284,9 +284,13 @@ describe("Quench full suite", () => {
     //    inside the page, settle the promise when it fires, and pull
     //    the stats out for the assertion.
     //
-    //    600 s cap: the full suite is ~130 s on a Docker host, plus
-    //    headroom for slow CI runners.
-    cy.window({ timeout: 600000 }).then((win) => {
+    //    The 600 s cap on BOTH cy.window AND .then() matters: cy.window
+    //    times out on the *initial* window-ready check, but cy.then's
+    //    callback returns a Cypress.Promise that has its OWN default
+    //    timeout (30 s). Without `{ timeout }` on .then() the suite
+    //    aborts mid-Quench at the 30 s mark even though Quench is
+    //    still happily running batches.
+    cy.window({ timeout: 600000 }).then({ timeout: 600000 }, (win) => {
       return new Cypress.Promise((resolve, reject) => {
         let report = null;
         let hookId = null;
