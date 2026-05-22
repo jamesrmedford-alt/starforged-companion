@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Fail fast with a clear message if the secrets aren't set yet —
       # before paying the Docker-pull + Foundry-download cost.
@@ -91,7 +91,7 @@ jobs:
       # iterate the spec without re-running the suite locally.
       - name: Upload Cypress artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cypress-artifacts-${{ github.run_id }}
           path: |
@@ -105,7 +105,7 @@ jobs:
       # can't capture.
       - name: Upload Foundry server logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: foundry-logs-${{ github.run_id }}
           path: test/ci/data/Logs/
