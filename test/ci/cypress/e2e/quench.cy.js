@@ -302,10 +302,14 @@ describe("Quench full suite", () => {
       // UI paths can be diagnosed from the PR sticky-comment log. Logged
       // first so even a same-tick throw in runBatches doesn't suppress it.
       const quenchModule = win.game?.modules?.get?.("quench");
+      // Object.keys only sees enumerable; Object.getOwnPropertyNames sees
+      // all. Quench's batch registry has been hidden as non-enumerable
+      // on past builds — getOwnPropertyNames catches it.
       const introspection = {
         phase:              "pre-run-introspection",
         hasQuench:          !!win.quench,
         quenchKeys:         win.quench ? Object.keys(win.quench) : [],
+        quenchAllProps:     win.quench ? Object.getOwnPropertyNames(win.quench) : [],
         quenchProtoKeys:    win.quench ? Object.getOwnPropertyNames(Object.getPrototypeOf(win.quench) ?? {}) : [],
         hasGameQuenchMod:   !!quenchModule,
         moduleApiKeys:      quenchModule?.api ? Object.keys(quenchModule.api) : null,
@@ -383,26 +387,164 @@ describe("Quench full suite", () => {
       // Give Foundry a tick for the panel render to settle.
       await new Promise(r => setTimeout(r, 1500));
 
+      // ─── ENUMERATE REGISTERED BATCHES ─────────────────────────────────
+      // PR #125 run #2 introspection showed quench._testBatches —
+      // that's the registry. Reading it directly bypasses Quench's
+      // glob interpretation entirely (which previously matched only
+      // 1 batch on both "starforged-companion.**" and "**"). Pass an
+      // explicit array of batch IDs to runBatches.
+      //
+      // If 0 batches with our prefix are registered, throw a clear
+      // error — that means either (a) our module's quenchReady hook
+      // didn't fire (load-order issue after world reload), or (b) the
+      // module isn't actually enabled in the world.
+      const testBatches = win.quench?._testBatches;
+      let allBatchIds = [];
+      if (testBatches) {
+        if (typeof testBatches.keys === "function") {
+          allBatchIds = Array.from(testBatches.keys());
+        } else if (typeof testBatches === "object") {
+          allBatchIds = Object.keys(testBatches);
+        }
+      }
+      const ourBatchIds = allBatchIds.filter((id) =>
+        typeof id === "string" && id.startsWith("starforged-companion."),
+      );
+
+      cy.task("logQuenchStats", {
+        phase:           "batch-enumeration",
+        totalBatches:    allBatchIds.length,
+        ourBatchCount:   ourBatchIds.length,
+        allBatchIds:     allBatchIds.slice(0, 50),
+      });
+
+      if (ourBatchIds.length === 0) {
+        throw new Error(
+          `No starforged-companion.* batches registered. ` +
+          `Total batches: ${allBatchIds.length}. ` +
+          `IDs: [${allBatchIds.slice(0, 10).join(", ")}]. ` +
+          `Either our module's quenchReady hook didn't fire after the ` +
+          `world-reload + re-join, or the module isn't enabled.`,
+        );
+      }
+
       // ─── ACTUAL RUN ───────────────────────────────────────────────────
+      // Snapshot quench.reports size BEFORE running so we can verify a
+      // NEW report landed (and isn't a stale entry from a prior aborted
+      // boot). reports might be array, Map, or plain object on different
+      // Quench builds — measure size accordingly.
+      const sizeOf = (c) =>
+        Array.isArray(c) ? c.length
+          : c?.size !== undefined ? c.size
+          : c && typeof c === "object" ? Object.keys(c).length
+          : 0;
+      const reportsBefore = sizeOf(win.quench?.reports);
+
       const ret = await win.quench.runBatches(
-        "starforged-companion.**",
+        ourBatchIds,
         { json: true },
       );
 
-      // Diagnostic: dump what runBatches returned + the shape of
-      // quench.reports (introspection on run #10 showed this exists
-      // as a plural collection, likely the historical report list).
+      // CRITICAL: quench.runBatches resolves with the Mocha Runner
+      // BEFORE the actual test execution starts. The runner is
+      // initialised with our 33 batches in its suite tree, but
+      // tests run async — we need to wait for the runner's 'end'
+      // event before reading stats.
+      //
+      // Run #4 caught this: suites=33, batches-passed=33, but
+      // tests=0, passes=0, stats.end=undefined. The runner had been
+      // set up but never executed by the time we checked.
+      //
+      // Mocha Runner is an EventEmitter. Hook 'end' to wait for
+      // completion, and 'fail' to collect failures *live* — walking
+      // suite.tests post-run can be unreliable, but the runner emits
+      // 'fail' for every failed test as it happens.
+      const liveFailures = [];
+      if (typeof ret?.on === "function" && !ret?.stats?.end) {
+        ret.on("fail", (test, err) => {
+          liveFailures.push({
+            fullTitle: typeof test?.fullTitle === "function" ? test.fullTitle() : (test?.title ?? "(no title)"),
+            err: {
+              message: err?.message ?? String(err ?? "(no message)"),
+              stack:   err?.stack ? String(err.stack).split("\n").slice(0, 6).join(" | ") : null,
+            },
+          });
+        });
+
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const settle = (fn) => (arg) => {
+            if (settled) return;
+            settled = true;
+            fn(arg);
+          };
+          // Cap the wait independently of cy.then's outer timeout —
+          // 10 min covers the ~2 min real suite plus headroom.
+          const t = setTimeout(
+            settle(reject),
+            10 * 60 * 1000,
+            new Error("Mocha runner 'end' event timed out after 10 minutes"),
+          );
+          const onEnd = settle(() => { clearTimeout(t); resolve(); });
+          ret.once("end", onEnd);
+          // Defensive: also resolve if 'end' already fired and stats
+          // got populated between our check and the listener install.
+          if (ret?.stats?.end) onEnd();
+        });
+      }
+
+      // Stash live failures on the runner so the downstream .then can
+      // pick them up even if walking suite.tests fails.
+      if (ret) ret.__liveFailures = liveFailures;
+
+      // Diagnostic: dump what runBatches returned + post-run state.
+      // Use a fail-loud-with-context throw for the stale-check —
+      // Cypress's Chai wrapper sometimes elides actual/expected numbers
+      // from greaterThan() assertions, which hides the signal we need.
       const reports = win.quench?.reports;
+      const reportsAfter = sizeOf(reports);
+      const statsTests   = ret?.stats?.tests   ?? null;
+      const statsPasses  = ret?.stats?.passes  ?? null;
+      const statsFails   = ret?.stats?.failures ?? null;
+      const statsPending = ret?.stats?.pending ?? null;
+      const statsStart   = ret?.stats?.start;
+      const statsEnd     = ret?.stats?.end;
+      const suiteCount   = ret?.suite?.suites?.length ?? null;
+
       cy.task("logQuenchStats", {
-        phase:           "post-run-shape",
-        retType:         typeof ret,
-        retKeys:         ret && typeof ret === "object" ? Object.keys(ret) : null,
-        retHasStats:     !!ret?.stats,
-        retFailuresType: typeof ret?.failures,
-        retFailuresIsArr: Array.isArray(ret?.failures),
-        reportsType:     Array.isArray(reports) ? "array" : typeof reports,
-        reportsLength:   Array.isArray(reports) ? reports.length : null,
+        phase:        "post-run-shape",
+        retType:      typeof ret,
+        retHasStats:  !!ret?.stats,
+        statsTests,
+        statsPasses,
+        statsFails,
+        statsPending,
+        statsStart:   statsStart ? String(statsStart) : null,
+        statsEnd:     statsEnd ? String(statsEnd) : null,
+        suiteCount,
+        reportsType:  Array.isArray(reports) ? "array" : typeof reports,
+        reportsBefore,
+        reportsAfter,
+        ourBatchCount: ourBatchIds.length,
       });
+
+      // Stale-run guard: Mocha sets stats.end when the runner finishes.
+      // A fresh run's end timestamp will be within the last minute. An
+      // unset / ancient timestamp means runBatches didn't actually
+      // execute a new run (returned a cached/stale runner state).
+      //
+      // Doesn't depend on the reports collection's shape — works whether
+      // Quench stores reports in an array, Map, plain object, or nowhere.
+      const endTime = statsEnd ? new Date(statsEnd).getTime() : 0;
+      const minRecent = Date.now() - 5 * 60_000;  // 5 min window
+      if (!endTime || endTime < minRecent) {
+        throw new Error(
+          `Stale-run guard tripped: stats.end is not recent. ` +
+          `end=${statsEnd ?? "(unset)"}, now=${new Date().toISOString()}, ` +
+          `passes=${statsPasses}, tests=${statsTests}, ` +
+          `suites=${suiteCount}, batches-passed=${ourBatchIds.length}`,
+        );
+      }
 
       // Build a normalized report. Sources, in preference order:
       //  - ret.json (Quench's `{ json: true }` shape: { json: { stats, failures: [], … } })
@@ -414,8 +556,19 @@ describe("Quench full suite", () => {
         if (ret.json?.stats) candidates.push(ret.json);
         if (ret.stats)       candidates.push(ret);
       }
-      if (Array.isArray(reports) && reports.length) {
-        const last = reports[reports.length - 1];
+      if (reportsAfter > reportsBefore) {
+        // Only consult the *new* entry, never stale tail. Reports may
+        // be array / Map / plain object on different Quench builds.
+        let last = null;
+        if (Array.isArray(reports)) {
+          last = reports[reports.length - 1];
+        } else if (typeof reports?.values === "function") {
+          const arr = Array.from(reports.values());
+          last = arr[arr.length - 1];
+        } else if (reports && typeof reports === "object") {
+          const keys = Object.keys(reports);
+          last = keys.length ? reports[keys[keys.length - 1]] : null;
+        }
         if (last?.json?.stats) candidates.push(last.json);
         else if (last?.stats)  candidates.push(last);
       }
@@ -439,22 +592,95 @@ describe("Quench full suite", () => {
 
       return report;
     }).then({ timeout: 30000 }, (report) => {
-      const stats       = report?.stats ?? {};
-      const failuresArr = Array.isArray(report?.failures) ? report.failures : [];
+      const stats = report?.stats ?? {};
 
-      cy.task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length });
-      if (failuresArr.length) {
-        cy.task("logQuenchFailures", failuresArr.map((f) => ({
-          fullTitle: f.fullTitle ?? f.title,
-          err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
-        })));
-      }
+      // Walk Mocha's suite tree to collect failed tests. Live failures
+      // captured from the runner's 'fail' event are most reliable;
+      // suite-tree walk is a fallback for builds where the runner
+      // doesn't carry the post-run state we expect.
+      const collectFromSuite = (suite, acc = []) => {
+        if (!suite) return acc;
+        for (const t of suite.tests ?? []) {
+          if (t.state === "failed") {
+            acc.push({
+              fullTitle: typeof t.fullTitle === "function" ? t.fullTitle() : t.title,
+              err: {
+                message: t.err?.message ?? String(t.err ?? "(no message)"),
+                stack:   t.err?.stack ? String(t.err.stack).split("\n").slice(0, 6).join(" | ") : null,
+              },
+            });
+          }
+        }
+        for (const sub of suite.suites ?? []) collectFromSuite(sub, acc);
+        return acc;
+      };
+
+      const failuresArr = (Array.isArray(report?.failures) && report.failures.length
+        ? report.failures.map((f) => ({
+            fullTitle: f.fullTitle ?? f.title,
+            err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
+          }))
+        : null)
+        ?? (report?.__liveFailures?.length ? report.__liveFailures : null)
+        ?? collectFromSuite(report?.suite);
+
+      // Chain cy.task → cy.task → assertions so the task console.log
+      // output (the "[quench] {...}" lines) flushes to stdout BEFORE
+      // expect() runs. Without this chain, expect throws synchronously
+      // and the queued tasks get aborted — that's why the
+      // logQuenchFailures output was missing from PR #125 run #6's
+      // sticky comment.
+      return cy
+        .task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length })
+        .then(() => failuresArr.length ? cy.task("logQuenchFailures", failuresArr) : null)
+        .then(() => ({ stats, failuresArr }));
+    }).then({ timeout: 30000 }, ({ stats, failuresArr }) => {
+      // Embed the failing test titles directly in the assertion message
+      // so they're visible in the failure annotation regardless of
+      // whether the cy.task console.log made it into the log tail.
+      const failureSummary = failuresArr.length
+        ? "\n  • " + failuresArr.map((f) =>
+            `${f.fullTitle}\n      → ${f.err?.message ?? "(no message)"}`,
+          ).join("\n  • ")
+        : "(no failure detail captured)";
 
       // stats.failures is a count (number) on both Mocha-runner and
       // mocha-JSON shapes. Use it for the pass/fail gate; failuresArr
-      // is only the diagnostic-detail surface.
-      expect(stats.tests,    "stats.tests").to.be.greaterThan(0);
-      expect(stats.failures, "stats.failures").to.equal(0);
+      // is the diagnostic-detail surface embedded in the message.
+      expect(stats.tests, "stats.tests").to.be.greaterThan(0);
+
+      // Embed failure summary in the message so the failing test names
+      // surface in the assertion error even if Chai elides them and
+      // cy.task console.log doesn't make it into the log tail.
+      if (stats.failures !== 0) {
+        throw new Error(
+          `Quench reported ${stats.failures} failing test(s) of ${stats.tests} total:${failureSummary}`,
+        );
+      }
+
+      // ─── ANTI-FALSE-PASS GUARDS ───────────────────────────────────────
+      //
+      // Mocha's stats.failures === 0 is ALSO true if every test ran
+      // this.skip() — most Quench batches gate on `if (skipNotGM)` or
+      // `if (skipNoKey)`. A precondition regression that skips the
+      // entire suite would otherwise show as "passed".
+      //
+      // The suite has ~165 tests as of late May 2026; 100 is a generous
+      // floor that catches mass-skip without being brittle to legitimate
+      // test-count drift. If the suite shrinks below 100 active tests
+      // in the future, this floor needs revisiting.
+      expect(
+        stats.passes,
+        "stats.passes (anti-false-pass guard: ≥100 tests must actually pass)",
+      ).to.be.at.least(100);
+
+      // Companion guard: even if 100+ pass, an unusually high skip rate
+      // suggests a partial precondition failure. Allow up to 20% skipped.
+      const skipRatio = (stats.pending ?? 0) / Math.max(stats.tests, 1);
+      expect(
+        skipRatio,
+        `pending/total ratio (was ${stats.pending}/${stats.tests})`,
+      ).to.be.lessThan(0.2);
     });
   });
 });
