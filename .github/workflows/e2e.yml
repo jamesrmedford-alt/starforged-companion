@@ -1,0 +1,195 @@
+# Phase 3 — End-to-end Quench suite gated per pull request.
+#
+# Runs the same orchestrator the developer uses locally
+# (`npm run test:e2e` → `test/ci/scripts/e2e.sh`) inside a GitHub
+# Actions Ubuntu runner. Boots Foundry via Docker, drives a Cypress
+# container through the first-launch ritual, runs every
+# starforged-companion.* Quench batch, asserts the Mocha report has
+# zero failures.
+#
+# Per-PR cadence (not per-commit). Triggers on PR open, every push to
+# the PR branch, and PR reopen. In-progress runs are cancelled when a
+# newer push lands on the same PR via the concurrency block.
+#
+# Setup — repo owner must add three GitHub secrets before the workflow
+# can run successfully:
+#
+#   FOUNDRY_USERNAME   — foundryvtt.com account
+#   FOUNDRY_PASSWORD   — foundryvtt.com password
+#   FOUNDRY_ADMIN_KEY  — admin password for the dev server (any value)
+#
+# Settings → Secrets and variables → Actions → New repository secret.
+
+name: E2E (Quench)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    # Skip docs-only / unrelated PRs. The e2e suite takes ~5 minutes
+    # and burns a Foundry license activation each run.
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'test/ci/**'
+      - 'lang/**'
+      - 'styles/**'
+      - 'packs/**'
+      - 'module.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
+
+# When a new commit lands on the PR branch, cancel the in-progress
+# run for that PR — the older run is testing superseded code.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quench:
+    name: Quench full suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Need pull-requests:write so the "Post orchestrator log to PR
+    # comment" step below can post via gh CLI. Default repo permissions
+    # only grant contents:read.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    env:
+      # Surfaced to test/ci/scripts/lib/keychain.sh, which falls back
+      # to env vars on non-Darwin hosts. CI=true forces env mode.
+      CI: 'true'
+      FOUNDRY_USERNAME:  ${{ secrets.FOUNDRY_USERNAME }}
+      FOUNDRY_PASSWORD:  ${{ secrets.FOUNDRY_PASSWORD }}
+      FOUNDRY_ADMIN_KEY: ${{ secrets.FOUNDRY_ADMIN_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Fail fast with a clear message if the secrets aren't set yet —
+      # before paying the Docker-pull + Foundry-download cost.
+      - name: Validate Foundry secrets are configured
+        run: |
+          missing=()
+          [ -n "${FOUNDRY_USERNAME}"  ] || missing+=(FOUNDRY_USERNAME)
+          [ -n "${FOUNDRY_PASSWORD}"  ] || missing+=(FOUNDRY_PASSWORD)
+          [ -n "${FOUNDRY_ADMIN_KEY}" ] || missing+=(FOUNDRY_ADMIN_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required GitHub repo secret(s): ${missing[*]}"
+            echo "::error::Add under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Show Docker + compose versions (diagnostic)
+        run: |
+          docker --version
+          docker compose version
+
+      # Tee the orchestrator's stdout+stderr to a log file so we can
+      # upload it as an artifact AND surface a tail into the run-summary
+      # box (no auth needed to view). Without this, failures upstream
+      # of Cypress (install-deps, Foundry boot, etc.) produce no artifact
+      # at all — Cypress's screenshots dir stays empty so the artifact
+      # upload silently skips with `if-no-files-found: ignore`.
+      - name: Run Quench e2e suite
+        run: |
+          mkdir -p test/ci/cypress/artifacts
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee test/ci/cypress/artifacts/e2e-run.log
+
+      # Always echo the last 200 lines of the orchestrator log into the
+      # run summary, success or failure. Saves the artifact-download
+      # round-trip when the failure is something the tail already shows.
+      - name: Surface orchestrator log tail to run summary
+        if: always()
+        run: |
+          {
+            echo "## Orchestrator log (last 200 lines)"
+            echo ""
+            echo '```'
+            tail -n 200 test/ci/cypress/artifacts/e2e-run.log 2>/dev/null || echo "(no log captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Post the orchestrator log tail as a PR comment so an external
+      # iterator (the maintainer, or an assistant with the GitHub MCP
+      # `add_issue_comment` / `pull_request_read get_comments` tools)
+      # can read CI failures without authenticating to fetch step logs
+      # or downloading artifact zips. Only fires on failure to avoid
+      # spamming green runs.
+      #
+      # The single sticky comment is found/updated via a hidden HTML
+      # marker (<!-- e2e-log:sticky -->) — keeps the PR thread tidy
+      # across many iterations instead of one comment per failed run.
+      - name: Post orchestrator log to PR comment on failure
+        if: failure() && github.event.pull_request.number
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MARKER='<!-- e2e-log:sticky -->'
+          # Build the comment body. Tail bounded so we stay under the
+          # 65 536-char GitHub comment limit even after markdown wrap.
+          LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
+          if [ -f "$LOG_FILE" ]; then
+            LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
+          else
+            LOG_TAIL="(no orchestrator log captured)"
+          fi
+          {
+            printf '%s\n' "$MARKER"
+            printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
+            printf '**Run page:** %s\n\n' "$RUN_URL"
+            printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
+            printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
+            printf '```\n%s\n```\n\n' "$LOG_TAIL"
+            printf '</details>\n'
+          } > /tmp/e2e-comment.md
+          # Find an existing sticky comment to update; otherwise post new.
+          EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][-1].id" 2>/dev/null || true)"
+          if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              -F body=@/tmp/e2e-comment.md >/dev/null
+            echo "Updated existing sticky comment ${EXISTING_ID}"
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -F body=@/tmp/e2e-comment.md >/dev/null
+            echo "Posted new sticky comment"
+          fi
+
+      # Always upload Cypress artifacts — screenshots from failed runs
+      # let the maintainer (or an assistant with GitHub MCP access)
+      # iterate the spec without re-running the suite locally. The
+      # orchestrator log goes here too so the same artifact name covers
+      # both pre-Cypress and Cypress-time failures.
+      - name: Upload Cypress artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cypress-artifacts-${{ github.run_id }}
+          path: |
+            test/ci/cypress/artifacts/screenshots/
+            test/ci/cypress/artifacts/videos/
+            test/ci/cypress/artifacts/e2e-run.log
+          if-no-files-found: ignore
+          # retention-days omitted on purpose — repo settings cap it to
+          # 1 day right now; passing 14 emits a warning and is silently
+          # downgraded. Fall back to the repo default.
+
+      # Upload Foundry server logs only on failure — useful for
+      # diagnosing world / module load failures the Cypress screenshots
+      # can't capture.
+      - name: Upload Foundry server logs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: foundry-logs-${{ github.run_id }}
+          path: test/ci/data/Logs/
+          if-no-files-found: ignore

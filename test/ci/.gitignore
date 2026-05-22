@@ -1,0 +1,10 @@
+# Credentials live in macOS Keychain (see scripts/credentials.sh), not in
+# any file. .env is ignored as defense-in-depth in case someone makes one.
+.env
+
+# Bind-mounted Foundry userData. Contains the licensed Foundry zip,
+# downloaded systems/modules, and any worlds you create. Never commit.
+data/
+
+# Cypress artifacts — screenshots / videos from failed e2e runs.
+cypress/artifacts/

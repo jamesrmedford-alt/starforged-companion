@@ -1,0 +1,393 @@
+# Local Foundry CI Stack
+
+A Docker stack that boots Foundry VTT v13 with the foundry-ironsworn system,
+the Starforged Companion module (built from your working tree), and Quench
+pre-installed. You can drive it manually (browser at `http://localhost:30000`)
+or have Cypress automate the whole Quench run for you.
+
+CI work is split into three phases:
+
+- **Phase 1:** working local Docker stack, manual browser-driven testing
+- **Phase 2 (this is now wired):** Cypress automation against the same
+  stack — `npm run test:e2e`
+- **Phase 3:** GitHub Actions wrapping the whole thing, gated on PR open /
+  synchronize (not per-commit — the suite is ~5 minutes per run)
+
+## Prerequisites
+
+- **macOS** (this stack stores credentials in the macOS Keychain)
+- Docker Desktop with file sharing for your repo path enabled
+- A foundryvtt.com account that owns a Foundry license
+- About 1 GB of free disk for the Foundry zip + Node runtime + worlds
+
+## Credentials
+
+There is no `.env` file. foundryvtt.com username/password and the dev
+admin key all live in your **macOS Keychain** under service
+`starforged-ci-foundry`. They never touch disk in plaintext and can't be
+accidentally committed.
+
+`start.sh` will prompt for any missing values on first run and store
+them automatically. You can also manage them explicitly:
+
+```bash
+./scripts/credentials.sh set       # prompt + store all three
+./scripts/credentials.sh status    # show which are present (masked)
+./scripts/credentials.sh clear     # remove all three from Keychain
+```
+
+The Keychain stores three accounts under that service: `username`,
+`password`, `admin-key`. Look them up in Keychain Access.app if you want
+to inspect or edit them by hand.
+
+On first read after a fresh store, macOS may pop a dialog asking
+whether `security` (or `bash`) can access the Keychain item — pick
+**Always Allow** so subsequent boots are silent.
+
+## Quick start
+
+```bash
+cd test/ci
+./scripts/install-deps.sh           # downloads ironsworn + Quench, copies the module
+./scripts/setup-test-world.sh       # installs the world template
+./scripts/start.sh                  # prompts for creds on first run, then boots
+```
+
+Then open <http://localhost:30000> in your browser.
+
+## First-time browser walk-through
+
+When you hit `http://localhost:30000` the first time you should see, in
+order:
+
+1. **EULA acceptance** — accept it.
+2. **Admin password prompt** — enter the admin key you set in Keychain
+   (default suggestion: `atropos-dev`). If you forget what you set,
+   `./scripts/credentials.sh status` shows a masked preview; `clear` +
+   `set` lets you replace it.
+3. **Setup screen — Systems / Modules indexing** — Foundry needs ~30 s
+   on first boot to scan and load the systems and modules that
+   `install-deps.sh` put under `data/Data/`. Pre-v13 Foundry indexed at
+   world-launch time; v13 does it at setup time, so you may see a
+   "Packages Loading" banner. Wait it out.
+4. **Setup screen — World list** — `Starforged CI Test World` should be
+   listed. Click **Launch World**.
+5. **World migration prompt** — the `data/Data/Config` directory is
+   created fresh by the felddy entrypoint, and Foundry treats the world
+   as a migration target. Accept the migration; it's a no-op on a brand
+   new world but Foundry insists on stamping the current version.
+6. **Join screen** — pick the **Gamemaster** user, leave password blank
+   the first time. (You can set a GM password under *Settings → Configure
+   Players* once inside the world.)
+7. **Inside the world — enable modules** — open *Settings → Manage Modules*
+   and tick:
+   - Starforged Companion
+   - Quench
+   - (optional) Dice So Nice! — if you've installed it manually for
+     visual dice rolls. Not bundled; install from the Foundry module
+     browser if you want it.
+   Click **Save Module Settings**. The world will reload.
+8. **Run Quench** — open the Quench UI from the sidebar. Run a batch
+   (e.g. `starforged-companion.actorBridge`) to confirm the module is
+   loading and the test harness works.
+
+After this one-time setup, Foundry remembers everything in `./data/`. Stop
+and start the stack freely without redoing it.
+
+### After a `reset.sh --yes`
+
+You'll repeat every step above. `reset.sh` wipes `./data/` entirely —
+license fingerprint, world DB, enabled-module list. Plan for ~2 minutes
+of one-time setup after each reset.
+
+## Automated end-to-end testing (Phase 2)
+
+```bash
+npm run test:e2e
+```
+
+That runs `test/ci/scripts/e2e.sh`, which:
+
+1. Wipes `./data/` (preserves `./data/container_cache/` so you don't
+   re-download the ~100 MB Foundry zip).
+2. Re-stages systems / modules / world from the working tree.
+3. Boots the `foundry` container and polls until it's accepting
+   connections.
+4. Runs a containerised Cypress (`cypress/included:14`) that walks the
+   first-launch ritual you'd otherwise do by hand (EULA → admin auth →
+   world launch → enable modules → reload) and invokes
+   `quench.runBatches("starforged-companion.**", { json: true })`.
+5. Asserts `stats.failures === 0` on the resulting Mocha-shape report.
+6. Tears down the container (use `--keep` to leave it running).
+
+Runtime: ~3–5 minutes (Foundry boot ~30 s + Quench suite ~130 s +
+Cypress overhead). Designed for **per-PR** CI gating, not per-commit.
+
+### Cypress flags
+
+```bash
+npm run test:e2e -- --keep       # leave Foundry running on failure for poking
+npm run test:e2e -- --no-rebuild # skip data wipe — iterate the spec against
+                                 # an already-running world. Useful while
+                                 # developing the spec itself.
+```
+
+### Cypress artifacts
+
+A failing run drops screenshots under `test/ci/cypress/artifacts/screenshots/`.
+Videos are off by default — enable them in `cypress.config.js` if you
+need to see the timeline of a flake.
+
+### Why both Foundry AND Cypress in Docker?
+
+We considered Cypress-on-host (talking to Foundry-in-container) but
+went with both containerised. Reasons:
+
+- Same compose graph is reused verbatim by Phase 3 (GitHub Actions),
+  which can't run Cypress on the host.
+- Cypress hits Foundry via `http://foundry:30000` via Docker service-
+  name DNS — no localhost binding needed, no host firewall trips.
+- Macs vary in Cypress install state (`xcrun` prompts, etc.). The
+  `cypress/included` image is reproducible across machines.
+
+Cost: first pull of `cypress/included:14` is ~2 GB. Subsequent runs use
+the cached image.
+
+### Iterating on the spec
+
+The spec lives at `test/ci/cypress/e2e/quench.cy.js`. When developing:
+
+```bash
+# Start a long-lived Foundry stack you can re-target:
+./scripts/start.sh        # one-time first-launch ritual in browser
+# Then for each spec iteration:
+npm run test:e2e -- --no-rebuild
+```
+
+`--no-rebuild` skips the wipe + reinstall + boot, so each iteration is
+~30 s of Cypress runtime alone.
+
+## Automated CI gate (Phase 3)
+
+GitHub Actions runs the same `npm run test:e2e` command on every pull
+request — open, push, reopen. See `.github/workflows/e2e.yml`. The
+workflow gates PR mergeability; a Quench failure shows as a red ✗ on
+the PR status checks.
+
+### One-time setup — repo secrets
+
+The workflow needs three GitHub repository secrets to authenticate to
+foundryvtt.com and to the Foundry admin console. Add them under
+*Settings → Secrets and variables → Actions → New repository secret*:
+
+| Secret | What it is |
+|---|---|
+| `FOUNDRY_USERNAME` | Your foundryvtt.com account username (or email). |
+| `FOUNDRY_PASSWORD` | Your foundryvtt.com account password. |
+| `FOUNDRY_ADMIN_KEY` | The admin password for the dev server — any value. |
+
+These are surfaced to the orchestrator as environment variables; the
+`test/ci/scripts/lib/keychain.sh` shim transparently reads from the
+env in CI mode (when `CI=true` or non-Darwin) and from the macOS
+Keychain on a developer machine. Same `e2e.sh` either way.
+
+### When the workflow runs
+
+- On `pull_request` events: `opened`, `synchronize` (each push to the
+  PR branch), `reopened`.
+- Skipped on docs-only PRs — the `paths:` filter limits it to changes
+  under `src/`, `tests/`, `test/ci/`, `lang/`, `styles/`, `packs/`,
+  `module.json`, `package.json`, `package-lock.json`, or the workflow
+  file itself.
+- Concurrency-cancelled: when a new commit lands on a PR while an
+  earlier run is still going, the earlier run is cancelled.
+
+### Cost considerations
+
+- Each run takes ~5–10 minutes (Docker image pulls + Foundry zip
+  download + Quench suite).
+- Each run authenticates to foundryvtt.com once for the zip download.
+  felddy's hostname-based license fingerprinting (the
+  `hostname: starforged-ci-host` directive in `docker-compose.yml`)
+  keeps the activation stable across runs.
+- The runner is fresh per invocation, so Docker images and the
+  Foundry zip re-download each time. Could be cached via
+  `actions/cache@v4` if total minutes become a constraint; left
+  unoptimised on purpose for the first cut.
+- GitHub Actions Linux runners are free for public repos.
+
+### Where the test artifacts go
+
+- **On every run** (pass or fail): the `cypress-artifacts-<run-id>`
+  artifact contains `screenshots/` and `videos/` from the Cypress
+  container. Useful for diagnosing flaky selector matches.
+- **On failure only**: the `foundry-logs-<run-id>` artifact contains
+  the Foundry server's `Logs/` directory.
+
+Both retain for 14 days, then expire.
+
+## Lifecycle scripts
+
+| Script | What it does |
+|---|---|
+| `scripts/install-deps.sh` | Pre-populates `./data/Data/{systems,modules}` with foundry-ironsworn v1.27.0, latest Quench, and Starforged Companion (copied from the working tree). Re-run any time you change module source. |
+| `scripts/setup-test-world.sh` | Copies the world template into `./data/Data/worlds/starforged-ci-world/`. Idempotent — pass `--force` to wipe and reinstall. |
+| `scripts/credentials.sh` | Manage Keychain entries (`set`, `status`, `clear`, `export`). |
+| `scripts/start.sh` | Loads creds from Keychain (prompts on first run), `docker compose up -d`, tails logs. Ctrl+C detaches; the server keeps running. |
+| `scripts/stop.sh` | `docker compose down`. Preserves `./data/`. |
+| `scripts/reset.sh --yes` | Destroys the container and `./data/`. Does **not** touch Keychain — use `scripts/credentials.sh clear` for that. |
+| `scripts/e2e.sh` | Phase 2 orchestrator — fresh-world Cypress run. Same as `npm run test:e2e`. |
+| `scripts/wait-for-foundry.sh` | Polls `http://localhost:30000/` until it responds 2xx/3xx. Used by `e2e.sh` after `docker compose up`. |
+
+## Refreshing the module under test
+
+After you change anything under `src/`, `lang/`, `styles/`, `packs/`, or
+`module.json`:
+
+```bash
+./scripts/install-deps.sh        # recopies the module from the working tree
+# in browser: F5 the Foundry tab — module reloads from disk
+```
+
+You do not need to restart the container.
+
+## Why a build step instead of a bind mount?
+
+We deliberately copy the module into the container's data directory rather
+than bind-mounting `src/`. That way:
+
+- The test environment exercises the same loading path as a real install
+- Foundry's manifest scanner sees a complete `module.json` next to the
+  files it references, with no surprise files (test fixtures, .git, etc.)
+- We catch packaging mistakes (missing files, wrong paths) in CI rather
+  than only in production
+
+The trade-off is that `install-deps.sh` must be re-run after source changes.
+That's a fair price for production parity.
+
+## What's installed and where
+
+```
+test/ci/data/
+├── Config/                              # Foundry server config (auto-generated)
+├── Data/
+│   ├── modules/
+│   │   ├── quench/                      # latest release from Ethaks/FVTT-Quench
+│   │   └── starforged-companion/        # copied from working tree
+│   ├── systems/
+│   │   └── foundry-ironsworn/           # v1.27.0 release from ben/foundry-ironsworn
+│   └── worlds/
+│       └── starforged-ci-world/         # from test/ci/world-template/
+├── Logs/
+└── container_cache/                     # cached Foundry zip (felddy)
+```
+
+`./data/` is gitignored. The world template, module source, and pinned
+versions are committed.
+
+## Decision: programmatic vs. pre-baked world
+
+Phase 1 plan offered two options for world creation:
+
+- **(a) Programmatic via Foundry setup API** — rejected.
+- **(b) Pre-baked world fixture** — chosen.
+
+Option (b) wins because:
+
+1. The setup API requires an authenticated admin session and is fragile
+   between Foundry versions.
+2. Module enablement and GM password storage live inside the world's
+   settings DB, which doesn't exist until the world is launched once. So
+   even with option (a), the user would still have to launch the world
+   in a browser before either could be set programmatically.
+3. A static `world-template/` is reproducible, diff-able in git, and
+   trivial to reset.
+
+The cost is a one-time three-click step in the browser (enable modules,
+optional GM password). Documented above. Phase 2 (Cypress) will automate
+even that.
+
+## Troubleshooting
+
+### License verification fails on every restart
+
+The felddy image fingerprints the license against the container hostname.
+If the hostname changes, Foundry treats it as a new machine. The compose
+file pins `hostname: starforged-ci-host` to keep it stable; if you copy
+the stack to another machine or run multiple stacks, give each one a
+unique stable hostname. **Don't** remove the `hostname:` directive.
+
+### Port 30000 already in use
+
+Another local Foundry instance is running. Either stop it, or edit
+`docker-compose.yml`:
+
+```yaml
+ports:
+  - "30001:30000"     # host:container
+```
+
+…and use `http://localhost:30001`.
+
+### `data/` permission denied (macOS)
+
+Docker Desktop needs explicit file-sharing permission for the path that
+contains your repo. *Docker Desktop → Settings → Resources → File Sharing*,
+then add the parent directory of your repo. Restart Docker Desktop after.
+
+If `./data/` was created with bad ownership during a botched run, fix it
+with:
+
+```bash
+sudo chown -R "$(id -u):$(id -g)" data/
+```
+
+…or just nuke it: `./scripts/reset.sh --yes`.
+
+### `.local` hostname quirks
+
+The compose file uses `starforged-ci-host` (no `.local` suffix) on
+purpose. macOS Bonjour treats `*.local` as multicast, which can confuse
+license verification inside the container. Don't rename the hostname to
+anything `.local`.
+
+### "World template missing" or `system.json` missing after install
+
+The release artifact layout for foundry-ironsworn or Quench changed.
+`install-deps.sh` flattens a single top-level directory inside the zip
+and dies if `system.json` / `module.json` isn't present after extract.
+Inspect the zip manually:
+
+```bash
+curl -L -o /tmp/foo.zip <release-url>
+unzip -l /tmp/foo.zip | head
+```
+
+…and adjust the script.
+
+### First boot is slow
+
+The felddy entrypoint downloads the Foundry zip on first boot using your
+foundryvtt.com credentials. Subsequent boots reuse the zip from
+`./data/container_cache/`. Expect a one-time ~30s wait.
+
+### Quench batch doesn't appear in the UI
+
+Most likely the Starforged Companion module isn't actually enabled —
+*Settings → Manage Modules*, confirm the checkbox. If it is enabled but
+batches are missing, check the Foundry browser console for module load
+errors. Quench batches register on the `quenchReady` hook, which only
+fires if both Quench and the module loaded cleanly.
+
+## What's pinned, what floats
+
+| Component | Version policy |
+|---|---|
+| Foundry VTT | v13 (image tag `:13`) |
+| foundry-ironsworn | pinned to `1.27.0` in `install-deps.sh` |
+| Quench | latest release at install time |
+| Starforged Companion | current working tree |
+
+Pin Quench to a specific tag if you start hitting flakes from upstream.
+Update the foundry-ironsworn pin in lockstep with `vendor/foundry-ironsworn`
+and `module.json`'s `recommends` block.

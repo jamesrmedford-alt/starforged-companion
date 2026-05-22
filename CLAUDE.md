@@ -160,6 +160,28 @@ the user rather than silently bumping past it.
 
 ---
 
+## PR monitoring and autonomous iteration
+
+When the user asks you to monitor, watch, babysit, or autofix a PR — or
+when the work involves an iterative CI loop where the loop body is
+"push, wait for CI, read failure, push again":
+
+- Subscribe via `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`
+  and end the turn. PR webhook events arrive as `<github-webhook-activity>`
+  messages that wake the session. **Don't poll** — no `gh pr checks` in a
+  loop, no `sleep` waiting for runs.
+- Pull CI diagnostic via `mcp__github__pull_request_read` with
+  `method=get_comments` and find the sticky-comment marker (we use
+  `<!-- e2e-log:sticky -->` in this repo's e2e workflow). The response
+  is often large enough to exceed the token budget — slice via
+  `python3 -c "print(open(file).read()[A:B])"` if so.
+- WebFetch cannot read GitHub Actions step logs (auth-gated) or
+  workflow artifact zips. Don't try; use the PR-comment bridge instead.
+- See `rules/ci-e2e.md` for the full pattern, including how the workflow
+  populates the sticky comment.
+
+---
+
 ## Architecture constraints
 
 These are deliberate decisions — do not change without reading
@@ -192,6 +214,8 @@ Topic-specific rules are split out under `rules/`. Read on demand:
 - `rules/foundry-ironsworn.md` — foundry-ironsworn submodule, Actor / Item
   schema rules, vendor-source workflow
 - `rules/quench.md` — Quench integration testing API and patterns
+- `rules/ci-e2e.md` — Docker stack, Cypress spec patterns, GitHub Actions
+  PR-gating, and the subscribe-to-PR / sticky-comment iteration loop
 - `rules/game-rules.md` — Ironsworn: Starforged rules references (play-kit
   doc and rulebook summary)
 - `rules/project-context.md` — module overview, transport, system dependency

@@ -1,0 +1,33 @@
+# Cypress E2E Configuration
+#
+# This compose file extends docker-compose.yml with a Cypress service
+# behind the `e2e` profile. Plain `docker compose up` ignores it; the
+# orchestrator (`scripts/e2e.sh`) invokes it via `--profile e2e`.
+#
+# Network: shares the default compose network so Cypress can reach Foundry
+# at http://foundry:30000 via service-name DNS.
+
+services:
+  cypress:
+    image: cypress/included:14.0.0
+    profiles: ["e2e"]
+    depends_on:
+      - foundry
+    # Cypress's default entrypoint runs `cypress run`. Override here so
+    # the orchestrator can pass flags (--browser, --spec, …) without
+    # reshaping the entrypoint.
+    entrypoint: ["cypress"]
+    command: ["run", "--browser", "electron", "--config-file", "cypress.config.js"]
+    working_dir: /e2e
+    volumes:
+      - ./cypress:/e2e
+      # screenshots/ and videos/ surface on the host so a failing run
+      # leaves debuggable artifacts behind.
+      - ./cypress/artifacts/screenshots:/e2e/screenshots
+      - ./cypress/artifacts/videos:/e2e/videos
+    environment:
+      CYPRESS_baseUrl: http://foundry:30000
+      CYPRESS_ADMIN_KEY: ${FOUNDRY_ADMIN_KEY:?run scripts/e2e.sh — credentials come from macOS Keychain}
+      # Surface Foundry's container hostname so the spec can wait on it
+      # explicitly if needed.
+      FOUNDRY_HOSTNAME: starforged-ci-host

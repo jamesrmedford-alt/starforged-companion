@@ -1,0 +1,13 @@
+{
+  "id": "starforged-ci-world",
+  "title": "Starforged CI Test World",
+  "description": "<p>Disposable test world for the Starforged Companion module. Reset at any time with <code>scripts/reset.sh</code>.</p>",
+  "system": "foundry-ironsworn",
+  "coreVersion": "13",
+  "systemVersion": "1.27.0",
+  "background": "",
+  "nextSession": null,
+  "resetKeys": false,
+  "safeMode": false,
+  "version": "1.0.0"
+}
