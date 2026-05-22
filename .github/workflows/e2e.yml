@@ -52,6 +52,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    # Need pull-requests:write so the "Post orchestrator log to PR
+    # comment" step below can post via gh CLI. Default repo permissions
+    # only grant contents:read.
+    permissions:
+      contents: read
+      pull-requests: write
+
     env:
       # Surfaced to test/ci/scripts/lib/keychain.sh, which falls back
       # to env vars on non-Darwin hosts. CI=true forces env mode.
@@ -108,6 +115,54 @@ jobs:
             tail -n 200 test/ci/cypress/artifacts/e2e-run.log 2>/dev/null || echo "(no log captured)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Post the orchestrator log tail as a PR comment so an external
+      # iterator (the maintainer, or an assistant with the GitHub MCP
+      # `add_issue_comment` / `pull_request_read get_comments` tools)
+      # can read CI failures without authenticating to fetch step logs
+      # or downloading artifact zips. Only fires on failure to avoid
+      # spamming green runs.
+      #
+      # The single sticky comment is found/updated via a hidden HTML
+      # marker (<!-- e2e-log:sticky -->) — keeps the PR thread tidy
+      # across many iterations instead of one comment per failed run.
+      - name: Post orchestrator log to PR comment on failure
+        if: failure() && github.event.pull_request.number
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MARKER='<!-- e2e-log:sticky -->'
+          # Build the comment body. Tail bounded so we stay under the
+          # 65 536-char GitHub comment limit even after markdown wrap.
+          LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
+          if [ -f "$LOG_FILE" ]; then
+            LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
+          else
+            LOG_TAIL="(no orchestrator log captured)"
+          fi
+          {
+            printf '%s\n' "$MARKER"
+            printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
+            printf '**Run page:** %s\n\n' "$RUN_URL"
+            printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
+            printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
+            printf '```\n%s\n```\n\n' "$LOG_TAIL"
+            printf '</details>\n'
+          } > /tmp/e2e-comment.md
+          # Find an existing sticky comment to update; otherwise post new.
+          EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][-1].id" 2>/dev/null || true)"
+          if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
+              -F body=@/tmp/e2e-comment.md >/dev/null
+            echo "Updated existing sticky comment ${EXISTING_ID}"
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -F body=@/tmp/e2e-comment.md >/dev/null
+            echo "Posted new sticky comment"
+          fi
 
       # Always upload Cypress artifacts — screenshots from failed runs
       # let the maintainer (or an assistant with GitHub MCP access)
