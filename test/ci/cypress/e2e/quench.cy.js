@@ -297,6 +297,93 @@ describe("Quench full suite", () => {
     //    completion stats this build expected. Trusting the promise
     //    resolution sidesteps that.
     cy.window({ timeout: 900000 }).then({ timeout: 900000 }, async (win) => {
+      // ─── PRE-FLIGHT DIAGNOSTIC ────────────────────────────────────────
+      // Surface the shape of win.quench so failures in Quench's internal
+      // UI paths can be diagnosed from the PR sticky-comment log. Logged
+      // first so even a same-tick throw in runBatches doesn't suppress it.
+      const quenchModule = win.game?.modules?.get?.("quench");
+      const introspection = {
+        phase:              "pre-run-introspection",
+        hasQuench:          !!win.quench,
+        quenchKeys:         win.quench ? Object.keys(win.quench) : [],
+        quenchProtoKeys:    win.quench ? Object.getOwnPropertyNames(Object.getPrototypeOf(win.quench) ?? {}) : [],
+        hasGameQuenchMod:   !!quenchModule,
+        moduleApiKeys:      quenchModule?.api ? Object.keys(quenchModule.api) : null,
+        hasWinQuenchResults: !!win.QuenchResults,
+      };
+      cy.task("logQuenchStats", introspection);
+
+      // ─── ENSURE RESULTS PANEL EXISTS ──────────────────────────────────
+      // Run #9: QuenchResults._setElementDisabled hit a `Cannot read
+      // properties of undefined (reading 'querySelector')` because the
+      // results panel was never rendered (in normal use the GM clicks a
+      // toolbar button to open it; headless Cypress doesn't). Two defenses:
+      //
+      // (a) Render the panel up front via whatever path the Quench build
+      //     exposes. Tries a handful of known shapes.
+      // (b) Monkey-patch _setElementDisabled to a try/swallow so a UI-
+      //     update failure can't take the whole run down. Headless runs
+      //     don't care about button state — we're reading stats only.
+      const renderPanel = async () => {
+        const candidates = [
+          win.quench?.QuenchResults,
+          win.QuenchResults,
+          quenchModule?.api?.QuenchResults,
+        ].filter(Boolean);
+        for (const Cls of candidates) {
+          if (Cls?.prototype?.render) {
+            try {
+              const inst = new Cls();
+              await inst.render(true);
+              return `class:${Cls.name ?? "anon"}`;
+            } catch (e) { /* fall through to next candidate */ }
+          }
+        }
+        const instances = [
+          win.quench?.app,
+          win.quench?.results,
+          win.quench?.quenchResults,
+          quenchModule?.api?.app,
+        ].filter(Boolean);
+        for (const inst of instances) {
+          if (typeof inst?.render === "function") {
+            try {
+              await inst.render(true);
+              return "instance.render";
+            } catch (e) { /* fall through */ }
+          }
+        }
+        return "(none worked)";
+      };
+
+      const monkeyPatch = () => {
+        const targets = [
+          win.quench?.QuenchResults?.prototype,
+          win.QuenchResults?.prototype,
+          quenchModule?.api?.QuenchResults?.prototype,
+        ].filter(p => p && typeof p._setElementDisabled === "function");
+        for (const proto of targets) {
+          const orig = proto._setElementDisabled;
+          proto._setElementDisabled = function safelyDisabled(...args) {
+            try { return orig.apply(this, args); }
+            catch { /* UI doesn't matter headless */ }
+          };
+        }
+        return targets.length;
+      };
+
+      const panelMethod = await renderPanel();
+      const patchedCount = monkeyPatch();
+      cy.task("logQuenchStats", {
+        phase:         "pre-run-prep",
+        panelMethod,
+        patchedCount,
+      });
+
+      // Give Foundry a tick for the panel render to settle.
+      await new Promise(r => setTimeout(r, 1500));
+
+      // ─── ACTUAL RUN ───────────────────────────────────────────────────
       const ret = await win.quench.runBatches(
         "starforged-companion.**",
         { json: true },
