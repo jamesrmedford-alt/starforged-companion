@@ -55,12 +55,16 @@ github_release_zip_url() {
     api_url="https://api.github.com/repos/${repo}/releases/tags/${tag}"
   fi
 
+  # Bash 3.2 (Apple's default on macOS) treats `"${arr[@]}"` as "unbound
+  # variable" under `set -u` when the array is empty — a well-known
+  # pre-4.4 bug. The `${arr[@]+"${arr[@]}"}` form sidesteps it: only
+  # expands when arr is set, no-ops otherwise.
   local auth_args=()
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     auth_args=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
 
-  curl -fsSL "${auth_args[@]}" \
+  curl -fsSL ${auth_args[@]+"${auth_args[@]}"} \
     -H "Accept: application/vnd.github+json" \
     "${api_url}" \
   | python3 -c '
