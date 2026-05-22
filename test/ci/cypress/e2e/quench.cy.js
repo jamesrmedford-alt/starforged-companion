@@ -35,41 +35,93 @@ function waitForQuenchReady() {
 /**
  * Walk past the EULA + admin-auth screens if they're showing. Idempotent:
  * a no-op when Foundry has already cleared them (post-reload, etc.).
+ *
+ * Gates by URL, not DOM selectors — Foundry's form IDs and class names
+ * shift between minor v13 releases, but the routes (/license, /setup,
+ * /join, /game) are stable. Inside each route, we use the visible
+ * label text or input name (also stable) instead of generated CSS.
  */
 function maybeAcceptEulaAndAuth() {
-  // EULA — Foundry shows a `<form id="eula">` with an "I Agree" button
-  // on the absolute first hit. Skip if not present.
-  cy.get("body", { timeout: 30000 }).then(($body) => {
-    if ($body.find("form#eula").length) {
-      cy.get('form#eula button[name="agree"], form#eula button[type="submit"]')
-        .first()
-        .click();
-    }
+  // 1. /license — EULA. v13 markup: a checkbox labelled "I agree to
+  //    these terms" plus a submit button reading "Agree". Tick the box
+  //    (force: true — the label may overlap the input visually) then
+  //    click Agree. Wait for the redirect away from /license.
+  cy.url({ timeout: 30000 }).then((url) => {
+    if (!url.includes("/license")) return;
+
+    // Force the checkbox: the layout uses a custom-styled label that
+    // sits on top of the input. force-check bypasses the visibility
+    // covered-by-other-element heuristic.
+    cy.contains("label", /i agree to these terms/i, { timeout: 10000 })
+      .find('input[type="checkbox"]')
+      .check({ force: true });
+
+    cy.contains("button", /^\s*(✓\s*)?agree\s*$/i).click();
+
+    cy.url({ timeout: 30000 }).should("not.include", "/license");
   });
 
-  // Admin auth — the setup screen requires the admin key before showing
-  // the world list. The form has `input[name="adminPassword"]` in v13.
-  cy.get("body", { timeout: 60000 }).then(($body) => {
-    if ($body.find('input[name="adminPassword"]').length) {
-      cy.get('input[name="adminPassword"]').type(Cypress.env("ADMIN_KEY"), {
-        log: false,
-      });
-      cy.get('form button[type="submit"], button[name="adminAuth"]')
-        .first()
-        .click();
-    }
+  // 2. /setup — admin auth. The input is `name="adminPassword"`;
+  //    submit is a button with text "Login" or "Sign In".
+  cy.url({ timeout: 30000 }).then((url) => {
+    if (!url.includes("/setup")) return;
+
+    cy.get("body").then(($body) => {
+      if (!$body.find('input[name="adminPassword"]').length) return;
+
+      cy.get('input[name="adminPassword"]')
+        .type(Cypress.env("ADMIN_KEY"), { log: false });
+      // Foundry's button text varies by version: "Sign In" / "Login" /
+      // "Submit". Submit via Enter keystroke as a robust fallback.
+      cy.get('input[name="adminPassword"]').type("{enter}");
+    });
   });
 }
 
 /** Launch the test world from the setup screen, then join as Gamemaster. */
 function launchAndJoinWorld() {
-  // Setup screen — wait for the world tile to render, then click its
-  // launch button. The tile carries `data-world="starforged-ci-world"`.
-  cy.contains("Starforged CI Test World", { timeout: 90000 }).should("be.visible");
-  cy.get('[data-world="starforged-ci-world"] [data-action="worldLaunch"], ' +
-         '[data-package-id="starforged-ci-world"] [data-action="worldLaunch"]')
-    .first()
-    .click({ force: true });
+  // Setup screen — Foundry v13 puts world tiles inside a tabbed layout
+  // (Worlds / Systems / Modules / …). If a Worlds tab is visible,
+  // click it first; no-op otherwise (already-active tab, or older
+  // markup without tabs).
+  cy.get("body", { timeout: 30000 }).then(($body) => {
+    const tabSelectors = [
+      'a[data-tab="worlds"]',
+      'button[data-tab="worlds"]',
+      '[data-action="tab"][data-tab="worlds"]',
+      'nav.tabs [data-tab="worlds"]',
+    ];
+    const match = tabSelectors.find((sel) => $body.find(sel).length);
+    if (match) cy.get(match).first().click({ force: true });
+  });
+
+  // World tile — try multiple attribute patterns Foundry has used
+  // across v13 patch releases. Falls back to text-match if neither
+  // attribute is present.
+  cy.get("body", { timeout: 90000 }).should(($body) => {
+    const has =
+      $body.find('[data-world="starforged-ci-world"]').length ||
+      $body.find('[data-package-id="starforged-ci-world"]').length ||
+      $body.text().includes("Starforged CI Test World");
+    expect(has, "world tile or text").to.be.ok;
+  });
+
+  cy.get("body").then(($body) => {
+    const direct = $body.find(
+      '[data-world="starforged-ci-world"] [data-action="worldLaunch"], ' +
+      '[data-package-id="starforged-ci-world"] [data-action="worldLaunch"]'
+    );
+    if (direct.length) {
+      cy.wrap(direct.first()).click({ force: true });
+      return;
+    }
+    // Fallback: any "Launch World" button next to the world's text.
+    cy.contains("Starforged CI Test World")
+      .closest('[data-package-id], [data-world], .package, .world')
+      .within(() => {
+        cy.contains("button, a", /launch( world)?/i).click({ force: true });
+      });
+  });
 
   // Join screen — `<select name="userid">` lists the GM. Some Foundry
   // builds use `<select id="join-game-user">` instead.

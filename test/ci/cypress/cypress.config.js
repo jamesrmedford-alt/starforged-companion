@@ -23,6 +23,12 @@ module.exports = defineConfig({
     screenshotsFolder: "/e2e/screenshots",
     videosFolder: "/e2e/videos",
 
+    // Foundry refuses to render usefully below 1024x768 and logs a
+    // dismissible banner that overlaps clickable targets. Default
+    // Cypress viewport is 1000x660. Bump it.
+    viewportWidth: 1280,
+    viewportHeight: 800,
+
     // Wide timeouts — Foundry's first boot + Quench run dominate.
     defaultCommandTimeout: 30000,
     pageLoadTimeout: 120000,
