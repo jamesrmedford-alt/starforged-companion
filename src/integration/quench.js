@@ -154,25 +154,39 @@ function snapshotWorldDocuments() {
   return snap;
 }
 
-async function reapNewDocuments(snap) {
-  for (const [key, label] of SNAPSHOTTED_COLLECTIONS) {
-    const baseline = snap.byCollection[key];
-    if (!baseline) continue;
-    const current = game[key]?.contents ?? [];
-    const toDelete = current.filter(d => !baseline.has(d.id));
-    for (const doc of toDelete) {
-      if (!doc?.delete) continue;
-      try {
-        await doc.delete();
-      } catch (err) {
-        console.warn(
-          `${MODULE_ID} | quench cleanup: ${label}.delete(${doc.id}) failed:`, err);
+async function reapNewDocuments(snap, batchName) {
+  // Two-pass: a doc deleted in pass 1 can fire a hook (foundry-ironsworn
+  // deleteActor, our own panel re-render) that creates a fresh doc in
+  // response. Pass 2 picks those up. If neither pass made progress, stop
+  // and surface what's left so the failure is visible instead of silent.
+  const summary = { reaped: 0, failed: [], stragglers: [] };
+
+  for (let pass = 1; pass <= 2; pass += 1) {
+    let progressThisPass = 0;
+
+    for (const [key, label] of SNAPSHOTTED_COLLECTIONS) {
+      const baseline = snap.byCollection[key];
+      if (!baseline) continue;
+      const current = game[key]?.contents ?? [];
+      const toDelete = current.filter(d => !baseline.has(d.id));
+      for (const doc of toDelete) {
+        if (!doc?.delete) continue;
+        try {
+          await doc.delete();
+          summary.reaped += 1;
+          progressThisPass += 1;
+        } catch (err) {
+          summary.failed.push({ label, id: doc.id, name: doc.name, error: err?.message });
+          console.warn(
+            `${MODULE_ID} | quench cleanup: ${label}.delete(${doc.id} "${doc.name}") failed:`, err);
+        }
       }
     }
+
+    if (pass === 2 || progressThisPass === 0) break;
   }
-  // Embedded JournalEntryPage reap on every pre-existing journal that's still
-  // around. New journals were already reaped above (which deletes their pages
-  // as a side-effect), so we only look at journals present in the baseline.
+
+  // Embedded JournalEntryPage reap on pre-existing journals still alive.
   for (const [journalId, baselinePageIds] of snap.pagesByJournal.entries()) {
     const journal = game.journal?.get(journalId);
     if (!journal) continue;
@@ -183,9 +197,32 @@ async function reapNewDocuments(snap) {
     if (!newPageIds.length) continue;
     try {
       await journal.deleteEmbeddedDocuments("JournalEntryPage", newPageIds);
+      summary.reaped += newPageIds.length;
     } catch (err) {
+      summary.failed.push({ label: "JournalEntryPage", id: journalId, error: err?.message });
       console.warn(
         `${MODULE_ID} | quench cleanup: deleteEmbeddedDocuments(pages) on ${journalId} failed:`, err);
+    }
+  }
+
+  // Final straggler scan — anything net-new still in the world after two
+  // passes. Useful diagnostic: shows up in console as a list of leaked
+  // doc ids so you can find them in the sidebar.
+  for (const [key, label] of SNAPSHOTTED_COLLECTIONS) {
+    const baseline = snap.byCollection[key];
+    if (!baseline) continue;
+    const stragglers = (game[key]?.contents ?? [])
+      .filter(d => !baseline.has(d.id))
+      .map(d => ({ label, id: d.id, name: d.name }));
+    summary.stragglers.push(...stragglers);
+  }
+
+  if (summary.reaped || summary.failed.length || summary.stragglers.length) {
+    const tag = `[quench-cleanup:${batchName}]`;
+    if (summary.stragglers.length || summary.failed.length) {
+      console.warn(`${tag} reaped=${summary.reaped} failed=${summary.failed.length} stragglers=${summary.stragglers.length}`, summary);
+    } else {
+      console.log(`${tag} reaped=${summary.reaped} (clean)`);
     }
   }
 }
@@ -206,7 +243,7 @@ function installAutoDocumentCleanup(quench) {
         context.after(async function () {
           if (!snapshot) return;
           if (!game.user?.isGM) { snapshot = null; return; }
-          await reapNewDocuments(snapshot);
+          await reapNewDocuments(snapshot, name);
           snapshot = null;
         });
       }
@@ -883,12 +920,23 @@ function registerSectorCreatorTests(quench) {
           if (createdSectorId || createdSettlementIds.length || createdConnectionId) {
             await game.settings.set("starforged-companion", "campaignState", state);
           }
-          // Delete entity journal documents (IDs were removed from campaignState above)
-          for (const id of [...createdSettlementIds, createdConnectionId].filter(Boolean)) {
-            const j = game.journal?.get(id);
+          // v1.2.9 migration moved settlements from JournalEntry to Actor —
+          // but this cleanup loop was never updated. settlementIds are Actor
+          // IDs; connectionIds remain JournalEntry IDs. Look up in the right
+          // collection or the docs leak (Hyperion, Reprise, oracle-rolled
+          // settlement names piling up in the Actors sidebar).
+          for (const id of createdSettlementIds.filter(Boolean)) {
+            const a = game.actors?.get(id);
+            if (a?.delete) {
+              await a.delete().catch(err =>
+                console.warn(`starforged-companion | quench: sector settlement Actor cleanup failed (${id}):`, err));
+            }
+          }
+          if (createdConnectionId) {
+            const j = game.journal?.get(createdConnectionId);
             if (j?.delete) {
               await j.delete().catch(err =>
-                console.warn(`starforged-companion | quench: sector entity journal cleanup failed (${id}):`, err));
+                console.warn(`starforged-companion | quench: sector connection journal cleanup failed (${createdConnectionId}):`, err));
             }
           }
         });
@@ -1001,10 +1049,24 @@ function registerSectorCreatorTests(quench) {
       });
 
       describe("createSectorScene", function () {
-        let testSector = null;
-        let testScene  = null;
+        let testSector  = null;
+        let testScene   = null;
+        let placeholder = null;
 
         before(async function () {
+          // Foundry v13 auto-activates a freshly-created scene when the world
+          // has no other active scene. That'd make `scene is NOT activated`
+          // fail through no fault of createSectorScene. Pre-create + activate
+          // a placeholder so v13's first-scene auto-activate fires against
+          // *it* instead of our sector scene.
+          if (!game.scenes?.active) {
+            placeholder = await Scene.create({
+              name: `QUENCH placeholder ${Date.now()}`,
+              width: 100, height: 100,
+            });
+            if (placeholder?.activate) await placeholder.activate();
+          }
+
           const { generateSector } = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
           const { createSectorScene } = await import(`${MODULE_PATH}/sectors/sceneBuilder.js`);
           testSector = generateSector("expanse");
@@ -1017,6 +1079,10 @@ function registerSectorCreatorTests(quench) {
               console.error(`starforged-companion | quench: testScene teardown failed (orphaned scene id ${testScene?.id ?? "?"}):`, err));
             testScene  = null;
             testSector = null;
+          }
+          if (placeholder) {
+            await placeholder.delete().catch(() => {});
+            placeholder = null;
           }
         });
 
@@ -2957,8 +3023,9 @@ function registerEntityPanelActionsTests(quench) {
           state.connectionIds = (state.connectionIds ?? []).filter(id => id !== testJournalId);
         }
         if (testSettlementId) {
-          const j = game.journal?.get(testSettlementId);
-          if (j?.delete) await j.delete().catch(() => {});
+          // settlementIds are Actor IDs post-v1.2.9 migration, not Journal IDs.
+          const a = game.actors?.get(testSettlementId);
+          if (a?.delete) await a.delete().catch(() => {});
           state.settlementIds = (state.settlementIds ?? []).filter(id => id !== testSettlementId);
         }
         // Restore current-location pointers so the QUENCH settlement we just

@@ -65,22 +65,40 @@ order:
    (default suggestion: `atropos-dev`). If you forget what you set,
    `./scripts/credentials.sh status` shows a masked preview; `clear` +
    `set` lets you replace it.
-3. **Setup screen — World list** — `Starforged CI Test World` should be
+3. **Setup screen — Systems / Modules indexing** — Foundry needs ~30 s
+   on first boot to scan and load the systems and modules that
+   `install-deps.sh` put under `data/Data/`. Pre-v13 Foundry indexed at
+   world-launch time; v13 does it at setup time, so you may see a
+   "Packages Loading" banner. Wait it out.
+4. **Setup screen — World list** — `Starforged CI Test World` should be
    listed. Click **Launch World**.
-4. **Join screen** — pick the **Gamemaster** user, leave password blank
+5. **World migration prompt** — the `data/Data/Config` directory is
+   created fresh by the felddy entrypoint, and Foundry treats the world
+   as a migration target. Accept the migration; it's a no-op on a brand
+   new world but Foundry insists on stamping the current version.
+6. **Join screen** — pick the **Gamemaster** user, leave password blank
    the first time. (You can set a GM password under *Settings → Configure
    Players* once inside the world.)
-5. **Inside the world — enable modules** — open *Settings → Manage Modules*
+7. **Inside the world — enable modules** — open *Settings → Manage Modules*
    and tick:
    - Starforged Companion
    - Quench
+   - (optional) Dice So Nice! — if you've installed it manually for
+     visual dice rolls. Not bundled; install from the Foundry module
+     browser if you want it.
    Click **Save Module Settings**. The world will reload.
-6. **Run Quench** — open the Quench UI from the sidebar. Run a batch
+8. **Run Quench** — open the Quench UI from the sidebar. Run a batch
    (e.g. `starforged-companion.actorBridge`) to confirm the module is
    loading and the test harness works.
 
 After this one-time setup, Foundry remembers everything in `./data/`. Stop
 and start the stack freely without redoing it.
+
+### After a `reset.sh --yes`
+
+You'll repeat every step above. `reset.sh` wipes `./data/` entirely —
+license fingerprint, world DB, enabled-module list. Plan for ~2 minutes
+of one-time setup after each reset.
 
 ## Lifecycle scripts
 
