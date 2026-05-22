@@ -40,9 +40,20 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
-require_cmd curl
+require_cmd docker  # used for SSL-clean curl (see CURL_IMAGE below)
 require_cmd unzip
-require_cmd python3   # used to parse GitHub release JSON without jq
+require_cmd python3 # used to parse GitHub release JSON without jq
+
+# macOS hosts often have a broken curl SSL setup — Anaconda and other
+# third-party tools set CURL_CA_BUNDLE / SSL_CERT_FILE to stale paths,
+# and the user hits `curl: (60) SSL certificate problem`. Route through
+# a containerised curl with a known-good cert chain instead. Docker is
+# already required by the rest of the CI stack so this is free.
+CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.10.1}"
+
+docker_curl() {
+  docker run --rm "${CURL_IMAGE}" "$@"
+}
 
 # Discover a release-asset URL for a given GitHub repo + tag (or "latest").
 # Picks the first .zip asset that doesn't look like a sourcemap. Echoes the
@@ -64,7 +75,7 @@ github_release_zip_url() {
     auth_args=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
 
-  curl -fsSL ${auth_args[@]+"${auth_args[@]}"} \
+  docker_curl -fsSL ${auth_args[@]+"${auth_args[@]}"} \
     -H "Accept: application/vnd.github+json" \
     "${api_url}" \
   | python3 -c '
@@ -91,7 +102,9 @@ download_and_extract() {
   trap 'rm -rf "${tmpdir}"' RETURN
 
   log "  fetching ${url}"
-  curl -fsSL "${url}" -o "${tmpdir}/pkg.zip"
+  # Pipe the container's stdout to a host file. `set -o pipefail` makes
+  # the script bail with curl's non-zero on any HTTP/network error.
+  docker_curl -fsSL "${url}" > "${tmpdir}/pkg.zip"
 
   rm -rf "${dest}"
   mkdir -p "${dest}"
