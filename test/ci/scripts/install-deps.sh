@@ -133,7 +133,8 @@ mkdir -p "${SYSTEMS_DIR}" "${MODULES_DIR}" "${WORLDS_DIR}"
 # ---- 1. foundry-ironsworn system -----------------------------------------
 
 log "installing foundry-ironsworn v${IRONSWORN_VERSION}"
-ironsworn_url="$(github_release_zip_url "${IRONSWORN_REPO}" "v${IRONSWORN_VERSION}")"
+# ben/foundry-ironsworn uses unprefixed tags (1.27.0, not v1.27.0).
+ironsworn_url="$(github_release_zip_url "${IRONSWORN_REPO}" "${IRONSWORN_VERSION}")"
 download_and_extract "${ironsworn_url}" "${SYSTEMS_DIR}/foundry-ironsworn"
 [[ -f "${SYSTEMS_DIR}/foundry-ironsworn/system.json" ]] \
   || die "foundry-ironsworn system.json missing after extract — release layout changed?"
