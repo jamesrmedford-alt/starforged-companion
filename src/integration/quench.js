@@ -5200,6 +5200,21 @@ function registerAudioNarrationTests(quench) {
 
       describe("cache key + path", function () {
         it("cacheKey is stable and content-addressed", async function () {
+          // cacheKey uses crypto.subtle.digest("SHA-256", …). Web Crypto's
+          // SubtleCrypto interface is only exposed in *secure contexts* —
+          // HTTPS, http://localhost, http://127.0.0.1, file:// URLs.
+          //
+          // In normal Foundry use this is fine: native Foundry serves on
+          // localhost (secure context); Forge serves over HTTPS. But our
+          // containerised e2e CI reaches Foundry via http://foundry:30000
+          // (Docker service-name DNS — non-loopback HTTP), where
+          // crypto.subtle is undefined.
+          //
+          // Skip with a clear reason rather than masking the dependency.
+          if (typeof globalThis.crypto?.subtle?.digest !== "function") {
+            this.skip();
+            return;
+          }
           const { cacheKey } = await import(`${MODULE_PATH}/audio/cache.js`);
           const a = await cacheKey({ text: "hi", voiceId: "v", modelId: "m", speed: 1.0 });
           const b = await cacheKey({ text: "hi", voiceId: "v", modelId: "m", speed: 1.0 });
