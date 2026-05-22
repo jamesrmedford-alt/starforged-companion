@@ -61,20 +61,24 @@ function maybeAcceptEulaAndAuth() {
     cy.url({ timeout: 30000 }).should("not.include", "/license");
   });
 
-  // 2. /setup — admin auth. The input is `name="adminPassword"`;
-  //    submit is a button with text "Login" or "Sign In".
-  cy.url({ timeout: 30000 }).then((url) => {
-    if (!url.includes("/setup")) return;
+  // 2. Admin auth. Foundry v13 routes this to either /auth or /setup
+  //    depending on patch release — so don't gate on URL. Just look for
+  //    the input on the current page and submit if present. The input
+  //    name varies (`adminPassword` on some builds, `password` on
+  //    others) — query by name OR by type as a fallback.
+  cy.get("body", { timeout: 60000 }).then(($body) => {
+    const $input = $body.find(
+      'input[name="adminPassword"], input[name="password"], input[type="password"]'
+    );
+    if (!$input.length) return;
 
-    cy.get("body").then(($body) => {
-      if (!$body.find('input[name="adminPassword"]').length) return;
+    // Use the first password input on the page.
+    cy.wrap($input.first()).type(Cypress.env("ADMIN_KEY"), { log: false });
+    cy.wrap($input.first()).type("{enter}");
 
-      cy.get('input[name="adminPassword"]')
-        .type(Cypress.env("ADMIN_KEY"), { log: false });
-      // Foundry's button text varies by version: "Sign In" / "Login" /
-      // "Submit". Submit via Enter keystroke as a robust fallback.
-      cy.get('input[name="adminPassword"]').type("{enter}");
-    });
+    // After login, Foundry lands on /setup. Wait for the redirect so the
+    // next step (world-tile search) sees the right DOM.
+    cy.url({ timeout: 60000 }).should("include", "/setup");
   });
 }
 
