@@ -455,9 +455,22 @@ describe("Quench full suite", () => {
       // tests=0, passes=0, stats.end=undefined. The runner had been
       // set up but never executed by the time we checked.
       //
-      // Mocha Runner is an EventEmitter. Hook 'end' (or 'fail' for
-      // an unhandled runner-side throw) and wait on a Promise.
+      // Mocha Runner is an EventEmitter. Hook 'end' to wait for
+      // completion, and 'fail' to collect failures *live* — walking
+      // suite.tests post-run can be unreliable, but the runner emits
+      // 'fail' for every failed test as it happens.
+      const liveFailures = [];
       if (typeof ret?.on === "function" && !ret?.stats?.end) {
+        ret.on("fail", (test, err) => {
+          liveFailures.push({
+            fullTitle: typeof test?.fullTitle === "function" ? test.fullTitle() : (test?.title ?? "(no title)"),
+            err: {
+              message: err?.message ?? String(err ?? "(no message)"),
+              stack:   err?.stack ? String(err.stack).split("\n").slice(0, 6).join(" | ") : null,
+            },
+          });
+        });
+
         await new Promise((resolve, reject) => {
           let settled = false;
           const settle = (fn) => (arg) => {
@@ -479,6 +492,10 @@ describe("Quench full suite", () => {
           if (ret?.stats?.end) onEnd();
         });
       }
+
+      // Stash live failures on the runner so the downstream .then can
+      // pick them up even if walking suite.tests fails.
+      if (ret) ret.__liveFailures = liveFailures;
 
       // Diagnostic: dump what runBatches returned + post-run state.
       // Use a fail-loud-with-context throw for the stale-check —
@@ -577,12 +594,11 @@ describe("Quench full suite", () => {
     }).then({ timeout: 30000 }, (report) => {
       const stats = report?.stats ?? {};
 
-      // Walk Mocha's suite tree to collect failed tests directly. The
-      // top-level `report.failures` on the runner shape is a count, not
-      // an array — but every failed test inside report.suite.suites[]
-      // has .state === "failed" and .err populated. This works whether
-      // we got a runner or a JSON report.
-      const collectFailures = (suite, acc = []) => {
+      // Walk Mocha's suite tree to collect failed tests. Live failures
+      // captured from the runner's 'fail' event are most reliable;
+      // suite-tree walk is a fallback for builds where the runner
+      // doesn't carry the post-run state we expect.
+      const collectFromSuite = (suite, acc = []) => {
         if (!suite) return acc;
         for (const t of suite.tests ?? []) {
           if (t.state === "failed") {
@@ -590,32 +606,57 @@ describe("Quench full suite", () => {
               fullTitle: typeof t.fullTitle === "function" ? t.fullTitle() : t.title,
               err: {
                 message: t.err?.message ?? String(t.err ?? "(no message)"),
-                stack:   t.err?.stack ? String(t.err.stack).split("\n").slice(0, 5).join(" | ") : null,
+                stack:   t.err?.stack ? String(t.err.stack).split("\n").slice(0, 6).join(" | ") : null,
               },
             });
           }
         }
-        for (const sub of suite.suites ?? []) collectFailures(sub, acc);
+        for (const sub of suite.suites ?? []) collectFromSuite(sub, acc);
         return acc;
       };
 
-      const failuresArr = Array.isArray(report?.failures) && report.failures.length
+      const failuresArr = (Array.isArray(report?.failures) && report.failures.length
         ? report.failures.map((f) => ({
             fullTitle: f.fullTitle ?? f.title,
             err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
           }))
-        : collectFailures(report?.suite);
+        : null)
+        ?? (report?.__liveFailures?.length ? report.__liveFailures : null)
+        ?? collectFromSuite(report?.suite);
 
-      cy.task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length });
-      if (failuresArr.length) {
-        cy.task("logQuenchFailures", failuresArr);
-      }
+      // Chain cy.task → cy.task → assertions so the task console.log
+      // output (the "[quench] {...}" lines) flushes to stdout BEFORE
+      // expect() runs. Without this chain, expect throws synchronously
+      // and the queued tasks get aborted — that's why the
+      // logQuenchFailures output was missing from PR #125 run #6's
+      // sticky comment.
+      return cy
+        .task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length })
+        .then(() => failuresArr.length ? cy.task("logQuenchFailures", failuresArr) : null)
+        .then(() => ({ stats, failuresArr }));
+    }).then({ timeout: 30000 }, ({ stats, failuresArr }) => {
+      // Embed the failing test titles directly in the assertion message
+      // so they're visible in the failure annotation regardless of
+      // whether the cy.task console.log made it into the log tail.
+      const failureSummary = failuresArr.length
+        ? "\n  • " + failuresArr.map((f) =>
+            `${f.fullTitle}\n      → ${f.err?.message ?? "(no message)"}`,
+          ).join("\n  • ")
+        : "(no failure detail captured)";
 
       // stats.failures is a count (number) on both Mocha-runner and
       // mocha-JSON shapes. Use it for the pass/fail gate; failuresArr
-      // is only the diagnostic-detail surface.
-      expect(stats.tests,    "stats.tests").to.be.greaterThan(0);
-      expect(stats.failures, "stats.failures").to.equal(0);
+      // is the diagnostic-detail surface embedded in the message.
+      expect(stats.tests, "stats.tests").to.be.greaterThan(0);
+
+      // Embed failure summary in the message so the failing test names
+      // surface in the assertion error even if Chai elides them and
+      // cy.task console.log doesn't make it into the log tail.
+      if (stats.failures !== 0) {
+        throw new Error(
+          `Quench reported ${stats.failures} failing test(s) of ${stats.tests} total:${failureSummary}`,
+        );
+      }
 
       // ─── ANTI-FALSE-PASS GUARDS ───────────────────────────────────────
       //
