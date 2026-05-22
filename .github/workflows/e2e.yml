@@ -83,12 +83,37 @@ jobs:
           docker --version
           docker compose version
 
+      # Tee the orchestrator's stdout+stderr to a log file so we can
+      # upload it as an artifact AND surface a tail into the run-summary
+      # box (no auth needed to view). Without this, failures upstream
+      # of Cypress (install-deps, Foundry boot, etc.) produce no artifact
+      # at all — Cypress's screenshots dir stays empty so the artifact
+      # upload silently skips with `if-no-files-found: ignore`.
       - name: Run Quench e2e suite
-        run: npm run test:e2e
+        run: |
+          mkdir -p test/ci/cypress/artifacts
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee test/ci/cypress/artifacts/e2e-run.log
+
+      # Always echo the last 200 lines of the orchestrator log into the
+      # run summary, success or failure. Saves the artifact-download
+      # round-trip when the failure is something the tail already shows.
+      - name: Surface orchestrator log tail to run summary
+        if: always()
+        run: |
+          {
+            echo "## Orchestrator log (last 200 lines)"
+            echo ""
+            echo '```'
+            tail -n 200 test/ci/cypress/artifacts/e2e-run.log 2>/dev/null || echo "(no log captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Always upload Cypress artifacts — screenshots from failed runs
       # let the maintainer (or an assistant with GitHub MCP access)
-      # iterate the spec without re-running the suite locally.
+      # iterate the spec without re-running the suite locally. The
+      # orchestrator log goes here too so the same artifact name covers
+      # both pre-Cypress and Cypress-time failures.
       - name: Upload Cypress artifacts
         if: always()
         uses: actions/upload-artifact@v5
@@ -97,6 +122,7 @@ jobs:
           path: |
             test/ci/cypress/artifacts/screenshots/
             test/ci/cypress/artifacts/videos/
+            test/ci/cypress/artifacts/e2e-run.log
           if-no-files-found: ignore
           retention-days: 14
 
