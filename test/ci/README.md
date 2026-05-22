@@ -167,6 +167,65 @@ npm run test:e2e -- --no-rebuild
 `--no-rebuild` skips the wipe + reinstall + boot, so each iteration is
 ~30 s of Cypress runtime alone.
 
+## Automated CI gate (Phase 3)
+
+GitHub Actions runs the same `npm run test:e2e` command on every pull
+request — open, push, reopen. See `.github/workflows/e2e.yml`. The
+workflow gates PR mergeability; a Quench failure shows as a red ✗ on
+the PR status checks.
+
+### One-time setup — repo secrets
+
+The workflow needs three GitHub repository secrets to authenticate to
+foundryvtt.com and to the Foundry admin console. Add them under
+*Settings → Secrets and variables → Actions → New repository secret*:
+
+| Secret | What it is |
+|---|---|
+| `FOUNDRY_USERNAME` | Your foundryvtt.com account username (or email). |
+| `FOUNDRY_PASSWORD` | Your foundryvtt.com account password. |
+| `FOUNDRY_ADMIN_KEY` | The admin password for the dev server — any value. |
+
+These are surfaced to the orchestrator as environment variables; the
+`test/ci/scripts/lib/keychain.sh` shim transparently reads from the
+env in CI mode (when `CI=true` or non-Darwin) and from the macOS
+Keychain on a developer machine. Same `e2e.sh` either way.
+
+### When the workflow runs
+
+- On `pull_request` events: `opened`, `synchronize` (each push to the
+  PR branch), `reopened`.
+- Skipped on docs-only PRs — the `paths:` filter limits it to changes
+  under `src/`, `tests/`, `test/ci/`, `lang/`, `styles/`, `packs/`,
+  `module.json`, `package.json`, `package-lock.json`, or the workflow
+  file itself.
+- Concurrency-cancelled: when a new commit lands on a PR while an
+  earlier run is still going, the earlier run is cancelled.
+
+### Cost considerations
+
+- Each run takes ~5–10 minutes (Docker image pulls + Foundry zip
+  download + Quench suite).
+- Each run authenticates to foundryvtt.com once for the zip download.
+  felddy's hostname-based license fingerprinting (the
+  `hostname: starforged-ci-host` directive in `docker-compose.yml`)
+  keeps the activation stable across runs.
+- The runner is fresh per invocation, so Docker images and the
+  Foundry zip re-download each time. Could be cached via
+  `actions/cache@v4` if total minutes become a constraint; left
+  unoptimised on purpose for the first cut.
+- GitHub Actions Linux runners are free for public repos.
+
+### Where the test artifacts go
+
+- **On every run** (pass or fail): the `cypress-artifacts-<run-id>`
+  artifact contains `screenshots/` and `videos/` from the Cypress
+  container. Useful for diagnosing flaky selector matches.
+- **On failure only**: the `foundry-logs-<run-id>` artifact contains
+  the Foundry server's `Logs/` directory.
+
+Both retain for 14 days, then expire.
+
 ## Lifecycle scripts
 
 | Script | What it does |

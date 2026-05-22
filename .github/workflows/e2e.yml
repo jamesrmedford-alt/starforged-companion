@@ -1,0 +1,113 @@
+# Phase 3 — End-to-end Quench suite gated per pull request.
+#
+# Runs the same orchestrator the developer uses locally
+# (`npm run test:e2e` → `test/ci/scripts/e2e.sh`) inside a GitHub
+# Actions Ubuntu runner. Boots Foundry via Docker, drives a Cypress
+# container through the first-launch ritual, runs every
+# starforged-companion.* Quench batch, asserts the Mocha report has
+# zero failures.
+#
+# Per-PR cadence (not per-commit). Triggers on PR open, every push to
+# the PR branch, and PR reopen. In-progress runs are cancelled when a
+# newer push lands on the same PR via the concurrency block.
+#
+# Setup — repo owner must add three GitHub secrets before the workflow
+# can run successfully:
+#
+#   FOUNDRY_USERNAME   — foundryvtt.com account
+#   FOUNDRY_PASSWORD   — foundryvtt.com password
+#   FOUNDRY_ADMIN_KEY  — admin password for the dev server (any value)
+#
+# Settings → Secrets and variables → Actions → New repository secret.
+
+name: E2E (Quench)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    # Skip docs-only / unrelated PRs. The e2e suite takes ~5 minutes
+    # and burns a Foundry license activation each run.
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'test/ci/**'
+      - 'lang/**'
+      - 'styles/**'
+      - 'packs/**'
+      - 'module.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
+
+# When a new commit lands on the PR branch, cancel the in-progress
+# run for that PR — the older run is testing superseded code.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quench:
+    name: Quench full suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Surfaced to test/ci/scripts/lib/keychain.sh, which falls back
+      # to env vars on non-Darwin hosts. CI=true forces env mode.
+      CI: 'true'
+      FOUNDRY_USERNAME:  ${{ secrets.FOUNDRY_USERNAME }}
+      FOUNDRY_PASSWORD:  ${{ secrets.FOUNDRY_PASSWORD }}
+      FOUNDRY_ADMIN_KEY: ${{ secrets.FOUNDRY_ADMIN_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fail fast with a clear message if the secrets aren't set yet —
+      # before paying the Docker-pull + Foundry-download cost.
+      - name: Validate Foundry secrets are configured
+        run: |
+          missing=()
+          [ -n "${FOUNDRY_USERNAME}"  ] || missing+=(FOUNDRY_USERNAME)
+          [ -n "${FOUNDRY_PASSWORD}"  ] || missing+=(FOUNDRY_PASSWORD)
+          [ -n "${FOUNDRY_ADMIN_KEY}" ] || missing+=(FOUNDRY_ADMIN_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required GitHub repo secret(s): ${missing[*]}"
+            echo "::error::Add under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Show Docker + compose versions (diagnostic)
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Run Quench e2e suite
+        run: npm run test:e2e
+
+      # Always upload Cypress artifacts — screenshots from failed runs
+      # let the maintainer (or an assistant with GitHub MCP access)
+      # iterate the spec without re-running the suite locally.
+      - name: Upload Cypress artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts-${{ github.run_id }}
+          path: |
+            test/ci/cypress/artifacts/screenshots/
+            test/ci/cypress/artifacts/videos/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Upload Foundry server logs only on failure — useful for
+      # diagnosing world / module load failures the Cypress screenshots
+      # can't capture.
+      - name: Upload Foundry server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-logs-${{ github.run_id }}
+          path: test/ci/data/Logs/
+          if-no-files-found: ignore
+          retention-days: 14
