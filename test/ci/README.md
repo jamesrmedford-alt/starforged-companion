@@ -1,17 +1,17 @@
-# Local Foundry CI Stack — Phase 1
+# Local Foundry CI Stack
 
 A Docker stack that boots Foundry VTT v13 with the foundry-ironsworn system,
 the Starforged Companion module (built from your working tree), and Quench
-pre-installed. You log in via browser at `http://localhost:30000` and run
-Quench batches manually.
+pre-installed. You can drive it manually (browser at `http://localhost:30000`)
+or have Cypress automate the whole Quench run for you.
 
-This is **Phase 1** of the CI work. It is intentionally manual:
+CI work is split into three phases:
 
-- **Phase 1 (this):** working local Docker stack, browser-driven testing
-- **Phase 2:** Cypress automation against the same stack
-- **Phase 3:** GitHub Actions wrapping the whole thing
-
-Do not introduce Cypress or CI workflows here — those belong in later phases.
+- **Phase 1:** working local Docker stack, manual browser-driven testing
+- **Phase 2 (this is now wired):** Cypress automation against the same
+  stack — `npm run test:e2e`
+- **Phase 3:** GitHub Actions wrapping the whole thing, gated on PR open /
+  synchronize (not per-commit — the suite is ~5 minutes per run)
 
 ## Prerequisites
 
@@ -100,6 +100,73 @@ You'll repeat every step above. `reset.sh` wipes `./data/` entirely —
 license fingerprint, world DB, enabled-module list. Plan for ~2 minutes
 of one-time setup after each reset.
 
+## Automated end-to-end testing (Phase 2)
+
+```bash
+npm run test:e2e
+```
+
+That runs `test/ci/scripts/e2e.sh`, which:
+
+1. Wipes `./data/` (preserves `./data/container_cache/` so you don't
+   re-download the ~100 MB Foundry zip).
+2. Re-stages systems / modules / world from the working tree.
+3. Boots the `foundry` container and polls until it's accepting
+   connections.
+4. Runs a containerised Cypress (`cypress/included:14`) that walks the
+   first-launch ritual you'd otherwise do by hand (EULA → admin auth →
+   world launch → enable modules → reload) and invokes
+   `quench.runBatches("starforged-companion.**", { json: true })`.
+5. Asserts `stats.failures === 0` on the resulting Mocha-shape report.
+6. Tears down the container (use `--keep` to leave it running).
+
+Runtime: ~3–5 minutes (Foundry boot ~30 s + Quench suite ~130 s +
+Cypress overhead). Designed for **per-PR** CI gating, not per-commit.
+
+### Cypress flags
+
+```bash
+npm run test:e2e -- --keep       # leave Foundry running on failure for poking
+npm run test:e2e -- --no-rebuild # skip data wipe — iterate the spec against
+                                 # an already-running world. Useful while
+                                 # developing the spec itself.
+```
+
+### Cypress artifacts
+
+A failing run drops screenshots under `test/ci/cypress/artifacts/screenshots/`.
+Videos are off by default — enable them in `cypress.config.js` if you
+need to see the timeline of a flake.
+
+### Why both Foundry AND Cypress in Docker?
+
+We considered Cypress-on-host (talking to Foundry-in-container) but
+went with both containerised. Reasons:
+
+- Same compose graph is reused verbatim by Phase 3 (GitHub Actions),
+  which can't run Cypress on the host.
+- Cypress hits Foundry via `http://foundry:30000` via Docker service-
+  name DNS — no localhost binding needed, no host firewall trips.
+- Macs vary in Cypress install state (`xcrun` prompts, etc.). The
+  `cypress/included` image is reproducible across machines.
+
+Cost: first pull of `cypress/included:14` is ~2 GB. Subsequent runs use
+the cached image.
+
+### Iterating on the spec
+
+The spec lives at `test/ci/cypress/e2e/quench.cy.js`. When developing:
+
+```bash
+# Start a long-lived Foundry stack you can re-target:
+./scripts/start.sh        # one-time first-launch ritual in browser
+# Then for each spec iteration:
+npm run test:e2e -- --no-rebuild
+```
+
+`--no-rebuild` skips the wipe + reinstall + boot, so each iteration is
+~30 s of Cypress runtime alone.
+
 ## Lifecycle scripts
 
 | Script | What it does |
@@ -110,6 +177,8 @@ of one-time setup after each reset.
 | `scripts/start.sh` | Loads creds from Keychain (prompts on first run), `docker compose up -d`, tails logs. Ctrl+C detaches; the server keeps running. |
 | `scripts/stop.sh` | `docker compose down`. Preserves `./data/`. |
 | `scripts/reset.sh --yes` | Destroys the container and `./data/`. Does **not** touch Keychain — use `scripts/credentials.sh clear` for that. |
+| `scripts/e2e.sh` | Phase 2 orchestrator — fresh-world Cypress run. Same as `npm run test:e2e`. |
+| `scripts/wait-for-foundry.sh` | Polls `http://localhost:30000/` until it responds 2xx/3xx. Used by `e2e.sh` after `docker compose up`. |
 
 ## Refreshing the module under test
 

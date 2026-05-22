@@ -5,3 +5,6 @@
 # Bind-mounted Foundry userData. Contains the licensed Foundry zip,
 # downloaded systems/modules, and any worlds you create. Never commit.
 data/
+
+# Cypress artifacts — screenshots / videos from failed e2e runs.
+cypress/artifacts/
