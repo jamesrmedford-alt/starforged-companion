@@ -90,6 +90,20 @@ If the suite shrinks below ~100 active tests in the future, the floor needs revi
 
 **Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
 
+## Accepted blind spots
+
+### `cacheKey is stable and content-addressed` (audio batch) — secure-context skip
+
+The audio cache key uses `crypto.subtle.digest("SHA-256", …)`. The Web Crypto `SubtleCrypto` interface is only exposed in [secure contexts](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts) — HTTPS, `http://localhost`, `http://127.0.0.1`, `file://`. Our containerised e2e reaches Foundry via `http://foundry:30000` (Docker service-name DNS, non-loopback HTTP), so `crypto.subtle` is undefined and the cacheKey Quench test errors with *"Cannot read properties of undefined (reading 'digest')"*.
+
+The test now self-skips when `crypto.subtle.digest` isn't available. Rationale:
+
+- The cache feature itself works in production (Foundry on localhost = secure context; Forge on HTTPS = secure context). This is purely a CI-environment limitation.
+- `tests/unit/audio.test.js` covers `cacheKey()` correctness under Vitest in Node 22+ (which exposes `globalThis.crypto.subtle` natively) — regressions in the algorithm, field ordering, or hex encoding are still caught.
+- The remaining blind spot is browser-side Web Crypto vs Node Web Crypto divergence on edge cases. Small, real, accepted on 2026-05-22.
+
+If a regression slips through that the unit tests miss, the alternative is to add a `--unsafely-treat-insecure-origin-as-secure=http://foundry:30000` Chromium launch flag in the Cypress config (via `before:browser:launch`). That promotes the CI origin to secure-context, restoring `crypto.subtle`. Not currently wired — the named flag's "unsafely-" qualifier is true (it's only safe because the CI runner is ephemeral and we fully control the origin), and the unit tests cover the algorithm.
+
 ## Autonomous iteration loop
 
 When iterating on the Cypress spec (or any CI-gated work), use the
