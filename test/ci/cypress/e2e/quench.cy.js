@@ -445,29 +445,54 @@ describe("Quench full suite", () => {
         { json: true },
       );
 
-      // Diagnostic: dump what runBatches returned + the shape of
-      // quench.reports. Introspection (PR #125 run #2) showed reports
-      // is type "object" on v0.10 — handled via sizeOf above.
+      // Diagnostic: dump what runBatches returned + post-run state.
+      // Use a fail-loud-with-context throw for the stale-check —
+      // Cypress's Chai wrapper sometimes elides actual/expected numbers
+      // from greaterThan() assertions, which hides the signal we need.
       const reports = win.quench?.reports;
       const reportsAfter = sizeOf(reports);
+      const statsTests   = ret?.stats?.tests   ?? null;
+      const statsPasses  = ret?.stats?.passes  ?? null;
+      const statsFails   = ret?.stats?.failures ?? null;
+      const statsPending = ret?.stats?.pending ?? null;
+      const statsStart   = ret?.stats?.start;
+      const statsEnd     = ret?.stats?.end;
+      const suiteCount   = ret?.suite?.suites?.length ?? null;
+
       cy.task("logQuenchStats", {
-        phase:            "post-run-shape",
-        retType:          typeof ret,
-        retKeys:          ret && typeof ret === "object" ? Object.keys(ret) : null,
-        retHasStats:      !!ret?.stats,
-        retFailuresType:  typeof ret?.failures,
-        retFailuresIsArr: Array.isArray(ret?.failures),
-        reportsType:      Array.isArray(reports) ? "array" : typeof reports,
+        phase:        "post-run-shape",
+        retType:      typeof ret,
+        retHasStats:  !!ret?.stats,
+        statsTests,
+        statsPasses,
+        statsFails,
+        statsPending,
+        statsStart:   statsStart ? String(statsStart) : null,
+        statsEnd:     statsEnd ? String(statsEnd) : null,
+        suiteCount,
+        reportsType:  Array.isArray(reports) ? "array" : typeof reports,
         reportsBefore,
         reportsAfter,
+        ourBatchCount: ourBatchIds.length,
       });
 
-      // Stale-report guard: reports collection must have grown. Works
-      // for array / Map / plain-object shapes (sizeOf normalises).
-      expect(
-        reportsAfter,
-        "quench.reports size (stale-report guard)",
-      ).to.be.greaterThan(reportsBefore);
+      // Stale-run guard: Mocha sets stats.end when the runner finishes.
+      // A fresh run's end timestamp will be within the last minute. An
+      // unset / ancient timestamp means runBatches didn't actually
+      // execute a new run (returned a cached/stale runner state).
+      //
+      // Doesn't depend on the reports collection's shape — works whether
+      // Quench stores reports in an array, Map, plain object, or nowhere.
+      const endTime = statsEnd ? new Date(statsEnd).getTime() : 0;
+      const minRecent = Date.now() - 5 * 60_000;  // 5 min window
+      if (!endTime || endTime < minRecent) {
+        throw new Error(
+          `Stale-run guard tripped: stats.end is not recent. ` +
+          `end=${statsEnd ?? "(unset)"}, now=${new Date().toISOString()}, ` +
+          `passes=${statsPasses}, tests=${statsTests}, ` +
+          `suites=${suiteCount}, batches-passed=${ourBatchIds.length}`,
+        );
+      }
 
       // Build a normalized report. Sources, in preference order:
       //  - ret.json (Quench's `{ json: true }` shape: { json: { stats, failures: [], … } })

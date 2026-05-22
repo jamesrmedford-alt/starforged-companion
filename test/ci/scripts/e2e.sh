@@ -134,9 +134,14 @@ fi
 
 mkdir -p "${CI_DIR}/cypress/artifacts/screenshots" "${CI_DIR}/cypress/artifacts/videos"
 
-log "running Cypress (cypress/included:14 — first pull is ~2 GB)"
+log "pre-pulling cypress image (quietly — pull-progress noise was evicting cy.task diagnostics from the 50 KB sticky-comment tail)"
+docker compose "${COMPOSE_FILES[@]}" --profile e2e pull --quiet cypress 2>&1 \
+  | grep -vE "^(Pulling|Pulled |Waiting|Downloading|Verifying|Extracting|Pull complete|Status|Digest|[a-f0-9]{12} )" \
+  || true
+
+log "running Cypress (cypress/included:14)"
 set +e
-docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm cypress
+docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull cypress
 cy_exit=$?
 set -e
 
