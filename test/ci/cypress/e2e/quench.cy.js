@@ -384,6 +384,13 @@ describe("Quench full suite", () => {
       await new Promise(r => setTimeout(r, 1500));
 
       // ─── ACTUAL RUN ───────────────────────────────────────────────────
+      // Snapshot quench.reports.length BEFORE running so we can verify a
+      // NEW report landed (and isn't a stale entry from a prior aborted
+      // boot). Mass-skip false-pass guard below also needs this.
+      const reportsBefore = Array.isArray(win.quench?.reports)
+        ? win.quench.reports.length
+        : 0;
+
       const ret = await win.quench.runBatches(
         "starforged-companion.**",
         { json: true },
@@ -394,15 +401,27 @@ describe("Quench full suite", () => {
       // as a plural collection, likely the historical report list).
       const reports = win.quench?.reports;
       cy.task("logQuenchStats", {
-        phase:           "post-run-shape",
-        retType:         typeof ret,
-        retKeys:         ret && typeof ret === "object" ? Object.keys(ret) : null,
-        retHasStats:     !!ret?.stats,
-        retFailuresType: typeof ret?.failures,
+        phase:            "post-run-shape",
+        retType:          typeof ret,
+        retKeys:          ret && typeof ret === "object" ? Object.keys(ret) : null,
+        retHasStats:      !!ret?.stats,
+        retFailuresType:  typeof ret?.failures,
         retFailuresIsArr: Array.isArray(ret?.failures),
-        reportsType:     Array.isArray(reports) ? "array" : typeof reports,
-        reportsLength:   Array.isArray(reports) ? reports.length : null,
+        reportsType:      Array.isArray(reports) ? "array" : typeof reports,
+        reportsBefore,
+        reportsAfter:     Array.isArray(reports) ? reports.length : null,
       });
+
+      // Stale-report guard: quench.reports must have grown. If it didn't,
+      // either runBatches didn't actually fire a run OR we're looking at
+      // the wrong collection. Either way, refuse to assert against a
+      // potentially-stale shape.
+      if (Array.isArray(reports)) {
+        expect(
+          reports.length,
+          "quench.reports.length (stale-report guard)",
+        ).to.be.greaterThan(reportsBefore);
+      }
 
       // Build a normalized report. Sources, in preference order:
       //  - ret.json (Quench's `{ json: true }` shape: { json: { stats, failures: [], … } })
@@ -414,7 +433,8 @@ describe("Quench full suite", () => {
         if (ret.json?.stats) candidates.push(ret.json);
         if (ret.stats)       candidates.push(ret);
       }
-      if (Array.isArray(reports) && reports.length) {
+      if (Array.isArray(reports) && reports.length > reportsBefore) {
+        // Only consult the *new* entry, never stale tail.
         const last = reports[reports.length - 1];
         if (last?.json?.stats) candidates.push(last.json);
         else if (last?.stats)  candidates.push(last);
@@ -455,6 +475,30 @@ describe("Quench full suite", () => {
       // is only the diagnostic-detail surface.
       expect(stats.tests,    "stats.tests").to.be.greaterThan(0);
       expect(stats.failures, "stats.failures").to.equal(0);
+
+      // ─── ANTI-FALSE-PASS GUARDS ───────────────────────────────────────
+      //
+      // Mocha's stats.failures === 0 is ALSO true if every test ran
+      // this.skip() — most Quench batches gate on `if (skipNotGM)` or
+      // `if (skipNoKey)`. A precondition regression that skips the
+      // entire suite would otherwise show as "passed".
+      //
+      // The suite has ~165 tests as of late May 2026; 100 is a generous
+      // floor that catches mass-skip without being brittle to legitimate
+      // test-count drift. If the suite shrinks below 100 active tests
+      // in the future, this floor needs revisiting.
+      expect(
+        stats.passes,
+        "stats.passes (anti-false-pass guard: ≥100 tests must actually pass)",
+      ).to.be.at.least(100);
+
+      // Companion guard: even if 100+ pass, an unusually high skip rate
+      // suggests a partial precondition failure. Allow up to 20% skipped.
+      const skipRatio = (stats.pending ?? 0) / Math.max(stats.tests, 1);
+      expect(
+        skipRatio,
+        `pending/total ratio (was ${stats.pending}/${stats.tests})`,
+      ).to.be.lessThan(0.2);
     });
   });
 });

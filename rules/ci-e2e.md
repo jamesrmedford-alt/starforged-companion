@@ -63,6 +63,7 @@ landmines:
 **Repo settings prerequisites:**
 - *Settings → Actions → General → Actions permissions* must allow GitHub-published actions (`actions/checkout`, `actions/upload-artifact`). The most restrictive ("Allow [owner] actions only") blocks the workflow at startup.
 - Secrets: `FOUNDRY_USERNAME`, `FOUNDRY_PASSWORD`, `FOUNDRY_ADMIN_KEY`. The workflow validates them in a fail-fast step before paying the Docker-pull cost.
+- **Branch protection:** the `Quench full suite` check must be configured as a **required status check** on `main` (Settings → Branches → Branch protection rules). Without this, a maintainer can merge a PR with red CI — the workflow is informational, not gating. Code-level anti-false-pass guards (see "False-pass prevention" below) only fire if the workflow actually runs and its result actually matters at merge time.
 
 **Linux bind-mount permissions:** `felddy/foundryvtt` runs as uid:gid 1000:1000 inside; the GHA runner user is 1001. Bind-mounted `./data` is owned by the runner user and the container can't write. `e2e.sh` does `sudo chown -R 1000:1000 ./data` when `CI=true`. (macOS Docker Desktop magic-mounts with permissive perms, so this isn't needed locally.)
 
@@ -73,6 +74,21 @@ permissions:
   contents: read
   pull-requests: write
 ```
+
+## False-pass prevention
+
+A "passing" e2e run is only meaningful if it actually exercised the
+suite. Three layered guards in `cypress/e2e/quench.cy.js`:
+
+1. **Stale-report guard.** Snapshot `quench.reports.length` before `runBatches`; after, require it grew by exactly 1. If the array didn't grow, either `runBatches` didn't fire a run or we're looking at the wrong collection — either way refuse to assert against a potentially-stale shape.
+
+2. **Minimum-passes floor.** `expect(stats.passes).to.be.at.least(100)`. Mocha counts `this.skip()` calls as `pending`, not as failures, so a precondition regression that mass-skips the entire suite would show `stats.failures === 0` and "pass" without actually testing anything. Most Quench batches gate on `if (skipNotGM(this))` or `if (skipNoKey(this))` — easy for a setup bug to skip everything. The 100 floor catches this without being brittle to legitimate test-count drift (current suite ~165 tests).
+
+3. **Max-skip ratio.** `expect(pending / tests).to.be.lessThan(0.2)`. Even if 100+ pass, an unusually high skip rate means a partial-precondition failure where some batches lost their auth gate.
+
+If the suite shrinks below ~100 active tests in the future, the floor needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
+
+**Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
 
 ## Autonomous iteration loop
 
