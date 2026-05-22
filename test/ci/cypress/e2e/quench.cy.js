@@ -117,7 +117,11 @@ function dismissAnyTour() {
  * is always true on first launch of a freshly-staged world template:
  * the template carries coreVersion "13" while Foundry runs 13.351).
  *
- * Clicks "Begin Migration" if the dialog is showing. No-op otherwise.
+ * Uncheck the "Create a backup" checkbox first so migration is a
+ * one-step click — backing up an empty test world is pointless and
+ * spawns a second dialog. If that fails (older Foundry builds, custom
+ * label markup), we fall back to clicking the follow-up Backup dialog
+ * with an empty note.
  */
 function maybeBeginMigration() {
   cy.get("body", { timeout: 15000 }).then(($body) => {
@@ -125,7 +129,34 @@ function maybeBeginMigration() {
       $body.find('.dialog, dialog, [data-appid]').filter(':contains("Migration")').length ||
       $body.text().includes("World Data Migration");
     if (!showing) return;
+
+    // Try to uncheck "Create a backup before migrating?". Match by
+    // checkbox's surrounding label text; ignore if not found.
+    const $bkCheckbox = $body.find('input[type="checkbox"]').filter((i, el) => {
+      const $el = Cypress.$(el);
+      const labelText =
+        ($el.parent().text() || "") +
+        " " +
+        ($el.attr("aria-label") || "") +
+        " " +
+        (Cypress.$(`label[for="${$el.attr("id")}"]`).text() || "");
+      return /backup/i.test(labelText);
+    });
+    if ($bkCheckbox.length) {
+      cy.wrap($bkCheckbox.first()).uncheck({ force: true });
+    }
+
     cy.contains("button", /begin migration/i, { timeout: 10000 })
+      .click({ force: true });
+  });
+
+  // Fallback: if the uncheck didn't take (or the dialog flow on this
+  // Foundry build always runs a backup), Foundry shows a "Creating
+  // Backup of <world>" prompt with an optional note field and a
+  // "Backup" submit button. Submit it empty.
+  cy.get("body", { timeout: 30000 }).then(($body) => {
+    if (!$body.text().includes("Creating Backup")) return;
+    cy.contains("button", /^\s*(✓\s*)?backup\s*$/i, { timeout: 10000 })
       .click({ force: true });
   });
 }
