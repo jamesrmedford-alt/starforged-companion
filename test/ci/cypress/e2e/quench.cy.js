@@ -80,8 +80,62 @@ function maybeAcceptEulaAndAuth() {
   });
 }
 
+/**
+ * Dismiss any visible Foundry tour overlay. v13 ships onboarding tours
+ * ("Backups Overview", "Sidebar Tour", etc.) that auto-launch on first
+ * /setup visit. They overlay clickable UI and can intercept clicks.
+ *
+ * Hits multiple close-button shapes Foundry has shipped (tour-step
+ * close icon, tour-overlay cancel button, generic .close inside tour).
+ * No-op when no tour is showing.
+ */
+function dismissAnyTour() {
+  cy.get("body").then(($body) => {
+    const tourSelectors = [
+      '.tour-step header .close',
+      '.tour-step [data-action="exit"]',
+      '.tour-step [data-action="close"]',
+      '.tour-overlay [data-action="cancel"]',
+      '.tour [data-action="exit"]',
+    ];
+    for (const sel of tourSelectors) {
+      const $el = $body.find(sel).filter(":visible");
+      if ($el.length) {
+        cy.wrap($el.first()).click({ force: true });
+        return;
+      }
+    }
+  });
+  // Also send an ESC keypress as a fallback — Foundry binds it to close
+  // the active tour / dialog in most builds. Harmless if no overlay.
+  cy.get("body").type("{esc}", { force: true });
+}
+
+/**
+ * Handle the "World Data Migration" dialog Foundry pops when a world's
+ * stored data version is older than the running Foundry build (which
+ * is always true on first launch of a freshly-staged world template:
+ * the template carries coreVersion "13" while Foundry runs 13.351).
+ *
+ * Clicks "Begin Migration" if the dialog is showing. No-op otherwise.
+ */
+function maybeBeginMigration() {
+  cy.get("body", { timeout: 15000 }).then(($body) => {
+    const showing =
+      $body.find('.dialog, dialog, [data-appid]').filter(':contains("Migration")').length ||
+      $body.text().includes("World Data Migration");
+    if (!showing) return;
+    cy.contains("button", /begin migration/i, { timeout: 10000 })
+      .click({ force: true });
+  });
+}
+
 /** Launch the test world from the setup screen, then join as Gamemaster. */
 function launchAndJoinWorld() {
+  // Foundry's onboarding tour overlays the setup screen on first launch.
+  // Get rid of it before searching for the world tile.
+  dismissAnyTour();
+
   // Setup screen — Foundry v13 puts world tiles inside a tabbed layout
   // (Worlds / Systems / Modules / …). If a Worlds tab is visible,
   // click it first; no-op otherwise (already-active tab, or older
@@ -110,20 +164,29 @@ function launchAndJoinWorld() {
 
   cy.get("body").then(($body) => {
     const direct = $body.find(
+      // v13 has shipped at least four shapes for the launch control.
       '[data-world="starforged-ci-world"] [data-action="worldLaunch"], ' +
-      '[data-package-id="starforged-ci-world"] [data-action="worldLaunch"]'
+      '[data-package-id="starforged-ci-world"] [data-action="worldLaunch"], ' +
+      '[data-world="starforged-ci-world"] a.control.play, ' +
+      '[data-package-id="starforged-ci-world"] a.control.play'
     );
     if (direct.length) {
       cy.wrap(direct.first()).click({ force: true });
       return;
     }
-    // Fallback: any "Launch World" button next to the world's text.
+    // Fallback: any "Launch World" / play control next to the world's text.
     cy.contains("Starforged CI Test World")
       .closest('[data-package-id], [data-world], .package, .world')
       .within(() => {
-        cy.contains("button, a", /launch( world)?/i).click({ force: true });
+        cy.contains("a, button", /launch( world)?|^play$/i).click({ force: true });
       });
   });
+
+  // First-launch interstitial: world-data migration dialog. Dismiss any
+  // tour that auto-launched alongside it, then begin migration. The
+  // migration of an empty test world is a few-second no-op.
+  dismissAnyTour();
+  maybeBeginMigration();
 
   // Join screen — `<select name="userid">` lists the GM. Some Foundry
   // builds use `<select id="join-game-user">` instead.
