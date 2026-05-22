@@ -445,6 +445,41 @@ describe("Quench full suite", () => {
         { json: true },
       );
 
+      // CRITICAL: quench.runBatches resolves with the Mocha Runner
+      // BEFORE the actual test execution starts. The runner is
+      // initialised with our 33 batches in its suite tree, but
+      // tests run async — we need to wait for the runner's 'end'
+      // event before reading stats.
+      //
+      // Run #4 caught this: suites=33, batches-passed=33, but
+      // tests=0, passes=0, stats.end=undefined. The runner had been
+      // set up but never executed by the time we checked.
+      //
+      // Mocha Runner is an EventEmitter. Hook 'end' (or 'fail' for
+      // an unhandled runner-side throw) and wait on a Promise.
+      if (typeof ret?.on === "function" && !ret?.stats?.end) {
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const settle = (fn) => (arg) => {
+            if (settled) return;
+            settled = true;
+            fn(arg);
+          };
+          // Cap the wait independently of cy.then's outer timeout —
+          // 10 min covers the ~2 min real suite plus headroom.
+          const t = setTimeout(
+            settle(reject),
+            10 * 60 * 1000,
+            new Error("Mocha runner 'end' event timed out after 10 minutes"),
+          );
+          const onEnd = settle(() => { clearTimeout(t); resolve(); });
+          ret.once("end", onEnd);
+          // Defensive: also resolve if 'end' already fired and stats
+          // got populated between our check and the listener install.
+          if (ret?.stats?.end) onEnd();
+        });
+      }
+
       // Diagnostic: dump what runBatches returned + post-run state.
       // Use a fail-loud-with-context throw for the stale-check —
       // Cypress's Chai wrapper sometimes elides actual/expected numbers
