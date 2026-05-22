@@ -97,6 +97,23 @@ if (( rebuild )); then
 
   log "installing test world template"
   ./scripts/setup-test-world.sh
+
+  # The felddy/foundryvtt container runs as uid:gid 1000:1000 inside.
+  # On Linux hosts (GitHub Actions runners), bind-mounted directories
+  # preserve host ownership, and the runner user (uid 1001) is not
+  # 1000. Without this chown, the container's entrypoint hits
+  # "Volume write test failed" and aborts with "insufficient
+  # permissions on /data" — see
+  # https://github.com/felddy/foundryvtt-docker/discussions/1197.
+  #
+  # macOS Docker Desktop magic-mounts files with permissive perms so
+  # this isn't needed there. Gate by CI=true so the chown only runs
+  # in the environment that needs it.
+  if [[ -n "${CI:-}" ]]; then
+    log "CI mode: chowning ./data to 1000:1000 for felddy container"
+    sudo chown -R 1000:1000 ./data 2>/dev/null \
+      || warn "chown failed — container may hit /data permission errors"
+  fi
 fi
 
 # ---- start Foundry --------------------------------------------------------
