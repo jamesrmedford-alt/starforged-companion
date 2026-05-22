@@ -124,7 +124,9 @@ jobs:
             test/ci/cypress/artifacts/videos/
             test/ci/cypress/artifacts/e2e-run.log
           if-no-files-found: ignore
-          retention-days: 14
+          # retention-days omitted on purpose — repo settings cap it to
+          # 1 day right now; passing 14 emits a warning and is silently
+          # downgraded. Fall back to the repo default.
 
       # Upload Foundry server logs only on failure — useful for
       # diagnosing world / module load failures the Cypress screenshots
@@ -136,4 +138,3 @@ jobs:
           name: foundry-logs-${{ github.run_id }}
           path: test/ci/data/Logs/
           if-no-files-found: ignore
-          retention-days: 14
