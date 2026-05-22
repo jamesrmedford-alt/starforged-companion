@@ -387,30 +387,69 @@ describe("Quench full suite", () => {
       // Give Foundry a tick for the panel render to settle.
       await new Promise(r => setTimeout(r, 1500));
 
-      // ─── ACTUAL RUN ───────────────────────────────────────────────────
-      // Snapshot quench.reports.length BEFORE running so we can verify a
-      // NEW report landed (and isn't a stale entry from a prior aborted
-      // boot). Mass-skip false-pass guard below also needs this.
-      const reportsBefore = Array.isArray(win.quench?.reports)
-        ? win.quench.reports.length
-        : 0;
+      // ─── ENUMERATE REGISTERED BATCHES ─────────────────────────────────
+      // PR #125 run #2 introspection showed quench._testBatches —
+      // that's the registry. Reading it directly bypasses Quench's
+      // glob interpretation entirely (which previously matched only
+      // 1 batch on both "starforged-companion.**" and "**"). Pass an
+      // explicit array of batch IDs to runBatches.
+      //
+      // If 0 batches with our prefix are registered, throw a clear
+      // error — that means either (a) our module's quenchReady hook
+      // didn't fire (load-order issue after world reload), or (b) the
+      // module isn't actually enabled in the world.
+      const testBatches = win.quench?._testBatches;
+      let allBatchIds = [];
+      if (testBatches) {
+        if (typeof testBatches.keys === "function") {
+          allBatchIds = Array.from(testBatches.keys());
+        } else if (typeof testBatches === "object") {
+          allBatchIds = Object.keys(testBatches);
+        }
+      }
+      const ourBatchIds = allBatchIds.filter((id) =>
+        typeof id === "string" && id.startsWith("starforged-companion."),
+      );
 
-      // Quench's filter does NOT interpret "module-name.**" as a prefix
-      // glob — that pattern matched literally and only ran 1 batch.
-      // Per Quench v0.10 docs the universal wildcard is `"**"` alone.
-      // That runs every registered batch (ours + any Quench example
-      // batches, which are trivial and meant to pass). The anti-false-
-      // pass floor of 100 still catches a regression where most tests
-      // skip.
+      cy.task("logQuenchStats", {
+        phase:           "batch-enumeration",
+        totalBatches:    allBatchIds.length,
+        ourBatchCount:   ourBatchIds.length,
+        allBatchIds:     allBatchIds.slice(0, 50),
+      });
+
+      if (ourBatchIds.length === 0) {
+        throw new Error(
+          `No starforged-companion.* batches registered. ` +
+          `Total batches: ${allBatchIds.length}. ` +
+          `IDs: [${allBatchIds.slice(0, 10).join(", ")}]. ` +
+          `Either our module's quenchReady hook didn't fire after the ` +
+          `world-reload + re-join, or the module isn't enabled.`,
+        );
+      }
+
+      // ─── ACTUAL RUN ───────────────────────────────────────────────────
+      // Snapshot quench.reports size BEFORE running so we can verify a
+      // NEW report landed (and isn't a stale entry from a prior aborted
+      // boot). reports might be array, Map, or plain object on different
+      // Quench builds — measure size accordingly.
+      const sizeOf = (c) =>
+        Array.isArray(c) ? c.length
+          : c?.size !== undefined ? c.size
+          : c && typeof c === "object" ? Object.keys(c).length
+          : 0;
+      const reportsBefore = sizeOf(win.quench?.reports);
+
       const ret = await win.quench.runBatches(
-        "**",
+        ourBatchIds,
         { json: true },
       );
 
       // Diagnostic: dump what runBatches returned + the shape of
-      // quench.reports (introspection on run #10 showed this exists
-      // as a plural collection, likely the historical report list).
+      // quench.reports. Introspection (PR #125 run #2) showed reports
+      // is type "object" on v0.10 — handled via sizeOf above.
       const reports = win.quench?.reports;
+      const reportsAfter = sizeOf(reports);
       cy.task("logQuenchStats", {
         phase:            "post-run-shape",
         retType:          typeof ret,
@@ -420,19 +459,15 @@ describe("Quench full suite", () => {
         retFailuresIsArr: Array.isArray(ret?.failures),
         reportsType:      Array.isArray(reports) ? "array" : typeof reports,
         reportsBefore,
-        reportsAfter:     Array.isArray(reports) ? reports.length : null,
+        reportsAfter,
       });
 
-      // Stale-report guard: quench.reports must have grown. If it didn't,
-      // either runBatches didn't actually fire a run OR we're looking at
-      // the wrong collection. Either way, refuse to assert against a
-      // potentially-stale shape.
-      if (Array.isArray(reports)) {
-        expect(
-          reports.length,
-          "quench.reports.length (stale-report guard)",
-        ).to.be.greaterThan(reportsBefore);
-      }
+      // Stale-report guard: reports collection must have grown. Works
+      // for array / Map / plain-object shapes (sizeOf normalises).
+      expect(
+        reportsAfter,
+        "quench.reports size (stale-report guard)",
+      ).to.be.greaterThan(reportsBefore);
 
       // Build a normalized report. Sources, in preference order:
       //  - ret.json (Quench's `{ json: true }` shape: { json: { stats, failures: [], … } })
@@ -444,9 +479,19 @@ describe("Quench full suite", () => {
         if (ret.json?.stats) candidates.push(ret.json);
         if (ret.stats)       candidates.push(ret);
       }
-      if (Array.isArray(reports) && reports.length > reportsBefore) {
-        // Only consult the *new* entry, never stale tail.
-        const last = reports[reports.length - 1];
+      if (reportsAfter > reportsBefore) {
+        // Only consult the *new* entry, never stale tail. Reports may
+        // be array / Map / plain object on different Quench builds.
+        let last = null;
+        if (Array.isArray(reports)) {
+          last = reports[reports.length - 1];
+        } else if (typeof reports?.values === "function") {
+          const arr = Array.from(reports.values());
+          last = arr[arr.length - 1];
+        } else if (reports && typeof reports === "object") {
+          const keys = Object.keys(reports);
+          last = keys.length ? reports[keys[keys.length - 1]] : null;
+        }
         if (last?.json?.stats) candidates.push(last.json);
         else if (last?.stats)  candidates.push(last);
       }
