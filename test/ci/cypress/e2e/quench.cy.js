@@ -575,15 +575,40 @@ describe("Quench full suite", () => {
 
       return report;
     }).then({ timeout: 30000 }, (report) => {
-      const stats       = report?.stats ?? {};
-      const failuresArr = Array.isArray(report?.failures) ? report.failures : [];
+      const stats = report?.stats ?? {};
+
+      // Walk Mocha's suite tree to collect failed tests directly. The
+      // top-level `report.failures` on the runner shape is a count, not
+      // an array — but every failed test inside report.suite.suites[]
+      // has .state === "failed" and .err populated. This works whether
+      // we got a runner or a JSON report.
+      const collectFailures = (suite, acc = []) => {
+        if (!suite) return acc;
+        for (const t of suite.tests ?? []) {
+          if (t.state === "failed") {
+            acc.push({
+              fullTitle: typeof t.fullTitle === "function" ? t.fullTitle() : t.title,
+              err: {
+                message: t.err?.message ?? String(t.err ?? "(no message)"),
+                stack:   t.err?.stack ? String(t.err.stack).split("\n").slice(0, 5).join(" | ") : null,
+              },
+            });
+          }
+        }
+        for (const sub of suite.suites ?? []) collectFailures(sub, acc);
+        return acc;
+      };
+
+      const failuresArr = Array.isArray(report?.failures) && report.failures.length
+        ? report.failures.map((f) => ({
+            fullTitle: f.fullTitle ?? f.title,
+            err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
+          }))
+        : collectFailures(report?.suite);
 
       cy.task("logQuenchStats", { phase: "assertion-input", stats, failureCount: failuresArr.length });
       if (failuresArr.length) {
-        cy.task("logQuenchFailures", failuresArr.map((f) => ({
-          fullTitle: f.fullTitle ?? f.title,
-          err: { message: f.err?.message ?? String(f.err ?? "(no message)") },
-        })));
+        cy.task("logQuenchFailures", failuresArr);
       }
 
       // stats.failures is a count (number) on both Mocha-runner and
