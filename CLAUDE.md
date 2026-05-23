@@ -123,13 +123,32 @@ User-facing language only — no file names or internal architecture references.
 
 `module.json` is the only source of truth for the release version — CI
 rewrites it at release time, so the in-repo value typically lags the live
-release. To decide which `<h3>v…</h3>` heading to add or merge into:
+release. The **release tags** in `origin` are the durable ground truth.
+Tags are assigned by the user (the maintainer triggers each release);
+the assistant never tags.
 
-1. Look at the most recent live release (the tag, or what the user reports
-   they are running).
+**Step 0 — always confirm the latest tag before touching `CONTENT_VERSION`
+or the help-Changelog block.** Local state lies. CHANGELOG.md lags. The
+in-tree `CONTENT_VERSION` and the latest `<h3>v…</h3>` block in
+`src/help/helpJournal.js` are both routinely stale (this drift has
+been confirmed in PR #126 — in-tree was v1.4.3 while the live release
+was v1.5.1). Run:
+
+```bash
+git fetch --tags origin
+git tag --sort=-version:refname | head -1
+```
+
+That output is the live release. Anything else in the working tree
+(CONTENT_VERSION, the latest help-Changelog heading) must be reconciled
+to it before any version-related edit.
+
+To decide which `<h3>v…</h3>` heading to add or merge into:
+
+1. **Fetched** the latest tag per Step 0. Call that `vCURRENT`.
 2. The work in `CHANGELOG.md`'s `[Unreleased]` section ships under the
-   **next** version after that release — e.g. running v1.4.1 → next is
-   v1.4.2.
+   **next** version after `vCURRENT` — e.g. fetched-tag v1.5.1 → next is
+   v1.5.2.
 3. **Only one `<h3>v…</h3>` block in `src/help/helpJournal.js` may correspond
    to `[Unreleased]`**, and `CONTENT_VERSION` must equal that heading. If
    prior unreleased work already has its own `<h3>v…</h3>` block (or
@@ -137,12 +156,24 @@ release. To decide which `<h3>v…</h3>` heading to add or merge into:
    heading.
 4. Never invent a "next" version by incrementing the latest help heading.
    The latest help heading is itself unreleased work; incrementing it
-   compounds the drift. Always cross-check against `CHANGELOG.md`'s last
-   non-`[Unreleased]` heading (or the last release tag) before picking
-   the version string.
+   compounds the drift. Always cross-check against the fetched latest
+   tag before picking the version string.
 
-If you find an existing heading inconsistent with this rule, surface it to
-the user rather than silently bumping past it.
+If the latest help heading is BELOW the fetched latest tag (i.e. it
+represents work that already shipped under a higher tag without the
+heading being updated), the correct repair is to rename that heading to
+`vCURRENT + 1` and bump `CONTENT_VERSION` to match — do not invent
+back-dated headings for the skipped releases unless explicitly asked.
+Surface the gap to the user.
+
+**When in doubt, ask the user what the next release version should be.**
+The fetch is the default, but if the situation is ambiguous (e.g. a
+tagged but unpushed release sitting locally, an interrupted release
+cycle, a pre-release decision that hasn't been documented yet, or the
+fetched tag conflicts with what the user just told you), the user is
+the authoritative source — they assign tags. A one-line
+AskUserQuestion is cheap; silently picking the wrong version compounds
+into another round of help-Changelog drift.
 
 ---
 
