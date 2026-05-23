@@ -123,46 +123,70 @@ jobs:
       # or downloading artifact zips. Only fires on failure to avoid
       # spamming green runs.
       #
-      # The single sticky comment is found/updated via a hidden HTML
-      # marker (<!-- e2e-log:sticky -->) — keeps the PR thread tidy
-      # across many iterations instead of one comment per failed run.
-      - name: Post orchestrator log to PR comment on failure
-        if: failure() && github.event.pull_request.number
+      # Post a status comment after every run (success / failure /
+      # cancelled). Marker <!-- e2e-log:sticky --> identifies the
+      # comment so the previous one is deleted first — keeps the PR
+      # thread to a single current comment at any time, but creates a
+      # fresh comment per run rather than PATCH-updating in place.
+      #
+      # PATCH was the original design but `issue_comment.edited`
+      # webhooks aren't routed through the agent's MCP subscription —
+      # only `issue_comment.created` events wake the session. Delete +
+      # POST guarantees a `created` event on every run completion
+      # (success included) so a subscribed session is reliably woken.
+      - name: Post orchestrator status to PR comment
+        if: always() && github.event.pull_request.number
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN:   ${{ github.token }}
+          PR_NUMBER:  ${{ github.event.pull_request.number }}
+          RUN_URL:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           MARKER='<!-- e2e-log:sticky -->'
-          # Build the comment body. Tail bounded so we stay under the
-          # 65 536-char GitHub comment limit even after markdown wrap.
-          LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
-          if [ -f "$LOG_FILE" ]; then
-            LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
-          else
-            LOG_TAIL="(no orchestrator log captured)"
-          fi
           {
             printf '%s\n' "$MARKER"
-            printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
-            printf '**Run page:** %s\n\n' "$RUN_URL"
-            printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
-            printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
-            printf '```\n%s\n```\n\n' "$LOG_TAIL"
-            printf '</details>\n'
+            case "$JOB_STATUS" in
+              success)
+                printf '## E2E run success — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n' "${{ github.event.pull_request.head.sha }}"
+                ;;
+              cancelled)
+                printf '## E2E run cancelled — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n' "${{ github.event.pull_request.head.sha }}"
+                ;;
+              *)
+                printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
+                LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
+                if [ -f "$LOG_FILE" ]; then
+                  LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
+                else
+                  LOG_TAIL="(no orchestrator log captured)"
+                fi
+                printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
+                printf '```\n%s\n```\n\n' "$LOG_TAIL"
+                printf '</details>\n'
+                ;;
+            esac
           } > /tmp/e2e-comment.md
-          # Find an existing sticky comment to update; otherwise post new.
-          EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][-1].id" 2>/dev/null || true)"
-          if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ]; then
-            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${EXISTING_ID}" \
-              -F body=@/tmp/e2e-comment.md >/dev/null
-            echo "Updated existing sticky comment ${EXISTING_ID}"
-          else
-            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-              -F body=@/tmp/e2e-comment.md >/dev/null
-            echo "Posted new sticky comment"
+          # Delete any prior sticky comments (there should be at most one,
+          # but handle the multi-match case gracefully). Then POST a fresh
+          # one so the event reaches subscribed agent sessions.
+          EXISTING_IDS="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\")) | .id] | .[]" 2>/dev/null || true)"
+          if [ -n "${EXISTING_IDS}" ]; then
+            for ID in ${EXISTING_IDS}; do
+              gh api -X DELETE "repos/${{ github.repository }}/issues/comments/${ID}" >/dev/null \
+                && echo "Deleted prior sticky comment ${ID}" \
+                || echo "Could not delete prior sticky ${ID} (continuing)"
+            done
           fi
+          gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -F body=@/tmp/e2e-comment.md >/dev/null
+          echo "Posted fresh sticky comment (job.status=${JOB_STATUS})"
 
       # Always upload Cypress artifacts — screenshots from failed runs
       # let the maintainer (or an assistant with GitHub MCP access)

@@ -68,6 +68,72 @@ Hooks.on("quenchReady", (quench) => {
   // Live API generation is left to manual smoke (the batch does not consume
   // ElevenLabs characters).
   registerAudioNarrationTests(quench);
+  // Fact Continuity — live integration for the sidecar/ledger/scene-lifecycle
+  // subsystem. Pure-logic coverage lives in tests/unit/factContinuity*.test.js;
+  // this batch pins the Foundry-side wiring: game.settings persistence, the
+  // !truth / !state / !scene chat dispatch path, and Section 6.5 surfacing in
+  // the assembled context packet.
+  registerFactContinuityTests(quench);
+  // Pacing commands — live integration for !pace and !roll. Pure-function
+  // coverage of applyPaceCommand / markForceNextAsMove / ring-buffer lives in
+  // tests/unit/pacing.test.js; this batch pins the chat-dispatch path, the
+  // response-card flag stamping that prevents self-recursion, and the
+  // game.settings persistence round-trip.
+  registerPaceCommandTests(quench);
+  // Sector Creator wizard UI — pure-generator coverage lives in
+  // tests/unit/sectorGenerator.test.js, and storeSector/createEntityJournals
+  // are covered by the existing `sectorCreator` batch. This batch pins the
+  // ApplicationV2 state machine itself: region-step renders three region
+  // buttons, chooseRegion action binding advances the wizard, rerollSector
+  // generates a fresh sector. Catches action-binding regressions of the kind
+  // that broke v13 chat-card buttons.
+  registerSectorCreatorWizardTests(quench);
+  // Sector art + ship Token — graceful-degradation paths for the OpenRouter
+  // image pipeline and the placeCommandVehicleTokenIfPresent skip branches
+  // (no scene / feature disabled / no command vehicle). Pure prompt formatter
+  // and createSectorScene happy-path coverage live in the unit suite and the
+  // existing sectorCreator batch respectively.
+  registerSectorArtTests(quench);
+  // NED permissions matrix — the schema MOVES table → resolveRelevance →
+  // assembleContextPacket → NARRATOR_PERMISSIONS block contract. Pure
+  // resolveRelevance coverage lives in tests/unit/relevanceResolver.test.js;
+  // this batch pins the end-to-end integration: that the right permissions
+  // block appears in the assembled system prompt for each narrator class.
+  registerNedPermissionsMatrixTests(quench);
+  // Settings round-trip — DOM-write-then-game.settings-read for the About
+  // tab API key fields and the Narrator tab fields. The existing
+  // settingsPanel batch covers switchTab/mischief and the safety
+  // add/removeLine paths; this batch covers the persistence round-trips
+  // and the GM-only / password-masking gates.
+  registerSettingsRoundTripTests(quench);
+  // Recap modes — !recap chat dispatch routing (session vs campaign),
+  // isRecapCommand predicate matrix, and postSessionRecap empty/non-empty
+  // branches. The existing chatCardActions batch covers the Refresh button
+  // and recapEndToEnd covers the chronicleWriter fallback; this batch covers
+  // the routing and the source functions' behaviours without invoking the
+  // live Claude API.
+  registerRecapModesTests(quench);
+  // Audio degradation — synthesise/fetchSubscription HTTP error paths and
+  // the togglePlayback "chat never blocked" invariant (the chat card's
+  // prose stays readable even when audio fails). Synthesise validation
+  // errors and the 401 hint are unit-tested in tests/unit/audio.test.js;
+  // the existing audio batch covers the audioEnabledForThisClient gate and
+  // the button hide/unhide flow. This batch fills the gap on what happens
+  // when the live network call fails.
+  registerAudioDegradationTests(quench);
+  // Help compendium generation — assert the static PAGES export has the
+  // right shape and the live JournalEntry created at world init matches
+  // CONTENT_VERSION. Catches help-content authoring mistakes
+  // (missing fields, malformed pages) and the contentVersion-stamping
+  // regression class.
+  registerHelpCompendiumTests(quench);
+  // i18n resolution — live integration of the localize* wrappers against
+  // the real foundry-ironsworn translation table. Pure-logic coverage of
+  // the wrapper (English fallback, missing-key behaviour, slug fallback)
+  // lives in tests/unit/i18n.test.js with a mocked game.i18n; this batch
+  // exercises the same wrappers against the real game.i18n so a vendor
+  // key rename surfaces here.
+  registerI18nResolutionTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5257,5 +5323,2043 @@ function registerAudioNarrationTests(quench) {
       });
     },
     { displayName: "STARFORGED: Audio Narration" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACT CONTINUITY — live integration for sidecar / ledger / lifecycle / chat
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-logic coverage of sidecarParser, ledgers, and scene-lifecycle migration
+// lives under tests/unit/factContinuity*.test.js. This batch pins what unit
+// tests cannot reach:
+//   - game.settings persistence round-trips of campaignState.sceneTruths /
+//     sceneState through Foundry's serializer
+//   - the chat-hook dispatch path: !truth, !state, !scene posted as real
+//     ChatMessages, the dispatcher routing them to handleFactContinuityCommand
+//     / handleSceneCommand, and the response cards being flagged correctly
+//   - factContinuity.enabled = false gating the chat handlers
+//   - Section 6.5 surfacing in assembleContextPacket against a live
+//     campaignState
+
+function registerFactContinuityTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.factContinuity",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      // Snapshot the active campaignState so every test runs against the same
+      // baseline and any mutation gets restored, even on throw. Deep-clone
+      // because Foundry returns objects by reference.
+      let originalState = null;
+      const createdMessageIds = [];
+
+      before(async function () {
+        const raw = game.settings.get(MODULE_ID, "campaignState");
+        originalState = JSON.parse(JSON.stringify(raw ?? {}));
+      });
+
+      after(async function () {
+        // Restore the baseline so leftover sceneTruths/sceneState don't leak
+        // into subsequent batches (or into a live world if a developer runs
+        // the suite manually).
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState).catch(() => {});
+        }
+        // Reap any FC/scene command cards we posted.
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      async function loadCampaignState() {
+        // Always re-read — the chat dispatcher mutates and persists, and we
+        // want the post-handler state, not the stale snapshot.
+        return game.settings.get(MODULE_ID, "campaignState");
+      }
+      async function writeCampaignState(state) {
+        await game.settings.set(MODULE_ID, "campaignState", state);
+      }
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        // The FC / scene-command handlers chain three async hops:
+        //   game.settings.set → ChatMessage.create → renderChatMessage hook.
+        // A fixed-count microtask flush was non-deterministic in CI (the
+        // !state set case failed on a 2026-05-23 run while the other eight
+        // tests in this batch passed with the same harness). Poll until the
+        // handler's response card surfaces in game.messages — or give up at
+        // the 3s deadline so a genuine handler bug surfaces as a clear
+        // assertion failure downstream rather than a hung post.
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break; // initial post + handler response
+          await flushMicrotasks();
+        }
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+      function findFlaggedCard(newOnes, flagName) {
+        return newOnes.find(m => m?.flags?.[MODULE_ID]?.[flagName] === true);
+      }
+
+      // ── 1: applySidecar against a live, persisted campaignState ──────────
+      describe("applySidecar — live game.settings round-trip", function () {
+        it("truths and state changes persist through game.settings.set/get", async function () {
+          if (skipNotGM(this)) return;
+          const state = JSON.parse(JSON.stringify(originalState ?? {}));
+          state.currentSessionId  = "ssn-quench";
+          state.currentSceneId    = "sc-quench-applysidecar";
+          state.sceneTruths       = [];
+          state.sceneState        = { bySubject: {}, sceneId: null };
+          state.dismissedEntities = state.dismissedEntities ?? [];
+
+          const { applySidecar } = await import(
+            `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+          applySidecar(
+            {
+              newTruths: [
+                { subject: "Quench Officer", fact: "Walks with a limp" },
+              ],
+              stateChanges: [
+                { subject: "scene", attribute: "lighting", value: "dim" },
+              ],
+            },
+            { campaignState: state, sessionId: "ssn-quench", sceneId: "sc-quench-applysidecar" },
+          );
+
+          await writeCampaignState(state);
+          const roundTripped = await loadCampaignState();
+
+          assert.isArray(roundTripped.sceneTruths, "sceneTruths must be an array");
+          const truth = roundTripped.sceneTruths.find(t => t?.fact === "Walks with a limp");
+          assert.isObject(truth, "truth survives serialization");
+          assert.equal(truth.subject?.kind, "text",   "text-subject preserved when no entity match");
+          assert.equal(truth.subject?.text, "Quench Officer");
+          assert.equal(truth.retracted, false);
+
+          const sceneBlock = roundTripped.sceneState?.bySubject?.scene;
+          assert.isArray(sceneBlock, "scene-keyed state list survives serialization");
+          const lighting = sceneBlock.find(e => e.attribute === "lighting");
+          assert.isObject(lighting);
+          assert.equal(lighting.value, "dim");
+        });
+      });
+
+      // ── 2: !truth set posts a flagged card and mutates sceneTruths ───────
+      describe("!truth set — chat dispatch", function () {
+        it("posts a factContinuityCommand card and appends a truth to sceneTruths", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-truthset";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!truth set "Quench Captain" Always uses a left-hand draw'),
+            );
+
+            const card = findFlaggedCard(newOnes, "factContinuityCommand");
+            assert.isObject(card, "an FC command response card should be posted");
+            assert.equal(card.flags[MODULE_ID].domain, "truth");
+            assert.equal(card.flags[MODULE_ID].verb,   "set");
+
+            const after = await loadCampaignState();
+            const truth = (after.sceneTruths ?? []).find(t =>
+              t?.fact === "Always uses a left-hand draw");
+            assert.isObject(truth, "the truth should be persisted");
+            assert.equal(truth.subject?.text, "Quench Captain",
+              "quoted multi-word subject parses correctly");
+          });
+        });
+      });
+
+      // ── 3: !truth strike retracts a truth by id-prefix ───────────────────
+      describe("!truth strike — chat dispatch", function () {
+        it("retracts the matched truth in place (does not delete)", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            // Seed a truth via the library so we know its id.
+            const { setTruth } = await import(
+              `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-strike";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            const entry = setTruth(
+              { kind: "text", text: "doomed npc" },
+              "Has a secret",
+              seed,
+              { actor: "gm", isGM: true },
+            );
+            assert.isObject(entry, "test setup: seed truth should exist");
+            await writeCampaignState(seed);
+
+            const prefix = entry.id.slice(0, 6);
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat(`!truth strike ${prefix}`),
+            );
+
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"),
+              "an FC command response card should be posted");
+            const after = await loadCampaignState();
+            const survivor = (after.sceneTruths ?? []).find(t => t?.id === entry.id);
+            assert.isObject(survivor, "truth still present (strike = retraction, not deletion)");
+            assert.equal(survivor.retracted, true, "truth should be marked retracted");
+            assert.isNumber(survivor.retractedAt);
+          });
+        });
+      });
+
+      // ── 4: !state set parses subject + attribute=value ───────────────────
+      describe("!state set — chat dispatch", function () {
+        it("writes an attribute=value entry into sceneState.bySubject", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-stateset";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!state set scene lighting=red emergency'),
+            );
+
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"),
+              "an FC command response card should be posted");
+            const after = await loadCampaignState();
+            const sceneList = after.sceneState?.bySubject?.scene;
+            assert.isArray(sceneList, "scene-keyed state list should exist");
+            const entry = sceneList.find(e => e.attribute === "lighting");
+            assert.isObject(entry, "lighting attribute should be set");
+            assert.equal(entry.value, "red emergency",
+              "value preserves intra-value whitespace");
+          });
+        });
+      });
+
+      // ── 5: !state strike removes an attribute entry ──────────────────────
+      describe("!state strike — chat dispatch", function () {
+        it("removes the matched (subject, attribute) state entry", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: { scene: [
+              { attribute: "lighting", value: "dim", updatedAt: Date.now() },
+            ] }, sceneId: "sc-quench-statestrike" };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-statestrike";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!state strike scene lighting'),
+            );
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"));
+
+            const after = await loadCampaignState();
+            const sceneList = after.sceneState?.bySubject?.scene;
+            const survivor = (sceneList ?? []).find(e => e.attribute === "lighting");
+            assert.isUndefined(survivor, "lighting attribute should be gone");
+          });
+        });
+      });
+
+      // ── 6: !scene start posts a sceneCommand card and sets currentSceneId
+      describe("!scene start — chat dispatch", function () {
+        it("posts a sceneCommand card and assigns campaignState.currentSceneId", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSceneId    = null;
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat("!scene start"),
+            );
+            const card = findFlaggedCard(newOnes, "sceneCommand");
+            assert.isObject(card, "a scene-command card should be posted");
+            assert.equal(card.flags[MODULE_ID].verb, "start");
+
+            const after = await loadCampaignState();
+            assert.isString(after.currentSceneId,
+              "currentSceneId should be assigned");
+            assert.match(after.currentSceneId, /^sc-/, "id has the sc- prefix");
+          });
+        });
+      });
+
+      // ── 7: !scene end clears the active ledgers + currentSceneId ─────────
+      describe("!scene end — chat dispatch", function () {
+        it("posts a sceneCommand card and discards sceneTruths + currentSceneId", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            // Seed: an active scene with one free-text truth (archives to WJ
+            // Lore on endScene; we don't assert against the journal here —
+            // sceneLifecycle.test.js covers that branch — but we DO assert the
+            // active ledger is emptied and currentSceneId clears.
+            const { setTruth } = await import(
+              `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-end";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            setTruth({ kind: "text", text: "quench corridor" }, "Smells of ozone", seed,
+              { actor: "gm", isGM: true });
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat("!scene end"),
+            );
+            const card = findFlaggedCard(newOnes, "sceneCommand");
+            assert.isObject(card, "a scene-command card should be posted");
+            assert.equal(card.flags[MODULE_ID].verb, "end");
+
+            const after = await loadCampaignState();
+            assert.isArray(after.sceneTruths,    "sceneTruths shape preserved");
+            assert.equal(after.sceneTruths.length, 0, "sceneTruths cleared");
+            assert.isNull(after.currentSceneId,  "currentSceneId cleared");
+          });
+        });
+      });
+
+      // ── 8: factContinuity.enabled = false gates !truth ───────────────────
+      describe("disabled setting — !truth refuses to mutate state", function () {
+        it("a !truth set posted while disabled does not append to sceneTruths", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", false, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-gated";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            await withSilencedNotifications(() =>
+              postChat('!truth set scene Lights flicker overhead'),
+            );
+
+            const after = await loadCampaignState();
+            assert.equal((after.sceneTruths ?? []).length, 0,
+              "no truth should be appended when factContinuity.enabled = false");
+          });
+        });
+      });
+
+      // ── 9: Section 6.5 surfaces in the assembled context packet ──────────
+      describe("Section 6.5 — surfaces in assembleContextPacket", function () {
+        it("a sceneTruth in campaignState appears as a binding-truths block", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            await withTempSetting("factContinuity.ledgerInContext", true, async () => {
+              const { setTruth } = await import(
+                `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+              const { assembleContextPacket } = await import(
+                `/modules/${MODULE_ID}/src/context/assembler.js`);
+
+              const state = JSON.parse(JSON.stringify(originalState ?? {}));
+              state.sceneTruths       = [];
+              state.sceneState        = { bySubject: {}, sceneId: "sc-quench-asm" };
+              state.currentSessionId  = "ssn-quench";
+              state.currentSceneId    = "sc-quench-asm";
+              state.dismissedEntities = state.dismissedEntities ?? [];
+              // A scene-kind truth so the relevance filter accepts it
+              // unconditionally (no entity/location match required).
+              setTruth({ kind: "scene", sceneId: "sc-quench-asm" },
+                "The blast door is welded shut", state,
+                { actor: "gm", isGM: true });
+
+              const packet = await assembleContextPacket(
+                /* resolution */ null,
+                state,
+                { tokenBudget: 4000 },
+              );
+              assert.isObject(packet, "assembleContextPacket returns an object");
+              assert.isString(packet.assembled, "assembled string present");
+              assert.include(
+                packet.assembled,
+                "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+                "Section 6.5 header should appear in the assembled prompt",
+              );
+              assert.include(
+                packet.assembled,
+                "The blast door is welded shut",
+                "the seeded truth should be rendered in the block",
+              );
+            });
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Fact Continuity" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PACING COMMANDS — !pace and !roll chat-dispatch integration
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-function coverage of applyPaceCommand, markForceNextAsMove, and the
+// in-memory ring buffer (recordRecentDecision / getRecentMoveDensity /
+// resetRecentDensity) lives in tests/unit/pacing.test.js. This batch covers
+// what unit tests cannot reach:
+//   - the createChatMessage hook dispatch (predicate gate → handler → response
+//     card)
+//   - response-card flag stamping (paceCommandCard / rollCommandCard) that
+//     gates self-recursion when the handler's own card flows back through the
+//     hook
+//   - GM gating (the !pace and !roll handlers warn and bail on non-GM)
+//   - persistence round-trip of campaignState.pacing.sceneOverride and
+//     campaignState.pacing.forceNextAsMove through game.settings
+
+function registerPaceCommandTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.paceCommand",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let originalState = null;
+      const createdMessageIds = [];
+
+      before(async function () {
+        const raw = game.settings.get(MODULE_ID, "campaignState");
+        originalState = JSON.parse(JSON.stringify(raw ?? {}));
+      });
+
+      after(async function () {
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState).catch(() => {});
+        }
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      // Same polling helper as the factContinuity batch — fixed microtask
+      // flushes were non-deterministic in CI for the multi-await
+      // settings.set → ChatMessage.create chain.
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break;
+          await flushMicrotasks();
+        }
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+      function findFlaggedCard(newOnes, flagName) {
+        return newOnes.find(m => m?.flags?.[MODULE_ID]?.[flagName] === true);
+      }
+      async function resetPacingState() {
+        const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+        seed.pacing = { sceneOverride: null, forceNextAsMove: false };
+        await game.settings.set(MODULE_ID, "campaignState", seed);
+      }
+
+      // ── 1: predicate gates recognise the formats ─────────────────────────
+      describe("Command predicate gates", function () {
+        it("isPaceCommand / isRollCommand recognise their formats and ignore their own response flags", async function () {
+          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+          const make = (content, flags = {}) => ({
+            content, isContentVisible: true, type: "ic",
+            whisper: [], rolls: [], flags, user: game.user.id,
+          });
+          assert.isTrue(idx.isPaceCommand(make("!pace hot")));
+          assert.isTrue(idx.isPaceCommand(make("!pace status")));
+          assert.isTrue(idx.isPaceCommand(make("!pace")));
+          assert.isFalse(idx.isPaceCommand(make("!paceify everything")),
+            "predicate must require a word boundary after !pace");
+          assert.isFalse(
+            idx.isPaceCommand(make("!pace hot", { [MODULE_ID]: { paceCommandCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+          assert.isTrue(idx.isRollCommand(make("!roll")));
+          assert.isFalse(idx.isRollCommand(make("!roll something else")),
+            "predicate matches the bare !roll only");
+          assert.isFalse(
+            idx.isRollCommand(make("!roll", { [MODULE_ID]: { rollCommandCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+        });
+      });
+
+      // ── 2: !pace hot — sets sceneOverride to {modifier:+3, label:"hot"} ──
+      describe("!pace hot — chat dispatch", function () {
+        it("posts a paceCommandCard and sets sceneOverride to hot (+3)", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace hot"));
+          assert.isObject(findFlaggedCard(newOnes, "paceCommandCard"),
+            "a pace command response card should be posted");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isObject(after.pacing?.sceneOverride, "sceneOverride should be set");
+          assert.equal(after.pacing.sceneOverride.label,    "hot");
+          assert.equal(after.pacing.sceneOverride.modifier, 3);
+        });
+      });
+
+      // ── 3: !pace quiet — sets sceneOverride to {modifier:-3, label:"quiet"}
+      describe("!pace quiet — chat dispatch", function () {
+        it("sets sceneOverride to quiet (-3)", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          await withSilencedNotifications(() => postChat("!pace quiet"));
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.equal(after.pacing?.sceneOverride?.label,    "quiet");
+          assert.equal(after.pacing?.sceneOverride?.modifier, -3);
+        });
+      });
+
+      // ── 4: !pace clear — wipes the override back to null ─────────────────
+      describe("!pace clear — chat dispatch", function () {
+        it("clears a previously set sceneOverride", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          // Seed an override directly to set up the cleared state.
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.pacing = { sceneOverride: { modifier: 3, label: "hot" }, forceNextAsMove: false };
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          await withSilencedNotifications(() => postChat("!pace clear"));
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isNull(after.pacing?.sceneOverride,
+            "sceneOverride should be null after !pace clear");
+        });
+      });
+
+      // ── 5: !pace status — posts a status card without mutating state ─────
+      describe("!pace status — chat dispatch", function () {
+        it("posts a paceCommandCard with a status block and does NOT mutate sceneOverride", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState")));
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace status"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card, "a pace command response card should be posted");
+          // The status branch renders a <pre> block (multi-line); the other
+          // branches render a <p>. Asserting the marker makes a verb-flip
+          // visible in the test output.
+          assert.match(card.content ?? "", /<pre /,
+            "!pace status should render a <pre> block, not a <p>");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.deepEqual(after.pacing, before.pacing,
+            "!pace status must not mutate campaignState.pacing");
+        });
+      });
+
+      // ── 6: !pace <bogus> — posts the unknown-subcommand card, no mutation
+      describe("!pace bogus — chat dispatch", function () {
+        it("posts the unknown-subcommand card without mutating state", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState")));
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!pace bogus-subcommand"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card, "a pace command response card should be posted even for unknown args");
+          assert.match(card.content ?? "", /Unknown subcommand/i,
+            "card body should call out the unknown subcommand");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.deepEqual(after.pacing, before.pacing,
+            "unknown subcommand must not mutate campaignState.pacing");
+        });
+      });
+
+      // ── 7: !roll — sets forceNextAsMove and posts the rollCommandCard ────
+      describe("!roll — chat dispatch", function () {
+        it("posts a rollCommandCard and sets pacing.forceNextAsMove = true", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const { newOnes } = await withSilencedNotifications(() => postChat("!roll"));
+          assert.isObject(findFlaggedCard(newOnes, "rollCommandCard"),
+            "a roll command response card should be posted");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isTrue(after.pacing?.forceNextAsMove === true,
+            "forceNextAsMove should be true after !roll");
+        });
+      });
+
+      // ── 8: !pace status after !pace hot — surfaces the active override ───
+      describe("!pace status reflects a previously set override", function () {
+        it("after !pace hot, !pace status shows the +3 hot label", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          await withSilencedNotifications(() => postChat("!pace hot"));
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace status"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card);
+          const body = card.content ?? "";
+          assert.match(body, /Scene override:\s*hot/i,
+            "status card should surface the active 'hot' label");
+          assert.match(body, /\+3/,
+            "status card should surface the +3 modifier on dials and footer");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Pace Command" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR CREATOR WIZARD — ApplicationV2 state machine and action binding
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-generator coverage (generateSector / generateSettlement / generatePlanet /
+// generateConnection / SECTOR_TROUBLE / rollTableResult) lives in
+// tests/unit/sectorGenerator.test.js; the storeSector / createEntityJournals
+// chain is covered by the `sectorCreator` batch above. This batch covers what
+// neither reaches: the wizard's own ApplicationV2 state machine and the
+// data-action button bindings that broke en masse with the v13 chat-card hook
+// change. Five tests:
+//
+//   1. SectorCreatorApp.open() returns a rendered app on the first call and
+//      reuses (re-renders) the same instance on the second call.
+//   2. Step-1 region picker renders three region buttons (terminus / outlands
+//      / expanse) with bound chooseRegion actions.
+//   3. clickAction("chooseRegion", { region: "outlands" }) advances the wizard
+//      to step 2 and populates a sector.
+//   4. Step-2 DOM contains the generated sector's name, trouble line, and at
+//      least one settlement.
+//   5. clickAction("rerollSector") generates a different sector (different id
+//      with overwhelming probability — generated names use a long random tail).
+
+function registerSectorCreatorWizardTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorCreatorWizard",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let app = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        const { SectorCreatorApp } = await import(
+          `/modules/${MODULE_ID}/src/sectors/sectorPanel.js`);
+        app = SectorCreatorApp.open();
+        await awaitRender(app);
+      });
+
+      after(async function () {
+        if (app?.close) await app.close().catch(() => {});
+        app = null;
+      });
+
+      describe("open() — app lifecycle", function () {
+        it("renders an ApplicationV2 instance on first open", function () {
+          if (!app) { this.skip(); return; }
+          assert.isTrue(app.rendered, "app should be rendered after open()");
+          assert.isOk(app.element, "app.element should be set");
+        });
+
+        it("re-uses the same instance on a second open() call", async function () {
+          if (skipNotGM(this)) return;
+          const { SectorCreatorApp } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorPanel.js`);
+          const second = SectorCreatorApp.open();
+          await awaitRender(second);
+          assert.strictEqual(second, app,
+            "open() must return the same instance as the first call (singleton)");
+        });
+      });
+
+      describe("step 1 — region picker", function () {
+        it("renders three chooseRegion buttons for the three canonical regions", function () {
+          if (!app) { this.skip(); return; }
+          const buttons = Array.from(
+            app.element.querySelectorAll('[data-action="chooseRegion"]'));
+          assert.equal(buttons.length, 3, "should render exactly three region buttons");
+          const regions = buttons.map(b => b.dataset.region).sort();
+          assert.deepEqual(regions, ["expanse", "outlands", "terminus"]);
+        });
+      });
+
+      describe("step 2 — chooseRegion advances the wizard", function () {
+        it("clicking chooseRegion(outlands) renders the sector preview with a name and trouble", async function () {
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await clickAction(app, "chooseRegion", { region: "outlands" });
+          // The wizard renders the sector step on advancement; assert against the
+          // resulting DOM rather than internal fields (private # fields are not
+          // reachable from outside the class).
+          const root = app.element;
+          assert.isNull(root.querySelector('[data-action="chooseRegion"]'),
+            "the region-pick buttons should be gone after advancement");
+          assert.isOk(root.querySelector('[data-action="finalizeSector"]'),
+            "the finalize button should be present on the sector-preview step");
+          assert.isOk(root.querySelector('[data-action="rerollSector"]'),
+            "the reroll button should be present on the sector-preview step");
+        });
+      });
+
+      describe("step 2 — sector preview content", function () {
+        it("the rendered sector contains at least one settlement entry", function () {
+          if (!app) { this.skip(); return; }
+          const settlementEntries = app.element.querySelectorAll(".sf-settlement-entry");
+          assert.isAbove(settlementEntries.length, 0,
+            "outlands sector should render at least one .sf-settlement-entry");
+        });
+      });
+
+      describe("rerollSector — generates a fresh sector", function () {
+        it("clicking rerollSector produces a different settlement set", async function () {
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          const namesBefore = Array.from(
+            app.element.querySelectorAll(".sf-settlement-entry strong"))
+            .map(el => el.textContent.trim());
+          assert.isAbove(namesBefore.length, 0,
+            "test precondition: should have settlement names before reroll");
+
+          await clickAction(app, "rerollSector");
+
+          const namesAfter = Array.from(
+            app.element.querySelectorAll(".sf-settlement-entry strong"))
+            .map(el => el.textContent.trim());
+          assert.isAbove(namesAfter.length, 0,
+            "should still have settlement names after reroll");
+          // Tolerate a single-name collision (cosmically unlikely but the table
+          // is finite). Asserting that AT LEAST ONE name differs catches a
+          // dead-button regression without being brittle on collisions.
+          const allSame = namesBefore.length === namesAfter.length &&
+            namesBefore.every((n, i) => n === namesAfter[i]);
+          assert.isFalse(allSame,
+            "rerollSector should produce a different settlement set");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Creator Wizard" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR ART + SHIP TOKEN — degradation paths
+// ─────────────────────────────────────────────────────────────────────────────
+// buildSectorBackgroundPrompt prompt-content coverage (region keywords, trouble
+// modifiers) lives in tests/unit/sectorGenerator.test.js, and the
+// createSectorScene happy path (notes, drawings, no auto-activation) is
+// covered by the existing `sectorCreator` batch — which also indirectly
+// exercises the happy path of placeCommandVehicleTokenIfPresent.
+//
+// This batch covers what neither reaches: the graceful-degradation paths in
+// the live OpenRouter pipeline (HTTP error / empty body → null, no throw)
+// and the three skip branches of placeCommandVehicleTokenIfPresent (no
+// scene, feature flag disabled, no command vehicle in campaign state).
+
+function registerSectorArtTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorArt",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      // Save / restore the OpenRouter key so degradation tests can install
+      // a placeholder value (the no-key path is already covered by the
+      // `sectorCommands` batch and tested separately).
+      let originalKey = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        originalKey = game.settings.get(MODULE_ID, "openRouterApiKey");
+      });
+
+      after(async function () {
+        if (game.user?.isGM) {
+          await game.settings.set(MODULE_ID, "openRouterApiKey", originalKey ?? "")
+            .catch(() => {});
+        }
+      });
+
+      // ── 1: generateSectorBackground — HTTP error path ────────────────────
+      describe("generateSectorBackground — graceful on HTTP error", function () {
+        it("returns null cleanly when the image API responds with 500", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { generateSector } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorGenerator.js`);
+          const { generateSectorBackground } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorArt.js`);
+
+          await game.settings.set(MODULE_ID, "openRouterApiKey", "sk-test-quench-only");
+          const sector = generateSector("outlands");
+          const result = await withStubbedFetch(
+            [["openrouter.ai", () => new Response("upstream error", { status: 500 })]],
+            () => withSilencedNotifications(() => generateSectorBackground(
+              sector, game.settings.get(MODULE_ID, "campaignState"))),
+          );
+          assert.isNull(result,
+            "should return null (not throw) when the OpenRouter API responds non-2xx");
+        });
+      });
+
+      // ── 2: generateSectorBackground — empty-body path ────────────────────
+      describe("generateSectorBackground — graceful on empty image body", function () {
+        it("returns null cleanly when the API responds 200 but with no usable image data", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { generateSector } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorGenerator.js`);
+          const { generateSectorBackground } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorArt.js`);
+
+          await game.settings.set(MODULE_ID, "openRouterApiKey", "sk-test-quench-only");
+          const sector = generateSector("expanse");
+          // Valid envelope shape but no image content — openRouterImage's
+          // parser walks the response looking for b64_json / url / data:
+          // bytes and returns null when none are found. Match what the
+          // production code sees on a model misconfiguration.
+          const emptyBody = JSON.stringify({
+            choices: [{ message: { content: "" } }],
+            data:    [],
+          });
+          const result = await withStubbedFetch(
+            [["openrouter.ai", () => new Response(emptyBody, {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })]],
+            () => withSilencedNotifications(() => generateSectorBackground(
+              sector, game.settings.get(MODULE_ID, "campaignState"))),
+          );
+          assert.isNull(result,
+            "should return null when the API responds 200 with no usable image bytes");
+        });
+      });
+
+      // ── 3: placeCommandVehicleTokenIfPresent — no scene → null ───────────
+      describe("placeCommandVehicleTokenIfPresent — no scene", function () {
+        it("returns null without throwing when scene is null", async function () {
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+          const result = await placeCommandVehicleTokenIfPresent(null, { id: "sec-x" });
+          assert.isNull(result, "no scene → null, no throw");
+        });
+      });
+
+      // ── 4: placeCommandVehicleTokenIfPresent — feature disabled → null ───
+      describe("placeCommandVehicleTokenIfPresent — feature disabled", function () {
+        it("returns null when factContinuity.shipTokenEnabled is false", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+          await withTempSetting("factContinuity.shipTokenEnabled", false, async () => {
+            // Pass a minimal scene-shaped object — the function should bail
+            // before ever touching createEmbeddedDocuments.
+            const sceneStub = { tokens: { contents: [] } };
+            const result = await placeCommandVehicleTokenIfPresent(sceneStub, { id: "sec-x" });
+            assert.isNull(result, "disabled setting must short-circuit to null");
+          });
+        });
+      });
+
+      // ── 5: placeCommandVehicleTokenIfPresent — no command vehicle → null
+      describe("placeCommandVehicleTokenIfPresent — no command vehicle", function () {
+        it("returns null when campaignState.shipIds has no command vehicle", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+
+          // Temporarily clear shipIds so the no-command-vehicle branch fires.
+          // withTempSetting restores on throw.
+          const state = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState") ?? {}));
+          const seed  = { ...state, shipIds: [] };
+          await withTempSetting("campaignState", seed, async () => {
+            const sceneStub = { tokens: { contents: [] } };
+            const result = await placeCommandVehicleTokenIfPresent(
+              sceneStub, { id: "sec-x", mapData: { settlements: [] } });
+            assert.isNull(result, "no command vehicle → null");
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Art + Ship Token" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NED PERMISSIONS MATRIX — schema table → resolveRelevance → assembled prompt
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveRelevance pure-logic coverage lives in
+// tests/unit/relevanceResolver.test.js (buildNameIndex, matchNamesInNarration,
+// the non-hybrid path, the hybrid name-match path, the dismissed-entities
+// path). This batch pins the integration contract that unit tests cannot
+// reach: that the right NARRATOR_PERMISSIONS block actually surfaces in the
+// `assembled` system prompt produced by assembleContextPacket for each
+// narrator class — and that the canonical moves in the schema MOVES table
+// map to the documented narratorClass values. Together those guarantee a
+// regression in either the schema, the resolver, or the assembler shows up
+// as a clear failure here.
+
+function registerNedPermissionsMatrixTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.nedPermissionsMatrix",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      // Hoisted modules so the schema/MOVES table is read once and re-used
+      // across every test in the batch.
+      let MOVES = null;
+      let assembleContextPacket = null;
+      let resolveRelevance = null;
+      let NARRATOR_PERMISSIONS = null;
+
+      before(async function () {
+        ({ MOVES } = await import(`/modules/${MODULE_ID}/src/schemas.js`));
+        ({ assembleContextPacket } = await import(
+          `/modules/${MODULE_ID}/src/context/assembler.js`));
+        ({ resolveRelevance } = await import(
+          `/modules/${MODULE_ID}/src/context/relevanceResolver.js`));
+        ({ NARRATOR_PERMISSIONS } = await import(
+          `/modules/${MODULE_ID}/src/narration/narratorPrompt.js`));
+      });
+
+      // ── 1: schema MOVES table — narratorClass contract for representatives
+      describe("schema MOVES → narratorClass", function () {
+        // Representative entries from each class. If any move's narratorClass
+        // is changed in src/schemas.js, this test surfaces the rename. The
+        // five-seeded discovery moves (make_a_connection, explore_a_waypoint,
+        // make_a_discovery, confront_chaos, gather_information) are pinned
+        // because NED-v3 scope depends on the oracle-seed code path running
+        // on every one of them.
+        const EXPECTED = {
+          // Hybrid moves — resolved per-narration by the relevance resolver
+          face_danger:         "hybrid",
+          secure_an_advantage: "hybrid",
+          pay_the_price:       "hybrid",
+          // Discovery moves — the five seeded moves plus gather_information
+          make_a_connection:   "discovery",
+          explore_a_waypoint:  "discovery",
+          make_a_discovery:    "discovery",
+          confront_chaos:      "discovery",
+          gather_information:  "discovery",
+          // Interaction moves — at-table interaction with established entities
+          compel:              "interaction",
+          // Embellishment moves — mechanical consequence, no new entities
+          aid_your_ally:       "embellishment",
+          check_your_gear:     "embellishment",
+          reach_a_milestone:   "embellishment",
+        };
+
+        for (const [moveId, expected] of Object.entries(EXPECTED)) {
+          it(`${moveId} maps to "${expected}"`, function () {
+            assert.isObject(MOVES?.[moveId], `MOVES.${moveId} should exist`);
+            assert.equal(MOVES[moveId].narratorClass, expected,
+              `MOVES.${moveId}.narratorClass drift — expected "${expected}"`);
+          });
+        }
+      });
+
+      // ── 2: assembler renders the right NARRATOR_PERMISSIONS block per class
+      describe("assembler renders NARRATOR_PERMISSIONS block per class", function () {
+        const CLASSES = [
+          { key: "discovery",     marker: "## NARRATOR PERMISSIONS — DISCOVERY MODE" },
+          { key: "interaction",   marker: "## NARRATOR PERMISSIONS — INTERACTION MODE" },
+          { key: "embellishment", marker: "## NARRATOR PERMISSIONS — EMBELLISHMENT MODE" },
+        ];
+
+        for (const { key, marker } of CLASSES) {
+          it(`narratorClass="${key}" surfaces the ${key.toUpperCase()} block in the assembled prompt`, async function () {
+            this.timeout(10000);
+            if (skipNotGM(this)) return;
+            const state = game.settings.get(MODULE_ID, "campaignState");
+            const packet = await assembleContextPacket(null, state, {
+              narratorClass: key,
+              tokenBudget:   4000,
+            });
+            assert.isString(packet.assembled);
+            assert.include(packet.assembled, marker,
+              `assembled prompt should contain the ${key.toUpperCase()} header`);
+            // Negative: must not also contain the OTHER two class headers.
+            for (const other of CLASSES) {
+              if (other.key === key) continue;
+              assert.notInclude(packet.assembled, other.marker,
+                `assembled prompt for "${key}" must not bleed in the ${other.key.toUpperCase()} block`);
+            }
+          });
+        }
+      });
+
+      // ── 3: assembler emits no permissions block when narratorClass is null
+      describe("assembler omits the permissions block when narratorClass is null", function () {
+        it("the assembled prompt contains no NARRATOR PERMISSIONS marker at all", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          const packet = await assembleContextPacket(null, state, {
+            narratorClass: null,
+            tokenBudget:   4000,
+          });
+          assert.notMatch(packet.assembled, /## NARRATOR PERMISSIONS —/,
+            "no permissions marker should appear when narratorClass is null (assembler default)");
+        });
+      });
+
+      // ── 4: resolveRelevance — non-hybrid passes the table class through ──
+      describe("resolveRelevance — non-hybrid passes table narratorClass through", function () {
+        it("gather_information (discovery) resolves to discovery even with no name matches", async function () {
+          const result = await resolveRelevance(
+            "I check the data terminal for clues",
+            "gather_information",
+            "strong_hit",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            // Inject an empty collector so we never touch the live world.
+            { collectEntities: () => [] },
+          );
+          assert.equal(result.resolvedClass, "discovery",
+            "non-hybrid classes pass through verbatim regardless of entity matches");
+          assert.deepEqual(result.entityIds, [], "no matches expected");
+        });
+
+        it("compel (interaction) resolves to interaction even with no name matches", async function () {
+          const result = await resolveRelevance(
+            "I press them on the stolen ledger",
+            "compel",
+            "weak_hit",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            { collectEntities: () => [] },
+          );
+          assert.equal(result.resolvedClass, "interaction");
+        });
+      });
+
+      // ── 5: resolveRelevance — hybrid + miss + no match → embellishment ───
+      describe("resolveRelevance — hybrid + miss + no match short-circuits to embellishment", function () {
+        it("face_danger (hybrid) on a miss with no name match resolves to embellishment without classifier API", async function () {
+          let classifierCalled = false;
+          const result = await resolveRelevance(
+            "I leap across the gap",
+            "face_danger",
+            "miss",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            {
+              collectEntities:  () => [],
+              classifyImplicit: async () => {
+                classifierCalled = true;
+                return { impliedEntity: false, referenceType: "none" };
+              },
+            },
+          );
+          assert.equal(result.resolvedClass, "embellishment",
+            "miss + hybrid + no name match must resolve to embellishment");
+          assert.isFalse(classifierCalled,
+            "miss path must NOT invoke the Haiku classifier (cost saver)");
+        });
+      });
+
+      // ── 6: resolveRelevance — hybrid + name match → interaction (no API) ─
+      describe("resolveRelevance — hybrid + name match short-circuits to interaction", function () {
+        it("face_danger (hybrid) with a matched entity name resolves to interaction without classifier API", async function () {
+          let classifierCalled = false;
+          const fakeEntity = {
+            _id:        "quench-fake-1",
+            journalId:  "quench-fake-1",
+            name:       "Vance",
+            entityType: "connection",
+          };
+          const result = await resolveRelevance(
+            "I push past Vance and bolt for the door",
+            "face_danger",
+            "strong_hit",
+            { connectionIds: ["quench-fake-1"], settlementIds: [], factionIds: [],
+              shipIds: [], planetIds: [], locationIds: [], creatureIds: [],
+              dismissedEntities: [] },
+            {
+              collectEntities:  () => [fakeEntity],
+              classifyImplicit: async () => {
+                classifierCalled = true;
+                return { impliedEntity: false, referenceType: "none" };
+              },
+            },
+          );
+          assert.equal(result.resolvedClass, "interaction",
+            "hybrid + name match must resolve to interaction");
+          assert.deepEqual(result.entityIds, ["quench-fake-1"],
+            "matched entity should be returned for assembler-side card injection");
+          assert.isFalse(classifierCalled,
+            "name-match path must NOT invoke the Haiku classifier (cost saver)");
+        });
+      });
+
+      // ── 7: NARRATOR_PERMISSIONS contract — three keys with non-empty body
+      describe("NARRATOR_PERMISSIONS module contract", function () {
+        it("exposes exactly discovery / interaction / embellishment keys with non-empty blocks", function () {
+          assert.isObject(NARRATOR_PERMISSIONS);
+          assert.deepEqual(Object.keys(NARRATOR_PERMISSIONS).sort(),
+            ["discovery", "embellishment", "interaction"]);
+          for (const key of Object.keys(NARRATOR_PERMISSIONS)) {
+            assert.isString(NARRATOR_PERMISSIONS[key]);
+            assert.isAbove(NARRATOR_PERMISSIONS[key].length, 50,
+              `${key} block should be a non-trivial string`);
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: NED Permissions Matrix" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS ROUND-TRIP — DOM-write → game.settings-read for Narrator / About
+// ─────────────────────────────────────────────────────────────────────────────
+// Existing settingsPanel batch covers switchTab→mischief, setDial→chaotic,
+// and addLine/removeLine on the safety tab. This batch covers what those
+// don't: the saveNarratorSettings + saveApiKeys handlers, the password-input
+// masking of the About-tab API key fields (privacy regression guard), and
+// the documented "leave blank to keep existing value" semantics.
+//
+// Each test snapshots the affected setting, mutates DOM, clicks Save, asserts
+// the round-trip, and restores in a finally so leftover writes don't leak
+// into other batches.
+
+function registerSettingsRoundTripTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.settingsRoundTrip",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let app = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        const { SettingsPanelApp } = await import(
+          `/modules/${MODULE_ID}/src/ui/settingsPanel.js`);
+        app = new SettingsPanelApp();
+        await awaitRender(app);
+      });
+
+      after(async function () {
+        if (app?.close) await app.close().catch(() => {});
+        app = null;
+      });
+
+      // Helper: switch to a tab and wait for the pane to re-render.
+      async function gotoTab(tab) {
+        await clickAction(app, "switchTab", { tab });
+        await awaitRender(app);
+      }
+
+      // ── 1: tab navigation — every tab renders without throwing ──────────
+      describe("switchTab — all five tabs render", function () {
+        const TABS = ["safety", "mischief", "narrator", "audio", "about"];
+        for (const tab of TABS) {
+          it(`tab "${tab}" renders an active tab button after click`, async function () {
+            this.timeout(10000);
+            if (!app) { this.skip(); return; }
+            await gotoTab(tab);
+            const active = app.element.querySelector(
+              `[data-action="switchTab"][data-tab="${tab}"].is-active`);
+            assert.isOk(active, `tab "${tab}" button should carry .is-active after click`);
+          });
+        }
+      });
+
+      // ── 2: About tab — API key inputs use type="password" (masking) ──────
+      describe("About tab — API key fields are type=password", function () {
+        it("all three API key inputs (claude / openRouter / elevenLabs) are masked", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("about");
+          for (const name of ["claudeApiKey", "openRouterApiKey", "elevenLabsApiKey"]) {
+            const input = app.element.querySelector(`[name="${name}"]`);
+            assert.isOk(input, `${name} input should render on the About tab`);
+            assert.equal(input.type, "password",
+              `${name} must be type=password to mask the key from over-the-shoulder reads`);
+          }
+        });
+      });
+
+      // ── 3: saveApiKeys — DOM round-trip persists all three keys ─────────
+      describe("saveApiKeys — DOM round-trip to game.settings", function () {
+        it("entering values and clicking Save persists each key via game.settings.set", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("about");
+
+          const originals = {
+            claudeApiKey:     game.settings.get(MODULE_ID, "claudeApiKey")     ?? "",
+            openRouterApiKey: game.settings.get(MODULE_ID, "openRouterApiKey") ?? "",
+            elevenLabsApiKey: game.settings.get(MODULE_ID, "elevenLabsApiKey") ?? "",
+          };
+          const ts = Date.now();
+          const fresh = {
+            claudeApiKey:     `sk-ant-quench-${ts}`,
+            openRouterApiKey: `sk-or-v1-quench-${ts}`,
+            elevenLabsApiKey: `sk_quench-${ts}`,
+          };
+
+          try {
+            for (const [name, value] of Object.entries(fresh)) {
+              const input = app.element.querySelector(`[name="${name}"]`);
+              input.value = value;
+            }
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveApiKeys"));
+
+            for (const [name, value] of Object.entries(fresh)) {
+              assert.equal(game.settings.get(MODULE_ID, name), value,
+                `${name} should be persisted with the entered value`);
+            }
+          } finally {
+            for (const [name, value] of Object.entries(originals)) {
+              await game.settings.set(MODULE_ID, name, value).catch(() => {});
+            }
+          }
+        });
+      });
+
+      // ── 4: saveApiKeys — blank input preserves the existing key ─────────
+      describe("saveApiKeys — blank input preserves existing value", function () {
+        it("leaving claudeApiKey blank does NOT clear a previously stored key", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+
+          const original = game.settings.get(MODULE_ID, "claudeApiKey") ?? "";
+          const seedKey  = `sk-ant-seed-${Date.now()}`;
+          await game.settings.set(MODULE_ID, "claudeApiKey", seedKey);
+
+          try {
+            // Re-render so the panel picks up the seeded "set" status.
+            await gotoTab("about");
+            const input = app.element.querySelector('[name="claudeApiKey"]');
+            input.value = ""; // explicit blank — represents "leave to keep"
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveApiKeys"));
+
+            assert.equal(game.settings.get(MODULE_ID, "claudeApiKey"), seedKey,
+              "blank input must not clear the existing key (documented in panel hint)");
+          } finally {
+            await game.settings.set(MODULE_ID, "claudeApiKey", original).catch(() => {});
+          }
+        });
+      });
+
+      // ── 5: saveNarratorSettings — DOM round-trip persists narrator config
+      describe("saveNarratorSettings — DOM round-trip to game.settings", function () {
+        it("changing narrationLength and clicking Save persists the new value", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("narrator");
+
+          const original = game.settings.get(MODULE_ID, "narrationLength") ?? 3;
+          // Pick a value distinct from the default so the assertion is
+          // meaningful regardless of the world's prior config (clamped 1–6).
+          const fresh = original === 5 ? 4 : 5;
+          try {
+            const input = app.element.querySelector('[name="narrationLength"]');
+            assert.isOk(input, "narrationLength input should render on the narrator tab");
+            input.value = String(fresh);
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveNarratorSettings"));
+
+            const persisted = game.settings.get(MODULE_ID, "narrationLength");
+            assert.equal(persisted, fresh,
+              `narrationLength should be persisted as ${fresh}`);
+          } finally {
+            await game.settings.set(MODULE_ID, "narrationLength", original).catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Settings Round-Trip" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECAP MODES — !recap chat dispatch routing + postSessionRecap branches
+// ─────────────────────────────────────────────────────────────────────────────
+// The existing `chatCardActions` batch covers the recap card's Refresh
+// button → postCampaignRecap regen; `recapEndToEnd` covers the
+// chronicleWriter fallback when characterIds is empty. Neither covers:
+//   - the !recap chat-dispatch router (session vs campaign disambiguation)
+//   - the isRecapCommand predicate matrix
+//   - postSessionRecap's empty-card vs counted-moves branches
+//   - postCampaignRecap's silent option (no card, returns text)
+//
+// This batch closes those gaps. To avoid spending Claude credit, the
+// campaign-recap tests rely on the empty-chronicle path (postCampaignRecap
+// short-circuits to the empty card when getCampaignRecap returns no text),
+// and the silent option's behaviour is asserted directly.
+
+function registerRecapModesTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.recapModes",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      const createdMessageIds = [];
+      let originalState = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        originalState = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE_ID, "campaignState") ?? {}));
+      });
+
+      after(async function () {
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState)
+            .catch(() => {});
+        }
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break;
+          await flushMicrotasks();
+        }
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+
+      // ── 1: isRecapCommand predicate matrix ───────────────────────────────
+      //
+      // Note on the prefix-match shape: isRecapCommand uses a bare
+      // `startsWith("!recap")` rather than a word-boundary regex (see
+      // src/index.js — contrast isPaceCommand which uses /^!pace(\s|$)/i and
+      // isFactContinuityCommand which uses /^!(truth|state)\s+/i). That
+      // means strings like "!recapify the world" also match the predicate.
+      // This batch ASSERTS the actual behaviour, not the "ideal" word-
+      // boundary behaviour — fixing the inconsistency belongs in a
+      // dedicated change, not in a coverage test.
+      describe("isRecapCommand — predicate matrix", function () {
+        it("matches every string with the !recap prefix (and ignores its own response-card flag)", async function () {
+          if (skipNotGM(this)) return;
+          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+          const make = (content, flags = {}) => ({
+            content,
+            isContentVisible: true,
+            type:    "ic",
+            whisper: [],
+            rolls:   [],
+            flags,
+            user:    game.user.id,
+            author:  game.user,
+          });
+          assert.isTrue(idx.isRecapCommand(make("!recap")),
+            "bare !recap should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap session")),
+            "!recap session should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap campaign")),
+            "!recap campaign should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap session 5")),
+            "!recap session N should match");
+          assert.isFalse(idx.isRecapCommand(make("regular narration")),
+            "predicate must reject unrelated text");
+          assert.isFalse(idx.isRecapCommand(make("/recap")),
+            "predicate requires the ! prefix");
+          assert.isFalse(
+            idx.isRecapCommand(make("!recap", { [MODULE_ID]: { recapCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+        });
+      });
+
+      // ── 2: !recap session — routes to postSessionRecap (session card) ────
+      describe("!recap session — chat dispatch routes to session recap", function () {
+        it("posts a recapType='session' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-recap";
+          seed.sessionNumber    = 99;
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap session"));
+          const sessionCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session");
+          assert.isObject(sessionCard,
+            "!recap session must route to postSessionRecap and post a session-typed card");
+        });
+      });
+
+      // ── 3: bare !recap — routes to postCampaignRecap (campaign card) ─────
+      describe("!recap (bare) — chat dispatch routes to campaign recap", function () {
+        it("posts a recapType='campaign' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          // Seed an empty chronicle context so postCampaignRecap takes the
+          // empty-card path without invoking Claude — campaignRecapText is
+          // cached on campaignState and read by getCampaignRecap.
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText      = "";
+          seed.campaignRecapChronLen  = 0;
+          seed.characterIds           = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap"));
+          const campaignCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "campaign");
+          assert.isObject(campaignCard,
+            "bare !recap must route to postCampaignRecap and post a campaign-typed card");
+        });
+      });
+
+      // ── 4: !recap campaign — same as bare !recap (explicit form) ─────────
+      describe("!recap campaign — chat dispatch routes to campaign recap", function () {
+        it("posts a recapType='campaign' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText     = "";
+          seed.campaignRecapChronLen = 0;
+          seed.characterIds          = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap campaign"));
+          const campaignCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "campaign");
+          assert.isObject(campaignCard,
+            "!recap campaign must route to postCampaignRecap and post a campaign-typed card");
+        });
+      });
+
+      // ── 5: postSessionRecap — empty path ─────────────────────────────────
+      describe("postSessionRecap — empty when no narrator cards in session", function () {
+        it("posts a card with recapEmpty=true when no narratorCard messages match", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postSessionRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-empty";
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
+          await postSessionRecap(seed, null);
+          for (let i = 0; i < 20 && game.messages.size <= beforeIds.size; i++) {
+            await flushMicrotasks();
+          }
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          for (const m of fresh) createdMessageIds.push(m.id);
+
+          const emptyCard = fresh.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session" &&
+            m?.flags?.[MODULE_ID]?.recapEmpty === true);
+          assert.isObject(emptyCard,
+            "no narrator cards in session → recapEmpty=true card");
+        });
+      });
+
+      // ── 6: postSessionRecap — counts a seeded narrator card ──────────────
+      describe("postSessionRecap — counts seeded narrator cards", function () {
+        it("posts a non-empty session card when a matching narratorCard exists", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postSessionRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-counted";
+          seed.sessionNumber    = 7;
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          // Seed a narrator-card message in this session so the recap finds it.
+          const narratorMsg = await ChatMessage.create({
+            content: `<div class="sf-narration-card"><div class="sf-narration-prose">Quench narration probe.</div></div>`,
+            flags: {
+              [MODULE_ID]: {
+                narratorCard:  true,
+                sessionId:     "ssn-quench-counted",
+                moveId:        "face_danger",
+                outcome:       "strong_hit",
+                narrationText: "Quench narration probe.",
+              },
+            },
+          });
+          if (narratorMsg?.id) createdMessageIds.push(narratorMsg.id);
+          await flushMicrotasks();
+
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
+          await postSessionRecap(seed, null);
+          for (let i = 0; i < 20 && game.messages.size <= beforeIds.size; i++) {
+            await flushMicrotasks();
+          }
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          for (const m of fresh) createdMessageIds.push(m.id);
+
+          const recapCard = fresh.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session");
+          assert.isObject(recapCard,
+            "a session recap card should be posted");
+          assert.notEqual(recapCard.flags[MODULE_ID].recapEmpty, true,
+            "the card should NOT be recapEmpty when a narrator card exists in the session");
+          assert.equal(recapCard.flags[MODULE_ID].sessionNumber, 7,
+            "the card should carry the seeded sessionNumber");
+        });
+      });
+
+      // ── 7: postCampaignRecap — silent option skips the card ──────────────
+      describe("postCampaignRecap — silent option does not post a card", function () {
+        it("with {silent: true}, no chat card is created even on the empty path", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postCampaignRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText     = "";
+          seed.campaignRecapChronLen = 0;
+          seed.characterIds          = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const beforeCount = game.messages.size;
+          await postCampaignRecap(seed, { silent: true });
+          for (let i = 0; i < 10; i++) await flushMicrotasks();
+
+          assert.equal(game.messages.size, beforeCount,
+            "silent:true must NOT create a chat message");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Recap Modes" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO DEGRADATION — synthesise / fetchSubscription HTTP error paths
+// ─────────────────────────────────────────────────────────────────────────────
+// `synthesise` and `fetchSubscription` validation paths and the 401-hint
+// console warn are unit-tested in tests/unit/audio.test.js. The existing
+// `audio` Quench batch covers the audioEnabledForThisClient triple gate
+// and the button hide/unhide flow on a healthy stub key.
+//
+// This batch fills the gap on what happens when the live network call
+// fails: non-401 HTTP error statuses surface a readable error to the
+// caller, and the togglePlayback failure path is graceful — button hits
+// the ERROR state with a tooltip but the chat-card prose remains visible
+// (the documented "audio never blocks chat" invariant from
+// docs/audio-narration-scope.md).
+//
+// Note on coverage scope: the priority-list audit referenced a
+// "streaming → fullgen fallback" path, but the production code in
+// src/audio/index.js currently calls `synthesise({ stream: false })`
+// unconditionally — there is no streaming endpoint in production. That
+// item is documentation drift, not a real missing test.
+
+function registerAudioDegradationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.audioDegradation",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      // ── 1: synthesise — 429 rate-limit surfaces the status to the caller
+      describe("synthesise — 429 rate limit", function () {
+        it("throws with the status code in the message", async function () {
+          this.timeout(10000);
+          const { synthesise } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("rate limited", { status: 429 })]],
+              () => synthesise({
+                apiKey:  "sk_test_quench",
+                voiceId: "voice-x",
+                modelId: "eleven_flash_v2_5",
+                text:    "Hello quench.",
+                stream:  false,
+              }),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.instanceOf(caught, Error, "synthesise should throw on non-2xx");
+          assert.match(caught.message, /429/,
+            "the thrown error should mention the HTTP status code");
+        });
+      });
+
+      // ── 2: synthesise — 503 service unavailable surfaces the status ──────
+      describe("synthesise — 503 service unavailable", function () {
+        it("throws with the 503 status code in the message", async function () {
+          this.timeout(10000);
+          const { synthesise } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("upstream down", { status: 503 })]],
+              () => synthesise({
+                apiKey:  "sk_test_quench",
+                voiceId: "voice-x",
+                modelId: "eleven_flash_v2_5",
+                text:    "Hello quench.",
+                stream:  false,
+              }),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.instanceOf(caught, Error, "synthesise should throw on 503");
+          assert.match(caught.message, /503/,
+            "the thrown error should mention the HTTP status code");
+        });
+      });
+
+      // ── 3: fetchSubscription — 500 throws with status ────────────────────
+      describe("fetchSubscription — non-2xx", function () {
+        it("throws when ElevenLabs returns 500 so the Audio tab can show 'unavailable'", async function () {
+          this.timeout(10000);
+          const { fetchSubscription } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("internal error", { status: 500 })]],
+              () => fetchSubscription("sk_test_quench"),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.instanceOf(caught, Error, "fetchSubscription should throw on 500");
+          assert.match(caught.message, /500/);
+        });
+      });
+
+      // ── 4: togglePlayback failure path — chat card stays readable ────────
+      describe("togglePlayback — chat-never-blocked invariant", function () {
+        it("when synthesise fails on click, the button hits ERROR state and the chat-card prose remains in the DOM", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+
+          // Snapshot + flip the three audio gates so audioEnabledForThisClient
+          // returns true (otherwise the renderChatMessage hook short-circuits
+          // and the button is never bound).
+          const originals = {
+            "audio.enabled":       game.settings.get(MODULE_ID, "audio.enabled"),
+            "audio.clientEnabled": game.settings.get(MODULE_ID, "audio.clientEnabled"),
+            "elevenLabsApiKey":    game.settings.get(MODULE_ID, "elevenLabsApiKey"),
+            "audio.narratorVoiceId": game.settings.get(MODULE_ID, "audio.narratorVoiceId"),
+          };
+
+          let createdId = null;
+          try {
+            await game.settings.set(MODULE_ID, "audio.enabled",         true);
+            await game.settings.set(MODULE_ID, "audio.clientEnabled",   true);
+            await game.settings.set(MODULE_ID, "elevenLabsApiKey",      "sk_test_quench");
+            // The voice must be configured or buildPlayableSegments throws
+            // before reaching the fetch. We want fetch to fail so we set
+            // a voice and let the stubbed fetch throw downstream.
+            await game.settings.set(MODULE_ID, "audio.narratorVoiceId", "voice-quench");
+
+            const msg = await ChatMessage.create({
+              content: `
+                <div class="sf-narration-card">
+                  <div class="sf-narration-prose">Audio-degradation probe prose.</div>
+                  <div class="sf-narration-footer">
+                    <button class="sf-audio-play-btn" data-action="audioPlayToggle" hidden>Play</button>
+                  </div>
+                </div>
+              `,
+              flags: {
+                [MODULE_ID]: {
+                  narratorCard:  true,
+                  narrationText: "Audio-degradation probe prose.",
+                },
+              },
+            });
+            createdId = msg.id;
+
+            // Let the renderChatMessage hook bind the button.
+            for (let i = 0; i < 20; i++) await flushMicrotasks();
+
+            const btn = document.querySelector(
+              `[data-message-id="${msg.id}"] .sf-audio-play-btn`);
+            // The button being bound at all is a precondition. On hosted CI
+            // the hook timing can be slow; skip gracefully if it didn't run.
+            if (!btn || btn.hasAttribute("hidden")) {
+              this.skip();
+              return;
+            }
+
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("nope", { status: 503 })]],
+              async () => {
+                btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                // Poll until the button state lands at "error" or the deadline
+                // passes — togglePlayback is async with multiple awaits.
+                const deadline = Date.now() + 5000;
+                while (Date.now() < deadline) {
+                  if (btn.getAttribute("data-state") === "error") break;
+                  await flushMicrotasks();
+                }
+              },
+            );
+
+            assert.equal(btn.getAttribute("data-state"), "error",
+              "button should land in the ERROR state when synthesise throws");
+            // Chat-never-blocked invariant: the prose element should still
+            // be in the DOM with readable text.
+            const prose = document.querySelector(
+              `[data-message-id="${msg.id}"] .sf-narration-prose`);
+            assert.isOk(prose, "the narrator prose element should still be in the DOM");
+            assert.include(prose.textContent, "Audio-degradation probe prose",
+              "the prose text must remain readable even after an audio failure");
+          } finally {
+            if (createdId) {
+              const msg = game.messages?.get(createdId);
+              if (msg?.delete) await msg.delete().catch(() => {});
+            }
+            for (const [k, v] of Object.entries(originals)) {
+              await game.settings.set(MODULE_ID, k, v).catch(() => {});
+            }
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Audio Degradation" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELP COMPENDIUM GENERATION — static export shape + live journal stamping
+// ─────────────────────────────────────────────────────────────────────────────
+// The help compendium is generated programmatically from src/help/helpJournal.js
+// at world ready (via ensureHelpJournal in src/index.js). No unit tests exist
+// — the module's effect is a live Foundry document. This batch pins:
+//   - PAGES exports the expected shape (every page has name / sort / non-empty
+//     text content)
+//   - PAGES has unique sort values so the rendered order is stable
+//   - CONTENT_VERSION is a non-empty string in semver-ish form
+//   - the JournalEntry exists in the live world after world init
+//   - the journal has page count equal to PAGES.length
+//   - the journal carries the contentVersion flag matching CONTENT_VERSION
+//     (catches CONTENT_VERSION-bump regressions where the journal would
+//     otherwise be silently stale)
+//
+// Note: this batch does NOT assert CONTENT_VERSION against module.json —
+// per CLAUDE.md the two are distinct version concepts (module.json is the
+// release tag; CONTENT_VERSION is the in-game help content fingerprint).
+
+function registerHelpCompendiumTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.helpCompendiumGeneration",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      let PAGES = null;
+      let CONTENT_VERSION = null;
+      let JOURNAL_NAME = null;
+
+      before(async function () {
+        const mod = await import(`/modules/${MODULE_ID}/src/help/helpJournal.js`);
+        PAGES = mod.PAGES;
+        CONTENT_VERSION = mod.CONTENT_VERSION;
+        JOURNAL_NAME = mod.JOURNAL_NAME;
+      });
+
+      // ── 1: PAGES export shape ────────────────────────────────────────────
+      describe("PAGES export — shape", function () {
+        it("is a non-empty array", function () {
+          assert.isArray(PAGES, "PAGES must be an array");
+          assert.isAbove(PAGES.length, 5,
+            "PAGES should have a non-trivial number of pages (>5)");
+        });
+
+        it("every entry has name, sort, and non-empty text.content", function () {
+          for (const p of PAGES) {
+            assert.isObject(p, `each PAGE entry must be an object (got ${typeof p})`);
+            assert.isString(p.name);
+            assert.isAbove(p.name.length, 0, `page name must be non-empty`);
+            assert.isNumber(p.sort, `page "${p.name}" must have a numeric sort`);
+            assert.isObject(p.text,  `page "${p.name}" must have a text object`);
+            assert.isString(p.text.content,
+              `page "${p.name}" must have a string text.content`);
+            assert.isAbove(p.text.content.length, 50,
+              `page "${p.name}" text.content should be non-trivial`);
+          }
+        });
+
+        it("sort values are unique so the rendered order is deterministic", function () {
+          const sorts = PAGES.map(p => p.sort);
+          const unique = new Set(sorts);
+          assert.equal(unique.size, sorts.length,
+            `sort values must be unique (got ${sorts.length} pages but ${unique.size} unique sorts)`);
+        });
+      });
+
+      // ── 2: CONTENT_VERSION export ────────────────────────────────────────
+      describe("CONTENT_VERSION export", function () {
+        it("is a non-empty string in semver-ish form", function () {
+          assert.isString(CONTENT_VERSION,
+            "CONTENT_VERSION must be a string");
+          assert.match(CONTENT_VERSION, /^\d+\.\d+\.\d+/,
+            `CONTENT_VERSION should match \\d+\\.\\d+\\.\\d+ (got "${CONTENT_VERSION}")`);
+        });
+      });
+
+      // ── 3: JOURNAL_NAME export ───────────────────────────────────────────
+      describe("JOURNAL_NAME export", function () {
+        it("is a non-empty string", function () {
+          assert.isString(JOURNAL_NAME);
+          assert.isAbove(JOURNAL_NAME.length, 0);
+        });
+      });
+
+      // ── 4: live journal — exists, page count matches, flag matches ───────
+      describe("live help journal — created and contentVersion-stamped", function () {
+        it("a JournalEntry with the configured name exists in the world", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          assert.isOk(journal,
+            `Help journal "${JOURNAL_NAME}" must exist (created at world init by ensureHelpJournal)`);
+        });
+
+        it("the journal's page count equals PAGES.length", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          if (!journal) { this.skip(); return; }
+          const pageCount = journal.pages?.size ?? journal.pages?.contents?.length ?? 0;
+          assert.equal(pageCount, PAGES.length,
+            `journal page count drift — module declares ${PAGES.length} pages, journal has ${pageCount}. ` +
+            `Likely a stale-version journal that didn't re-build on CONTENT_VERSION bump.`);
+        });
+
+        it("the journal's contentVersion flag matches CONTENT_VERSION", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          if (!journal) { this.skip(); return; }
+          const stored = journal.getFlag(MODULE_ID, "contentVersion");
+          assert.equal(stored, CONTENT_VERSION,
+            `journal contentVersion flag drift — module declares "${CONTENT_VERSION}", journal has "${stored}". ` +
+            `ensureHelpJournal() should have re-built the journal at world ready.`);
+        });
+      });
+
+      // ── 5: ensureHelpJournal — idempotent ────────────────────────────────
+      describe("ensureHelpJournal — idempotent", function () {
+        it("calling again with the current CONTENT_VERSION does not throw and does not duplicate", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { ensureHelpJournal } = await import(
+            `/modules/${MODULE_ID}/src/help/helpJournal.js`);
+          const before = (game.journal?.contents ?? [])
+            .filter(j => j.name === JOURNAL_NAME).length;
+          // Should be a no-op when the stored flag already matches.
+          await ensureHelpJournal();
+          const after = (game.journal?.contents ?? [])
+            .filter(j => j.name === JOURNAL_NAME).length;
+          assert.equal(after, before,
+            "ensureHelpJournal must not duplicate the journal on a same-version call");
+          assert.isAtLeast(after, 1,
+            "the journal should still exist after the no-op call");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Help Compendium Generation" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// I18N RESOLUTION — live game.i18n integration of the localize* wrappers
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-logic coverage of localize() lives in tests/unit/i18n.test.js with a
+// mocked game.i18n (English fallback, missing-key behaviour, unknown-slug
+// fallback). This batch exercises the same wrappers against the real
+// foundry-ironsworn translation table so a vendor key rename or a missing
+// translation row surfaces here. Even when individual keys are missing in
+// foundry-ironsworn (the wrapper falls back to its English table silently),
+// the wrappers MUST return non-empty strings — that's the contract.
+
+function registerI18nResolutionTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.i18nResolution",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      let i18n = null;
+
+      before(async function () {
+        i18n = await import(`/modules/${MODULE_ID}/src/system/i18n.js`);
+      });
+
+      // Per-wrapper signature: assert non-empty string return. The
+      // notEqual(out, slug) "echo guard" assertion was tried in an
+      // earlier revision but proved brittle — foundry-ironsworn's
+      // translation values for stats / meters happen to be the same
+      // lowercase strings as our slugs ("edge" → "edge"), so the
+      // localized return coincidentally matches the slug even though
+      // the i18n key DID resolve. The signal of "wrapper fell all the
+      // way through to slug verbatim" is preserved by the dedicated
+      // unknown-slug test below (group 5).
+
+      // ── 1: localizeStat — all five canonical stats resolve non-empty ─────
+      describe("localizeStat — five canonical stats", function () {
+        const STATS = ["edge", "heart", "iron", "shadow", "wits"];
+        for (const slug of STATS) {
+          it(`localizeStat("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeStat(slug);
+            assert.isString(out, `localizeStat must return a string`);
+            assert.isAbove(out.trim().length, 0,
+              `localizeStat("${slug}") must be non-empty even on translation miss`);
+          });
+        }
+      });
+
+      // ── 2: localizeMeter — all four meters resolve non-empty ─────────────
+      describe("localizeMeter — four canonical meters", function () {
+        const METERS = ["health", "spirit", "supply", "momentum"];
+        for (const slug of METERS) {
+          it(`localizeMeter("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeMeter(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+          });
+        }
+      });
+
+      // ── 3: localizeDebility — character + starship slugs ─────────────────
+      describe("localizeDebility — character and starship slugs", function () {
+        // Canonical character debilities (wounded/shaken/unprepared/encumbered)
+        // plus battered (the starship-only debility — a 1.5.x addition that
+        // would silently regress if the table key were removed).
+        const DEBILITIES = [
+          "wounded", "shaken", "unprepared", "encumbered", "battered",
+        ];
+        for (const slug of DEBILITIES) {
+          it(`localizeDebility("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeDebility(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+          });
+        }
+      });
+
+      // ── 4: localizeMove — representative move slugs ──────────────────────
+      describe("localizeMove — representative move slugs", function () {
+        // A sample from each move category: adventure, oracle, fate, combat.
+        // MOVE_KEYS' i18n keys are documented in src/system/i18n.js as
+        // vendor-version-sensitive — the English fallback is mandatory and
+        // is what we assert here.
+        const MOVES = [
+          "face_danger", "pay_the_price", "ask_the_oracle",
+          "endure_harm", "make_a_connection",
+        ];
+        for (const slug of MOVES) {
+          it(`localizeMove("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeMove(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+          });
+        }
+      });
+
+      // ── 5: unknown slug fallback — wrappers must not throw ───────────────
+      describe("unknown slug — each wrapper falls back gracefully", function () {
+        it("localizeStat / localizeMeter / localizeDebility / localizeMove all return the slug for an unknown key", function () {
+          const slug = "quench-unknown-slug-do-not-use";
+          for (const fn of [i18n.localizeStat, i18n.localizeMeter,
+                            i18n.localizeDebility, i18n.localizeMove]) {
+            let out;
+            try {
+              out = fn(slug);
+            } catch (err) {
+              assert.fail(`wrapper threw on unknown slug: ${err?.message ?? err}`);
+            }
+            assert.isString(out, `wrapper must return a string for an unknown slug`);
+            // The wrapper's contract: unknown slug returns the slug itself
+            // (not undefined, not "[object Object]", not a thrown error).
+            assert.equal(out, slug,
+              `unknown-slug fallback should return the slug verbatim`);
+          }
+        });
+      });
+
+      // ── 6: consistency — repeated calls return the same string ───────────
+      describe("consistency — repeated calls are idempotent", function () {
+        it("localizeStat('edge') returns the same string on repeat calls", function () {
+          const a = i18n.localizeStat("edge");
+          const b = i18n.localizeStat("edge");
+          const c = i18n.localizeStat("edge");
+          assert.equal(a, b, "localize must be deterministic");
+          assert.equal(b, c, "localize must be deterministic");
+        });
+      });
+    },
+    { displayName: "STARFORGED: I18n Resolution" },
   );
 }

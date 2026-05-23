@@ -82,11 +82,11 @@ suite. Three layered guards in `cypress/e2e/quench.cy.js`:
 
 1. **Stale-report guard.** Snapshot `quench.reports.length` before `runBatches`; after, require it grew by exactly 1. If the array didn't grow, either `runBatches` didn't fire a run or we're looking at the wrong collection — either way refuse to assert against a potentially-stale shape.
 
-2. **Minimum-passes floor.** `expect(stats.passes).to.be.at.least(100)`. Mocha counts `this.skip()` calls as `pending`, not as failures, so a precondition regression that mass-skips the entire suite would show `stats.failures === 0` and "pass" without actually testing anything. Most Quench batches gate on `if (skipNotGM(this))` or `if (skipNoKey(this))` — easy for a setup bug to skip everything. The 100 floor catches this without being brittle to legitimate test-count drift (current suite ~165 tests).
+2. **Pass floor — 95% of attempted.** `expect(stats.passes).to.be.at.least(Math.ceil(0.95 * (tests - pending)))`. Mocha counts `this.skip()` calls as `pending`, not as failures, so a precondition regression that mass-skips the entire suite would show `stats.failures === 0` and "pass" without actually testing anything. The 95%-of-attempted floor (a) scales with the suite size as new batches land, (b) ignores legitimate API-key skips (`skipNoKey`) so the gate doesn't break when CI lacks Claude/OpenRouter/ElevenLabs secrets, and (c) tolerates at most ~5% real failures of what ran. A secondary `at.least(100)` absolute backstop catches the case where the attempted-count itself collapses (most batches converted their failures to skips).
 
-3. **Max-skip ratio.** `expect(pending / tests).to.be.lessThan(0.2)`. Even if 100+ pass, an unusually high skip rate means a partial-precondition failure where some batches lost their auth gate.
+3. **Max-skip ratio.** `expect(pending / tests).to.be.lessThan(0.2)`. Even if the pass ratio holds, an unusually high skip rate means a partial-precondition failure where some batches lost their auth gate.
 
-If the suite shrinks below ~100 active tests in the future, the floor needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
+If the suite shrinks below ~100 active tests in the future, the absolute backstop needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
 
 **Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
 
@@ -112,15 +112,16 @@ loop between fixes and diagnostics.
 
 **Setup (one-time, in the workflow):**
 - Tee the orchestrator stdout to a log file: `npm run test:e2e 2>&1 | tee test/ci/cypress/artifacts/e2e-run.log` (with `set -o pipefail`).
-- On `if: failure()`, post the last ~50 KB of that log to the PR as a *sticky* comment — search existing comments for a hidden marker (`<!-- e2e-log:sticky -->`) and PATCH it in place via `gh api`; only POST a new one if none exists. Keeps the PR thread tidy across many iterations.
+- On `if: always()`, post a status comment to the PR with a hidden marker (`<!-- e2e-log:sticky -->`): on success a short status line (run page + head SHA); on failure the orchestrator-log tail (~50 KB). The same step covers both — `if: always()` so the comment fires regardless of CI outcome.
+- **Delete the existing marked comment first, then POST a fresh one** (not PATCH in place). The MCP `subscribe_pr_activity` subscription only routes `issue_comment.created` events to the agent; `issue_comment.edited` (which is what PATCH produces) does not wake the session. Delete+POST guarantees a `created` event per run, keeps the PR thread to one comment, and still preserves the marker pattern.
 
 **Setup (in the session):**
 - Call `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`. Webhook events for the PR arrive as `<github-webhook-activity>` messages that wake the session.
-- Don't poll. Don't use Bash `sleep` to wait for CI. The webhook tells you when a run finishes.
+- Don't poll. Don't use Bash `sleep` to wait for CI. The webhook tells you when a run finishes — success or failure.
 
 **On each `github-webhook-activity` event:**
 1. Call `mcp__github__pull_request_read` with `method=get_comments`. The response is large — slice via `python3 -c "print(open(file).read()[A:B])"` if it exceeds the token budget.
-2. Find the sticky comment (`'<!-- e2e-log:sticky -->' in body`). Read its tail.
+2. Find the sticky comment (`'<!-- e2e-log:sticky -->' in body`). The heading line is `## E2E run success` / `## E2E run failure` / `## E2E run cancelled` — read it first; on success continue with whatever's next; on failure read the orchestrator-log tail.
 3. Diagnose, fix, push. The push triggers a new run; the sticky comment updates in place. Repeat.
 
 **What WebFetch cannot do** (don't try):
