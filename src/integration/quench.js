@@ -68,6 +68,12 @@ Hooks.on("quenchReady", (quench) => {
   // Live API generation is left to manual smoke (the batch does not consume
   // ElevenLabs characters).
   registerAudioNarrationTests(quench);
+  // Fact Continuity — live integration for the sidecar/ledger/scene-lifecycle
+  // subsystem. Pure-logic coverage lives in tests/unit/factContinuity*.test.js;
+  // this batch pins the Foundry-side wiring: game.settings persistence, the
+  // !truth / !state / !scene chat dispatch path, and Section 6.5 surfacing in
+  // the assembled context packet.
+  registerFactContinuityTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5257,5 +5263,400 @@ function registerAudioNarrationTests(quench) {
       });
     },
     { displayName: "STARFORGED: Audio Narration" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACT CONTINUITY — live integration for sidecar / ledger / lifecycle / chat
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-logic coverage of sidecarParser, ledgers, and scene-lifecycle migration
+// lives under tests/unit/factContinuity*.test.js. This batch pins what unit
+// tests cannot reach:
+//   - game.settings persistence round-trips of campaignState.sceneTruths /
+//     sceneState through Foundry's serializer
+//   - the chat-hook dispatch path: !truth, !state, !scene posted as real
+//     ChatMessages, the dispatcher routing them to handleFactContinuityCommand
+//     / handleSceneCommand, and the response cards being flagged correctly
+//   - factContinuity.enabled = false gating the chat handlers
+//   - Section 6.5 surfacing in assembleContextPacket against a live
+//     campaignState
+
+function registerFactContinuityTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.factContinuity",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      // Snapshot the active campaignState so every test runs against the same
+      // baseline and any mutation gets restored, even on throw. Deep-clone
+      // because Foundry returns objects by reference.
+      let originalState = null;
+      const createdMessageIds = [];
+
+      before(async function () {
+        const raw = game.settings.get(MODULE_ID, "campaignState");
+        originalState = JSON.parse(JSON.stringify(raw ?? {}));
+      });
+
+      after(async function () {
+        // Restore the baseline so leftover sceneTruths/sceneState don't leak
+        // into subsequent batches (or into a live world if a developer runs
+        // the suite manually).
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState).catch(() => {});
+        }
+        // Reap any FC/scene command cards we posted.
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      async function loadCampaignState() {
+        // Always re-read — the chat dispatcher mutates and persists, and we
+        // want the post-handler state, not the stale snapshot.
+        return game.settings.get(MODULE_ID, "campaignState");
+      }
+      async function writeCampaignState(state) {
+        await game.settings.set(MODULE_ID, "campaignState", state);
+      }
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        // Let the createChatMessage hook + the FC handler's async chain settle.
+        for (let i = 0; i < 5; i++) await flushMicrotasks();
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+      function findFlaggedCard(newOnes, flagName) {
+        return newOnes.find(m => m?.flags?.[MODULE_ID]?.[flagName] === true);
+      }
+
+      // ── 1: applySidecar against a live, persisted campaignState ──────────
+      describe("applySidecar — live game.settings round-trip", function () {
+        it("truths and state changes persist through game.settings.set/get", async function () {
+          if (skipNotGM(this)) return;
+          const state = JSON.parse(JSON.stringify(originalState ?? {}));
+          state.currentSessionId  = "ssn-quench";
+          state.currentSceneId    = "sc-quench-applysidecar";
+          state.sceneTruths       = [];
+          state.sceneState        = { bySubject: {}, sceneId: null };
+          state.dismissedEntities = state.dismissedEntities ?? [];
+
+          const { applySidecar } = await import(
+            `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+          applySidecar(
+            {
+              newTruths: [
+                { subject: "Quench Officer", fact: "Walks with a limp" },
+              ],
+              stateChanges: [
+                { subject: "scene", attribute: "lighting", value: "dim" },
+              ],
+            },
+            { campaignState: state, sessionId: "ssn-quench", sceneId: "sc-quench-applysidecar" },
+          );
+
+          await writeCampaignState(state);
+          const roundTripped = await loadCampaignState();
+
+          assert.isArray(roundTripped.sceneTruths, "sceneTruths must be an array");
+          const truth = roundTripped.sceneTruths.find(t => t?.fact === "Walks with a limp");
+          assert.isObject(truth, "truth survives serialization");
+          assert.equal(truth.subject?.kind, "text",   "text-subject preserved when no entity match");
+          assert.equal(truth.subject?.text, "Quench Officer");
+          assert.equal(truth.retracted, false);
+
+          const sceneBlock = roundTripped.sceneState?.bySubject?.scene;
+          assert.isArray(sceneBlock, "scene-keyed state list survives serialization");
+          const lighting = sceneBlock.find(e => e.attribute === "lighting");
+          assert.isObject(lighting);
+          assert.equal(lighting.value, "dim");
+        });
+      });
+
+      // ── 2: !truth set posts a flagged card and mutates sceneTruths ───────
+      describe("!truth set — chat dispatch", function () {
+        it("posts a factContinuityCommand card and appends a truth to sceneTruths", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-truthset";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!truth set "Quench Captain" Always uses a left-hand draw'),
+            );
+
+            const card = findFlaggedCard(newOnes, "factContinuityCommand");
+            assert.isObject(card, "an FC command response card should be posted");
+            assert.equal(card.flags[MODULE_ID].domain, "truth");
+            assert.equal(card.flags[MODULE_ID].verb,   "set");
+
+            const after = await loadCampaignState();
+            const truth = (after.sceneTruths ?? []).find(t =>
+              t?.fact === "Always uses a left-hand draw");
+            assert.isObject(truth, "the truth should be persisted");
+            assert.equal(truth.subject?.text, "Quench Captain",
+              "quoted multi-word subject parses correctly");
+          });
+        });
+      });
+
+      // ── 3: !truth strike retracts a truth by id-prefix ───────────────────
+      describe("!truth strike — chat dispatch", function () {
+        it("retracts the matched truth in place (does not delete)", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            // Seed a truth via the library so we know its id.
+            const { setTruth } = await import(
+              `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-strike";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            const entry = setTruth(
+              { kind: "text", text: "doomed npc" },
+              "Has a secret",
+              seed,
+              { actor: "gm", isGM: true },
+            );
+            assert.isObject(entry, "test setup: seed truth should exist");
+            await writeCampaignState(seed);
+
+            const prefix = entry.id.slice(0, 6);
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat(`!truth strike ${prefix}`),
+            );
+
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"),
+              "an FC command response card should be posted");
+            const after = await loadCampaignState();
+            const survivor = (after.sceneTruths ?? []).find(t => t?.id === entry.id);
+            assert.isObject(survivor, "truth still present (strike = retraction, not deletion)");
+            assert.equal(survivor.retracted, true, "truth should be marked retracted");
+            assert.isNumber(survivor.retractedAt);
+          });
+        });
+      });
+
+      // ── 4: !state set parses subject + attribute=value ───────────────────
+      describe("!state set — chat dispatch", function () {
+        it("writes an attribute=value entry into sceneState.bySubject", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-stateset";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!state set scene lighting=red emergency'),
+            );
+
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"),
+              "an FC command response card should be posted");
+            const after = await loadCampaignState();
+            const sceneList = after.sceneState?.bySubject?.scene;
+            assert.isArray(sceneList, "scene-keyed state list should exist");
+            const entry = sceneList.find(e => e.attribute === "lighting");
+            assert.isObject(entry, "lighting attribute should be set");
+            assert.equal(entry.value, "red emergency",
+              "value preserves intra-value whitespace");
+          });
+        });
+      });
+
+      // ── 5: !state strike removes an attribute entry ──────────────────────
+      describe("!state strike — chat dispatch", function () {
+        it("removes the matched (subject, attribute) state entry", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: { scene: [
+              { attribute: "lighting", value: "dim", updatedAt: Date.now() },
+            ] }, sceneId: "sc-quench-statestrike" };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-statestrike";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat('!state strike scene lighting'),
+            );
+            assert.isObject(findFlaggedCard(newOnes, "factContinuityCommand"));
+
+            const after = await loadCampaignState();
+            const sceneList = after.sceneState?.bySubject?.scene;
+            const survivor = (sceneList ?? []).find(e => e.attribute === "lighting");
+            assert.isUndefined(survivor, "lighting attribute should be gone");
+          });
+        });
+      });
+
+      // ── 6: !scene start posts a sceneCommand card and sets currentSceneId
+      describe("!scene start — chat dispatch", function () {
+        it("posts a sceneCommand card and assigns campaignState.currentSceneId", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSceneId    = null;
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat("!scene start"),
+            );
+            const card = findFlaggedCard(newOnes, "sceneCommand");
+            assert.isObject(card, "a scene-command card should be posted");
+            assert.equal(card.flags[MODULE_ID].verb, "start");
+
+            const after = await loadCampaignState();
+            assert.isString(after.currentSceneId,
+              "currentSceneId should be assigned");
+            assert.match(after.currentSceneId, /^sc-/, "id has the sc- prefix");
+          });
+        });
+      });
+
+      // ── 7: !scene end clears the active ledgers + currentSceneId ─────────
+      describe("!scene end — chat dispatch", function () {
+        it("posts a sceneCommand card and discards sceneTruths + currentSceneId", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            // Seed: an active scene with one free-text truth (archives to WJ
+            // Lore on endScene; we don't assert against the journal here —
+            // sceneLifecycle.test.js covers that branch — but we DO assert the
+            // active ledger is emptied and currentSceneId clears.
+            const { setTruth } = await import(
+              `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-end";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            setTruth({ kind: "text", text: "quench corridor" }, "Smells of ozone", seed,
+              { actor: "gm", isGM: true });
+            await writeCampaignState(seed);
+
+            const { newOnes } = await withSilencedNotifications(() =>
+              postChat("!scene end"),
+            );
+            const card = findFlaggedCard(newOnes, "sceneCommand");
+            assert.isObject(card, "a scene-command card should be posted");
+            assert.equal(card.flags[MODULE_ID].verb, "end");
+
+            const after = await loadCampaignState();
+            assert.isArray(after.sceneTruths,    "sceneTruths shape preserved");
+            assert.equal(after.sceneTruths.length, 0, "sceneTruths cleared");
+            assert.isNull(after.currentSceneId,  "currentSceneId cleared");
+          });
+        });
+      });
+
+      // ── 8: factContinuity.enabled = false gates !truth ───────────────────
+      describe("disabled setting — !truth refuses to mutate state", function () {
+        it("a !truth set posted while disabled does not append to sceneTruths", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", false, async () => {
+            const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+            seed.sceneTruths       = [];
+            seed.sceneState        = { bySubject: {}, sceneId: null };
+            seed.currentSessionId  = "ssn-quench";
+            seed.currentSceneId    = "sc-quench-gated";
+            seed.dismissedEntities = seed.dismissedEntities ?? [];
+            await writeCampaignState(seed);
+
+            await withSilencedNotifications(() =>
+              postChat('!truth set scene Lights flicker overhead'),
+            );
+
+            const after = await loadCampaignState();
+            assert.equal((after.sceneTruths ?? []).length, 0,
+              "no truth should be appended when factContinuity.enabled = false");
+          });
+        });
+      });
+
+      // ── 9: Section 6.5 surfaces in the assembled context packet ──────────
+      describe("Section 6.5 — surfaces in assembleContextPacket", function () {
+        it("a sceneTruth in campaignState appears as a binding-truths block", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+
+          await withTempSetting("factContinuity.enabled", true, async () => {
+            await withTempSetting("factContinuity.ledgerInContext", true, async () => {
+              const { setTruth } = await import(
+                `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
+              const { assembleContextPacket } = await import(
+                `/modules/${MODULE_ID}/src/context/assembler.js`);
+
+              const state = JSON.parse(JSON.stringify(originalState ?? {}));
+              state.sceneTruths       = [];
+              state.sceneState        = { bySubject: {}, sceneId: "sc-quench-asm" };
+              state.currentSessionId  = "ssn-quench";
+              state.currentSceneId    = "sc-quench-asm";
+              state.dismissedEntities = state.dismissedEntities ?? [];
+              // A scene-kind truth so the relevance filter accepts it
+              // unconditionally (no entity/location match required).
+              setTruth({ kind: "scene", sceneId: "sc-quench-asm" },
+                "The blast door is welded shut", state,
+                { actor: "gm", isGM: true });
+
+              const packet = await assembleContextPacket(
+                /* resolution */ null,
+                state,
+                { tokenBudget: 4000 },
+              );
+              assert.isObject(packet, "assembleContextPacket returns an object");
+              assert.isString(packet.assembled, "assembled string present");
+              assert.include(
+                packet.assembled,
+                "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
+                "Section 6.5 header should appear in the assembled prompt",
+              );
+              assert.include(
+                packet.assembled,
+                "The blast door is welded shut",
+                "the seeded truth should be rendered in the block",
+              );
+            });
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Fact Continuity" },
   );
 }
