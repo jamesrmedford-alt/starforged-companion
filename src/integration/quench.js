@@ -100,6 +100,12 @@ Hooks.on("quenchReady", (quench) => {
   // this batch pins the end-to-end integration: that the right permissions
   // block appears in the assembled system prompt for each narrator class.
   registerNedPermissionsMatrixTests(quench);
+  // Settings round-trip — DOM-write-then-game.settings-read for the About
+  // tab API key fields and the Narrator tab fields. The existing
+  // settingsPanel batch covers switchTab/mischief and the safety
+  // add/removeLine paths; this batch covers the persistence round-trips
+  // and the GM-only / password-masking gates.
+  registerSettingsRoundTripTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6419,5 +6425,176 @@ function registerNedPermissionsMatrixTests(quench) {
       });
     },
     { displayName: "STARFORGED: NED Permissions Matrix" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS ROUND-TRIP — DOM-write → game.settings-read for Narrator / About
+// ─────────────────────────────────────────────────────────────────────────────
+// Existing settingsPanel batch covers switchTab→mischief, setDial→chaotic,
+// and addLine/removeLine on the safety tab. This batch covers what those
+// don't: the saveNarratorSettings + saveApiKeys handlers, the password-input
+// masking of the About-tab API key fields (privacy regression guard), and
+// the documented "leave blank to keep existing value" semantics.
+//
+// Each test snapshots the affected setting, mutates DOM, clicks Save, asserts
+// the round-trip, and restores in a finally so leftover writes don't leak
+// into other batches.
+
+function registerSettingsRoundTripTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.settingsRoundTrip",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let app = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        const { SettingsPanelApp } = await import(
+          `/modules/${MODULE_ID}/src/ui/settingsPanel.js`);
+        app = new SettingsPanelApp();
+        await awaitRender(app);
+      });
+
+      after(async function () {
+        if (app?.close) await app.close().catch(() => {});
+        app = null;
+      });
+
+      // Helper: switch to a tab and wait for the pane to re-render.
+      async function gotoTab(tab) {
+        await clickAction(app, "switchTab", { tab });
+        await awaitRender(app);
+      }
+
+      // ── 1: tab navigation — every tab renders without throwing ──────────
+      describe("switchTab — all five tabs render", function () {
+        const TABS = ["safety", "mischief", "narrator", "audio", "about"];
+        for (const tab of TABS) {
+          it(`tab "${tab}" renders an active tab button after click`, async function () {
+            this.timeout(10000);
+            if (!app) { this.skip(); return; }
+            await gotoTab(tab);
+            const active = app.element.querySelector(
+              `[data-action="switchTab"][data-tab="${tab}"].is-active`);
+            assert.isOk(active, `tab "${tab}" button should carry .is-active after click`);
+          });
+        }
+      });
+
+      // ── 2: About tab — API key inputs use type="password" (masking) ──────
+      describe("About tab — API key fields are type=password", function () {
+        it("all three API key inputs (claude / openRouter / elevenLabs) are masked", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("about");
+          for (const name of ["claudeApiKey", "openRouterApiKey", "elevenLabsApiKey"]) {
+            const input = app.element.querySelector(`[name="${name}"]`);
+            assert.isOk(input, `${name} input should render on the About tab`);
+            assert.equal(input.type, "password",
+              `${name} must be type=password to mask the key from over-the-shoulder reads`);
+          }
+        });
+      });
+
+      // ── 3: saveApiKeys — DOM round-trip persists all three keys ─────────
+      describe("saveApiKeys — DOM round-trip to game.settings", function () {
+        it("entering values and clicking Save persists each key via game.settings.set", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("about");
+
+          const originals = {
+            claudeApiKey:     game.settings.get(MODULE_ID, "claudeApiKey")     ?? "",
+            openRouterApiKey: game.settings.get(MODULE_ID, "openRouterApiKey") ?? "",
+            elevenLabsApiKey: game.settings.get(MODULE_ID, "elevenLabsApiKey") ?? "",
+          };
+          const ts = Date.now();
+          const fresh = {
+            claudeApiKey:     `sk-ant-quench-${ts}`,
+            openRouterApiKey: `sk-or-v1-quench-${ts}`,
+            elevenLabsApiKey: `sk_quench-${ts}`,
+          };
+
+          try {
+            for (const [name, value] of Object.entries(fresh)) {
+              const input = app.element.querySelector(`[name="${name}"]`);
+              input.value = value;
+            }
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveApiKeys"));
+
+            for (const [name, value] of Object.entries(fresh)) {
+              assert.equal(game.settings.get(MODULE_ID, name), value,
+                `${name} should be persisted with the entered value`);
+            }
+          } finally {
+            for (const [name, value] of Object.entries(originals)) {
+              await game.settings.set(MODULE_ID, name, value).catch(() => {});
+            }
+          }
+        });
+      });
+
+      // ── 4: saveApiKeys — blank input preserves the existing key ─────────
+      describe("saveApiKeys — blank input preserves existing value", function () {
+        it("leaving claudeApiKey blank does NOT clear a previously stored key", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+
+          const original = game.settings.get(MODULE_ID, "claudeApiKey") ?? "";
+          const seedKey  = `sk-ant-seed-${Date.now()}`;
+          await game.settings.set(MODULE_ID, "claudeApiKey", seedKey);
+
+          try {
+            // Re-render so the panel picks up the seeded "set" status.
+            await gotoTab("about");
+            const input = app.element.querySelector('[name="claudeApiKey"]');
+            input.value = ""; // explicit blank — represents "leave to keep"
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveApiKeys"));
+
+            assert.equal(game.settings.get(MODULE_ID, "claudeApiKey"), seedKey,
+              "blank input must not clear the existing key (documented in panel hint)");
+          } finally {
+            await game.settings.set(MODULE_ID, "claudeApiKey", original).catch(() => {});
+          }
+        });
+      });
+
+      // ── 5: saveNarratorSettings — DOM round-trip persists narrator config
+      describe("saveNarratorSettings — DOM round-trip to game.settings", function () {
+        it("changing narrationLength and clicking Save persists the new value", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await gotoTab("narrator");
+
+          const original = game.settings.get(MODULE_ID, "narrationLength") ?? 3;
+          // Pick a value distinct from the default so the assertion is
+          // meaningful regardless of the world's prior config (clamped 1–6).
+          const fresh = original === 5 ? 4 : 5;
+          try {
+            const input = app.element.querySelector('[name="narrationLength"]');
+            assert.isOk(input, "narrationLength input should render on the narrator tab");
+            input.value = String(fresh);
+            await withSilencedNotifications(() =>
+              clickAction(app, "saveNarratorSettings"));
+
+            const persisted = game.settings.get(MODULE_ID, "narrationLength");
+            assert.equal(persisted, fresh,
+              `narrationLength should be persisted as ${fresh}`);
+          } finally {
+            await game.settings.set(MODULE_ID, "narrationLength", original).catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Settings Round-Trip" },
   );
 }
