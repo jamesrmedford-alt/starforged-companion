@@ -6935,7 +6935,7 @@ function registerAudioDegradationTests(quench) {
           } catch (err) {
             caught = err;
           }
-          assert.isObject(caught, "synthesise should throw on non-2xx");
+          assert.instanceOf(caught, Error, "synthesise should throw on non-2xx");
           assert.match(caught.message, /429/,
             "the thrown error should mention the HTTP status code");
         });
@@ -6962,7 +6962,7 @@ function registerAudioDegradationTests(quench) {
           } catch (err) {
             caught = err;
           }
-          assert.isObject(caught, "synthesise should throw on 503");
+          assert.instanceOf(caught, Error, "synthesise should throw on 503");
           assert.match(caught.message, /503/,
             "the thrown error should mention the HTTP status code");
         });
@@ -6983,7 +6983,7 @@ function registerAudioDegradationTests(quench) {
           } catch (err) {
             caught = err;
           }
-          assert.isObject(caught, "fetchSubscription should throw on 500");
+          assert.instanceOf(caught, Error, "fetchSubscription should throw on 500");
           assert.match(caught.message, /500/);
         });
       });
