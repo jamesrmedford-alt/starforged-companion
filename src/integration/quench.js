@@ -94,6 +94,12 @@ Hooks.on("quenchReady", (quench) => {
   // and createSectorScene happy-path coverage live in the unit suite and the
   // existing sectorCreator batch respectively.
   registerSectorArtTests(quench);
+  // NED permissions matrix — the schema MOVES table → resolveRelevance →
+  // assembleContextPacket → NARRATOR_PERMISSIONS block contract. Pure
+  // resolveRelevance coverage lives in tests/unit/relevanceResolver.test.js;
+  // this batch pins the end-to-end integration: that the right permissions
+  // block appears in the assembled system prompt for each narrator class.
+  registerNedPermissionsMatrixTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6187,5 +6193,231 @@ function registerSectorArtTests(quench) {
       });
     },
     { displayName: "STARFORGED: Sector Art + Ship Token" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NED PERMISSIONS MATRIX — schema table → resolveRelevance → assembled prompt
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveRelevance pure-logic coverage lives in
+// tests/unit/relevanceResolver.test.js (buildNameIndex, matchNamesInNarration,
+// the non-hybrid path, the hybrid name-match path, the dismissed-entities
+// path). This batch pins the integration contract that unit tests cannot
+// reach: that the right NARRATOR_PERMISSIONS block actually surfaces in the
+// `assembled` system prompt produced by assembleContextPacket for each
+// narrator class — and that the canonical moves in the schema MOVES table
+// map to the documented narratorClass values. Together those guarantee a
+// regression in either the schema, the resolver, or the assembler shows up
+// as a clear failure here.
+
+function registerNedPermissionsMatrixTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.nedPermissionsMatrix",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      // Hoisted modules so the schema/MOVES table is read once and re-used
+      // across every test in the batch.
+      let MOVES = null;
+      let assembleContextPacket = null;
+      let resolveRelevance = null;
+      let NARRATOR_PERMISSIONS = null;
+
+      before(async function () {
+        ({ MOVES } = await import(`/modules/${MODULE_ID}/src/schemas.js`));
+        ({ assembleContextPacket } = await import(
+          `/modules/${MODULE_ID}/src/context/assembler.js`));
+        ({ resolveRelevance } = await import(
+          `/modules/${MODULE_ID}/src/context/relevanceResolver.js`));
+        ({ NARRATOR_PERMISSIONS } = await import(
+          `/modules/${MODULE_ID}/src/narration/narratorPrompt.js`));
+      });
+
+      // ── 1: schema MOVES table — narratorClass contract for representatives
+      describe("schema MOVES → narratorClass", function () {
+        // Representative entries from each class. If any move's narratorClass
+        // is changed in src/schemas.js, this test surfaces the rename. The
+        // five-seeded discovery moves (make_a_connection, explore_a_waypoint,
+        // make_a_discovery, confront_chaos, gather_information) are pinned
+        // because NED-v3 scope depends on the oracle-seed code path running
+        // on every one of them.
+        const EXPECTED = {
+          // Hybrid moves — resolved per-narration by the relevance resolver
+          face_danger:         "hybrid",
+          secure_an_advantage: "hybrid",
+          pay_the_price:       "hybrid",
+          // Discovery moves — the five seeded moves plus gather_information
+          make_a_connection:   "discovery",
+          explore_a_waypoint:  "discovery",
+          make_a_discovery:    "discovery",
+          confront_chaos:      "discovery",
+          gather_information:  "discovery",
+          // Interaction moves — at-table interaction with established entities
+          compel:              "interaction",
+          // Embellishment moves — mechanical consequence, no new entities
+          aid_your_ally:       "embellishment",
+          check_your_gear:     "embellishment",
+          reach_a_milestone:   "embellishment",
+        };
+
+        for (const [moveId, expected] of Object.entries(EXPECTED)) {
+          it(`${moveId} maps to "${expected}"`, function () {
+            assert.isObject(MOVES?.[moveId], `MOVES.${moveId} should exist`);
+            assert.equal(MOVES[moveId].narratorClass, expected,
+              `MOVES.${moveId}.narratorClass drift — expected "${expected}"`);
+          });
+        }
+      });
+
+      // ── 2: assembler renders the right NARRATOR_PERMISSIONS block per class
+      describe("assembler renders NARRATOR_PERMISSIONS block per class", function () {
+        const CLASSES = [
+          { key: "discovery",     marker: "## NARRATOR PERMISSIONS — DISCOVERY MODE" },
+          { key: "interaction",   marker: "## NARRATOR PERMISSIONS — INTERACTION MODE" },
+          { key: "embellishment", marker: "## NARRATOR PERMISSIONS — EMBELLISHMENT MODE" },
+        ];
+
+        for (const { key, marker } of CLASSES) {
+          it(`narratorClass="${key}" surfaces the ${key.toUpperCase()} block in the assembled prompt`, async function () {
+            this.timeout(10000);
+            if (skipNotGM(this)) return;
+            const state = game.settings.get(MODULE_ID, "campaignState");
+            const packet = await assembleContextPacket(null, state, {
+              narratorClass: key,
+              tokenBudget:   4000,
+            });
+            assert.isString(packet.assembled);
+            assert.include(packet.assembled, marker,
+              `assembled prompt should contain the ${key.toUpperCase()} header`);
+            // Negative: must not also contain the OTHER two class headers.
+            for (const other of CLASSES) {
+              if (other.key === key) continue;
+              assert.notInclude(packet.assembled, other.marker,
+                `assembled prompt for "${key}" must not bleed in the ${other.key.toUpperCase()} block`);
+            }
+          });
+        }
+      });
+
+      // ── 3: assembler emits no permissions block when narratorClass is null
+      describe("assembler omits the permissions block when narratorClass is null", function () {
+        it("the assembled prompt contains no NARRATOR PERMISSIONS marker at all", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const state = game.settings.get(MODULE_ID, "campaignState");
+          const packet = await assembleContextPacket(null, state, {
+            narratorClass: null,
+            tokenBudget:   4000,
+          });
+          assert.notMatch(packet.assembled, /## NARRATOR PERMISSIONS —/,
+            "no permissions marker should appear when narratorClass is null (assembler default)");
+        });
+      });
+
+      // ── 4: resolveRelevance — non-hybrid passes the table class through ──
+      describe("resolveRelevance — non-hybrid passes table narratorClass through", function () {
+        it("gather_information (discovery) resolves to discovery even with no name matches", async function () {
+          const result = await resolveRelevance(
+            "I check the data terminal for clues",
+            "gather_information",
+            "strong_hit",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            // Inject an empty collector so we never touch the live world.
+            { collectEntities: () => [] },
+          );
+          assert.equal(result.resolvedClass, "discovery",
+            "non-hybrid classes pass through verbatim regardless of entity matches");
+          assert.deepEqual(result.entityIds, [], "no matches expected");
+        });
+
+        it("compel (interaction) resolves to interaction even with no name matches", async function () {
+          const result = await resolveRelevance(
+            "I press them on the stolen ledger",
+            "compel",
+            "weak_hit",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            { collectEntities: () => [] },
+          );
+          assert.equal(result.resolvedClass, "interaction");
+        });
+      });
+
+      // ── 5: resolveRelevance — hybrid + miss + no match → embellishment ───
+      describe("resolveRelevance — hybrid + miss + no match short-circuits to embellishment", function () {
+        it("face_danger (hybrid) on a miss with no name match resolves to embellishment without classifier API", async function () {
+          let classifierCalled = false;
+          const result = await resolveRelevance(
+            "I leap across the gap",
+            "face_danger",
+            "miss",
+            { connectionIds: [], settlementIds: [], factionIds: [], shipIds: [],
+              planetIds: [], locationIds: [], creatureIds: [], dismissedEntities: [] },
+            {
+              collectEntities:  () => [],
+              classifyImplicit: async () => {
+                classifierCalled = true;
+                return { impliedEntity: false, referenceType: "none" };
+              },
+            },
+          );
+          assert.equal(result.resolvedClass, "embellishment",
+            "miss + hybrid + no name match must resolve to embellishment");
+          assert.isFalse(classifierCalled,
+            "miss path must NOT invoke the Haiku classifier (cost saver)");
+        });
+      });
+
+      // ── 6: resolveRelevance — hybrid + name match → interaction (no API) ─
+      describe("resolveRelevance — hybrid + name match short-circuits to interaction", function () {
+        it("face_danger (hybrid) with a matched entity name resolves to interaction without classifier API", async function () {
+          let classifierCalled = false;
+          const fakeEntity = {
+            _id:        "quench-fake-1",
+            journalId:  "quench-fake-1",
+            name:       "Vance",
+            entityType: "connection",
+          };
+          const result = await resolveRelevance(
+            "I push past Vance and bolt for the door",
+            "face_danger",
+            "strong_hit",
+            { connectionIds: ["quench-fake-1"], settlementIds: [], factionIds: [],
+              shipIds: [], planetIds: [], locationIds: [], creatureIds: [],
+              dismissedEntities: [] },
+            {
+              collectEntities:  () => [fakeEntity],
+              classifyImplicit: async () => {
+                classifierCalled = true;
+                return { impliedEntity: false, referenceType: "none" };
+              },
+            },
+          );
+          assert.equal(result.resolvedClass, "interaction",
+            "hybrid + name match must resolve to interaction");
+          assert.deepEqual(result.entityIds, ["quench-fake-1"],
+            "matched entity should be returned for assembler-side card injection");
+          assert.isFalse(classifierCalled,
+            "name-match path must NOT invoke the Haiku classifier (cost saver)");
+        });
+      });
+
+      // ── 7: NARRATOR_PERMISSIONS contract — three keys with non-empty body
+      describe("NARRATOR_PERMISSIONS module contract", function () {
+        it("exposes exactly discovery / interaction / embellishment keys with non-empty blocks", function () {
+          assert.isObject(NARRATOR_PERMISSIONS);
+          assert.deepEqual(Object.keys(NARRATOR_PERMISSIONS).sort(),
+            ["discovery", "embellishment", "interaction"]);
+          for (const key of Object.keys(NARRATOR_PERMISSIONS)) {
+            assert.isString(NARRATOR_PERMISSIONS[key]);
+            assert.isAbove(NARRATOR_PERMISSIONS[key].length, 50,
+              `${key} block should be a non-trivial string`);
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: NED Permissions Matrix" },
   );
 }
