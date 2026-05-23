@@ -127,6 +127,13 @@ Hooks.on("quenchReady", (quench) => {
   // (missing fields, malformed pages) and the contentVersion-stamping
   // regression class.
   registerHelpCompendiumTests(quench);
+  // i18n resolution — live integration of the localize* wrappers against
+  // the real foundry-ironsworn translation table. Pure-logic coverage of
+  // the wrapper (English fallback, missing-key behaviour, slug fallback)
+  // lives in tests/unit/i18n.test.js with a mocked game.i18n; this batch
+  // exercises the same wrappers against the real game.i18n so a vendor
+  // key rename surfaces here.
+  registerI18nResolutionTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7223,5 +7230,132 @@ function registerHelpCompendiumTests(quench) {
       });
     },
     { displayName: "STARFORGED: Help Compendium Generation" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// I18N RESOLUTION — live game.i18n integration of the localize* wrappers
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-logic coverage of localize() lives in tests/unit/i18n.test.js with a
+// mocked game.i18n (English fallback, missing-key behaviour, unknown-slug
+// fallback). This batch exercises the same wrappers against the real
+// foundry-ironsworn translation table so a vendor key rename or a missing
+// translation row surfaces here. Even when individual keys are missing in
+// foundry-ironsworn (the wrapper falls back to its English table silently),
+// the wrappers MUST return non-empty strings — that's the contract.
+
+function registerI18nResolutionTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.i18nResolution",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      let i18n = null;
+
+      before(async function () {
+        i18n = await import(`/modules/${MODULE_ID}/src/system/i18n.js`);
+      });
+
+      // ── 1: localizeStat — all five canonical stats resolve non-empty ─────
+      describe("localizeStat — five canonical stats", function () {
+        const STATS = ["edge", "heart", "iron", "shadow", "wits"];
+        for (const slug of STATS) {
+          it(`localizeStat("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeStat(slug);
+            assert.isString(out, `localizeStat must return a string`);
+            assert.isAbove(out.trim().length, 0,
+              `localizeStat("${slug}") must be non-empty even on translation miss`);
+            assert.notEqual(out, slug,
+              `localizeStat("${slug}") must not echo the slug verbatim ` +
+              `(would mean both the i18n key AND the English fallback are missing)`);
+          });
+        }
+      });
+
+      // ── 2: localizeMeter — all four meters resolve non-empty ─────────────
+      describe("localizeMeter — four canonical meters", function () {
+        const METERS = ["health", "spirit", "supply", "momentum"];
+        for (const slug of METERS) {
+          it(`localizeMeter("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeMeter(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+            assert.notEqual(out, slug);
+          });
+        }
+      });
+
+      // ── 3: localizeDebility — character + starship slugs ─────────────────
+      describe("localizeDebility — character and starship slugs", function () {
+        // Canonical character debilities (wounded/shaken/unprepared/encumbered)
+        // plus battered (the starship-only debility — a 1.5.x addition that
+        // would silently regress if the table key were removed).
+        const DEBILITIES = [
+          "wounded", "shaken", "unprepared", "encumbered", "battered",
+        ];
+        for (const slug of DEBILITIES) {
+          it(`localizeDebility("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeDebility(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+            assert.notEqual(out, slug);
+          });
+        }
+      });
+
+      // ── 4: localizeMove — representative move slugs ──────────────────────
+      describe("localizeMove — representative move slugs", function () {
+        // A sample from each move category: adventure, oracle, fate, combat.
+        // MOVE_KEYS' i18n keys are documented in src/system/i18n.js as
+        // vendor-version-sensitive — the English fallback is mandatory and
+        // is what we assert here.
+        const MOVES = [
+          "face_danger", "pay_the_price", "ask_the_oracle",
+          "endure_harm", "make_a_connection",
+        ];
+        for (const slug of MOVES) {
+          it(`localizeMove("${slug}") returns a non-empty string`, function () {
+            const out = i18n.localizeMove(slug);
+            assert.isString(out);
+            assert.isAbove(out.trim().length, 0);
+            assert.notEqual(out, slug);
+          });
+        }
+      });
+
+      // ── 5: unknown slug fallback — wrappers must not throw ───────────────
+      describe("unknown slug — each wrapper falls back gracefully", function () {
+        it("localizeStat / localizeMeter / localizeDebility / localizeMove all return the slug for an unknown key", function () {
+          const slug = "quench-unknown-slug-do-not-use";
+          for (const fn of [i18n.localizeStat, i18n.localizeMeter,
+                            i18n.localizeDebility, i18n.localizeMove]) {
+            let out;
+            try {
+              out = fn(slug);
+            } catch (err) {
+              assert.fail(`wrapper threw on unknown slug: ${err?.message ?? err}`);
+            }
+            assert.isString(out, `wrapper must return a string for an unknown slug`);
+            // The wrapper's contract: unknown slug returns the slug itself
+            // (not undefined, not "[object Object]", not a thrown error).
+            assert.equal(out, slug,
+              `unknown-slug fallback should return the slug verbatim`);
+          }
+        });
+      });
+
+      // ── 6: consistency — repeated calls return the same string ───────────
+      describe("consistency — repeated calls are idempotent", function () {
+        it("localizeStat('edge') returns the same string on repeat calls", function () {
+          const a = i18n.localizeStat("edge");
+          const b = i18n.localizeStat("edge");
+          const c = i18n.localizeStat("edge");
+          assert.equal(a, b, "localize must be deterministic");
+          assert.equal(b, c, "localize must be deterministic");
+        });
+      });
+    },
+    { displayName: "STARFORGED: I18n Resolution" },
   );
 }
