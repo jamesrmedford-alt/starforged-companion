@@ -665,17 +665,28 @@ describe("Quench full suite", () => {
       // `if (skipNoKey)`. A precondition regression that skips the
       // entire suite would otherwise show as "passed".
       //
-      // The suite has ~165 tests as of late May 2026; 100 is a generous
-      // floor that catches mass-skip without being brittle to legitimate
-      // test-count drift. If the suite shrinks below 100 active tests
-      // in the future, this floor needs revisiting.
+      // Pass floor — 95% of ATTEMPTED tests (tests − pending). Pending
+      // here is legitimate skips (API-key-gated tests with no secret in
+      // CI). Of what actually ran, at most 5% may fail. The floor scales
+      // automatically with the suite size so adding new batches doesn't
+      // require touching this threshold. A pre-2026-05-23 absolute floor
+      // of 100 passes is retained as a sanity backstop in case the
+      // attempted-count collapses (e.g. a precondition regression that
+      // converts most failures to skips).
+      const attempted = Math.max((stats.tests ?? 0) - (stats.pending ?? 0), 0);
+      const requiredPasses = Math.ceil(0.95 * attempted);
       expect(
         stats.passes,
-        "stats.passes (anti-false-pass guard: ≥100 tests must actually pass)",
+        `stats.passes ≥95% of attempted (was ${stats.passes}/${attempted}; floor ${requiredPasses})`,
+      ).to.be.at.least(requiredPasses);
+      expect(
+        stats.passes,
+        "stats.passes (absolute backstop: ≥100 must actually pass)",
       ).to.be.at.least(100);
 
-      // Companion guard: even if 100+ pass, an unusually high skip rate
-      // suggests a partial precondition failure. Allow up to 20% skipped.
+      // Companion guard: even if the pass ratio holds, an unusually high
+      // skip rate suggests a partial precondition failure. Allow up to
+      // 20% pending.
       const skipRatio = (stats.pending ?? 0) / Math.max(stats.tests, 1);
       expect(
         skipRatio,

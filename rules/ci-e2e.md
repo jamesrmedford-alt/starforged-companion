@@ -82,11 +82,11 @@ suite. Three layered guards in `cypress/e2e/quench.cy.js`:
 
 1. **Stale-report guard.** Snapshot `quench.reports.length` before `runBatches`; after, require it grew by exactly 1. If the array didn't grow, either `runBatches` didn't fire a run or we're looking at the wrong collection — either way refuse to assert against a potentially-stale shape.
 
-2. **Minimum-passes floor.** `expect(stats.passes).to.be.at.least(100)`. Mocha counts `this.skip()` calls as `pending`, not as failures, so a precondition regression that mass-skips the entire suite would show `stats.failures === 0` and "pass" without actually testing anything. Most Quench batches gate on `if (skipNotGM(this))` or `if (skipNoKey(this))` — easy for a setup bug to skip everything. The 100 floor catches this without being brittle to legitimate test-count drift (current suite ~165 tests).
+2. **Pass floor — 95% of attempted.** `expect(stats.passes).to.be.at.least(Math.ceil(0.95 * (tests - pending)))`. Mocha counts `this.skip()` calls as `pending`, not as failures, so a precondition regression that mass-skips the entire suite would show `stats.failures === 0` and "pass" without actually testing anything. The 95%-of-attempted floor (a) scales with the suite size as new batches land, (b) ignores legitimate API-key skips (`skipNoKey`) so the gate doesn't break when CI lacks Claude/OpenRouter/ElevenLabs secrets, and (c) tolerates at most ~5% real failures of what ran. A secondary `at.least(100)` absolute backstop catches the case where the attempted-count itself collapses (most batches converted their failures to skips).
 
-3. **Max-skip ratio.** `expect(pending / tests).to.be.lessThan(0.2)`. Even if 100+ pass, an unusually high skip rate means a partial-precondition failure where some batches lost their auth gate.
+3. **Max-skip ratio.** `expect(pending / tests).to.be.lessThan(0.2)`. Even if the pass ratio holds, an unusually high skip rate means a partial-precondition failure where some batches lost their auth gate.
 
-If the suite shrinks below ~100 active tests in the future, the floor needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
+If the suite shrinks below ~100 active tests in the future, the absolute backstop needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
 
 **Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
 
