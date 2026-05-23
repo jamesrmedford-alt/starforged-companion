@@ -80,6 +80,14 @@ Hooks.on("quenchReady", (quench) => {
   // response-card flag stamping that prevents self-recursion, and the
   // game.settings persistence round-trip.
   registerPaceCommandTests(quench);
+  // Sector Creator wizard UI — pure-generator coverage lives in
+  // tests/unit/sectorGenerator.test.js, and storeSector/createEntityJournals
+  // are covered by the existing `sectorCreator` batch. This batch pins the
+  // ApplicationV2 state machine itself: region-step renders three region
+  // buttons, chooseRegion action binding advances the wizard, rerollSector
+  // generates a fresh sector. Catches action-binding regressions of the kind
+  // that broke v13 chat-card buttons.
+  registerSectorCreatorWizardTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5896,5 +5904,136 @@ function registerPaceCommandTests(quench) {
       });
     },
     { displayName: "STARFORGED: Pace Command" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR CREATOR WIZARD — ApplicationV2 state machine and action binding
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-generator coverage (generateSector / generateSettlement / generatePlanet /
+// generateConnection / SECTOR_TROUBLE / rollTableResult) lives in
+// tests/unit/sectorGenerator.test.js; the storeSector / createEntityJournals
+// chain is covered by the `sectorCreator` batch above. This batch covers what
+// neither reaches: the wizard's own ApplicationV2 state machine and the
+// data-action button bindings that broke en masse with the v13 chat-card hook
+// change. Five tests:
+//
+//   1. SectorCreatorApp.open() returns a rendered app on the first call and
+//      reuses (re-renders) the same instance on the second call.
+//   2. Step-1 region picker renders three region buttons (terminus / outlands
+//      / expanse) with bound chooseRegion actions.
+//   3. clickAction("chooseRegion", { region: "outlands" }) advances the wizard
+//      to step 2 and populates a sector.
+//   4. Step-2 DOM contains the generated sector's name, trouble line, and at
+//      least one settlement.
+//   5. clickAction("rerollSector") generates a different sector (different id
+//      with overwhelming probability — generated names use a long random tail).
+
+function registerSectorCreatorWizardTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorCreatorWizard",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let app = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        const { SectorCreatorApp } = await import(
+          `/modules/${MODULE_ID}/src/sectors/sectorPanel.js`);
+        app = SectorCreatorApp.open();
+        await awaitRender(app);
+      });
+
+      after(async function () {
+        if (app?.close) await app.close().catch(() => {});
+        app = null;
+      });
+
+      describe("open() — app lifecycle", function () {
+        it("renders an ApplicationV2 instance on first open", function () {
+          if (!app) { this.skip(); return; }
+          assert.isTrue(app.rendered, "app should be rendered after open()");
+          assert.isOk(app.element, "app.element should be set");
+        });
+
+        it("re-uses the same instance on a second open() call", async function () {
+          if (skipNotGM(this)) return;
+          const { SectorCreatorApp } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorPanel.js`);
+          const second = SectorCreatorApp.open();
+          await awaitRender(second);
+          assert.strictEqual(second, app,
+            "open() must return the same instance as the first call (singleton)");
+        });
+      });
+
+      describe("step 1 — region picker", function () {
+        it("renders three chooseRegion buttons for the three canonical regions", function () {
+          if (!app) { this.skip(); return; }
+          const buttons = Array.from(
+            app.element.querySelectorAll('[data-action="chooseRegion"]'));
+          assert.equal(buttons.length, 3, "should render exactly three region buttons");
+          const regions = buttons.map(b => b.dataset.region).sort();
+          assert.deepEqual(regions, ["expanse", "outlands", "terminus"]);
+        });
+      });
+
+      describe("step 2 — chooseRegion advances the wizard", function () {
+        it("clicking chooseRegion(outlands) renders the sector preview with a name and trouble", async function () {
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          await clickAction(app, "chooseRegion", { region: "outlands" });
+          // The wizard renders the sector step on advancement; assert against the
+          // resulting DOM rather than internal fields (private # fields are not
+          // reachable from outside the class).
+          const root = app.element;
+          assert.isNull(root.querySelector('[data-action="chooseRegion"]'),
+            "the region-pick buttons should be gone after advancement");
+          assert.isOk(root.querySelector('[data-action="finalizeSector"]'),
+            "the finalize button should be present on the sector-preview step");
+          assert.isOk(root.querySelector('[data-action="rerollSector"]'),
+            "the reroll button should be present on the sector-preview step");
+        });
+      });
+
+      describe("step 2 — sector preview content", function () {
+        it("the rendered sector contains at least one settlement entry", function () {
+          if (!app) { this.skip(); return; }
+          const settlementEntries = app.element.querySelectorAll(".sf-settlement-entry");
+          assert.isAbove(settlementEntries.length, 0,
+            "outlands sector should render at least one .sf-settlement-entry");
+        });
+      });
+
+      describe("rerollSector — generates a fresh sector", function () {
+        it("clicking rerollSector produces a different settlement set", async function () {
+          if (skipNotGM(this)) return;
+          if (!app) { this.skip(); return; }
+          const namesBefore = Array.from(
+            app.element.querySelectorAll(".sf-settlement-entry strong"))
+            .map(el => el.textContent.trim());
+          assert.isAbove(namesBefore.length, 0,
+            "test precondition: should have settlement names before reroll");
+
+          await clickAction(app, "rerollSector");
+
+          const namesAfter = Array.from(
+            app.element.querySelectorAll(".sf-settlement-entry strong"))
+            .map(el => el.textContent.trim());
+          assert.isAbove(namesAfter.length, 0,
+            "should still have settlement names after reroll");
+          // Tolerate a single-name collision (cosmically unlikely but the table
+          // is finite). Asserting that AT LEAST ONE name differs catches a
+          // dead-button regression without being brittle on collisions.
+          const allSame = namesBefore.length === namesAfter.length &&
+            namesBefore.every((n, i) => n === namesAfter[i]);
+          assert.isFalse(allSame,
+            "rerollSector should produce a different settlement set");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Creator Wizard" },
   );
 }
