@@ -113,6 +113,14 @@ Hooks.on("quenchReady", (quench) => {
   // the routing and the source functions' behaviours without invoking the
   // live Claude API.
   registerRecapModesTests(quench);
+  // Audio degradation — synthesise/fetchSubscription HTTP error paths and
+  // the togglePlayback "chat never blocked" invariant (the chat card's
+  // prose stays readable even when audio fails). Synthesise validation
+  // errors and the 401 hint are unit-tested in tests/unit/audio.test.js;
+  // the existing audio batch covers the audioEnabledForThisClient gate and
+  // the button hide/unhide flow. This batch fills the gap on what happens
+  // when the live network call fails.
+  registerAudioDegradationTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6875,5 +6883,202 @@ function registerRecapModesTests(quench) {
       });
     },
     { displayName: "STARFORGED: Recap Modes" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO DEGRADATION — synthesise / fetchSubscription HTTP error paths
+// ─────────────────────────────────────────────────────────────────────────────
+// `synthesise` and `fetchSubscription` validation paths and the 401-hint
+// console warn are unit-tested in tests/unit/audio.test.js. The existing
+// `audio` Quench batch covers the audioEnabledForThisClient triple gate
+// and the button hide/unhide flow on a healthy stub key.
+//
+// This batch fills the gap on what happens when the live network call
+// fails: non-401 HTTP error statuses surface a readable error to the
+// caller, and the togglePlayback failure path is graceful — button hits
+// the ERROR state with a tooltip but the chat-card prose remains visible
+// (the documented "audio never blocks chat" invariant from
+// docs/audio-narration-scope.md).
+//
+// Note on coverage scope: the priority-list audit referenced a
+// "streaming → fullgen fallback" path, but the production code in
+// src/audio/index.js currently calls `synthesise({ stream: false })`
+// unconditionally — there is no streaming endpoint in production. That
+// item is documentation drift, not a real missing test.
+
+function registerAudioDegradationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.audioDegradation",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      // ── 1: synthesise — 429 rate-limit surfaces the status to the caller
+      describe("synthesise — 429 rate limit", function () {
+        it("throws with the status code in the message", async function () {
+          this.timeout(10000);
+          const { synthesise } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("rate limited", { status: 429 })]],
+              () => synthesise({
+                apiKey:  "sk_test_quench",
+                voiceId: "voice-x",
+                modelId: "eleven_flash_v2_5",
+                text:    "Hello quench.",
+                stream:  false,
+              }),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.isObject(caught, "synthesise should throw on non-2xx");
+          assert.match(caught.message, /429/,
+            "the thrown error should mention the HTTP status code");
+        });
+      });
+
+      // ── 2: synthesise — 503 service unavailable surfaces the status ──────
+      describe("synthesise — 503 service unavailable", function () {
+        it("throws with the 503 status code in the message", async function () {
+          this.timeout(10000);
+          const { synthesise } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("upstream down", { status: 503 })]],
+              () => synthesise({
+                apiKey:  "sk_test_quench",
+                voiceId: "voice-x",
+                modelId: "eleven_flash_v2_5",
+                text:    "Hello quench.",
+                stream:  false,
+              }),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.isObject(caught, "synthesise should throw on 503");
+          assert.match(caught.message, /503/,
+            "the thrown error should mention the HTTP status code");
+        });
+      });
+
+      // ── 3: fetchSubscription — 500 throws with status ────────────────────
+      describe("fetchSubscription — non-2xx", function () {
+        it("throws when ElevenLabs returns 500 so the Audio tab can show 'unavailable'", async function () {
+          this.timeout(10000);
+          const { fetchSubscription } = await import(
+            `/modules/${MODULE_ID}/src/audio/elevenlabs.js`);
+          let caught = null;
+          try {
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("internal error", { status: 500 })]],
+              () => fetchSubscription("sk_test_quench"),
+            );
+          } catch (err) {
+            caught = err;
+          }
+          assert.isObject(caught, "fetchSubscription should throw on 500");
+          assert.match(caught.message, /500/);
+        });
+      });
+
+      // ── 4: togglePlayback failure path — chat card stays readable ────────
+      describe("togglePlayback — chat-never-blocked invariant", function () {
+        it("when synthesise fails on click, the button hits ERROR state and the chat-card prose remains in the DOM", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+
+          // Snapshot + flip the three audio gates so audioEnabledForThisClient
+          // returns true (otherwise the renderChatMessage hook short-circuits
+          // and the button is never bound).
+          const originals = {
+            "audio.enabled":       game.settings.get(MODULE_ID, "audio.enabled"),
+            "audio.clientEnabled": game.settings.get(MODULE_ID, "audio.clientEnabled"),
+            "elevenLabsApiKey":    game.settings.get(MODULE_ID, "elevenLabsApiKey"),
+            "audio.narratorVoiceId": game.settings.get(MODULE_ID, "audio.narratorVoiceId"),
+          };
+
+          let createdId = null;
+          try {
+            await game.settings.set(MODULE_ID, "audio.enabled",         true);
+            await game.settings.set(MODULE_ID, "audio.clientEnabled",   true);
+            await game.settings.set(MODULE_ID, "elevenLabsApiKey",      "sk_test_quench");
+            // The voice must be configured or buildPlayableSegments throws
+            // before reaching the fetch. We want fetch to fail so we set
+            // a voice and let the stubbed fetch throw downstream.
+            await game.settings.set(MODULE_ID, "audio.narratorVoiceId", "voice-quench");
+
+            const msg = await ChatMessage.create({
+              content: `
+                <div class="sf-narration-card">
+                  <div class="sf-narration-prose">Audio-degradation probe prose.</div>
+                  <div class="sf-narration-footer">
+                    <button class="sf-audio-play-btn" data-action="audioPlayToggle" hidden>Play</button>
+                  </div>
+                </div>
+              `,
+              flags: {
+                [MODULE_ID]: {
+                  narratorCard:  true,
+                  narrationText: "Audio-degradation probe prose.",
+                },
+              },
+            });
+            createdId = msg.id;
+
+            // Let the renderChatMessage hook bind the button.
+            for (let i = 0; i < 20; i++) await flushMicrotasks();
+
+            const btn = document.querySelector(
+              `[data-message-id="${msg.id}"] .sf-audio-play-btn`);
+            // The button being bound at all is a precondition. On hosted CI
+            // the hook timing can be slow; skip gracefully if it didn't run.
+            if (!btn || btn.hasAttribute("hidden")) {
+              this.skip();
+              return;
+            }
+
+            await withStubbedFetch(
+              [["elevenlabs.io", () => new Response("nope", { status: 503 })]],
+              async () => {
+                btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                // Poll until the button state lands at "error" or the deadline
+                // passes — togglePlayback is async with multiple awaits.
+                const deadline = Date.now() + 5000;
+                while (Date.now() < deadline) {
+                  if (btn.getAttribute("data-state") === "error") break;
+                  await flushMicrotasks();
+                }
+              },
+            );
+
+            assert.equal(btn.getAttribute("data-state"), "error",
+              "button should land in the ERROR state when synthesise throws");
+            // Chat-never-blocked invariant: the prose element should still
+            // be in the DOM with readable text.
+            const prose = document.querySelector(
+              `[data-message-id="${msg.id}"] .sf-narration-prose`);
+            assert.isOk(prose, "the narrator prose element should still be in the DOM");
+            assert.include(prose.textContent, "Audio-degradation probe prose",
+              "the prose text must remain readable even after an audio failure");
+          } finally {
+            if (createdId) {
+              const msg = game.messages?.get(createdId);
+              if (msg?.delete) await msg.delete().catch(() => {});
+            }
+            for (const [k, v] of Object.entries(originals)) {
+              await game.settings.set(MODULE_ID, k, v).catch(() => {});
+            }
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Audio Degradation" },
   );
 }
