@@ -106,6 +106,13 @@ Hooks.on("quenchReady", (quench) => {
   // add/removeLine paths; this batch covers the persistence round-trips
   // and the GM-only / password-masking gates.
   registerSettingsRoundTripTests(quench);
+  // Recap modes — !recap chat dispatch routing (session vs campaign),
+  // isRecapCommand predicate matrix, and postSessionRecap empty/non-empty
+  // branches. The existing chatCardActions batch covers the Refresh button
+  // and recapEndToEnd covers the chronicleWriter fallback; this batch covers
+  // the routing and the source functions' behaviours without invoking the
+  // live Claude API.
+  registerRecapModesTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6596,5 +6603,266 @@ function registerSettingsRoundTripTests(quench) {
       });
     },
     { displayName: "STARFORGED: Settings Round-Trip" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECAP MODES — !recap chat dispatch routing + postSessionRecap branches
+// ─────────────────────────────────────────────────────────────────────────────
+// The existing `chatCardActions` batch covers the recap card's Refresh
+// button → postCampaignRecap regen; `recapEndToEnd` covers the
+// chronicleWriter fallback when characterIds is empty. Neither covers:
+//   - the !recap chat-dispatch router (session vs campaign disambiguation)
+//   - the isRecapCommand predicate matrix
+//   - postSessionRecap's empty-card vs counted-moves branches
+//   - postCampaignRecap's silent option (no card, returns text)
+//
+// This batch closes those gaps. To avoid spending Claude credit, the
+// campaign-recap tests rely on the empty-chronicle path (postCampaignRecap
+// short-circuits to the empty card when getCampaignRecap returns no text),
+// and the silent option's behaviour is asserted directly.
+
+function registerRecapModesTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.recapModes",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      const createdMessageIds = [];
+      let originalState = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        originalState = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE_ID, "campaignState") ?? {}));
+      });
+
+      after(async function () {
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState)
+            .catch(() => {});
+        }
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break;
+          await flushMicrotasks();
+        }
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+
+      // ── 1: isRecapCommand predicate matrix ───────────────────────────────
+      describe("isRecapCommand — predicate matrix", function () {
+        it("accepts !recap, !recap session, !recap campaign, !recap session N; rejects !recapify and own response cards", async function () {
+          if (skipNotGM(this)) return;
+          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+          const make = (content, flags = {}) => ({
+            content,
+            isContentVisible: true,
+            type:    "ic",
+            whisper: [],
+            rolls:   [],
+            flags,
+            user:    game.user.id,
+            author:  game.user,
+          });
+          assert.isTrue(idx.isRecapCommand(make("!recap")),
+            "bare !recap should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap session")),
+            "!recap session should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap campaign")),
+            "!recap campaign should match");
+          assert.isTrue(idx.isRecapCommand(make("!recap session 5")),
+            "!recap session N should match");
+          assert.isFalse(idx.isRecapCommand(make("!recapify the world")),
+            "predicate must reject !recapify (no word boundary)");
+          assert.isFalse(
+            idx.isRecapCommand(make("!recap", { [MODULE_ID]: { recapCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+        });
+      });
+
+      // ── 2: !recap session — routes to postSessionRecap (session card) ────
+      describe("!recap session — chat dispatch routes to session recap", function () {
+        it("posts a recapType='session' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-recap";
+          seed.sessionNumber    = 99;
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap session"));
+          const sessionCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session");
+          assert.isObject(sessionCard,
+            "!recap session must route to postSessionRecap and post a session-typed card");
+        });
+      });
+
+      // ── 3: bare !recap — routes to postCampaignRecap (campaign card) ─────
+      describe("!recap (bare) — chat dispatch routes to campaign recap", function () {
+        it("posts a recapType='campaign' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          // Seed an empty chronicle context so postCampaignRecap takes the
+          // empty-card path without invoking Claude — campaignRecapText is
+          // cached on campaignState and read by getCampaignRecap.
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText      = "";
+          seed.campaignRecapChronLen  = 0;
+          seed.characterIds           = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap"));
+          const campaignCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "campaign");
+          assert.isObject(campaignCard,
+            "bare !recap must route to postCampaignRecap and post a campaign-typed card");
+        });
+      });
+
+      // ── 4: !recap campaign — same as bare !recap (explicit form) ─────────
+      describe("!recap campaign — chat dispatch routes to campaign recap", function () {
+        it("posts a recapType='campaign' card", async function () {
+          this.timeout(20000);
+          if (skipNotGM(this)) return;
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText     = "";
+          seed.campaignRecapChronLen = 0;
+          seed.characterIds          = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!recap campaign"));
+          const campaignCard = newOnes.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "campaign");
+          assert.isObject(campaignCard,
+            "!recap campaign must route to postCampaignRecap and post a campaign-typed card");
+        });
+      });
+
+      // ── 5: postSessionRecap — empty path ─────────────────────────────────
+      describe("postSessionRecap — empty when no narrator cards in session", function () {
+        it("posts a card with recapEmpty=true when no narratorCard messages match", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postSessionRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-empty";
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
+          await postSessionRecap(seed, null);
+          for (let i = 0; i < 20 && game.messages.size <= beforeIds.size; i++) {
+            await flushMicrotasks();
+          }
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          for (const m of fresh) createdMessageIds.push(m.id);
+
+          const emptyCard = fresh.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session" &&
+            m?.flags?.[MODULE_ID]?.recapEmpty === true);
+          assert.isObject(emptyCard,
+            "no narrator cards in session → recapEmpty=true card");
+        });
+      });
+
+      // ── 6: postSessionRecap — counts a seeded narrator card ──────────────
+      describe("postSessionRecap — counts seeded narrator cards", function () {
+        it("posts a non-empty session card when a matching narratorCard exists", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postSessionRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.currentSessionId = "ssn-quench-counted";
+          seed.sessionNumber    = 7;
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          // Seed a narrator-card message in this session so the recap finds it.
+          const narratorMsg = await ChatMessage.create({
+            content: `<div class="sf-narration-card"><div class="sf-narration-prose">Quench narration probe.</div></div>`,
+            flags: {
+              [MODULE_ID]: {
+                narratorCard:  true,
+                sessionId:     "ssn-quench-counted",
+                moveId:        "face_danger",
+                outcome:       "strong_hit",
+                narrationText: "Quench narration probe.",
+              },
+            },
+          });
+          if (narratorMsg?.id) createdMessageIds.push(narratorMsg.id);
+          await flushMicrotasks();
+
+          const beforeIds = new Set(game.messages.contents.map(m => m.id));
+          await postSessionRecap(seed, null);
+          for (let i = 0; i < 20 && game.messages.size <= beforeIds.size; i++) {
+            await flushMicrotasks();
+          }
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          for (const m of fresh) createdMessageIds.push(m.id);
+
+          const recapCard = fresh.find(m =>
+            m?.flags?.[MODULE_ID]?.recapCard === true &&
+            m?.flags?.[MODULE_ID]?.recapType === "session");
+          assert.isObject(recapCard,
+            "a session recap card should be posted");
+          assert.notEqual(recapCard.flags[MODULE_ID].recapEmpty, true,
+            "the card should NOT be recapEmpty when a narrator card exists in the session");
+          assert.equal(recapCard.flags[MODULE_ID].sessionNumber, 7,
+            "the card should carry the seeded sessionNumber");
+        });
+      });
+
+      // ── 7: postCampaignRecap — silent option skips the card ──────────────
+      describe("postCampaignRecap — silent option does not post a card", function () {
+        it("with {silent: true}, no chat card is created even on the empty path", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { postCampaignRecap } = await import(
+            `/modules/${MODULE_ID}/src/narration/narrator.js`);
+
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.campaignRecapText     = "";
+          seed.campaignRecapChronLen = 0;
+          seed.characterIds          = [];
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          const beforeCount = game.messages.size;
+          await postCampaignRecap(seed, { silent: true });
+          for (let i = 0; i < 10; i++) await flushMicrotasks();
+
+          assert.equal(game.messages.size, beforeCount,
+            "silent:true must NOT create a chat message");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Recap Modes" },
   );
 }
