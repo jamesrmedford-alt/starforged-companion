@@ -112,7 +112,8 @@ loop between fixes and diagnostics.
 
 **Setup (one-time, in the workflow):**
 - Tee the orchestrator stdout to a log file: `npm run test:e2e 2>&1 | tee test/ci/cypress/artifacts/e2e-run.log` (with `set -o pipefail`).
-- On `if: always()`, post a *sticky* comment to the PR with a hidden marker (`<!-- e2e-log:sticky -->`): on success a short status line (run page + head SHA); on failure the orchestrator-log tail (~50 KB). The same step covers both — `if: always()` so the comment fires (and the webhook wakes any subscribed session) regardless of CI outcome. Search existing comments for the marker and PATCH it in place via `gh api`; only POST a new one if none exists. Keeps the PR thread to a single comment that flips between success/failure across iterations.
+- On `if: always()`, post a status comment to the PR with a hidden marker (`<!-- e2e-log:sticky -->`): on success a short status line (run page + head SHA); on failure the orchestrator-log tail (~50 KB). The same step covers both — `if: always()` so the comment fires regardless of CI outcome.
+- **Delete the existing marked comment first, then POST a fresh one** (not PATCH in place). The MCP `subscribe_pr_activity` subscription only routes `issue_comment.created` events to the agent; `issue_comment.edited` (which is what PATCH produces) does not wake the session. Delete+POST guarantees a `created` event per run, keeps the PR thread to one comment, and still preserves the marker pattern.
 
 **Setup (in the session):**
 - Call `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`. Webhook events for the PR arrive as `<github-webhook-activity>` messages that wake the session.
