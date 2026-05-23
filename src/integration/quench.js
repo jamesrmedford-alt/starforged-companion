@@ -74,6 +74,12 @@ Hooks.on("quenchReady", (quench) => {
   // !truth / !state / !scene chat dispatch path, and Section 6.5 surfacing in
   // the assembled context packet.
   registerFactContinuityTests(quench);
+  // Pacing commands — live integration for !pace and !roll. Pure-function
+  // coverage of applyPaceCommand / markForceNextAsMove / ring-buffer lives in
+  // tests/unit/pacing.test.js; this batch pins the chat-dispatch path, the
+  // response-card flag stamping that prevents self-recursion, and the
+  // game.settings persistence round-trip.
+  registerPaceCommandTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5670,5 +5676,225 @@ function registerFactContinuityTests(quench) {
       });
     },
     { displayName: "STARFORGED: Fact Continuity" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PACING COMMANDS — !pace and !roll chat-dispatch integration
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure-function coverage of applyPaceCommand, markForceNextAsMove, and the
+// in-memory ring buffer (recordRecentDecision / getRecentMoveDensity /
+// resetRecentDensity) lives in tests/unit/pacing.test.js. This batch covers
+// what unit tests cannot reach:
+//   - the createChatMessage hook dispatch (predicate gate → handler → response
+//     card)
+//   - response-card flag stamping (paceCommandCard / rollCommandCard) that
+//     gates self-recursion when the handler's own card flows back through the
+//     hook
+//   - GM gating (the !pace and !roll handlers warn and bail on non-GM)
+//   - persistence round-trip of campaignState.pacing.sceneOverride and
+//     campaignState.pacing.forceNextAsMove through game.settings
+
+function registerPaceCommandTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.paceCommand",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let originalState = null;
+      const createdMessageIds = [];
+
+      before(async function () {
+        const raw = game.settings.get(MODULE_ID, "campaignState");
+        originalState = JSON.parse(JSON.stringify(raw ?? {}));
+      });
+
+      after(async function () {
+        if (originalState) {
+          await game.settings.set(MODULE_ID, "campaignState", originalState).catch(() => {});
+        }
+        for (const id of createdMessageIds) {
+          const msg = game.messages?.get(id);
+          if (msg?.delete) await msg.delete().catch(() => {});
+        }
+        createdMessageIds.length = 0;
+      });
+
+      // Same polling helper as the factContinuity batch — fixed microtask
+      // flushes were non-deterministic in CI for the multi-await
+      // settings.set → ChatMessage.create chain.
+      async function postChat(content) {
+        const beforeIds = new Set(game.messages.contents.map(m => m.id));
+        const msg = await ChatMessage.create({ content, user: game.user.id });
+        if (msg?.id) createdMessageIds.push(msg.id);
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break;
+          await flushMicrotasks();
+        }
+        const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
+        for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
+        return { msg, newOnes };
+      }
+      function findFlaggedCard(newOnes, flagName) {
+        return newOnes.find(m => m?.flags?.[MODULE_ID]?.[flagName] === true);
+      }
+      async function resetPacingState() {
+        const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+        seed.pacing = { sceneOverride: null, forceNextAsMove: false };
+        await game.settings.set(MODULE_ID, "campaignState", seed);
+      }
+
+      // ── 1: predicate gates recognise the formats ─────────────────────────
+      describe("Command predicate gates", function () {
+        it("isPaceCommand / isRollCommand recognise their formats and ignore their own response flags", async function () {
+          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+          const make = (content, flags = {}) => ({
+            content, isContentVisible: true, type: "ic",
+            whisper: [], rolls: [], flags, user: game.user.id,
+          });
+          assert.isTrue(idx.isPaceCommand(make("!pace hot")));
+          assert.isTrue(idx.isPaceCommand(make("!pace status")));
+          assert.isTrue(idx.isPaceCommand(make("!pace")));
+          assert.isFalse(idx.isPaceCommand(make("!paceify everything")),
+            "predicate must require a word boundary after !pace");
+          assert.isFalse(
+            idx.isPaceCommand(make("!pace hot", { [MODULE_ID]: { paceCommandCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+          assert.isTrue(idx.isRollCommand(make("!roll")));
+          assert.isFalse(idx.isRollCommand(make("!roll something else")),
+            "predicate matches the bare !roll only");
+          assert.isFalse(
+            idx.isRollCommand(make("!roll", { [MODULE_ID]: { rollCommandCard: true } })),
+            "the handler's own response card must not re-trigger the handler",
+          );
+        });
+      });
+
+      // ── 2: !pace hot — sets sceneOverride to {modifier:+3, label:"hot"} ──
+      describe("!pace hot — chat dispatch", function () {
+        it("posts a paceCommandCard and sets sceneOverride to hot (+3)", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace hot"));
+          assert.isObject(findFlaggedCard(newOnes, "paceCommandCard"),
+            "a pace command response card should be posted");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isObject(after.pacing?.sceneOverride, "sceneOverride should be set");
+          assert.equal(after.pacing.sceneOverride.label,    "hot");
+          assert.equal(after.pacing.sceneOverride.modifier, 3);
+        });
+      });
+
+      // ── 3: !pace quiet — sets sceneOverride to {modifier:-3, label:"quiet"}
+      describe("!pace quiet — chat dispatch", function () {
+        it("sets sceneOverride to quiet (-3)", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          await withSilencedNotifications(() => postChat("!pace quiet"));
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.equal(after.pacing?.sceneOverride?.label,    "quiet");
+          assert.equal(after.pacing?.sceneOverride?.modifier, -3);
+        });
+      });
+
+      // ── 4: !pace clear — wipes the override back to null ─────────────────
+      describe("!pace clear — chat dispatch", function () {
+        it("clears a previously set sceneOverride", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          // Seed an override directly to set up the cleared state.
+          const seed = JSON.parse(JSON.stringify(originalState ?? {}));
+          seed.pacing = { sceneOverride: { modifier: 3, label: "hot" }, forceNextAsMove: false };
+          await game.settings.set(MODULE_ID, "campaignState", seed);
+
+          await withSilencedNotifications(() => postChat("!pace clear"));
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isNull(after.pacing?.sceneOverride,
+            "sceneOverride should be null after !pace clear");
+        });
+      });
+
+      // ── 5: !pace status — posts a status card without mutating state ─────
+      describe("!pace status — chat dispatch", function () {
+        it("posts a paceCommandCard with a status block and does NOT mutate sceneOverride", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState")));
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace status"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card, "a pace command response card should be posted");
+          // The status branch renders a <pre> block (multi-line); the other
+          // branches render a <p>. Asserting the marker makes a verb-flip
+          // visible in the test output.
+          assert.match(card.content ?? "", /<pre /,
+            "!pace status should render a <pre> block, not a <p>");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.deepEqual(after.pacing, before.pacing,
+            "!pace status must not mutate campaignState.pacing");
+        });
+      });
+
+      // ── 6: !pace <bogus> — posts the unknown-subcommand card, no mutation
+      describe("!pace bogus — chat dispatch", function () {
+        it("posts the unknown-subcommand card without mutating state", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const before = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState")));
+          const { newOnes } = await withSilencedNotifications(() =>
+            postChat("!pace bogus-subcommand"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card, "a pace command response card should be posted even for unknown args");
+          assert.match(card.content ?? "", /Unknown subcommand/i,
+            "card body should call out the unknown subcommand");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.deepEqual(after.pacing, before.pacing,
+            "unknown subcommand must not mutate campaignState.pacing");
+        });
+      });
+
+      // ── 7: !roll — sets forceNextAsMove and posts the rollCommandCard ────
+      describe("!roll — chat dispatch", function () {
+        it("posts a rollCommandCard and sets pacing.forceNextAsMove = true", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          const { newOnes } = await withSilencedNotifications(() => postChat("!roll"));
+          assert.isObject(findFlaggedCard(newOnes, "rollCommandCard"),
+            "a roll command response card should be posted");
+          const after = game.settings.get(MODULE_ID, "campaignState");
+          assert.isTrue(after.pacing?.forceNextAsMove === true,
+            "forceNextAsMove should be true after !roll");
+        });
+      });
+
+      // ── 8: !pace status after !pace hot — surfaces the active override ───
+      describe("!pace status reflects a previously set override", function () {
+        it("after !pace hot, !pace status shows the +3 hot label", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          await resetPacingState();
+          await withSilencedNotifications(() => postChat("!pace hot"));
+          const { newOnes } = await withSilencedNotifications(() => postChat("!pace status"));
+          const card = findFlaggedCard(newOnes, "paceCommandCard");
+          assert.isObject(card);
+          const body = card.content ?? "";
+          assert.match(body, /Scene override:\s*hot/i,
+            "status card should surface the active 'hot' label");
+          assert.match(body, /\+3/,
+            "status card should surface the +3 modifier on dials and footer");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Pace Command" },
   );
 }
