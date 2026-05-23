@@ -126,30 +126,48 @@ jobs:
       # The single sticky comment is found/updated via a hidden HTML
       # marker (<!-- e2e-log:sticky -->) — keeps the PR thread tidy
       # across many iterations instead of one comment per failed run.
-      - name: Post orchestrator log to PR comment on failure
-        if: failure() && github.event.pull_request.number
+      #
+      # Also runs on success so any subscribed agent session is woken
+      # by the comment-event webhook (GitHub fires pr_comment events
+      # on both create and update). On success the body is a single
+      # status line; on failure it embeds the orchestrator-log tail.
+      - name: Post orchestrator status to PR comment
+        if: always() && github.event.pull_request.number
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN:  ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           MARKER='<!-- e2e-log:sticky -->'
-          # Build the comment body. Tail bounded so we stay under the
-          # 65 536-char GitHub comment limit even after markdown wrap.
-          LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
-          if [ -f "$LOG_FILE" ]; then
-            LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
-          else
-            LOG_TAIL="(no orchestrator log captured)"
-          fi
           {
             printf '%s\n' "$MARKER"
-            printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
-            printf '**Run page:** %s\n\n' "$RUN_URL"
-            printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
-            printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
-            printf '```\n%s\n```\n\n' "$LOG_TAIL"
-            printf '</details>\n'
+            case "$JOB_STATUS" in
+              success)
+                printf '## E2E run success — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n' "${{ github.event.pull_request.head.sha }}"
+                ;;
+              cancelled)
+                printf '## E2E run cancelled — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n' "${{ github.event.pull_request.head.sha }}"
+                ;;
+              *)
+                printf '## E2E run failure — `%s`\n\n' "${{ github.run_id }}"
+                printf '**Run page:** %s\n\n' "$RUN_URL"
+                printf '**Head SHA:** `%s`\n\n' "${{ github.event.pull_request.head.sha }}"
+                LOG_FILE=test/ci/cypress/artifacts/e2e-run.log
+                if [ -f "$LOG_FILE" ]; then
+                  LOG_TAIL="$(tail -c 50000 "$LOG_FILE")"
+                else
+                  LOG_TAIL="(no orchestrator log captured)"
+                fi
+                printf '<details><summary>Orchestrator log (tail)</summary>\n\n'
+                printf '```\n%s\n```\n\n' "$LOG_TAIL"
+                printf '</details>\n'
+                ;;
+            esac
           } > /tmp/e2e-comment.md
           # Find an existing sticky comment to update; otherwise post new.
           EXISTING_ID="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \

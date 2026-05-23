@@ -112,15 +112,15 @@ loop between fixes and diagnostics.
 
 **Setup (one-time, in the workflow):**
 - Tee the orchestrator stdout to a log file: `npm run test:e2e 2>&1 | tee test/ci/cypress/artifacts/e2e-run.log` (with `set -o pipefail`).
-- On `if: failure()`, post the last ~50 KB of that log to the PR as a *sticky* comment — search existing comments for a hidden marker (`<!-- e2e-log:sticky -->`) and PATCH it in place via `gh api`; only POST a new one if none exists. Keeps the PR thread tidy across many iterations.
+- On `if: always()`, post a *sticky* comment to the PR with a hidden marker (`<!-- e2e-log:sticky -->`): on success a short status line (run page + head SHA); on failure the orchestrator-log tail (~50 KB). The same step covers both — `if: always()` so the comment fires (and the webhook wakes any subscribed session) regardless of CI outcome. Search existing comments for the marker and PATCH it in place via `gh api`; only POST a new one if none exists. Keeps the PR thread to a single comment that flips between success/failure across iterations.
 
 **Setup (in the session):**
 - Call `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`. Webhook events for the PR arrive as `<github-webhook-activity>` messages that wake the session.
-- Don't poll. Don't use Bash `sleep` to wait for CI. The webhook tells you when a run finishes.
+- Don't poll. Don't use Bash `sleep` to wait for CI. The webhook tells you when a run finishes — success or failure.
 
 **On each `github-webhook-activity` event:**
 1. Call `mcp__github__pull_request_read` with `method=get_comments`. The response is large — slice via `python3 -c "print(open(file).read()[A:B])"` if it exceeds the token budget.
-2. Find the sticky comment (`'<!-- e2e-log:sticky -->' in body`). Read its tail.
+2. Find the sticky comment (`'<!-- e2e-log:sticky -->' in body`). The heading line is `## E2E run success` / `## E2E run failure` / `## E2E run cancelled` — read it first; on success continue with whatever's next; on failure read the orchestrator-log tail.
 3. Diagnose, fix, push. The push triggers a new run; the sticky comment updates in place. Repeat.
 
 **What WebFetch cannot do** (don't try):
