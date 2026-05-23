@@ -88,6 +88,12 @@ Hooks.on("quenchReady", (quench) => {
   // generates a fresh sector. Catches action-binding regressions of the kind
   // that broke v13 chat-card buttons.
   registerSectorCreatorWizardTests(quench);
+  // Sector art + ship Token — graceful-degradation paths for the OpenRouter
+  // image pipeline and the placeCommandVehicleTokenIfPresent skip branches
+  // (no scene / feature disabled / no command vehicle). Pure prompt formatter
+  // and createSectorScene happy-path coverage live in the unit suite and the
+  // existing sectorCreator batch respectively.
+  registerSectorArtTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6035,5 +6041,151 @@ function registerSectorCreatorWizardTests(quench) {
       });
     },
     { displayName: "STARFORGED: Sector Creator Wizard" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR ART + SHIP TOKEN — degradation paths
+// ─────────────────────────────────────────────────────────────────────────────
+// buildSectorBackgroundPrompt prompt-content coverage (region keywords, trouble
+// modifiers) lives in tests/unit/sectorGenerator.test.js, and the
+// createSectorScene happy path (notes, drawings, no auto-activation) is
+// covered by the existing `sectorCreator` batch — which also indirectly
+// exercises the happy path of placeCommandVehicleTokenIfPresent.
+//
+// This batch covers what neither reaches: the graceful-degradation paths in
+// the live OpenRouter pipeline (HTTP error / empty body → null, no throw)
+// and the three skip branches of placeCommandVehicleTokenIfPresent (no
+// scene, feature flag disabled, no command vehicle in campaign state).
+
+function registerSectorArtTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorArt",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      // Save / restore the OpenRouter key so degradation tests can install
+      // a placeholder value (the no-key path is already covered by the
+      // `sectorCommands` batch and tested separately).
+      let originalKey = null;
+
+      before(async function () {
+        if (!game.user?.isGM) return;
+        originalKey = game.settings.get(MODULE_ID, "openRouterApiKey");
+      });
+
+      after(async function () {
+        if (game.user?.isGM) {
+          await game.settings.set(MODULE_ID, "openRouterApiKey", originalKey ?? "")
+            .catch(() => {});
+        }
+      });
+
+      // ── 1: generateSectorBackground — HTTP error path ────────────────────
+      describe("generateSectorBackground — graceful on HTTP error", function () {
+        it("returns null cleanly when the image API responds with 500", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { generateSector } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorGenerator.js`);
+          const { generateSectorBackground } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorArt.js`);
+
+          await game.settings.set(MODULE_ID, "openRouterApiKey", "sk-test-quench-only");
+          const sector = generateSector("outlands");
+          const result = await withStubbedFetch(
+            [["openrouter.ai", () => new Response("upstream error", { status: 500 })]],
+            () => withSilencedNotifications(() => generateSectorBackground(
+              sector, game.settings.get(MODULE_ID, "campaignState"))),
+          );
+          assert.isNull(result,
+            "should return null (not throw) when the OpenRouter API responds non-2xx");
+        });
+      });
+
+      // ── 2: generateSectorBackground — empty-body path ────────────────────
+      describe("generateSectorBackground — graceful on empty image body", function () {
+        it("returns null cleanly when the API responds 200 but with no usable image data", async function () {
+          this.timeout(15000);
+          if (skipNotGM(this)) return;
+          const { generateSector } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorGenerator.js`);
+          const { generateSectorBackground } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sectorArt.js`);
+
+          await game.settings.set(MODULE_ID, "openRouterApiKey", "sk-test-quench-only");
+          const sector = generateSector("expanse");
+          // Valid envelope shape but no image content — openRouterImage's
+          // parser walks the response looking for b64_json / url / data:
+          // bytes and returns null when none are found. Match what the
+          // production code sees on a model misconfiguration.
+          const emptyBody = JSON.stringify({
+            choices: [{ message: { content: "" } }],
+            data:    [],
+          });
+          const result = await withStubbedFetch(
+            [["openrouter.ai", () => new Response(emptyBody, {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })]],
+            () => withSilencedNotifications(() => generateSectorBackground(
+              sector, game.settings.get(MODULE_ID, "campaignState"))),
+          );
+          assert.isNull(result,
+            "should return null when the API responds 200 with no usable image bytes");
+        });
+      });
+
+      // ── 3: placeCommandVehicleTokenIfPresent — no scene → null ───────────
+      describe("placeCommandVehicleTokenIfPresent — no scene", function () {
+        it("returns null without throwing when scene is null", async function () {
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+          const result = await placeCommandVehicleTokenIfPresent(null, { id: "sec-x" });
+          assert.isNull(result, "no scene → null, no throw");
+        });
+      });
+
+      // ── 4: placeCommandVehicleTokenIfPresent — feature disabled → null ───
+      describe("placeCommandVehicleTokenIfPresent — feature disabled", function () {
+        it("returns null when factContinuity.shipTokenEnabled is false", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+          await withTempSetting("factContinuity.shipTokenEnabled", false, async () => {
+            // Pass a minimal scene-shaped object — the function should bail
+            // before ever touching createEmbeddedDocuments.
+            const sceneStub = { tokens: { contents: [] } };
+            const result = await placeCommandVehicleTokenIfPresent(sceneStub, { id: "sec-x" });
+            assert.isNull(result, "disabled setting must short-circuit to null");
+          });
+        });
+      });
+
+      // ── 5: placeCommandVehicleTokenIfPresent — no command vehicle → null
+      describe("placeCommandVehicleTokenIfPresent — no command vehicle", function () {
+        it("returns null when campaignState.shipIds has no command vehicle", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { placeCommandVehicleTokenIfPresent } = await import(
+            `/modules/${MODULE_ID}/src/sectors/sceneBuilder.js`);
+
+          // Temporarily clear shipIds so the no-command-vehicle branch fires.
+          // withTempSetting restores on throw.
+          const state = JSON.parse(JSON.stringify(
+            game.settings.get(MODULE_ID, "campaignState") ?? {}));
+          const seed  = { ...state, shipIds: [] };
+          await withTempSetting("campaignState", seed, async () => {
+            const sceneStub = { tokens: { contents: [] } };
+            const result = await placeCommandVehicleTokenIfPresent(
+              sceneStub, { id: "sec-x", mapData: { settlements: [] } });
+            assert.isNull(result, "no command vehicle → null");
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Art + Ship Token" },
   );
 }
