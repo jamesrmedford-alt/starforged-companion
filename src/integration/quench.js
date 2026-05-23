@@ -121,6 +121,12 @@ Hooks.on("quenchReady", (quench) => {
   // the button hide/unhide flow. This batch fills the gap on what happens
   // when the live network call fails.
   registerAudioDegradationTests(quench);
+  // Help compendium generation — assert the static PAGES export has the
+  // right shape and the live JournalEntry created at world init matches
+  // CONTENT_VERSION. Catches help-content authoring mistakes
+  // (missing fields, malformed pages) and the contentVersion-stamping
+  // regression class.
+  registerHelpCompendiumTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7080,5 +7086,142 @@ function registerAudioDegradationTests(quench) {
       });
     },
     { displayName: "STARFORGED: Audio Degradation" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELP COMPENDIUM GENERATION — static export shape + live journal stamping
+// ─────────────────────────────────────────────────────────────────────────────
+// The help compendium is generated programmatically from src/help/helpJournal.js
+// at world ready (via ensureHelpJournal in src/index.js). No unit tests exist
+// — the module's effect is a live Foundry document. This batch pins:
+//   - PAGES exports the expected shape (every page has name / sort / non-empty
+//     text content)
+//   - PAGES has unique sort values so the rendered order is stable
+//   - CONTENT_VERSION is a non-empty string in semver-ish form
+//   - the JournalEntry exists in the live world after world init
+//   - the journal has page count equal to PAGES.length
+//   - the journal carries the contentVersion flag matching CONTENT_VERSION
+//     (catches CONTENT_VERSION-bump regressions where the journal would
+//     otherwise be silently stale)
+//
+// Note: this batch does NOT assert CONTENT_VERSION against module.json —
+// per CLAUDE.md the two are distinct version concepts (module.json is the
+// release tag; CONTENT_VERSION is the in-game help content fingerprint).
+
+function registerHelpCompendiumTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.helpCompendiumGeneration",
+    (context) => {
+      const { describe, it, assert, before } = context;
+
+      let PAGES = null;
+      let CONTENT_VERSION = null;
+      let JOURNAL_NAME = null;
+
+      before(async function () {
+        const mod = await import(`/modules/${MODULE_ID}/src/help/helpJournal.js`);
+        PAGES = mod.PAGES;
+        CONTENT_VERSION = mod.CONTENT_VERSION;
+        JOURNAL_NAME = mod.JOURNAL_NAME;
+      });
+
+      // ── 1: PAGES export shape ────────────────────────────────────────────
+      describe("PAGES export — shape", function () {
+        it("is a non-empty array", function () {
+          assert.isArray(PAGES, "PAGES must be an array");
+          assert.isAbove(PAGES.length, 5,
+            "PAGES should have a non-trivial number of pages (>5)");
+        });
+
+        it("every entry has name, sort, and non-empty text.content", function () {
+          for (const p of PAGES) {
+            assert.isObject(p, `each PAGE entry must be an object (got ${typeof p})`);
+            assert.isString(p.name);
+            assert.isAbove(p.name.length, 0, `page name must be non-empty`);
+            assert.isNumber(p.sort, `page "${p.name}" must have a numeric sort`);
+            assert.isObject(p.text,  `page "${p.name}" must have a text object`);
+            assert.isString(p.text.content,
+              `page "${p.name}" must have a string text.content`);
+            assert.isAbove(p.text.content.length, 50,
+              `page "${p.name}" text.content should be non-trivial`);
+          }
+        });
+
+        it("sort values are unique so the rendered order is deterministic", function () {
+          const sorts = PAGES.map(p => p.sort);
+          const unique = new Set(sorts);
+          assert.equal(unique.size, sorts.length,
+            `sort values must be unique (got ${sorts.length} pages but ${unique.size} unique sorts)`);
+        });
+      });
+
+      // ── 2: CONTENT_VERSION export ────────────────────────────────────────
+      describe("CONTENT_VERSION export", function () {
+        it("is a non-empty string in semver-ish form", function () {
+          assert.isString(CONTENT_VERSION,
+            "CONTENT_VERSION must be a string");
+          assert.match(CONTENT_VERSION, /^\d+\.\d+\.\d+/,
+            `CONTENT_VERSION should match \\d+\\.\\d+\\.\\d+ (got "${CONTENT_VERSION}")`);
+        });
+      });
+
+      // ── 3: JOURNAL_NAME export ───────────────────────────────────────────
+      describe("JOURNAL_NAME export", function () {
+        it("is a non-empty string", function () {
+          assert.isString(JOURNAL_NAME);
+          assert.isAbove(JOURNAL_NAME.length, 0);
+        });
+      });
+
+      // ── 4: live journal — exists, page count matches, flag matches ───────
+      describe("live help journal — created and contentVersion-stamped", function () {
+        it("a JournalEntry with the configured name exists in the world", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          assert.isOk(journal,
+            `Help journal "${JOURNAL_NAME}" must exist (created at world init by ensureHelpJournal)`);
+        });
+
+        it("the journal's page count equals PAGES.length", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          if (!journal) { this.skip(); return; }
+          const pageCount = journal.pages?.size ?? journal.pages?.contents?.length ?? 0;
+          assert.equal(pageCount, PAGES.length,
+            `journal page count drift — module declares ${PAGES.length} pages, journal has ${pageCount}. ` +
+            `Likely a stale-version journal that didn't re-build on CONTENT_VERSION bump.`);
+        });
+
+        it("the journal's contentVersion flag matches CONTENT_VERSION", function () {
+          const journal = game.journal?.getName?.(JOURNAL_NAME);
+          if (!journal) { this.skip(); return; }
+          const stored = journal.getFlag(MODULE_ID, "contentVersion");
+          assert.equal(stored, CONTENT_VERSION,
+            `journal contentVersion flag drift — module declares "${CONTENT_VERSION}", journal has "${stored}". ` +
+            `ensureHelpJournal() should have re-built the journal at world ready.`);
+        });
+      });
+
+      // ── 5: ensureHelpJournal — idempotent ────────────────────────────────
+      describe("ensureHelpJournal — idempotent", function () {
+        it("calling again with the current CONTENT_VERSION does not throw and does not duplicate", async function () {
+          this.timeout(10000);
+          if (skipNotGM(this)) return;
+          const { ensureHelpJournal } = await import(
+            `/modules/${MODULE_ID}/src/help/helpJournal.js`);
+          const before = (game.journal?.contents ?? [])
+            .filter(j => j.name === JOURNAL_NAME).length;
+          // Should be a no-op when the stored flag already matches.
+          await ensureHelpJournal();
+          const after = (game.journal?.contents ?? [])
+            .filter(j => j.name === JOURNAL_NAME).length;
+          assert.equal(after, before,
+            "ensureHelpJournal must not duplicate the journal on a same-version call");
+          assert.isAtLeast(after, 1,
+            "the journal should still exist after the no-op call");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Help Compendium Generation" },
   );
 }
