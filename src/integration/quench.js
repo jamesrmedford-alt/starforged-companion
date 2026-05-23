@@ -5327,8 +5327,20 @@ function registerFactContinuityTests(quench) {
         const beforeIds = new Set(game.messages.contents.map(m => m.id));
         const msg = await ChatMessage.create({ content, user: game.user.id });
         if (msg?.id) createdMessageIds.push(msg.id);
-        // Let the createChatMessage hook + the FC handler's async chain settle.
-        for (let i = 0; i < 5; i++) await flushMicrotasks();
+        // The FC / scene-command handlers chain three async hops:
+        //   game.settings.set → ChatMessage.create → renderChatMessage hook.
+        // A fixed-count microtask flush was non-deterministic in CI (the
+        // !state set case failed on a 2026-05-23 run while the other eight
+        // tests in this batch passed with the same harness). Poll until the
+        // handler's response card surfaces in game.messages — or give up at
+        // the 3s deadline so a genuine handler bug surfaces as a clear
+        // assertion failure downstream rather than a hung post.
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const fresh = game.messages.contents.filter(m => !beforeIds.has(m.id));
+          if (fresh.length >= 2) break; // initial post + handler response
+          await flushMicrotasks();
+        }
         const newOnes = game.messages.contents.filter(m => !beforeIds.has(m.id));
         for (const m of newOnes) if (m.id !== msg?.id) createdMessageIds.push(m.id);
         return { msg, newOnes };
