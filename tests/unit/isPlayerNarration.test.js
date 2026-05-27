@@ -127,6 +127,51 @@ describe('isPlayerNarration()', () => {
     expect(isPlayerNarration(msg)).toBe(true);
   });
 
+  it('returns false for EMOTE-style messages (v13 style, not type)', () => {
+    // foundry-ironsworn posts "Added <asset>" alerts as emotes on the actor —
+    // EMOTE style (3), italic content, a speaker actor, and NO module flag, so
+    // the foundry-ironsworn flag guard cannot catch them. They must not reach
+    // the narrator. Note message.type is "base" here (v13), which the legacy
+    // string check does NOT catch — the style check is what rejects it.
+    const msg = makeMessage({
+      type:    'base',
+      style:   CONST.CHAT_MESSAGE_STYLES.EMOTE,
+      content: '<em>Added Grappler</em>',
+      speaker: { actor: 'dqQpfECKb1YBnUi2' },
+    });
+    expect(isPlayerNarration(msg)).toBe(false);
+  });
+
+  it('returns false for whisper messages (non-empty whisper array)', () => {
+    const msg = makeMessage({
+      type:    'base',
+      whisper: ['gm-user-id'],
+      content: 'A private aside that should never be narrated.',
+    });
+    expect(isPlayerNarration(msg)).toBe(false);
+  });
+
+  it('returns false for roll messages (non-empty rolls array)', () => {
+    const msg = makeMessage({
+      type:  'base',
+      rolls: [{ total: 7 }],
+      content: 'Rolling action dice for the move.',
+    });
+    expect(isPlayerNarration(msg)).toBe(false);
+  });
+
+  it('still returns true for IC narration that carries a style (style does not over-reject)', () => {
+    // Regression guard for the EMOTE fix: a normal IC message with an explicit
+    // IC style and a speaker actor is still narration — only EMOTE is rejected.
+    const msg = makeMessage({
+      type:    'base',
+      style:   CONST.CHAT_MESSAGE_STYLES.IC,
+      content: 'I vault the railing and sprint for the airlock.',
+      speaker: { actor: 'pc-actor-id' },
+    });
+    expect(isPlayerNarration(msg)).toBe(true);
+  });
+
   it('returns true for messages with bypassPacing flag (NWMA Roll button re-post)', () => {
     const msg = makeMessage({
       content: 'I press her on what she heard.',

@@ -190,6 +190,7 @@ global.foundry.audio = {
 
 global.CONST = {
   DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, LIMITED: 1, OBSERVER: 2, OWNER: 3 },
+  CHAT_MESSAGE_STYLES:       { OTHER: 0, OOC: 1, IC: 2, EMOTE: 3 },
 };
 
 // ---------------------------------------------------------------------------
