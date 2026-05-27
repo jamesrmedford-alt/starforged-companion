@@ -1007,7 +1007,24 @@ function registerStarshipSeedHook() {
  * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
  */
 export function isPlayerNarration(message) {
-  // String literal type checks — v13 compatible
+  // v13: the IC / OOC / EMOTE classification lives on `message.style`
+  // (CONST.CHAT_MESSAGE_STYLES), NOT on `message.type` — in v13 `type` is the
+  // document subtype ("base"), so the legacy string check further down is a
+  // no-op there and was silently letting emotes, whispers, and rolls through
+  // to the narrator. Emote-style messages in particular are never
+  // move-triggering narration: they are `/em` roleplay flavor, or — the case
+  // that surfaced this — a foundry-ironsworn system alert posted when an
+  // asset/module is added to an actor (an italic "<em>Added Grappler</em>"
+  // with the ship as speaker, EMOTE style, and no module flag, so the
+  // foundry-ironsworn flag check below can't catch it). Reject emote / whisper
+  // / roll up front using the style and the document's own arrays.
+  const EMOTE = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
+  if (message.style === EMOTE) return false;
+  if (Array.isArray(message.whisper) && message.whisper.length > 0) return false;
+  if (Array.isArray(message.rolls) && message.rolls.length > 0) return false;
+
+  // Legacy v12 string-type guard — harmless no-op on v13 (type is "base"),
+  // retained for v12 worlds where message.type still carries the style.
   const type = message.type;
   if (type === "ooc" || type === "roll" || type === "whisper") return false;
 
