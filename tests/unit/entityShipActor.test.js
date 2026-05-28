@@ -19,6 +19,15 @@ vi.mock("../../src/oracles/roller.js", async (importOriginal) => {
   };
 });
 
+// apiPost is mocked so the Sonnet-notes path in seedStarshipActor is
+// deterministic. Returns a fixed prose paragraph; the no-key seed tests never
+// reach it (generateStarshipIntroProse returns early when no claudeApiKey set).
+vi.mock("../../src/api-proxy.js", () => ({
+  apiPost: vi.fn(async () => ({
+    content: [{ type: "text", text: "Your habitat-hulk hangs motionless against the dark." }],
+  })),
+}));
+
 import {
   createShip,
   getShip,
@@ -30,6 +39,9 @@ import {
   ShipSchema,
   starshipHasSeedDetail,
   seedStarshipActor,
+  getCommandVehicle,
+  actorHasCommandVehicleAsset,
+  syncCommandVehicleFlag,
 } from "../../src/entities/ship.js";
 import { rollOracle } from "../../src/oracles/roller.js";
 import { _resetFolderCache } from "../../src/entities/folder.js";
@@ -134,6 +146,97 @@ describe("getShip / listShips — reads route through the registry", () => {
     await createShip({ name: "B" }, state);
     const names = listShips(state).map(s => s.name).sort();
     expect(names).toEqual(["A", "B"]);
+  });
+});
+
+describe("getCommandVehicle — flag, then lone-ship fallback", () => {
+  it("returns the flagged command vehicle when one is set", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Support" }, state);
+    await createShip({ name: "Flagship", isCommandVehicle: true }, state);
+    expect(getCommandVehicle(state)?.name).toBe("Flagship");
+  });
+
+  it("falls back to the sole tracked starship when none is flagged", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Only Ship" }, state);
+    expect(getCommandVehicle(state)?.name).toBe("Only Ship");
+  });
+
+  it("is ambiguous (null) when multiple ships exist and none is flagged", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "A" }, state);
+    await createShip({ name: "B" }, state);
+    expect(getCommandVehicle(state)).toBeNull();
+  });
+});
+
+describe("actorHasCommandVehicleAsset", () => {
+  it("detects an embedded Command Vehicle asset on a starship", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Has CV",
+      items: { contents: [
+        { type: "asset", system: { category: "Module" } },
+        { type: "asset", system: { category: "Command Vehicle" } },
+      ] },
+    });
+    expect(actorHasCommandVehicleAsset(actor)).toBe(true);
+  });
+
+  it("is false for a starship carrying only modules / support vehicles", () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Modules Only",
+      items: { contents: [
+        { type: "asset", system: { category: "Module" } },
+        { type: "asset", system: { category: "Support Vehicle" } },
+      ] },
+    });
+    expect(actorHasCommandVehicleAsset(actor)).toBe(false);
+  });
+
+  it("is false for non-starship actors", () => {
+    const actor = global.makeTestActor({
+      type: "character", name: "PC",
+      items: { contents: [{ type: "asset", system: { category: "Command Vehicle" } }] },
+    });
+    expect(actorHasCommandVehicleAsset(actor)).toBe(false);
+  });
+});
+
+describe("syncCommandVehicleFlag", () => {
+  it("flags a tracked starship once it carries a Command Vehicle asset", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Promotable" }, state);
+    const actor = global.game.actors.contents[0];
+    expect(getShip(actor.id).isCommandVehicle).toBe(false);
+
+    actor.items.contents.push({ type: "asset", system: { category: "Command Vehicle" } });
+    const result = await syncCommandVehicleFlag(actor, state);
+
+    expect(result?.isCommandVehicle).toBe(true);
+    expect(getShip(actor.id).isCommandVehicle).toBe(true);
+  });
+
+  it("is a no-op when the flag already matches the asset state", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Already" }, state);
+    const actor = global.game.actors.contents[0];
+    expect(await syncCommandVehicleFlag(actor, state)).toBeNull();
+  });
+
+  it("registers and flags an untracked sidebar starship that carries the asset", async () => {
+    const actor = global.makeTestActor({
+      type: "starship", name: "Sidebar CV",
+      items: { contents: [{ type: "asset", system: { category: "Command Vehicle" } }] },
+    });
+    global.game.actors._set(actor.id, actor);
+    const state = { shipIds: [] };
+
+    const result = await syncCommandVehicleFlag(actor, state);
+
+    expect(result?.isCommandVehicle).toBe(true);
+    expect(state.shipIds).toContain(actor.id);
+    expect(actor.flags["starforged-companion"].ship.isCommandVehicle).toBe(true);
   });
 });
 
@@ -310,6 +413,26 @@ describe("seedStarshipActor", () => {
     expect(notes).toContain("Patched hull");
     expect(notes).toContain("Mission");
     expect(notes).toContain("Smuggle a contraband cargo");
+  });
+
+  it("composes atmospheric prose Notes (prose + fact line) when a Claude key is set", async () => {
+    global.game.settings.get = (_mod, key) => {
+      if (key === "claudeApiKey")     return "sk-ant-test";
+      if (key === "autoSeedStarship") return true;
+      if (key === "narrationModel")   return "claude-sonnet-4-5-20250929";
+      if (key === "narrationTone")    return "wry";
+      if (key === "openRouterApiKey") return "";
+      return undefined;
+    };
+    const actor = global.makeTestActor({ type: "starship", name: "Prose Ship" });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    const notes = actor.system.notes;
+    expect(notes).toContain("Your habitat-hulk hangs motionless against the dark."); // Sonnet prose
+    expect(notes).toContain("Heavy Freighter");  // compact fact line preserves the rolls
+    expect(notes).not.toContain("<ul>");          // prose path, not the bullet fallback
   });
 
   it("picks the active sector's region for the mission table", async () => {

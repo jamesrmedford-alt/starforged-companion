@@ -86,6 +86,7 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
 
   await storeArtAsset(asset, campaignState);
   await linkPortraitToEntity(journalEntryId, entityType, asset._id);
+  await attachPortraitToActor(journalEntryId, entityType, asset.b64, asset._id);
 
   console.log(`${MODULE_ID} | Art: generated portrait for ${entityType} ${entity._id}`);
   return asset;
@@ -139,6 +140,7 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
   const lockedAsset = { ...asset, regenerationUsed: true, locked: true };
   await storeArtAsset(lockedAsset, campaignState);
   await linkPortraitToEntity(journalEntryId, entityType, lockedAsset._id);
+  await attachPortraitToActor(journalEntryId, entityType, lockedAsset.b64, lockedAsset._id);
 
   console.log(`${MODULE_ID} | Art: regenerated (and locked) portrait for ${entityType} ${entity._id}`);
   return lockedAsset;
@@ -225,6 +227,77 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
     console.log(`${MODULE_ID} | Art: linked portrait ${artAssetId} to ${entityType} ${journalEntryId}`);
   } catch (err) {
     console.error(`${MODULE_ID} | Art: failed to link portrait to entity:`, err.message);
+  }
+}
+
+/**
+ * Attach a generated portrait to an Actor-hosted entity so the native Actor
+ * sheet and its tokens render the art — not just the Entity Panel. The base64
+ * journal copy (storeArtAsset) feeds the panel's custom HTML; Foundry document
+ * image fields need a real file path, so the bytes are uploaded to the world
+ * data dir and `actor.img` / the prototype-token texture point at it (per
+ * docs/foundry-api-reference.md → FilePicker.upload).
+ *
+ * No-op for journal-hosted entities (connection / faction / creature) — they
+ * have no image-bearing document. GM-gated (uploads require GM). Non-blocking:
+ * a missing Actor portrait is preferable to a broken seed or narration.
+ */
+async function attachPortraitToActor(journalEntryId, entityType, b64, assetId) {
+  try {
+    if (!b64) return;
+    if (typeof game !== "undefined" && game?.user && !game.user.isGM) return;
+
+    let document = null;
+    try { document = getEntityDocument(entityType, journalEntryId); } catch { document = null; }
+    if (!document || document.documentName !== "Actor") return;
+
+    const path = await uploadPortraitImage(b64, `${document.id}-${assetId}.png`);
+    if (!path) return;
+
+    await document.update({
+      img:                          path,
+      "prototypeToken.texture.src": path,
+    });
+    console.log(`${MODULE_ID} | Art: attached portrait to Actor ${document.id} (${path})`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Art: attachPortraitToActor failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Upload a base64 PNG to the world data dir and return its path. Mirrors the
+ * sector-art / audio-cache upload pattern. Prefers the upload response's
+ * `path` (The Forge stores uploads in the Assets Library and returns the real
+ * URL there — the constructed local path 404s on Forge; see AUDIO-002).
+ *
+ * @returns {Promise<string|null>}
+ */
+async function uploadPortraitImage(b64, filename) {
+  try {
+    const worldId   = globalThis.game?.world?.id ?? "world";
+    const uploadDir = `worlds/${worldId}/art`;
+    const FP = foundry.applications.apps.FilePicker.implementation;
+
+    try {
+      await FP.createDirectory("data", uploadDir, {});
+    } catch (err) {
+      const msg = err?.message ?? String(err);
+      if (!/exists/i.test(msg)) {
+        console.warn(`${MODULE_ID} | Art: createDirectory(${uploadDir}) failed:`, err);
+      }
+    }
+
+    const byteString = atob(b64);
+    const bytes = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "image/png" });
+    const file = new File([blob], filename, { type: "image/png" });
+
+    const response = await FP.upload("data", uploadDir, file, {}, { notify: false });
+    return response?.path ?? `${uploadDir}/${filename}`;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Art: portrait upload failed:`, err?.message ?? err);
+    return null;
   }
 }
 

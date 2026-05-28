@@ -274,9 +274,40 @@ export function buildShipPositionLine(campaignState) {
       const p = a?.flags?.[MID]?.ship;
       if (p?.isCommandVehicle) { payload = p; actor = a; break; }
     }
-    if (!payload) return '';
-    const name = actor?.name ?? payload?.name ?? '';
-    return formatShipPositionLine(payload.position, campaignState, name);
+    // Lone-ship fallback: a single tracked starship is the command vehicle
+    // even when nothing has set the isCommandVehicle flag yet.
+    if (!actor) {
+      const starships = ids
+        .map(id => globalThis.game?.actors?.get?.(id))
+        .filter(a => a?.type === 'starship');
+      if (starships.length === 1) {
+        actor   = starships[0];
+        payload = actor.flags?.[MID]?.ship ?? null;
+      }
+    }
+    if (!actor) return '';
+
+    const name  = actor?.name ?? payload?.name ?? '';
+    const lines = [];
+
+    // Identity line — always present so the narrator knows the command
+    // vehicle exists and its name, even before any position is established.
+    const idParts = [];
+    if (payload?.type)      idParts.push(String(payload.type).trim());
+    if (payload?.firstLook) idParts.push(`first look: ${String(payload.firstLook).trim()}`);
+    if (payload?.mission)   idParts.push(`mission: ${String(payload.mission).trim()}`);
+    if (typeof payload?.integrity === 'number') {
+      const max     = payload.integrityMax ?? 5;
+      const impacts = [payload.battered && 'battered', payload.cursed && 'cursed'].filter(Boolean);
+      idParts.push(`integrity ${payload.integrity}/${max}${impacts.length ? ` [${impacts.join(', ')}]` : ''}`);
+    }
+    lines.push(`COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`);
+
+    // Position line — only when the position record carries information.
+    const posLine = formatShipPositionLine(payload?.position, campaignState, name);
+    if (posLine) lines.push(posLine);
+
+    return lines.join('\n');
   } catch (err) {
     console.warn?.('starforged-companion | buildShipPositionLine failed:', err?.message ?? err);
     return '';

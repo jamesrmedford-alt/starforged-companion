@@ -18,6 +18,7 @@ import {
   sanitizePlayerText,
   stripHtml,
   NARRATOR_PERMISSIONS,
+  buildShipPositionLine,
 } from '../../src/narration/narratorPrompt.js';
 
 
@@ -797,5 +798,66 @@ describe('user-message builders strip HTML at the intake', () => {
     );
     expect(msg.toLowerCase()).not.toContain('<p');
     expect(msg.toLowerCase()).not.toContain('html');
+  });
+});
+
+describe('buildShipPositionLine()', () => {
+  const MID = 'starforged-companion';
+
+  beforeEach(() => { game.actors._reset?.(); });
+
+  it('emits a COMMAND VEHICLE identity line even when position is empty', () => {
+    const ship = makeTestActor({
+      id: 'cv', type: 'starship', name: 'Kobayashi III',
+      flags: { [MID]: { ship: {
+        _id: 's1', name: 'Kobayashi III', isCommandVehicle: true,
+        type: 'Ironhome — Habitat', firstLook: 'Immobile', mission: 'Provide shelter',
+        integrity: 5, integrityMax: 5, position: {},
+      } } },
+    });
+    game.actors._set('cv', ship);
+    const line = buildShipPositionLine({ shipIds: ['cv'] });
+    expect(line).toContain('COMMAND VEHICLE: Kobayashi III');
+    expect(line).toContain('Ironhome — Habitat');
+    expect(line).toContain('mission: Provide shelter');
+    expect(line).toContain('integrity 5/5');
+  });
+
+  it('falls back to the sole tracked starship when none is flagged', () => {
+    const ship = makeTestActor({
+      id: 'lone', type: 'starship', name: 'Drifter',
+      flags: { [MID]: { ship: { _id: 's2', name: 'Drifter', isCommandVehicle: false, position: {} } } },
+    });
+    game.actors._set('lone', ship);
+    const line = buildShipPositionLine({ shipIds: ['lone'] });
+    expect(line).toContain('COMMAND VEHICLE: Drifter');
+  });
+
+  it('returns "" with no tracked starship, and stays ambiguous with two unflagged ships', () => {
+    expect(buildShipPositionLine({ shipIds: [] })).toBe('');
+    expect(buildShipPositionLine(null)).toBe('');
+
+    const a = makeTestActor({ id: 'a', type: 'starship', name: 'A',
+      flags: { [MID]: { ship: { _id: 'sa', isCommandVehicle: false, position: {} } } } });
+    const b = makeTestActor({ id: 'b', type: 'starship', name: 'B',
+      flags: { [MID]: { ship: { _id: 'sb', isCommandVehicle: false, position: {} } } } });
+    game.actors._set('a', a);
+    game.actors._set('b', b);
+    expect(buildShipPositionLine({ shipIds: ['a', 'b'] })).toBe('');
+  });
+
+  it('appends a SHIP POSITION line when the position record is populated', () => {
+    const ship = makeTestActor({
+      id: 'cv2', type: 'starship', name: 'Pioneer',
+      flags: { [MID]: { ship: {
+        _id: 's3', name: 'Pioneer', isCommandVehicle: true,
+        position: { freeText: 'adrift in the Bleakhold expanse' },
+      } } },
+    });
+    game.actors._set('cv2', ship);
+    const line = buildShipPositionLine({ shipIds: ['cv2'] });
+    expect(line).toContain('COMMAND VEHICLE: Pioneer');
+    expect(line).toContain('SHIP POSITION:');
+    expect(line).toContain('adrift in the Bleakhold expanse');
   });
 });

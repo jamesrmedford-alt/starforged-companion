@@ -311,4 +311,27 @@ describe('getCommandVehicleActor', () => {
     expect(getCommandVehicleActor({ shipIds: [] })).toBeNull();
     expect(getCommandVehicleActor({})).toBeNull();
   });
+
+  it('falls back to the sole tracked starship when none is flagged', () => {
+    const only = makeTestActor({
+      id: 'only', type: 'starship',
+      flags: { [MODULE_ID]: { ship: { _id: 'shipX', isCommandVehicle: false }, entityType: 'ship', entityId: 'shipX' } },
+    });
+    game.actors._set('only', only);
+    expect(getCommandVehicleActor({ shipIds: ['only'] })).toBe(only);
+  });
+
+  it('stays ambiguous (null) when multiple starships exist and none is flagged', () => {
+    const a = makeTestActor({
+      id: 'a', type: 'starship',
+      flags: { [MODULE_ID]: { ship: { _id: 's1', isCommandVehicle: false }, entityType: 'ship', entityId: 's1' } },
+    });
+    const b = makeTestActor({
+      id: 'b', type: 'starship',
+      flags: { [MODULE_ID]: { ship: { _id: 's2', isCommandVehicle: false }, entityType: 'ship', entityId: 's2' } },
+    });
+    game.actors._set('a', a);
+    game.actors._set('b', b);
+    expect(getCommandVehicleActor({ shipIds: ['a', 'b'] })).toBeNull();
+  });
 });
