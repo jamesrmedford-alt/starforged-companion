@@ -29,6 +29,45 @@ export const PLAYBACK_STATE = Object.freeze({
 let _gestureReceived = false;
 const _gestureWaiters = [];
 
+// Single-active-playback guard. Only one PlaybackSession may play at a time.
+// Narrator cards rendered in fast succession (e.g. an autoplay burst, or
+// several moves resolving quickly) would otherwise each spin up an
+// independent session and overlap into a loud cacophony. Starting any
+// session stops whichever session was previously active, so playback is
+// always "latest wins, no overlap".
+let _activeSession = null;
+
+function _claimActivePlayback(session) {
+  const prev = _activeSession;
+  // Claim first, THEN stop the previous one — so prev.stop()'s own release
+  // (which only nulls _activeSession when it still points at prev) cannot
+  // clobber this fresh claim.
+  _activeSession = session;
+  if (prev && prev !== session) {
+    Promise.resolve(prev.stop()).catch(err =>
+      console.warn(`${MODULE_ID} | playback: stopping prior session failed:`, err));
+  }
+}
+
+function _releaseActivePlayback(session) {
+  if (_activeSession === session) _activeSession = null;
+}
+
+/** Test-only — clears the single-active-playback registry between cases. */
+export function _resetActivePlaybackForTests() { _activeSession = null; }
+
+/**
+ * Stop whatever session is currently playing, if any. Backs the per-card
+ * "Stop" button so a narration that runs excessively long (or the wrong one
+ * in a burst) can be halted from any visible card. No-op when nothing is
+ * active. Returns a promise that resolves once the stop has been issued.
+ */
+export function stopActivePlayback() {
+  const s = _activeSession;
+  if (!s) return Promise.resolve(false);
+  return Promise.resolve(s.stop()).then(() => true).catch(() => false);
+}
+
 function ensureGestureListener() {
   if (_gestureReceived) return;
   // In headless / node-test environments there is no document — gesture
@@ -111,6 +150,8 @@ export class PlaybackSession {
    */
   async play() {
     if (this._state === PLAYBACK_STATE.PLAYING) return;
+    // Stop any other session before we make a sound — prevents overlap.
+    _claimActivePlayback(this);
     if (this._state === PLAYBACK_STATE.PAUSED && this._currentSound) {
       this._setState(PLAYBACK_STATE.PLAYING);
       try {
@@ -152,6 +193,7 @@ export class PlaybackSession {
       }
     }
     this._currentSound = null;
+    _releaseActivePlayback(this);
   }
 
   async _playFromCurrent() {
@@ -166,6 +208,7 @@ export class PlaybackSession {
     }
     if (!this._stopped) {
       this._setState(PLAYBACK_STATE.IDLE);
+      _releaseActivePlayback(this);
     }
   }
 
@@ -226,6 +269,7 @@ export class PlaybackSession {
   _fail(err) {
     console.warn(`${MODULE_ID} | playback failed:`, err);
     this._setState(PLAYBACK_STATE.ERROR);
+    _releaseActivePlayback(this);
   }
 }
 

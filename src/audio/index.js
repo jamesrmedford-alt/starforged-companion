@@ -29,6 +29,7 @@ import {
   PLAYBACK_STATE,
   markGestureReceived,
   userGestureReceived,
+  stopActivePlayback,
 } from "./playback.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
@@ -239,6 +240,24 @@ export async function onNarratorCardRendered(message, root) {
     markGestureReceived();
     await togglePlayback(message, fresh, rawProse);
   });
+
+  // Stop button — halts whatever is currently playing (the single active
+  // session, which may belong to a different card in a burst) and resets
+  // this card's play button to idle. Lets the GM cut off a narration that
+  // runs excessively long. Unhidden alongside Play; clone-replaced to drop
+  // any stale listener from a prior render.
+  const stopBtn = root.querySelector('[data-action="audioStop"]');
+  if (stopBtn) {
+    stopBtn.removeAttribute("hidden");
+    const freshStop = stopBtn.cloneNode(true);
+    stopBtn.replaceWith(freshStop);
+    freshStop.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await stopActivePlayback();
+      setButtonLabel(fresh, "idle");
+    });
+  }
 
   // Optional auto-play.
   if (getSetting("audio.autoplay", false) === true) {
