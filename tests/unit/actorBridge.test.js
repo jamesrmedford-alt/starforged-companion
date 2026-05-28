@@ -13,6 +13,7 @@ import {
   readDebilities,
   readAssets,
   readVows,
+  readConnections,
   applyMeterChanges,
   setDebility,
   awardXP,
@@ -490,6 +491,42 @@ describe('readAssets', () => {
   it('returns empty array when no asset items present', () => {
     const actor = freshActor();
     expect(readAssets(actor)).toEqual([]);
+  });
+});
+
+
+describe('readConnections', () => {
+  it('reads bond-subtype progress items, ignoring vows and assets', () => {
+    const actor = freshActor({
+      items: { contents: [
+        { type: 'progress', name: 'Dr Chen', system: { subtype: 'bond', rank: 'dangerous', progress: 4 } },
+        { type: 'progress', name: 'A vow',   system: { subtype: 'vow' } },
+        { type: 'asset',    name: 'Scoundrel', system: {} },
+      ] },
+    });
+    const out = readConnections(actor);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('Dr Chen');
+    expect(out[0].rank).toBe('dangerous');
+    expect(out[0].progress).toBe(1);
+  });
+
+  it('surfaces connections, notes and biography through readCharacterSnapshot', () => {
+    const actor = freshActor({
+      system: { notes: '<p>Keeps a journal.</p>', biography: '<p>Born on a hauler.</p>' },
+      items: { contents: [
+        { type: 'progress', name: 'Vance', system: { subtype: 'bond', rank: 'troublesome' } },
+      ] },
+    });
+    const snap = readCharacterSnapshot(actor);
+    expect(snap.connections).toHaveLength(1);
+    expect(snap.connections[0].name).toBe('Vance');
+    expect(snap.notes).toBe('Keeps a journal.');
+    expect(snap.biography).toBe('Born on a hauler.');
+  });
+
+  it('returns empty array when no bond items present', () => {
+    expect(readConnections(freshActor())).toEqual([]);
   });
 });
 

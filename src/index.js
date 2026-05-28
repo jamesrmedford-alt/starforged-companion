@@ -994,6 +994,64 @@ function registerStarshipSeedHook() {
 }
 
 /**
+ * Keep a starship Actor's `isCommandVehicle` flag in sync with whether it
+ * carries the STARSHIP / Command Vehicle asset. This is the registration
+ * signal the narrator's command-vehicle resolution depends on.
+ *
+ * Triggers:
+ *  - createItem / deleteItem — when a Command Vehicle asset is added to or
+ *    removed from a starship Actor, recompute that ship's flag.
+ *  - ready (once) — reconcile ships created before asset-detection shipped,
+ *    so an existing command vehicle (like one made via the sidebar) gets
+ *    flagged without the user having to re-add the asset.
+ *
+ * GM-gated (world-scoped writes). The sync helper writes only on a status
+ * change, so the ready-scan is idempotent. A single tracked starship is still
+ * resolved as the command vehicle via the lone-ship fallback even if nothing
+ * here ever flags it.
+ */
+function registerCommandVehicleHook() {
+  const onAssetChange = (item) => {
+    try {
+      if (!game.user?.isGM) return;
+      if (item?.type !== "asset") return;
+      const actor = item.parent;
+      if (actor?.type !== "starship") return;
+      if (!/command vehicle/i.test(String(item.system?.category ?? ""))) return;
+
+      import("./entities/ship.js").then(async (mod) => {
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | command-vehicle sync failed for ${actor.id}:`, err));
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | command-vehicle sync: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | command-vehicle item hook threw:`, err);
+    }
+  };
+
+  Hooks.on("createItem", onAssetChange);
+  Hooks.on("deleteItem", onAssetChange);
+
+  Hooks.once("ready", () => {
+    try {
+      if (!game.user?.isGM) return;
+      import("./entities/ship.js").then(async (mod) => {
+        const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
+        for (const actor of starships) {
+          await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+            console.warn(`${MODULE_ID} | command-vehicle ready sync failed for ${actor.id}:`, err));
+        }
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | command-vehicle ready scan: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | command-vehicle ready hook threw:`, err);
+    }
+  });
+}
+
+/**
  * Determine whether a chat message is player narration that should be
  * routed through the move interpretation pipeline.
  *
@@ -2241,6 +2299,7 @@ Hooks.once("ready", () => {
   registerChatHook();
   registerActorHook();
   registerStarshipSeedHook();
+  registerCommandVehicleHook();
   registerProgressTrackHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();

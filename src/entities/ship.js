@@ -163,7 +163,82 @@ export function listShips(campaignState) {
 }
 
 export function getCommandVehicle(campaignState) {
-  return listShips(campaignState).find(s => s.isCommandVehicle) ?? null;
+  const ships = listShips(campaignState);
+  const flagged = ships.find(s => s.isCommandVehicle);
+  if (flagged) return flagged;
+  // Lone-ship fallback: a single tracked starship is the command vehicle even
+  // when nothing has set the isCommandVehicle flag yet (e.g. a ship created
+  // before asset-detection shipped, or via the sidebar). Ambiguous when more
+  // than one ship is tracked — then designation must be explicit.
+  return ships.length === 1 ? ships[0] : null;
+}
+
+/**
+ * True when a foundry-ironsworn `starship` Actor carries the STARSHIP /
+ * Command Vehicle asset — an embedded `asset`-type Item whose
+ * `system.category` is "Command Vehicle" (confirmed against vendor source
+ * json-packs; modules / support vehicles carry different categories).
+ *
+ * @param {Actor} actor
+ * @returns {boolean}
+ */
+export function actorHasCommandVehicleAsset(actor) {
+  if (!actor || actor.type !== "starship") return false;
+  const items = actor.items?.contents ?? actor.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  return list.some(i =>
+    i?.type === "asset" &&
+    /command vehicle/i.test(String(i.system?.category ?? "")));
+}
+
+/**
+ * Reconcile a starship Actor's `isCommandVehicle` flag with whether it
+ * actually carries the Command Vehicle asset. Called from the
+ * createItem / deleteItem hooks (when a Command Vehicle asset is added or
+ * removed) and from a one-time ready-scan over tracked ships. GM-gated by
+ * the caller. Writes only when the status changes (idempotent).
+ *
+ * @param {Actor} actor
+ * @param {Object} campaignState
+ * @returns {Promise<Object|null>} the updated ship payload, or null on no-op
+ */
+export async function syncCommandVehicleFlag(actor, campaignState) {
+  if (!actor || actor.type !== "starship") return null;
+  const isCV     = actorHasCommandVehicleAsset(actor);
+  const existing = actor.flags?.[MODULE_ID]?.ship ?? null;
+
+  // No module payload yet (sidebar starship with autoSeed off). Only register
+  // one when a Command Vehicle asset is present — otherwise nothing to track.
+  if (!existing) {
+    if (!isCV) return null;
+    const now = new Date().toISOString();
+    const id  = actor.flags?.[MODULE_ID]?.entityId || generateId();
+    const ship = {
+      ...ShipSchema,
+      _id:              id,
+      name:             actor.name,
+      isCommandVehicle: true,
+      createdAt:        now,
+      updatedAt:        now,
+    };
+    await actor.update({
+      [`flags.${MODULE_ID}.ship`]:       ship,
+      [`flags.${MODULE_ID}.entityType`]: "ship",
+      [`flags.${MODULE_ID}.entityId`]:   id,
+    });
+    if (campaignState) {
+      if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
+      if (!campaignState.shipIds.includes(actor.id)) {
+        campaignState.shipIds.push(actor.id);
+        await persistCampaignState(campaignState).catch(err =>
+          console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err));
+      }
+    }
+    return ship;
+  }
+
+  if (!!existing.isCommandVehicle === isCV) return null;   // no change
+  return updateShip(actor.id, { isCommandVehicle: isCV });
 }
 
 export async function updateShip(actorId, updates) {
@@ -365,17 +440,22 @@ export async function seedStarshipActor(actor, campaignState) {
     type:       existing.type      || rolledType      || "",
     firstLook:  existing.firstLook || rolledFirstLook || "",
     mission:    existing.mission   || rolledMission   || "",
+    isCommandVehicle: existing.isCommandVehicle || actorHasCommandVehicleAsset(actor),
     description:               existing.description ?? "",
     portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
     createdAt:  existing.createdAt ?? now,
     updatedAt:  now,
   };
 
-  const notesHtml = buildStarshipNotesHtml({
+  // Atmospheric Notes: ask the narrator model to turn the oracle rolls into a
+  // short introduction (prose + a compact fact line). Falls back to the bare
+  // oracle bullet list when no Claude key is set or the call fails.
+  const notesHtml = await composeStarshipNotesHtml({
     type:      ship.type,
     firstLook: ship.firstLook,
     mission:   ship.mission,
     region,
+    name:      ship.name,
   });
 
   try {
@@ -445,6 +525,95 @@ function buildStarshipNotesHtml({ type, firstLook, mission, region }) {
   if (mission)   lines.push(`<li><strong>Mission (${escapeHtml(region)}):</strong> ${escapeHtml(mission)}</li>`);
   if (!lines.length) return "";
   return `<p><em>Oracle-seeded starship details:</em></p><ul>${lines.join("")}</ul>`;
+}
+
+/**
+ * Compose the Notes HTML for a seeded starship. Tries a narrator-model call to
+ * turn the oracle rolls into a short atmospheric introduction (prose), then
+ * appends a compact fact line so the raw rolls stay visible. Falls back to the
+ * plain oracle bullet list when no Claude key is configured or the call fails —
+ * Notes generation must never block actor seeding.
+ */
+async function composeStarshipNotesHtml({ type, firstLook, mission, region, name }) {
+  const facts = [type, firstLook, mission].filter(Boolean);
+  if (!facts.length) return "";
+
+  const prose = await generateStarshipIntroProse({ type, firstLook, mission, name })
+    .catch(() => null);
+
+  if (!prose) {
+    return buildStarshipNotesHtml({ type, firstLook, mission, region });
+  }
+
+  const paras = prose
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${escapeHtml(p).replace(/\n+/g, " ")}</p>`)
+    .join("");
+  const factLine = facts.map(escapeHtml).join(" &middot; ");
+  return `${paras}<p><em>${factLine}</em></p>`;
+}
+
+/**
+ * Single narrator-model (Sonnet by default) call that turns the starship
+ * oracle rolls into a 2-3 sentence second-person introduction. Returns null
+ * (caller falls back) when no Claude key is set or the call yields nothing.
+ * All Anthropic traffic goes through src/api-proxy.js per the architecture
+ * constraint in CLAUDE.md.
+ */
+async function generateStarshipIntroProse({ type, firstLook, mission, name }) {
+  const apiKey = readClaudeKey();
+  if (!apiKey) return null;
+
+  const { apiPost } = await import("../api-proxy.js");
+  const model = readModuleSetting("narrationModel") || "claude-sonnet-4-5-20250929";
+  const tone  = readModuleSetting("narrationTone")  || "wry";
+
+  const system =
+    `You are the narrator for an Ironsworn: Starforged solo campaign. ` +
+    `Tone: ${tone}. Write a short (2-3 sentence) atmospheric introduction to ` +
+    `the player's starship, grounded ONLY in the oracle details provided. ` +
+    `Address the player in second person ("your ship", "you"). Evocative but ` +
+    `spare. Plain prose only — no headings, lists, or markdown. Do not invent ` +
+    `proper nouns, crew, factions, or plot beyond what the details imply.`;
+
+  const userMsg = [
+    name      ? `Ship name: ${name}`       : null,
+    type      ? `Type: ${type}`            : null,
+    firstLook ? `First look: ${firstLook}` : null,
+    mission   ? `Mission: ${mission}`      : null,
+  ].filter(Boolean).join("\n");
+
+  const body = {
+    model,
+    max_tokens: 220,
+    system:   [{ type: "text", text: system }],
+    messages: [{ role: "user", content: userMsg }],
+  };
+  const headers = {
+    "Content-Type":      "application/json",
+    "x-api-key":         apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+
+  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body);
+  const text = (data?.content ?? [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("")
+    .trim();
+  return text || null;
+}
+
+function readClaudeKey() {
+  try { return globalThis.game?.settings?.get(MODULE_ID, "claudeApiKey") || null; }
+  catch { return null; }
+}
+
+function readModuleSetting(key) {
+  try { return globalThis.game?.settings?.get(MODULE_ID, key); }
+  catch { return undefined; }
 }
 
 function escapeHtml(s) {

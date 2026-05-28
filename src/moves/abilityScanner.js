@@ -399,7 +399,14 @@ export function getCommandVehicleActor(campaignState) {
     }
     // Fallback via listShips (handles older flag layouts).
     const ship = (listShips(campaignState) ?? []).find(s => s?.isCommandVehicle);
-    if (!ship) return null;
+    if (!ship) {
+      // Lone-ship fallback: a single tracked starship is the command vehicle
+      // even when nothing has set the isCommandVehicle flag yet.
+      const starships = ids
+        .map(id => globalThis.game?.actors?.get?.(id))
+        .filter(a => a?.type === "starship");
+      return starships.length === 1 ? starships[0] : null;
+    }
     // listShips returns flag payloads; map back via shipIds whose actor has
     // the matching ship._id.
     for (const id of ids) {

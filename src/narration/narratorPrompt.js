@@ -274,9 +274,40 @@ export function buildShipPositionLine(campaignState) {
       const p = a?.flags?.[MID]?.ship;
       if (p?.isCommandVehicle) { payload = p; actor = a; break; }
     }
-    if (!payload) return '';
-    const name = actor?.name ?? payload?.name ?? '';
-    return formatShipPositionLine(payload.position, campaignState, name);
+    // Lone-ship fallback: a single tracked starship is the command vehicle
+    // even when nothing has set the isCommandVehicle flag yet.
+    if (!actor) {
+      const starships = ids
+        .map(id => globalThis.game?.actors?.get?.(id))
+        .filter(a => a?.type === 'starship');
+      if (starships.length === 1) {
+        actor   = starships[0];
+        payload = actor.flags?.[MID]?.ship ?? null;
+      }
+    }
+    if (!actor) return '';
+
+    const name  = actor?.name ?? payload?.name ?? '';
+    const lines = [];
+
+    // Identity line — always present so the narrator knows the command
+    // vehicle exists and its name, even before any position is established.
+    const idParts = [];
+    if (payload?.type)      idParts.push(String(payload.type).trim());
+    if (payload?.firstLook) idParts.push(`first look: ${String(payload.firstLook).trim()}`);
+    if (payload?.mission)   idParts.push(`mission: ${String(payload.mission).trim()}`);
+    if (typeof payload?.integrity === 'number') {
+      const max     = payload.integrityMax ?? 5;
+      const impacts = [payload.battered && 'battered', payload.cursed && 'cursed'].filter(Boolean);
+      idParts.push(`integrity ${payload.integrity}/${max}${impacts.length ? ` [${impacts.join(', ')}]` : ''}`);
+    }
+    lines.push(`COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`);
+
+    // Position line — only when the position record carries information.
+    const posLine = formatShipPositionLine(payload?.position, campaignState, name);
+    if (posLine) lines.push(posLine);
+
+    return lines.join('\n');
   } catch (err) {
     console.warn?.('starforged-companion | buildShipPositionLine failed:', err?.message ?? err);
     return '';
@@ -1066,16 +1097,65 @@ function buildConnectionsSummary(campaignState) {
 
 function buildCharacterBlock(character) {
   const lines = ['## CHARACTER'];
-  if (character.name) lines.push(`Name: ${character.name}`);
+
+  const idBits = [];
+  if (character.callsign) idBits.push(`"${character.callsign}"`);
+  if (character.pronouns) idBits.push(character.pronouns);
+  lines.push(`Name: ${character.name ?? 'Unknown'}${idBits.length ? ` (${idBits.join(', ')})` : ''}`);
+
   if (character.description) lines.push(`Description: ${character.description}`);
 
-  // Support both old (loremasterNotes) and new (narratorNotes) field names
-  const notes = character.narratorNotes ?? character.loremasterNotes ?? '';
-  if (notes) lines.push(`Notes for narrator: ${notes}`);
+  // Player-authored backstory from the character sheet (Biography / Notes tab).
+  const bio = (character.biography ?? '').trim();
+  if (bio) lines.push(`Biography: ${bio}`);
+  const charNotes = (character.notes ?? '').trim();
+  if (charNotes) lines.push(`Notes: ${charNotes}`);
+
+  // GM/narrator-facing notes (legacy field names retained for back-compat).
+  const narratorNotes = character.narratorNotes ?? character.loremasterNotes ?? '';
+  if (narratorNotes) lines.push(`Notes for narrator: ${narratorNotes}`);
+
+  if (character.stats) {
+    const { edge = 0, heart = 0, iron = 0, shadow = 0, wits = 0 } = character.stats;
+    lines.push(`Stats: Edge ${edge}, Heart ${heart}, Iron ${iron}, Shadow ${shadow}, Wits ${wits}`);
+  }
 
   if (character.meters) {
     const { health = 5, spirit = 5, supply = 5, momentum = 2 } = character.meters;
     lines.push(`Current state: Health ${health}/5, Spirit ${spirit}/5, Supply ${supply}/5, Momentum ${momentum}`);
+  }
+
+  // Marked impacts only — the active debilities the narrator should weave in.
+  const marked = character.debilities
+    ? Object.entries(character.debilities).filter(([, v]) => v === true).map(([k]) => k)
+    : [];
+  if (marked.length) lines.push(`Impacts: ${marked.join(', ')}`);
+
+  // Paths / assets — name plus enabled ability text, so the narrator can
+  // reference what the character is actually capable of.
+  const assets = Array.isArray(character.assets) ? character.assets : [];
+  if (assets.length) {
+    lines.push('Assets & paths:');
+    for (const a of assets) {
+      const abilities = Array.isArray(a.abilities) ? a.abilities.filter(Boolean) : [];
+      const summary = abilities.length ? ` — ${abilities.join(' ')}` : '';
+      lines.push(`  - ${a.name}${summary}`);
+    }
+  }
+
+  // Vows — spotlight the background (founding) vow, then active others.
+  const vows = Array.isArray(character.vows) ? character.vows : [];
+  if (vows.length) {
+    const bg     = vows.find(v => v.isBackground);
+    const others = vows.filter(v => !v.isBackground && !v.completed);
+    if (bg)            lines.push(`Background vow: ${bg.name} (${bg.rank})`);
+    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${v.rank})`).join('; ')}`);
+  }
+
+  // Connections (bonds) the character holds.
+  const connections = Array.isArray(character.connections) ? character.connections : [];
+  if (connections.length) {
+    lines.push(`Connections: ${connections.map(c => `${c.name} (${c.rank})`).join('; ')}`);
   }
 
   return lines.join('\n');
