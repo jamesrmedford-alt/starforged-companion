@@ -127,6 +127,28 @@ Hooks.on("quenchReady", (quench) => {
   // (missing fields, malformed pages) and the contentVersion-stamping
   // regression class.
   registerHelpCompendiumTests(quench);
+  // Command-vehicle registration — pure-logic coverage of the asset-detection,
+  // lone-ship fallback, and identity-line render lives in entityShipActor /
+  // abilityScanner / narratorPrompt unit tests. This batch pins the live
+  // foundry-ironsworn schema integration: a real starship Actor with an
+  // embedded `asset` Item of category "Command Vehicle" must drive the flag.
+  registerCommandVehicleRegistrationTests(quench);
+  // Portrait actor attach — the unit tests cover the link write; this batch
+  // pins the FilePicker upload + actor.img / prototype-token write against a
+  // real Foundry data dir, with the OpenRouter call stubbed so no key is
+  // burned.
+  registerPortraitActorAttachTests(quench);
+  // Starship narrated Notes — the unit tests use a mocked apiPost; this
+  // batch exercises the live createActor hook path with the Anthropic
+  // endpoint stubbed, asserting prose + fact-line render and the no-key
+  // bullet-list fallback.
+  registerStarshipNarratedNotesTests(quench);
+  // Narrator character context — the unit tests check buildCharacterBlock
+  // against synthetic snapshots; this batch builds a real character Actor
+  // with vow / bond / asset Items and biographical fields, then reads
+  // through readCharacterSnapshot → buildNarratorSystemPrompt so a vendor
+  // schema rename or a missing snapshot field would surface here.
+  registerNarratorCharacterContextTests(quench);
   // i18n resolution — live integration of the localize* wrappers against
   // the real foundry-ironsworn translation table. Pure-logic coverage of
   // the wrapper (English fallback, missing-key behaviour, slug fallback)
@@ -7361,5 +7383,495 @@ function registerI18nResolutionTests(quench) {
       });
     },
     { displayName: "STARFORGED: I18n Resolution" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMMAND VEHICLE REGISTRATION — live asset detection + fallback resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerCommandVehicleRegistrationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.commandVehicleRegistration",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+      afterEach(flushCleanup);
+
+      describe("actorHasCommandVehicleAsset — live items collection", function () {
+        it("detects an asset whose system.category is 'Command Vehicle'", async function () {
+          this.timeout(20000);
+          const { actorHasCommandVehicleAsset } = await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const actor = await Actor.create({
+            name: `QUENCH CV-DETECT ${Date.now()}`,
+            type: "starship",
+            // Pre-populate notes so the auto-seed hook skips this Actor —
+            // keeps the test focused on asset detection.
+            system: { notes: "<p>already populated</p>" },
+          });
+          track(actor.id);
+
+          await actor.createEmbeddedDocuments("Item", [{
+            name:   "STARSHIP",
+            type:   "asset",
+            system: { category: "Command Vehicle", abilities: [] },
+          }]);
+
+          assert.isTrue(actorHasCommandVehicleAsset(actor),
+            "the Command Vehicle category should be detected");
+        });
+
+        it("is false for a starship carrying only Module assets", async function () {
+          this.timeout(20000);
+          const { actorHasCommandVehicleAsset } = await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const actor = await Actor.create({
+            name: `QUENCH CV-MODULES ${Date.now()}`,
+            type: "starship",
+            system: { notes: "<p>already populated</p>" },
+          });
+          track(actor.id);
+
+          await actor.createEmbeddedDocuments("Item", [{
+            name: "Grappler", type: "asset",
+            system: { category: "Module", abilities: [] },
+          }]);
+
+          assert.isFalse(actorHasCommandVehicleAsset(actor),
+            "a Module-category asset must not register a starship as the command vehicle");
+        });
+      });
+
+      describe("syncCommandVehicleFlag — writes on change only", function () {
+        it("flips isCommandVehicle false → true when the asset is added to a tracked ship", async function () {
+          this.timeout(20000);
+          const { createShip, getShip, syncCommandVehicleFlag } =
+            await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const state = game.settings.get(MODULE, "campaignState") ?? {};
+          state.shipIds = state.shipIds ?? [];
+          await createShip({ name: `QUENCH SYNC ${Date.now()}` }, state);
+          const id = state.shipIds[state.shipIds.length - 1];
+          track(id);
+
+          assert.isFalse(!!getShip(id)?.isCommandVehicle,
+            "fresh ship should start unflagged");
+
+          const actor = game.actors.get(id);
+          await actor.createEmbeddedDocuments("Item", [{
+            name: "STARSHIP", type: "asset",
+            system: { category: "Command Vehicle", abilities: [] },
+          }]);
+
+          await syncCommandVehicleFlag(actor, state);
+          assert.isTrue(!!getShip(id)?.isCommandVehicle,
+            "adding the Command Vehicle asset should set isCommandVehicle");
+        });
+      });
+
+      describe("getCommandVehicle — lone-ship fallback", function () {
+        it("resolves the sole tracked starship as the command vehicle when nothing is flagged", async function () {
+          this.timeout(20000);
+          const { createShip, getCommandVehicle } =
+            await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), shipIds: [] };
+          await game.settings.set(MODULE, "campaignState", state);
+
+          await createShip({ name: `QUENCH LONE ${Date.now()}` }, state);
+          track(state.shipIds[state.shipIds.length - 1]);
+
+          const cv = getCommandVehicle(state);
+          assert.isOk(cv, "lone-ship fallback should resolve a single tracked starship");
+        });
+
+        it("returns null when two starships exist and neither is flagged (ambiguous)", async function () {
+          this.timeout(20000);
+          const { createShip, getCommandVehicle } =
+            await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), shipIds: [] };
+          await game.settings.set(MODULE, "campaignState", state);
+
+          await createShip({ name: `QUENCH AMB-A ${Date.now()}` }, state);
+          track(state.shipIds[state.shipIds.length - 1]);
+          await createShip({ name: `QUENCH AMB-B ${Date.now()}` }, state);
+          track(state.shipIds[state.shipIds.length - 1]);
+
+          assert.isNull(getCommandVehicle(state),
+            "two unflagged starships must not resolve via the lone-ship fallback");
+        });
+      });
+
+      describe("buildShipPositionLine — identity line is always present", function () {
+        it("emits a COMMAND VEHICLE line even when no position is set", async function () {
+          this.timeout(20000);
+          const { createShip } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const { buildShipPositionLine } =
+            await import(`${MODULE_PATH}/narration/narratorPrompt.js`);
+
+          const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), shipIds: [] };
+          await game.settings.set(MODULE, "campaignState", state);
+
+          await createShip({
+            name: `QUENCH IDENT ${Date.now()}`,
+            type: "Cutter",
+            firstLook: "Patched hull",
+            mission: "Smuggle cargo",
+            isCommandVehicle: true,
+          }, state);
+          track(state.shipIds[state.shipIds.length - 1]);
+
+          const line = buildShipPositionLine(state);
+          assert.include(line, "COMMAND VEHICLE:",
+            "identity line must render even when position is empty");
+          assert.include(line, "Cutter", "type should appear in the identity line");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Command Vehicle Registration", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTRAIT ACTOR ATTACH — FilePicker upload + actor.img write
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerPortraitActorAttachTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.portraitActorAttach",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      // 1×1 transparent PNG — small but a real PNG so any decoder accepts it.
+      const PNG_B64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+      afterEach(flushCleanup);
+
+      describe("generatePortrait — actor-hosted entities", function () {
+        it("uploads the PNG and sets actor.img + prototype-token texture on a starship", async function () {
+          this.timeout(60000);
+
+          const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
+          const { createShip, listShips } = await import(`${MODULE_PATH}/entities/ship.js`);
+
+          const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), shipIds: [] };
+          await game.settings.set(MODULE, "campaignState", state);
+
+          await createShip({
+            name: `QUENCH PORTRAIT ${Date.now()}`,
+            portraitSourceDescription: "A patched-hull cutter with mismatched plating.",
+          }, state);
+          const actorId = state.shipIds[state.shipIds.length - 1];
+          track(actorId);
+
+          const imgBefore = game.actors.get(actorId).img;
+
+          await withTempSetting("openRouterApiKey", "or-test-key", async () => {
+            await withStubbedFetch(
+              [
+                ["openrouter.ai", async () => ({
+                  choices: [{
+                    message: {
+                      images: [{ image_url: { url: `data:image/png;base64,${PNG_B64}` } }],
+                    },
+                  }],
+                })],
+              ],
+              async () => {
+                const ship = listShips(state).find(s => s?._id);
+                await generatePortrait(actorId, "ship", ship, state);
+              },
+            );
+          });
+
+          const fresh = game.actors.get(actorId);
+          assert.notEqual(fresh.img, imgBefore,
+            "actor.img should change away from the default seed image");
+          assert.isOk(fresh.img && fresh.img.includes("/art/"),
+            "actor.img should point to the uploaded portrait under worlds/<id>/art/");
+          assert.isOk(fresh.prototypeToken?.texture?.src,
+            "prototypeToken.texture.src should also be set");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Portrait Actor Attach", timeout: 90000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARSHIP NARRATED NOTES — Sonnet intro path + bullet-list fallback
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerStarshipNarratedNotesTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.starshipNarratedNotes",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+      async function waitFor(predicate, timeoutMs = 8000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          if (await predicate()) return true;
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return false;
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+      afterEach(flushCleanup);
+
+      describe("seedStarshipActor — Notes content", function () {
+        it("renders prose + a compact fact line when a Claude key is set (apiPost stubbed)", async function () {
+          this.timeout(30000);
+
+          const proseText = "Your patched cutter coasts in cold drift, lights low.";
+
+          await withTempSetting("claudeApiKey", "sk-ant-test", async () => {
+            await withStubbedFetch(
+              [
+                ["api.anthropic.com", async () => ({
+                  content: [{ type: "text", text: proseText }],
+                })],
+              ],
+              async () => {
+                const actor = await Actor.create({
+                  name: `QUENCH PROSE ${Date.now()}`,
+                  type: "starship",
+                });
+                track(actor.id);
+
+                const ok = await waitFor(async () => {
+                  const fresh = game.actors.get(actor.id);
+                  return typeof fresh?.system?.notes === "string"
+                      && fresh.system.notes.includes(proseText);
+                });
+                assert.isTrue(ok, "Notes should contain the stubbed Sonnet prose paragraph");
+
+                const fresh = game.actors.get(actor.id);
+                assert.notInclude(fresh.system.notes, "<ul>",
+                  "prose path should not emit the oracle bullet list");
+                assert.include(fresh.system.notes, "&middot;",
+                  "the compact fact-line separator should be present");
+              },
+            );
+          });
+        });
+
+        it("falls back to the oracle bullet list when no Claude key is set", async function () {
+          this.timeout(20000);
+
+          await withTempSetting("claudeApiKey", "", async () => {
+            const actor = await Actor.create({
+              name: `QUENCH FALLBACK ${Date.now()}`,
+              type: "starship",
+            });
+            track(actor.id);
+
+            const ok = await waitFor(async () => {
+              const fresh = game.actors.get(actor.id);
+              return typeof fresh?.system?.notes === "string"
+                  && fresh.system.notes.includes("Oracle-seeded starship details");
+            });
+            assert.isTrue(ok,
+              "without a key the bullet-list fallback should populate Notes");
+
+            const fresh = game.actors.get(actor.id);
+            assert.include(fresh.system.notes, "<ul>",
+              "fallback path emits the bullet list");
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Starship Narrated Notes", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NARRATOR CHARACTER CONTEXT — paths, vows, connections, bio reach the prompt
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerNarratorCharacterContextTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.narratorCharacterContext",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+      });
+      afterEach(flushCleanup);
+
+      describe("readCharacterSnapshot + buildCharacterBlock — live schema", function () {
+        it("surfaces paths, vows, connections, biography, and impacts in the narrator system prompt", async function () {
+          this.timeout(30000);
+
+          const { readCharacterSnapshot, invalidateActorCache } =
+            await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const { buildNarratorSystemPrompt } =
+            await import(`${MODULE_PATH}/narration/narratorPrompt.js`);
+
+          const actor = await Actor.create({
+            name: `QUENCH CHAR ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 3, heart: 2, iron: 2, shadow: 1, wits: 1,
+              health:   { value: 5, max: 5, min: 0 },
+              spirit:   { value: 5, max: 5, min: 0 },
+              supply:   { value: 5, max: 5, min: 0 },
+              momentum: { value: 2, max: 10, min: -6, resetValue: 2 },
+              debility: { wounded: true },
+              callsign:  "Maelstrom",
+              pronouns:  "she/her",
+              biography: "<p>Grew up on a hauler.</p>",
+              notes:     "<p>Wary of the Hegemony.</p>",
+            },
+          });
+          track(actor.id);
+
+          await actor.createEmbeddedDocuments("Item", [
+            {
+              name: "Ace", type: "asset",
+              system: {
+                category: "Path",
+                abilities: [{
+                  enabled: true,
+                  text: "<p>When you Face Danger by guiding your vehicle, add +1.</p>",
+                }],
+              },
+            },
+            { name: "Avenge my sister", type: "progress",
+              system: { subtype: "vow",  rank: "extreme" } },
+            { name: "Dr Chen",          type: "progress",
+              system: { subtype: "bond", rank: "dangerous" } },
+          ]);
+
+          invalidateActorCache(actor.id);
+          const snap = readCharacterSnapshot(actor);
+
+          assert.equal(snap.callsign, "Maelstrom",
+            "callsign should reach the snapshot from system.callsign");
+          assert.equal(snap.pronouns, "she/her",
+            "pronouns should reach the snapshot from system.pronouns");
+          assert.include(snap.biography, "hauler",
+            "biography should be stripped of HTML and present");
+          assert.include(snap.notes, "Hegemony",
+            "character notes should reach the snapshot");
+          assert.isAtLeast(snap.assets.length, 1,
+            "assets should populate from items");
+          assert.isAtLeast(snap.vows.length, 1,
+            "vows should populate from progress/vow items");
+          assert.isAtLeast(snap.connections.length, 1,
+            "connections should populate from progress/bond items");
+          assert.isTrue(snap.debilities.wounded,
+            "marked impact should pass through");
+
+          const prompt = buildNarratorSystemPrompt(
+            { safety: { lines: [], veils: [], privateLines: [] }, worldTruths: {}, connectionIds: [] },
+            {
+              narrationTone: "wry", narrationPerspective: "auto",
+              narrationLength: 3, narrationInstructions: "",
+            },
+            snap,
+          );
+
+          assert.include(prompt, "Maelstrom",          "callsign should reach the prompt");
+          assert.include(prompt, "Edge 3",             "stats line should reach the prompt");
+          assert.include(prompt, "wounded",            "marked impact should reach the prompt");
+          assert.include(prompt, "Ace",                "path/asset name should reach the prompt");
+          assert.include(prompt, "Background vow:",    "background vow line should render");
+          assert.include(prompt, "Avenge my sister",   "background-vow name should appear");
+          assert.include(prompt, "Dr Chen",            "connection name should reach the prompt");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Narrator Character Context" },
   );
 }
