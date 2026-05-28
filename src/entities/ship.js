@@ -340,7 +340,7 @@ export function isReadyForArtGeneration(ship) {
 }
 
 /**
- * Format a Ship for Loremaster context injection.
+ * Format a Ship for narrator context injection.
  *
  * @param {Object} ship
  * @returns {string}

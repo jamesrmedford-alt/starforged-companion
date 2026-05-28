@@ -1130,7 +1130,9 @@ export function isPlayerNarration(message) {
  */
 export function isSceneQuery(message) {
   const text = message.content?.trim() ?? "";
-  if (!text.toLowerCase().startsWith("@scene")) return false;
+  // Match exactly "@scene" or "@scene …" — not "@scenery" / "@scenes"
+  // (predicate-matrix exclusivity per Priority 3 of the behaviour-coverage audit).
+  if (!/^@scene(\s|$)/i.test(text)) return false;
   if (message.flags?.[MODULE_ID]?.sceneResponse) return false;
   return true;
 }
@@ -1142,7 +1144,8 @@ export function isSceneQuery(message) {
  */
 export function isRecapCommand(message) {
   const text = message.content?.trim() ?? "";
-  if (!text.toLowerCase().startsWith("!recap")) return false;
+  // Match exactly "!recap" or "!recap …" — not "!recapify".
+  if (!/^!recap(\s|$)/i.test(text)) return false;
   if (message.flags?.[MODULE_ID]?.recapCard) return false;
   if (getRecapGmOnly()) {
     const user = message.author ?? game.users?.get(message.user);
@@ -1153,10 +1156,12 @@ export function isRecapCommand(message) {
 
 /**
  * Determine whether a chat message is a !sector command.
+ * Matches exactly "!sector" or "!sector …" — not "!sectoral" / "!sectoring"
+ * (predicate-matrix exclusivity per Priority 3 of the behaviour-coverage audit).
  */
 export function isSectorCommand(message) {
   const text = message.content?.trim() ?? "";
-  return text.toLowerCase().startsWith("!sector");
+  return /^!sector(\s|$)/i.test(text);
 }
 
 /**

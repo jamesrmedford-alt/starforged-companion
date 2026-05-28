@@ -189,7 +189,7 @@ export function isReadyForArtGeneration(planet) {
 }
 
 /**
- * Format a Planet for Loremaster context injection.
+ * Format a Planet for narrator context injection.
  *
  * @param {Object} planet
  * @returns {string}

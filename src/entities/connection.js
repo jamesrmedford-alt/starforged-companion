@@ -373,10 +373,20 @@ export function isReadyForArtGeneration(connection) {
 
 /**
  * Store the source description that will be used for art generation.
- * Called by the Loremaster hook after the first entity description is detected.
+ *
+ * Currently unused in production — the connection record's
+ * `portraitSourceDescription` field is populated at creation time via
+ * `createConnection({ portraitSourceDescription })` and read by
+ * `generatePortrait` to build the image prompt. This setter is retained
+ * as part of the entity art-path contract (parallel to the per-type
+ * setters on settlement / planet / location / ship / faction / creature)
+ * for callers that need to deferredly write the field. Previously
+ * documented as called by the Loremaster hook, which was removed when
+ * narration moved to the direct-Claude pipeline (see
+ * docs/decisions.md § "Narration: direct Claude API").
  *
  * @param {string} journalEntryId
- * @param {string} sourceDescription — The Loremaster narration excerpt
+ * @param {string} sourceDescription
  * @returns {Promise<Object>}
  */
 export async function setPortraitSourceDescription(journalEntryId, sourceDescription) {
@@ -385,7 +395,13 @@ export async function setPortraitSourceDescription(journalEntryId, sourceDescrip
 
 /**
  * Record the generated portrait asset ID.
- * Called by the art generation pipeline after a successful generation.
+ *
+ * Wraps `updateConnection({ portraitId })`. Production callers route
+ * through `linkPortraitToEntity` in `src/art/generator.js` (which writes
+ * via the entity registry's `writeEntityFlag` so journal-hosted and
+ * actor-hosted entities share one code path); this direct setter is
+ * retained for symmetry with the other entity modules and for use by
+ * tests that pre-populate the field.
  *
  * @param {string} journalEntryId
  * @param {string} artAssetId
@@ -401,7 +417,7 @@ export async function setPortraitId(journalEntryId, artAssetId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Format a Connection record for Loremaster context injection.
+ * Format a Connection record for narrator context injection.
  * Progressive disclosure — only populated fields are included.
  * Secrets are never included (GM-only).
  *

@@ -146,6 +146,21 @@ Hooks.on("quenchReady", (quench) => {
   // from docs/behaviour-coverage-audit.md (Lens 1 Cluster A + Lens 3
   // IP1 + IP3).
   registerLocationFamilyActorWiresTests(quench);
+  // Token-drag set a course — Lens 3 IP4 of the behaviour-coverage audit
+  // (Priority 2). The sector-Scene Token-drag handler dispatches a
+  // synthetic ChatMessage carrying `forcedMoveId: "set_a_course"`; this
+  // batch pins both halves of that contract (cancel-the-drag and message-
+  // landed-in-game.messages).
+  registerTokenDragSetACourseTests(quench);
+  // Sector enhanced — background art upload path + Scene grid config +
+  // sectorScene flag round-trip. Priority 8 of the behaviour-coverage
+  // audit (Lens 2 PARTIAL findings on Sector Creator Enhanced).
+  registerSectorEnhancedTests(quench);
+  // API key privacy — the API key fields' `config: false` registration
+  // and the About tab's password-typed input rendering. Priority 9 of
+  // the behaviour-coverage audit (Lens 2 PARTIAL findings on API Key
+  // Privacy).
+  registerApiKeyPrivacyTests(quench);
   // Starship narrated Notes — the unit tests use a mocked apiPost; this
   // batch exercises the live createActor hook path with the Anthropic
   // endpoint stubbed, asserting prose + fact-line render and the no-key
@@ -7657,7 +7672,6 @@ function registerPortraitActorAttachTests(quench) {
   );
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCATION-FAMILY ACTOR WIRES — planet / settlement / location end-to-end
 //
@@ -7872,6 +7886,316 @@ function registerLocationFamilyActorWiresTests(quench) {
       });
     },
     { displayName: "STARFORGED: Location-Family Actor Wires", timeout: 240000 },
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOKEN-DRAG SET A COURSE — Priority 2 of the behaviour-coverage audit
+//
+// The Sector Token drag handler (`handleCommandVehicleTokenDrag` in
+// src/sectors/sectorSceneHooks.js) cancels the Token drag when it
+// lands near a settlement Note and asynchronously dispatches a
+// synthetic ChatMessage with flags[MODULE].forcedMoveId === "set_a_course".
+// The existing sector batches don't assert that the synthetic message
+// actually reaches game.messages — Lens 3 IP4 of the audit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerTokenDragSetACourseTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.tokenDragSetACourse",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart  = null;
+      let testScene     = null;
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        if (testScene?.delete) await testScene.delete().catch(() => {});
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      describe("handleCommandVehicleTokenDrag — drag near settlement Note", function () {
+        it("cancels the drag (returns false) and posts a synthetic set_a_course chat message", async function () {
+          this.timeout(15000);
+
+          const { handleCommandVehicleTokenDrag } = await import(
+            `${MODULE_PATH}/sectors/sectorSceneHooks.js`
+          );
+
+          // Build a sector Scene with the right flags + grid + settlement Note.
+          testScene = await Scene.create({
+            name:    `QUENCH TOKEN-DRAG ${Date.now()}`,
+            grid:    { type: 1, size: 100 },
+            flags:   { [MODULE]: { sectorScene: true } },
+          });
+
+          await testScene.createEmbeddedDocuments("Note", [{
+            text:   "Glimmer",
+            x:      500,
+            y:      500,
+            flags:  { [MODULE]: { sectorPin: true, kind: "settlement", settlementId: "fake-settlement-id" } },
+          }]);
+
+          await testScene.createEmbeddedDocuments("Token", [{
+            name:  "Test Ship",
+            x:     100,
+            y:     100,
+            flags: { [MODULE]: { commandVehicle: true } },
+          }]);
+          const tokenDoc = testScene.tokens.contents[0];
+
+          const messagesBefore = game.messages?.contents?.length ?? 0;
+
+          // Simulate the drag landing within snap range of the Glimmer Note.
+          const result = handleCommandVehicleTokenDrag(tokenDoc, { x: 510, y: 505 });
+          assert.equal(result, false,
+            "handler should return false to cancel the Token drag when within snap range");
+
+          // The dispatch is queued via setTimeout(0) — give it a tick.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+
+          const newMessages = (game.messages?.contents ?? []).slice(messagesBefore);
+          const synthetic   = newMessages.find(m =>
+            m?.flags?.[MODULE]?.forcedMoveId === "set_a_course");
+
+          assert.isOk(synthetic,
+            "expected a synthetic chat message with flags[MODULE].forcedMoveId === 'set_a_course'");
+          assert.match(synthetic.content, /set a course/i,
+            "synthetic message content should mention setting a course");
+          assert.isOk(synthetic.flags[MODULE].tokenDragSetCourse,
+            "synthetic message should carry the tokenDragSetCourse payload for downstream Token move");
+          assert.equal(synthetic.flags[MODULE].tokenDragSetCourse.destName, "Glimmer",
+            "tokenDragSetCourse payload should carry the destination Note text");
+        });
+
+        it("does not fire when the drag lands outside snap radius (free-text reposition)", async function () {
+          this.timeout(5000);
+
+          const { handleCommandVehicleTokenDrag } = await import(
+            `${MODULE_PATH}/sectors/sectorSceneHooks.js`
+          );
+          // Reuse testScene — same Glimmer Note at (500, 500) and 100-px grid.
+          const tokenDoc = testScene.tokens.contents[0];
+          // Drag to a point far from the Glimmer Note (delta > 1 grid cell).
+          const result = handleCommandVehicleTokenDrag(tokenDoc, { x: 50, y: 50 });
+          assert.notEqual(result, false,
+            "handler should let the drag through (return undefined) when no Note is within snap range");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Token-Drag Set a Course", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR ENHANCED — background art path, Scene grid config, narrator stub
+// journal archival. Priority 8 of the behaviour-coverage audit (Lens 2 —
+// Sector Creator Enhanced PARTIAL findings).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerSectorEnhancedTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.sectorEnhanced",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      // 1×1 PNG for the stubbed-image response.
+      const PNG_B64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+      let stateAtStart = null;
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      describe("generateSectorBackground — upload path", function () {
+        it("returns a usable path string when OpenRouter responds with a PNG", async function () {
+          this.timeout(20000);
+
+          const { generateSectorBackground } = await import(
+            `${MODULE_PATH}/sectors/sectorArt.js`
+          );
+
+          let resultPath = null;
+          await withTempSetting("openRouterApiKey", "or-test-key", async () => {
+            await withStubbedFetch(
+              [
+                ["openrouter.ai", async () => ({
+                  choices: [{
+                    message: {
+                      images: [{ image_url: { url: `data:image/png;base64,${PNG_B64}` } }],
+                    },
+                  }],
+                })],
+              ],
+              async () => {
+                resultPath = await generateSectorBackground({
+                  name:   "Quench Sector",
+                  region: "outlands",
+                  trouble: "An ancient warning beacon broadcasts on a forbidden frequency.",
+                });
+              },
+            );
+          });
+
+          assert.isOk(resultPath, "generateSectorBackground should resolve to a path on a successful response");
+          assert.isString(resultPath, "the resolved value should be a string path");
+        });
+
+        it("returns null cleanly when OpenRouter responds with no usable image bytes", async function () {
+          this.timeout(15000);
+
+          const { generateSectorBackground } = await import(
+            `${MODULE_PATH}/sectors/sectorArt.js`
+          );
+
+          let resultPath = "not-null";
+          await withTempSetting("openRouterApiKey", "or-test-key", async () => {
+            await withStubbedFetch(
+              [
+                ["openrouter.ai", async () => ({
+                  choices: [{ message: { content: "no image" } }],
+                })],
+              ],
+              async () => {
+                resultPath = await generateSectorBackground({
+                  name:   "Quench Sector Empty",
+                  region: "expanse",
+                  trouble: "trouble text",
+                });
+              },
+            );
+          });
+
+          assert.isNull(resultPath, "generateSectorBackground should return null when no image bytes are present");
+        });
+      });
+
+      describe("createSectorScene — grid config and naming", function () {
+        it("creates a Scene with the expected grid config and sectorScene flag", async function () {
+          this.timeout(15000);
+
+          const { createSectorScene } = await import(
+            `${MODULE_PATH}/sectors/sceneBuilder.js`
+          );
+
+          const sector = {
+            id:   "quench-sector-grid-config",
+            name: `QUENCH GRID ${Date.now()}`,
+            region: "terminus",
+            trouble: "trouble",
+            settlements: [],
+            map: { width: 4000, height: 3000, passages: [] },
+          };
+
+          const scene = await createSectorScene(sector, null, []);
+
+          try {
+            assert.isOk(scene, "createSectorScene should return a Scene document");
+            assert.equal(scene.flags?.[MODULE]?.sectorScene, true,
+              "Scene should carry flags[MODULE].sectorScene === true");
+            assert.isOk(scene.grid?.size > 0 || scene.gridSize > 0,
+              "Scene should have a positive grid size (v13: scene.grid.size; v12: scene.gridSize)");
+            assert.equal(scene.active, false,
+              "Scene should not auto-activate on creation");
+          } finally {
+            if (scene?.delete) await scene.delete().catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Sector Enhanced", timeout: 90000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API KEY PRIVACY — Companion Settings panel GM gate + "Set / Not set" badge.
+// Priority 9 of the behaviour-coverage audit (Lens 2 — API Key Privacy
+// PARTIAL findings).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerApiKeyPrivacyTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.apiKeyPrivacy",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      before(function () {
+        if (!game.user.isGM) { this.skip(); return; }
+      });
+      after(async function () {
+        // No persistent state mutated here (settings are restored via
+        // withTempSetting); the GM gate test reads through `config: false`
+        // which Foundry registers at module init and never persists.
+      });
+
+      describe("API key fields are config:false (hidden from Configure Settings dialog)", function () {
+        const KEYS = ["claudeApiKey", "openRouterApiKey", "elevenLabsApiKey"];
+
+        for (const key of KEYS) {
+          it(`${key} is registered with config: false`, function () {
+            const setting = game.settings.settings.get(`${MODULE}.${key}`);
+            assert.isOk(setting, `${key} should be registered`);
+            assert.equal(setting.config, false,
+              `${key} must be config: false so it never appears in the Configure Settings dialog`);
+            assert.equal(setting.scope, "client",
+              `${key} must be client-scoped so each player stores their own value locally, never world-wide`);
+          });
+        }
+      });
+
+      describe("Settings panel About tab — GM-only rendering", function () {
+        it("renders password-type inputs for the API keys when opened by a GM", async function () {
+          this.timeout(15000);
+
+          const { SettingsPanelApp } = await import(
+            `${MODULE_PATH}/ui/settingsPanel.js`
+          );
+          const app = new SettingsPanelApp();
+          try {
+            await app._prepareContext({});
+            await app.render(true);
+            // Switch to About tab
+            const aboutBtn = app.element.querySelector('[data-action="switchTab"][data-tab="about"]');
+            if (aboutBtn) aboutBtn.click();
+            await new Promise(r => setTimeout(r, 50));
+
+            const passwordInputs = app.element.querySelectorAll('input[type="password"]');
+            assert.isAtLeast(passwordInputs.length, 1,
+              "About tab should render at least one password-typed input (API key fields)");
+          } finally {
+            await app.close({ force: true }).catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: API Key Privacy", timeout: 60000 },
   );
 }
 
