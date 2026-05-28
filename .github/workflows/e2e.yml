@@ -23,6 +23,11 @@
 name: E2E (Quench)
 
 on:
+  # Manual trigger from the Actions tab — used to validate docs-only PRs
+  # that the pull_request paths filter below intentionally skips
+  # (audit / scope-doc / changelog work that doesn't touch src/ still
+  # benefits from a green Quench run before merge).
+  workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
