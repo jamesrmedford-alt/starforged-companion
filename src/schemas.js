@@ -644,6 +644,18 @@ export const CampaignStateSchema = {
   activeSectorId: null,         // The sector the party is currently in
 
   // Active entity ID collections
+  //
+  // `characterIds`: dead schema field, never written by any production
+  // code path (see Priority 12 of the behaviour-coverage audit at
+  // docs/behaviour-coverage-audit.md). Three callers historically read
+  // it — `src/narration/narrator.js`, `src/character/chronicleWriter.js`,
+  // `src/moves/persistResolution.js` — all now fall back to
+  // `getPlayerActors()` (the same source the assembler uses) when the
+  // stored list is empty (RECAP-003 fix in v1.2.12). The field is
+  // retained for backward-compatibility with snapshots created by older
+  // module versions; future schema migrations may remove it. Tests that
+  // populate it explicitly (chronicleWriter.test.js, speaker.test.js)
+  // still exercise the "stored value present" code branch.
   characterIds:     [],
   connectionIds:    [],
   settlementIds:    [],

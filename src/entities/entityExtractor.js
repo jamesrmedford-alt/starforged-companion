@@ -1161,6 +1161,26 @@ async function handleDraftConfirm(message, draftIndex) {
 
   if (record) {
     await postCreationEnrichment(draft.type, record, campaignState);
+
+    // Promote any free-text fact-continuity ledger entries that were
+    // captured against this name into entity-scoped entries pointing at
+    // the new record. Without this rewrite, truths captured before the
+    // entity existed stay text-bound forever and never migrate at scene
+    // end. Idempotent — promoteTextSubject is a no-op when no matching
+    // text subjects exist. (Priority 6 of the behaviour-coverage audit.)
+    try {
+      const { promoteTextSubject } = await import("../factContinuity/ledgers.js");
+      const rewritten = promoteTextSubject(
+        draft.name,
+        { entityId: record._id, entityType: draft.type },
+        campaignState,
+      );
+      if (rewritten > 0) {
+        await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | draft confirm: promoteTextSubject failed:`, err?.message ?? err);
+    }
   }
 
   drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });

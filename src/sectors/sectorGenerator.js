@@ -14,6 +14,7 @@ import { createSettlement }    from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { buildSettlementsListHtml } from "./sectorOverview.js";
+import { recordThreat }         from "../world/worldJournal.js";
 import { apiPost }             from "../api-proxy.js";
 import * as SETTLEMENTS        from "../oracles/tables/settlements.js";
 import * as SPACE              from "../oracles/tables/space.js";
@@ -352,8 +353,20 @@ export async function storeSector(sector, extras, campaignState) {
   // the authoritative store. The migrator deletes any orphan journal left
   // by pre-migration runs.
 
-  // TODO: World Journal integration — add sector trouble as threat when WJ ships
-  // await recordThreat(sector.trouble, { type: "environmental", severity: "looming", ... })
+  // World Journal integration — record the sector trouble as an active
+  // threat so the narrator-context assembler surfaces it during play.
+  // Non-blocking: a WJ write failure should not abort sector creation.
+  if (sector?.trouble) {
+    try {
+      await recordThreat(sector.trouble, {
+        type:     "environmental",
+        severity: "looming",
+        summary:  `Trouble in ${sector.name ?? "this sector"}: ${sector.trouble}`,
+      }, campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sectorGenerator: recordThreat failed for ${sector.name}:`, err?.message ?? err);
+    }
+  }
 
   await persistCampaignState(campaignState);
 

@@ -98,7 +98,11 @@ export function isSceneSuppressed(sessionState) {
  * Activate the X-Card — sets xCardActive on campaignState so the assembler
  * suppresses all creative content for the remainder of the scene.
  *
- * Called by the /x chat hook in settingsPanel.js.
+ * Called by the `!x` chat-command handler in `src/index.js` (and a
+ * parallel guard hook in `src/ui/settingsPanel.js`). The `/x` form was
+ * superseded by `!x` per CHAT-001 (Foundry v13 rejects unrecognised
+ * `/word` commands before the createChatMessage hook fires).
+ *
  * The flag persists in game.settings until clearXCard() is called or the
  * scene is redirected (manual GM action).
  *

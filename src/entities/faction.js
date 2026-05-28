@@ -191,7 +191,7 @@ export function isReadyForArtGeneration(faction) {
 }
 
 /**
- * Format a Faction for Loremaster context injection.
+ * Format a Faction for narrator context injection.
  *
  * @param {Object} faction
  * @returns {string}

@@ -241,6 +241,60 @@ describe("assembleContextPacket", () => {
     expect(packet.omittedSections).not.toContain("safety");
   });
 
+  // ── Section-ordering contract (Priority 4 — Lens 3 IP2) ────────────────────
+  //
+  // The assembler builds named sections in a fixed order; the narrator system
+  // prompt depends on that order (cache stability + the model expects the
+  // sections in a particular sequence). A section rename or accidental drop
+  // would silently thin the narrator prompt with no test failing. These two
+  // tests pin the contract.
+
+  it("renders section headers in the documented canonical order", async () => {
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState());
+
+    // The canonical order matches the section comments at the top of
+    // assembleContextPacket (Section 0 safety → 1 permissions → 2 oracle
+    // seeds → 3 lore → 4 threats → 5 world truths → 6 location → 6.5
+    // ledger → 7 progress tracks → 8 connections → 9 active sector → 10
+    // character state). Only the headers that are non-empty for the
+    // baseCampaignState fixture appear here.
+    // Safety renders with a bare "SAFETY CONFIGURATION" header (no `##`
+    // prefix — it's a top-level safety block, not a numbered section);
+    // every other section uses the `## NAME` form.
+    const CANONICAL_ORDER = [
+      "SAFETY CONFIGURATION",
+      "## WORLD TRUTHS",
+    ];
+
+    const indices = CANONICAL_ORDER.map((h) => ({
+      header: h,
+      index:  packet.assembled.indexOf(h),
+    }));
+
+    for (const { header, index } of indices) {
+      expect(index, `expected section "${header}" to be present`).toBeGreaterThanOrEqual(0);
+    }
+    for (let i = 1; i < indices.length; i++) {
+      expect(
+        indices[i].index,
+        `expected "${indices[i].header}" to follow "${indices[i - 1].header}"`,
+      ).toBeGreaterThan(indices[i - 1].index);
+    }
+  });
+
+  it("omitting world truths does not drop downstream sections", async () => {
+    // If a section's content is empty, the assembler should skip it but
+    // continue rendering subsequent sections — not silently swallow them.
+    const state = baseCampaignState({ worldTruths: {} });
+    const packet = await assembleContextPacket(baseResolution(), state);
+
+    expect(packet.assembled).toMatch(/SAFETY CONFIGURATION/);
+    // World truths block is suppressed when empty
+    expect(packet.assembled).not.toMatch(/## WORLD TRUTHS/);
+    // The move-outcome user-message section should still render
+    expect(packet.assembled).toMatch(/Face Danger/);
+  });
+
   // ── X-Card via sessionState (existing path) ───────────────────────────────
 
   it("returns suppressed packet when sessionState.xCardActive is true", async () => {

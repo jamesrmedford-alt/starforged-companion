@@ -189,7 +189,7 @@ export function isReadyForArtGeneration(settlement) {
 }
 
 /**
- * Format a Settlement for Loremaster context injection.
+ * Format a Settlement for narrator context injection.
  * Used when the scene is set at this location.
  *
  * @param {Object} settlement

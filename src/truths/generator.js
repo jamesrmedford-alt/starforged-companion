@@ -6,7 +6,7 @@
  * - Roll through all 14 truth categories (or individual ones)
  * - Resolve sub-tables where a chosen option has one
  * - Store the complete truth set in the campaign state and as a Foundry journal entry
- * - Format truths for Loremaster context injection (compact form for ongoing packets)
+ * - Format truths for narrator context injection (compact form for ongoing packets)
  * - Format truths for the World Truths journal entry (full descriptive form)
  *
  * World Truths are campaign-level constants. They're set at Session Zero and
@@ -240,7 +240,7 @@ function formatTruthsAsHtml(truthSet) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Format the truth set for Loremaster context injection.
+ * Format the truth set for narrator context injection.
  *
  * Used in every context packet as the "WORLD TRUTHS" section.
  * Compact — just the title and the sub-result where present.
