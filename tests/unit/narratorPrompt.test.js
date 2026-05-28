@@ -181,6 +181,45 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Health 4/5');
   });
 
+  it('surfaces paths, vows, connections, impacts and notes in the CHARACTER block', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),
+      makeNarratorSettings(),
+      {
+        name:     'Mae Winter',
+        callsign: 'Maelstrom',
+        pronouns: 'she/her',
+        biography: 'Grew up on the Kobayashi III.',
+        notes:    'Distrusts the Hegemony.',
+        stats:   { edge: 3, heart: 2, iron: 2, shadow: 1, wits: 1 },
+        meters:  { health: 5, spirit: 5, supply: 5, momentum: 2 },
+        debilities: { wounded: true, shaken: false },
+        assets: [
+          { name: 'Ace',        abilities: ['When you Face Danger by guiding your vehicle, add +1.'] },
+          { name: 'Blademaster', abilities: ['When you Clash or Strike in close quarters, add +1.'] },
+        ],
+        vows: [
+          { name: 'Avenge my sister', rank: 'extreme', isBackground: true },
+          { name: 'Find the relay',   rank: 'dangerous', isBackground: false, completed: false },
+        ],
+        connections: [
+          { name: 'Dr Chen', rank: 'dangerous' },
+        ],
+      },
+    );
+    expect(prompt).toContain('Maelstrom');
+    expect(prompt).toContain('she/her');
+    expect(prompt).toContain('Grew up on the Kobayashi III');
+    expect(prompt).toContain('Distrusts the Hegemony');
+    expect(prompt).toContain('Edge 3');
+    expect(prompt).toContain('wounded');               // marked impact
+    expect(prompt).toContain('Ace');                   // path
+    expect(prompt).toContain('Blademaster');
+    expect(prompt).toContain('Background vow: Avenge my sister');
+    expect(prompt).toContain('Find the relay');
+    expect(prompt).toContain('Dr Chen');               // connection
+  });
+
   // Narrator suggestion-loop remediation §A1 — role description must match
   // the call-site mode so the paced-narrative path does not inherit the
   // "narrate the mechanical consequences of move outcomes" framing.

@@ -1097,16 +1097,65 @@ function buildConnectionsSummary(campaignState) {
 
 function buildCharacterBlock(character) {
   const lines = ['## CHARACTER'];
-  if (character.name) lines.push(`Name: ${character.name}`);
+
+  const idBits = [];
+  if (character.callsign) idBits.push(`"${character.callsign}"`);
+  if (character.pronouns) idBits.push(character.pronouns);
+  lines.push(`Name: ${character.name ?? 'Unknown'}${idBits.length ? ` (${idBits.join(', ')})` : ''}`);
+
   if (character.description) lines.push(`Description: ${character.description}`);
 
-  // Support both old (loremasterNotes) and new (narratorNotes) field names
-  const notes = character.narratorNotes ?? character.loremasterNotes ?? '';
-  if (notes) lines.push(`Notes for narrator: ${notes}`);
+  // Player-authored backstory from the character sheet (Biography / Notes tab).
+  const bio = (character.biography ?? '').trim();
+  if (bio) lines.push(`Biography: ${bio}`);
+  const charNotes = (character.notes ?? '').trim();
+  if (charNotes) lines.push(`Notes: ${charNotes}`);
+
+  // GM/narrator-facing notes (legacy field names retained for back-compat).
+  const narratorNotes = character.narratorNotes ?? character.loremasterNotes ?? '';
+  if (narratorNotes) lines.push(`Notes for narrator: ${narratorNotes}`);
+
+  if (character.stats) {
+    const { edge = 0, heart = 0, iron = 0, shadow = 0, wits = 0 } = character.stats;
+    lines.push(`Stats: Edge ${edge}, Heart ${heart}, Iron ${iron}, Shadow ${shadow}, Wits ${wits}`);
+  }
 
   if (character.meters) {
     const { health = 5, spirit = 5, supply = 5, momentum = 2 } = character.meters;
     lines.push(`Current state: Health ${health}/5, Spirit ${spirit}/5, Supply ${supply}/5, Momentum ${momentum}`);
+  }
+
+  // Marked impacts only — the active debilities the narrator should weave in.
+  const marked = character.debilities
+    ? Object.entries(character.debilities).filter(([, v]) => v === true).map(([k]) => k)
+    : [];
+  if (marked.length) lines.push(`Impacts: ${marked.join(', ')}`);
+
+  // Paths / assets — name plus enabled ability text, so the narrator can
+  // reference what the character is actually capable of.
+  const assets = Array.isArray(character.assets) ? character.assets : [];
+  if (assets.length) {
+    lines.push('Assets & paths:');
+    for (const a of assets) {
+      const abilities = Array.isArray(a.abilities) ? a.abilities.filter(Boolean) : [];
+      const summary = abilities.length ? ` — ${abilities.join(' ')}` : '';
+      lines.push(`  - ${a.name}${summary}`);
+    }
+  }
+
+  // Vows — spotlight the background (founding) vow, then active others.
+  const vows = Array.isArray(character.vows) ? character.vows : [];
+  if (vows.length) {
+    const bg     = vows.find(v => v.isBackground);
+    const others = vows.filter(v => !v.isBackground && !v.completed);
+    if (bg)            lines.push(`Background vow: ${bg.name} (${bg.rank})`);
+    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${v.rank})`).join('; ')}`);
+  }
+
+  // Connections (bonds) the character holds.
+  const connections = Array.isArray(character.connections) ? character.connections : [];
+  if (connections.length) {
+    lines.push(`Connections: ${connections.map(c => `${c.name} (${c.rank})`).join('; ')}`);
   }
 
   return lines.join('\n');

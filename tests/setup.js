@@ -410,6 +410,11 @@ global.makeTestActor = (overrides = {}) => {
         ...(sys.debility ?? {}),
       },
       xp: sys.xp ?? 0,
+      // Biographical fields (ironsworn-api-scope.md §1.1).
+      notes:     sys.notes     ?? '',
+      biography: sys.biography ?? '',
+      callsign:  sys.callsign  ?? '',
+      pronouns:  sys.pronouns  ?? '',
       // Vendor system computed getters — tests may override these to simulate
       // foundry-ironsworn's #impactCount-driven momentumMax / momentumReset.
       ...(sys.momentumMax   !== undefined ? { momentumMax:   sys.momentumMax   } : {}),

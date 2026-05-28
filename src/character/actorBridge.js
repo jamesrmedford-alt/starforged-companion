@@ -109,8 +109,13 @@ export function readCharacterSnapshot(actor) {
       value: sys.xp ?? 0,
       max:   30,
     },
-    assets: readAssets(actor),
-    vows:   readVows(actor),
+    assets:      readAssets(actor),
+    vows:        readVows(actor),
+    connections: readConnections(actor),
+    notes:       stripHtml(sys.notes ?? ''),
+    biography:   stripHtml(sys.biography ?? ''),
+    callsign:    String(sys.callsign ?? '').trim(),
+    pronouns:    String(sys.pronouns ?? '').trim(),
   };
 
   _snapshotCache.set(actor.id, snapshot);
@@ -182,6 +187,34 @@ export function readVows(actor) {
       progress:     Math.floor(ticks / 4),
       completed:    !!v.system?.completed,
       isBackground: i === 0,
+    };
+  });
+}
+
+/**
+ * Read the character's connection (bond) progress Items. foundry-ironsworn
+ * stores connections the module auto-creates (and manual bonds) as
+ * `type: "progress"` with `system.subtype: "bond"`, mirroring vows. Surfaced
+ * so the narrator knows who the character is bonded to — answers like
+ * "who am I" / "who do I know" need this.
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ id, name, rank, progress, ticks, completed }>}
+ */
+export function readConnections(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  const bonds = list.filter(i => i?.type === 'progress' && i?.system?.subtype === 'bond');
+
+  return bonds.map(b => {
+    const ticks = Number(b.system?.progress ?? b.system?.current ?? 0);
+    return {
+      id:        b.id ?? b._id ?? null,
+      name:      b.name ?? '',
+      rank:      b.system?.rank ?? 'dangerous',
+      ticks,
+      progress:  Math.floor(ticks / 4),
+      completed: !!b.system?.completed,
     };
   });
 }
