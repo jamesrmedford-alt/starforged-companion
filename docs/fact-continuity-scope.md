@@ -1,7 +1,7 @@
 # Starforged Companion — Fact Continuity Scope
 ## Two-ledger persistent memory for in-scene narrator consistency
 
-**Status:** 📋 PLANNED
+**Status:** ✅ COMPLETE — core shipped (Phases A–G, including §20 ship positioning); Entity Panel "Active truths" collapsible and WJ Panel scene-truth filter row (§17 items 26–27) deferred to panel-polish work
 **Priority:** Medium — addresses narrator drift observed in playtesting after NED + WJ shipped
 **Dependencies:** Narrator (✅), Narrator Entity Discovery (✅), World Journal v2 (✅), Pacing (✅)
 **Related:** World Truths (constitutional axioms — distinct concept; see §1.2)
