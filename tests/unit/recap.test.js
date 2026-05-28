@@ -128,6 +128,10 @@ describe('isRecapCommand()', () => {
     expect(isRecapCommand(makeMessage('!recap session 3'))).toBe(true);
   });
 
+  it('returns false for "!recapify" — word boundary, not a bare prefix', () => {
+    expect(isRecapCommand(makeMessage('!recapify the world'))).toBe(false);
+  });
+
   it('returns false for "!recap" from non-GM when recapGmOnly is true', () => {
     expect(isRecapCommand(makeMessage('!recap', false))).toBe(false);
   });

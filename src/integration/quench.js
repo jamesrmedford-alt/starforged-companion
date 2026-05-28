@@ -6688,16 +6688,13 @@ function registerRecapModesTests(quench) {
 
       // ── 1: isRecapCommand predicate matrix ───────────────────────────────
       //
-      // Note on the prefix-match shape: isRecapCommand uses a bare
-      // `startsWith("!recap")` rather than a word-boundary regex (see
-      // src/index.js — contrast isPaceCommand which uses /^!pace(\s|$)/i and
-      // isFactContinuityCommand which uses /^!(truth|state)\s+/i). That
-      // means strings like "!recapify the world" also match the predicate.
-      // This batch ASSERTS the actual behaviour, not the "ideal" word-
-      // boundary behaviour — fixing the inconsistency belongs in a
-      // dedicated change, not in a coverage test.
+      // isRecapCommand uses a word-boundary regex (/^!recap(\s|$)/i), matching
+      // the shape of the other command predicates in src/index.js (e.g.
+      // isPaceCommand → /^!pace(\s|$)/i, isFactContinuityCommand →
+      // /^!(truth|state)\s+/i). Bare "!recap" and "!recap <subcommand>" match;
+      // look-alikes like "!recapify the world" do NOT.
       describe("isRecapCommand — predicate matrix", function () {
-        it("matches every string with the !recap prefix (and ignores its own response-card flag)", async function () {
+        it("matches !recap and its subcommands, rejects look-alikes and its own response-card flag", async function () {
           if (skipNotGM(this)) return;
           const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
           const make = (content, flags = {}) => ({
@@ -6718,6 +6715,8 @@ function registerRecapModesTests(quench) {
             "!recap campaign should match");
           assert.isTrue(idx.isRecapCommand(make("!recap session 5")),
             "!recap session N should match");
+          assert.isFalse(idx.isRecapCommand(make("!recapify the world")),
+            "!recapify must NOT match — word boundary, not a bare prefix");
           assert.isFalse(idx.isRecapCommand(make("regular narration")),
             "predicate must reject unrelated text");
           assert.isFalse(idx.isRecapCommand(make("/recap")),

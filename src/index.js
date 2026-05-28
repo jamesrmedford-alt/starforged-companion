@@ -1084,7 +1084,7 @@ export function isSceneQuery(message) {
  */
 export function isRecapCommand(message) {
   const text = message.content?.trim() ?? "";
-  if (!text.toLowerCase().startsWith("!recap")) return false;
+  if (!/^!recap(\s|$)/i.test(text)) return false;
   if (message.flags?.[MODULE_ID]?.recapCard) return false;
   if (getRecapGmOnly()) {
     const user = message.author ?? game.users?.get(message.user);
