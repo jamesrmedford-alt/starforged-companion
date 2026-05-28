@@ -138,6 +138,14 @@ Hooks.on("quenchReady", (quench) => {
   // real Foundry data dir, with the OpenRouter call stubbed so no key is
   // burned.
   registerPortraitActorAttachTests(quench);
+  // Location-family Actor wires (planet / settlement / location) — the
+  // portraitActorAttach batch above pins the ship side; this batch closes
+  // the same wire for the other three Actor-hosted entity types and also
+  // covers the routing-crumb / system.description round-trip via
+  // iterEntityDocuments. Surfaces the consolidated Priority 1 finding
+  // from docs/behaviour-coverage-audit.md (Lens 1 Cluster A + Lens 3
+  // IP1 + IP3).
+  registerLocationFamilyActorWiresTests(quench);
   // Starship narrated Notes — the unit tests use a mocked apiPost; this
   // batch exercises the live createActor hook path with the Anthropic
   // endpoint stubbed, asserting prose + fact-line render and the no-key
@@ -7646,6 +7654,224 @@ function registerPortraitActorAttachTests(quench) {
       });
     },
     { displayName: "STARFORGED: Portrait Actor Attach", timeout: 90000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCATION-FAMILY ACTOR WIRES — planet / settlement / location end-to-end
+//
+// PR #130 wired `actor.img ← portrait pipeline` for ship and pinned it via
+// the portraitActorAttach batch above. The same writer (`attachPortraitToActor`
+// in src/art/generator.js) feeds planet / settlement / location too, but no
+// test exercised the wire for those three types. Same defect class
+// (ENTITY-001) hid the journal-vs-page flag read in the entity panel for
+// months — writers tested in isolation, reader path missed.
+//
+// This batch closes the gap by creating one of each non-ship Actor-hosted
+// type and asserting three contracts at once:
+//   (a) routing crumbs (flags[MODULE].entityType / entityId) round-trip
+//       through entityPanel's iterEntityDocuments reader path
+//   (b) actor.system.description matches the input that createX() wrote
+//   (c) generatePortrait sets actor.img + prototype-token texture for each
+//       type (same writer as ship; previously only ship was asserted)
+//
+// Surfaces the consolidated Priority 1 finding from the behaviour-coverage
+// audit (Lens 1 Cluster A + Lens 3 IP1 + IP3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerLocationFamilyActorWiresTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.locationFamilyActorWires",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      // 1×1 transparent PNG — small but a real PNG so any decoder accepts it.
+      const PNG_B64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+      afterEach(flushCleanup);
+
+      // Each row exercises one type. The structure is intentionally
+      // repetitive — three nearly-identical it() blocks rather than a
+      // single table-driven test — because a failure in one type
+      // should not skip the other two, and Mocha's reporter pinpoints
+      // a named it() faster than a parametrised loop.
+      const CASES = [
+        {
+          type:           "planet",
+          stateKey:       "planetIds",
+          modulePath:     "/entities/planet.js",
+          createFn:       "createPlanet",
+          listFn:         "listPlanets",
+          sampleInput:    {
+            name:        `QUENCH PLANET ${Date.now()}`,
+            description: "A vast ringed gas giant ringed with crystalline debris.",
+            type:        "Vital",
+          },
+          extraSystemAssertion: (actor) => {
+            // planet.js writes planet.type → actor.system.klass.
+            assert.equal(actor.system?.klass, "Vital",
+              "planet writer should map data.type → actor.system.klass");
+          },
+        },
+        {
+          type:           "settlement",
+          stateKey:       "settlementIds",
+          modulePath:     "/entities/settlement.js",
+          createFn:       "createSettlement",
+          listFn:         "listSettlements",
+          sampleInput:    {
+            name:        `QUENCH SETTLEMENT ${Date.now()}`,
+            description: "A salvager town clinging to a hollowed-out mining habitat.",
+            location:    "Orbital",
+          },
+          extraSystemAssertion: (actor) => {
+            // settlement.js writes settlement.location → actor.system.klass.
+            assert.equal(actor.system?.klass, "Orbital",
+              "settlement writer should map data.location → actor.system.klass");
+          },
+        },
+        {
+          type:           "location",
+          stateKey:       "locationIds",
+          modulePath:     "/entities/location.js",
+          createFn:       "createLocation",
+          listFn:         "listLocations",
+          sampleInput:    {
+            name:        `QUENCH LOCATION ${Date.now()}`,
+            description: "A vein of pre-Forge ruins half-swallowed by tidal ice.",
+            type:        "ruin",
+          },
+          extraSystemAssertion: (actor) => {
+            // location.js writes location.type → actor.system.subtype.
+            assert.equal(actor.system?.subtype, "ruin",
+              "location writer should map data.type → actor.system.subtype");
+          },
+        },
+      ];
+
+      describe("location-family Actor wires", function () {
+        CASES.forEach((c) => {
+          describe(`${c.type}`, function () {
+            it(`createX writes routing crumbs and system.description reachable via iterEntityDocuments`, async function () {
+              this.timeout(30000);
+
+              const mod = await import(`${MODULE_PATH}${c.modulePath}`);
+              const registry = await import(`${MODULE_PATH}/entities/registry.js`);
+
+              const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), [c.stateKey]: [] };
+              await game.settings.set(MODULE, "campaignState", state);
+
+              await mod[c.createFn](c.sampleInput, state);
+              const actorId = state[c.stateKey][state[c.stateKey].length - 1];
+              track(actorId);
+
+              const actor = game.actors.get(actorId);
+              assert.isOk(actor, `${c.createFn} should create an Actor reachable via game.actors.get`);
+
+              // (a) routing crumbs round-trip through iterEntityDocuments
+              const yielded = [...registry.iterEntityDocuments(c.type)]
+                .filter(({ document }) => document.id === actorId);
+              assert.lengthOf(yielded, 1,
+                `iterEntityDocuments("${c.type}") should yield exactly one document for the new actor`);
+
+              const { data } = yielded[0];
+              assert.equal(data.name, c.sampleInput.name,
+                `iterEntityDocuments data.name should match the created ${c.type}`);
+
+              const flags = actor.flags?.[MODULE] ?? {};
+              assert.equal(flags.entityType, c.type,
+                `actor.flags[MODULE].entityType should be "${c.type}"`);
+              assert.isOk(flags.entityId,
+                "actor.flags[MODULE].entityId should be set to a non-empty id");
+              assert.isOk(flags[c.type],
+                `actor.flags[MODULE].${c.type} payload should exist`);
+              assert.equal(flags[c.type].name, c.sampleInput.name,
+                "the embedded payload should carry the same name as the input");
+
+              // (b) actor.system.description matches input
+              assert.equal(actor.system?.description, c.sampleInput.description,
+                `${c.createFn} should write data.description → actor.system.description`);
+
+              // type-specific system field assertion (klass / subtype mapping)
+              c.extraSystemAssertion(actor);
+            });
+
+            it(`generatePortrait sets actor.img and prototype-token texture`, async function () {
+              this.timeout(60000);
+
+              const mod = await import(`${MODULE_PATH}${c.modulePath}`);
+              const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
+
+              const state = { ...(game.settings.get(MODULE, "campaignState") ?? {}), [c.stateKey]: [] };
+              await game.settings.set(MODULE, "campaignState", state);
+
+              const input = {
+                ...c.sampleInput,
+                name: `QUENCH PORTRAIT ${c.type} ${Date.now()}`,
+                portraitSourceDescription: `Reference: ${c.sampleInput.description}`,
+              };
+              await mod[c.createFn](input, state);
+              const actorId = state[c.stateKey][state[c.stateKey].length - 1];
+              track(actorId);
+
+              const imgBefore = game.actors.get(actorId).img;
+
+              await withTempSetting("openRouterApiKey", "or-test-key", async () => {
+                await withStubbedFetch(
+                  [
+                    ["openrouter.ai", async () => ({
+                      choices: [{
+                        message: {
+                          images: [{ image_url: { url: `data:image/png;base64,${PNG_B64}` } }],
+                        },
+                      }],
+                    })],
+                  ],
+                  async () => {
+                    const entity = mod[c.listFn](state).find(e => e?._id);
+                    await generatePortrait(actorId, c.type, entity, state);
+                  },
+                );
+              });
+
+              const fresh = game.actors.get(actorId);
+              assert.notEqual(fresh.img, imgBefore,
+                "actor.img should change away from the default seed image");
+              assert.isOk(fresh.img && fresh.img.includes("/art/"),
+                "actor.img should point to the uploaded portrait under worlds/<id>/art/");
+              assert.isOk(fresh.prototypeToken?.texture?.src,
+                "prototypeToken.texture.src should also be set");
+            });
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Location-Family Actor Wires", timeout: 240000 },
   );
 }
 
