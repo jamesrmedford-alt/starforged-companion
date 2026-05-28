@@ -39,6 +39,8 @@ import {
   userGestureReceived,
   waitForUserGesture,
   _resetGestureForTests,
+  _resetActivePlaybackForTests,
+  stopActivePlayback,
 } from '../../src/audio/playback.js';
 
 import {
@@ -52,6 +54,7 @@ beforeEach(() => {
   globalThis.foundry.applications.apps.FilePicker.implementation._reset();
   globalThis.foundry.audio.Sound._reset();
   _resetGestureForTests();
+  _resetActivePlaybackForTests();
   // Default settings — tests override as needed.
   globalThis.game.settings._store.clear();
 });
@@ -479,6 +482,69 @@ describe('PlaybackSession', () => {
     } finally {
       SoundClass.prototype.play = origPlay;
     }
+  });
+
+  // No-overlap guard — starting a second session must stop the first so
+  // narrator cards rendered in fast succession never play over each other.
+  it('starting a second session stops the first (single active playback)', async () => {
+    const first = new PlaybackSession({
+      cardId: 'overlap-1',
+      segments: [{ voice: 'narrator', src: '/first.mp3', text: 'first' }],
+    });
+    first.play();                                   // do not await — it stays PLAYING
+    await new Promise(r => setTimeout(r, 0));
+    expect(first.state).toBe(PLAYBACK_STATE.PLAYING);
+
+    const second = new PlaybackSession({
+      cardId: 'overlap-2',
+      segments: [{ voice: 'narrator', src: '/second.mp3', text: 'second' }],
+    });
+    second.play();                                  // claims playback, stops `first`
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(first.state).toBe(PLAYBACK_STATE.STOPPED);
+    expect(second.state).toBe(PLAYBACK_STATE.PLAYING);
+  });
+
+  it('a completed session releases the active slot so the next can play cleanly', async () => {
+    const first = new PlaybackSession({
+      cardId: 'release-1',
+      segments: [{ voice: 'narrator', src: '/a.mp3', text: 'a' }],
+    });
+    const p1 = first.play();
+    await new Promise(r => setTimeout(r, 0));
+    globalThis.foundry.audio.Sound._instances[0]._fire('end');   // complete naturally
+    await p1;
+    expect(first.state).toBe(PLAYBACK_STATE.IDLE);
+
+    // A later session starting does NOT re-stop the already-finished first.
+    const second = new PlaybackSession({
+      cardId: 'release-2',
+      segments: [{ voice: 'narrator', src: '/b.mp3', text: 'b' }],
+    });
+    second.play();
+    await new Promise(r => setTimeout(r, 0));
+    expect(second.state).toBe(PLAYBACK_STATE.PLAYING);
+    expect(first.state).toBe(PLAYBACK_STATE.IDLE);   // unchanged — was released on completion
+  });
+
+  it('stopActivePlayback() stops the current session and is a no-op when nothing is active', async () => {
+    // Nothing playing yet → resolves false, no throw.
+    await expect(stopActivePlayback()).resolves.toBe(false);
+
+    const session = new PlaybackSession({
+      cardId: 'skip-1',
+      segments: [{ voice: 'narrator', src: '/long.mp3', text: 'long' }],
+    });
+    session.play();                                  // becomes the active session
+    await new Promise(r => setTimeout(r, 0));
+    expect(session.state).toBe(PLAYBACK_STATE.PLAYING);
+
+    await expect(stopActivePlayback()).resolves.toBe(true);   // the skip button path
+    expect(session.state).toBe(PLAYBACK_STATE.STOPPED);
+
+    // Slot released — a second stop is a no-op again.
+    await expect(stopActivePlayback()).resolves.toBe(false);
   });
 });
 

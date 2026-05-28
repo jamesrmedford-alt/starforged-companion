@@ -382,6 +382,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
           </button>
+          <button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden>
+            <i class="fas fa-stop"></i> Stop
+          </button>
           <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
             <i class="fas fa-list-check"></i> Correct a fact
           </button>
@@ -926,6 +929,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
+          </button>
+          <button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden>
+            <i class="fas fa-stop"></i> Stop
           </button>
           <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
             <i class="fas fa-list-check"></i> Correct a fact

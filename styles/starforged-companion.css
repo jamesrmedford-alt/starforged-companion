@@ -2205,7 +2205,8 @@
   flex-wrap:   wrap;
 }
 
-.sf-audio-play-btn {
+.sf-audio-play-btn,
+.sf-audio-stop-btn {
   display:       inline-flex;
   align-items:   center;
   gap:           0.4em;
@@ -2219,11 +2220,13 @@
   font-size:     0.85em;
 }
 
-.sf-audio-play-btn:hover:not([disabled]) {
+.sf-audio-play-btn:hover:not([disabled]),
+.sf-audio-stop-btn:hover:not([disabled]) {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.sf-audio-play-btn[disabled] {
+.sf-audio-play-btn[disabled],
+.sf-audio-stop-btn[disabled] {
   opacity: 0.5;
   cursor:  not-allowed;
 }
