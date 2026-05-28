@@ -7886,7 +7886,7 @@ function registerSectorEnhancedTests(quench) {
             map: { width: 4000, height: 3000, passages: [] },
           };
 
-          const scene = await createSectorScene(sector, { backgroundPath: null });
+          const scene = await createSectorScene(sector, null, []);
 
           try {
             assert.isOk(scene, "createSectorScene should return a Scene document");
@@ -7948,10 +7948,10 @@ function registerApiKeyPrivacyTests(quench) {
         it("renders password-type inputs for the API keys when opened by a GM", async function () {
           this.timeout(15000);
 
-          const { CompanionSettings } = await import(
+          const { SettingsPanelApp } = await import(
             `${MODULE_PATH}/ui/settingsPanel.js`
           );
-          const app = new CompanionSettings();
+          const app = new SettingsPanelApp();
           try {
             await app._prepareContext({});
             await app.render(true);
