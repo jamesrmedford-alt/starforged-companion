@@ -578,6 +578,13 @@ export function registerChatHook() {
       return;
     }
 
+    // !pay-the-price (alias !ptp) — roll the d100 Pay the Price table
+    // and post the result as a chat card. Any player; no state mutation.
+    if (isPayThePriceCommand(message)) {
+      await handlePayThePriceCommand(message);
+      return;
+    }
+
     // !bond <rank> command — bonded Develop Your Relationship (play kit p. 3)
     if (isBondCommand(message)) {
       await handleBondCommand(message);
@@ -1256,6 +1263,20 @@ export function isOracleCommand(message) {
 }
 
 /**
+ * Determine whether a chat message is a !pay-the-price (or !ptp) command —
+ * the manual fate-move variant. Any player may invoke; the handler rolls
+ * the d100 table and posts the result as a chat card. No state mutation.
+ *
+ *   !pay-the-price [question?]
+ *   !ptp [question?]
+ */
+export function isPayThePriceCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.payThePriceCard) return false;
+  return /^!(pay-the-price|ptp)(\s|$)/i.test(text);
+}
+
+/**
  * Determine whether a chat message is a !bond command — the bonded-path
  * variant of Develop Your Relationship per play kit p. 3.
  *   !bond <rank>
@@ -1739,6 +1760,47 @@ async function handleOracleCommand(message) {
   await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
     flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+  });
+}
+
+/**
+ * Handle a !pay-the-price (or !ptp) chat command. Rolls the d100 Pay the
+ * Price table and posts the result. Any player may invoke; no state mutation.
+ *
+ *   !pay-the-price [question?]
+ *   !ptp [question?]
+ *
+ * The question text is optional context — the table itself just produces a
+ * d100 + consequence string. The fate-move (`pay_the_price`) flow in the
+ * resolver already surfaces this same table as an advisory seed on every
+ * eligible move's miss card; this command lets the player or GM invoke it
+ * directly without going through a move pipeline.
+ */
+async function handlePayThePriceCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const head = /^!(pay-the-price|ptp)\b/i.exec(text)?.[0] ?? "!pay-the-price";
+  const question = text.slice(head.length).trim();
+
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = rollOracle("pay_the_price");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | !pay-the-price: roll failed:`, err);
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong> <p>Roll failed — see console.</p></div>`,
+      flags:   { [MODULE_ID]: { payThePriceCard: true } },
+    });
+    return;
+  }
+
+  const qBlock = question
+    ? `<p><em>${escapeChatHtml(question)}</em></p>`
+    : "";
+
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
+    flags:   { [MODULE_ID]: { payThePriceCard: true } },
   });
 }
 
