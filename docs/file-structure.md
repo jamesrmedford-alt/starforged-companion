@@ -21,7 +21,6 @@ developer-only and excluded from the release.
 | `CHANGELOG.md` | GitHub changelog. `[Unreleased]` maps to the next release after the latest tag. |
 | `LICENSE.md` | CC BY-NC-SA 4.0. |
 | `package.json` / `vitest.config.js` / `eslint.config.js` | npm scripts, Vitest config (coverage thresholds), ESLint flat config. |
-| `handoff-known-issues-update.md` | Stale one-off handoff snapshot — every entry is already merged into `docs/known-issues.md`. Safe to remove. |
 
 ---
 

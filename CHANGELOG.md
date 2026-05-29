@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-05-29
+
 - Docs: **Documentation audit & reorganization.** Reorganized `docs/` into feature-theme subfolders (`narrator/`, `entities/`, `character/`, `sectors/`, `pacing/`, `fact-continuity/`, `audio/`, `session/`, `clocks/`, `foundations/`, `rules-reference/`, `foundry-reference/`, `testing/`, `process/`), keeping the always-read hub docs (`scope-index`, `file-structure`, `decisions`, `known-issues`) at the `docs/` root. Updated every inbound link plus the doc-path references in source/test comments and `CLAUDE.md`.
 - Docs: **`file-structure.md` now documents the full `src/` source tree** — it previously pointed at a non-existent root file and covered only `docs/` + `rules/`.
 - Docs: **`scope-index.md` gains rows for shipped-but-unscoped features** — Session Lifecycle, Clocks, World Truths, plus a supporting-infrastructure note for multiplayer coordination and speech input. New concise scope docs added for Session, Clocks, and World Truths.
