@@ -53,7 +53,7 @@ beforeEach(() => {
 
 describe('move pipeline concurrency guard', () => {
   it('second message is blocked while pendingMove is true', async () => {
-    const state = { ...CampaignStateSchema, pendingMove: true };
+    const state = { ...CampaignStateSchema, pendingMove: true, sessionActive: true };
     game.settings._store.set(`${MODULE_ID}.campaignState`, state);
 
     registerChatHook();
@@ -75,7 +75,7 @@ describe('move pipeline concurrency guard', () => {
   });
 
   it('non-narration messages bypass the lock check entirely', async () => {
-    const state = { ...CampaignStateSchema, pendingMove: true };
+    const state = { ...CampaignStateSchema, pendingMove: true, sessionActive: true };
     game.settings._store.set(`${MODULE_ID}.campaignState`, state);
 
     registerChatHook();

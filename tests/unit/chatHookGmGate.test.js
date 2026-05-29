@@ -43,7 +43,12 @@ beforeEach(() => {
   Hooks._handlers.clear();
   interpretMove.mockClear();
   routePacedInput.mockClear();
-  game.settings._store.set(`${MODULE_ID}.campaignState`, { ...CampaignStateSchema, pendingMove: false });
+  // sessionActive: true — these tests exercise the pipeline post-Begin-Session.
+  // The session-active gate in src/index.js short-circuits the pipeline pre-
+  // session (see src/session/lifecycle.js); fixtures here flip the gate ON.
+  game.settings._store.set(`${MODULE_ID}.campaignState`, {
+    ...CampaignStateSchema, pendingMove: false, sessionActive: true,
+  });
 });
 
 async function runHookAs(currentUser, users) {

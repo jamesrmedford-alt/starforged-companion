@@ -901,6 +901,76 @@ function escapeHtml(s) {
 }
 
 /**
+ * Render a Begin Session opening vignette via the narrator API and return the
+ * prose text. The caller is responsible for posting the chat card; see
+ * `src/session/galleyVignette.js` for the participant-enumeration + card-post
+ * wrapper.
+ *
+ * Silent skip with `null` return when the Claude API key is unset, the
+ * narrator-enabled toggle is off, or the X-Card is active.
+ *
+ * Tone is overridden to wry+absurd via the `session_vignette` mode (see
+ * narratorPrompt.js ROLE_DESCRIPTIONS) regardless of any campaign tone
+ * setting — Begin Session is always intentionally light.
+ *
+ * @param {Object} args
+ * @param {string} args.userMessage    — pre-built vignette prompt body
+ *                                       (active/absent rosters, sector context,
+ *                                       generation instructions)
+ * @param {Object} args.campaignState
+ * @returns {Promise<string|null>}
+ */
+export async function narrateSessionVignette({ userMessage, campaignState }) {
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+  if (campaignState?.xCardActive)  return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const character = getActiveCharacter(campaignState);
+  const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '',
+    {
+      mode:               'session_vignette',
+      playerNarration:    '',
+      currentLocationCard,
+      activeSectorBlock,
+      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
+    },
+  );
+
+  try {
+    const raw = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(380),  // 4-6 sentences, comfortable headroom
+    });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    return (text && text.trim()) ? text : null;
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try {
+        await delay(RETRY_DELAY_MS);
+        const raw = await callNarratorAPI({
+          apiKey, systemPrompt, userMessage,
+          model:     settings.narrationModel,
+          maxTokens: maxTokensWithSidecar(380),
+        });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+        return (text && text.trim()) ? text : null;
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);
+      }
+    }
+    console.error(`${MODULE_ID} | narrateSessionVignette failed:`, err);
+    return null;
+  }
+}
+
+/**
  * Run a narrator-only response for the pacing classifier's NARRATIVE and
  * NARRATIVE_WITH_MOVE_AVAILABLE decisions. No move is rolled, no move card is
  * posted, no chronicle entry — just a narrator card continuing the fiction
