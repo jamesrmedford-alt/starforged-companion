@@ -11,9 +11,9 @@
  * to it manually. Automatic activation would disrupt mid-session clients.
  *
  * Foundry v13 API references:
- *   - Scene.create(): docs/foundry-api-reference.md §Scene
- *   - createEmbeddedDocuments("Note", ...): docs/foundry-api-reference.md §NoteDocument
- *   - createEmbeddedDocuments("Drawing", ...): docs/foundry-api-reference.md §DrawingDocument
+ *   - Scene.create(): docs/foundry-reference/foundry-api-reference.md §Scene
+ *   - createEmbeddedDocuments("Note", ...): docs/foundry-reference/foundry-api-reference.md §NoteDocument
+ *   - createEmbeddedDocuments("Drawing", ...): docs/foundry-reference/foundry-api-reference.md §DrawingDocument
  */
 
 import {

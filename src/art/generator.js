@@ -236,7 +236,7 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
  * journal copy (storeArtAsset) feeds the panel's custom HTML; Foundry document
  * image fields need a real file path, so the bytes are uploaded to the world
  * data dir and `actor.img` / the prototype-token texture point at it (per
- * docs/foundry-api-reference.md → FilePicker.upload).
+ * docs/foundry-reference/foundry-api-reference.md → FilePicker.upload).
  *
  * No-op for journal-hosted entities (connection / faction / creature) — they
  * have no image-bearing document. GM-gated (uploads require GM). Non-blocking:

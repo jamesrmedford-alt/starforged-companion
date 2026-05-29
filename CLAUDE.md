@@ -40,16 +40,16 @@ Before doing any work, read these files in order:
    or re-open closed issues
 4. `docs/file-structure.md` — what each file exports and does
 5. The relevant scope document for the current task — find it via scope-index.md:
-   - Character/actor work: always read `docs/ironsworn-api-scope.md` first,
+   - Character/actor work: always read `docs/character/ironsworn-api-scope.md` first,
      then `rules/foundry-ironsworn.md` for the full schema-rules contract
      before fetching live source and writing any code
 6. When the task touches narrator behaviour, move interpretation, pacing
    classification, scene mechanics, oracles, or any new game-side feature —
-   read `docs/rulebook-summary.md` (design intent) and
-   `docs/playkit-rules-and-coverage.md` Part 1 (verbatim rules) before
+   read `docs/rules-reference/rulebook-summary.md` (design intent) and
+   `docs/rules-reference/playkit-rules-and-coverage.md` Part 1 (verbatim rules) before
    writing code. See `rules/game-rules.md` for when to reach for which.
 7. Before writing any Foundry API code — read `rules/foundry-api.md` and
-   the relevant section of `docs/foundry-api-reference.md` to confirm current
+   the relevant section of `docs/foundry-reference/foundry-api-reference.md` to confirm current
    method signatures, valid values, and deprecation status. Never rely on
    memory for Foundry APIs.
 

@@ -6,7 +6,7 @@
  * suppresses redundant World Journal entries when an entity record already
  * exists.
  *
- * Mocking strategy (per docs/implementation-ordering.md Phase 4):
+ * Mocking strategy (per docs/entities/implementation-ordering.md Phase 4):
  *   - WJ write functions (recordLoreDiscovery, recordThreat, ...) are
  *     mocked via vi.spyOn so we can assert routing without hitting real
  *     journal storage.

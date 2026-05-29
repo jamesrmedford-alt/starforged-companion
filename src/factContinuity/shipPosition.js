@@ -3,7 +3,7 @@
  * src/factContinuity/shipPosition.js
  *
  * Persistent position record for the player's command vehicle.
- * See docs/fact-continuity-scope.md §20.
+ * See docs/fact-continuity/fact-continuity-scope.md §20.
  *
  * The narrator has no way to know where the ship physically is unless we
  * tell it. This module owns the inference: given a seed reference

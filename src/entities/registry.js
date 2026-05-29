@@ -15,7 +15,7 @@
  * game.actors directly. After the migration only this file changes; every
  * caller stays correct.
  *
- * See docs/entity-actor-migration-scope.md §4 for the surface that uses this.
+ * See docs/entities/entity-actor-migration-scope.md §4 for the surface that uses this.
  */
 
 const MODULE_ID = 'starforged-companion';

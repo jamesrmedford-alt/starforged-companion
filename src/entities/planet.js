@@ -4,7 +4,7 @@
  * `location` Actor documents with `system.subtype='planet'` (Phase 3 of the
  * Entity → Actor Migration).
  *
- * Field placement (per docs/entity-actor-migration-scope.md §3.2):
+ * Field placement (per docs/entities/entity-actor-migration-scope.md §3.2):
  *   actor.name                            ← planet.name
  *   actor.img                             ← portrait dataUri (set by art pipeline)
  *   actor.system.subtype                  = "planet"

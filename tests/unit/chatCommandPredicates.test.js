@@ -11,7 +11,7 @@
  * instance of this same defect class.
  *
  * Surfaces Priority 3 of the behaviour-coverage audit
- * (docs/behaviour-coverage-audit.md — Lens 3 IP5).
+ * (docs/testing/behaviour-coverage-audit.md — Lens 3 IP5).
  */
 
 import { describe, it, expect } from "vitest";

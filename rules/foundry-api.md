@@ -4,7 +4,7 @@ The Foundry VTT API documentation is the authoritative source for all Foundry
 classes, hooks, methods, and properties. Before writing ANY code that uses
 Foundry APIs, fetch the relevant documentation page first.
 
-**Local reference:** `docs/foundry-api-reference.md`
+**Local reference:** `docs/foundry-reference/foundry-api-reference.md`
 
 This file contains compiled API documentation for all Foundry classes used
 in this module, sourced from the community wiki (verified v13). Claude Code's
@@ -13,17 +13,17 @@ authoritative reference.
 
 **Rule:** Before writing ANY code that calls a Foundry method, registers a hook,
 creates a document, or uses any Foundry class — read the relevant section of
-`docs/foundry-api-reference.md` first. Do not rely on training data for Foundry
+`docs/foundry-reference/foundry-api-reference.md` first. Do not rely on training data for Foundry
 API details.
 
 ```bash
 # Read the local API reference
-cat docs/foundry-api-reference.md
+cat docs/foundry-reference/foundry-api-reference.md
 
 # Or search for a specific section
-grep -A 30 "^## ChatMessage" docs/foundry-api-reference.md
-grep -A 30 "^## Hooks" docs/foundry-api-reference.md
-grep -A 50 "^## ApplicationV2" docs/foundry-api-reference.md
+grep -A 30 "^## ChatMessage" docs/foundry-reference/foundry-api-reference.md
+grep -A 30 "^## Hooks" docs/foundry-reference/foundry-api-reference.md
+grep -A 50 "^## ApplicationV2" docs/foundry-reference/foundry-api-reference.md
 ```
 
 If the required API is not covered in the local reference, note it in your

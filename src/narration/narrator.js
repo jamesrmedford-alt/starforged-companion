@@ -118,7 +118,7 @@ export async function narrateResolution(resolution, contextPacket, campaignState
   const character    = getActiveCharacter(campaignState, options?.speakerActorId);
 
   // First narration of a session implicitly starts a scene if none is active.
-  // See docs/fact-continuity-scope.md §9.1.
+  // See docs/fact-continuity/fact-continuity-scope.md §9.1.
   await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
 
   // Inject campaign recap into the system prompt for the first narration of a session
@@ -1377,7 +1377,7 @@ async function postFallbackCard(resolution, campaignState = null) {
  * Process a raw narrator API response: strip the fenced JSON sidecar from
  * the prose, apply it to the active-scene ledgers in campaignState, and
  * persist campaignState in the background. Returns the prose with the
- * sidecar removed. See docs/fact-continuity-scope.md §7–8.
+ * sidecar removed. See docs/fact-continuity/fact-continuity-scope.md §7–8.
  *
  * Failures (missing block, JSON parse error, persistence write rejected)
  * never block the narrator: the prose is always returned, only ledger

@@ -3,7 +3,7 @@
  * src/factContinuity/sceneLifecycle.js
  *
  * Scene-transition lifecycle for the active-scene fact-continuity ledgers.
- * See docs/fact-continuity-scope.md §9.
+ * See docs/fact-continuity/fact-continuity-scope.md §9.
  *
  * Exports:
  *   - startScene(campaignState, { reason }) — assign a fresh scene ID; if a
