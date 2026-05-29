@@ -19,31 +19,35 @@
 #   FOUNDRY_ADMIN_KEY  — admin password for the dev server (any value)
 #
 # Settings → Secrets and variables → Actions → New repository secret.
+#
+# Required-check / docs-only PR design
+# ------------------------------------
+# The repo's branch ruleset marks `Quench full suite` as a required
+# status check. The workflow therefore must ALWAYS produce that check —
+# otherwise docs-only PRs (changes only to `docs/` / `*.md`) get stuck
+# in a permanent "Pending" state and can never merge.
+#
+# Earlier this workflow used an `on.pull_request.paths:` filter to skip
+# itself on docs-only PRs. That saved CI minutes but produced no status
+# check, blocking merge under the ruleset. The current shape removes the
+# `paths:` filter and instead detects relevant-file changes inside the
+# job: docs-only PRs report success in seconds (no Foundry license burn),
+# code PRs run the full ~5-minute suite. The check name stays the same
+# in both cases so the ruleset is always satisfied.
 
 name: E2E (Quench)
 
 on:
-  # Manual trigger from the Actions tab — used to validate docs-only PRs
-  # that the pull_request paths filter below intentionally skips
-  # (audit / scope-doc / changelog work that doesn't touch src/ still
-  # benefits from a green Quench run before merge).
+  # Manual trigger from the Actions tab — used to force a Quench run on
+  # any branch (docs PRs that have already merged, ad-hoc validation).
   workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    # Skip docs-only / unrelated PRs. The e2e suite takes ~5 minutes
-    # and burns a Foundry license activation each run.
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'test/ci/**'
-      - 'lang/**'
-      - 'styles/**'
-      - 'packs/**'
-      - 'module.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/e2e.yml'
+    # No paths filter — the workflow always runs so the required check
+    # is always reported. Inside the job, a `changes` step decides
+    # whether to actually run Quench (code changes) or report instant
+    # success (docs-only).
 
 # When a new commit lands on the PR branch, cancel the in-progress
 # run for that PR — the older run is testing superseded code.
@@ -75,10 +79,64 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # fetch-depth: 0 (full history) so the `Detect code changes`
+          # step below can git-diff between the PR's base and head SHAs.
+          fetch-depth: 0
+
+      # Decide whether this PR actually needs the Quench suite. The same
+      # path list that used to live in `on.pull_request.paths:` lives
+      # here now — but instead of skipping the workflow entirely (which
+      # leaves the required check pending), we run the workflow and
+      # short-circuit the heavy steps below.
+      #
+      # workflow_dispatch always runs the full suite (manual trigger
+      # implies the operator wants Quench validation regardless).
+      - name: Detect code changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "code=true"  >> "$GITHUB_OUTPUT"
+            echo "reason=workflow_dispatch — full suite forced" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Comparing $BASE_SHA..$HEAD_SHA"
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$CHANGED"
+          # Path patterns mirror the prior `on.pull_request.paths:` list.
+          # Anchored to start of line — partial matches inside a longer
+          # path don't count.
+          if echo "$CHANGED" | grep -qE '^(src/|tests/|test/ci/|lang/|styles/|packs/|module\.json$|package\.json$|package-lock\.json$|\.github/workflows/e2e\.yml$)'; then
+            echo "code=true"  >> "$GITHUB_OUTPUT"
+            echo "reason=relevant-file change detected" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "reason=docs-only PR — no relevant files changed" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Print the decision into the run summary so a reviewer reading
+      # the Actions tab can see at a glance why Quench did / didn't run.
+      - name: Print Quench-gate decision
+        run: |
+          {
+            echo "## Quench gate"
+            echo ""
+            echo "**Run Quench?** \`${{ steps.changes.outputs.code }}\`"
+            echo ""
+            echo "**Reason:** ${{ steps.changes.outputs.reason }}"
+            echo ""
+            if [ "${{ steps.changes.outputs.code }}" != "true" ]; then
+              echo "_Docs-only PR — \`Quench full suite\` reports success without running the orchestrator. This satisfies the required-status-check ruleset on \`main\`._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Fail fast with a clear message if the secrets aren't set yet —
       # before paying the Docker-pull + Foundry-download cost.
       - name: Validate Foundry secrets are configured
+        if: steps.changes.outputs.code == 'true'
         run: |
           missing=()
           [ -n "${FOUNDRY_USERNAME}"  ] || missing+=(FOUNDRY_USERNAME)
@@ -91,6 +149,7 @@ jobs:
           fi
 
       - name: Show Docker + compose versions (diagnostic)
+        if: steps.changes.outputs.code == 'true'
         run: |
           docker --version
           docker compose version
@@ -102,6 +161,7 @@ jobs:
       # at all — Cypress's screenshots dir stays empty so the artifact
       # upload silently skips with `if-no-files-found: ignore`.
       - name: Run Quench e2e suite
+        if: steps.changes.outputs.code == 'true'
         run: |
           mkdir -p test/ci/cypress/artifacts
           set -o pipefail
@@ -111,7 +171,7 @@ jobs:
       # run summary, success or failure. Saves the artifact-download
       # round-trip when the failure is something the tail already shows.
       - name: Surface orchestrator log tail to run summary
-        if: always()
+        if: always() && steps.changes.outputs.code == 'true'
         run: |
           {
             echo "## Orchestrator log (last 200 lines)"
@@ -125,8 +185,7 @@ jobs:
       # iterator (the maintainer, or an assistant with the GitHub MCP
       # `add_issue_comment` / `pull_request_read get_comments` tools)
       # can read CI failures without authenticating to fetch step logs
-      # or downloading artifact zips. Only fires on failure to avoid
-      # spamming green runs.
+      # or downloading artifact zips.
       #
       # Post a status comment after every run (success / failure /
       # cancelled). Marker <!-- e2e-log:sticky --> identifies the
@@ -139,8 +198,11 @@ jobs:
       # only `issue_comment.created` events wake the session. Delete +
       # POST guarantees a `created` event on every run completion
       # (success included) so a subscribed session is reliably woken.
+      #
+      # Docs-only runs skip the comment — there's no orchestrator
+      # output to post and the PR thread stays uncluttered.
       - name: Post orchestrator status to PR comment
-        if: always() && github.event.pull_request.number
+        if: always() && github.event.pull_request.number && steps.changes.outputs.code == 'true'
         env:
           GH_TOKEN:   ${{ github.token }}
           PR_NUMBER:  ${{ github.event.pull_request.number }}
@@ -199,7 +261,7 @@ jobs:
       # orchestrator log goes here too so the same artifact name covers
       # both pre-Cypress and Cypress-time failures.
       - name: Upload Cypress artifacts
-        if: always()
+        if: always() && steps.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: cypress-artifacts-${{ github.run_id }}
@@ -216,7 +278,7 @@ jobs:
       # diagnosing world / module load failures the Cypress screenshots
       # can't capture.
       - name: Upload Foundry server logs
-        if: failure()
+        if: failure() && steps.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: foundry-logs-${{ github.run_id }}
