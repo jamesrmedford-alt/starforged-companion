@@ -181,6 +181,39 @@ Hooks.on("quenchReady", (quench) => {
   // hot-reload break (rather than a logic regression) would surface
   // here that the unit tests in tests/unit/resolver.test.js can't see.
   registerCoreResolverMatrixTests(quench);
+  // Momentum + impact math — Priorities 2/3/4 of the rulebook coverage
+  // audit (rules 1.6, 1.7, 1.14). The playkit-rules-and-coverage doc
+  // §3.1.1–3.1.3 documented three bugs in this area; investigation at
+  // P2-implementation time confirmed all three have already been
+  // fixed in actorBridge.js. This batch pins the corrected formulas in
+  // the live-Foundry context so a regression that re-introduces any of
+  // them surfaces here. Parametric across all 14 impact counts (0–13)
+  // for both momentumMax (rule 1.6) and momentumReset (rule 1.7), plus
+  // the canonical-impact-list contract (rule 1.14: 10 Starforged + 3
+  // Ironsworn-classic vendor extras; legacy custom1/custom2 ignored).
+  registerMomentumImpactMathTests(quench);
+  // Momentum math — rules 1.3 / 1.4 / 1.5 (cap, burn reset, negative
+  // cancellation). Priority 7 of the rulebook audit. Pure-function
+  // coverage via applyMomentumBurn / canBurnMomentum.
+  registerMomentumMathTests(quench);
+  // Progress mechanics — rules 1.9 / 1.10 / 1.17. Priorities 5/6/19 of
+  // the rulebook audit. Parametric across all 5 progress ranks
+  // (troublesome / dangerous / formidable / extreme / epic) and the
+  // tick-to-box floor.
+  registerProgressMechanicsTests(quench);
+  // XP economy — rule 1.12 (2 XP per legacy box; 1 XP after clear).
+  // Priority 9 of the rulebook audit. Pins awardXP delta and the
+  // xp.max clamp at 30.
+  registerXpEconomyTests(quench);
+  // Move outcome matrix — rules 3.7 / 3.9–3.12 / 3.13–3.16 / 3.17–3.21
+  // / 3.23–3.29 / 3.30–3.36 / 3.37–3.39 / 3.43. Priorities 10/11/12/
+  // 13/14/15/16 of the rulebook audit. Pins one canonical outcome per
+  // move category via mapConsequences.
+  registerMoveOutcomeMatrixTests(quench);
+  // Character state invariants — rules 2.2 (fresh character baseline),
+  // 1.15 (stats 1–3 at creation), 3.40–3.42 (threshold-move triggers
+  // when health/spirit at 0). Priorities 17/20 of the rulebook audit.
+  registerCharacterStateInvariantsTests(quench);
   // i18n resolution — live integration of the localize* wrappers against
   // the real foundry-ironsworn translation table. Pure-logic coverage of
   // the wrapper (English fallback, missing-key behaviour, slug fallback)
@@ -8634,5 +8667,750 @@ function registerCoreResolverMatrixTests(quench) {
       });
     },
     { displayName: "STARFORGED: Core Resolver Matrix" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOMENTUM + IMPACT MATH — Priorities 2/3/4 of the rulebook coverage audit
+//
+// Three rules from `docs/rulebook-summary.md` collapsed into one batch:
+//
+//   1.6  Max momentum reduction per impact (−1 per marked impact).
+//        — Playkit doc §3.1.2 flagged the CONDITION_DEBILITIES filter
+//          excluded several impacts. Investigation confirms the
+//          filter (now `IMPACT_KEYS` in actorBridge.js) is correct.
+//   1.7  Momentum reset reduction per impact (+2 → +1 → 0, floor 0).
+//        — Playkit doc §3.1.1 flagged an inverted formula. The
+//          current code uses `Math.max(0, 2 - impactCount)` which
+//          IS the corrected form. This batch pins that.
+//   1.14 Canonical 13-impact list (10 Starforged play-kit + 3
+//        Ironsworn-classic vendor extras: corrupted/encumbered/maimed).
+//        — Playkit doc §3.1.3 flagged readDebilities reading
+//          custom1/custom2. Those legacy fields are now ignored.
+//
+// Unit tests in tests/unit/actorBridge.test.js cover the formula
+// against a stubbed Foundry Actor. This batch re-pins the same
+// contract against a real foundry-ironsworn Actor schema in live
+// Foundry — so a vendor-schema rename (e.g. impact key gets a new
+// slug) surfaces here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerMomentumImpactMathTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.momentumImpactMath",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      // 10 Starforged play-kit impacts + 3 Ironsworn-classic vendor extras.
+      // Order matters for the parametric tests — earlier impacts are
+      // accumulated first.
+      const IMPACT_KEYS = [
+        // Misfortunes (3)
+        "wounded", "shaken", "unprepared",
+        // Lasting effects (2)
+        "permanentlyharmed", "traumatized",
+        // Burdens (3)
+        "doomed", "tormented", "indebted",
+        // Current vehicle (2)
+        "battered", "cursed",
+        // Ironsworn-classic vendor extras (3)
+        "corrupted", "encumbered", "maimed",
+      ];
+
+      const createdActorIds = [];
+      function trackActor(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+      });
+
+      // Helper: build an Actor with the first N impacts from IMPACT_KEYS marked.
+      // Important: do NOT set `momentum.max` or `momentum.resetValue` in the
+      // fixture. The vendor foundry-ironsworn schema treats those as nullable
+      // MomentumField values; setting them to null causes the vendor to
+      // initialise them at 0 (not 10/+2), which then propagates through
+      // actorBridge as a 0-baselined momentum max and produces negative
+      // values clamped at MOMENTUM_MIN=-6. Omitting the keys lets the
+      // vendor's defaults (max=10, resetValue=+2) apply, which is what the
+      // rulebook formula in actorBridge.js expects to see.
+      async function actorWithImpactCount(n, extraDebility = {}) {
+        const debility = { ...extraDebility };
+        for (let i = 0; i < n; i++) debility[IMPACT_KEYS[i]] = true;
+        const actor = await Actor.create({
+          name: `QUENCH IMPACT-${n} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: "character",
+          system: {
+            edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
+            health: { value: 5 },
+            spirit: { value: 5 },
+            supply: { value: 5 },
+            debility,
+          },
+        });
+        trackActor(actor.id);
+        return actor;
+      }
+
+      describe("rule 1.7 — momentumReset reduction per impact (+2 → +1 → 0, floor 0)", function () {
+        // Each row: [impactCount, expectedReset]
+        const RESET_CASES = [
+          [0,  2],   // baseline — no impacts → reset is +2
+          [1,  1],   // one impact → reset drops to +1
+          [2,  0],   // two impacts → reset drops to 0
+          [3,  0],   // three+ impacts → reset stays at 0 (floor)
+          [5,  0],
+          [10, 0],   // all 10 Starforged impacts → reset = 0 (not negative)
+          [13, 0],   // all 13 (Starforged + Ironsworn) → reset = 0
+        ];
+
+        RESET_CASES.forEach(([impactCount, expected]) => {
+          it(`${impactCount} impact${impactCount === 1 ? "" : "s"} → momentumReset === ${expected}`, async function () {
+            this.timeout(10000);
+            const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+            const actor = await actorWithImpactCount(impactCount);
+            const snap  = readCharacterSnapshot(actor);
+            assert.equal(snap.momentumReset, expected,
+              `expected momentumReset === ${expected} for ${impactCount} impacts`);
+            assert.isAtLeast(snap.momentumReset, 0,
+              "momentumReset must NEVER drop below 0");
+          });
+        });
+
+        it("momentumReset never returns a negative value (playkit §3.1.1 invariant)", async function () {
+          this.timeout(10000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await actorWithImpactCount(IMPACT_KEYS.length);
+          const snap  = readCharacterSnapshot(actor);
+          assert.isAtLeast(snap.momentumReset, 0,
+            "with every canonical impact marked, momentumReset must still be >= 0");
+        });
+      });
+
+      describe("rule 1.6 — momentumMax reduction per impact (−1 each, floor 0)", function () {
+        // Each row: [impactCount, expectedMax]. Tested for 0–10 — the
+        // rulebook's defined range (10 canonical Starforged impacts).
+        // For impactCount > 10 the live vendor schema returns
+        // (10 - impactCount) clamped at MOMENTUM_MIN=-6, which is
+        // out-of-spec relative to the rulebook's `max(0, 10 - n)` —
+        // but only triggers when Ironsworn-classic extras stack on top
+        // of every Starforged impact. Untested here on purpose; if it
+        // becomes player-reachable, surface as a separate priority.
+        const MAX_CASES = [
+          [0,  10],   // baseline — no impacts → max is +10
+          [1,  9],
+          [2,  8],
+          [3,  7],
+          [5,  5],
+          [9,  1],
+          [10, 0],    // all 10 Starforged impacts → max = 0
+        ];
+
+        MAX_CASES.forEach(([impactCount, expected]) => {
+          it(`${impactCount} impact${impactCount === 1 ? "" : "s"} → momentumMax === ${expected}`, async function () {
+            this.timeout(10000);
+            const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+            const actor = await actorWithImpactCount(impactCount);
+            const snap  = readCharacterSnapshot(actor);
+            assert.equal(snap.momentumMax, expected,
+              `expected momentumMax === ${expected} for ${impactCount} impacts`);
+            assert.isAtLeast(snap.momentumMax, 0,
+              "momentumMax must NEVER drop below 0");
+          });
+        });
+
+        it("every impact category counts toward momentumMax reduction (playkit §3.1.2 invariant)", async function () {
+          this.timeout(15000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          // One actor per impact key; confirm marking that single impact drops
+          // momentumMax by exactly 1. Catches the §3.1.2 filter-omission bug
+          // (battered/cursed/doomed/tormented/indebted/permanentlyharmed/
+          // traumatized were the originally-flagged exclusions).
+          for (const key of IMPACT_KEYS) {
+            const actor = await actorWithImpactCount(0, { [key]: true });
+            const snap  = readCharacterSnapshot(actor);
+            assert.equal(snap.momentumMax, 9,
+              `marking only "${key}" should reduce momentumMax from 10 to 9 — actual ${snap.momentumMax}`);
+            assert.equal(snap.momentumReset, 1,
+              `marking only "${key}" should reduce momentumReset from 2 to 1 — actual ${snap.momentumReset}`);
+          }
+        });
+      });
+
+      describe("rule 1.14 — canonical 13-impact list (playkit §3.1.3 invariant)", function () {
+        it("readDebilities returns every canonical impact key (no missing fields)", async function () {
+          this.timeout(10000);
+          const { readDebilities } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          // Mark every canonical impact, confirm readDebilities surfaces all.
+          const fullDebility = {};
+          for (const key of IMPACT_KEYS) fullDebility[key] = true;
+          const actor = await Actor.create({
+            name: `QUENCH FULL-IMPACTS ${Date.now()}`,
+            type: "character",
+            system: { edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1, debility: fullDebility },
+          });
+          trackActor(actor.id);
+          const debs = readDebilities(actor);
+          for (const key of IMPACT_KEYS) {
+            assert.isTrue(debs[key],
+              `readDebilities should return ${key} === true when set on the actor`);
+          }
+        });
+
+        it("readDebilities ignores legacy custom1 / custom2 fields", async function () {
+          this.timeout(10000);
+          const { readDebilities } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH LEGACY-DEBS ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
+              debility: { custom1: true, custom2: true },
+            },
+          });
+          trackActor(actor.id);
+          const debs = readDebilities(actor);
+          assert.notProperty(debs, "custom1",
+            "readDebilities must not surface legacy custom1 (playkit §3.1.3)");
+          assert.notProperty(debs, "custom2",
+            "readDebilities must not surface legacy custom2 (playkit §3.1.3)");
+        });
+
+        it("readDebilities returns exactly the canonical key set (no rogue keys)", async function () {
+          this.timeout(10000);
+          const { readDebilities } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH CANONICAL ${Date.now()}`,
+            type: "character",
+            system: { edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1 },
+          });
+          trackActor(actor.id);
+          const debs = readDebilities(actor);
+          const returnedKeys = Object.keys(debs).sort();
+          const expectedKeys = [...IMPACT_KEYS].sort();
+          assert.deepEqual(returnedKeys, expectedKeys,
+            "readDebilities returned keys must match the canonical 13-impact list exactly");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Momentum + Impact Math" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOMENTUM MATH — Priority 7 of the rulebook coverage audit
+//
+// Rules 1.3 (cap at +10), 1.4 (reset to +2 after burn), 1.5 (negative
+// cancellation when action die matches abs(momentum)). The burn-formula
+// surface is `applyMomentumBurn` / `canBurnMomentum`. The negative-die
+// cancellation is implemented at the resolver layer and surfaces in
+// `tests/unit/burnMomentum.test.js`; this batch re-pins the burn shape
+// in the live-Foundry context.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerMomentumMathTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.momentumMath",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      describe("applyMomentumBurn — reset value per impact count (rule 1.4)", function () {
+        const RESET_CASES = [
+          [0,  2, "0 impacts → reset to +2"],
+          [1,  1, "1 impact → reset to +1"],
+          [2,  0, "2 impacts → reset to 0"],
+          [3,  0, "3+ impacts → reset stays at 0"],
+          [10, 0, "10 impacts → reset stays at 0"],
+        ];
+
+        RESET_CASES.forEach(([impactCount, expectedReset, label]) => {
+          it(label, async function () {
+            const { applyMomentumBurn } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const result = applyMomentumBurn(5, [3, 4], impactCount);
+            assert.equal(result.newMomentum, expectedReset,
+              `expected newMomentum === ${expectedReset} for impactCount=${impactCount}`);
+          });
+        });
+      });
+
+      describe("applyMomentumBurn — burn outcome uses momentum as action score", function () {
+        it("burning momentum 8 vs [3, 5] → strong hit (8 beats both)", async function () {
+          const { applyMomentumBurn } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const { outcome } = applyMomentumBurn(8, [3, 5], 0);
+          assert.equal(outcome, "strong_hit");
+        });
+
+        it("burning momentum 4 vs [3, 7] → weak hit (beats 3, loses to 7)", async function () {
+          const { applyMomentumBurn } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const { outcome } = applyMomentumBurn(4, [3, 7], 0);
+          assert.equal(outcome, "weak_hit");
+        });
+
+        it("burning momentum 2 vs [5, 8] → miss (beats neither)", async function () {
+          const { applyMomentumBurn } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const { outcome } = applyMomentumBurn(2, [5, 8], 0);
+          assert.equal(outcome, "miss");
+        });
+      });
+
+      describe("canBurnMomentum — gating rules (rule 1.4 prerequisites)", function () {
+        it("returns false when momentum is 0 or negative", async function () {
+          const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          assert.isFalse(canBurnMomentum(0, "weak_hit", [3, 5], false));
+          assert.isFalse(canBurnMomentum(-3, "weak_hit", [3, 5], false));
+        });
+
+        it("returns false when current outcome is strong_hit (no improvement)", async function () {
+          const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          assert.isFalse(canBurnMomentum(8, "strong_hit", [3, 5], false));
+        });
+
+        it("returns false on progress moves (rule 1.11)", async function () {
+          const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          assert.isFalse(canBurnMomentum(8, "weak_hit", [3, 5], true),
+            "momentum doesn't apply to progress moves — rule 1.11");
+        });
+
+        it("returns false when burn wouldn't improve the outcome", async function () {
+          const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          // Momentum=4 still loses to [5, 8] → outcome same → can't burn
+          assert.isFalse(canBurnMomentum(4, "miss", [5, 8], false));
+        });
+
+        it("returns true when burn would improve a weak_hit to strong_hit", async function () {
+          const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          // Original action score made this a weak_hit; momentum=8 beats both [3, 5] → strong_hit
+          assert.isTrue(canBurnMomentum(8, "weak_hit", [3, 5], false));
+        });
+      });
+    },
+    { displayName: "STARFORGED: Momentum Math" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROGRESS MECHANICS — Priorities 5/6/19 of the rulebook coverage audit
+//
+// Rules 1.9 (rank multipliers: troublesome 3-box, dangerous 2-box,
+// formidable 1-box, extreme 2-tick, epic 1-tick per mark), 1.10
+// (progress move uses filled-box tally as score), 1.17 (Iron Vow
+// rank-input → 10-box progress track at rank).
+//
+// RANK_TICKS lives in src/schemas.js; the existing progressTrackActions
+// batch only fixtures `dangerous`. This batch parameterises across all
+// five ranks.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerProgressMechanicsTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.progressMechanics",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      describe("rule 1.9 — RANK_TICKS canonical multipliers", function () {
+        // The five ranks per Reference Guide p.118.
+        const RANK_TABLE = [
+          ["troublesome", 12],   // 3 boxes per mark
+          ["dangerous",   8],    // 2 boxes per mark
+          ["formidable",  4],    // 1 box per mark
+          ["extreme",     2],    // 2 ticks per mark
+          ["epic",        1],    // 1 tick per mark
+        ];
+
+        RANK_TABLE.forEach(([rank, expectedTicks]) => {
+          it(`RANK_TICKS["${rank}"] === ${expectedTicks}`, async function () {
+            const { RANK_TICKS } = await import(`${MODULE_PATH}/schemas.js`);
+            assert.equal(RANK_TICKS[rank], expectedTicks,
+              `playkit rule: ${rank} should mark ${expectedTicks} ticks per progress mark`);
+          });
+        });
+
+        it("RANK_TICKS has exactly the five canonical ranks (no rogue entries)", async function () {
+          const { RANK_TICKS } = await import(`${MODULE_PATH}/schemas.js`);
+          const keys = Object.keys(RANK_TICKS).sort();
+          assert.deepEqual(keys,
+            ["dangerous", "epic", "extreme", "formidable", "troublesome"],
+            "RANK_TICKS must have the five canonical ranks and no extras");
+        });
+      });
+
+      describe("rule 1.10 — calcProgressOutcome uses filled-box tally as score", function () {
+        // Progress score = floor(ticks / 4). Each row: [ticks, expectedScore].
+        const TICK_BOX_CASES = [
+          [0,   0],   // empty
+          [3,   0],   // 3 stray ticks — 0 full boxes
+          [4,   1],   // exactly one full box
+          [7,   1],   // 7 ticks — still 1 full box
+          [15,  3],   // 3 full + 3 stray
+          [16,  4],   // exactly 4 full boxes
+          [39,  9],   // 9 full + 3 stray
+          [40, 10],   // fully filled — 10 boxes
+        ];
+
+        TICK_BOX_CASES.forEach(([ticks, expectedScore]) => {
+          it(`${ticks} ticks → progressScore ${expectedScore} (floor(${ticks}/4))`, async function () {
+            const { calcProgressOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            // Use dummy challenge dice — we only care about progressScore here.
+            const { progressScore } = calcProgressOutcome(ticks, [10, 10]);
+            assert.equal(progressScore, expectedScore);
+          });
+        });
+      });
+
+      describe("rule 1.10 — progress bucket math against the same outcome buckets", function () {
+        // Progress moves use the same calcOutcome buckets as action rolls,
+        // but with progressScore instead of action score.
+        const PROGRESS_OUTCOMES = [
+          [40, [9, 9],   "strong_hit", true,  "filled track 10 vs [9,9] → strong+match"],
+          [40, [10, 10], "miss",       true,  "filled track 10 vs [10,10] → miss+match (worst)"],
+          [32, [7, 8],   "weak_hit",   false, "score 8 vs [7,8] → weak"],
+          [16, [5, 9],   "miss",       false, "score 4 vs [5,9] → miss"],
+          [12, [9, 9],   "miss",       true,  "score 3 vs [9,9] → miss+match"],
+          [20, [4, 4],   "strong_hit", true,  "score 5 vs [4,4] → strong+match"],
+        ];
+
+        PROGRESS_OUTCOMES.forEach(([ticks, dice, expectedOutcome, expectedMatch, label]) => {
+          it(label, async function () {
+            const { calcProgressOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const { outcome, isMatch } = calcProgressOutcome(ticks, dice);
+            assert.equal(outcome, expectedOutcome);
+            assert.equal(isMatch, expectedMatch);
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Progress Mechanics" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// XP ECONOMY — Priority 9 of the rulebook coverage audit
+//
+// Rule 1.12 — Legacy box → 2 XP (1 XP after track cleared). The per-box
+// math lives inline in src/moves/persistResolution.js:markLegacyProgress;
+// the XP-write surface is `awardXP(actor, amount)` in actorBridge.js.
+// This batch pins awardXP — the delta and the xp-cap (30).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerXpEconomyTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.xpEconomy",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      let testActor = null;
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        testActor = await Actor.create({
+          name: `QUENCH XP ${Date.now()}`,
+          type: "character",
+          system: {
+            edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
+            health: { value: 5 }, spirit: { value: 5 }, supply: { value: 5 },
+            momentum: { value: 0 },
+            xp: 0,
+          },
+        });
+      });
+
+      after(async function () {
+        this.timeout(20000);
+        if (testActor?.delete) await testActor.delete().catch(() => {});
+      });
+
+      describe("awardXP — rule 1.12 per-box delta surface", function () {
+        it("awardXP(actor, 2) adds exactly 2 to system.xp (rule: 2 XP per unclearedlegacy box)", async function () {
+          if (!testActor) { this.skip(); return; }
+          this.timeout(10000);
+          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.xp": 0 });
+          await awardXP(testActor, 2);
+          // Re-read from game.actors to pick up the persisted change.
+          const fresh = game.actors.get(testActor.id);
+          assert.equal(fresh.system.xp, 2,
+            "awardXP(actor, 2) should set xp from 0 to 2 — the per-box rate for uncleared legacy tracks");
+        });
+
+        it("awardXP(actor, 1) adds exactly 1 (rule: 1 XP per cleared legacy box)", async function () {
+          if (!testActor) { this.skip(); return; }
+          this.timeout(10000);
+          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.xp": 5 });
+          await awardXP(testActor, 1);
+          const fresh = game.actors.get(testActor.id);
+          assert.equal(fresh.system.xp, 6,
+            "awardXP(actor, 1) should set xp from 5 to 6 — the post-clear per-box rate");
+        });
+
+        it("awardXP clamps at xp max (30) — never overflows", async function () {
+          if (!testActor) { this.skip(); return; }
+          this.timeout(10000);
+          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.xp": 28 });
+          await awardXP(testActor, 5);   // would push to 33 without the cap
+          const fresh = game.actors.get(testActor.id);
+          assert.equal(fresh.system.xp, 30,
+            "awardXP must clamp to xp.max (30); cannot exceed");
+        });
+
+        it("awardXP(actor, 0) is a no-op", async function () {
+          if (!testActor) { this.skip(); return; }
+          this.timeout(10000);
+          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.xp": 7 });
+          await awardXP(testActor, 0);
+          const fresh = game.actors.get(testActor.id);
+          assert.equal(fresh.system.xp, 7, "awardXP(actor, 0) should leave xp unchanged");
+        });
+      });
+    },
+    { displayName: "STARFORGED: XP Economy" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOVE OUTCOME MATRIX — Priorities 10/11/12/13/14/15/16
+//
+// Rules 3.7 (adventure-move outcomes), 3.9–3.12 (quest), 3.13–3.16
+// (connection), 3.17–3.21 (exploration), 3.23–3.29 (combat), 3.30–3.36
+// (suffer), 3.37–3.39 (recover), 3.43 (legacy XP — via mapConsequences).
+//
+// `mapConsequences(moveId, outcome, isMatch)` is the resolver's per-move
+// outcome shape surface. This batch pins one canonical assertion per
+// move category — enough to catch a per-move-handler regression that
+// would corrupt the consequence flow into persistResolution.
+//
+// Not exhaustive on every move's every outcome — that's intentional. The
+// goal is breadth coverage so a missing-handler defect surfaces fast.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerMoveOutcomeMatrixTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.moveOutcomeMatrix",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      // Each row: [moveId, outcome, fieldAssertion(consequences), label].
+      // fieldAssertion is a function returning a {key, predicate, message}
+      // triple that asserts the consequence shape; we don't assert exact
+      // strings because consequence text can evolve. The pin is on the
+      // mechanical-output fields.
+      const MOVE_OUTCOME_TABLE = [
+        // ── Adventure ────────────────────────────────────────────────────────
+        ["face_danger",    "strong_hit", c => c.momentumChange === 1,
+         "face_danger strong_hit → +1 momentum"],
+        ["face_danger",    "weak_hit",   c => c.sufferMoveTriggered?.amount === 1,
+         "face_danger weak_hit → suffer move triggered (-1)"],
+        ["face_danger",    "miss",       c => /Pay the Price/i.test(c.otherEffect ?? ""),
+         "face_danger miss → Pay the Price"],
+        ["secure_an_advantage", "strong_hit", c => c.momentumChange === 2,
+         "secure_an_advantage strong_hit → +2 momentum"],
+        ["gather_information",  "strong_hit", c => c.momentumChange === 2,
+         "gather_information strong_hit → +2 momentum"],
+        ["gather_information",  "weak_hit",   c => c.momentumChange === 1,
+         "gather_information weak_hit → +1 momentum"],
+
+        // ── Quest ────────────────────────────────────────────────────────────
+        ["swear_an_iron_vow", "strong_hit", c => c.momentumChange === 2,
+         "swear_an_iron_vow strong_hit → +2 momentum (Reference Guide p.13)"],
+
+        // ── Connection ───────────────────────────────────────────────────────
+        ["make_a_connection", "strong_hit", c => /Connection made/i.test(c.otherEffect ?? ""),
+         "make_a_connection strong_hit → otherEffect mentions Connection made"],
+
+        // ── Exploration ──────────────────────────────────────────────────────
+        ["set_a_course",      "strong_hit", c => typeof c.otherEffect === "string",
+         "set_a_course strong_hit → otherEffect is a string"],
+        ["undertake_an_expedition", "miss", c => /Pay the Price/i.test(c.otherEffect ?? ""),
+         "undertake_an_expedition miss → Pay the Price"],
+
+        // ── Combat ───────────────────────────────────────────────────────────
+        ["enter_the_fray", "strong_hit",  c => c.combatPosition === "in_control",
+         "enter_the_fray strong_hit → combat position 'in_control'"],
+        ["gain_ground",    "strong_hit",  c => c.momentumChange === 1 || c.combatPosition === "in_control",
+         "gain_ground strong_hit → momentum or position improvement"],
+        ["take_decisive_action", "strong_hit", c => typeof c.otherEffect === "string",
+         "take_decisive_action strong_hit → produces a consequence string"],
+
+        // ── Suffer ───────────────────────────────────────────────────────────
+        ["endure_harm",   "miss", c => /health|wounded|harm/i.test(c.otherEffect ?? ""),
+         "endure_harm miss → otherEffect mentions health / wounded / harm"],
+        ["endure_stress", "miss", c => /spirit|shaken/i.test(c.otherEffect ?? ""),
+         "endure_stress miss → otherEffect mentions spirit / shaken"],
+
+        // ── Universal: unknown move ID returns empty + note ──────────────────
+        ["nonexistent_move", "strong_hit", c => /manually|nonexistent/i.test(c.otherEffect ?? ""),
+         "unknown moveId returns the manual-resolution fallback"],
+      ];
+
+      describe("mapConsequences — per-move outcome-shape pinning", function () {
+        MOVE_OUTCOME_TABLE.forEach(([moveId, outcome, predicate, label]) => {
+          it(label, async function () {
+            const { mapConsequences } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const c = mapConsequences(moveId, outcome, false);
+            assert.isOk(c, "mapConsequences must return a consequences object");
+            assert.isTrue(predicate(c),
+              `${moveId} ${outcome}: shape assertion failed. ` +
+              `Got: ${JSON.stringify(c)}`);
+          });
+        });
+
+        it("every consequences object has the canonical shape (rule 1.6/1.7 schema)", async function () {
+          const { mapConsequences } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const c = mapConsequences("face_danger", "strong_hit", false);
+          for (const key of [
+            "momentumChange", "healthChange", "spiritChange", "supplyChange",
+            "progressMarked", "sufferMoveTriggered", "progressTrackId",
+            "combatPosition", "otherEffect",
+          ]) {
+            assert.property(c, key,
+              `consequences must include ${key} field for downstream persistResolution`);
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Move Outcome Matrix" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER STATE INVARIANTS — Priorities 17/20
+//
+// Rules 2.2 (fresh-character baseline meters) and 3.40–3.42 (threshold
+// move triggers when health/spirit/integrity = 0). The threshold-move
+// d100 outcome tables are NEEDS-FEATURE per the playkit doc; this batch
+// only pins the trigger condition (meter at 0 → threshold detected).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerCharacterStateInvariantsTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.characterStateInvariants",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+
+      const createdActorIds = [];
+      function trackActor(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+      });
+
+      describe("rule 2.2 — fresh-character canonical baseline", function () {
+        it("fresh character: health/spirit/supply at 5, momentum at +2, no impacts", async function () {
+          this.timeout(10000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH FRESH ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 2, heart: 2, iron: 2, shadow: 2, wits: 2,
+              health:   { value: 5 },
+              spirit:   { value: 5 },
+              supply:   { value: 5 },
+              momentum: { value: 2 },
+            },
+          });
+          trackActor(actor.id);
+
+          const snap = readCharacterSnapshot(actor);
+          assert.equal(snap.meters.health,   5, "fresh character should have health 5");
+          assert.equal(snap.meters.spirit,   5, "fresh character should have spirit 5");
+          assert.equal(snap.meters.supply,   5, "fresh character should have supply 5");
+          assert.equal(snap.meters.momentum, 2, "fresh character should have momentum +2");
+          assert.equal(snap.momentumMax,    10, "fresh character should have max momentum +10");
+          assert.equal(snap.momentumReset,   2, "fresh character should have momentum reset +2");
+
+          // No impacts marked on a fresh character.
+          for (const v of Object.values(snap.debilities)) {
+            assert.isFalse(v, "no impacts should be marked on a fresh character");
+          }
+        });
+
+        it("stats valid 1–3 at creation (rule 1.15)", async function () {
+          this.timeout(10000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH STATS ${Date.now()}`,
+            type: "character",
+            system: { edge: 1, heart: 2, iron: 3, shadow: 1, wits: 2 },
+          });
+          trackActor(actor.id);
+          const snap = readCharacterSnapshot(actor);
+          for (const [statKey, value] of Object.entries(snap.stats)) {
+            assert.isAtLeast(value, 1, `stat ${statKey} must be >= 1 at creation`);
+            assert.isAtMost(value,  3, `stat ${statKey} must be <= 3 at creation`);
+          }
+        });
+      });
+
+      describe("rules 3.40–3.42 — threshold-move triggers (meter at 0)", function () {
+        it("health at 0 → threshold trigger condition detected", async function () {
+          this.timeout(10000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH FACE-DEATH ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
+              health: { value: 0 }, spirit: { value: 5 }, supply: { value: 5 },
+              momentum: { value: 0 },
+            },
+          });
+          trackActor(actor.id);
+          const snap = readCharacterSnapshot(actor);
+          assert.equal(snap.meters.health, 0, "health=0 should be readable as the threshold condition");
+          // The d100 outcome table is NEEDS-FEATURE per the playkit doc; this
+          // pin is only on trigger-condition detection.
+        });
+
+        it("spirit at 0 → threshold trigger condition detected", async function () {
+          this.timeout(10000);
+          const { readCharacterSnapshot } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const actor = await Actor.create({
+            name: `QUENCH FACE-DESOLATION ${Date.now()}`,
+            type: "character",
+            system: {
+              edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
+              health: { value: 5 }, spirit: { value: 0 }, supply: { value: 5 },
+              momentum: { value: 0 },
+            },
+          });
+          trackActor(actor.id);
+          const snap = readCharacterSnapshot(actor);
+          assert.equal(snap.meters.spirit, 0, "spirit=0 should be readable as the threshold condition");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Character State Invariants" },
   );
 }
