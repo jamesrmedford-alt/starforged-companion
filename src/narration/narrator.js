@@ -765,6 +765,142 @@ export async function interrogateScene(question, campaignState, _options = {}) {
 }
 
 /**
+ * Append a narration card after a raw oracle / table chat-command card. The
+ * raw card has already been posted by the caller; this helper posts a follow-
+ * up card flagged `oracleNarrationCard: true` that renders the rolled result
+ * as 2–3 sentences of in-fiction prose in the configured tone.
+ *
+ * Silent skip — no fallback card, no error toast — when any of these is true:
+ *   - the Claude API key is unset (so the feature is opt-in via key config)
+ *   - the X-Card is active (scene paused; never narrate during suppression)
+ *   - the narrator-enabled toggle is off in module settings
+ *
+ * Reuses the narrator's `oracle_followup` mode (added to
+ * narratorPrompt.js's ROLE_DESCRIPTIONS) so safety / tone / perspective /
+ * length / sector / location / character context all flow through the same
+ * `buildNarratorSystemPrompt` path the move pipeline uses.
+ *
+ * @param {Object}  args
+ * @param {string}  args.kind            — `oracle_yes_no` | `pay_the_price` (extensible)
+ * @param {string}  args.oracleName      — e.g. "Ask the Oracle (50/50)" or "Pay the Price"
+ * @param {string}  [args.question]      — optional player-supplied question text
+ * @param {string}  args.rolledLine      — the structured roll line, e.g.
+ *                                          "d100 = 47 → An ally is exposed to harm"
+ * @param {Object}  args.campaignState
+ * @returns {Promise<string|null>} the rendered narration text or null on silent skip / failure
+ */
+export async function narrateOracleFollowup({
+  kind, oracleName, question = '', rolledLine, campaignState,
+}) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+
+  if (campaignState?.xCardActive) return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const character = getActiveCharacter(campaignState);
+  // Reuse the same sector + current-location anchors the paced / scene paths
+  // use so the narrator references the right place + established names.
+  const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '',
+    {
+      mode:               'oracle_followup',
+      playerNarration:    question,
+      currentLocationCard,
+      activeSectorBlock,
+      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
+    },
+  );
+
+  const sentenceTarget = settings.narrationLength ?? 3;
+  const recentContext  = getRecentNarrationContext(sessionId, 3);
+  const userMessage    = buildOracleUserMessage({
+    oracleName, question, rolledLine, recentContext, sentenceTarget,
+  });
+
+  try {
+    const raw = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(220),
+    });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+
+    if (!text?.trim()) return null;
+
+    await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+    return text;
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try {
+        await delay(RETRY_DELAY_MS);
+        const raw = await callNarratorAPI({
+          apiKey, systemPrompt, userMessage,
+          model:     settings.narrationModel,
+          maxTokens: maxTokensWithSidecar(220),
+        });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+        if (text?.trim()) {
+          await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+          return text;
+        }
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narrateOracleFollowup retry failed:`, retryErr);
+      }
+    }
+    console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
+    return null;
+  }
+}
+
+function buildOracleUserMessage({
+  oracleName, question, rolledLine, recentContext, sentenceTarget,
+}) {
+  const recent = (recentContext && recentContext.length > 0)
+    ? `\n\nRECENT NARRATION (most recent last):\n${recentContext.join('\n\n---\n\n')}`
+    : '';
+  const q = question?.trim() ? `Question or context: ${question.trim()}\n` : '';
+  return (
+    `The player invoked the oracle:\n` +
+    `Oracle: ${oracleName}\n` +
+    q +
+    `Mechanical result: ${rolledLine}\n` +
+    `${recent}\n\n` +
+    `Render this result as ${sentenceTarget} sentence(s) of in-fiction prose anchored to ` +
+    `the current scene. Do not repeat the dice number or the literal table text — transform ` +
+    `it into narrative.`
+  );
+}
+
+async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
+  const header = oracleName || (kind === 'pay_the_price' ? 'Pay the Price' : 'Oracle');
+  await ChatMessage.create({
+    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(text)}</p></div>`,
+    flags:   {
+      [MODULE_ID]: {
+        oracleNarrationCard: true,
+        narrationKind:       kind,
+        sessionId:           sessionId ?? '',
+      },
+    },
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
  * Run a narrator-only response for the pacing classifier's NARRATIVE and
  * NARRATIVE_WITH_MOVE_AVAILABLE decisions. No move is rolled, no move card is
  * posted, no chronicle entry — just a narrator card continuing the fiction

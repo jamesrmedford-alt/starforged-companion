@@ -219,6 +219,12 @@ Hooks.on("quenchReady", (quench) => {
   // pay_the_price table, plus end-to-end coverage of the `!oracle yes`
   // and the new `!pay-the-price` / `!ptp` chat commands.
   registerFateMovesTests(quench);
+  // Oracle narration follow-up — every chat command that rolls a one-shot
+  // oracle (currently `!oracle yes` and `!pay-the-price`/`!ptp`)
+  // automatically appends a narrator-rendered card after the raw result.
+  // This batch pins the auto-append behaviour with a stubbed Anthropic
+  // endpoint, plus the silent-skip gates (no API key / X-Card active).
+  registerOracleNarrationTests(quench);
   // i18n resolution — live integration of the localize* wrappers against
   // the real foundry-ironsworn translation table. Pure-logic coverage of
   // the wrapper (English fallback, missing-key behaviour, slug fallback)
@@ -9603,5 +9609,148 @@ function registerFateMovesTests(quench) {
       });
     },
     { displayName: "STARFORGED: Fate Moves" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORACLE NARRATION FOLLOW-UP — auto-append narrator card after every
+// one-shot oracle chat command. Pins:
+//
+//   (a) `!oracle yes` posts BOTH the raw oracleCommandCard AND, after the
+//       narrator API call, an oracleNarrationCard.
+//   (b) `!pay-the-price` posts BOTH the raw payThePriceCard AND, after the
+//       narrator API call, an oracleNarrationCard.
+//   (c) Silent skip with no narration card when the Claude API key is unset
+//       — the raw card still lands.
+//
+// The Anthropic endpoint is stubbed via withStubbedFetch so this batch is
+// deterministic and never burns Claude credit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerOracleNarrationTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.oracleNarration",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      // Canned narrator response — content[0].text shape per the Anthropic
+      // Messages API. Includes a sentinel string so the assertion can prove
+      // this exact stubbed response made it into the chat card.
+      const STUBBED_NARRATION_SENTINEL = "Stubbed narration — the airlock whispers.";
+      function stubAnthropic() {
+        return [
+          ["api.anthropic.com", async () => ({
+            id:    "msg_test",
+            type:  "message",
+            role:  "assistant",
+            model: "claude-haiku-4-5-20251001",
+            content: [
+              { type: "text", text: STUBBED_NARRATION_SENTINEL },
+            ],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 100, output_tokens: 20 },
+          })],
+        ];
+      }
+
+      async function waitForCardWithFlag(flagKey, sinceCount, timeoutMs = 6000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const msgs = game.messages?.contents ?? [];
+          for (let i = sinceCount; i < msgs.length; i++) {
+            if (msgs[i]?.flags?.[MODULE_ID]?.[flagKey]) return msgs[i];
+          }
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return null;
+      }
+
+      describe("auto-append: `!oracle yes` posts a narration card after the raw card", function () {
+        it("posts an oracleNarrationCard after the oracleCommandCard with the stubbed narration text", async function () {
+          this.timeout(15000);
+          const before = game.messages?.contents?.length ?? 0;
+
+          await withTempSetting("claudeApiKey", "sk-ant-test-key", async () => {
+            await withStubbedFetch(stubAnthropic(), async () => {
+              await ChatMessage.create({
+                content: "!oracle yes 50/50 does the hatch hold",
+              });
+
+              const raw = await waitForCardWithFlag("oracleCommandCard", before);
+              assert.isOk(raw, "the raw oracleCommandCard must land first");
+
+              const narration = await waitForCardWithFlag("oracleNarrationCard", before, 10000);
+              assert.isOk(narration, "an oracleNarrationCard must follow the raw card");
+              assert.match(narration.content, new RegExp(STUBBED_NARRATION_SENTINEL),
+                "the narration card must carry the stubbed narration text");
+              assert.equal(narration.flags?.[MODULE_ID]?.narrationKind, "oracle_yes_no",
+                "narration card should carry kind = oracle_yes_no");
+
+              await raw.delete().catch(() => {});
+              await narration.delete().catch(() => {});
+            });
+          });
+        });
+      });
+
+      describe("auto-append: `!pay-the-price` posts a narration card after the raw card", function () {
+        it("posts an oracleNarrationCard after the payThePriceCard with the stubbed narration text", async function () {
+          this.timeout(15000);
+          const before = game.messages?.contents?.length ?? 0;
+
+          await withTempSetting("claudeApiKey", "sk-ant-test-key", async () => {
+            await withStubbedFetch(stubAnthropic(), async () => {
+              await ChatMessage.create({
+                content: "!pay-the-price the airlock seal",
+              });
+
+              const raw = await waitForCardWithFlag("payThePriceCard", before);
+              assert.isOk(raw, "the raw payThePriceCard must land first");
+
+              const narration = await waitForCardWithFlag("oracleNarrationCard", before, 10000);
+              assert.isOk(narration, "an oracleNarrationCard must follow the raw card");
+              assert.match(narration.content, new RegExp(STUBBED_NARRATION_SENTINEL),
+                "the narration card must carry the stubbed narration text");
+              assert.equal(narration.flags?.[MODULE_ID]?.narrationKind, "pay_the_price",
+                "narration card should carry kind = pay_the_price");
+
+              await raw.delete().catch(() => {});
+              await narration.delete().catch(() => {});
+            });
+          });
+        });
+      });
+
+      describe("silent skip: no API key → raw card only", function () {
+        it("does NOT post an oracleNarrationCard when claudeApiKey is empty", async function () {
+          this.timeout(15000);
+          const before = game.messages?.contents?.length ?? 0;
+
+          await withTempSetting("claudeApiKey", "", async () => {
+            await ChatMessage.create({
+              content: "!pay-the-price the hull breach",
+            });
+
+            const raw = await waitForCardWithFlag("payThePriceCard", before);
+            assert.isOk(raw, "the raw payThePriceCard must still land");
+
+            // Give the fire-and-forget scheduler time to run and silently
+            // skip — 800ms is enough for the import + the early return.
+            await new Promise(r => setTimeout(r, 800));
+
+            const after = game.messages?.contents ?? [];
+            const narration = after.slice(before).find(
+              m => m?.flags?.[MODULE_ID]?.oracleNarrationCard,
+            );
+            assert.isUndefined(narration,
+              "with no API key, no narration card must be posted");
+
+            await raw.delete().catch(() => {});
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Oracle Narration" },
   );
 }
