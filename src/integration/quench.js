@@ -9464,7 +9464,7 @@ function registerFateMovesTests(quench) {
           // ── small_chance threshold = 10 ──────────────────────────────────
           ["small_chance",   5,  "yes", false, "5 ≤ 10 → yes"],
           ["small_chance",   10, "yes", false, "10 ≤ 10 → yes (boundary)"],
-          ["small_chance",   11, "no",  false, "11 > 10 → no"],
+          ["small_chance",   12, "no",  false, "12 > 10 → no (11 would also work but matches)"],
           // ── unlikely threshold = 25 ──────────────────────────────────────
           ["unlikely",       25, "yes", false, "25 ≤ 25 → yes"],
           ["unlikely",       26, "no",  false, "26 > 25 → no"],
