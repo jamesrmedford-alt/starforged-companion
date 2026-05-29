@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- CI: **`Quench full suite` now always reports, so docs-only PRs aren't blocked by the required-check ruleset.** The earlier workflow used `on.pull_request.paths:` to skip itself on docs-only PRs (changes only to `docs/` / `*.md`), saving the ~5-minute Foundry-license-burning suite when nothing testable changed. But that skipping leaves the `Quench full suite` status check permanently pending — and the repo's branch ruleset marks that check as required for merge into `main`. Docs-only PRs (#132, #135, #136 in this session) all deadlocked: green on every other check but un-mergeable. The fix moves the path detection from the workflow trigger into the job itself. The workflow always runs (so the required check is always reported), but the first step git-diffs the PR's `base..head` against the same path list as before and short-circuits: docs-only PRs report success in seconds without booting Docker / Cypress, code PRs run the full suite as before. The check name (`Quench full suite`) stays the same in both cases so the ruleset is satisfied without modification. `workflow_dispatch` still forces the full suite (manual operator intent overrides the gate). Docs-only runs also skip the sticky PR comment and artifact upload — there's nothing to surface and the thread stays uncluttered.
+
 ## [1.5.4] — 2026-05-29
 
 - Added: **Behaviour-coverage audit — Priorities 2 through 12 landed in a single sweep.** Closes 11 of the 12 risk-ranked findings from `docs/behaviour-coverage-audit.md` (Priority 1 already shipped via PR #133). User-visible changes:
