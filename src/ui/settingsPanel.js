@@ -463,7 +463,7 @@ export function registerSettings() {
     default: PACING_DEFAULTS.downtime,
   });
 
-  // ── Fact continuity — see docs/fact-continuity-scope.md §12 ──────────────
+  // ── Fact continuity — see docs/fact-continuity/fact-continuity-scope.md §12 ──────────────
 
   game.settings.register(MODULE_ID, SETTING.FC_ENABLED, {
     name:    'Fact Continuity Enabled',
@@ -1156,7 +1156,7 @@ export class SettingsPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
-  // Audio pane — docs/audio-narration-scope.md §5
+  // Audio pane — docs/audio/audio-narration-scope.md §5
   //
   // GM section: world-scoped voice/model/speed/master toggle + budget
   // refresh button. Player section: per-client enable / volume / autoplay.
@@ -1618,7 +1618,7 @@ export class SettingsPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
-  // Audio tab — audio narration settings (docs/audio-narration-scope.md §5).
+  // Audio tab — audio narration settings (docs/audio/audio-narration-scope.md §5).
   // Action handler defined as static private; the audio pane renderer
   // composes the markup based on isGM (world fields hidden for non-GMs).
   // -----------------------------------------------------------------------

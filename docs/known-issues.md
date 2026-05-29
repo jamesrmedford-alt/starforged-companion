@@ -3,39 +3,31 @@
 Open bugs, workarounds, and items pending resolution. Update this file as
 issues are resolved or discovered.
 
+_Last audited against the code at v1.6.0 (2026-05)._
+
 ---
 
 ## Active issues
 
-### NARRATOR-001 — Loremaster removed, narrator not yet implemented
-
-**Status:** In progress — see `docs/narrator-scope.md`
-
-**Symptom:** No narration after move resolution. The pipeline posts a move
-result card but no narrative continuation follows.
-
-**Cause:** Loremaster dependency removed. Direct narrator not yet implemented.
-
-**Fix:** Implement `src/narration/narrator.js` and `src/narration/narratorPrompt.js`
-per the narrator scope document.
-
----
-
 ### PERSIST-001 — persistResolution gated to GM only
 
-**Status:** Open — acceptable for solo play, needs socket relay for multiplayer
+**Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
 
 **Symptom:** Player-triggered moves do not persist meter changes to character
 or campaign state. Only GM-triggered moves persist.
 
-**Cause:** `persistResolution()` writes to world-scoped settings which require
-GM permissions. Player clients cannot write to world-scoped settings.
+**Cause:** `persistResolution()` (`src/moves/persistResolution.js`) writes
+world-scoped settings, which require GM permissions. Player clients cannot write
+to world-scoped settings, so the call is gated to `game.user.isGM` at the
+pipeline site in `src/index.js`.
 
-**Workaround:** Run the triggering narration from the GM account. Meter
-changes will persist correctly. For multiplayer, the GM client must be active.
+**Workaround:** Run the triggering narration from the GM account. Meter changes
+persist correctly. For multiplayer, the GM client must be active.
 
-**Fix needed:** Socket relay — player client emits move result to GM client,
-GM client calls `persistResolution()`. See PERSIST-001 in the backlog.
+**Note:** `src/multiplayer/gmGate.js` (`isCanonicalGM()`) was added to dedupe the
+*emitter* so a move resolves only once across connected clients — it does **not**
+relay persistence from a player client to the GM. A true player→GM persistence
+relay is still the outstanding fix.
 
 ---
 
@@ -46,41 +38,79 @@ GM client calls `persistResolution()`. See PERSIST-001 in the backlog.
 **Symptom:** If Lines or Veils are set while only one player is connected,
 other players who connect later will not have their `campaignState.safety`
 populated until `syncSafetyToCampaignState()` runs on their client (which
-happens on `ready` hook).
+happens on the `ready` hook).
 
-**Cause:** `syncSafetyToCampaignState()` runs on each client's `ready` hook
-and on every write, but reads from client-local `game.settings` which is
-scoped per-client for private Lines and world-scoped for global Lines/Veils.
+**Cause:** `syncSafetyToCampaignState()` (`src/ui/settingsPanel.js`) runs on each
+client's `ready` hook and on every Lines/Veils write, but reads from client-local
+`game.settings` — client-scoped for private Lines, world-scoped for global
+Lines/Veils. It is GM-gated.
 
-**Impact:** Near zero for solo play. For multiplayer, GM should set global
+**Impact:** Near zero for solo play. For multiplayer, the GM should set global
 Lines before players connect for the session.
 
 ---
 
-### DIALOG-001 — Dialog.confirm deprecated in v13 ✓
+### COVERAGE-001 — Function coverage below the historical 65% threshold
 
-**Status:** Resolved
+**Status:** Accepted — `functions` threshold set to 50% in `vitest.config.js`
 
-**Fix:** Replaced `Dialog.confirm(...)` with `DialogV2.confirm(...)` (with
-updated option shape `{ window: { title }, content }`) in both `entityPanel.js`
-and `progressTracks.js`.
+**Cause:** `src/moves/resolver.js` has a ~40-entry `CONSEQUENCE_MAP` where each
+entry is an **arrow function** — a move-specific consequence handler with its own
+`switch`/branching — not a callable reached by unit tests. Exercising them needs
+a full move-pipeline mock, so v8 reports them as uncovered functions.
+
+**Resolution:** `functions` threshold set to 50 with an explanatory comment in
+`vitest.config.js`. Raise it if `resolver.js` is refactored to separate the
+consequence data from the per-move logic.
+
+> Earlier revisions of this entry called the map entries "pure data objects with
+> no logic to test" — that was inaccurate; they are functions with branching.
 
 ---
 
-### COVERAGE-001 — Function coverage below 65% threshold
+### SECTOR-SWITCH-001 — `!sector <name>` silently no-ops for non-GM players
 
-**Status:** Accepted — threshold lowered to 50%
+**Status:** Low priority — minor UX gap
 
-**Cause:** `resolver.js` has a 40-entry `CONSEQUENCE_MAP` where each entry is
-a data object, not a callable function. These register as uncovered functions in
-v8 coverage. The functions are pure data — they have no logic to test.
+**Symptom:** A non-GM player typing `!sector <name>` to switch the active sector
+gets no feedback — nothing happens and no message is posted.
 
-**Resolution:** Threshold set to 50% with explanatory comment in `vitest.config.js`.
-Raise threshold if resolver.js is refactored to separate data from logic.
+**Cause:** The switch branch in `handleSectorCommand` (`src/index.js`) is gated
+`if (sub && game.user.isGM)` with no `else`, so non-GM invocations fall through
+silently. `!sector list` is unaffected (open to all); `!sector new` and the
+switch are GM-only by design.
+
+**Fix needed:** Post a "GM only" notice on the non-GM switch path.
 
 ---
 
 ## Resolved issues
+
+### NARRATOR-001 — Loremaster removed; direct narrator now implemented ✓
+
+**Status:** Resolved
+
+**Symptom (historical):** No narration after move resolution — the pipeline
+posted a result card but no narrative continuation followed, because the
+Loremaster dependency had been removed before its replacement existed.
+
+**Fix:** Direct Claude narration implemented in `src/narration/narrator.js` +
+`src/narration/narratorPrompt.js`, wired into the move and paced pipelines. See
+`decisions.md` → "Narration: direct Claude API (not Loremaster)". The Narrator
+scope is ✅ COMPLETE in `scope-index.md`.
+
+---
+
+### DIALOG-001 — `Dialog.confirm()` deprecated in v13 ✓
+
+**Status:** Resolved
+
+**Fix:** Replaced `Dialog.confirm(...)` with `DialogV2.confirm(...)` (option shape
+`{ window: { title }, content }`). No `Dialog.confirm` remains in `src/`; call
+sites use `DialogV2.confirm` in `entityPanel.js`, `progressTracks.js`, and
+`customOracles.js`.
+
+---
 
 ### V13-002 — `renderChatMessage` hook deprecated; all chat-button handlers silently dead in v13 ✓
 
@@ -385,7 +415,7 @@ connection draft; everything else lived on the chat card forever.
 **Fix:** Two-hook pattern. `getSceneControlButtons` registers metadata only.
 `renderSceneControls` attaches click handlers via DOM after render.
 
-**Pattern now in:** `docs/foundry-api-reference.md` (SceneControls section)
+**Pattern now in:** `docs/foundry-reference/foundry-api-reference.md` (SceneControls section)
 and `CLAUDE.md` (two-hook pattern section).
 
 ---
@@ -427,6 +457,9 @@ gzip/brotli compressed response. Proxy passed bytes through undecompressed.
 
 **Fix:** Proxy strips `accept-encoding` and sets `accept-encoding: identity`
 explicitly. In `proxy/claude-proxy.mjs`.
+
+**Note:** the local proxy was later removed entirely (see CORS-001) —
+`proxy/claude-proxy.mjs` no longer exists. This entry is retained for history.
 
 ---
 

@@ -647,7 +647,7 @@ export const CampaignStateSchema = {
   //
   // `characterIds`: dead schema field, never written by any production
   // code path (see Priority 12 of the behaviour-coverage audit at
-  // docs/behaviour-coverage-audit.md). Three callers historically read
+  // docs/testing/behaviour-coverage-audit.md). Three callers historically read
   // it — `src/narration/narrator.js`, `src/character/chronicleWriter.js`,
   // `src/moves/persistResolution.js` — all now fall back to
   // `getPlayerActors()` (the same source the assembler uses) when the
@@ -745,7 +745,7 @@ export const CampaignStateSchema = {
     chronicleLength: 0,
   },
 
-  // Pacing classifier state (see docs/pacing-scope.md)
+  // Pacing classifier state (see docs/pacing/pacing-scope.md)
   //   sceneOverride   — { modifier, label } when GM has set !pace hot/quiet; null otherwise
   //   forceNextAsMove — set by !roll, consumed by router before classification
   // Recent-decision rolling window lives in-memory in src/pacing/router.js;
@@ -755,7 +755,7 @@ export const CampaignStateSchema = {
     forceNextAsMove: false,
   },
 
-  // Fact-continuity active-scene ledgers (see docs/fact-continuity-scope.md §4–5).
+  // Fact-continuity active-scene ledgers (see docs/fact-continuity/fact-continuity-scope.md §4–5).
   //   currentSceneId — assigned on scene start, cleared on scene end
   //   sceneTruths    — append-only ledger of narrator-asserted truths
   //                    { id, subject: { kind, ... }, fact, sessionId, sceneId,

@@ -347,7 +347,7 @@ export function parseDetectionResponse(text, campaignState) {
  *   than queued on the GM card. Used by make_a_connection on a hit.
  *   The paced-narrative detection path explicitly sets this to false
  *   so detected NPCs always go through GM review (suggestion-loop
- *   remediation §C — see docs/narrator-suggestion-loop-group-c-design-memo.md).
+ *   remediation §C — see docs/narrator/narrator-suggestion-loop-group-c-design-memo.md).
  * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
@@ -893,7 +893,7 @@ async function persistGenerativeTier(entityRef, tier) {
 
 /**
  * Append a fact-continuity scene-end migration entry to an entity's
- * generative tier. See docs/fact-continuity-scope.md §9.2 step 1.
+ * generative tier. See docs/fact-continuity/fact-continuity-scope.md §9.2 step 1.
  *
  * Lower-level than `appendDetailToTier` — does not dedupe against existing
  * entries (migration entries are tagged source: "scene_truth_migration"

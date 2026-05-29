@@ -143,7 +143,7 @@ Hooks.on("quenchReady", (quench) => {
   // the same wire for the other three Actor-hosted entity types and also
   // covers the routing-crumb / system.description round-trip via
   // iterEntityDocuments. Surfaces the consolidated Priority 1 finding
-  // from docs/behaviour-coverage-audit.md (Lens 1 Cluster A + Lens 3
+  // from docs/testing/behaviour-coverage-audit.md (Lens 1 Cluster A + Lens 3
   // IP1 + IP3).
   registerLocationFamilyActorWiresTests(quench);
   // Token-drag set a course — Lens 3 IP4 of the behaviour-coverage audit
@@ -5286,7 +5286,7 @@ function registerRecapEndToEndTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUDIO NARRATION TESTS (docs/audio-narration-scope.md §15)
+// AUDIO NARRATION TESTS (docs/audio/audio-narration-scope.md §15)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerAudioNarrationTests(quench) {
@@ -7017,7 +7017,7 @@ function registerRecapModesTests(quench) {
 // caller, and the togglePlayback failure path is graceful — button hits
 // the ERROR state with a tooltip but the chat-card prose remains visible
 // (the documented "audio never blocks chat" invariant from
-// docs/audio-narration-scope.md).
+// docs/audio/audio-narration-scope.md).
 //
 // Note on coverage scope: the priority-list audit referenced a
 // "streaming → fullgen fallback" path, but the production code in
@@ -8489,7 +8489,7 @@ function registerNarratorCharacterContextTests(quench) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE RESOLVER MATRIX — Priority 1 of the rulebook coverage audit
 //
-// Three rules from `docs/rulebook-summary.md` collapsed into one batch:
+// Three rules from `docs/rules-reference/rulebook-summary.md` collapsed into one batch:
 //
 //   1.1 Action roll outcome buckets (strong/weak/miss; ties → challenge dice).
 //   1.2 Action score capped at 10 (so a challenge 10 is never beatable).
@@ -8691,7 +8691,7 @@ function registerCoreResolverMatrixTests(quench) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MOMENTUM + IMPACT MATH — Priorities 2/3/4 of the rulebook coverage audit
 //
-// Three rules from `docs/rulebook-summary.md` collapsed into one batch:
+// Three rules from `docs/rules-reference/rulebook-summary.md` collapsed into one batch:
 //
 //   1.6  Max momentum reduction per impact (−1 per marked impact).
 //        — Playkit doc §3.1.2 flagged the CONDITION_DEBILITIES filter

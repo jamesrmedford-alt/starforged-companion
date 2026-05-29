@@ -2,7 +2,7 @@
  * STARFORGED COMPANION
  * tests/unit/audio.test.js
  *
- * Coverage for the audio narration module (docs/audio-narration-scope.md):
+ * Coverage for the audio narration module (docs/audio/audio-narration-scope.md):
  *   - segments.js (splitSegments, stripMarkup)
  *   - cache.js (cacheKey, lookup, write, evictIfOverflow)
  *   - elevenlabs.js (ELEVENLABS_MODELS, synthesise, fetchSubscription)

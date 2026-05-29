@@ -3,7 +3,7 @@
  * src/factContinuity/sidecarParser.js
  *
  * Extracts the structured sidecar JSON block from narrator output.
- * See docs/fact-continuity-scope.md §7.
+ * See docs/fact-continuity/fact-continuity-scope.md §7.
  *
  * The narrator is instructed to emit prose followed by a single fenced JSON
  * block of shape:

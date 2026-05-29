@@ -281,7 +281,7 @@ function registerCoreSettings() {
   });
 
   // -------------------------------------------------------------------------
-  // Audio narration (docs/audio-narration-scope.md)
+  // Audio narration (docs/audio/audio-narration-scope.md)
   //
   // World-scoped GM controls: master toggle, voice IDs, model, speed, cache
   // cap. Client-scoped per-player controls: API key, client enable, volume,
@@ -457,7 +457,7 @@ export function registerChatHook() {
       resetRecentDensity();
       // Fact continuity: every @scene begins a new scene moment. Flush any
       // unended prior scene and assign a fresh scene ID before narration.
-      // See docs/fact-continuity-scope.md §9.1.
+      // See docs/fact-continuity/fact-continuity-scope.md §9.1.
       if (factContinuityEnabledFromSettings()) {
         await startScene(campaignState, { reason: "@scene_intercept" });
       }
@@ -2470,7 +2470,7 @@ Hooks.once("closeWorld", async () => {
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   // Fact continuity: flush any active scene before the world closes so
   // truths migrate to entity tiers / WJ Lore rather than vanishing on the
-  // next world load. See docs/fact-continuity-scope.md §9.2.
+  // next world load. See docs/fact-continuity/fact-continuity-scope.md §9.2.
   if (factContinuityEnabledFromSettings() && campaignState?.currentSceneId) {
     try {
       await endScene(campaignState, { reason: "session_close" });
@@ -2664,7 +2664,7 @@ onChatMessageRender((message, root) => {
 
 /**
  * Wire the "▶ Play" audio button on narrator cards
- * (docs/audio-narration-scope.md §9). The button is rendered hidden by
+ * (docs/audio/audio-narration-scope.md §9). The button is rendered hidden by
  * postNarrationCard / postPacedNarrativeCard; this hook unhides it and
  * binds playback when the player has opted in on this client.
  */
