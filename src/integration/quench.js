@@ -172,6 +172,15 @@ Hooks.on("quenchReady", (quench) => {
   // through readCharacterSnapshot → buildNarratorSystemPrompt so a vendor
   // schema rename or a missing snapshot field would surface here.
   registerNarratorCharacterContextTests(quench);
+  // Core resolver matrix — Priority 1 of the rulebook coverage audit.
+  // Parametric `(action_score, A, B) → outcome` matrix covering the
+  // bucket math (1.1), the action-score 10-cap (1.2), and match
+  // detection (1.8). Exercises the pure functions calcOutcome /
+  // calcActionScore / calcProgressOutcome / buildOutcomeLabel via
+  // dynamic import in the live-Foundry context so a build-tool or
+  // hot-reload break (rather than a logic regression) would surface
+  // here that the unit tests in tests/unit/resolver.test.js can't see.
+  registerCoreResolverMatrixTests(quench);
   // i18n resolution — live integration of the localize* wrappers against
   // the real foundry-ironsworn translation table. Pure-logic coverage of
   // the wrapper (English fallback, missing-key behaviour, slug fallback)
@@ -8423,5 +8432,207 @@ function registerNarratorCharacterContextTests(quench) {
       });
     },
     { displayName: "STARFORGED: Narrator Character Context" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE RESOLVER MATRIX — Priority 1 of the rulebook coverage audit
+//
+// Three rules from `docs/rulebook-summary.md` collapsed into one batch:
+//
+//   1.1 Action roll outcome buckets (strong/weak/miss; ties → challenge dice).
+//   1.2 Action score capped at 10 (so a challenge 10 is never beatable).
+//   1.8 Match detection (both challenge dice equal → isMatch: true).
+//
+// Pure-function coverage of calcOutcome / calcActionScore /
+// calcProgressOutcome / buildOutcomeLabel lives in
+// tests/unit/resolver.test.js. This batch re-pins the same contract
+// in the live-Foundry context — dynamically importing the production
+// `src/moves/resolver.js` module the pipeline imports — so a
+// build-tool / hot-reload / Foundry-API edge case that breaks the
+// integration layer (without breaking the unit) would surface here.
+//
+// The matrix is intentionally exhaustive on the boundary cases (ties,
+// 10-cap, both-equal, beat-by-one) — every move resolution in every
+// session uses these functions, so a silent regression here corrupts
+// the entire pipeline.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerCoreResolverMatrixTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.coreResolverMatrix",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      describe("calcOutcome — bucket math (rule 1.1)", function () {
+        // Each row: [actionScore, [c1, c2], expectedOutcome, expectedMatch, label]
+        const CASES = [
+          // ── Beat both → strong hit ────────────────────────────────────────
+          [8, [3, 5], "strong_hit", false, "beats both 3 and 5"],
+          [10, [9, 9], "strong_hit", true,  "10 beats two 9s — match → strong+match"],
+          [7, [1, 6], "strong_hit", false, "beats 1 and 6"],
+
+          // ── Beat one → weak hit ───────────────────────────────────────────
+          [6, [3, 8], "weak_hit", false, "beats 3, loses to 8"],
+          [4, [7, 2], "weak_hit", false, "beats 2, loses to 7"],
+          [9, [4, 9], "weak_hit", false, "beats 4, ties 9 (tie = challenge wins)"],
+
+          // ── Beat neither → miss ───────────────────────────────────────────
+          [4, [7, 9], "miss", false, "loses to both"],
+          [3, [7, 7], "miss", true,  "loses to two 7s — match → miss+match"],
+          [6, [6, 6], "miss", true,  "ties two 6s → miss + match (worst case)"],
+
+          // ── Tie boundary cases (ties favour challenge dice) ───────────────
+          [6, [6, 3], "weak_hit", false, "score=6, dice 6&3: ties 6 (lose), beats 3 → weak"],
+          [5, [5, 5], "miss", true,  "score=5, dice 5&5: ties both, both lose → miss+match"],
+          [9, [9, 5], "weak_hit", false, "score=9, dice 9&5: ties 9 (lose), beats 5 → weak"],
+
+          // ── 10-cap boundary (a 10 challenge die is never beatable) ────────
+          [10, [9, 5],  "strong_hit", false, "score=10 beats 9 and 5 → strong"],
+          [10, [10, 5], "weak_hit",   false, "score=10 ties 10 (lose), beats 5 → weak"],
+          [10, [10, 10], "miss", true, "score=10 ties two 10s → miss+match (worst)"],
+        ];
+
+        CASES.forEach(([score, dice, expectedOutcome, expectedMatch, label]) => {
+          it(`calcOutcome(${score}, [${dice[0]}, ${dice[1]}]) → ${expectedOutcome}${expectedMatch ? "+match" : ""} (${label})`, async function () {
+            const { calcOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const { outcome, isMatch } = calcOutcome(score, dice);
+            assert.equal(outcome, expectedOutcome,
+              `expected outcome="${expectedOutcome}" for score=${score} vs [${dice}]`);
+            assert.equal(isMatch, expectedMatch,
+              `expected isMatch=${expectedMatch} for dice=[${dice}]`);
+          });
+        });
+      });
+
+      describe("calcActionScore — 10-cap (rule 1.2)", function () {
+        // Each row: [actionDie, statValue, adds, expectedScore, label]
+        const CASES = [
+          // ── No cap needed ─────────────────────────────────────────────────
+          [4, 2, 0,  6,  "die 4 + stat 2 + 0 adds = 6"],
+          [4, 2, 1,  7,  "die 4 + stat 2 + 1 add = 7"],
+          [3, 1, 0,  4,  "minimum-ish: die 3 + stat 1 + 0 = 4"],
+
+          // ── Right at the cap ──────────────────────────────────────────────
+          [6, 3, 1, 10,  "die 6 + stat 3 + 1 = 10 exact"],
+          [6, 4, 0, 10,  "die 6 + stat 4 + 0 = 10 exact"],
+
+          // ── Over the cap — must clip to 10 ────────────────────────────────
+          [6, 4, 1, 10,  "die 6 + stat 4 + 1 = 11 → capped at 10"],
+          [6, 4, 5, 10,  "die 6 + stat 4 + 5 = 15 → capped at 10"],
+          [6, 5, 3, 10,  "die 6 + stat 5 + 3 = 14 → capped at 10"],
+
+          // ── Bottom edge ───────────────────────────────────────────────────
+          [1, 1, 0,  2,  "die 1 + stat 1 + 0 = 2 (minimum action score)"],
+        ];
+
+        CASES.forEach(([actionDie, statValue, adds, expected, label]) => {
+          it(`calcActionScore(${actionDie}, ${statValue}, ${adds}) → ${expected} (${label})`, async function () {
+            const { calcActionScore } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const score = calcActionScore(actionDie, statValue, adds);
+            assert.equal(score, expected,
+              `expected calcActionScore(${actionDie}, ${statValue}, ${adds}) === ${expected}`);
+            assert.isAtMost(score, 10,
+              "action score must NEVER exceed 10 (Reference Guide p.8)");
+          });
+        });
+
+        it("a 10 challenge die is never beatable by any action score", async function () {
+          const { calcActionScore, calcOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const maxScore = calcActionScore(6, 4, 99);
+          assert.equal(maxScore, 10, "even with extreme adds the score caps at 10");
+          // Versus a 10 challenge die, the action ties → challenge wins → it's a loss
+          assert.equal(calcOutcome(10, [10, 5]).outcome, "weak_hit",
+            "score=10 ties one 10 (lose) + beats 5 → weak");
+          assert.equal(calcOutcome(10, [10, 10]).outcome, "miss",
+            "score=10 ties two 10s (lose both) → miss");
+        });
+      });
+
+      describe("calcOutcome — match detection (rule 1.8)", function () {
+        // Each row: [score, [c1, c2], expectedMatch, label]
+        const MATCH_CASES = [
+          // ── Matches (both dice equal) ─────────────────────────────────────
+          [8, [4, 4], true,  "[4, 4] → match"],
+          [3, [7, 7], true,  "[7, 7] → match"],
+          [10, [10, 10], true, "[10, 10] → match (worst)"],
+          [5, [1, 1], true,  "[1, 1] → match (best-for-the-player edge)"],
+
+          // ── Non-matches ───────────────────────────────────────────────────
+          [8, [4, 5], false, "[4, 5] → no match"],
+          [6, [3, 8], false, "[3, 8] → no match"],
+          [6, [6, 6], true,  "[6, 6] → match (even on a miss)"],
+          [9, [9, 5], false, "[9, 5] → no match (one tie but not both)"],
+        ];
+
+        MATCH_CASES.forEach(([score, dice, expectedMatch, label]) => {
+          it(`calcOutcome(${score}, [${dice[0]}, ${dice[1]}]).isMatch === ${expectedMatch} (${label})`, async function () {
+            const { calcOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const { isMatch } = calcOutcome(score, dice);
+            assert.equal(isMatch, expectedMatch,
+              `expected isMatch=${expectedMatch} for dice=[${dice}]`);
+          });
+        });
+      });
+
+      describe("calcProgressOutcome — same bucket math, no momentum (rule 1.10/1.11)", function () {
+        // Progress score is floor(ticks / 4) — only fully-filled boxes
+        // count. Each row: [ticks, dice, expectedScore, expectedOutcome,
+        // expectedMatch, label].
+        const PROGRESS_CASES = [
+          [40, [9, 9],   10, "strong_hit", true,  "fully-filled track: score 10 vs match 9+9 → strong+match"],
+          [32, [7, 8],   8,  "weak_hit",   false, "score 8 beats 7, ties 8 → weak"],
+          [16, [5, 9],   4,  "miss",       false, "score 4 vs [5, 9] — beats neither → miss"],
+          [12, [9, 9],   3,  "miss",       true,  "score 3 vs [9, 9] → miss + match"],
+          [20, [4, 4],   5,  "strong_hit", true,  "score 5 vs [4, 4] → strong + match"],
+          [0,  [1, 1],   0,  "miss",       true,  "empty track score=0 vs [1, 1] → miss + match"],
+        ];
+
+        PROGRESS_CASES.forEach(([ticks, dice, expectedScore, expectedOutcome, expectedMatch, label]) => {
+          it(`calcProgressOutcome(${ticks}, [${dice[0]}, ${dice[1]}]) → score ${expectedScore}, ${expectedOutcome} (${label})`, async function () {
+            const { calcProgressOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            const { progressScore, outcome, isMatch } = calcProgressOutcome(ticks, dice);
+            assert.equal(progressScore, expectedScore,
+              `progressScore must equal floor(${ticks}/4) = ${expectedScore}`);
+            assert.equal(outcome, expectedOutcome,
+              `outcome bucket should be ${expectedOutcome}`);
+            assert.equal(isMatch, expectedMatch,
+              `isMatch should be ${expectedMatch}`);
+          });
+        });
+
+        it("ticks are tallied in fully-filled boxes only — partial ticks don't count", async function () {
+          const { calcProgressOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          // 15 ticks = 3 full boxes + 3 stray ticks → score 3, not 4
+          assert.equal(calcProgressOutcome(15, [9, 9]).progressScore, 3,
+            "15 ticks → 3 full boxes (not 4)");
+          // 39 ticks = 9 full boxes + 3 stray → score 9, not 10
+          assert.equal(calcProgressOutcome(39, [1, 1]).progressScore, 9,
+            "39 ticks → 9 full boxes (not 10)");
+        });
+      });
+
+      describe("buildOutcomeLabel — composed string (rule 1.1 + 1.8 chat-card surface)", function () {
+        // The chat card surface — players see these strings.
+        const LABEL_CASES = [
+          ["strong_hit", false, "Strong Hit"],
+          ["strong_hit", true,  "Strong Hit with a Match"],
+          ["weak_hit",   false, "Weak Hit"],
+          ["weak_hit",   true,  "Weak Hit with a Match"],
+          ["miss",       false, "Miss"],
+          ["miss",       true,  "Miss with a Match"],
+        ];
+
+        LABEL_CASES.forEach(([outcome, isMatch, expected]) => {
+          it(`buildOutcomeLabel("${outcome}", ${isMatch}) → "${expected}"`, async function () {
+            const { buildOutcomeLabel } = await import(`${MODULE_PATH}/moves/resolver.js`);
+            assert.equal(buildOutcomeLabel(outcome, isMatch), expected,
+              `expected exactly "${expected}"`);
+          });
+        });
+      });
+    },
+    { displayName: "STARFORGED: Core Resolver Matrix" },
   );
 }
