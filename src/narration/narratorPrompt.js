@@ -601,7 +601,7 @@ export function formatEntityCard(entity, entityType) {
  * report (H4). Each mode now gets a role description that matches its call
  * site.
  */
-const NARRATOR_MODES = new Set(['move_resolution', 'paced_narrative', 'scene_interrogation']);
+const NARRATOR_MODES = new Set(['move_resolution', 'paced_narrative', 'scene_interrogation', 'oracle_followup']);
 
 const ROLE_DESCRIPTIONS = {
   move_resolution:
@@ -624,6 +624,15 @@ const ROLE_DESCRIPTIONS = {
     `that serves the story.\n\n` +
     `The narrator is a camera here, not a writer. Describe what is already established; ` +
     `do not introduce new plot elements.`,
+
+  oracle_followup:
+    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
+    `weave a rolled oracle result into the current scene as vivid, atmospheric prose.\n\n` +
+    `The player has rolled an oracle table or asked the Oracle a yes/no question. The ` +
+    `mechanical result is given to you verbatim. Render it as 2-3 sentences anchored to ` +
+    `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
+    `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
+    `the literal table text — transform it into narrative.`,
 };
 
 /**

@@ -1761,6 +1761,16 @@ async function handleOracleCommand(message) {
     content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
     flags:   { [MODULE_ID]: { oracleCommandCard: true } },
   });
+
+  // Fire-and-forget narration follow-up (silent skip if Claude key is unset).
+  // Reuses the same `oracle_followup` mode as Pay the Price below so safety,
+  // tone, scene anchor, and length come from the configured narrator settings.
+  scheduleOracleNarration({
+    kind:       "oracle_yes_no",
+    oracleName: `Ask the Oracle (${oddsLabel})`,
+    question,
+    rolledLine: `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+  });
 }
 
 /**
@@ -1802,6 +1812,40 @@ async function handlePayThePriceCommand(message) {
     content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
     flags:   { [MODULE_ID]: { payThePriceCard: true } },
   });
+
+  // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
+  scheduleOracleNarration({
+    kind:       "pay_the_price",
+    oracleName: "Pay the Price",
+    question,
+    rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
+}
+
+/**
+ * Async-queue an oracle-narration follow-up card. Used by every chat command
+ * that rolls a one-shot oracle table (`!oracle yes`, `!pay-the-price`, future
+ * extensions). Runs `narrateOracleFollowup` in a fresh microtask so the raw
+ * oracle-result card has already landed and the chat-render hook has already
+ * fired by the time the narrator API call starts — guaranteeing chat order
+ * is `<raw card> → <narration card>`.
+ *
+ * Silent skip if the Claude API key is unset, the X-Card is active, or the
+ * narrator-enabled toggle is off (see `narrateOracleFollowup` in
+ * `src/narration/narrator.js`).
+ *
+ * @param {Object} args — passed through verbatim to narrateOracleFollowup
+ */
+function scheduleOracleNarration(args) {
+  setTimeout(async () => {
+    try {
+      const { narrateOracleFollowup } = await import("./narration/narrator.js");
+      const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+      await narrateOracleFollowup({ ...args, campaignState });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | scheduleOracleNarration: narration follow-up failed:`, err?.message ?? err);
+    }
+  }, 0);
 }
 
 // Rank → +X adds for the bonded-path Develop Your Relationship roll
