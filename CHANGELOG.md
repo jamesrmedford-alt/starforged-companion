@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+## [1.5.4] — 2026-05-29
+
 - Added: **Behaviour-coverage audit — Priorities 2 through 12 landed in a single sweep.** Closes 11 of the 12 risk-ranked findings from `docs/behaviour-coverage-audit.md` (Priority 1 already shipped via PR #133). User-visible changes:
   - **Fixed: Sector trouble now seeds the World Journal as an active threat.** When a sector is created via `!sector new`, the rolled `SECTOR_TROUBLE` entry is recorded as a `looming` environmental threat against the World Journal so the narrator-context assembler surfaces it in every subsequent narration. Previously the trouble was rolled and displayed in the sector preview but never reached the assembler (P7 — `sectorGenerator.js:355` carried a TODO comment "when WJ ships" though WJ was ✅ COMPLETE).
   - **Fixed: Confirming a draft entity migrates any text-bound fact-continuity truths to the new entity.** Previously, truths the narrator emitted in its sidecar that referenced an as-yet-unconfirmed name stayed text-bound forever — they never migrated to the new entity record at scene end. `handleDraftConfirm` in `src/entities/entityExtractor.js` now calls `promoteTextSubject(draftName, { entityId, entityType }, campaignState)` after the entity is created, rewriting matching ledger entries. Idempotent — no-op when no matching text subjects exist (P6 — `factContinuity/ledgers.js:168` was promised in the Fact Continuity scope but had no production caller).
