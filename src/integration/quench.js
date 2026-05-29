@@ -8738,9 +8738,14 @@ function registerMomentumImpactMathTests(quench) {
       });
 
       // Helper: build an Actor with the first N impacts from IMPACT_KEYS marked.
-      // The vendor schema computes `momentumMax` / `momentumReset` itself, so
-      // we set those to null in `system` to force the actorBridge fallback
-      // formulas (which the unit tests pin) to apply.
+      // Important: do NOT set `momentum.max` or `momentum.resetValue` in the
+      // fixture. The vendor foundry-ironsworn schema treats those as nullable
+      // MomentumField values; setting them to null causes the vendor to
+      // initialise them at 0 (not 10/+2), which then propagates through
+      // actorBridge as a 0-baselined momentum max and produces negative
+      // values clamped at MOMENTUM_MIN=-6. Omitting the keys lets the
+      // vendor's defaults (max=10, resetValue=+2) apply, which is what the
+      // rulebook formula in actorBridge.js expects to see.
       async function actorWithImpactCount(n, extraDebility = {}) {
         const debility = { ...extraDebility };
         for (let i = 0; i < n; i++) debility[IMPACT_KEYS[i]] = true;
@@ -8749,10 +8754,9 @@ function registerMomentumImpactMathTests(quench) {
           type: "character",
           system: {
             edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
-            health:   { value: 5 },
-            spirit:   { value: 5 },
-            supply:   { value: 5 },
-            momentum: { value: 0, resetValue: null, max: null },
+            health: { value: 5 },
+            spirit: { value: 5 },
+            supply: { value: 5 },
             debility,
           },
         });
