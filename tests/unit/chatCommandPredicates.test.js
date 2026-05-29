@@ -27,6 +27,7 @@ import {
   isPaceCommand,
   isRollCommand,
   isOracleCommand,
+  isPayThePriceCommand,
   isBondCommand,
   isFlagCommand,
   isFateCommand,
@@ -109,6 +110,12 @@ const PREDICATES = [
     fn:   isOracleCommand,
     canonical: ["!oracle action", "!oracle theme", "!oracle weakness"],
     adversarial: ["!oracular", "oracle"],
+  },
+  {
+    name: "isPayThePriceCommand",
+    fn:   isPayThePriceCommand,
+    canonical: ["!pay-the-price", "!ptp", "!pay-the-price the ship?", "!ptp what breaks"],
+    adversarial: ["!pay", "!ptpd", "!pay-the-pricey", "ptp"],
   },
   {
     name: "isBondCommand",

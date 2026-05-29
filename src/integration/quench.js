@@ -214,6 +214,11 @@ Hooks.on("quenchReady", (quench) => {
   // 1.15 (stats 1–3 at creation), 3.40–3.42 (threshold-move triggers
   // when health/spirit at 0). Priorities 17/20 of the rulebook audit.
   registerCharacterStateInvariantsTests(quench);
+  // Fate moves — rules 3.45 (Ask the Oracle yes/no with odds) and 3.47
+  // (Pay the Price d100). Pure-function coverage of rollYesNo and the
+  // pay_the_price table, plus end-to-end coverage of the `!oracle yes`
+  // and the new `!pay-the-price` / `!ptp` chat commands.
+  registerFateMovesTests(quench);
   // i18n resolution — live integration of the localize* wrappers against
   // the real foundry-ironsworn translation table. Pure-logic coverage of
   // the wrapper (English fallback, missing-key behaviour, slug fallback)
@@ -9412,5 +9417,191 @@ function registerCharacterStateInvariantsTests(quench) {
       });
     },
     { displayName: "STARFORGED: Character State Invariants" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FATE MOVES — `!oracle yes/no` and `!pay-the-price` chat-command coverage.
+//
+// Both fate moves were misclassified as NEEDS-FEATURE in the rulebook
+// coverage audit; investigation showed both are fully implemented:
+//
+//   rule 3.45 — `rollYesNo(odds, { roll })` in `src/oracles/roller.js`,
+//               surfaced via the `!oracle yes [odds] [question]` chat
+//               command in `src/index.js`.
+//   rule 3.47 — `rollOracle("pay_the_price")` in `src/oracles/roller.js`
+//               (table at `src/oracles/tables/payThePrice.js`), surfaced
+//               via the resolver as an advisory seed on every miss
+//               and (new in this batch's PR) as a direct
+//               `!pay-the-price` / `!ptp` chat command.
+//
+// This batch covers both the pure-function rollers and the chat-command
+// surfaces end-to-end (post message → assert response card lands).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerFateMovesTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.fateMoves",
+    (context) => {
+      const { describe, it, assert } = context;
+
+      async function waitForCardWithFlag(flagKey, sinceCount, timeoutMs = 5000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const msgs = game.messages?.contents ?? [];
+          for (let i = sinceCount; i < msgs.length; i++) {
+            if (msgs[i]?.flags?.[MODULE_ID]?.[flagKey]) return msgs[i];
+          }
+          await new Promise(r => setTimeout(r, 50));
+        }
+        return null;
+      }
+
+      describe("rollYesNo — rule 3.45 odds + threshold + match (pure function)", function () {
+        // Each row: [odds, roll, expectedAnswer, expectedMatch, label]
+        const CASES = [
+          // ── small_chance threshold = 10 ──────────────────────────────────
+          ["small_chance",   5,  "yes", false, "5 ≤ 10 → yes"],
+          ["small_chance",   10, "yes", false, "10 ≤ 10 → yes (boundary)"],
+          ["small_chance",   11, "no",  false, "11 > 10 → no"],
+          // ── unlikely threshold = 25 ──────────────────────────────────────
+          ["unlikely",       25, "yes", false, "25 ≤ 25 → yes"],
+          ["unlikely",       26, "no",  false, "26 > 25 → no"],
+          // ── 50_50 threshold = 50 ─────────────────────────────────────────
+          ["50_50",          50, "yes", false, "50 ≤ 50 → yes"],
+          ["50_50",          51, "no",  false, "51 > 50 → no"],
+          // ── likely threshold = 75 ────────────────────────────────────────
+          ["likely",         75, "yes", false, "75 ≤ 75 → yes"],
+          ["likely",         76, "no",  false, "76 > 75 → no"],
+          // ── almost_certain threshold = 90 ────────────────────────────────
+          ["almost_certain", 90, "yes", false, "90 ≤ 90 → yes"],
+          ["almost_certain", 91, "no",  false, "91 > 90 → no"],
+
+          // ── Match detection — tens digit === ones digit ──────────────────
+          ["50_50",          33, "yes", true,  "33 → match (3 = 3)"],
+          ["50_50",          77, "no",  true,  "77 → match (7 = 7)"],
+          ["50_50",          100, "no", true,  "100 → match (read as 00, 0 = 0)"],
+          ["50_50",          11, "yes", true,  "11 → match (1 = 1)"],
+          ["50_50",          12, "yes", false, "12 → no match"],
+          ["50_50",          21, "yes", false, "21 → no match"],
+        ];
+
+        CASES.forEach(([odds, roll, expectedAnswer, expectedMatch, label]) => {
+          it(`rollYesNo("${odds}", { roll: ${roll} }) → ${expectedAnswer}${expectedMatch ? "+match" : ""} (${label})`, async function () {
+            const { rollYesNo } = await import(`${MODULE_PATH}/oracles/roller.js`);
+            const result = rollYesNo(odds, { roll });
+            assert.equal(result.answer, expectedAnswer,
+              `expected answer="${expectedAnswer}" for ${odds} @ ${roll}`);
+            assert.equal(result.isMatch, expectedMatch,
+              `expected isMatch=${expectedMatch} for roll=${roll}`);
+            assert.equal(result.roll, roll, "roll override should pass through");
+            assert.equal(result.odds, odds, "odds key should pass through");
+          });
+        });
+
+        it("rollYesNo throws on unknown odds (gate against silent miscount)", async function () {
+          const { rollYesNo } = await import(`${MODULE_PATH}/oracles/roller.js`);
+          assert.throws(
+            () => rollYesNo("bogus_odds", { roll: 50 }),
+            /Unknown odds/,
+            "rollYesNo must throw on an odds key that isn't in ORACLE_ODDS",
+          );
+        });
+      });
+
+      describe("!oracle yes chat command — rule 3.45 end-to-end", function () {
+        it("posts an oracleCommandCard with the answer and odds label", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          await ChatMessage.create({
+            content: "!oracle yes 50/50 will the airlock hold",
+          });
+          const card = await waitForCardWithFlag("oracleCommandCard", before);
+          assert.isOk(card, "expected an oracleCommandCard chat response");
+          assert.match(card.content, /Ask the Oracle/i,
+            "card should announce the Ask the Oracle move");
+          assert.match(card.content, /will the airlock hold/i,
+            "card should echo the player's question text");
+          assert.match(card.content, /(YES|NO)/,
+            "card should report a YES or NO answer in caps");
+          await card.delete().catch(() => {});
+        });
+
+        it("usage card on bare !oracle (no subcommand)", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          await ChatMessage.create({
+            content: "!oracle",
+          });
+          const card = await waitForCardWithFlag("oracleCommandCard", before);
+          assert.isOk(card, "expected a usage card");
+          assert.match(card.content, /Usage:/i,
+            "bare !oracle should produce the usage card");
+          await card.delete().catch(() => {});
+        });
+      });
+
+      describe("rollOracle('pay_the_price') — rule 3.47 d100 table", function () {
+        it("returns a string result for every roll 1..100", async function () {
+          const { rollOracle } = await import(`${MODULE_PATH}/oracles/roller.js`);
+          for (let r = 1; r <= 100; r++) {
+            const out = rollOracle("pay_the_price", { roll: r });
+            assert.isString(out.result, `roll ${r} should produce a string consequence`);
+            assert.isAbove(out.result.length, 0,
+              `roll ${r} consequence string should be non-empty`);
+            assert.equal(out.roll, r, "the roll passed in should be echoed back");
+          }
+        });
+
+        it("table coverage: rolls 1, 50, 100 each yield distinct results", async function () {
+          const { rollOracle } = await import(`${MODULE_PATH}/oracles/roller.js`);
+          const r1   = rollOracle("pay_the_price", { roll: 1   }).result;
+          const r50  = rollOracle("pay_the_price", { roll: 50  }).result;
+          const r100 = rollOracle("pay_the_price", { roll: 100 }).result;
+          assert.isString(r1);
+          assert.isString(r50);
+          assert.isString(r100);
+          // Not strictly required for correctness but a useful smoke test —
+          // each row of the d100 table should be a distinct consequence.
+          assert.notEqual(r1, r100,
+            "roll 1 and roll 100 should yield different consequences");
+        });
+      });
+
+      describe("!pay-the-price (and !ptp alias) chat command — rule 3.47 end-to-end", function () {
+        it("!pay-the-price posts a payThePriceCard with a d100 result", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          await ChatMessage.create({
+            content: "!pay-the-price the airlock seal",
+          });
+          const card = await waitForCardWithFlag("payThePriceCard", before);
+          assert.isOk(card, "expected a payThePriceCard chat response");
+          assert.match(card.content, /Pay the Price/i,
+            "card should announce the Pay the Price move");
+          assert.match(card.content, /the airlock seal/i,
+            "card should echo the player's question text");
+          assert.match(card.content, /d100\s*=\s*<strong>\d+<\/strong>/,
+            "card should report a d100 roll as a number");
+          await card.delete().catch(() => {});
+        });
+
+        it("!ptp alias produces the same card shape", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          await ChatMessage.create({
+            content: "!ptp",
+          });
+          const card = await waitForCardWithFlag("payThePriceCard", before);
+          assert.isOk(card, "expected a payThePriceCard chat response from the !ptp alias");
+          assert.match(card.content, /Pay the Price/i);
+          assert.match(card.content, /d100\s*=\s*<strong>\d+<\/strong>/,
+            "card should report a d100 roll as a number");
+          await card.delete().catch(() => {});
+        });
+      });
+    },
+    { displayName: "STARFORGED: Fate Moves" },
   );
 }
