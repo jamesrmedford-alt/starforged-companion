@@ -726,6 +726,19 @@ export const CampaignStateSchema = {
   lastSessionTimestamp: null,  // ISO string, updated on ready and closeWorld
   sessionCount:         0,
 
+  // Session-active gate (see docs/scope-index.md → Session moves panel).
+  // false at world load and after End Session; flipped to true by Begin
+  // Session. Used by the createChatMessage hook to short-circuit the
+  // implicit move-pipeline / paced-narrator paths so users can interact
+  // with cards (X-Card, draft Confirm/Dismiss, recap Refresh) and run
+  // explicit narration commands (@scene, !oracle yes, !pay-the-price,
+  // !lore) without triggering automatic narration on every typed
+  // message.
+  sessionActive:        false,
+  // Wall-clock ISO of the last beginSession() call. Powers the panel's
+  // "active for N minutes" display and the session-vignette anchor.
+  sessionActiveStartedAt: null,
+
   campaignRecapCache: {
     text:            "",
     generatedAt:     null,

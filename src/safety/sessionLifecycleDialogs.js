@@ -85,6 +85,44 @@ async function postBeginSessionCard(rollVignette) {
     content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${vignetteBlock}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
+
+  // Flip the session-active gate ON. From this point forward, plain
+  // typed narration runs through the move pipeline / paced narrator
+  // again. GM-gate the persist write — non-GM clients can't write
+  // world-scoped settings, so the dialog itself is functionally GM-
+  // only via the surrounding `!begin-session` predicate already.
+  if (game.user?.isGM) {
+    try {
+      const { beginSession } = await import("../session/lifecycle.js");
+      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      beginSession(cs);
+      await game.settings.set(MODULE_ID, "campaignState", cs);
+      Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | beginSession state flip failed:`, err?.message ?? err);
+    }
+  }
+
+  // Fire-and-forget galley vignette — narrator-generated 4-6 sentence
+  // opening scene describing the active PCs in the ship's galley
+  // bantering about the absent ones. Silent skip when the Claude key
+  // is unset or narration is disabled.
+  setTimeout(async () => {
+    try {
+      const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
+        = await import("../session/galleyVignette.js");
+      const { narrateSessionVignette } = await import("../narration/narrator.js");
+      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const participants = collectGalleyParticipants();
+      const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs });
+      if (text) {
+        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "" });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | galley vignette generation failed:`, err?.message ?? err);
+    }
+  }, 0);
 }
 
 
@@ -136,12 +174,20 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     : `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`;
 
   // Persist the foci to campaignState so the next Begin a Session can surface
-  // them. Also award the +1 momentum to all players if a focus was set.
+  // them. Also flip the session-active gate OFF and award the +1 momentum to
+  // all players if a focus was set.
   if (game.user?.isGM) {
     const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
     if (questFocus)      state.questFocus      = questFocus;
     if (connectionFocus) state.connectionFocus = connectionFocus;
+    try {
+      const { endSession } = await import("../session/lifecycle.js");
+      endSession(state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | endSession state flip failed:`, err?.message ?? err);
+    }
     await game.settings.set(MODULE_ID, "campaignState", state);
+    Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
     if (questFocus || connectionFocus) {
       await applyMomentumToAllPlayers(1);
@@ -152,6 +198,27 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     content: `<div class="sf-session-card"><strong>End a Session</strong>${focusBlock}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
+
+  // Fire-and-forget closing vignette — narrator-generated slice-of-life
+  // featuring a currently-important NPC (bonded connection → recurring
+  // threat → fallback) doing something trivial and mundane. Silent skip
+  // when the Claude key is unset or narration is disabled.
+  setTimeout(async () => {
+    try {
+      const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
+        = await import("../session/endSessionVignette.js");
+      const { narrateSessionVignette } = await import("../narration/narrator.js");
+      const cs  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const npc = selectEndSessionNPC(cs);
+      const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs });
+      if (text) {
+        await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "" });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);
+    }
+  }, 0);
 }
 
 

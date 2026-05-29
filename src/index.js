@@ -67,6 +67,7 @@ import {
 } from "./narration/narrator.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
+import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
 import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
@@ -633,6 +634,28 @@ export function registerChatHook() {
     // GM (lowest-userId active GM) is now the sole pipeline runner;
     // players just type and watch the narration appear.
     if (!isCanonicalGM()) return;
+
+    // Session-active gate. Pre-session (the Session Panel's Begin
+    // Session button has not been pressed yet, or End Session has
+    // flipped the flag back to false), plain typed narration must NOT
+    // trigger the implicit move-pipeline / paced-narrator path —
+    // players can interact with cards (X-Card, draft Confirm/Dismiss,
+    // recap Refresh) and run explicit narration commands (@scene,
+    // !oracle yes, !pay-the-price, !lore — all caught by earlier
+    // predicates above) without burning Claude credit on every chat
+    // message during setup. See `src/session/lifecycle.js`.
+    try {
+      const { isSessionActive } = await import("./session/lifecycle.js");
+      const cs = game.settings.get(MODULE_ID, "campaignState");
+      if (!isSessionActive(cs)) return;
+    } catch (err) {
+      // Defensive: if the import or read fails, fail-OPEN — treat the
+      // session as active and run the pipeline. The downside of
+      // fail-closed is "narration completely stops working on a
+      // module-load edge case", which is worse than "pre-session
+      // narration runs once".
+      console.warn(`${MODULE_ID} | session-active gate check failed (failing open):`, err?.message ?? err);
+    }
 
     // Resolve the speaking player's character — message.author.character
     // first, then ownership scan, then campaignState fallback. Pre-gate,
@@ -2479,6 +2502,13 @@ Hooks.on("getSceneControlButtons", (controls) => {
   tokenControls.tools ??= {};
 
   // v13: use onChange not onClick — confirmed from official API docs
+  tokenControls.tools.sfSession = {
+    name:     "sfSession",
+    title:    "Session",
+    icon:     "fas fa-play-circle",
+    button:   true,
+    onChange: () => openSessionPanel(),
+  };
   tokenControls.tools.progressTracks = {
     name:     "progressTracks",
     title:    "Progress Tracks",
@@ -2557,6 +2587,7 @@ Hooks.on("renderSceneControls", (app, html) => {
   if (!root) return;
 
   const buttonMap = {
+    sfSession:      () => openSessionPanel(),
     progressTracks: () => openProgressTracks(),
     entityPanel:    () => openEntityPanel(),
     chronicle:      () => openChroniclePanel(),

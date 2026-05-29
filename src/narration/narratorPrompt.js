@@ -601,7 +601,13 @@ export function formatEntityCard(entity, entityType) {
  * report (H4). Each mode now gets a role description that matches its call
  * site.
  */
-const NARRATOR_MODES = new Set(['move_resolution', 'paced_narrative', 'scene_interrogation', 'oracle_followup']);
+const NARRATOR_MODES = new Set([
+  'move_resolution',
+  'paced_narrative',
+  'scene_interrogation',
+  'oracle_followup',
+  'session_vignette',   // Begin Session opening vignette — see src/session/galleyVignette.js
+]);
 
 const ROLE_DESCRIPTIONS = {
   move_resolution:
@@ -633,6 +639,25 @@ const ROLE_DESCRIPTIONS = {
     `the current scene: describe what the player sees, hears, or learns as the oracle's ` +
     `answer manifests in the fiction. Do not repeat the d100 number, the threshold, or ` +
     `the literal table text — transform it into narrative.`,
+
+  session_vignette:
+    `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
+    `a session-bookend vignette — a short atmospheric scene that brackets the play ` +
+    `session itself.\n\n` +
+    `Two flavours, distinguished by the user message:\n\n` +
+    `BEGIN — active PCs together in a quiet downtime moment (the ship's galley, etc.), ` +
+    `bantering about what the absent crewmates might be up to. TONE OVERRIDE for ` +
+    `BEGIN: WRY AND ABSURD. Affectionate ribbing about absent crewmates, vivid specific ` +
+    `food or activity for the present ones, weird little crew-life details. Not ` +
+    `cynical, not sneering — fond, observed, a little odd.\n\n` +
+    `END — a single important NPC (an established connection, a recurring threat, a ` +
+    `faction figurehead) caught doing something trivial and mundane, in a place the ` +
+    `players are NOT. TONE OVERRIDE for END: WRY AND OBSERVED, slice-of-life. The ` +
+    `cosmic threat eating a sandwich; the rival captain taking inventory of spare ` +
+    `parts; the bonded ally watering houseplants. Specific, small, almost tender.\n\n` +
+    `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
+    `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
+    `the calm before / the calm after, not the start or end of the action.`,
 };
 
 /**
