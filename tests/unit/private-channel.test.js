@@ -13,8 +13,24 @@ import {
   loadCurrentSessionTranscript,
   _resetBuffers,
 } from "../../src/private-channel/transcript.js";
+import { getActiveCharacter, getRecentNarrationContext } from "../../src/narration/narrator.js";
+import { buildPrivateContext } from "../../src/private-channel/context.js";
+import { publishToMainChat } from "../../src/private-channel/publish.js";
 
 const MODULE_ID = "starforged-companion";
+
+// Mocks for the context/publish slice. The transcript tests above don't import
+// these modules, so these mocks are inert for them.
+vi.mock("../../src/context/safety.js", () => ({
+  formatSafetyContext: vi.fn(() => "## SAFETY CONFIGURATION\n\n(safety rules)"),
+}));
+vi.mock("../../src/system/campaignTruths.js", () => ({
+  buildCampaignTruthsBlock: vi.fn(async () => "## WORLD TRUTHS\n\n(14 truths verbatim)"),
+}));
+vi.mock("../../src/narration/narrator.js", () => ({
+  getActiveCharacter:        vi.fn(),
+  getRecentNarrationContext: vi.fn(() => ""),
+}));
 
 // ── in-memory Foundry doubles ───────────────────────────────────────────────
 
@@ -242,5 +258,99 @@ describe("debounced write", () => {
     await vi.advanceTimersByTimeAsync(5000);             // timer must NOT fire a second write
     expect(_journals.get("Private Channel — Kira").pages.contents.length).toBe(pagesAfterFlush);
     expect(pagesAfterFlush).toBe(1);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildPrivateContext (context.js) — §4 context packet, cacheable-prefix split
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPrivateContext", () => {
+  beforeEach(() => {
+    getActiveCharacter.mockReset().mockReturnValue({
+      name: "Kira", description: "A wry pilot.", meters: { health: 4, spirit: 3 }, narratorNotes: "",
+    });
+    getRecentNarrationContext.mockReset().mockReturnValue("The airlock cycled, slow and deliberate.");
+  });
+
+  it("assembles a cacheable system prefix: safety + role + world truths + character", async () => {
+    const { system } = await buildPrivateContext({
+      campaignState: { currentSessionId: "s1" }, userId: "u1", playerMessage: "hi",
+    });
+    expect(system).toContain("## SAFETY CONFIGURATION");
+    expect(system).toContain("## ROLE");
+    expect(system).toContain("private channel session");
+    expect(system).toContain("WORLD TRUTHS");
+    expect(system).toContain("## CHARACTER");
+    expect(system).toContain("Kira");
+    expect(system).toContain("Meters: health 4, spirit 3");
+  });
+
+  it("puts scene context, transcript, and player message in the volatile user block", async () => {
+    const { system, user, cacheBreakpoint } = await buildPrivateContext({
+      campaignState: { currentSessionId: "s1" }, userId: "u1",
+      transcriptTurns: ["Kira: an earlier line"], playerMessage: "what now?",
+    });
+    expect(user).toContain("## CURRENT SCENE CONTEXT");
+    expect(user).toContain("The airlock cycled, slow and deliberate."); // recent narration
+    expect(user).toContain("## PRIVATE TRANSCRIPT THIS SESSION");
+    expect(user).toContain("Kira: an earlier line");
+    expect(user).toContain("## PLAYER MESSAGE");
+    expect(user).toContain("what now?");
+    // The volatile content must NOT be inside the cached prefix.
+    expect(system).not.toContain("CURRENT SCENE CONTEXT");
+    expect(cacheBreakpoint).toBe(system.length);
+  });
+
+  it("omits the transcript block when there are no prior turns", async () => {
+    const { user } = await buildPrivateContext({ campaignState: {}, userId: "u1", playerMessage: "first" });
+    expect(user).not.toContain("PRIVATE TRANSCRIPT");
+    expect(user).toContain("## PLAYER MESSAGE");
+  });
+
+  it("throws when no active character can be resolved", async () => {
+    getActiveCharacter.mockReturnValue(null);
+    await expect(
+      buildPrivateContext({ campaignState: {}, userId: "u1", playerMessage: "x" }),
+    ).rejects.toThrow(/no active character/i);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// publishToMainChat (publish.js) — opt-in publish to main chat
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("publishToMainChat", () => {
+  let createSpy;
+  beforeEach(() => {
+    getActiveCharacter.mockReset().mockReturnValue({ name: "Kira" });
+    createSpy = vi.spyOn(global.ChatMessage, "create").mockResolvedValue({ id: "msg-1" });
+  });
+  afterEach(() => createSpy.mockRestore());
+
+  it("posts a card attributed to the character with the published-reflection flag", async () => {
+    await publishToMainChat({ userId: "u1", content: "I think I trust Vance now." });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const arg = createSpy.mock.calls[0][0];
+    expect(arg.speaker.alias).toBe("Kira");
+    expect(arg.flags[MODULE_ID].kind).toBe("published-reflection");
+    expect(arg.flags[MODULE_ID].publishedReflection).toBe(true);
+    expect(arg.content).toContain("I think I trust Vance now.");
+  });
+
+  it("escapes HTML in the character-name attribution", async () => {
+    getActiveCharacter.mockReturnValue({ name: "<b>Kira</b>" });
+    await publishToMainChat({ userId: "u1", content: "hi" });
+    const arg = createSpy.mock.calls[0][0];
+    expect(arg.content).toContain("&lt;b&gt;Kira&lt;/b&gt;");
+    expect(arg.content).not.toContain("<b>Kira</b>");
+  });
+
+  it("returns null and posts nothing for empty content", async () => {
+    const r = await publishToMainChat({ userId: "u1", content: "   " });
+    expect(r).toBeNull();
+    expect(createSpy).not.toHaveBeenCalled();
   });
 });

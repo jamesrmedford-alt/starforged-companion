@@ -1571,7 +1571,7 @@ function getApiKey() {
   }
 }
 
-function getActiveCharacter(campaignState, speakerActorId = null) {
+export function getActiveCharacter(campaignState, speakerActorId = null) {
   try {
     // Prefer the speaker if one was resolved upstream from the chat
     // message author — without this, every narration in a 2-player
