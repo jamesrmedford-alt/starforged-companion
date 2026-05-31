@@ -52,7 +52,7 @@ state only — the `sessionNumber` / `currentSessionId` cohort is still managed 
   `openEndSessionDialog`. These own the state flips, so chat-command invocation,
   panel-button invocation, and end-of-world cleanup all share one path.
 - `src/safety/sessionDialogs.js` — Set a Flag / Change Your Fate / Take a Break.
-- `src/ui/sessionPanel.js` — the 🎮 Session Panel (ApplicationV2), opened by the
+- `src/ui/sessionPanel.js` — the ▶ Session Panel (ApplicationV2), opened by the
   `sfSession` toolbar button. Status badge shows active/inactive and minutes;
   Begin is disabled when already active, End when inactive.
 
