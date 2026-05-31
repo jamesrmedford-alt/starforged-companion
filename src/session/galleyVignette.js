@@ -23,6 +23,7 @@
  */
 
 import { readCharacterSnapshot } from "../character/actorBridge.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -140,7 +141,7 @@ function truncate(s, max) {
  */
 export async function postGalleyVignetteCard({ text, kind, sessionId = null }) {
   await globalThis.ChatMessage?.create?.({
-    content: `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong><p>${escapeHtml(text)}</p></div>`,
+    content: `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         sessionVignetteCard: true,
