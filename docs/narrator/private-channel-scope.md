@@ -7,23 +7,52 @@
 **Dependencies:** Narrator (✅), Settings infrastructure (✅), Companion
 Settings panel (✅), Foundry JournalEntry permission model (✅), Actor
 bridge / `getActiveCharacter` resolution (✅)
-**Related:** Audio Narration (📋 PLANNED — audio carries through transparently;
+**Related:** Audio Narration (✅ COMPLETE — audio carries through transparently;
 see §16), `!thread` (future, reuses this primitive), `!character new`
 (future, structured variant of this primitive)
+
+> **Codebase reconciliation — audited 2026-05-31 against `main`.** This scope was
+> written 2026-05-22; the codebase has since shipped features that move its
+> integration points. Status stays 📋 PLANNED — **no private-channel code exists
+> in `src/`** (verified). Key updates folded in below; the "Pre-drafting
+> verification" block that follows is the original 2026-05-22 audit, annotated
+> where it has since drifted.
+>
+> - **Toolbar now uses the Companion's own control group.** F16 (shipped) gave the
+>   module a dedicated `controls.starforgedCompanion` scene-control group, built by
+>   `buildCompanionTools()` in `src/index.js`, with click handlers in a central
+>   `renderSceneControls` `buttonMap`. The private-channel button joins that group
+>   and that map — it does **not** inject into `controls.tokens`. This reverses
+>   original assumption #1 and supersedes §6.3 (the "dedicated Companion group" it
+>   deferred to the future is now the present). There are ten tools today (the
+>   v1.6.0 `sfSession` button was added since this was written); the private
+>   channel is the eleventh.
+> - **Audio Narration shipped (✅).** The §16 "if audio ships" framing is now
+>   "audio is available" — see `docs/audio/audio-narration-scope.md`.
+> - **Stale paths fixed:** in-game help lives in `src/help/helpJournal.js` (the
+>   `packs/help.json` references are corrected throughout); the audio scope moved
+>   to `docs/audio/`.
+> - **`file:line` references are indicative.** Line numbers across the doc have
+>   drifted since 2026-05-22 — e.g. `getActiveCharacter` is now
+>   `src/narration/narrator.js:1574` and `getActiveCharacterForPacing` is
+>   `src/index.js:1691`. Treat each as "this function, in this file"; re-grep
+>   before relying on an exact line.
 
 > **Pre-drafting verification (surfaced per packet instructions).** The
 > source packet's eleven structural assumptions were audited against the
 > codebase. Adjustments to the original packet are itemised here so the
 > reader can see what changed and why.
 >
-> 1. ✅ **`getSceneControlButtons` is registered already.** `src/index.js`
->    registers nine tools under `controls.tokens` (the v13 default group
->    keyed by name, not a separate Companion group): `progressTracks`,
->    `entityPanel`, `chronicle`, `sfSettings`, `sectorCreator`,
->    `worldJournal`, `worldTruths`, `clocks`, `customOracles`. The
->    private channel button joins this group as a tenth tool. The
->    packet's "Companion control group" concept is folded into the
->    existing `tokens` group — no new group is created. See §6.
+> 1. ⚠️ **SUPERSEDED by F16 — the button joins the Companion's own group.**
+>    *Originally (2026-05-22):* `src/index.js` registered nine tools under
+>    `controls.tokens` and this scope folded the private-channel button in as a
+>    tenth. *Now:* F16 shipped a dedicated `controls.starforgedCompanion` group,
+>    built by `buildCompanionTools()`, holding ten tools today — `sfSession`,
+>    `progressTracks`, `entityPanel`, `chronicle`, `sfSettings`, `sectorCreator`,
+>    `worldJournal`, `worldTruths`, `clocks`, `customOracles`. The private channel
+>    becomes the **eleventh** tool **in that group** (not in `tokens`). The
+>    packet's original "Companion control group" concept — which this assumption
+>    rejected — is now exactly what exists. See §6.
 >
 > 2. ⚠️ **Two-hook toolbar pattern is mandatory.** Per
 >    `rules/foundry-api.md` lines 32-68, v13 requires registration in
@@ -32,9 +61,10 @@ see §16), `!thread` (future, reuses this primitive), `!character new`
 >    (DOM `addEventListener` against `[data-tool="…"]`). The packet's
 >    single-hook `onClick` shape is v12-era and must be split. See §6.
 >
-> 3. ✅ **ApplicationV2 accessed globally.** All four existing panels
+> 3. ✅ **ApplicationV2 accessed globally.** Every existing panel
 >    (`SettingsPanelApp`, `EntityPanelApp`, `WorldJournalPanelApp`,
->    `ProgressTracksApp`) extend `foundry.applications.api.ApplicationV2`
+>    `ProgressTracksApp`, plus the newer Clocks / Custom-Oracles / Session
+>    panels) extends `foundry.applications.api.ApplicationV2`
 >    via the global namespace, not an ES module import. The packet's
 >    `import { ApplicationV2 } from "<foundry-app-v2-path>"` is a
 >    placeholder; the real shape is `extends foundry.applications.api.ApplicationV2`.
@@ -44,9 +74,9 @@ see §16), `!thread` (future, reuses this primitive), `!character new`
 >    references it three times (disabled-state check, context packet,
 >    publish flow). The actual character-resolution helpers are
 >    `getActiveCharacter(campaignState, speakerActorId)` in
->    `src/narration/narrator.js:1340+` and
+>    `src/narration/narrator.js:1574+` and
 >    `getActiveCharacterForPacing(campaignState, speakerActorId)` in
->    `src/index.js:1514+`. Both fall back to `getPlayerActors()` from
+>    `src/index.js:1691+`. Both fall back to `getPlayerActors()` from
 >    the actor bridge when `campaignState.characterIds` is empty. The
 >    scope uses these helpers — see §3 and §4.
 >
@@ -337,7 +367,8 @@ export async function publishToMainChat({ userId, content }) { /* ... */ }
 ### 3.5 `src/private-channel/index.js`
 
 The module entry point — imported from `src/index.js`. Registers
-settings (§10) and wires the two-hook toolbar pattern (§6).
+settings (§10) and registers the private-channel tool in the Companion
+control group (§6).
 
 ---
 
@@ -485,62 +516,52 @@ turn array is needed.
 
 ---
 
-## 6. Button placement and discovery — two-hook pattern
+## 6. Button placement and discovery — join the Companion control group
 
-Per `rules/foundry-api.md`, v13 requires a two-hook registration: hook
-one for metadata (`getSceneControlButtons`), hook two for click handlers
-(`renderSceneControls`).
+`src/index.js` already owns the two-hook registration (per the
+`rules/foundry-api.md` "Two-hook pattern" section): `getSceneControlButtons`
+builds the dedicated `controls.starforgedCompanion` group from
+`buildCompanionTools()`, and `renderSceneControls` wires clicks from a central
+`buttonMap`. The private channel adds **one tool** and **one handler entry** to
+that existing machinery — it does not register its own hook pair.
 
-### 6.1 Metadata registration
-
-```js
-Hooks.on("getSceneControlButtons", (controls) => {
-  // v13: controls is an Object keyed by group name; tools is an Object
-  // keyed by tool name. v12 compatibility uses Array.isArray fallback,
-  // already handled elsewhere in src/index.js.
-  controls.tokens ??= { tools: {} };
-  controls.tokens.tools ??= {};
-  controls.tokens.tools["sf-private-channel"] = {
-    name:    "sf-private-channel",
-    title:   "Private Channel — speak with the narrator privately",
-    icon:    "fas fa-comment-dots",
-    visible: true,
-    button:  true,
-    onChange: () => { /* no-op — click handler is in renderSceneControls */ },
-  };
-});
-```
-
-### 6.2 Click handler
+### 6.1 Metadata — add a tool to `buildCompanionTools()`
 
 ```js
-Hooks.on("renderSceneControls", (app, html) => {
-  const root = html instanceof HTMLElement ? html : html?.[0];
-  if (!root) return;
-  const btn = root.querySelector('[data-tool="sf-private-channel"]');
-  if (!btn) return;
-
-  // Clone-replace to drop any listener from a prior render.
-  const fresh = btn.cloneNode(true);
-  btn.replaceWith(fresh);
-  fresh.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    PrivateChannelApp.open({ userId: game.user.id })
-      .catch(err => console.error(`${MODULE_ID} | private channel open failed:`, err));
-  });
-});
+// inside buildCompanionTools() in src/index.js, alongside the other ten tools
+sfPrivateChannel: {
+  name:    "sfPrivateChannel",
+  title:   "Private Channel — speak with the narrator privately",
+  icon:    "fas fa-comment-dots",
+  button:  true,
+  // player-facing, so no `visible: isGM` gate (unlike sfSettings / worldJournal / …)
+  onChange: () => {},   // v13 doesn't fire onChange for button tools; the click
+                        // is wired in renderSceneControls (§6.2)
+},
 ```
 
-### 6.3 Group choice
+### 6.2 Click — add an entry to the `renderSceneControls` `buttonMap`
 
-The tool lives in the existing **tokens** group (alongside
-`progressTracks`, `entityPanel`, `chronicle`, etc.) rather than
-spawning a "Companion" group. Rationale: the existing module tools
-share the tokens group; introducing a separate group splits the
-toolbar visually without functional benefit. If a future tools-growth
-pressure motivates a dedicated Companion group, that's a one-line
-refactor for all ten tools at once.
+```js
+// inside the existing renderSceneControls handler's buttonMap in src/index.js
+const buttonMap = {
+  sfSession:        () => openSessionPanel(),
+  // …the existing entries…
+  sfPrivateChannel: () => PrivateChannelApp.open({ userId: game.user.id }),
+};
+```
+
+The shared handler already clone-replaces and re-listens against
+`[data-tool="…"]`, so the private channel inherits the de-dupe and the v13
+wiring for free — no per-feature hook needed.
+
+### 6.3 Group — resolved by F16
+
+The tool lives in the dedicated **`starforgedCompanion`** group that F16 shipped.
+This scope originally deferred such a group to "future tools-growth pressure";
+that future is now the present, so there is no `tokens`-group injection and no
+new group to create — the private channel is simply the **eleventh** tool in the
+existing group.
 
 ### 6.4 Disabled state
 
@@ -742,8 +763,8 @@ Private channel exchanges write a row to the existing **Pacing
 Telemetry** journal under the Starforged Companion folder (created by
 `docs/pacing-scope.md` §12). Fields: timestamp, userId-hash,
 turn-direction (player/narrator), prompt-tokens, output-tokens,
-cache-read-tokens, error. Same journal as pacing classifier and (if
-audio narration ships) audio generation. One row per turn.
+cache-read-tokens, error. Same journal as the pacing classifier and
+audio-narration generation. One row per turn.
 
 The hash of `userId` keeps the journal observable to the GM without
 leaking which specific player is reflecting most — relevant when the
@@ -792,9 +813,9 @@ debounced transcript write
 ### 13.2 Quench integration — `starforged-companion.private-channel`
 
 ```
-Toolbar registration (two-hook)
-  ✓ getSceneControlButtons adds tool to controls.tokens.tools
-  ✓ renderSceneControls attaches a click listener
+Toolbar registration (Companion control group)
+  ✓ getSceneControlButtons exposes the tool in the starforgedCompanion group
+  ✓ renderSceneControls wires the buttonMap entry to a click listener
   ✓ click handler opens PrivateChannelApp.open
   ✓ second click on already-open window brings to front (no new instance)
   ✓ tool hidden when privateChannel.enabled is false
@@ -847,16 +868,16 @@ Permissions
    button, error banner (initially hidden).
 7. Register settings (`privateChannel.enabled`,
    `privateChannel.windowPosition`).
-8. Write `src/private-channel/index.js` — register settings, wire the
-   two-hook toolbar pattern (`getSceneControlButtons` +
-   `renderSceneControls`) with disabled-state evaluation.
+8. Write `src/private-channel/index.js` — register settings, add the tool
+   to `buildCompanionTools()` + a `renderSceneControls` `buttonMap` entry,
+   with disabled-state evaluation.
 9. Wire `#onSend` → call narrator via `apiPost` with private context
    packet → render response in transcript → schedule debounced persist.
 10. Wire `#onPublish` → DialogV2 confirmation → `publishToMainChat`.
 11. Add CSS in `styles/private-channel.css`; import from
     `styles/starforged-companion.css`.
 12. Add Quench integration batch.
-13. Update `packs/help.json` — add a "Private Channel" entry describing
+13. Update `src/help/helpJournal.js` — add a "Private Channel" entry describing
     the tool, the disabled-state reasons, the publish behaviour, and
     the "no main chat noise" guarantee.
 14. Update `CHANGELOG.md` and `docs/scope-index.md`.
@@ -949,10 +970,13 @@ is over-engineering for an entry-point gate. Failure of an existing
 key surfaces inside the window as a banner the player can act on
 without losing transcript state. A periodic key health-check is §17.
 
-**Existing `tokens` toolbar group, not a new "Companion" group.** All
-nine existing module tools share `controls.tokens`. Adding a tenth
-keeps the toolbar visually coherent; spinning up a new group splits
-discovery without benefit.
+**The Companion's own control group (F16).** The module's ten tools live in a
+dedicated `controls.starforgedCompanion` group — F16 moved them out of
+`controls.tokens`, where selecting any other control group hid them with no way
+back. The private channel is the eleventh tool in that group. *(This reverses the
+original 2026-05-22 decision, which kept the tools in `tokens` and deferred a
+dedicated group to future tools-growth pressure — that pressure has since
+arrived.)*
 
 **Two-hook toolbar pattern.** Mandated by `rules/foundry-api.md` for
 v13. The packet's single-hook `onClick` shape is v12-era and would
@@ -988,8 +1012,8 @@ private journal entries via Foundry's built-in journal search.
 the player's own record. Out of scope for v1; Foundry's normal journal-
 export mechanisms cover this.
 
-**Audio narration in the private channel.** If
-`docs/audio-narration-scope.md` ships, audio applies in the private
+**Audio narration in the private channel.** Audio Narration shipped
+(`docs/audio/audio-narration-scope.md`); audio applies in the private
 channel window the same way it applies to main chat narrator cards —
 provided narrator turns in the transcript are rendered with the
 `narratorCard: true` flag on a card-equivalent DOM element. The audio
@@ -1038,11 +1062,11 @@ introduce a GM-only path without realising the convention.
 | `src/private-channel/transcript.js` | new |
 | `src/private-channel/publish.js` | new |
 | `src/private-channel/index.js` | new |
-| `src/index.js` | edit — import private-channel index, add `getSceneControlButtons`/`renderSceneControls` registration |
+| `src/index.js` | edit — import private-channel index, add the tool to `buildCompanionTools()` + a `renderSceneControls` `buttonMap` entry |
 | `src/schemas.js` | no change (no new persistent fields; transient buffer is module-scoped) |
 | `styles/private-channel.css` | new |
 | `styles/starforged-companion.css` | edit — `@import "private-channel.css"` |
 | `tests/unit/private-channel.test.js` | new |
-| `packs/help.json` | edit — add Private Channel entry, bump `CONTENT_VERSION` |
+| `src/help/helpJournal.js` | edit — add Private Channel entry, bump `CONTENT_VERSION` |
 | `CHANGELOG.md` | edit |
 | `docs/scope-index.md` | edit |
