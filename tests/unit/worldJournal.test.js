@@ -501,6 +501,14 @@ describe("writeSessionLog", () => {
     const journal = _journals.get(JOURNAL_NAMES.sessionLog);
     expect(journal.pages.contents).toHaveLength(1);
   });
+
+  // F18: the Session Log was blank because writeSessionLog was never called from
+  // production (now wired into End Session). Pin that the page carries a body.
+  it("writes a non-empty page body", async () => {
+    const page = await writeSessionLog(campaign({ sessionNumber: 3, currentSessionId: "ses-3" }));
+    expect(page.text?.content ?? "").not.toBe("");
+    expect(page.text.content).toContain("Session 3");
+  });
 });
 
 
