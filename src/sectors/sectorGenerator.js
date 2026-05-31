@@ -10,7 +10,7 @@
  */
 
 // rollOracle is imported for potential future use by panel overrides
-import { createSettlement }    from "../entities/settlement.js";
+import { createSettlement, updateSettlement } from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { buildSettlementsListHtml } from "./sectorOverview.js";
@@ -430,31 +430,30 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
 }
 
 /**
- * Write each settlement narrator stub into its entity record's `description`
- * field, so the canonical entity carries the same prose as the sector journal
- * page. Safe to call when stubs are missing — fields stay untouched.
+ * Write each settlement narrator stub into its settlement Actor's description,
+ * so the canonical entity carries the same prose as the sector journal page.
  *
- * @param {Object} settlements — { sourceSettlementId: JournalEntry|null }
+ * Settlements are foundry-ironsworn `location` Actors post-migration; the stub
+ * is routed through `updateSettlement`, which patches both `system.description`
+ * (the sheet body) and the module flag (`flags.settlement.description`). The
+ * pre-migration code wrote to a JournalEntry page that no longer exists, so the
+ * stub was silently dropped and sector-born settlements rendered with an empty
+ * body (finding F3). Safe to call when stubs are missing — those settlements
+ * are left untouched.
+ *
+ * @param {Object} settlements — { sourceSettlementGenId: Actor|null }
  * @param {{ settlements?: Object }} stubs — output from generateNarratorStubs()
  * @returns {Promise<void>}
  */
 export async function applyStubsToSettlementEntities(settlements, stubs) {
   if (!stubs?.settlements) return;
-  for (const [sourceId, entry] of Object.entries(settlements ?? {})) {
+  for (const [sourceId, actor] of Object.entries(settlements ?? {})) {
     const stub = stubs.settlements[sourceId];
-    if (!stub || !entry) continue;
+    if (!stub || !actor?.id) continue;
     try {
-      const page = entry.pages?.contents?.[0];
-      if (page) {
-        const existing = page.flags?.[MODULE_ID]?.["settlement"] ?? {};
-        await page.setFlag(MODULE_ID, "settlement", {
-          ...existing,
-          description: stub,
-          updatedAt:   new Date().toISOString(),
-        });
-      }
+      await updateSettlement(actor.id, { description: stub });
     } catch (err) {
-      console.warn(`${MODULE_ID} | Sector: could not write stub to entity record:`, err.message);
+      console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);
     }
   }
 }
