@@ -243,16 +243,22 @@ export class PlaybackSession {
       let settled = false;
       const finish = () => { if (settled) return; settled = true; resolve(); };
       const fail   = (err) => { if (settled) return; settled = true; reject(err); };
+      // Completion is signalled by the Sound's 'end' (clip finished) or 'stop'
+      // (interrupted) event — NOT by play()'s promise. Foundry v13 Sound.play()
+      // resolves at playback START, so finishing on it would advance to the next
+      // segment immediately and play it on top of this one (F11: the two NPC/
+      // narrator voices overlapped). We only listen for end/stop here.
+      //
       // Foundry v13 Sound only supports pause/start/stop/end/load events —
       // attaching an "error" listener throws synchronously. Failures during
       // load or decode surface via sound.play()'s promise rejection below.
       sound.addEventListener?.("end",  finish, { once: true });
       sound.addEventListener?.("stop", finish, { once: true });
-      sound.play({ volume: this.volume }).then(
-        // Some Sound implementations resolve play() at completion; others at start.
-        // If play() resolves AND no 'end' event has fired, we still treat the
-        // resolved promise as a hint that the sound is done.
-        () => setTimeout(finish, 0),
+      // Guard: a Sound implementation that never emits 'end' (or resolves play()
+      // only at completion) must still advance — fall back to the resolved
+      // play() promise so the queue can't deadlock, but only as a last resort.
+      Promise.resolve(sound.play({ volume: this.volume })).then(
+        () => { if (sound?.addEventListener == null) finish(); },
         fail,
       );
     });

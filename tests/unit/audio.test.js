@@ -404,7 +404,10 @@ describe('PlaybackSession', () => {
     });
     expect(session.state).toBe(PLAYBACK_STATE.IDLE);
     const playPromise = session.play();
-    // Simulate Sound completion immediately
+    // Wait a tick so the segment's 'end' listener is attached (the sound is
+    // created and loaded asynchronously). Completion is driven by the 'end'
+    // event now, not by play()'s start-time resolution (F11).
+    await new Promise(r => setTimeout(r, 0));
     const sound = globalThis.foundry.audio.Sound._instances[0];
     sound._fire('end');
     await playPromise;
@@ -431,6 +434,36 @@ describe('PlaybackSession', () => {
       s._fire('end');
       await new Promise(r => setTimeout(r, 0));
     }
+    await playPromise;
+    expect(session.state).toBe(PLAYBACK_STATE.IDLE);
+  });
+
+  // F11 regression: the next segment must NOT begin until the current one's
+  // 'end' fires. Foundry v13 Sound.play() resolves at START; if completion were
+  // taken from that promise, both the narrator and NPC segments would be
+  // created and play on top of each other.
+  it('does not start the next segment until the current one ends (F11)', async () => {
+    const Sound = globalThis.foundry.audio.Sound;
+    Sound._reset();
+    const session = new PlaybackSession({
+      cardId: 'f11',
+      segments: [
+        { voice: 'narrator', src: '/a.mp3', text: 'a' },
+        { voice: 'npc',      src: '/b.mp3', text: 'b' },
+      ],
+    });
+    const playPromise = session.play();
+    await new Promise(r => setTimeout(r, 0));
+
+    // Only the FIRST segment's sound should exist; the second must wait.
+    expect(Sound._instances.length).toBe(1);
+
+    Sound._instances[0]._fire('end');           // first finishes
+    await new Promise(r => setTimeout(r, 0));
+
+    // Now — and only now — the second segment is created.
+    expect(Sound._instances.length).toBe(2);
+    Sound._instances[1]._fire('end');
     await playPromise;
     expect(session.state).toBe(PLAYBACK_STATE.IDLE);
   });
