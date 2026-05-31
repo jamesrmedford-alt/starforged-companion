@@ -87,6 +87,7 @@ export async function createFaction(data, campaignState) {
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
     name:  "Faction Data",
     type:  "text",
+    text:  { format: 1, content: renderEntityBody(faction) },
     flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
   }]);
 
@@ -212,6 +213,27 @@ export function formatForContext(faction) {
   if (faction.loremasterNotes) parts.push(`Note: ${faction.loremasterNotes}`);
 
   return parts.join(" | ");
+}
+
+/**
+ * Render the Faction's descriptive fields into HTML for the page body so the
+ * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives
+ * on the page flag for the entity panel.
+ */
+export function renderEntityBody(faction) {
+  const esc = (s) => String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = [];
+  const meta = (label, value) =>
+    value ? out.push(`<p><strong>${esc(label)}:</strong> ${esc(value)}</p>`) : null;
+  meta("Type", faction?.subtype ? `${faction.type}: ${faction.subtype}` : faction?.type);
+  if (faction?.relationship && faction.relationship !== "unknown") {
+    meta("Stance", faction.relationship.replace(/_/g, " "));
+  }
+  if (faction?.description) out.push(`<p>${esc(faction.description)}</p>`);
+  meta("Quirk", faction?.quirk);
+  if (faction?.notes) out.push(`<p>${esc(faction.notes)}</p>`);
+  return out.join("");
 }
 
 function generateId() {

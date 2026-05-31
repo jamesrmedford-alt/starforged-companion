@@ -39,6 +39,32 @@ export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
 const _sessionsByCardId = new WeakMap();
 let _gestureOverlayShown = false;
 
+// Cards we have already auto-played, by message id. A narrator card re-renders
+// on every update (e.g. clicking its "Roll <move>" button updates the message),
+// and onNarratorCardRendered runs each time — without this guard, autoplay
+// would re-fire on every re-render and replay the audio (F14). Click-to-play is
+// unaffected; this only gates the automatic path.
+const _autoplayedCardIds = new Set();
+
+/** Test-only — clears the autoplay-once guard between cases. */
+export function _resetAutoplayGuardForTests() { _autoplayedCardIds.clear(); }
+
+/**
+ * Should this card auto-play right now? True at most once per card id — the
+ * first call for a given id claims it and returns true; subsequent calls (card
+ * re-renders, e.g. after its "Roll <move>" button updates the message) return
+ * false so autoplay never replays the audio (F14). Mutates the guard set.
+ *
+ * @param {string} cardId  message.id
+ * @returns {boolean}
+ */
+export function claimAutoplayOnce(cardId) {
+  if (cardId == null) return false;
+  if (_autoplayedCardIds.has(cardId)) return false;
+  _autoplayedCardIds.add(cardId);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Setting accessors
 // ---------------------------------------------------------------------------
@@ -259,8 +285,9 @@ export async function onNarratorCardRendered(message, root) {
     });
   }
 
-  // Optional auto-play.
-  if (getSetting("audio.autoplay", false) === true) {
+  // Optional auto-play — once per card. A re-render (e.g. after the card's
+  // "Roll <move>" button updates the message) must not replay the audio (F14).
+  if (getSetting("audio.autoplay", false) === true && claimAutoplayOnce(message.id)) {
     if (!userGestureReceived()) {
       showGestureOverlay(root, async () => {
         await togglePlayback(message, fresh, rawProse);

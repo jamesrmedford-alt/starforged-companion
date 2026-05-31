@@ -82,6 +82,7 @@ export async function createCreature(data, campaignState) {
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
     name:  "Creature Data",
     type:  "text",
+    text:  { format: 1, content: renderEntityBody(creature) },
     flags: { [MODULE_ID]: { [FLAG_KEY]: creature } },
   }]);
 
@@ -168,6 +169,29 @@ export function formatForContext(creature) {
   if (creature.narratorNotes) parts.push(`Note: ${creature.narratorNotes}`);
 
   return parts.join(" | ");
+}
+
+/**
+ * Render the Creature's descriptive fields into HTML for the page body so the
+ * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives
+ * on the page flag for the entity panel.
+ */
+export function renderEntityBody(creature) {
+  const esc = (s) => String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = [];
+  const meta = (label, value) =>
+    value ? out.push(`<p><strong>${esc(label)}:</strong> ${esc(value)}</p>`) : null;
+  meta("Environment", creature?.environment);
+  meta("Rank", creature?.rank);
+  if (Array.isArray(creature?.aspect) && creature.aspect.length) {
+    meta("Aspect", creature.aspect.join(", "));
+  }
+  meta("Behavior", creature?.behavior);
+  if (creature?.form && creature.form !== creature?.description) out.push(`<p>${esc(creature.form)}</p>`);
+  if (creature?.description) out.push(`<p>${esc(creature.description)}</p>`);
+  if (creature?.notes) out.push(`<p>${esc(creature.notes)}</p>`);
+  return out.join("");
 }
 
 function generateId() {

@@ -24,6 +24,7 @@
 
 import { listConnections } from "../entities/connection.js";
 import { getActiveThreats } from "../world/worldJournal.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -166,7 +167,7 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState) {
  */
 export async function postEndSessionVignetteCard({ text, npcName, sessionId = null }) {
   await globalThis.ChatMessage?.create?.({
-    content: `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong><p>${escapeHtml(text)}</p></div>`,
+    content: `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         sessionVignetteCard: true,

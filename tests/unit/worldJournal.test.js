@@ -238,6 +238,59 @@ describe("recordThreat", () => {
   });
 });
 
+// F15/F17/F19/F21 (theme T3): the entry description must be written into the
+// JournalEntryPage BODY, not only the page flag, or the page renders blank.
+describe("page body content (T3)", () => {
+  const bodyOf = (journalName) =>
+    _journals.get(journalName)?.pages.contents.at(-1)?.text?.content ?? "";
+
+  it("lore page body carries the discovery text", async () => {
+    await recordLoreDiscovery(
+      "Airlock Cycling",
+      { text: "Someone is cycling through the airlock sequence.", narratorAsserted: true },
+      campaign(),
+    );
+    const body = bodyOf(JOURNAL_NAMES.lore);
+    expect(body).toContain("Someone is cycling through the airlock sequence.");
+    expect(body).not.toBe("");
+  });
+
+  it("threat page body carries severity + summary", async () => {
+    await recordThreat("Boarding Party", { severity: "active", summary: "cutting the seal" }, campaign());
+    const body = bodyOf(JOURNAL_NAMES.threats);
+    expect(body).toContain("cutting the seal");
+    expect(body).toContain("active");
+  });
+
+  it("faction page body carries attitude + known goal", async () => {
+    await recordFactionIntelligence(
+      "Syndicate",
+      { attitude: "hostile", knownGoal: "smuggle munitions" },
+      campaign(),
+    );
+    const body = bodyOf(JOURNAL_NAMES.factions);
+    expect(body).toContain("smuggle munitions");
+  });
+
+  it("location page body carries the description", async () => {
+    await recordLocation(
+      "Cargo Bay",
+      { type: "ship interior", description: "rows of unmarked cases" },
+      campaign(),
+    );
+    const body = bodyOf(JOURNAL_NAMES.locations);
+    expect(body).toContain("rows of unmarked cases");
+  });
+
+  it("updates the page body when an existing entry changes (update branch)", async () => {
+    await recordThreat("Drift", { severity: "looming", summary: "first" }, campaign());
+    await recordThreat("Drift", { severity: "active", summary: "second" }, campaign());
+    const body = bodyOf(JOURNAL_NAMES.threats);
+    expect(body).toContain("second");
+    expect(body).toContain("active");
+  });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // recordFactionIntelligence
@@ -447,6 +500,14 @@ describe("writeSessionLog", () => {
     expect(page.name).toContain("Session 7");
     const journal = _journals.get(JOURNAL_NAMES.sessionLog);
     expect(journal.pages.contents).toHaveLength(1);
+  });
+
+  // F18: the Session Log was blank because writeSessionLog was never called from
+  // production (now wired into End Session). Pin that the page carries a body.
+  it("writes a non-empty page body", async () => {
+    const page = await writeSessionLog(campaign({ sessionNumber: 3, currentSessionId: "ses-3" }));
+    expect(page.text?.content ?? "").not.toBe("");
+    expect(page.text.content).toContain("Session 3");
   });
 });
 

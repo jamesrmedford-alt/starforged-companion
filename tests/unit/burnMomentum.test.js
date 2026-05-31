@@ -9,7 +9,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { buildBurnState, renderBurnButtonHtml } from '../../src/moves/burnMomentum.js';
+import {
+  buildBurnState,
+  renderBurnButtonHtml,
+  buildSupersededNarrationContent,
+  supersedeOriginalNarration,
+} from '../../src/moves/burnMomentum.js';
 
 beforeEach(() => {
   game.actors._reset();
@@ -121,5 +126,66 @@ describe('renderBurnButtonHtml', () => {
     expect(html).toContain('data-action="sf-burn-momentum"');
     expect(html).toContain('8');
     expect(html).toContain('Strong Hit');
+  });
+});
+
+// F13a: burning momentum supersedes the original (now stale) narration card.
+describe('buildSupersededNarrationContent (F13a)', () => {
+  const card = (prose) =>
+    `<div class="sf-narration-card"><div class="sf-narration-label">◈ Narrator</div>` +
+    `<div class="sf-narration-prose">${prose}</div></div>`;
+
+  it('strikes through the prose and adds a superseded note', () => {
+    const out = buildSupersededNarrationContent(card('The door jams shut.'));
+    expect(out).toContain('sf-narration-superseded');
+    expect(out).toContain('<s>The door jams shut.</s>');
+    expect(out).toMatch(/Superseded/i);
+  });
+
+  it('is idempotent — re-applying does not double-wrap', () => {
+    const once  = buildSupersededNarrationContent(card('x'));
+    const twice = buildSupersededNarrationContent(once);
+    expect(twice).toBe(once);
+  });
+});
+
+describe('supersedeOriginalNarration (F13a)', () => {
+  const MODULE_ID = 'starforged-companion';
+
+  function fakeCard(resolutionId, extraFlags = {}) {
+    return {
+      content: '<div class="sf-narration-card"><div class="sf-narration-prose">stale prose</div></div>',
+      flags: { [MODULE_ID]: { narratorCard: true, resolutionId, ...extraFlags } },
+      updated: null,
+      async update(data) { this.updated = data; Object.assign(this, { content: data.content ?? this.content }); },
+    };
+  }
+
+  it('marks the matching narration card superseded', async () => {
+    const target = fakeCard('res-1');
+    const other  = fakeCard('res-2');
+    global.game.messages = { contents: [other, target] };
+
+    await supersedeOriginalNarration({ resolutionId: 'res-1' });
+
+    expect(target.updated).not.toBeNull();
+    expect(target.updated[`flags.${MODULE_ID}.burnSuperseded`]).toBe(true);
+    expect(target.updated.content).toContain('sf-narration-superseded');
+    expect(other.updated).toBeNull(); // untouched
+  });
+
+  it('is a no-op when no resolutionId or no match', async () => {
+    const card = fakeCard('res-9');
+    global.game.messages = { contents: [card] };
+    await supersedeOriginalNarration({ resolutionId: null });
+    await supersedeOriginalNarration({ resolutionId: 'nope' });
+    expect(card.updated).toBeNull();
+  });
+
+  it('skips a card already superseded', async () => {
+    const card = fakeCard('res-3', { burnSuperseded: true });
+    global.game.messages = { contents: [card] };
+    await supersedeOriginalNarration({ resolutionId: 'res-3' });
+    expect(card.updated).toBeNull();
   });
 });

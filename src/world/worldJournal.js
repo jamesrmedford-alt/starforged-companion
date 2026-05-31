@@ -761,20 +761,64 @@ function findPageByName(journal, pageName) {
 
 async function upsertPage(journal, pageName, flagKey, data) {
   const existing = findPageByName(journal, pageName);
+  const content  = renderPageBody(flagKey, data);
   if (existing) {
     await existing.setFlag(MODULE_ID, flagKey, data);
+    // Keep the visible page body in sync with the flag data (F15/F17/F19/F21:
+    // the description lived only in the flag, so the page rendered blank).
+    try {
+      await existing.update({ text: { format: 1, content } });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | worldJournal: page body update for "${pageName}" failed:`, err);
+    }
     return existing;
   }
   try {
     const created = await journal.createEmbeddedDocuments("JournalEntryPage", [{
       name:  pageName,
       type:  "text",
+      text:  { format: 1, content },
       flags: { [MODULE_ID]: { [flagKey]: data } },
     }]);
     return Array.isArray(created) ? created[0] : created;
   } catch (err) {
     console.error(`${MODULE_ID} | worldJournal: upsertPage(${pageName}) failed:`, err);
     return null;
+  }
+}
+
+/**
+ * Render a World Journal entry's descriptive fields into HTML for the
+ * JournalEntryPage body. The entry data is also stored on a page flag (the
+ * panel reads that), but the page itself needs real body content or it renders
+ * blank — see F15/F17/F19/F21 in docs/testing/v1.6.1-playtest-findings.md.
+ *
+ * @param {string} flagKey  one of FLAG_KEYS.*
+ * @param {Object} data     the per-category entry record
+ * @returns {string} HTML
+ */
+function renderPageBody(flagKey, data) {
+  if (!data) return "";
+  const p = (s) => `<p>${escapeHtml(String(s))}</p>`;
+  const meta = (label, value) =>
+    value ? `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(String(value))}</p>` : "";
+
+  switch (flagKey) {
+    case FLAG_KEYS.lore: {
+      const body = data.text || data.fact || "";
+      return (body ? p(body) : "") +
+        (data.confirmed ? "<p><em>Confirmed.</em></p>"
+         : data.narratorAsserted ? "<p><em>Pending confirmation.</em></p>" : "");
+    }
+    case FLAG_KEYS.threats:
+      return meta("Severity", data.severity) + (data.summary ? p(data.summary) : "");
+    case FLAG_KEYS.factions:
+      return meta("Attitude", data.attitude) + (data.knownGoal ? p(data.knownGoal) : "");
+    case FLAG_KEYS.locations:
+      return meta("Type", data.type) + meta("Status", data.status) +
+        (data.description ? p(data.description) : "");
+    default:
+      return data.summary ? p(data.summary) : (data.text ? p(data.text) : "");
   }
 }
 

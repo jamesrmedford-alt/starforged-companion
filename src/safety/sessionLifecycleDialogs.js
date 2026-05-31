@@ -189,6 +189,17 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     await game.settings.set(MODULE_ID, "campaignState", state);
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
+    // Write the session log on End (F18). writeSessionLog was implemented but
+    // never called from production, so the Session Log journal stayed blank.
+    if (game.settings.get(MODULE_ID, "sessionLogAutoWrite") !== false) {
+      try {
+        const { writeSessionLog } = await import("../world/worldJournal.js");
+        await writeSessionLog(state);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
+      }
+    }
+
     if (questFocus || connectionFocus) {
       await applyMomentumToAllPlayers(1);
     }

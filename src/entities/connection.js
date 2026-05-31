@@ -74,10 +74,12 @@ export async function createConnection(data, campaignState, { persist = true } =
     flags:  { [MODULE_ID]: { entityType: "connection", entityId: id } },
   });
 
-  // Create the page that holds the data
+  // Create the page that holds the data. Render a body from the description so
+  // the page isn't blank — the data also lives on the flag (F19, theme T3).
   await entry.createEmbeddedDocuments("JournalEntryPage", [{
     name:  "Connection Data",
     type:  "text",
+    text:  { format: 1, content: renderEntityBody(connection) },
     flags: { [MODULE_ID]: { [FLAG_KEY]: connection } },
   }]);
 
@@ -463,6 +465,26 @@ function resolveJournalId(connectionId, campaignState) {
     if (entry?.flags?.[MODULE_ID]?.entityId === connectionId) return journalId;
   }
   return null;
+}
+
+/**
+ * Render the Connection's descriptive fields into HTML for the page body so
+ * the JournalEntryPage isn't blank (F19 / theme T3). The full record still
+ * lives on the page flag for the entity panel.
+ */
+export function renderEntityBody(connection) {
+  const esc = (s) => String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = [];
+  const meta = (label, value) =>
+    value ? out.push(`<p><strong>${esc(label)}:</strong> ${esc(value)}</p>`) : null;
+  meta("Role", connection?.role);
+  meta("Rank", connection?.rank);
+  meta("Relationship", connection?.relationshipType);
+  if (connection?.description) out.push(`<p>${esc(connection.description)}</p>`);
+  if (connection?.motivation)  out.push(`<p><strong>Motivation:</strong> ${esc(connection.motivation)}</p>`);
+  if (connection?.notes)       out.push(`<p>${esc(connection.notes)}</p>`);
+  return out.join("");
 }
 
 function generateId() {

@@ -242,6 +242,30 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
  * have no image-bearing document. GM-gated (uploads require GM). Non-blocking:
  * a missing Actor portrait is preferable to a broken seed or narration.
  */
+/**
+ * Embed (or replace) a portrait image block at the top of a starship's Notes
+ * HTML (F5). Wrapped in a marker div so it can be swapped on regeneration
+ * without duplicating, and so it's stripped cleanly before re-adding.
+ *
+ * @param {string} notesHtml  existing system.notes
+ * @param {string} imgPath    uploaded image path / URL
+ * @returns {string}
+ */
+export function withPortraitInNotes(notesHtml, imgPath) {
+  const existing = String(notesHtml ?? "");
+  // Remove any prior companion art block (idempotent on regeneration).
+  const stripped = existing.replace(
+    /<div class="sf-ship-portrait"[\s\S]*?<\/div>/,
+    "",
+  ).trimStart();
+  if (!imgPath) return stripped;
+  const block =
+    `<div class="sf-ship-portrait" style="text-align:center;margin-bottom:0.5em;">` +
+    `<img src="${imgPath}" alt="Ship portrait" style="max-width:100%;border-radius:6px;"/>` +
+    `</div>`;
+  return block + stripped;
+}
+
 async function attachPortraitToActor(journalEntryId, entityType, b64, assetId) {
   try {
     if (!b64) return;
@@ -254,10 +278,21 @@ async function attachPortraitToActor(journalEntryId, entityType, b64, assetId) {
     const path = await uploadPortraitImage(b64, `${document.id}-${assetId}.png`);
     if (!path) return;
 
-    await document.update({
+    const update = {
       img:                          path,
       "prototypeToken.texture.src": path,
-    });
+    };
+
+    // Mirror the portrait into the starship's Notes tab (F5): the sheet's
+    // header icon is small, so embed a larger copy at the top of the notes
+    // HTML. Idempotent — replace any prior companion art block rather than
+    // stacking. Only starships have a meaningful Notes tab here.
+    if (entityType === "ship") {
+      const notes = String(document.system?.notes ?? "");
+      update["system.notes"] = withPortraitInNotes(notes, path);
+    }
+
+    await document.update(update);
     console.log(`${MODULE_ID} | Art: attached portrait to Actor ${document.id} (${path})`);
   } catch (err) {
     console.warn(`${MODULE_ID} | Art: attachPortraitToActor failed:`, err?.message ?? err);

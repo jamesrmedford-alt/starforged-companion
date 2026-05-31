@@ -2323,7 +2323,39 @@ Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
   registerCoreSettings();
   registerUISettings();
+  registerCompanionControlLayer();
 });
+
+/**
+ * Register an empty Canvas InteractionLayer for the Companion's own
+ * scene-control group (F16). A top-level scene-control group must reference a
+ * canvas layer; selecting the group activates that layer. We don't draw
+ * anything — the layer exists only so the group is selectable without hijacking
+ * Foundry's token tools (where the buttons previously lived and vanished when
+ * another group was selected). Mirrors foundry-ironsworn's own pattern
+ * (vendor/foundry-ironsworn/src/module/features/sceneButtons.ts).
+ */
+function registerCompanionControlLayer() {
+  try {
+    const InteractionLayer = foundry?.canvas?.layers?.InteractionLayer;
+    if (!InteractionLayer || !globalThis.CONFIG?.Canvas?.layers) return;
+    class StarforgedCompanionLayer extends InteractionLayer {
+      static get layerOptions() {
+        return foundry.utils.mergeObject(super.layerOptions, {
+          zIndex: 180,
+          name:   "starforgedCompanion",
+        });
+      }
+      get placeables() { return []; }
+    }
+    CONFIG.Canvas.layers.starforgedCompanion = {
+      layerClass: StarforgedCompanionLayer,
+      group:      "primary",
+    };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | could not register companion control layer:`, err);
+  }
+}
 
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
@@ -2482,101 +2514,70 @@ Hooks.once("closeWorld", async () => {
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
+/**
+ * Build the Companion's toolbar tools as an object keyed by tool name. Shared
+ * between the dedicated Companion control group (F16) and the legacy tokens-group
+ * fallback. `onChange` exists because v13 requires it on the tool object, but it
+ * is never called for button:true tools — the real handlers are bound in the
+ * renderSceneControls hook below (two-hook pattern).
+ */
+function buildCompanionTools() {
+  const isGM = game.user.isGM;
+  return {
+    sfSession:      { name: "sfSession",      title: "Session",             icon: "fas fa-play-circle", button: true, onChange: () => openSessionPanel() },
+    progressTracks: { name: "progressTracks", title: "Progress Tracks",     icon: "fas fa-tasks",       button: true, onChange: () => openProgressTracks() },
+    entityPanel:    { name: "entityPanel",    title: "Entities",            icon: "fas fa-users",       button: true, onChange: () => openEntityPanel() },
+    chronicle:      { name: "chronicle",      title: "Character Chronicle", icon: "fas fa-book-open",    button: true, onChange: () => openChroniclePanel() },
+    sfSettings:     { name: "sfSettings",     title: "Companion Settings",  icon: "fas fa-shield-alt",   button: true, visible: isGM, onChange: () => openSettingsPanel() },
+    sectorCreator:  { name: "sectorCreator",  title: "Sector Creator",      icon: "fas fa-map",          button: true, visible: isGM, onChange: () => {} },
+    worldJournal:   { name: "worldJournal",   title: "World Journal",       icon: "fas fa-book",         button: true, visible: isGM, onChange: () => {} },
+    worldTruths:    { name: "worldTruths",    title: "World Truths",        icon: "fas fa-scroll",       button: true, visible: isGM, onChange: () => {} },
+    clocks:         { name: "clocks",         title: "Clocks",              icon: "fas fa-clock",        button: true, onChange: () => {} },
+    customOracles:  { name: "customOracles",  title: "Custom Oracles",      icon: "fas fa-table-list",   button: true, visible: isGM, onChange: () => {} },
+  };
+}
+
 Hooks.on("getSceneControlButtons", (controls) => {
-  console.log(`${MODULE_ID} | getSceneControlButtons fired, keys:`,
-    Object.keys(controls ?? {}));
+  const tools = buildCompanionTools();
 
-  // v13: controls is an object keyed by group name
-  // Access tokens group directly — do not use Object.values or find()
-  const tokenControls = controls?.tokens ?? controls?.token;
-  console.log(`${MODULE_ID} | tokenControls:`, tokenControls?.name,
-    "tools:", Object.keys(tokenControls?.tools ?? {}));
-
-  if (!tokenControls) {
-    console.warn(`${MODULE_ID} | No token controls found — buttons not registered`);
-    return;
+  // Preferred: the Companion's own top-level scene-control group (F16) so the
+  // buttons no longer ride inside Foundry's token tools (where selecting any
+  // other group hid them, with no way back). v13 — controls is an Object keyed
+  // by group name; v12 — controls is an Array. Mirrors foundry-ironsworn's own
+  // group registration. Wrapped defensively: any failure falls back to the
+  // tokens group so the buttons can never fully disappear.
+  let placedInOwnGroup = false;
+  try {
+    const group = {
+      name:    "starforgedCompanion",
+      title:   "Starforged Companion",
+      icon:    "fas fa-meteor",
+      layer:   "starforgedCompanion",
+      visible: true,
+      tools,
+    };
+    if (Array.isArray(controls)) {
+      controls.push(group);
+      placedInOwnGroup = true;
+    } else if (controls && typeof controls === "object") {
+      controls.starforgedCompanion = group;
+      placedInOwnGroup = true;
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | companion control group registration failed:`, err);
   }
 
-  // v13: tools is an object keyed by tool name
-  // Do NOT reassign tokenControls.tools — add keys to whatever is there
-  tokenControls.tools ??= {};
-
-  // v13: use onChange not onClick — confirmed from official API docs
-  tokenControls.tools.sfSession = {
-    name:     "sfSession",
-    title:    "Session",
-    icon:     "fas fa-play-circle",
-    button:   true,
-    onChange: () => openSessionPanel(),
-  };
-  tokenControls.tools.progressTracks = {
-    name:     "progressTracks",
-    title:    "Progress Tracks",
-    icon:     "fas fa-tasks",
-    button:   true,
-    onChange: () => openProgressTracks(),
-  };
-  tokenControls.tools.entityPanel = {
-    name:     "entityPanel",
-    title:    "Entities",
-    icon:     "fas fa-users",
-    button:   true,
-    onChange: () => openEntityPanel(),
-  };
-  tokenControls.tools.chronicle = {
-    name:     "chronicle",
-    title:    "Character Chronicle",
-    icon:     "fas fa-book-open",
-    button:   true,
-    onChange: () => openChroniclePanel(),
-  };
-  tokenControls.tools.sfSettings = {
-    name:     "sfSettings",
-    title:    "Companion Settings",
-    icon:     "fas fa-shield-alt",
-    button:   true,
-    visible:  game.user.isGM,
-    onChange: () => openSettingsPanel(),
-  };
-  tokenControls.tools.sectorCreator = {
-    name:     "sectorCreator",
-    title:    "Sector Creator",
-    icon:     "fas fa-map",
-    button:   true,
-    visible:  game.user.isGM,
-    onChange: () => {},
-  };
-  tokenControls.tools.worldJournal = {
-    name:     "worldJournal",
-    title:    "World Journal",
-    icon:     "fas fa-book",
-    button:   true,
-    visible:  game.user.isGM,
-    onChange: () => {},
-  };
-  tokenControls.tools.worldTruths = {
-    name:     "worldTruths",
-    title:    "World Truths",
-    icon:     "fas fa-scroll",
-    button:   true,
-    visible:  game.user.isGM,
-    onChange: () => {},
-  };
-  tokenControls.tools.clocks = {
-    name:     "clocks",
-    title:    "Clocks",
-    icon:     "fas fa-clock",
-    button:   true,
-    onChange: () => {},
-  };
-  tokenControls.tools.customOracles = {
-    name:     "customOracles",
-    title:    "Custom Oracles",
-    icon:     "fas fa-table-list",
-    button:   true,
-    visible:  game.user.isGM,
-    onChange: () => {},
-  };
+  // Fallback: if the dedicated group couldn't be placed (unexpected controls
+  // shape), register into the tokens group as before so the buttons still show.
+  if (!placedInOwnGroup) {
+    const tokenControls = controls?.tokens ?? controls?.token;
+    if (!tokenControls) {
+      console.warn(`${MODULE_ID} | No control group available — buttons not registered`);
+      return;
+    }
+    tokenControls.tools ??= {};
+    Object.assign(tokenControls.tools, tools);
+  }
 });
 
 // Foundry v13 does not invoke onChange for `button: true` tools registered via

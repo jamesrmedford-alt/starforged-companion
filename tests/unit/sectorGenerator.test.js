@@ -15,6 +15,7 @@ import {
   generateSector,
   rollTableResult,
   buildSettlementStubPrompt,
+  trimToLastSentence,
 } from "../../src/sectors/sectorGenerator.js";
 
 import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
@@ -394,5 +395,33 @@ describe("buildSettlementStubPrompt", () => {
   it("uses provided perspective note", () => {
     const prompt = buildSettlementStubPrompt(settlement, sector, "Terminus", "Narrate in first person");
     expect(prompt).toContain("Narrate in first person");
+  });
+});
+
+// F4: sector narrative passages were cut off mid-sentence by the token cap.
+describe("trimToLastSentence (F4)", () => {
+  it("trims a length-truncated tail back to the last complete sentence", () => {
+    const cut = "The void hums with menace. The real question, as you chart your course through the cold black between them";
+    expect(trimToLastSentence(cut, true)).toBe("The void hums with menace.");
+  });
+
+  it("leaves naturally-complete text untouched even if truncated flag is set", () => {
+    const done = "A quiet sector. Nothing stirs here yet.";
+    expect(trimToLastSentence(done, true)).toBe(done);
+  });
+
+  it("never trims when the generation was not truncated", () => {
+    const ongoing = "An evocative fragment with no ending punctuation";
+    expect(trimToLastSentence(ongoing, false)).toBe(ongoing);
+  });
+
+  it("leaves text unchanged when there is no earlier sentence boundary", () => {
+    const oneClause = "A single dangling clause that never closes";
+    expect(trimToLastSentence(oneClause, true)).toBe(oneClause);
+  });
+
+  it("preserves a closing quote/paren after terminal punctuation", () => {
+    const quoted = '"We are not alone." She believed it, right up until the end';
+    expect(trimToLastSentence(quoted, true)).toBe('"We are not alone."');
   });
 });

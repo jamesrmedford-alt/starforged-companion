@@ -4224,19 +4224,41 @@ function registerToolbarTests(quench) {
       const { describe, it, assert } = context;
 
       describe("getSceneControlButtons — registers companion tools", function () {
-        it("populates token tool entries for the companion buttons", async function () {
-          // Build a minimal controls object as v13 would, then fire the hook.
+        it("creates a dedicated Starforged Companion control group with the buttons", async function () {
+          // v13: controls is an Object keyed by group name. The Companion now
+          // registers its own top-level group (F16) instead of riding inside
+          // the tokens group, so selecting another group no longer hides it.
           const controls = { tokens: { name: "tokens", tools: {} } };
           Hooks.callAll("getSceneControlButtons", controls);
-          const tools = controls.tokens.tools;
-          assert.isObject(tools, "tools should be populated");
-          // Expected button keys per CLAUDE.md / source — at minimum these:
-          const expected = ["progressTracks", "entityPanel", "chronicle"];
+
+          const group = controls.starforgedCompanion;
+          assert.isObject(group, "a starforgedCompanion control group should be registered");
+          assert.isObject(group.tools, "the group should carry a tools object");
+          const expected = ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"];
           for (const k of expected) {
-            const has = Object.values(tools).some(t =>
-              t?.name === k || (typeof tools[k] === "object" && tools[k] !== null));
-            assert.isTrue(has, `tool "${k}" should be registered`);
+            assert.isTrue(
+              group.tools[k]?.name === k,
+              `tool "${k}" should be registered in the companion group`,
+            );
           }
+          // The buttons should NOT also be injected into the tokens group.
+          assert.isUndefined(
+            controls.tokens.tools.progressTracks,
+            "companion tools should live in their own group, not tokens",
+          );
+        });
+
+        it("supports the v12 array-shaped controls (push a group)", async function () {
+          // v12: controls is an Array. The hook should push a group object
+          // rather than throw or silently drop the buttons.
+          const controls = [{ name: "tokens", tools: {} }];
+          Hooks.callAll("getSceneControlButtons", controls);
+          const group = controls.find(c => c?.name === "starforgedCompanion");
+          assert.isObject(group, "a companion group should be pushed onto the array");
+          assert.isTrue(
+            group.tools.progressTracks?.name === "progressTracks",
+            "the pushed group should carry the companion tools",
+          );
         });
       });
 

@@ -20,6 +20,7 @@ import {
   calcProgressOutcome,
   buildOutcomeLabel,
   canBurnMomentum,
+  OUTCOME_RANK,
   applyMomentumBurn,
   countMarkedImpacts,
   mapConsequences,
@@ -252,6 +253,26 @@ describe("canBurnMomentum", () => {
   it("returns false when momentum burn does not change the outcome", () => {
     // Momentum 3, challenge [5, 7] — 3 doesn't beat either → still a miss
     expect(canBurnMomentum(3, "miss", [5, 7], false)).toBe(false);
+  });
+
+  it("returns false when the burn would WORSEN the outcome (F12)", () => {
+    // The reported bug: action score 7 was a weak hit vs [6, 7], but current
+    // momentum is only 6. Burning to 6 beats neither die → miss. A bare
+    // `burnedOutcome !== currentOutcome` check offered this; the rank check
+    // must refuse it so weak_hit never burns down to miss.
+    expect(canBurnMomentum(6, "weak_hit", [6, 7], false)).toBe(false);
+  });
+
+  it("returns false when a weak hit would burn to another (non-improving) outcome", () => {
+    // Momentum equal to a die it doesn't beat — still not a strict improvement.
+    expect(canBurnMomentum(6, "weak_hit", [6, 9], false)).toBe(false);
+  });
+});
+
+describe("OUTCOME_RANK", () => {
+  it("orders outcomes miss < weak_hit < strong_hit", () => {
+    expect(OUTCOME_RANK.miss).toBeLessThan(OUTCOME_RANK.weak_hit);
+    expect(OUTCOME_RANK.weak_hit).toBeLessThan(OUTCOME_RANK.strong_hit);
   });
 });
 
