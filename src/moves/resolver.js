@@ -130,8 +130,21 @@ export function canBurnMomentum(currentMomentum, currentOutcome, challengeDice, 
   if (currentOutcome === "strong_hit") return false;  // Already optimal
 
   const { outcome: burnedOutcome } = calcOutcome(currentMomentum, challengeDice);
-  return burnedOutcome !== currentOutcome;             // Only valid if it actually improves
+  // Only valid if it STRICTLY improves. A bare `!==` check would also offer a
+  // burn that makes the outcome worse — e.g. action score 7 (weak hit) but
+  // current momentum 6 burns down to a miss. Compare outcome rank instead.
+  return OUTCOME_RANK[burnedOutcome] > OUTCOME_RANK[currentOutcome];
 }
+
+/**
+ * Outcome severity ranking, worst → best. Used to decide whether a momentum
+ * burn (or any re-resolution) is an improvement. miss < weak_hit < strong_hit.
+ */
+export const OUTCOME_RANK = {
+  miss:       0,
+  weak_hit:   1,
+  strong_hit: 2,
+};
 
 /**
  * Apply momentum burn. Returns the new outcome after replacing action score

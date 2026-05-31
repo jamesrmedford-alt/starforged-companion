@@ -31,6 +31,7 @@ import {
   canBurnMomentum,
   applyMomentumBurn,
   mapConsequences,
+  OUTCOME_RANK,
 } from "./resolver.js";
 import {
   getActor,
@@ -187,6 +188,17 @@ async function handleBurnClick(message, { narrate, persist, assemble }) {
   const burnResult = applyMomentumBurn(
     burn.momentum, burn.challengeDice, burn.markedImpactCount,
   );
+
+  // Defense-in-depth: never apply a burn that does not strictly improve the
+  // outcome, even if a stale card offered one. The render-time gate
+  // (canBurnMomentum in buildBurnState) should already prevent this, but a
+  // momentum change between render and click could leave a worsening burn on
+  // the card. Bail without touching meters or the card.
+  if (OUTCOME_RANK[burnResult.outcome] <= OUTCOME_RANK[burn.originalOutcome]) {
+    console.warn(`${MODULE_ID} | burnMomentum: burn would not improve ${burn.originalOutcome} → ${burnResult.outcome}; ignoring`);
+    return;
+  }
+
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
 
   await applyBurnMeterDeltas({
