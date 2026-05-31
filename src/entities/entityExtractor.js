@@ -9,8 +9,8 @@
  * and to the World Journal write functions.
  *
  * Routing rule (world-journal scope §4):
- *   - Lore   → WJ when salience clears the lore floor (else dropped)
- *   - Threat → WJ when salience clears the threat floor (else dropped)
+ *   - Lore   → WJ when salience clears the lore floor, else the running session log
+ *   - Threat → WJ when salience clears the threat floor, else the running session log
  *   - Faction → WJ only if no entity record with that name exists, else
  *     handled via the entity generative tier
  *   - Location → same rule as faction
@@ -18,8 +18,9 @@
  *
  * The detector rates each lore/threat candidate's salience (see
  * src/world/salience.js); per-channel floors keep transient scene beats out of
- * the World Journal (findings F15 / F17 / F21). Fail-open — an unrated item is
- * recorded rather than silently dropped.
+ * the World Journal (findings F15 / F17 / F21). Below-threshold beats append to
+ * one running session-log page (D7 / F18) rather than being dropped. Fail-open —
+ * an unrated item is recorded as durable, never rerouted.
  *
  * For interaction-class moves with matched entities, a separate Haiku call
  * (`appendGenerativeTierUpdates`) extracts narrator-added details and
@@ -50,6 +51,7 @@ import {
   recordLocation,
   promoteLoreToConfirmed,
   applyStateTransition as wjApplyStateTransition,
+  appendSessionLogBeat,
   getConfirmedLore,
   getNarratorAssertedLore,
   getActiveThreats,
@@ -603,10 +605,17 @@ function hasOpenRouterKey() {
 export async function routeWorldJournalResults(wj, campaignState) {
   if (!wj) return;
 
+  // Below-threshold lore/threat items are transient scene beats: route them to
+  // the running session log (D7 / F18) instead of spawning a WJ entry each.
+  // Fail-open items (unrated salience) clear the gate and are recorded as
+  // durable, never rerouted.
   const loreThreshold = getSalienceThreshold("lore");
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
-    if (!passesSalience(lore.salience, loreThreshold)) continue;
+    if (!passesSalience(lore.salience, loreThreshold)) {
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
+      continue;
+    }
     await recordLoreDiscovery(lore.title, {
       ...lore,
       narratorAsserted: true,
@@ -617,7 +626,10 @@ export async function routeWorldJournalResults(wj, campaignState) {
   const threatThreshold = getSalienceThreshold("threats");
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
-    if (!passesSalience(threat.salience, threatThreshold)) continue;
+    if (!passesSalience(threat.salience, threatThreshold)) {
+      await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "" });
+      continue;
+    }
     await recordThreat(threat.name, threat, campaignState);
   }
 

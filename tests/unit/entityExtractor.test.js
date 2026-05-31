@@ -64,6 +64,7 @@ beforeEach(() => {
     recordLocation:             vi.spyOn(wj, "recordLocation").mockResolvedValue(undefined),
     promoteLoreToConfirmed:     vi.spyOn(wj, "promoteLoreToConfirmed").mockResolvedValue(undefined),
     applyStateTransition:       vi.spyOn(wj, "applyStateTransition").mockResolvedValue(undefined),
+    appendSessionLogBeat:       vi.spyOn(wj, "appendSessionLogBeat").mockResolvedValue(undefined),
     getConfirmedLore:           vi.spyOn(wj, "getConfirmedLore").mockReturnValue([]),
     getNarratorAssertedLore:    vi.spyOn(wj, "getNarratorAssertedLore").mockReturnValue([]),
     getActiveThreats:           vi.spyOn(wj, "getActiveThreats").mockReturnValue([]),
@@ -451,16 +452,21 @@ describe("routeWorldJournalResults — salience gate", () => {
   beforeEach(() => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
   afterEach(()  => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
 
-  it("drops a lore item below the default 'significant' floor (F17)", async () => {
+  it("reroutes a below-floor lore item to the session log, not Lore (F17/F18)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
-      lore: [{ title: "Container C-47 scorch marks", text: "x", salience: "scene" }],
+      lore: [{ title: "Container C-47 scorch marks", text: "faint scorch", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).not.toHaveBeenCalled();
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
+      fixture.campaignState,
+      expect.objectContaining({ kind: "lore", title: "Container C-47 scorch marks", text: "faint scorch" }),
+    );
     fixture.restore();
   });
 
-  it("records lore items at or above the floor", async () => {
+  it("records lore items at or above the floor (not rerouted)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       lore: [
@@ -469,43 +475,51 @@ describe("routeWorldJournalResults — salience gate", () => {
       ],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(2);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
-  it("records an unrated lore item (fail-open — never a silent blackout)", async () => {
+  it("records an unrated lore item as durable (fail-open — not rerouted)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       lore: [{ title: "Unrated but kept", text: "x" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
-  it("drops a scene-level threat below the default floor (F15)", async () => {
+  it("reroutes a scene-level threat to the session log, not Threats (F15/F18)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       threats: [{ name: "External airlock intrusion", severity: "immediate", summary: "now", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordThreat).not.toHaveBeenCalled();
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
+      fixture.campaignState,
+      expect.objectContaining({ kind: "threat", title: "External airlock intrusion", text: "now" }),
+    );
     fixture.restore();
   });
 
-  it("records a campaign-level threat at or above the floor", async () => {
+  it("records a campaign-level threat at or above the floor (not rerouted)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       threats: [{ name: "Hegemony purge fleet", severity: "looming", summary: "inbound", salience: "defining" }],
     }, fixture.campaignState);
     expect(spies.recordThreat).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
-  it("respects a per-channel lore floor lowered to 'scene'", async () => {
+  it("respects a per-channel lore floor lowered to 'scene' (records, no reroute)", async () => {
     game.settings._store.set(`${MODULE_ID}.loreSalienceThreshold`, "scene");
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       lore: [{ title: "Kept once the floor is lowered", text: "x", salience: "scene" }],
     }, fixture.campaignState);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
     fixture.restore();
   });
 
@@ -515,7 +529,8 @@ describe("routeWorldJournalResults — salience gate", () => {
     await routeWorldJournalResults({
       threats: [{ name: "Scene blip", severity: "immediate", summary: "now", salience: "scene" }],
     }, fixture.campaignState);
-    expect(spies.recordThreat).not.toHaveBeenCalled(); // threat floor still 'significant'
+    expect(spies.recordThreat).not.toHaveBeenCalled();          // threat floor still 'significant'
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1); // rerouted instead
     fixture.restore();
   });
 });

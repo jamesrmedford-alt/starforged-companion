@@ -2529,8 +2529,26 @@ function registerWorldJournalTests(quench) {
           const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
           if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
           assert.isObject(page);
+          assert.isNotEmpty(page?.text?.content ?? "", "session-log page should have a body");
           const after = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog)?.pages?.contents?.length ?? 0;
-          assert.isAtLeast(after, before + 1);
+          // writeSessionLog now find-or-creates one running page per session (D7),
+          // so a re-run fills the summary on the existing page rather than spawning
+          // another. Assert a page exists and none were lost, not a strict +1.
+          assert.isAtLeast(after, Math.max(before, 1));
+        });
+
+        it("appendSessionLogBeat appends a scene beat to the running session page", async function () {
+          this.timeout(20000);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+          const title = `QUENCH TEST — Scene beat ${Date.now()}`;
+
+          const page = await wj.appendSessionLogBeat(state, { kind: "lore", title, text: "transient detail" });
+          const slJournal = game.journal?.getName?.(wj.JOURNAL_NAMES.sessionLog);
+          if (page?.id && slJournal?.id) createdPageIds.push({ journalId: slJournal.id, pageId: page.id });
+          assert.isObject(page, "appendSessionLogBeat should return the running page");
+          assert.include(page?.text?.content ?? "", title, "the beat should appear in the page body");
+          assert.include(page?.text?.content ?? "", "Scene log", "the running scene-log section should be present");
         });
       });
 

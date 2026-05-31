@@ -333,9 +333,15 @@ fail-open route does not trip the test-harness warn guard.
 - *Retroactive sweep of existing over-captured entries (D6).* Out of scope —
   go-forward behaviour only.
 
-**Deliberately not in this slice:** routing below-threshold scene beats into a
-running session-log page (D7, append-during-play) is the follow-up; for now
-below-threshold lore/threats are simply dropped. The empty-body defect (T3) is a
+**Running session log (D7, append-during-play):** below-threshold lore/threat
+beats are not dropped — they append to one running session-log page per session
+(`appendSessionLogBeat`), a live scene-by-scene log. `writeSessionLog` was
+refactored to fill the End-Session summary as a section on that *same* page
+(matched by `sessionId`, one page per session) rather than spawning a new page
+each End Session, so the F18 wrap-up and the live log coexist. Reserve Lore and
+Threats for durable facts; the Session Log holds the session's texture (F18).
+The chronicle is **not** rerouted — it is the PC's personal record, not a scene
+log, so below-floor chronicle beats are skipped. The empty-body defect (T3) is a
 separate confirm/persist concern, not a salience question.
 
 **Settings surface:** the three thresholds are registered `config: false` like
