@@ -89,6 +89,7 @@ export function buildBurnState(resolution, actor) {
     previewOutcome,
     originalApplied:    false,            // flipped to true once persistResolution writes
     actorId:            actor.id,
+    resolutionId:       resolution._id ?? null,  // links to the original narration card (F13a)
   };
 }
 
@@ -215,6 +216,13 @@ async function handleBurnClick(message, { narrate, persist, assemble }) {
     content: buildBurnedCardContent(message.content, burnResult, newConsequences),
   }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: message.update failed:`, err));
 
+  // Supersede the original narration card (F13a): the burn changed the outcome,
+  // so the prose describing the pre-burn result is now stale. Strike it through
+  // and label it rather than delete it, so the history is preserved. The new
+  // (upgraded) narration is posted below by renarrate().
+  await supersedeOriginalNarration(burn).catch(err =>
+    console.warn(`${MODULE_ID} | burnMomentum: superseding original narration failed:`, err));
+
   // Re-narrate on the upgraded outcome. Best-effort — if the campaign has
   // no API key configured or the narrator is otherwise disabled, the move
   // card is still correctly updated above.
@@ -296,6 +304,46 @@ async function renarrate({ burn, burnResult, newConsequences, narrate, persist, 
 // ─────────────────────────────────────────────────────────────────────────────
 // CARD CONTENT REWRITE
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Find the narration card posted for this resolution and mark it superseded
+ * (F13a). The burn changed the outcome, so the original prose no longer matches;
+ * we strike it through and add a note rather than deleting it. No-op when the
+ * card can't be found (e.g. narration was disabled).
+ *
+ * @param {Object} burn  the burn flag blob (carries resolutionId)
+ */
+export async function supersedeOriginalNarration(burn) {
+  const resolutionId = burn?.resolutionId;
+  if (!resolutionId) return;
+  const messages = globalThis.game?.messages?.contents ?? [];
+  const card = messages.find(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true
+      && f?.resolutionId === resolutionId
+      && f?.burnSuperseded !== true;
+  });
+  if (!card) return;
+  await card.update({
+    [`flags.${MODULE_ID}.burnSuperseded`]: true,
+    content: buildSupersededNarrationContent(card.content),
+  });
+}
+
+/**
+ * Wrap a narration card's prose in a struck-through, dimmed block with a
+ * "superseded by momentum burn" note. Idempotent — re-applying is a no-op.
+ */
+export function buildSupersededNarrationContent(originalContent) {
+  const html = String(originalContent ?? "");
+  if (html.includes("sf-narration-superseded")) return html;
+  return html.replace(
+    /<div class="sf-narration-prose">([\s\S]*?)<\/div>/,
+    (_full, inner) =>
+      `<div class="sf-narration-prose sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></div>` +
+      `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">Superseded — momentum was burned to upgrade this outcome. See the updated narration below.</div>`,
+  );
+}
 
 /**
  * Rewrite the existing move-result card's HTML to reflect the burned
