@@ -151,6 +151,11 @@ Hooks.on("quenchReady", (quench) => {
   // Anthropic endpoint stubbed and the art branch skipped via a pre-set
   // portraitId. Live analog of tests/unit/finalize.test.js.
   registerEntityFinalizeTests(quench);
+  // Private Channel (v1.7.0) — toolbar tool present in the Companion group, the
+  // transcript write/read against a real per-player journal with scoped
+  // ownership, and publish posting a flagged main-chat card. Live analog of
+  // tests/unit/private-channel.test.js.
+  registerPrivateChannelTests(quench);
   // Token-drag set a course — Lens 3 IP4 of the behaviour-coverage audit
   // (Priority 2). The sector-Scene Token-drag handler dispatches a
   // synthetic ChatMessage carrying `forcedMoveId: "set_a_course"`; this
@@ -7797,6 +7802,84 @@ function registerPortraitActorAttachTests(quench) {
 // Surfaces the consolidated Priority 1 finding from the behaviour-coverage
 // audit (Lens 1 Cluster A + Lens 3 IP1 + IP3).
 // ─────────────────────────────────────────────────────────────────────────────
+
+function registerPrivateChannelTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.privateChannel",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      const createdJournalIds = [];
+      const createdMessageIds = [];
+      async function flushCleanup() {
+        for (const id of createdJournalIds.splice(0)) {
+          const j = game.journal?.get(id);
+          if (j?.delete) await j.delete().catch(() => {});
+        }
+        for (const id of createdMessageIds.splice(0)) {
+          const m = game.messages?.get(id);
+          if (m?.delete) await m.delete().catch(() => {});
+        }
+      }
+
+      before(function () { if (!game.user.isGM) this.skip(); });
+      after(flushCleanup);
+      afterEach(flushCleanup);
+
+      describe("toolbar", function () {
+        it("exposes the Private Channel tool in the starforgedCompanion group when enabled", async function () {
+          this.timeout(20000);
+          await withTempSetting("privateChannel.enabled", true, async () => {
+            const controls = {};
+            Hooks.callAll("getSceneControlButtons", controls);
+            const group = controls.starforgedCompanion;
+            assert.isObject(group, "the starforgedCompanion control group should exist");
+            assert.isOk(group.tools?.sfPrivateChannel, "the sfPrivateChannel tool should be registered");
+            assert.notStrictEqual(group.tools.sfPrivateChannel.visible, false, "tool should be visible when enabled");
+          });
+        });
+      });
+
+      describe("transcript persistence", function () {
+        it("writes a per-player journal (player OWNER) and reads the session page back", async function () {
+          this.timeout(20000);
+          const tx        = await import(`${MODULE_PATH}/private-channel/transcript.js`);
+          const userId    = game.user.id;
+          const sessionId = game.settings.get(MODULE, "campaignState")?.currentSessionId ?? "";
+          const marker    = `QUENCH private ${Date.now()}`;
+
+          tx.appendToBuffer(userId, { who: "player", name: "Quench", text: marker });
+          const page = await tx.flushNow(userId);
+          assert.isOk(page, "flushNow should write a session page");
+
+          const journal = game.journal?.getName?.(`Private Channel — ${game.user.name}`);
+          if (journal?.id) createdJournalIds.push(journal.id);
+          assert.isOk(journal, "a per-player private journal should have been created");
+          assert.isAtLeast(journal.ownership?.[userId] ?? 0, 3, "the player should own their private journal");
+
+          const html = await tx.loadCurrentSessionTranscript(userId, sessionId);
+          assert.include(html, marker, "the written turn should read back from the session page");
+        });
+      });
+
+      describe("publish", function () {
+        it("publishToMainChat posts a flagged card to main chat", async function () {
+          this.timeout(20000);
+          const pub    = await import(`${MODULE_PATH}/private-channel/publish.js`);
+          const marker = `QUENCH reflection ${Date.now()}`;
+          const msg    = await pub.publishToMainChat({ userId: game.user.id, content: marker });
+          if (msg?.id) createdMessageIds.push(msg.id);
+          assert.isOk(msg, "publish should post a message");
+          assert.isTrue(!!msg.flags?.[MODULE]?.publishedReflection, "card carries the publishedReflection flag");
+          assert.equal(msg.flags?.[MODULE]?.kind, "published-reflection");
+          assert.include(msg.content, marker);
+        });
+      });
+    },
+    { displayName: "STARFORGED: Private Channel" },
+  );
+}
 
 function registerEntityFinalizeTests(quench) {
   quench.registerBatch(
