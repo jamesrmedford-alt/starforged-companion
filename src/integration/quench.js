@@ -146,6 +146,11 @@ Hooks.on("quenchReady", (quench) => {
   // from docs/testing/behaviour-coverage-audit.md (Lens 1 Cluster A + Lens 3
   // IP1 + IP3).
   registerLocationFamilyActorWiresTests(quench);
+  // Entity finalize lifecycle (T1) — finalizeEntity writes grounded narrator
+  // flavour to a real settlement Actor (system.description + flag), with the
+  // Anthropic endpoint stubbed and the art branch skipped via a pre-set
+  // portraitId. Live analog of tests/unit/finalize.test.js.
+  registerEntityFinalizeTests(quench);
   // Token-drag set a course — Lens 3 IP4 of the behaviour-coverage audit
   // (Priority 2). The sector-Scene Token-drag handler dispatches a
   // synthetic ChatMessage carrying `forcedMoveId: "set_a_course"`; this
@@ -7792,6 +7797,142 @@ function registerPortraitActorAttachTests(quench) {
 // Surfaces the consolidated Priority 1 finding from the behaviour-coverage
 // audit (Lens 1 Cluster A + Lens 3 IP1 + IP3).
 // ─────────────────────────────────────────────────────────────────────────────
+
+function registerEntityFinalizeTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.entityFinalize",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      // Canned narrator response (Anthropic Messages shape) with a sentinel so
+      // the assertion proves THIS stubbed prose reached the Actor.
+      const STUB = "Stubbed finalize prose — a salvager town under a dead star.";
+      function stubAnthropic() {
+        return [
+          ["api.anthropic.com", async () => ({
+            id: "msg_test", type: "message", role: "assistant",
+            model: "claude-sonnet-4-5-20250929",
+            content: [{ type: "text", text: STUB }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 100, output_tokens: 20 },
+          })],
+        ];
+      }
+
+      let stateAtStart = null;
+      const createdActorIds = [];
+      function track(id) { if (id) createdActorIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdActorIds.splice(0)) {
+          const a = game.actors?.get(id);
+          if (a?.delete) await a.delete().catch(() => {});
+        }
+      }
+
+      // Seed a real settlement Actor. portraitId is pre-set so finalizeEntity
+      // skips the art branch — this batch isolates the flavour write and never
+      // touches OpenRouter. Returns the new actor id.
+      async function seedSettlement(label) {
+        const { createSettlement } = await import(`${MODULE_PATH}/entities/settlement.js`);
+        const state  = game.settings.get(MODULE, "campaignState");
+        const before = state.settlementIds?.length ?? 0;
+        await createSettlement({
+          name:       `QUENCH FINALIZE ${label} ${Date.now()}`,
+          location:   "Orbital",
+          authority:  "Lawless",
+          portraitId: "quench-skip-art",
+        }, state, { persist: false });
+        const actorId = state.settlementIds?.[before] ?? null;
+        track(actorId);
+        return { actorId, state };
+      }
+
+      before(async function () {
+        this.timeout(20000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+      after(async function () {
+        this.timeout(20000);
+        await flushCleanup();
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+      afterEach(flushCleanup);
+
+      describe("finalizeEntity writes grounded flavour to a real settlement Actor", function () {
+        it("sets system.description + flag description + finalizedAt from the narrator", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { actorId, state } = await seedSettlement("WRITE");
+          assert.isOk(actorId, "a settlement Actor should have been created");
+
+          const { finalizeEntity } = await import(`${MODULE_PATH}/entities/finalize.js`);
+          let result;
+          await withTempSetting("claudeApiKey", "sk-ant-test-key", async () => {
+            await withStubbedFetch(stubAnthropic(), async () => {
+              result = await finalizeEntity("settlement", actorId, state);
+            });
+          });
+
+          assert.isTrue(result?.ok, "finalize should succeed");
+          assert.equal(result.reason, "finalized");
+
+          const actor = game.actors.get(actorId);
+          assert.equal(actor.system?.description, STUB,
+            "system.description should carry the stubbed flavour (the sheet body)");
+          const flag = actor.getFlag(MODULE, "settlement");
+          assert.equal(flag?.description, STUB, "the module flag should carry the same flavour");
+          assert.isOk(flag?.finalizedAt, "the record should be stamped finalizedAt");
+        });
+
+        it("is idempotent without force and regenerates with force", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { actorId, state } = await seedSettlement("IDEM");
+          const { finalizeEntity } = await import(`${MODULE_PATH}/entities/finalize.js`);
+
+          await withTempSetting("claudeApiKey", "sk-ant-test-key", async () => {
+            await withStubbedFetch(stubAnthropic(), async () => {
+              const first = await finalizeEntity("settlement", actorId, state);
+              assert.equal(first.reason, "finalized", "first finalize generates");
+
+              const second = await finalizeEntity("settlement", actorId, state);
+              assert.equal(second.reason, "already-finalized",
+                "a finalized entity is left alone without force");
+
+              const forced = await finalizeEntity("settlement", actorId, state, { force: true });
+              assert.equal(forced.reason, "regenerated", "force re-runs the generation");
+            });
+          });
+        });
+
+        it("skips with no Claude key and writes nothing", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { actorId, state } = await seedSettlement("NOKEY");
+          const { finalizeEntity } = await import(`${MODULE_PATH}/entities/finalize.js`);
+
+          const result = await withTempSetting("claudeApiKey", "", async () => {
+            return withStubbedFetch(stubAnthropic(), async () =>
+              finalizeEntity("settlement", actorId, state));
+          });
+
+          assert.isFalse(result.ok, "finalize should not succeed without a key");
+          assert.equal(result.reason, "no-flavor");
+          const flag = game.actors.get(actorId).getFlag(MODULE, "settlement");
+          assert.isNotOk(flag?.finalizedAt, "nothing should have been written");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Entity Finalize" },
+  );
+}
 
 function registerLocationFamilyActorWiresTests(quench) {
   quench.registerBatch(
