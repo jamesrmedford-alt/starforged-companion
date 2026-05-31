@@ -284,3 +284,61 @@ multiple characters are present and "you" becomes ambiguous.
 
 **Both are configurable** in the Narrator tab of module settings. The auto
 logic lives in `resolveNarrationPerspective()` in `src/narration/narrator.js`.
+
+---
+
+## Auto-capture salience gate
+
+**Decision:** The combined detection pass and the chronicle writer rate every
+candidate beat on a five-tier salience scale (`trivial` < `scene` < `notable` <
+`significant` < `defining`), and each capture channel — World Journal Lore,
+World Journal Threats, and the character Chronicle — drops anything below its
+own configurable floor. Floors default conservatively to `significant`. The
+shared logic lives in `src/world/salience.js`; the gate sits in
+`routeWorldJournalResults` (lore/threats) and `writeChronicleEntry` (chronicle).
+
+**Reason:** v1.6.1 playtest (findings F15 / F17 / F20 / F21) showed auto-capture
+was over-eager — transient scene beats (a sensor blip, scorch marks, an airlock
+cycling) became permanent Lore pages, scene-level complications became world
+Threats, and the Chronicle filled with moment-to-moment minutiae. Salience is
+distinct from the existing detector `confidence` field (how sure the model is a
+thing exists) — it measures how *durable* the thing is — so it is a new field,
+not an overload of `confidence`.
+
+**Per-channel, not a single dial (D4):** each channel owns its floor so the GM
+can, e.g., keep Threats strict while loosening the Chronicle. Matches the
+existing per-feature world-settings style.
+
+**Conservative default (D5):** the floor is `significant`, so only durable
+world/character facts are recorded and the GM promotes scene texture up. Under-
+capturing is cheap to correct (the WJ panel has a Confirm step; the Chronicle
+has manual + Add Note); over-capturing creates cleanup. Findings explicitly
+flagged over-capture, so the default errs toward recording less.
+
+**Fail-open — the load-bearing safety choice:** `passesSalience` treats an
+absent or unrecognised item salience as a *pass*. If the model stops emitting
+the field (format drift), capture degrades to the pre-salience "record
+everything" baseline rather than a silent blackout where nothing is captured.
+This is the RECAP-003 lesson — never let a parse miss silently disable a whole
+subsystem. The salience path is also kept free of `console.warn` so the
+fail-open route does not trip the test-harness warn guard.
+
+**What was rejected:**
+- *A numeric 1–5 score.* An ordered enum is more self-documenting in the JSON
+  and the per-channel setting becomes a meaningful choice list rather than an
+  opaque number; it also mirrors the `SEVERITY_ORDER` idiom already in
+  `worldJournal.js`.
+- *Fail-closed (drop unrated items).* Safer-looking but it risks the exact
+  silent-disable failure mode RECAP-003 warned about.
+- *Retroactive sweep of existing over-captured entries (D6).* Out of scope —
+  go-forward behaviour only.
+
+**Deliberately not in this slice:** routing below-threshold scene beats into a
+running session-log page (D7, append-during-play) is the follow-up; for now
+below-threshold lore/threats are simply dropped. The empty-body defect (T3) is a
+separate confirm/persist concern, not a salience question.
+
+**Settings surface:** the three thresholds are registered `config: false` like
+the rest of the World Journal / Chronicle capture family (none of which the
+custom panel renders yet) and are documented in the in-game Settings Reference.
+Surfacing the whole capture family as panel rows is a clean later improvement.

@@ -18,6 +18,7 @@
 import { apiPost } from '../api-proxy.js';
 import { addChronicleEntry } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
+import { passesSalience, getSalienceThreshold } from '../world/salience.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -38,6 +39,7 @@ Return ONLY a JSON object — no markdown fences, no preamble, no text outside t
 
 {
   "type": "revelation" | "relationship" | "scar" | "discovery" | "moment",
+  "salience": "trivial" | "scene" | "notable" | "significant" | "defining",
   "text": "<one short sentence in plain prose>"
 }
 
@@ -50,6 +52,16 @@ The chronicle is a narrative story record, not a mechanical one. Capture what ch
   - scar: physical or emotional harm taken; a mark the character will carry
   - discovery: a new place, faction, NPC, or piece of the world encountered
   - moment: an emotionally significant beat that doesn't fit the others
+
+Salience — rate how much this beat changes the character's ongoing story, so fleeting scene texture does not flood the chronicle:
+
+  - defining: a turning point in the character's arc.
+  - significant: a durable development — a bond formed, a scar taken, or a truth that changes how the character sees their journey.
+  - notable: a meaningful beat that may echo later.
+  - scene: matters only in the current moment.
+  - trivial: incidental flavour.
+
+Be sparing: most narration is "scene" or "trivial".
 
 Constraints:
   - One sentence, plain prose, present or past tense — pick what reads naturally.
@@ -115,6 +127,12 @@ export async function writeChronicleEntry({
     return null;
   });
   if (!generated?.text) return null;
+
+  // Per-channel salience floor (docs/decisions.md → auto-capture salience gate).
+  // Fail-open: an unrated beat passes rather than silently dropping (F20).
+  if (!passesSalience(generated.salience, getSalienceThreshold('chronicle'))) {
+    return null;
+  }
 
   const entry = {
     type:      VALID_TYPES.has(generated.type) ? generated.type : 'moment',
@@ -189,6 +207,7 @@ function parseEntry(rawText) {
     if (!text)                                   return null;
     return {
       type: typeof parsed.type === 'string' ? parsed.type.toLowerCase() : 'moment',
+      salience: typeof parsed.salience === 'string' ? parsed.salience.toLowerCase() : null,
       text,
     };
   } catch {
