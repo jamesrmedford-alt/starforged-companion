@@ -16,6 +16,9 @@ import {
 import { getActiveCharacter, getRecentNarrationContext } from "../../src/narration/narrator.js";
 import { buildPrivateContext } from "../../src/private-channel/context.js";
 import { publishToMainChat } from "../../src/private-channel/publish.js";
+import { requestPrivateNarration } from "../../src/private-channel/narrate.js";
+import { PrivateChannelApp, CHANNEL_MODE } from "../../src/private-channel/app.js";
+import { apiPost } from "../../src/api-proxy.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -31,6 +34,7 @@ vi.mock("../../src/narration/narrator.js", () => ({
   getActiveCharacter:        vi.fn(),
   getRecentNarrationContext: vi.fn(() => ""),
 }));
+vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 
 // ── in-memory Foundry doubles ───────────────────────────────────────────────
 
@@ -352,5 +356,104 @@ describe("publishToMainChat", () => {
     const r = await publishToMainChat({ userId: "u1", content: "   " });
     expect(r).toBeNull();
     expect(createSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requestPrivateNarration (narrate.js) — the send-flow core
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("requestPrivateNarration", () => {
+  beforeEach(() => {
+    apiPost.mockReset();
+    getActiveCharacter.mockReset().mockReturnValue({ name: "Kira", meters: {} });
+    getRecentNarrationContext.mockReset().mockReturnValue("");
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, "sk-ant-test");
+  });
+
+  it("returns the narrator text on success, using Haiku with a cached system prefix", async () => {
+    apiPost.mockResolvedValue({ content: [{ type: "text", text: "The image stays with you." }] });
+    const r = await requestPrivateNarration({
+      campaignState: { currentSessionId: "s1" }, userId: "u1", playerMessage: "hi",
+    });
+    expect(r).toEqual({ ok: true, text: "The image stays with you." });
+    const body = apiPost.mock.calls[0][2];
+    expect(body.model).toMatch(/haiku/);
+    expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(body.messages[0].role).toBe("user");
+  });
+
+  it("returns no-key (and skips the call) when the Claude key is unset", async () => {
+    game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    const r = await requestPrivateNarration({ campaignState: {}, userId: "u1", playerMessage: "hi" });
+    expect(r).toEqual({ ok: false, reason: "no-key" });
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it("returns no-character (and skips the call) when none resolves", async () => {
+    getActiveCharacter.mockReturnValue(null);
+    const r = await requestPrivateNarration({ campaignState: {}, userId: "u1", playerMessage: "hi" });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("no-character");
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it("returns empty when the model yields no text", async () => {
+    apiPost.mockResolvedValue({ content: [{ type: "text", text: "   " }] });
+    const r = await requestPrivateNarration({ campaignState: {}, userId: "u1", playerMessage: "hi" });
+    expect(r.reason).toBe("empty");
+  });
+
+  it("returns error (message preserved by the caller) when the API call throws", async () => {
+    apiPost.mockRejectedValue(new Error("401"));
+    const r = await requestPrivateNarration({ campaignState: {}, userId: "u1", playerMessage: "hi" });
+    expect(r.reason).toBe("error");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PrivateChannelApp.open (app.js) — per-user window lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PrivateChannelApp.open", () => {
+  beforeEach(() => PrivateChannelApp._resetInstances());
+  afterEach(() => PrivateChannelApp._resetInstances());
+
+  it("creates a window with the given userId and mode", async () => {
+    const app = await PrivateChannelApp.open({ userId: "u1", mode: CHANNEL_MODE.PRIVATE });
+    expect(app.userId).toBe("u1");
+    expect(app.mode).toBe("private");
+    expect(PrivateChannelApp._hasInstance("u1")).toBe(true);
+  });
+
+  it("defaults mode to PRIVATE", async () => {
+    const app = await PrivateChannelApp.open({ userId: "u1" });
+    expect(app.mode).toBe(CHANNEL_MODE.PRIVATE);
+  });
+
+  it("returns the same instance for the same user (no duplicate window)", async () => {
+    const a = await PrivateChannelApp.open({ userId: "u1" });
+    const b = await PrivateChannelApp.open({ userId: "u1" });
+    expect(b).toBe(a);
+  });
+
+  it("tracks separate windows per user", async () => {
+    const a = await PrivateChannelApp.open({ userId: "u1" });
+    const b = await PrivateChannelApp.open({ userId: "u2" });
+    expect(b).not.toBe(a);
+    expect(PrivateChannelApp._hasInstance("u1")).toBe(true);
+    expect(PrivateChannelApp._hasInstance("u2")).toBe(true);
+  });
+
+  it("applies initialMessage when provided", async () => {
+    const app = await PrivateChannelApp.open({ userId: "u1", initialMessage: "draft text" });
+    expect(app.initialMessage).toBe("draft text");
+  });
+
+  it("rejects an unknown mode value", async () => {
+    await expect(PrivateChannelApp.open({ userId: "u1", mode: "bogus" }))
+      .rejects.toThrow(/unknown mode/i);
   });
 });
