@@ -401,7 +401,9 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
   const [sectorStubText, ...settlementResults] = await Promise.all([
     callStubApi(
       buildSectorStubPrompt(sector, regionLabel, settlementList, perspectiveNote),
-      150,
+      // ~110 words for a 2–3 sentence atmospheric paragraph. 150 tokens cut the
+      // prose off mid-sentence (F4); 320 lets the requested length complete.
+      320,
       apiKey
     ).catch(err => {
       console.warn(`${MODULE_ID} | sectorGenerator: sector stub generation failed:`, err);
@@ -410,7 +412,8 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
     ...sector.settlements.map(s =>
       callStubApi(
         buildSettlementStubPrompt(s, sector, regionLabel, perspectiveNote),
-        100,
+        // 1–2 sentences; 100 tokens risked the same mid-sentence cut-off.
+        220,
         apiKey
       ).catch(err => {
         console.warn(`${MODULE_ID} | sectorGenerator: settlement stub generation failed for ${s.id}:`, err);
@@ -664,13 +667,40 @@ async function callStubApi(prompt, maxTokens, apiKey) {
     "anthropic-version": "2023-06-01",
   };
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const stopReason = data.stop_reason;
   const text = (data.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)
     .join("");
   if (!text) throw new Error("Stub API returned no text");
-  return text.trim();
+  // If the model hit the token ceiling mid-sentence (F4), trim back to the last
+  // complete sentence so the prose never ends on a dangling clause. Only when
+  // truncated by length and a clean earlier sentence boundary exists.
+  return trimToLastSentence(text.trim(), stopReason === "max_tokens");
 }
+
+/**
+ * Trim text to its last complete sentence when it was cut off by the token
+ * limit and doesn't already end on terminal punctuation. Leaves naturally
+ * complete text untouched.
+ *
+ * @param {string} text
+ * @param {boolean} wasTruncated  true when stop_reason was "max_tokens"
+ * @returns {string}
+ */
+function trimToLastSentence(text, wasTruncated) {
+  if (!wasTruncated) return text;
+  if (/[.!?]["')\]]?\s*$/.test(text)) return text;       // already ends cleanly
+  // Find the last sentence-ending punctuation, then keep any immediately
+  // following closing quote/paren so dialogue like `"...end."` stays intact.
+  const m = /[.!?]["')\]]?/g;
+  let lastEnd = -1, match;
+  while ((match = m.exec(text)) !== null) lastEnd = match.index + match[0].length;
+  if (lastEnd <= 0) return text;                          // no earlier boundary — leave as-is
+  return text.slice(0, lastEnd).trim();
+}
+
+export { trimToLastSentence };
 
 function escapeHtml(str) {
   return String(str ?? "")
