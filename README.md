@@ -28,7 +28,7 @@ and `!pace hot|quiet|clear` let you tune scene intensity on the fly.
 **Scene interrogation** — type `@scene [question]` to ask the narrator for
 atmospheric detail without triggering a move.
 
-**Session flow** — a 🎮 **Session Panel** covers all five session moves (Begin,
+**Session flow** — a ▶ **Session Panel** covers all five session moves (Begin,
 End, Set a Flag, Change Your Fate, Take a Break). **Begin Session** is the gate:
 before you start, plain typed messages stay as ordinary chat. Begin opens with a
 light galley vignette of your crew; End closes with a quiet slice-of-life scene
@@ -129,7 +129,7 @@ the path.
 ## Chat commands
 
 Module commands use a `!` prefix (Foundry reserves `/` for its own commands).
-Several commands are GM-only as noted. The 🎮 Session and 🛡 Companion Settings
+Several commands are GM-only as noted. The ▶ Session and 🛡 Companion Settings
 toolbar buttons provide button-driven equivalents for the session moves and
 configuration.
 
