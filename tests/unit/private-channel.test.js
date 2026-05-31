@@ -18,6 +18,7 @@ import { buildPrivateContext } from "../../src/private-channel/context.js";
 import { publishToMainChat } from "../../src/private-channel/publish.js";
 import { requestPrivateNarration } from "../../src/private-channel/narrate.js";
 import { PrivateChannelApp, CHANNEL_MODE } from "../../src/private-channel/app.js";
+import { openPrivateChannel, isPrivateChannelEnabled } from "../../src/private-channel/index.js";
 import { apiPost } from "../../src/api-proxy.js";
 
 const MODULE_ID = "starforged-companion";
@@ -455,5 +456,39 @@ describe("PrivateChannelApp.open", () => {
   it("rejects an unknown mode value", async () => {
     await expect(PrivateChannelApp.open({ userId: "u1", mode: "bogus" }))
       .rejects.toThrow(/unknown mode/i);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// private-channel index — enable gate + open wrapper (toolbar target)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("private-channel index", () => {
+  beforeEach(() => PrivateChannelApp._resetInstances());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    game.settings._store.delete(`${MODULE_ID}.privateChannel.enabled`);
+  });
+
+  it("isPrivateChannelEnabled defaults to true and respects the setting", () => {
+    expect(isPrivateChannelEnabled()).toBe(true);                 // unset → enabled
+    game.settings._store.set(`${MODULE_ID}.privateChannel.enabled`, false);
+    expect(isPrivateChannelEnabled()).toBe(false);
+  });
+
+  it("openPrivateChannel opens the window for the calling user when enabled", () => {
+    const spy = vi.spyOn(PrivateChannelApp, "open").mockReturnValue("APP");
+    const r = openPrivateChannel();
+    expect(spy).toHaveBeenCalledWith({ userId: game.user.id });
+    expect(r).toBe("APP");
+  });
+
+  it("openPrivateChannel no-ops (null, no window) when the feature is disabled", () => {
+    game.settings._store.set(`${MODULE_ID}.privateChannel.enabled`, false);
+    const spy = vi.spyOn(PrivateChannelApp, "open").mockReturnValue("APP");
+    const r = openPrivateChannel();
+    expect(r).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
   });
 });

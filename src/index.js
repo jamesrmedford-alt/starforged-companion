@@ -68,6 +68,7 @@ import {
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
+import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
 import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
@@ -2323,6 +2324,7 @@ Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
   registerCoreSettings();
   registerUISettings();
+  registerPrivateChannelSettings();
   registerCompanionControlLayer();
 });
 
@@ -2528,6 +2530,7 @@ function buildCompanionTools() {
     progressTracks: { name: "progressTracks", title: "Progress Tracks",     icon: "fas fa-tasks",       button: true, onChange: () => openProgressTracks() },
     entityPanel:    { name: "entityPanel",    title: "Entities",            icon: "fas fa-users",       button: true, onChange: () => openEntityPanel() },
     chronicle:      { name: "chronicle",      title: "Character Chronicle", icon: "fas fa-book-open",    button: true, onChange: () => openChroniclePanel() },
+    sfPrivateChannel:{ name: "sfPrivateChannel", title: "Private Channel",   icon: "fas fa-comment-dots", button: true, visible: isPrivateChannelEnabled(), onChange: () => openPrivateChannel() },
     sfSettings:     { name: "sfSettings",     title: "Companion Settings",  icon: "fas fa-shield-alt",   button: true, visible: isGM, onChange: () => openSettingsPanel() },
     sectorCreator:  { name: "sectorCreator",  title: "Sector Creator",      icon: "fas fa-map",          button: true, visible: isGM, onChange: () => {} },
     worldJournal:   { name: "worldJournal",   title: "World Journal",       icon: "fas fa-book",         button: true, visible: isGM, onChange: () => {} },
@@ -2592,6 +2595,7 @@ Hooks.on("renderSceneControls", (app, html) => {
     progressTracks: () => openProgressTracks(),
     entityPanel:    () => openEntityPanel(),
     chronicle:      () => openChroniclePanel(),
+    sfPrivateChannel: () => openPrivateChannel(),
     sfSettings:     () => openSettingsPanel(),
     sectorCreator:  () => openSectorCreator(),
     worldJournal:   () => openWorldJournalPanel(),
