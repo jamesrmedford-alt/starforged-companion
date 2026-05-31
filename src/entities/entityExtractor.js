@@ -9,12 +9,18 @@
  * and to the World Journal write functions.
  *
  * Routing rule (world-journal scope §4):
- *   - Lore   → WJ always
- *   - Threat → WJ always
+ *   - Lore   → WJ when salience clears the lore floor, else the running session log
+ *   - Threat → WJ when salience clears the threat floor, else the running session log
  *   - Faction → WJ only if no entity record with that name exists, else
  *     handled via the entity generative tier
  *   - Location → same rule as faction
  *   - NPC / ship / creature → entity only, never WJ
+ *
+ * The detector rates each lore/threat candidate's salience (see
+ * src/world/salience.js); per-channel floors keep transient scene beats out of
+ * the World Journal (findings F15 / F17 / F21). Below-threshold beats append to
+ * one running session-log page (D7 / F18) rather than being dropped. Fail-open —
+ * an unrated item is recorded as durable, never rerouted.
  *
  * For interaction-class moves with matched entities, a separate Haiku call
  * (`appendGenerativeTierUpdates`) extracts narrator-added details and
@@ -45,11 +51,13 @@ import {
   recordLocation,
   promoteLoreToConfirmed,
   applyStateTransition as wjApplyStateTransition,
+  appendSessionLogBeat,
   getConfirmedLore,
   getNarratorAssertedLore,
   getActiveThreats,
   getFactionLandscape,
 } from "../world/worldJournal.js";
+import { passesSalience, getSalienceThreshold } from "../world/salience.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -230,10 +238,12 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `  "worldJournal": {`,
     `    "lore": [`,
     `      { "title": string, "category": string, "text": string,`,
+    `        "salience": "trivial"|"scene"|"notable"|"significant"|"defining",`,
     `        "narratorAsserted": true, "confirmed": false }`,
     `    ],`,
     `    "threats": [`,
-    `      { "name": string, "type": string, "severity": string, "summary": string }`,
+    `      { "name": string, "type": string, "severity": string, "summary": string,`,
+    `        "salience": "trivial"|"scene"|"notable"|"significant"|"defining" }`,
     `    ],`,
     `    "factionUpdates": [`,
     `      { "name": string, "attitude": string, "summary": string, "isNew": boolean }`,
@@ -248,6 +258,20 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `    ]`,
     `  }`,
     `}`,
+    ``,
+    `SALIENCE — rate how durable each lore and threat item is, so transient`,
+    `scene beats do not become permanent World Journal entries:`,
+    `  - "defining":    a world truth, a faction's overarching agenda, or a`,
+    `                   revelation that reshapes the campaign.`,
+    `  - "significant": a durable world or character fact that will still matter`,
+    `                   in later sessions (e.g. the cargo is actually wartime munitions).`,
+    `  - "notable":     a meaningful clue or complication that may matter beyond`,
+    `                   the current scene.`,
+    `  - "scene":       matters only within the current encounter (a sensor blip,`,
+    `                   a description, an immediate observation).`,
+    `  - "trivial":     atmospheric flavour with no lasting weight.`,
+    `Be sparing: most moment-to-moment narration is "scene" or "trivial". Reserve`,
+    `"significant" and "defining" for facts worth remembering next session.`,
     ``,
     `Lore rules: only extract concrete narrative facts, not atmosphere.`,
     `Threat rules: only named or distinctly typed dangers with narrative weight.`,
@@ -581,8 +605,17 @@ function hasOpenRouterKey() {
 export async function routeWorldJournalResults(wj, campaignState) {
   if (!wj) return;
 
+  // Below-threshold lore/threat items are transient scene beats: route them to
+  // the running session log (D7 / F18) instead of spawning a WJ entry each.
+  // Fail-open items (unrated salience) clear the gate and are recorded as
+  // durable, never rerouted.
+  const loreThreshold = getSalienceThreshold("lore");
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
+    if (!passesSalience(lore.salience, loreThreshold)) {
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
+      continue;
+    }
     await recordLoreDiscovery(lore.title, {
       ...lore,
       narratorAsserted: true,
@@ -590,8 +623,13 @@ export async function routeWorldJournalResults(wj, campaignState) {
     }, campaignState);
   }
 
+  const threatThreshold = getSalienceThreshold("threats");
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
+    if (!passesSalience(threat.salience, threatThreshold)) {
+      await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "" });
+      continue;
+    }
     await recordThreat(threat.name, threat, campaignState);
   }
 

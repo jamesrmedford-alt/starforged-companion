@@ -1,11 +1,50 @@
 # Starforged Companion — Entity → Actor Migration Scope
 ## Move four custom entity types onto native foundry-ironsworn Actor documents
 
-**Status:** 📋 PLANNED
-**Priority:** TBD (no current blocker; opportunistic structural cleanup)
-**Estimated Claude Code sessions:** 3
+**Status:** ✅ COMPLETE — shipped incrementally; see "Implementation status" below.
+**Priority:** —
+**Estimated Claude Code sessions:** 3 (as-built: shipped across Phases 1–3.5)
 **Dependencies:** Character Management (✅), Ironsworn API (✅), Narrator Entity Discovery (✅), World Journal (✅), Quench Integration Tests (✅)
 **Pre-requisite:** None — entity reads/writes are concentrated in a small surface (`src/entities/*.js`, `src/ui/entityPanel.js`, `src/context/{assembler,relevanceResolver}.js`)
+
+---
+
+## Implementation status — ✅ SHIPPED (reconciled 2026-05-31)
+
+This scope was **implemented and shipped**, but this document and `scope-index.md`
+were never moved off 📋 PLANNED. Reconciled here against the as-built code. The
+design sections below describe what was built — treat them as the as-built
+reference, not a forward plan.
+
+**What shipped, and where:**
+
+| Phase | Commit | As-built |
+|---|---|---|
+| 1 — storage shim | `4b642b0` | `src/entities/registry.js` — `getEntityDocument` / `readEntityFlag` / `writeEntityFlag` dispatch journal-vs-actor via the `HOST_COLLECTION` map |
+| 2 — ship | `d1413b1` | `src/entities/ship.js` → `Actor.create({ type: "starship" })` |
+| 3 — location family | `b65175a` | `planet.js` / `location.js` / `settlement.js` → `Actor.create({ type: "location", system.subtype })` |
+| 3.5 — sector dedup + overview | `3bda244` | `sectorGenerator.js` slims `campaignState.sectors[]`, sector overview uses `@UUID[Actor.<id>]` links, live `updateActor` re-render |
+| folder flatten | `9e52d31` | `Sectors/<Name>/` (per-type subfolder removed); `flattenSectorActorFolders` in `migrator.js` |
+
+- `src/entities/migrator.js` implements `!migrate-entities` (+ `--cleanup`), registered in `src/index.js`.
+- `src/entities/folder.js` exposes the §3.4 helpers (`getOrCreateActorFolder`, `getOrCreateSectorActorFolder`, `getOrCreateJournalEntitiesFolder`).
+- Unit coverage: `tests/unit/entityShipActor.test.js`, `entityLocationFamilyActor.test.js`, `entityMigrator.test.js` (green in the suite).
+- `connection` / `faction` / `creature` remain journal-backed, as designed (§8).
+
+**Bearing on the T1 finalize-lifecycle work (v1.6.1 playtest theme):** because the
+four types are already Actor-backed, T1 ("defer generation out of creation;
+finalize at wizard completion / explicit action; ground prompts in the real
+Actor; manual regen") **builds directly on this storage — there is no migration
+prerequisite.** The earlier audit note that "T1 folds into Phases 2–3" is
+superseded: those phases shipped. T1 now layers a generation-lifecycle step onto
+the existing Actor creators (`ship.js`, `settlement.js`) and reads via the
+existing getters / `getEntityDocument`.
+
+**Doc hygiene fixed in this reconciliation:** stale paths from the v1.6.1 docs
+reorg were corrected throughout — `tests/integration/quench.js` →
+`src/integration/quench.js`; `docs/foundry-api-reference.md` →
+`docs/foundry-reference/foundry-api-reference.md`; `packs/help.json` →
+`src/help/helpJournal.js` (the live in-game help source).
 
 ---
 
@@ -18,7 +57,7 @@ The narrator's entity-discovery pipeline (Phase 1) creates entity records as Jou
 - Compendium and sidebar integration (entities appear in the standard Actors tab grouped by type)
 - A canonical `actor.img` field that Foundry knows how to render in chat, sidebars, and token wildcards — removes the `data.portraitId → loadArtAsset()` indirection for display
 
-A field-by-field review (`docs/foundry-api-reference.md` plus `vendor/foundry-ironsworn/src/module/actor/subtypes/`) shows four of the seven custom types have native Actor analogues strong enough to migrate:
+A field-by-field review (`docs/foundry-reference/foundry-api-reference.md` plus `vendor/foundry-ironsworn/src/module/actor/subtypes/`) shows four of the seven custom types have native Actor analogues strong enough to migrate:
 
 | Custom type | Native Actor | Match quality | Storage shape |
 |---|---|---|---|
@@ -201,7 +240,7 @@ Pre-migration, settlement (and to a lesser extent planet/location) data is dupli
 | 1 | `actor.system + actor.flags[MODULE].<type>` | (doesn't exist yet) | **Source of truth.** Holds every mutable field. |
 | 2 | Embedded `JournalEntryPage` inside the sector-record `JournalEntry` (`src/sectors/sectorGenerator.js:494-515`) | One static HTML page per settlement (type / population / authority / projects / trouble / narrator stub) | **Removed.** The sector-record journal keeps the sector overview page only. Per-settlement detail is replaced by `@UUID[Actor.<id>]{Name}` links in the overview's settlement list. Same treatment applied if/when the sector record gains planet or POI pages. |
 | 3 | `campaignState.sectors[]` array on the world settings blob (`src/sectors/sectorGenerator.js:340`, read by `src/index.js:1024`, `src/context/assembler.js:792`, `src/narration/narrator.js:929`) | The entire generation result, including full settlement objects | **Slimmed.** Each `sector.settlements[]` entry becomes `{ id, actorId, locationType, planetActorId?, mapCoords? }` — only the structural/spatial fields needed for sector-map rendering and for the assembler's "what's in this sector" lookup. `id` is retained for backward compatibility with sector-art and map code that already references it. The other fields (`population`, `authority`, `projects`, `trouble`, `description`, etc.) are removed from the array entry and resolved at read time via `game.actors.get(actorId)`. |
-| 4 | `Starforged Sectors` JournalEntry flag (`saveSectorToJournal`, `src/sectors/sectorGenerator.js:529`) | The entire generation result, again | **Removed.** No production code reads this — only `tests/integration/quench.js:776/781`. Quench tests are updated to read from `campaignState.sectors[]` instead. The orphan `Starforged Sectors` JournalEntry itself is deleted by the migrator. |
+| 4 | `Starforged Sectors` JournalEntry flag (`saveSectorToJournal`, `src/sectors/sectorGenerator.js:529`) | The entire generation result, again | **Removed.** No production code reads this — only `src/integration/quench.js:776/781`. Quench tests are updated to read from `campaignState.sectors[]` instead. The orphan `Starforged Sectors` JournalEntry itself is deleted by the migrator. |
 
 **Field ownership rule** — for every field, exactly one of (1) and (3) owns it:
 
@@ -358,7 +397,7 @@ The settlement-instance fields are being removed from the sector-flag entries. T
 - `src/context/assembler.js:792` — active-sector context block. Audit during implementation: any read of `sector.settlements[i].population` (etc.) must switch to `game.actors.get(actorId).flags[MODULE].settlement.population`. The slim entry's `actorId` is the lookup key.
 - `src/narration/narrator.js:929` — same audit. Likely reads sector name and trouble (both kept), but verify before merging.
 
-The Quench test at `tests/integration/quench.js:776/781` reads the `Starforged Sectors` flag — rewrite to read `campaignState.sectors[]`.
+The Quench test at `src/integration/quench.js:776/781` reads the `Starforged Sectors` flag — rewrite to read `campaignState.sectors[]`.
 
 ### 4.8 Campaign state
 
@@ -445,7 +484,7 @@ After implementing in a Foundry session:
 - `sectorGenerator.js`: drop the per-settlement embedded pages from `createSectorJournal`; rewrite the overview's settlements list as `@UUID[...]` document links; delete `saveSectorToJournal`.
 - `storeSector` (the `campaignState.sectors[]` push) emits slim settlement entries per §3.5.
 - Audit and update `src/context/assembler.js` and `src/narration/narrator.js` active-sector reads (§4.8).
-- Quench tests at `tests/integration/quench.js:776/781` switch to reading `campaignState.sectors[]`.
+- Quench tests at `src/integration/quench.js:776/781` switch to reading `campaignState.sectors[]`.
 - Migrator covers all three subtypes plus the steps 4–6 dedup work (slim sector array, rewrite sector-record overview, delete orphan `Starforged Sectors` journal).
 - The `updateActor` debounced hook for overview re-render lands here.
 - Quench `entityActorMigration` batch is extended with subtype-disambiguation tests, "fresh sector emits slim settlement entries", and "migrator slims a legacy sector and rewrites its overview".
@@ -506,7 +545,7 @@ Modify:
 - `src/integration/quench.js` (new `entityActorMigration` batch, audit existing seeds)
 - `tests/setup.js` (extend `makeTestActor` for `starship` and `location` types)
 - `tests/unit/entityShipActor.test.js` (new), `entityPlanetActor.test.js`, `entityLocationActor.test.js`, `entitySettlementActor.test.js`
-- `packs/help.json` (add `!migrate-entities` to Chat Commands table; brief Changelog entry)
+- `src/help/helpJournal.js` (add `!migrate-entities` to Chat Commands table; brief Changelog entry)
 - `CHANGELOG.md` (Unreleased entry)
 - `docs/scope-index.md` (register this scope)
 - `docs/known-issues.md` (close any items the migration resolves; flag any remaining)
@@ -514,7 +553,7 @@ Modify:
 Read-only reference (no edits):
 - `vendor/foundry-ironsworn/src/module/actor/subtypes/starship.ts`
 - `vendor/foundry-ironsworn/src/module/actor/subtypes/location.ts`
-- `docs/foundry-api-reference.md` (Actor section before any Actor write)
+- `docs/foundry-reference/foundry-api-reference.md` (Actor section before any Actor write)
 
 ---
 

@@ -287,6 +287,89 @@ describe('writeChronicleEntry()', () => {
     expect(entry.sessionId).toBe('session-1');
     expect(entry.moveId).toBe('gather_information');
   });
+
+  // ── salience gate (T2: F20) ───────────────────────────────────────────────
+
+  it('drops a beat below the default "significant" chronicle floor (F20)', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'revelation', salience: 'scene',
+      text: 'Someone is cycling through the airlock sequence.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'The airlock indicator blinks through its cycle.',
+      campaignState: BASE_STATE,
+      kind:          'paced',
+    });
+
+    expect(entry).toBeNull();
+    expect(addChronicleEntry).not.toHaveBeenCalled();
+  });
+
+  it('records a beat at or above the floor', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'revelation', salience: 'significant',
+      text: 'The medical supplies were a front — the container holds wartime munitions.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'You pry the lid: not medicine. Munitions.',
+      campaignState: BASE_STATE,
+      moveId:        'gather_information',
+      outcome:       'strong_hit',
+      kind:          'move',
+    });
+
+    expect(entry?.text).toContain('munitions');
+    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it('records an unrated beat (fail-open — never a silent blackout)', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'moment', text: 'A beat with no salience field.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'prose',
+      campaignState: BASE_STATE,
+      kind:          'paced',
+    });
+
+    expect(entry?.text).toBe('A beat with no salience field.');
+    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not store the salience field on the chronicle entry', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'discovery', salience: 'defining',
+      text: 'A truth that reframes the journey.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'prose',
+      campaignState: BASE_STATE,
+      kind:          'paced',
+    });
+
+    expect(entry).not.toHaveProperty('salience');
+    expect(addChronicleEntry.mock.calls[0][1]).not.toHaveProperty('salience');
+  });
+
+  it('respects a chronicle floor lowered to "scene"', async () => {
+    game.settings._store.set(`${MODULE_ID}.chronicleSalienceThreshold`, 'scene');
+    apiPost.mockResolvedValue(makeApiResponse({
+      type: 'moment', salience: 'scene', text: 'Kept once the floor is lowered.',
+    }));
+
+    const entry = await writeChronicleEntry({
+      narrationText: 'prose',
+      campaignState: BASE_STATE,
+      kind:          'paced',
+    });
+
+    expect(entry?.text).toBe('Kept once the floor is lowered.');
+    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+  });
 });
 
 

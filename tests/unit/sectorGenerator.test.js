@@ -7,6 +7,7 @@
  * Run with: npm test
  */
 
+import { vi } from "vitest";
 import {
   generateSectorName,
   generateSettlement,
@@ -16,7 +17,9 @@ import {
   rollTableResult,
   buildSettlementStubPrompt,
   trimToLastSentence,
+  applyStubsToSettlementEntities,
 } from "../../src/sectors/sectorGenerator.js";
+import * as settlement from "../../src/entities/settlement.js";
 
 import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
 import { SECTOR_TROUBLE } from "../../src/oracles/tables/misc.js";
@@ -423,5 +426,52 @@ describe("trimToLastSentence (F4)", () => {
   it("preserves a closing quote/paren after terminal punctuation", () => {
     const quoted = '"We are not alone." She believed it, right up until the end';
     expect(trimToLastSentence(quoted, true)).toBe('"We are not alone."');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyStubsToSettlementEntities (F3 — write the stub to the settlement Actor)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("applyStubsToSettlementEntities", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("routes each stub through updateSettlement keyed by actor id", async () => {
+    const spy = vi.spyOn(settlement, "updateSettlement").mockResolvedValue({});
+    await applyStubsToSettlementEntities(
+      { gen1: { id: "actor-1" }, gen2: { id: "actor-2" } },
+      { settlements: { gen1: "A windswept dome.", gen2: "A rusting orbital." } },
+    );
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({ description: "A windswept dome." }));
+    expect(spy).toHaveBeenCalledWith("actor-2", expect.objectContaining({ description: "A rusting orbital." }));
+  });
+
+  it("skips settlements with no stub, an empty stub, or a missing actor", async () => {
+    const spy = vi.spyOn(settlement, "updateSettlement").mockResolvedValue({});
+    await applyStubsToSettlementEntities(
+      { gen1: { id: "actor-1" }, gen2: null, gen3: { id: "actor-3" } },
+      { settlements: { gen1: "Only this one.", gen3: "" } }, // gen2 actor null, gen3 stub empty
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({ description: "Only this one." }));
+  });
+
+  it("no-ops when the stubs payload has no settlements", async () => {
+    const spy = vi.spyOn(settlement, "updateSettlement").mockResolvedValue({});
+    await applyStubsToSettlementEntities({ gen1: { id: "actor-1" } }, {});
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("swallows an updateSettlement failure without throwing (one bad write doesn't sink the batch)", async () => {
+    const spy = vi.spyOn(settlement, "updateSettlement")
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValue({});
+    await expect(applyStubsToSettlementEntities(
+      { gen1: { id: "actor-1" }, gen2: { id: "actor-2" } },
+      { settlements: { gen1: "fails", gen2: "succeeds" } },
+    )).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

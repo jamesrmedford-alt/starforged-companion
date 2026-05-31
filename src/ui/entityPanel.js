@@ -197,6 +197,8 @@ export class EntityPanelApp extends ApplicationV2 {
       removeTier:         EntityPanelApp.#onRemoveTier,
       toggleCanonicalLock:EntityPanelApp.#onToggleCanonicalLock,
       setCurrentLocation: EntityPanelApp.#onSetCurrentLocation,
+      finalizeEntity:     EntityPanelApp.#onFinalizeEntity,
+      regenerateFlavor:   EntityPanelApp.#onRegenerateFlavor,
       switchTopTab:       EntityPanelApp.#onSwitchTopTab,
       undismiss:          EntityPanelApp.#onUndismiss,
     },
@@ -405,6 +407,28 @@ export class EntityPanelApp extends ApplicationV2 {
          </button>`
       : '';
 
+    // Finalize affordance (T1) — generate a grounded narrator description (and a
+    // first-time portrait) on demand; once finalized, offer a manual regenerate.
+    // Scoped to the four Actor-backed types. The flavour generating-state is keyed
+    // separately from portrait generation so the two indicators don't collide.
+    const supportsFinalizeType = ['ship', 'settlement', 'planet', 'location'].includes(entity.typeKey);
+    const isFinalizing = this.#generatingIds.has(`flavor:${entity.journalId}`);
+    const finalizeBtnHtml = !supportsFinalizeType
+      ? ''
+      : isFinalizing
+        ? `<button class="sf-finalize-entity" disabled>Finalising…</button>`
+        : entity.data.finalizedAt
+          ? `<button class="sf-regenerate-flavor" data-action="regenerateFlavor"
+                     data-journal-id="${escapeHtml(entity.journalId)}"
+                     title="Regenerate the narrator description from this entity's current details">
+               ↻ Regenerate flavour
+             </button>`
+          : `<button class="sf-finalize-entity" data-action="finalizeEntity"
+                     data-journal-id="${escapeHtml(entity.journalId)}"
+                     title="Generate a grounded narrator description (and a portrait if art is enabled)">
+               ✦ Finalise
+             </button>`;
+
     let portraitHtml;
     if (entity.art?.dataUri) {
       const lockBadge = entity.art.locked
@@ -478,6 +502,7 @@ export class EntityPanelApp extends ApplicationV2 {
       <div class="detail-header-actions">
         ${lockToggleHtml}
         ${currentLocationBtn}
+        ${finalizeBtnHtml}
       </div>`;
 
     return `
@@ -662,6 +687,57 @@ export class EntityPanelApp extends ApplicationV2 {
     } finally {
       this.#generatingIds.delete(journalId);
       this.render();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Finalize lifecycle handlers (T1)
+  // -----------------------------------------------------------------------
+
+  static async #onFinalizeEntity(event, target) {
+    await EntityPanelApp.#finalizeFlow(this, target, false);
+  }
+
+  static async #onRegenerateFlavor(event, target) {
+    await EntityPanelApp.#finalizeFlow(this, target, true);
+  }
+
+  // Shared flow for Finalise / Regenerate-flavour. `app` is the panel instance
+  // (the static action handler is invoked with `this` bound to it); private
+  // fields are reachable through any instance reference.
+  static async #finalizeFlow(app, target, force) {
+    const journalId = target.dataset.journalId;
+    if (!journalId) return;
+
+    const key = `flavor:${journalId}`;
+    if (app.#generatingIds.has(key)) return;
+    app.#generatingIds.add(key);
+    app.render();
+
+    try {
+      const entity = await findEntity(journalId);
+      if (!entity) throw new Error(`Entity not found: ${journalId}`);
+
+      const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+      const { finalizeEntity } = await import('../entities/finalize.js');
+      const result = await finalizeEntity(entity.typeKey, journalId, campaignState, { force });
+
+      if (result.ok && (result.reason === 'finalized' || result.reason === 'regenerated')) {
+        const art = result.artTriggered ? ' (portrait generating…)' : '';
+        ui.notifications.info(`${force ? 'Regenerated flavour for' : 'Finalised'} ${entity.name}${art}.`);
+      } else if (result.reason === 'no-flavor') {
+        ui.notifications.warn(`Could not generate a description for ${entity.name} — is your Claude API key set?`);
+      } else if (result.reason === 'already-finalized') {
+        ui.notifications.info(`${entity.name} is already finalised.`);
+      } else {
+        ui.notifications.warn(`Finalise failed for ${entity.name}. Check console for details.`);
+      }
+    } catch (err) {
+      console.error(`${MODULE_ID} | finalize failed:`, err);
+      ui.notifications.warn('Finalise failed. Check console for details.');
+    } finally {
+      app.#generatingIds.delete(key);
+      app.render();
     }
   }
 

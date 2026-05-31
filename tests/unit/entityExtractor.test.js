@@ -64,6 +64,7 @@ beforeEach(() => {
     recordLocation:             vi.spyOn(wj, "recordLocation").mockResolvedValue(undefined),
     promoteLoreToConfirmed:     vi.spyOn(wj, "promoteLoreToConfirmed").mockResolvedValue(undefined),
     applyStateTransition:       vi.spyOn(wj, "applyStateTransition").mockResolvedValue(undefined),
+    appendSessionLogBeat:       vi.spyOn(wj, "appendSessionLogBeat").mockResolvedValue(undefined),
     getConfirmedLore:           vi.spyOn(wj, "getConfirmedLore").mockReturnValue([]),
     getNarratorAssertedLore:    vi.spyOn(wj, "getNarratorAssertedLore").mockReturnValue([]),
     getActiveThreats:           vi.spyOn(wj, "getActiveThreats").mockReturnValue([]),
@@ -441,6 +442,101 @@ describe("routeWorldJournalResults", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// routeWorldJournalResults — per-channel salience gate (T2: F15 / F17 / F21)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("routeWorldJournalResults — salience gate", () => {
+  const KEYS = ["loreSalienceThreshold", "threatSalienceThreshold"];
+
+  // beforeEach does not clear settings; guarantee the conservative default.
+  beforeEach(() => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
+  afterEach(()  => { for (const k of KEYS) game.settings._store.delete(`${MODULE_ID}.${k}`); });
+
+  it("reroutes a below-floor lore item to the session log, not Lore (F17/F18)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [{ title: "Container C-47 scorch marks", text: "faint scorch", salience: "scene" }],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).not.toHaveBeenCalled();
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
+      fixture.campaignState,
+      expect.objectContaining({ kind: "lore", title: "Container C-47 scorch marks", text: "faint scorch" }),
+    );
+    fixture.restore();
+  });
+
+  it("records lore items at or above the floor (not rerouted)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [
+        { title: "Cargo is wartime munitions", text: "x", salience: "significant" },
+        { title: "A faction's true agenda",    text: "y", salience: "defining" },
+      ],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(2);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
+    fixture.restore();
+  });
+
+  it("records an unrated lore item as durable (fail-open — not rerouted)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [{ title: "Unrated but kept", text: "x" }],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
+    fixture.restore();
+  });
+
+  it("reroutes a scene-level threat to the session log, not Threats (F15/F18)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      threats: [{ name: "External airlock intrusion", severity: "immediate", summary: "now", salience: "scene" }],
+    }, fixture.campaignState);
+    expect(spies.recordThreat).not.toHaveBeenCalled();
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledWith(
+      fixture.campaignState,
+      expect.objectContaining({ kind: "threat", title: "External airlock intrusion", text: "now" }),
+    );
+    fixture.restore();
+  });
+
+  it("records a campaign-level threat at or above the floor (not rerouted)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      threats: [{ name: "Hegemony purge fleet", severity: "looming", summary: "inbound", salience: "defining" }],
+    }, fixture.campaignState);
+    expect(spies.recordThreat).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
+    fixture.restore();
+  });
+
+  it("respects a per-channel lore floor lowered to 'scene' (records, no reroute)", async () => {
+    game.settings._store.set(`${MODULE_ID}.loreSalienceThreshold`, "scene");
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [{ title: "Kept once the floor is lowered", text: "x", salience: "scene" }],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(spies.appendSessionLogBeat).not.toHaveBeenCalled();
+    fixture.restore();
+  });
+
+  it("each channel owns its floor — a lowered lore floor does not loosen threats (D4)", async () => {
+    game.settings._store.set(`${MODULE_ID}.loreSalienceThreshold`, "trivial");
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      threats: [{ name: "Scene blip", severity: "immediate", summary: "now", salience: "scene" }],
+    }, fixture.campaignState);
+    expect(spies.recordThreat).not.toHaveBeenCalled();          // threat floor still 'significant'
+    expect(spies.appendSessionLogBeat).toHaveBeenCalledTimes(1); // rerouted instead
+    fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // routeEntityDrafts — auto-create connection vs. queued draft card
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -602,6 +698,15 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toContain('"entities"');
     expect(prompt).toContain('"worldJournal"');
     expect(prompt).toContain("stateTransitions");
+  });
+
+  it("documents the salience field and its conservative rubric", () => {
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", {});
+    expect(prompt).toContain('"salience"');
+    expect(prompt).toContain("SALIENCE");
+    expect(prompt).toContain("defining");
+    expect(prompt).toContain("scene");
+    expect(prompt).toMatch(/Be sparing/i);
   });
 
   // Suggestion-loop remediation §C — paced sentinel framing.

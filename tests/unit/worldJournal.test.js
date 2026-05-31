@@ -19,6 +19,7 @@ import {
   applyStateTransition,
   annotateEntry,
   writeSessionLog,
+  appendSessionLogBeat,
   parseJournalCommand,
   executeJournalCommand,
   getConfirmedLore,
@@ -508,6 +509,74 @@ describe("writeSessionLog", () => {
     const page = await writeSessionLog(campaign({ sessionNumber: 3, currentSessionId: "ses-3" }));
     expect(page.text?.content ?? "").not.toBe("");
     expect(page.text.content).toContain("Session 3");
+  });
+
+  // D7: the End-Session summary lands on the SAME running page the scene log was
+  // appended to during play — one page per session, not one per call.
+  it("fills the summary section on the running page without spawning a new one", async () => {
+    const cs = campaign({ sessionNumber: 5, currentSessionId: "ses-5" });
+    await appendSessionLogBeat(cs, { kind: "lore", title: "Scorch marks", text: "faint" });
+    await recordLoreDiscovery("Wartime munitions", { text: "real", sessionId: "ses-5" }, cs);
+    const page = await writeSessionLog(cs);
+
+    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
+    expect(journal.pages.contents).toHaveLength(1);          // one page for the session
+    expect(page.text.content).toContain("Scene log");        // running beats kept
+    expect(page.text.content).toContain("Scorch marks");
+    expect(page.text.content).toContain("Session summary");  // wrap-up added
+    expect(page.text.content).toContain("Wartime munitions");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// appendSessionLogBeat — running scene log (D7 / F18)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("appendSessionLogBeat", () => {
+  afterEach(() => { game.settings._store.delete(`${MODULE_ID}.sessionLogAutoWrite`); });
+
+  it("creates the running session page on the first beat", async () => {
+    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "Unmarked cases", text: "serials filed off" });
+    expect(page).not.toBeNull();
+    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
+    expect(journal.pages.contents).toHaveLength(1);
+    expect(page.text.content).toContain("Scene log");
+    expect(page.text.content).toContain("Unmarked cases");
+    expect(page.text.content).toContain("serials filed off");
+  });
+
+  it("appends later beats to the same page instead of spawning new pages", async () => {
+    const cs = campaign();
+    await appendSessionLogBeat(cs, { kind: "lore",   title: "Scorch marks",     text: "a" });
+    await appendSessionLogBeat(cs, { kind: "threat", title: "Airlock cycling",  text: "b" });
+    const page = await appendSessionLogBeat(cs, { kind: "lore", title: "Proximity blip", text: "c" });
+
+    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
+    expect(journal.pages.contents).toHaveLength(1);
+    expect(page.text.content).toContain("Scorch marks");
+    expect(page.text.content).toContain("Airlock cycling");
+    expect(page.text.content).toContain("Proximity blip");
+    expect(page.text.content).toContain("Threat:");          // kind label rendered
+  });
+
+  it("no-ops when sessionLogAutoWrite is disabled", async () => {
+    game.settings._store.set(`${MODULE_ID}.sessionLogAutoWrite`, false);
+    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "Dropped beat" });
+    expect(page).toBeNull();
+    expect(_journals.has(JOURNAL_NAMES.sessionLog)).toBe(false);
+  });
+
+  it("returns null for a beat with no title", async () => {
+    const page = await appendSessionLogBeat(campaign(), { kind: "lore", title: "" });
+    expect(page).toBeNull();
+  });
+
+  it("keeps separate pages for separate sessions", async () => {
+    await appendSessionLogBeat(campaign({ currentSessionId: "ses-A", sessionNumber: 1 }), { kind: "lore", title: "A-beat" });
+    await appendSessionLogBeat(campaign({ currentSessionId: "ses-B", sessionNumber: 2 }), { kind: "lore", title: "B-beat" });
+    const journal = _journals.get(JOURNAL_NAMES.sessionLog);
+    expect(journal.pages.contents).toHaveLength(2);
   });
 });
 

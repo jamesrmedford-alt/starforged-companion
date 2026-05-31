@@ -497,58 +497,178 @@ export async function annotateEntry(journalType, entryName, text, authorName, _c
   return updated;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION LOG — one running page per session (D7 / F18)
+//
+// A single page per session accumulates transient scene beats during play
+// (the "Scene log" — below-salience lore/threat items routed here by the
+// detector instead of spawning a World Journal entry each, see
+// docs/testing/v1.6.1-playtest-findings.md F17/F18) and gains a "Session
+// summary" section at End Session (the durable lore/threats recorded this
+// session). The page is matched on its sessionId flag so every append within a
+// session lands on the same page regardless of the date-derived name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function sessionLogAutoWriteEnabled() {
+  try   { return game.settings?.get(MODULE_ID, "sessionLogAutoWrite") !== false; }
+  catch { return true; }
+}
+
+function findSessionLogPage(journal, sessionId) {
+  return (journal?.pages?.contents ?? []).find(
+    p => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage]?.sessionId === sessionId,
+  ) ?? null;
+}
+
 /**
- * Write a session-log text page summarising the current session. Reads from
- * existing journal flags + chat history; this is a thin Phase 3 placeholder
- * that captures session id, number, and timestamps. Phase 5 will compose a
- * richer page from the chronicle and chat narration.
+ * Render the running session-log page body from its flag: a "Scene log" list of
+ * transient beats appended during play, plus an optional "Session summary"
+ * section written at End Session.
  *
- * @param {Object} campaignState
- * @returns {Promise<Object|null>} — the created page, or null
+ * @param {Object} flag — the sessionLogPage flag
+ * @returns {string} HTML
  */
-export async function writeSessionLog(campaignState) {
+function renderSessionLogContent(flag) {
+  const lines = [
+    `<h2>${escapeHtml(flag.pageName)}</h2>`,
+    `<p>Session ID: <code>${escapeHtml(flag.sessionId || "—")}</code></p>`,
+    `<h3>Scene log</h3>`,
+  ];
+
+  const beats = Array.isArray(flag.beats) ? flag.beats : [];
+  if (beats.length) {
+    lines.push("<ul>");
+    for (const b of beats) {
+      const label = b.kind === "threat" ? "Threat" : "Lore";
+      const text  = b.text ? ` — ${escapeHtml(b.text)}` : "";
+      lines.push(`<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(b.title)}${text}</li>`);
+    }
+    lines.push("</ul>");
+  } else {
+    lines.push("<p><em>No scene beats recorded yet.</em></p>");
+  }
+
+  const summary = flag.summary;
+  if (summary && (summary.lore?.length || summary.threats?.length)) {
+    lines.push("<h3>Session summary</h3>");
+    if (summary.lore?.length) {
+      lines.push("<h4>Lore this session</h4><ul>");
+      for (const t of summary.lore) lines.push(`<li>${escapeHtml(t)}</li>`);
+      lines.push("</ul>");
+    }
+    if (summary.threats?.length) {
+      lines.push("<h4>Threats this session</h4><ul>");
+      for (const t of summary.threats) lines.push(`<li>${escapeHtml(t.name)} — ${escapeHtml(t.severity)}</li>`);
+      lines.push("</ul>");
+    }
+  }
+  return lines.join("");
+}
+
+/**
+ * Find or create the running session-log page for the current session.
+ * @returns {Promise<{page:Object, flag:Object}|null>}
+ */
+async function getOrCreateSessionLogPage(campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.sessionLog);
   if (!journal) return null;
 
   const sessionId  = campaignState?.currentSessionId ?? "";
-  const sessionNum = campaignState?.sessionNumber    ?? null;
+  const existing   = findSessionLogPage(journal, sessionId);
+  if (existing) {
+    return { page: existing, flag: { ...existing.flags[MODULE_ID][FLAG_KEYS.sessionLogPage] } };
+  }
+
+  const sessionNum = campaignState?.sessionNumber ?? null;
   const now        = new Date().toISOString();
   const pageName   = sessionNum ? `Session ${sessionNum} — ${now.slice(0, 10)}` : `Session — ${now}`;
-
-  const headerLines = [
-    `<h2>${pageName}</h2>`,
-    `<p>Session ID: <code>${sessionId}</code></p>`,
-    `<p>Logged at ${now}.</p>`,
-  ];
-
-  const recentLore     = readEntries(await getOrCreateJournal(JOURNAL_NAMES.lore),     FLAG_KEYS.lore)
-                          .filter(e => e.sessionId === sessionId);
-  const recentThreats  = readEntries(await getOrCreateJournal(JOURNAL_NAMES.threats),  FLAG_KEYS.threats)
-                          .filter(e => e.lastUpdated === sessionId);
-
-  if (recentLore.length) {
-    headerLines.push("<h3>Lore this session</h3><ul>");
-    for (const l of recentLore) headerLines.push(`<li>${escapeHtml(l.title)}</li>`);
-    headerLines.push("</ul>");
-  }
-  if (recentThreats.length) {
-    headerLines.push("<h3>Threats this session</h3><ul>");
-    for (const t of recentThreats) headerLines.push(`<li>${escapeHtml(t.name)} — ${escapeHtml(t.severity)}</li>`);
-    headerLines.push("</ul>");
-  }
+  const flag = {
+    sessionId, sessionNumber: sessionNum, pageName,
+    createdAt: now, updatedAt: now, beats: [], summary: null,
+  };
 
   try {
     const created = await journal.createEmbeddedDocuments("JournalEntryPage", [{
       name:  pageName,
       type:  "text",
-      text:  { format: 1, content: headerLines.join("") },
-      flags: { [MODULE_ID]: { [FLAG_KEYS.sessionLogPage]: { sessionId, sessionNumber: sessionNum, writtenAt: now } } },
+      text:  { format: 1, content: renderSessionLogContent(flag) },
+      flags: { [MODULE_ID]: { [FLAG_KEYS.sessionLogPage]: flag } },
     }]);
-    return Array.isArray(created) ? created[0] : created;
+    const page = Array.isArray(created) ? created[0] : created;
+    return page ? { page, flag } : null;
   } catch (err) {
-    console.error(`${MODULE_ID} | worldJournal: writeSessionLog failed:`, err);
+    console.error(`${MODULE_ID} | worldJournal: getOrCreateSessionLogPage failed:`, err);
     return null;
   }
+}
+
+async function persistSessionLogPage(page, flag) {
+  flag.updatedAt = new Date().toISOString();
+  try {
+    await page.update({ text: { format: 1, content: renderSessionLogContent(flag) } });
+    await page.setFlag(MODULE_ID, FLAG_KEYS.sessionLogPage, flag);
+    return page;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: session-log persist failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Append a transient scene beat to the running session-log page (D7). Below-
+ * salience lore/threat items route here instead of spawning a World Journal
+ * entry each. Gated on sessionLogAutoWrite; GM-only (journal writes need a
+ * permitted client — getOrCreateJournal returns null for players).
+ *
+ * @param {Object} campaignState
+ * @param {{kind:"lore"|"threat", title:string, text?:string}} beat
+ * @returns {Promise<Object|null>} the page, or null if skipped
+ */
+export async function appendSessionLogBeat(campaignState, beat) {
+  if (!beat?.title) return null;
+  if (!sessionLogAutoWriteEnabled()) return null;
+
+  const ctx = await getOrCreateSessionLogPage(campaignState);
+  if (!ctx) return null;
+
+  const { page, flag } = ctx;
+  flag.beats = Array.isArray(flag.beats) ? [...flag.beats] : [];
+  flag.beats.push({
+    kind:  beat.kind === "threat" ? "threat" : "lore",
+    title: String(beat.title),
+    text:  beat.text ? String(beat.text) : "",
+    at:    new Date().toISOString(),
+  });
+  return persistSessionLogPage(page, flag);
+}
+
+/**
+ * Write the End-Session summary onto the running session-log page (F18 + D7).
+ * Fills the "Session summary" section (durable lore + threats recorded this
+ * session) on the same page the scene log was appended to during play, creating
+ * the page if the session produced no transient beats.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<Object|null>} — the page, or null
+ */
+export async function writeSessionLog(campaignState) {
+  const ctx = await getOrCreateSessionLogPage(campaignState);
+  if (!ctx) return null;
+
+  const { page, flag } = ctx;
+  const sessionId = campaignState?.currentSessionId ?? "";
+
+  const recentLore    = readEntries(await getOrCreateJournal(JOURNAL_NAMES.lore),    FLAG_KEYS.lore)
+                         .filter(e => e.sessionId === sessionId);
+  const recentThreats = readEntries(await getOrCreateJournal(JOURNAL_NAMES.threats), FLAG_KEYS.threats)
+                         .filter(e => e.lastUpdated === sessionId);
+
+  flag.summary = {
+    lore:      recentLore.map(l => l.title),
+    threats:   recentThreats.map(t => ({ name: t.name, severity: t.severity })),
+    writtenAt: new Date().toISOString(),
+  };
+  return persistSessionLogPage(page, flag);
 }
 
 

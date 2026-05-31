@@ -58,6 +58,7 @@ const SETTING = {
   ACTIVE_CHARACTER_ID:      'activeCharacterId',
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_CONTEXT_COUNT:  'chronicleContextCount',
+  CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
   CHARACTER_CONTEXT_ENABLED:'characterContextEnabled',
   // ── Scene interrogation ──────────────────────────────────────────────────
   SCENE_QUERY_ENABLED:      'sceneQueryEnabled',
@@ -75,6 +76,8 @@ const SETTING = {
   WJ_FACTION_IN_CONTEXT:       'factionLandscapeInContext',
   WJ_CONTRADICTION_NOTIFY:     'contradictionNotifications',
   WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
+  WJ_LORE_SALIENCE:            'loreSalienceThreshold',
+  WJ_THREAT_SALIENCE:          'threatSalienceThreshold',
   // ── Pacing classifier ────────────────────────────────────────────────────
   PACING_ENABLED:              'pacing.enabled',
   PACING_DENSITY_WINDOW:       'pacing.densityWindow',
@@ -102,6 +105,17 @@ const PACING_DEFAULTS = {
   exploration:   6,
   social:        5,
   downtime:      1,
+};
+
+// Per-channel auto-capture floors (lore / threats / chronicle). Ordered least →
+// most durable; see src/world/salience.js. Conservative default is "significant"
+// so transient scene beats are dropped (findings F15 / F17 / F20 / F21).
+const SALIENCE_CHOICES = {
+  trivial:     'Everything (no filtering)',
+  scene:       'Scene and above',
+  notable:     'Notable and above',
+  significant: 'Significant and above (recommended)',
+  defining:    'Campaign-defining only',
 };
 
 const NARRATION_MODELS = {
@@ -266,6 +280,16 @@ export function registerSettings() {
     default: 5,
   });
 
+  game.settings.register(MODULE_ID, SETTING.CHRONICLE_SALIENCE, {
+    name:    'Chronicle Capture Threshold',
+    hint:    'Minimum salience for an automatic chronicle entry to be recorded. Conservative by default — fleeting scene beats are skipped; the player can still add smaller notes by hand. One of: trivial, scene, notable, significant, defining.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: SALIENCE_CHOICES,
+    default: 'significant',
+  });
+
   game.settings.register(MODULE_ID, SETTING.CHARACTER_CONTEXT_ENABLED, {
     name:    'Character Context in Packet',
     hint:    'Include character state (stats, meters, chronicle) in context packets sent to the narrator.',
@@ -396,6 +420,26 @@ export function registerSettings() {
     config:  false,
     type:    Boolean,
     default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_LORE_SALIENCE, {
+    name:    'Lore Capture Threshold',
+    hint:    'Minimum salience for an auto-detected lore entry to be recorded. Conservative by default — transient scene beats are dropped so Lore holds durable world facts. One of: trivial, scene, notable, significant, defining.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: SALIENCE_CHOICES,
+    default: 'significant',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_THREAT_SALIENCE, {
+    name:    'Threat Capture Threshold',
+    hint:    'Minimum salience for an auto-detected threat to be recorded. Conservative by default — scene-level complications are dropped so Threats holds campaign-level dangers. One of: trivial, scene, notable, significant, defining.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: SALIENCE_CHOICES,
+    default: 'significant',
   });
 
   // ── Pacing classifier ────────────────────────────────────────────────────
