@@ -45,6 +45,8 @@ import {
 
 import {
   audioEnabledForThisClient,
+  claimAutoplayOnce,
+  _resetAutoplayGuardForTests,
 } from '../../src/audio/index.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -631,5 +633,35 @@ describe('audioEnabledForThisClient', () => {
     game.settings._store.set(`${MODULE_ID}.audio.clientEnabled`, true);
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_xyz');
     expect(audioEnabledForThisClient()).toBe(true);
+  });
+});
+
+// F14: autoplay must fire at most once per card. A narrator card re-renders on
+// every message update (e.g. clicking its "Roll <move>" button), and the render
+// hook runs each time — without the once-guard, autoplay replayed the audio.
+describe('claimAutoplayOnce (F14)', () => {
+  beforeEach(() => _resetAutoplayGuardForTests());
+
+  it('returns true the first time and false on every re-render of the same card', () => {
+    expect(claimAutoplayOnce('card-A')).toBe(true);
+    expect(claimAutoplayOnce('card-A')).toBe(false);
+    expect(claimAutoplayOnce('card-A')).toBe(false);
+  });
+
+  it('tracks cards independently', () => {
+    expect(claimAutoplayOnce('card-A')).toBe(true);
+    expect(claimAutoplayOnce('card-B')).toBe(true);
+    expect(claimAutoplayOnce('card-A')).toBe(false);
+  });
+
+  it('returns false for a null/undefined card id', () => {
+    expect(claimAutoplayOnce(null)).toBe(false);
+    expect(claimAutoplayOnce(undefined)).toBe(false);
+  });
+
+  it('the reset helper clears the guard', () => {
+    expect(claimAutoplayOnce('card-A')).toBe(true);
+    _resetAutoplayGuardForTests();
+    expect(claimAutoplayOnce('card-A')).toBe(true);
   });
 });
