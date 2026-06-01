@@ -2552,11 +2552,20 @@ Hooks.on("getSceneControlButtons", (controls) => {
   let placedInOwnGroup = false;
   try {
     const group = {
-      name:    "starforgedCompanion",
-      title:   "Starforged Companion",
-      icon:    "fas fa-meteor",
-      layer:   "starforgedCompanion",
-      visible: true,
+      name:       "starforgedCompanion",
+      title:      "Starforged Companion",
+      icon:       "fas fa-meteor",
+      layer:      "starforgedCompanion",
+      visible:    true,
+      // v13's SceneControls.activate() → #preActivate → #onToolChange → #onChange
+      // chain does `group.tools[group.activeTool].onChange(...)` during every
+      // group transition. Without an activeTool, `tools[undefined]` is undefined
+      // and the onChange read throws — aborting the click and leaving the user
+      // unable to switch groups. Point this at a tool whose onChange is a no-op
+      // (`clocks`) so the preActivate call is benign and doesn't pop a panel as
+      // a side effect. Must be a non-GM-gated key so it resolves for player
+      // clients too.
+      activeTool: "clocks",
       tools,
     };
     if (Array.isArray(controls)) {
@@ -2583,9 +2592,10 @@ Hooks.on("getSceneControlButtons", (controls) => {
   }
 });
 
-// Foundry v13 does not invoke onChange for `button: true` tools registered via
-// getSceneControlButtons. Attach click listeners directly after the toolbar
-// renders so the buttons actually do something.
+// Foundry v13 doesn't invoke a tool's onChange when the user *clicks* it
+// (it does call it during group activate — see the activeTool comment above —
+// but that's a different code path). Attach click listeners directly after the
+// toolbar renders so the buttons actually do something on click.
 Hooks.on("renderSceneControls", (app, html) => {
   const root = html instanceof HTMLElement ? html : html[0];
   if (!root) return;
