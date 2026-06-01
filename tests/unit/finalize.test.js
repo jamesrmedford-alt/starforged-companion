@@ -26,6 +26,7 @@ import { getSettlement, updateSettlement } from '../../src/entities/settlement.j
 import {
   buildEntityFlavorPrompt,
   finalizeEntity,
+  finalizeEntityArtOnly,
   supportsFinalize,
 } from '../../src/entities/finalize.js';
 
@@ -201,5 +202,108 @@ describe('finalizeEntity', () => {
     expect(result.reason).toBe('no-flavor');
     expect(updateSettlement).not.toHaveBeenCalled();
     expect(generatePortrait).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('finalizeEntityArtOnly', () => {
+  it('uses an explicit portraitSourceDescription, stamps finalizedAt, and triggers a portrait', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer' });
+
+    const result = await finalizeEntityArtOnly('settlement', 'actor-1', {}, {
+      portraitSourceDescription: 'A rusting ring station, half its lights dead.',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.reason).toBe('finalized');
+    expect(apiPost).not.toHaveBeenCalled(); // no LLM round-trip
+    expect(updateSettlement).toHaveBeenCalledTimes(1);
+    const [id, updates] = updateSettlement.mock.calls[0];
+    expect(id).toBe('actor-1');
+    expect(updates.portraitSourceDescription).toBe('A rusting ring station, half its lights dead.');
+    expect(typeof updates.finalizedAt).toBe('string');
+    expect(updates.description).toBeUndefined(); // existing description preserved
+    expect(generatePortrait).toHaveBeenCalledTimes(1);
+    expect(result.artTriggered).toBe(true);
+  });
+
+  it('falls back to the existing portraitSourceDescription when no override given', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer', portraitSourceDescription: 'seeded by detector' });
+
+    await finalizeEntityArtOnly('settlement', 'actor-1', {});
+
+    expect(updateSettlement.mock.calls[0][1].portraitSourceDescription).toBe('seeded by detector');
+    expect(generatePortrait).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to a plain-text strip of description when no source is supplied', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer', description: '<p>A <em>rusting</em> ring station.</p>' });
+
+    await finalizeEntityArtOnly('settlement', 'actor-1', {});
+
+    expect(updateSettlement.mock.calls[0][1].portraitSourceDescription).toBe('A rusting ring station.');
+  });
+
+  it('returns no-source when there is nothing to feed the portrait prompt', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer' });
+
+    const result = await finalizeEntityArtOnly('settlement', 'actor-1', {});
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('no-source');
+    expect(updateSettlement).not.toHaveBeenCalled();
+    expect(generatePortrait).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent — a record already stamped finalizedAt is a no-op', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer', finalizedAt: '2026-05-01T00:00:00.000Z' });
+
+    const result = await finalizeEntityArtOnly('settlement', 'actor-1', {}, {
+      portraitSourceDescription: 'fresh source',
+    });
+
+    expect(result.reason).toBe('already-finalized');
+    expect(updateSettlement).not.toHaveBeenCalled();
+    expect(generatePortrait).not.toHaveBeenCalled();
+  });
+
+  it('does not trigger a portrait when one already exists (generate-once)', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer', portraitId: 'art-existing' });
+
+    const result = await finalizeEntityArtOnly('settlement', 'actor-1', {}, {
+      portraitSourceDescription: 'still gets stamped',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.reason).toBe('finalized');
+    expect(updateSettlement).toHaveBeenCalledTimes(1); // stamps finalizedAt
+    expect(generatePortrait).not.toHaveBeenCalled();
+    expect(result.artTriggered).toBe(false);
+  });
+
+  it('still returns ok=true when the portrait call resolves null (no key)', async () => {
+    getSettlement.mockReturnValue({ _id: 's1', name: 'Glimmer' });
+    generatePortrait.mockResolvedValueOnce(null);
+
+    const result = await finalizeEntityArtOnly('settlement', 'actor-1', {}, {
+      portraitSourceDescription: 'prose',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.reason).toBe('finalized');
+    expect(result.artTriggered).toBe(false);
+    expect(updateSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns not-found when the record does not exist', async () => {
+    getSettlement.mockReturnValue(null);
+    const result = await finalizeEntityArtOnly('settlement', 'missing', {});
+    expect(result.reason).toBe('not-found');
+  });
+
+  it('returns unsupported-type for journal-backed types', async () => {
+    const result = await finalizeEntityArtOnly('faction', 'whatever', {});
+    expect(result.reason).toBe('unsupported-type');
+    expect(updateSettlement).not.toHaveBeenCalled();
   });
 });

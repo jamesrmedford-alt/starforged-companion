@@ -227,6 +227,20 @@ export async function listCanonicalEncounters() {
 }
 
 /**
+ * Find an asset Item by slug in the starforged-assets pack. Used to install
+ * canonical Modules onto starships (Module-category assets carry the rolled
+ * abilities the sheet needs; embedding a hand-constructed `{ name, type,
+ * system: { category: "Module" } }` skeleton would lose them).
+ *
+ * @param {string} slug — e.g. "engine_upgrade", "stealth_tech"
+ * @returns {Promise<Object|null>}
+ */
+export async function getCanonicalAsset(slug) {
+  if (!slug) return null;
+  return findInPacks(slug, [IS_PACKS.STARFORGED_ASSETS], "asset");
+}
+
+/**
  * Return every JournalEntry document in the starforged-truths pack.
  * Used by Phase 8 to digest selected campaign truths into narrator context.
  *

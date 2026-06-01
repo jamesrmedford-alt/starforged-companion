@@ -8,6 +8,11 @@
  */
 
 import { vi } from "vitest";
+
+vi.mock("../../src/entities/finalize.js", () => ({
+  finalizeEntityArtOnly: vi.fn(),
+}));
+
 import {
   generateSectorName,
   generateSettlement,
@@ -20,7 +25,9 @@ import {
   applyStubsToSettlementEntities,
   createEntityJournals,
   storeSector,
+  finalizeSectorEntities,
 } from "../../src/sectors/sectorGenerator.js";
+import { finalizeEntityArtOnly } from "../../src/entities/finalize.js";
 import * as settlement from "../../src/entities/settlement.js";
 
 import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
@@ -714,5 +721,120 @@ describe("generateSector — F7 stellar object roll", () => {
     for (const s of stellars) {
       expect(s).toBe(stellars[0]);
     }
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// finalizeSectorEntities (F5 — sector-created settlements get portraits/tokens)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("finalizeSectorEntities", () => {
+  beforeEach(() => {
+    finalizeEntityArtOnly.mockReset();
+  });
+
+  it("calls finalizeEntityArtOnly for each settlement with its stub as the portrait source", async () => {
+    finalizeEntityArtOnly.mockResolvedValue({ ok: true, reason: "finalized", artTriggered: true });
+    const settlements = {
+      gen1: { id: "actor-1" },
+      gen2: { id: "actor-2" },
+    };
+    const stubs = { settlements: { gen1: "A windswept dome.", gen2: "A rusting orbital." } };
+
+    const result = await finalizeSectorEntities(settlements, stubs, {});
+
+    expect(finalizeEntityArtOnly).toHaveBeenCalledTimes(2);
+    expect(finalizeEntityArtOnly).toHaveBeenCalledWith(
+      "settlement",
+      "actor-1",
+      {},
+      { portraitSourceDescription: "A windswept dome." }
+    );
+    expect(finalizeEntityArtOnly).toHaveBeenCalledWith(
+      "settlement",
+      "actor-2",
+      {},
+      { portraitSourceDescription: "A rusting orbital." }
+    );
+    expect(result).toEqual({ finalized: 2, portraitsTriggered: 2, skipped: 0 });
+  });
+
+  it("counts portraitsTriggered separately from finalized (settlement finalized but no portrait fired)", async () => {
+    finalizeEntityArtOnly
+      .mockResolvedValueOnce({ ok: true, reason: "finalized", artTriggered: true })
+      .mockResolvedValueOnce({ ok: true, reason: "finalized", artTriggered: false });
+
+    const result = await finalizeSectorEntities(
+      { gen1: { id: "a1" }, gen2: { id: "a2" } },
+      { settlements: { gen1: "x", gen2: "y" } },
+      {},
+    );
+
+    expect(result).toEqual({ finalized: 2, portraitsTriggered: 1, skipped: 0 });
+  });
+
+  it("passes a null portrait source when the stub is missing — finalizeEntityArtOnly will fall back internally", async () => {
+    finalizeEntityArtOnly.mockResolvedValue({ ok: false, reason: "no-source" });
+
+    const result = await finalizeSectorEntities(
+      { gen1: { id: "a1" } },
+      { settlements: {} },
+      {},
+    );
+
+    expect(finalizeEntityArtOnly).toHaveBeenCalledWith(
+      "settlement",
+      "a1",
+      {},
+      { portraitSourceDescription: null }
+    );
+    expect(result).toEqual({ finalized: 0, portraitsTriggered: 0, skipped: 1 });
+  });
+
+  it("counts an already-finalized result as skipped", async () => {
+    finalizeEntityArtOnly.mockResolvedValue({ ok: true, reason: "already-finalized" });
+
+    const result = await finalizeSectorEntities(
+      { gen1: { id: "a1" } },
+      { settlements: { gen1: "x" } },
+      {},
+    );
+
+    expect(result).toEqual({ finalized: 0, portraitsTriggered: 0, skipped: 1 });
+  });
+
+  it("skips entries with a null actor without crashing the batch", async () => {
+    finalizeEntityArtOnly.mockResolvedValue({ ok: true, reason: "finalized", artTriggered: true });
+
+    const result = await finalizeSectorEntities(
+      { gen1: { id: "a1" }, gen2: null, gen3: { id: "a3" } },
+      { settlements: { gen1: "x", gen3: "z" } },
+      {},
+    );
+
+    expect(finalizeEntityArtOnly).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ finalized: 2, portraitsTriggered: 2, skipped: 1 });
+  });
+
+  it("swallows a thrown finalizeEntityArtOnly error — one bad settlement doesn't sink the batch", async () => {
+    finalizeEntityArtOnly
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ ok: true, reason: "finalized", artTriggered: true });
+
+    const result = await finalizeSectorEntities(
+      { gen1: { id: "a1" }, gen2: { id: "a2" } },
+      { settlements: { gen1: "x", gen2: "y" } },
+      {},
+    );
+
+    expect(finalizeEntityArtOnly).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ finalized: 1, portraitsTriggered: 1, skipped: 1 });
+  });
+
+  it("returns zero-count result on a null settlements map", async () => {
+    const result = await finalizeSectorEntities(null, {}, {});
+    expect(finalizeEntityArtOnly).not.toHaveBeenCalled();
+    expect(result).toEqual({ finalized: 0, portraitsTriggered: 0, skipped: 0 });
   });
 });

@@ -16,6 +16,7 @@ import {
   generateNarratorStubs,
   createSectorJournal,
   applyStubsToSettlementEntities,
+  finalizeSectorEntities,
 } from "./sectorGenerator.js";
 import { renderSectorMap }         from "./sectorMap.js";
 import { generateSectorBackground } from "./sectorArt.js";
@@ -246,6 +247,19 @@ export class SectorCreatorApp extends ApplicationV2 {
       // Mirror settlement stubs onto the entity records so the canonical
       // entity description matches what the sector journal page shows.
       await applyStubsToSettlementEntities(entityData.settlements, stubs);
+
+      // F5: stamp each sector-created settlement as finalized and trigger a
+      // first-time portrait (which also becomes the token image), so the GM
+      // doesn't have to click ✦ Finalise on every settlement individually.
+      // Gated on a setting so the OpenRouter cost is opt-out.
+      const portraitsEnabled = getSetting("sectorEntityPortraitsEnabled", true);
+      if (portraitsEnabled) {
+        try {
+          await finalizeSectorEntities(entityData.settlements, stubs, campaignState);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finalizeSectorEntities unhandled rejection:`, err?.message ?? err);
+        }
+      }
 
       // Sector journal (needs stubs + the gen-id→Actor map so the overview can
       // emit @UUID document links to each settlement Actor — see scope §3.6);

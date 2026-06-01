@@ -52,6 +52,12 @@ import {
 } from "./safety/sessionLifecycleDialogs.js";
 import { isClockCommand, handleClockCommand, openClocksPanel } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
+import {
+  isShipEnvisionCommand,
+  handleShipEnvisionCommand,
+  isShipHistoryCommand,
+  handleShipHistoryCommand,
+} from "./entities/shipEnvision.js";
 import { openCustomOraclesPanel } from "./oracles/customOracles.js";
 import {
   isOracleAddCommand,
@@ -245,6 +251,15 @@ function registerCoreSettings() {
   game.settings.register(MODULE_ID, "sectorNarratorStubsEnabled", {
     name:    "Generate Sector Narrator Stubs",
     hint:    "Generate atmospheric descriptions for new sectors and settlements. Requires Claude API Key.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "sectorEntityPortraitsEnabled", {
+    name:    "Generate Sector Entity Portraits",
+    hint:    "Auto-finalize each settlement created by the Sector Creator and generate its portrait + token image. Requires the OpenRouter API key.",
     scope:   "world",
     config:  true,
     type:    Boolean,
@@ -609,6 +624,18 @@ export function registerChatHook() {
     // !repair — vehicle repair point-spend dialog (play kit p. 7)
     if (isRepairCommand(message)) {
       await handleRepairCommand(message);
+      return;
+    }
+
+    // !ship envision / !ship history — roll supplementary ship oracles,
+    // generate narrator prose, post a card, append a dated section to
+    // system.notes (GM-only on the write). Any player may invoke.
+    if (isShipEnvisionCommand(message)) {
+      await handleShipEnvisionCommand(message);
+      return;
+    }
+    if (isShipHistoryCommand(message)) {
+      await handleShipHistoryCommand(message);
       return;
     }
 
