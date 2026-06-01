@@ -33,6 +33,26 @@ import {
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "settlement";
 
+// foundry-ironsworn LocationModel.klass for subtype=settlement is one of
+// `planetside` | `orbital` | `deep space` (lowercase, single space). We roll
+// Planetside / Orbital / Deep Space (titlecase) — without normalisation the
+// sheet's "Type of settlement" dropdown can't match and renders blank (F6).
+const SETTLEMENT_KLASS_MAP = {
+  "planetside": "planetside",
+  "orbital":    "orbital",
+  "deep space": "deep space",
+};
+
+/**
+ * @param {string|null} raw — titlecase, mixed-case, or already-canonical value.
+ * @returns {string|null} canonical lowercase klass, or null when no match.
+ */
+function normaliseSettlementKlass(raw) {
+  if (!raw) return null;
+  const key = String(raw).trim().toLowerCase();
+  return SETTLEMENT_KLASS_MAP[key] ?? null;
+}
+
 export const SettlementSchema = {
   _id:      "",
   name:     "",
@@ -46,6 +66,9 @@ export const SettlementSchema = {
   authority:      "",
   projects:       [],
   trouble:        "",
+  stellar:        "",    // Stellar object rolled once per sector and shared across all
+                         // settlements/planets in the sector (F7). Surfaces on the description
+                         // body and drives the scene-map stellar pin.
 
   // Narrative
   description: "",
@@ -113,7 +136,7 @@ export async function createSettlement(data, campaignState, { persist = true } =
     folder: folderId,
     system: {
       subtype:     "settlement",
-      klass:       settlement.location ?? null,
+      klass:       normaliseSettlementKlass(settlement.location),
       description: settlement.description ?? "",
     },
     flags:  {
@@ -163,7 +186,7 @@ export async function updateSettlement(actorId, updates) {
   };
 
   const systemPatch = {};
-  if (updates.location !== undefined)    systemPatch["system.klass"]       = updated.location ?? null;
+  if (updates.location !== undefined)    systemPatch["system.klass"]       = normaliseSettlementKlass(updated.location);
   if (updates.description !== undefined) systemPatch["system.description"] = updated.description ?? "";
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
 

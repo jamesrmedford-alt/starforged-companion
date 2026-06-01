@@ -30,6 +30,35 @@ import {
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "planet";
 
+// foundry-ironsworn LocationModel.klass for subtype=planet is one of the
+// canonical Starforged planet classes (lowercase, no "World" suffix). We roll
+// "Desert World" / "Vital World" / etc. — without normalisation the sheet's
+// "Type of planet" dropdown can't match and renders blank (F6).
+const PLANET_KLASS_MAP = {
+  "desert":    "desert",
+  "furnace":   "furnace",
+  "grave":     "grave",
+  "ice":       "ice",
+  "jovian":    "jovian",
+  "jungle":    "jungle",
+  "ocean":     "ocean",
+  "rocky":     "rocky",
+  "shattered": "shattered",
+  "tainted":   "tainted",
+  "vital":     "vital",
+};
+
+/**
+ * @param {string|null} raw — accepts "Desert World", "desert", "DESERT", …
+ * @returns {string|null} canonical lowercase klass, or null when no match.
+ */
+function normalisePlanetKlass(raw) {
+  if (!raw) return null;
+  // Strip trailing "world" so "Desert World" / "desert world" both map.
+  const key = String(raw).trim().toLowerCase().replace(/\s+world$/, "");
+  return PLANET_KLASS_MAP[key] ?? null;
+}
+
 export const PlanetSchema = {
   _id:    "",
   name:   "",
@@ -97,7 +126,7 @@ export async function createPlanet(data, campaignState, { persist = true } = {})
     folder: folderId,
     system: {
       subtype:     "planet",
-      klass:       planet.type ?? null,
+      klass:       normalisePlanetKlass(planet.type),
       description: planet.description ?? "",
     },
     flags:  {
@@ -147,7 +176,7 @@ export async function updatePlanet(actorId, updates) {
 
   // Mirror native fields onto the Actor document so the system sheet renders.
   const systemPatch = {};
-  if (updates.type !== undefined)        systemPatch["system.klass"]       = updated.type ?? null;
+  if (updates.type !== undefined)        systemPatch["system.klass"]       = normalisePlanetKlass(updated.type);
   if (updates.description !== undefined) systemPatch["system.description"] = updated.description ?? "";
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
