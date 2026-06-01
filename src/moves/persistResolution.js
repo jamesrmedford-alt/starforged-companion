@@ -26,6 +26,7 @@ import {
   awardXP,
   markVowProgress,
 } from '../character/actorBridge.js';
+import { promptSufferChoice, runSufferResolution } from './sufferDialog.js';
 import { RANK_TICKS } from '../schemas.js';
 
 const MODULE_ID  = 'starforged-companion';
@@ -106,6 +107,15 @@ export async function persistResolution(resolution, campaignState) {
         updated,
       );
     }
+
+    // 7. Suffer prompt (F16 Phase D) — blocking dialog that resolves the
+    //    rulebook-mandated player choice into one or more executor calls.
+    //    Per Q1 we await the selection; per Q4 GM-only writes apply
+    //    inside the executors. The dialog is no-op-safe when
+    //    ApplicationV2 isn't available (test env / pre-init).
+    if (resolution.consequences.sufferPrompt) {
+      await resolveSufferPrompt(resolution, actor);
+    }
   }
 
   // 6. Persist campaign state
@@ -145,6 +155,49 @@ function appendToSessionLog(resolution, campaignState) {
  * Only the deterministic automatic cases (health/spirit/supply at zero
  * after taking damage) — player-choice branches are surfaced as otherEffect.
  */
+/**
+ * F16 Phase D entry point. Called from persistResolution when the
+ * resolved consequences carry a sufferPrompt. Opens the blocking
+ * SufferChoiceDialog, runs the resulting executor calls, and posts a
+ * cancel card when the player closes the dialog without picking.
+ *
+ * The runner handles recursive prompts (lose_momentum at-min, etc.)
+ * up to one nesting level — deeper recursion is rare in practice and
+ * deferred to GM adjudication via the route-card affordance.
+ *
+ * @param {Object} resolution
+ * @param {Actor} actor
+ */
+async function resolveSufferPrompt(resolution, actor) {
+  const prompt = resolution.consequences.sufferPrompt;
+  if (!prompt) return;
+
+  // Map the triggering move's outcome class onto executor opts so the
+  // mortal-wound / desolation / vehicle-damage d100 fires only on
+  // miss-at-0. The executor handles the at-0 check itself.
+  const isMiss = resolution.outcome === 'miss';
+  const isMissWithMatch = isMiss && !!resolution.isMatch;
+  const executorOpts = { isMiss, isMissWithMatch };
+
+  const choice = await promptSufferChoice(prompt, actor, executorOpts);
+
+  if (choice.cancelled) {
+    if (choice.reason === 'no-app-v2') return; // test env — silently skip
+    try {
+      await globalThis.ChatMessage?.create?.({
+        content: `<div class="sf-card sf-card--suffer-cancel"><div class="sf-card-header">Resolution cancelled</div><div class="sf-card-body">No meter changes applied. Re-trigger the move when ready.</div></div>`,
+        flags: { [MODULE_ID]: { sufferCancel: true, moveId: resolution.moveId } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | resolveSufferPrompt: cancel-card post failed:`, err?.message ?? err);
+    }
+    return;
+  }
+
+  await runSufferResolution(choice.calls, actor, executorOpts);
+}
+
+
 async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
   const { sufferMoveTriggered } = consequences;
 
