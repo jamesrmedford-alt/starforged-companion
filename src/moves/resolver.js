@@ -213,6 +213,12 @@ function emptyConsequences() {
     supplyChange:        0,
     progressMarked:      0,
     sufferMoveTriggered: null,
+    // F16 §5.2: structured prompt that the SufferChoiceDialog renders
+    // when the outcome requires a player choice (Shape B1 generic
+    // suffer-pick or Shape B2 enumerated options). `null` means no
+    // choice required. See docs/moves/suffer-routing-audit.md for the
+    // per-move target shapes.
+    sufferPrompt:        null,
     progressTrackId:     null,
     combatPosition:      null,
     otherEffect:         "",
@@ -224,11 +230,21 @@ function emptyConsequences() {
  * Each entry is a function(outcome, isMatch) → consequences object.
  *
  * Conventions:
- * - "Pay the Price" is represented as otherEffect — Loremaster resolves it narratively
- * - "Make a suffer move (-X)" is represented as sufferMoveTriggered with amount
- * - Player choices are collapsed to the most mechanically significant option
- *   and noted in otherEffect so the confirmation UI can present alternatives
+ * - "Pay the Price" is represented as otherEffect — Phase E (F16) will annotate
+ *   the PAY_THE_PRICE d100 entries with sufferRoute and dispatch from the
+ *   `pay_the_price` resolver branch into the suffer executors.
+ * - "Make a suffer move (-X)" → `sufferPrompt: { kind: "any", amount, count }`
+ *   (Shape B1). Player picks any of the six suffer moves.
+ * - "Choose: X or Y or …" → `sufferPrompt: { kind: "enumerated", options: [...],
+ *   allowComplication? }` (Shape B2). Player picks from listed options.
+ *   `sufferMoveTriggered` remains set in parallel as a deprecated back-compat
+ *   field for one release; new code reads from `sufferPrompt`.
  * - Progress moves return progressMarked: 0 (progress is tracked separately per track)
+ *
+ * Audit: docs/moves/suffer-routing-audit.md tabulates every move + outcome
+ * against the play kit's outcome text and the target shape below. When
+ * editing this map, update the audit row first so the doc and code stay
+ * in lockstep.
  */
 const CONSEQUENCE_MAP = {
 
@@ -258,7 +274,9 @@ const CONSEQUENCE_MAP = {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1 };
       case "weak_hit":   return {
         ...emptyConsequences(),
-        sufferMoveTriggered: { move: "suffer", amount: 1 },
+        // B1: generic "make a suffer move (-1)" — player picks which.
+        sufferPrompt:        { kind: "any", amount: 1, count: 1 },
+        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         otherEffect: "Success with a cost. Make a suffer move (-1).",
       };
       case "miss": return {
@@ -277,7 +295,14 @@ const CONSEQUENCE_MAP = {
       };
       case "weak_hit": return {
         ...emptyConsequences(),
-        momentumChange: 2,   // Default to momentum; player may choose +1 on next move instead
+        // B2: enumerated. Default option is +2 momentum so the existing
+        // delta-based test fixtures keep their pre-F16 shape; the dialog
+        // surfaces the alternative.
+        momentumChange: 2,
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "+2 momentum",                momentum:   2 },
+          { label: "+1 on your next move",       nextBonus:  1 },
+        ]},
         otherEffect: "Weak hit: choose one — +2 momentum OR +1 on next move (not a progress move).",
       };
       case "miss": return {
@@ -318,8 +343,15 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "You have it and are ready to act. Take +1 momentum." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "You have it, but choose one: Sacrifice Resources (-1) OR Lose Momentum (-2)." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        // B2: explicit two-option pick.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Sacrifice Resources (-1)", suffer: "sacrifice_resources", amount: 1 },
+          { label: "Lose Momentum (-2)",       suffer: "lose_momentum",       amount: 2 },
+        ]},
+        otherEffect: "You have it, but choose one: Sacrifice Resources (-1) OR Lose Momentum (-2)."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "You don't have it and situation grows more perilous. Pay the Price." };
     }
@@ -359,6 +391,16 @@ const CONSEQUENCE_MAP = {
 
   forsake_your_vow: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    // B2: one-or-more costs. The dialog presents these as a multi-select;
+    // suffer-routed options apply via the executor, the non-suffer ones
+    // (test relationship, asset discard, narrative cost) post a card and
+    // hand off to the GM.
+    sufferPrompt: { kind: "enumerated", multi: true, options: [
+      { label: "Endure Stress (-2)",          suffer: "endure_stress", amount: 2 },
+      { label: "Test Your Relationship",      route:  "test_your_relationship" },
+      { label: "Discard an asset",            route:  "asset_discard" },
+      { label: "Narrative cost",              complication: true },
+    ]},
     otherEffect: "Vow cleared. Envision the impact and choose one or more costs: Endure Stress, Test Your Relationship, discard an asset, or narrative costs.",
   }),
 
@@ -388,8 +430,14 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Develop Your Relationship." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Develop Your Relationship, but with a demand or complication as fallout." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Choose: lose the connection (Pay the Price) OR prove loyalty (Swear an Iron Vow, formidable or greater)." };
+      case "miss": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose the connection (Pay the Price)", route: "pay_the_price" },
+          { label: "Swear an Iron Vow (formidable+)",     route: "swear_an_iron_vow", rank: "formidable" },
+        ]},
+        otherEffect: "Choose: lose the connection (Pay the Price) OR prove loyalty (Swear an Iron Vow, formidable or greater)."
+      };
     }
   },
 
@@ -412,8 +460,16 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
         otherEffect: "Reach a waypoint. Mark progress per expedition rank." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 0,
-        otherEffect: "Reach waypoint but at cost. Mark progress per rank. Choose: suffer move (-2) or two suffer moves (-1), OR face a peril at the waypoint." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        progressMarked: 0,
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "One suffer move (-2)",        kind: "any", amount: 2, count: 1 },
+          { label: "Two suffer moves (-1 each)",  kind: "any", amount: 1, count: 2 },
+          { label: "Peril at the waypoint",       complication: true, scope: "waypoint" },
+        ]},
+        otherEffect: "Reach waypoint but at cost. Mark progress per rank. Choose: suffer move (-2) or two suffer moves (-1), OR face a peril at the waypoint."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Waylaid by crisis or immediate hardship at waypoint. No progress. Pay the Price." };
     }
@@ -451,8 +507,15 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Arrived, situation favors you. Take +1 momentum." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Arrived but with cost or complication. Choose: suffer move (-2) or two suffer moves (-1), OR face complication at destination." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "One suffer move (-2)",          kind: "any", amount: 2, count: 1 },
+          { label: "Two suffer moves (-1 each)",    kind: "any", amount: 1, count: 2 },
+          { label: "Complication at destination",   complication: true, scope: "destination" },
+        ]},
+        otherEffect: "Arrived but with cost or complication. Choose: suffer move (-2) or two suffer moves (-1), OR face complication at destination."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Waylaid by significant threat. Pay the Price. If overcome, may push on safely." };
     }
@@ -475,10 +538,15 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, combatPosition: "in_control",
         otherEffect: "Strong hit: take both — +2 momentum AND you are in control." };
-      case "weak_hit": return { ...emptyConsequences(),
-        // Player-choice outcome; do not pre-set position. The player picks
-        // +2 momentum (no position change) or "you are in control".
-        otherEffect: "Weak hit: choose one — +2 momentum OR you are in control." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        // B2: choose one — +2 momentum OR in control. No pre-set position.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "+2 momentum",   momentum: 2 },
+          { label: "You are in control", combatPosition: "in_control" },
+        ]},
+        otherEffect: "Weak hit: choose one — +2 momentum OR you are in control."
+      };
       case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };
     }
@@ -486,10 +554,31 @@ const CONSEQUENCE_MAP = {
 
   gain_ground: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, progressMarked: 0, combatPosition: "in_control",
-        otherEffect: "In control. Strong hit: choose two — mark progress / +2 momentum / +1 on next move." };
-      case "weak_hit": return { ...emptyConsequences(), combatPosition: "in_control",
-        otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move." };
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        // B2 multi: choose two of three. Defaults to (+2 momentum, mark
+        // progress) so the pre-F16 delta-based tests stay green; the
+        // dialog presents the full picker.
+        momentumChange: 2,
+        progressMarked: 0,
+        combatPosition: "in_control",
+        sufferPrompt: { kind: "enumerated", multi: 2, options: [
+          { label: "Mark progress",       progress:  1 },
+          { label: "+2 momentum",         momentum:  2 },
+          { label: "+1 on your next move", nextBonus: 1 },
+        ]},
+        otherEffect: "In control. Strong hit: choose two — mark progress / +2 momentum / +1 on next move."
+      };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        combatPosition: "in_control",
+        sufferPrompt: { kind: "enumerated", multi: 1, options: [
+          { label: "Mark progress",       progress:  1 },
+          { label: "+2 momentum",         momentum:  2 },
+          { label: "+1 on your next move", nextBonus: 1 },
+        ]},
+        otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move."
+      };
       case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe gains upper hand. You are in a bad spot. Pay the Price." };
     }
@@ -521,10 +610,14 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
         otherEffect: "Succeed and are in control. Take +1 momentum." };
-      case "weak_hit": return { ...emptyConsequences(),
-        sufferMoveTriggered: { move: "suffer", amount: 1 },
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        // B1: generic "suffer move (-1)" pick.
+        sufferPrompt:        { kind: "any", amount: 1, count: 1 },
+        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         combatPosition: "bad_spot",
-        otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot." };
+        otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot."
+      };
       case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Situation worsens. Stay in a bad spot. Pay the Price." };
     }
@@ -573,34 +666,98 @@ const CONSEQUENCE_MAP = {
 
   endure_harm: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: shake it off (if not wounded, +1 health) OR embrace the pain (+1 momentum)." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "If not wounded, may Lose Momentum (-1) for +1 health. Otherwise press on." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Worse than thought. Suffer -1 health or Lose Momentum (-2). If health 0, mark wounded or permanently harmed, or roll on the miss table." };
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        // B2 — "shake it off" requires !wounded; the dialog filters.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "+1 health (if not wounded)", health: 1, requires: "!wounded" },
+          { label: "+1 momentum",                momentum: 1 },
+        ]},
+        otherEffect: "Choose: shake it off (if not wounded, +1 health) OR embrace the pain (+1 momentum)."
+      };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose Momentum (-1) for +1 health",
+            chain: [{ suffer: "lose_momentum", amount: 1 }, { health: 1 }],
+            requires: "!wounded" },
+          { label: "Press on", noop: true },
+        ]},
+        otherEffect: "If not wounded, may Lose Momentum (-1) for +1 health. Otherwise press on."
+      };
+      case "miss": return {
+        ...emptyConsequences(),
+        // The miss-at-0-health → mortal wound d100 is executor-side (Phase C).
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "-1 health",          health:  -1 },
+          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
+        ]},
+        otherEffect: "Worse than thought. Suffer -1 health or Lose Momentum (-2). If health 0, mark wounded or permanently harmed, or roll on the miss table."
+      };
     }
   },
 
   endure_stress: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: shake it off (if not shaken, +1 spirit) OR embrace the darkness (+1 momentum)." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "If not shaken, may Lose Momentum (-1) for +1 spirit. Otherwise press on." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Worse than thought. Suffer -1 spirit or Lose Momentum (-2). If spirit 0, mark shaken or traumatized, or roll on the miss table." };
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "+1 spirit (if not shaken)", spirit: 1, requires: "!shaken" },
+          { label: "+1 momentum",               momentum: 1 },
+        ]},
+        otherEffect: "Choose: shake it off (if not shaken, +1 spirit) OR embrace the darkness (+1 momentum)."
+      };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose Momentum (-1) for +1 spirit",
+            chain: [{ suffer: "lose_momentum", amount: 1 }, { spirit: 1 }],
+            requires: "!shaken" },
+          { label: "Press on", noop: true },
+        ]},
+        otherEffect: "If not shaken, may Lose Momentum (-1) for +1 spirit. Otherwise press on."
+      };
+      case "miss": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "-1 spirit",          spirit:  -1 },
+          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
+        ]},
+        otherEffect: "Worse than thought. Suffer -1 spirit or Lose Momentum (-2). If spirit 0, mark shaken or traumatized, or roll on the miss table."
+      };
     }
   },
 
   withstand_damage: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: bypass (if not battered, +1 integrity) OR ride it out (+1 momentum)." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "If not battered, may Lose Momentum (-1) for +1 integrity. Otherwise press on." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Worse than thought. Suffer -1 integrity or Lose Momentum (-2). If integrity 0, suffer vehicle-type cost." };
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "+1 integrity (if not battered)", integrity: 1, requires: "!battered" },
+          { label: "+1 momentum",                    momentum: 1 },
+        ]},
+        otherEffect: "Choose: bypass (if not battered, +1 integrity) OR ride it out (+1 momentum)."
+      };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose Momentum (-1) for +1 integrity",
+            chain: [{ suffer: "lose_momentum", amount: 1 }, { integrity: 1 }],
+            requires: "!battered" },
+          { label: "Press on", noop: true },
+        ]},
+        otherEffect: "If not battered, may Lose Momentum (-1) for +1 integrity. Otherwise press on."
+      };
+      case "miss": return {
+        ...emptyConsequences(),
+        // Executor handles at-0 (vehicle-damage d100) and command-vehicle
+        // destruction → Overcome Destruction prompt.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "-1 integrity",       integrity: -1 },
+          { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
+        ]},
+        otherEffect: "Worse than thought. Suffer -1 integrity or Lose Momentum (-2). If integrity 0, suffer vehicle-type cost."
+      };
     }
   },
 
@@ -608,12 +765,28 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
         otherEffect: "Companion rallies. Give them +1 health." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "If companion health not 0, may Lose Momentum (-1) and give +1 health. Otherwise press on." };
-      case "miss": return { ...emptyConsequences(),
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose Momentum (-1), companion +1 health",
+            chain: [{ suffer: "lose_momentum", amount: 1 }, { companionHealth: 1 }],
+            requires: "companionHealth>0" },
+          { label: "Press on", noop: true },
+        ]},
+        otherEffect: "If companion health not 0, may Lose Momentum (-1) and give +1 health. Otherwise press on."
+      };
+      case "miss": return {
+        ...emptyConsequences(),
+        // Executor handles at-0 + match → companion destroyed (Q2: prompt,
+        // not auto-discard).
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "-1 companion health", companionHealth: -1 },
+          { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2 },
+        ]},
         otherEffect: isMatch
           ? "Miss with a match — companion is dead or destroyed. Discard the asset."
-          : "Worse than thought. Companion suffers -1 health or you Lose Momentum (-2). If health 0, out of action until aided." };
+          : "Worse than thought. Companion suffers -1 health or you Lose Momentum (-2). If health 0, out of action until aided."
+      };
     }
   },
 
@@ -631,8 +804,14 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Safe refuge. You and allies each choose two recover moves (Heal/Hearten/Repair/Resupply) as automatic strong hits." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Time short or resources strained. Each make one recover move instead of two (max three total)." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Choose: community needs help (do it or Swear an Iron Vow → resolves as strong hit) OR no relief and situation worsens (Pay the Price)." };
+      case "miss": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Community needs help (Swear an Iron Vow)", route: "swear_an_iron_vow" },
+          { label: "No relief — Pay the Price",                route: "pay_the_price" },
+        ]},
+        otherEffect: "Choose: community needs help (do it or Swear an Iron Vow → resolves as strong hit) OR no relief and situation worsens (Pay the Price)."
+      };
     }
   },
 
@@ -640,8 +819,14 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
         otherEffect: "If wounded, clear impact and take/give +2 health. Otherwise take/give +3 health." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Recovery costs extra time or resources. Choose: Lose Momentum (-2) OR Sacrifice Resources (-2)." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Lose Momentum (-2)",       suffer: "lose_momentum",       amount: 2 },
+          { label: "Sacrifice Resources (-2)", suffer: "sacrifice_resources", amount: 2 },
+        ]},
+        otherEffect: "Recovery costs extra time or resources. Choose: Lose Momentum (-2) OR Sacrifice Resources (-2)."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Aid ineffective and situation worsens. Pay the Price." };
     }
@@ -687,8 +872,16 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
         otherEffect: "Cast back into the mortal world." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: noble sacrifice (envision final moments) OR Swear an Iron Vow (extreme quest), return and mark doomed." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        // PC death is permanent — Q2-family prompt, not auto-execute.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Noble sacrifice (PC dies)",                  route: "character_death" },
+          { label: "Swear extreme vow + mark doomed",
+            chain: [{ route: "swear_an_iron_vow", rank: "extreme" }, { mark: "doomed" }] },
+        ]},
+        otherEffect: "Choose: noble sacrifice (envision final moments) OR Swear an Iron Vow (extreme quest), return and mark doomed."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "You are dead." };
     }
@@ -698,8 +891,15 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
         otherEffect: "Resist and press on." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: spirit breaks (noble sacrifice, envision final moments) OR vision of dire future (Swear an Iron Vow extreme quest, return and mark tormented)." };
+      case "weak_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Spirit breaks (noble sacrifice)",            route: "character_breaks" },
+          { label: "Swear extreme vow + mark tormented",
+            chain: [{ route: "swear_an_iron_vow", rank: "extreme" }, { mark: "tormented" }] },
+        ]},
+        otherEffect: "Choose: spirit breaks (noble sacrifice, envision final moments) OR vision of dire future (Swear an Iron Vow extreme quest, return and mark tormented)."
+      };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Succumb to despair or horror — lost." };
     }

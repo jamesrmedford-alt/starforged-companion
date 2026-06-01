@@ -335,6 +335,12 @@ describe("mapConsequences", () => {
 
     it("weak hit triggers a suffer move", () => {
       const c = mapConsequences("face_danger", "weak_hit", false);
+      // F16: sufferPrompt is the canonical surface; sufferMoveTriggered
+      // remains as a deprecated alias for one release.
+      expect(c.sufferPrompt).not.toBeNull();
+      expect(c.sufferPrompt.kind).toBe("any");
+      expect(c.sufferPrompt.amount).toBe(1);
+      expect(c.sufferPrompt.count).toBe(1);
       expect(c.sufferMoveTriggered).not.toBeNull();
       expect(c.sufferMoveTriggered.amount).toBe(1);
     });
@@ -445,7 +451,8 @@ describe("mapConsequences", () => {
 
 const REQUIRED_KEYS = [
   "momentumChange", "healthChange", "spiritChange", "supplyChange",
-  "progressMarked", "sufferMoveTriggered", "progressTrackId", "otherEffect",
+  "progressMarked", "sufferMoveTriggered", "sufferPrompt",
+  "progressTrackId", "otherEffect",
 ];
 
 const HANDLER_CASES = [
@@ -1097,5 +1104,87 @@ describe("buildOracleSeeds", () => {
       const seeds = buildOracleSeeds("explore_a_waypoint", "miss", true);
       expect(seeds.results.some(r => r.includes("Confront Chaos: Dread hallucinations"))).toBe(true);
     });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F16 — sufferPrompt shape contract per move + outcome
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
+
+  it("face_danger weak hit emits a B1 'any' prompt at amount=1 count=1", () => {
+    const c = mapConsequences("face_danger", "weak_hit", false);
+    expect(c.sufferPrompt).toEqual({ kind: "any", amount: 1, count: 1 });
+  });
+
+  it("react_under_fire weak hit emits a B1 'any' prompt at amount=1 count=1", () => {
+    const c = mapConsequences("react_under_fire", "weak_hit", false);
+    expect(c.sufferPrompt).toEqual({ kind: "any", amount: 1, count: 1 });
+    expect(c.combatPosition).toBe("bad_spot");
+  });
+
+  it("check_your_gear weak hit emits a B2 with the two rulebook-named options", () => {
+    const c = mapConsequences("check_your_gear", "weak_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    const labels = c.sufferPrompt.options.map(o => o.label);
+    expect(labels).toContain("Sacrifice Resources (-1)");
+    expect(labels).toContain("Lose Momentum (-2)");
+  });
+
+  it("set_a_course weak hit emits a B2 three-branch prompt (suffer -2, two -1s, complication)", () => {
+    const c = mapConsequences("set_a_course", "weak_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    expect(c.sufferPrompt.options).toHaveLength(3);
+    const complication = c.sufferPrompt.options.find(o => o.complication);
+    expect(complication?.scope).toBe("destination");
+  });
+
+  it("undertake_an_expedition weak hit mirrors set_a_course's three-branch shape but with peril at waypoint", () => {
+    const c = mapConsequences("undertake_an_expedition", "weak_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    expect(c.sufferPrompt.options).toHaveLength(3);
+    expect(c.sufferPrompt.options.find(o => o.complication)?.scope).toBe("waypoint");
+  });
+
+  it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
+    const c = mapConsequences("gain_ground", "strong_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    expect(c.sufferPrompt.multi).toBe(2);
+    expect(c.sufferPrompt.options).toHaveLength(3);
+  });
+
+  it("gain_ground weak hit emits multi:1 of the same three options", () => {
+    const c = mapConsequences("gain_ground", "weak_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    expect(c.sufferPrompt.multi).toBe(1);
+    expect(c.sufferPrompt.options).toHaveLength(3);
+  });
+
+  it("endure_harm strong hit gates the +1 health option on !wounded", () => {
+    const c = mapConsequences("endure_harm", "strong_hit", false);
+    const healthOpt = c.sufferPrompt.options.find(o => o.health === 1);
+    expect(healthOpt?.requires).toBe("!wounded");
+  });
+
+  it("endure_harm miss emits an enumerated -1 health vs -2 lose-momentum pick", () => {
+    const c = mapConsequences("endure_harm", "miss", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    const labels = c.sufferPrompt.options.map(o => o.label);
+    expect(labels).toContain("-1 health");
+    expect(labels).toContain("Lose Momentum (-2)");
+  });
+
+  it("forsake_your_vow emits a multi:true enumerated of all four named costs", () => {
+    const c = mapConsequences("forsake_your_vow", "strong_hit", false);
+    expect(c.sufferPrompt.multi).toBe(true);
+    expect(c.sufferPrompt.options.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("emits no sufferPrompt for outcomes that are pure auto-apply or pure Pay-the-Price", () => {
+    expect(mapConsequences("face_danger", "strong_hit", false).sufferPrompt).toBeNull();
+    expect(mapConsequences("face_danger", "miss", false).sufferPrompt).toBeNull();
+    expect(mapConsequences("gather_information", "strong_hit", false).sufferPrompt).toBeNull();
   });
 });
