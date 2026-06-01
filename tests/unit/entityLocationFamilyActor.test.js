@@ -32,7 +32,10 @@ describe("createSettlement", () => {
     const actor = global.game.actors.contents[0];
     expect(actor.type).toBe("location");
     expect(actor.system.subtype).toBe("settlement");
-    expect(actor.system.klass).toBe("Planetside");
+    // F6: klass must be lowercase to match the foundry-ironsworn enum
+    // (`planetside` | `orbital` | `deep space`). Titlecase leaves the sheet's
+    // "Type of settlement" dropdown blank.
+    expect(actor.system.klass).toBe("planetside");
     expect(actor.flags[MODULE].settlement.name).toBe("Bleakhold");
     expect(actor.flags[MODULE].settlement.sectorId).toBe("sec-1");
     expect(state.settlementIds).toEqual([actor.id]);
@@ -66,7 +69,7 @@ describe("createSettlement", () => {
     await updateSettlement(id, { name: "New", location: "Orbital" });
     const actor = global.game.actors.get(id);
     expect(actor.name).toBe("New");
-    expect(actor.system.klass).toBe("Orbital");
+    expect(actor.system.klass).toBe("orbital");
     expect(getSettlement(id).location).toBe("Orbital");
   });
 
@@ -84,7 +87,10 @@ describe("createPlanet", () => {
     await createPlanet({ name: "Cinderworld", type: "Furnace World" }, state);
     const actor = global.game.actors.contents[0];
     expect(actor.system.subtype).toBe("planet");
-    expect(actor.system.klass).toBe("Furnace World");
+    // F6: klass must be the canonical lowercase short form ("furnace"),
+    // not the oracle's display string ("Furnace World"). Otherwise the
+    // sheet's "Type of planet" dropdown can't match.
+    expect(actor.system.klass).toBe("furnace");
     expect(actor.flags[MODULE].planet.name).toBe("Cinderworld");
     expect(state.planetIds).toEqual([actor.id]);
   });

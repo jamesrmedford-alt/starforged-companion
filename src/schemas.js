@@ -386,6 +386,10 @@ export const ConnectionSchema = {
   description: "",              // Physical description
   background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
+  goal: "",                     // CHARACTERS.GOAL oracle result — the driving objective
+                                // rolled at creation (sector wizard / Make a Connection).
+                                // F3: rolled by sector creator and passed to createConnection
+                                // but had no schema home, so it never reached the journal body.
   secrets: "",                  // Information hidden from the player character (GM only)
 
   // Append-only relationship history log

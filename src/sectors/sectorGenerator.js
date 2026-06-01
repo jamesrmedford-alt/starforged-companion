@@ -67,10 +67,18 @@ export function generateSector(region, _overrides = {}) {
   const cfg = REGION_CONFIG[region];
   if (!cfg) throw new Error(`Unknown region: ${region}`);
 
-  // Steps 3–5: Generate each settlement
+  // Step 1: Stellar object — rolled once per sector and shared across all
+  // settlements / planets in that sector (F7). Drives the scene-map stellar
+  // pin (sceneBuilder.js → iconForStellarObject) which was already wired up
+  // but starved of data because nothing populated this field.
+  const stellar = rollTableResult(SPACE.STELLAR_OBJECT);
+
+  // Steps 3–5: Generate each settlement, sharing the sector's stellar object.
   const settlements = [];
   for (let i = 0; i < cfg.settlements; i++) {
-    settlements.push(generateSettlement(region));
+    const s = generateSettlement(region);
+    s.stellar = stellar;
+    settlements.push(s);
   }
 
   // Step 10: Sector trouble
@@ -253,6 +261,7 @@ export async function createEntityJournals(sector, campaignState) {
       projects:   s.projects,
       trouble:    s.trouble ?? null,
       planet:     s.planet ?? null,
+      stellar:    s.stellar ?? null,
       sectorId:   sector.id,
     }, campaignState, { persist: false });
     const actorId = campaignState.settlementIds?.[beforeLen] ?? null;
@@ -471,11 +480,47 @@ export async function applyStubsToSettlementEntities(settlements, stubs) {
     const stub = stubs.settlements[sourceId];
     if (!stub || !actor?.id) continue;
     try {
-      await updateSettlement(actor.id, { description: stub });
+      // F17: combine the narrator prose with a structured rolled-detail block
+      // so the sheet displays both the atmospheric description AND the
+      // Population/Authority/Projects/Trouble that the wizard rolled.
+      const data = actor.flags?.[MODULE_ID]?.settlement ?? {};
+      const description = composeSettlementDescription(stub, data);
+      await updateSettlement(actor.id, { description });
     } catch (err) {
       console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);
     }
   }
+}
+
+/**
+ * Build the settlement-sheet description body: narrator prose first, then a
+ * compact, dot-separated facts line carrying every rolled oracle result. The
+ * foundry-ironsworn Location-actor schema only exposes `subtype`/`klass`/
+ * `description` — there's no `system.population` / `system.authority` /
+ * etc. — so the rolled details either ride in the description HTML or stay
+ * invisible to the sheet (F17).
+ *
+ * @param {string} prose       — narrator-generated atmospheric prose, HTML or plain.
+ * @param {Object} data        — settlement payload (matches SettlementSchema).
+ * @returns {string} description HTML.
+ */
+export function composeSettlementDescription(prose, data = {}) {
+  const esc = (s) => String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const parts = [];
+  if (data.location)            parts.push(`<strong>Location:</strong> ${esc(data.location)}`);
+  if (data.population)          parts.push(`<strong>Population:</strong> ${esc(data.population)}`);
+  if (data.authority)           parts.push(`<strong>Authority:</strong> ${esc(data.authority)}`);
+  if (data.projects?.length)    parts.push(`<strong>Projects:</strong> ${data.projects.map(esc).join(", ")}`);
+  if (data.trouble)             parts.push(`<strong>Trouble:</strong> ${esc(data.trouble)}`);
+  if (data.firstLook)           parts.push(`<strong>First look:</strong> ${esc(data.firstLook)}`);
+  if (data.initialContact)      parts.push(`<strong>Initial contact:</strong> ${esc(data.initialContact)}`);
+  if (data.stellar)             parts.push(`<strong>Stellar object:</strong> ${esc(data.stellar)}`);
+
+  const proseHtml  = prose ? (prose.trim().startsWith("<") ? prose : `<p>${esc(prose)}</p>`) : "";
+  const factsHtml  = parts.length ? `<p>${parts.join(" &middot; ")}</p>` : "";
+  if (proseHtml && factsHtml) return `${proseHtml}<hr>${factsHtml}`;
+  return proseHtml || factsHtml;
 }
 
 /**

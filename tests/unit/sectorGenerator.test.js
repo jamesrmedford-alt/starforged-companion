@@ -508,25 +508,42 @@ describe("trimToLastSentence (F4)", () => {
 describe("applyStubsToSettlementEntities", () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("routes each stub through updateSettlement keyed by actor id", async () => {
+  it("routes each stub through updateSettlement keyed by actor id (description includes narrator prose)", async () => {
     const spy = vi.spyOn(settlement, "updateSettlement").mockResolvedValue({});
+    // Actors carry the settlement flag (empty payload here — composeSettlementDescription
+    // tolerates missing rolled details and renders prose-only).
+    const a1 = { id: "actor-1", flags: { "starforged-companion": { settlement: {} } } };
+    const a2 = { id: "actor-2", flags: { "starforged-companion": { settlement: {} } } };
     await applyStubsToSettlementEntities(
-      { gen1: { id: "actor-1" }, gen2: { id: "actor-2" } },
+      { gen1: a1, gen2: a2 },
       { settlements: { gen1: "A windswept dome.", gen2: "A rusting orbital." } },
     );
     expect(spy).toHaveBeenCalledTimes(2);
-    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({ description: "A windswept dome." }));
-    expect(spy).toHaveBeenCalledWith("actor-2", expect.objectContaining({ description: "A rusting orbital." }));
+    // F17: applyStubsToSettlementEntities now composes a description that
+    // pairs the narrator stub with a structured rolled-detail block. The
+    // exact HTML is asserted in the composeSettlementDescription tests
+    // below — here we just pin that each call's description contains the
+    // original prose so the narrator stub still drives the body.
+    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({
+      description: expect.stringContaining("A windswept dome."),
+    }));
+    expect(spy).toHaveBeenCalledWith("actor-2", expect.objectContaining({
+      description: expect.stringContaining("A rusting orbital."),
+    }));
   });
 
   it("skips settlements with no stub, an empty stub, or a missing actor", async () => {
     const spy = vi.spyOn(settlement, "updateSettlement").mockResolvedValue({});
+    const a1 = { id: "actor-1", flags: { "starforged-companion": { settlement: {} } } };
+    const a3 = { id: "actor-3", flags: { "starforged-companion": { settlement: {} } } };
     await applyStubsToSettlementEntities(
-      { gen1: { id: "actor-1" }, gen2: null, gen3: { id: "actor-3" } },
+      { gen1: a1, gen2: null, gen3: a3 },
       { settlements: { gen1: "Only this one.", gen3: "" } }, // gen2 actor null, gen3 stub empty
     );
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({ description: "Only this one." }));
+    expect(spy).toHaveBeenCalledWith("actor-1", expect.objectContaining({
+      description: expect.stringContaining("Only this one."),
+    }));
   });
 
   it("no-ops when the stubs payload has no settlements", async () => {
@@ -548,6 +565,7 @@ describe("applyStubsToSettlementEntities", () => {
 });
 
 
+// ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // F4 — sector-folder routing. createEntityJournals must pre-register the
 // sector in campaignState.sectors before any settlement is created, so the
@@ -625,5 +643,76 @@ describe("createEntityJournals — F4 sector-folder pre-registration", () => {
     expect(stored.id).toBe("sector-test-003");
     expect(stored.trouble).toBe("Pirates");
     expect(stored.region).toBe("terminus");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// composeSettlementDescription (F17 — rolled-detail block on the sheet body)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("composeSettlementDescription", () => {
+  let composeSettlementDescription;
+  beforeAll(async () => {
+    ({ composeSettlementDescription } = await import("../../src/sectors/sectorGenerator.js"));
+  });
+
+  it("pairs narrator prose with a dot-separated facts line of rolled details", () => {
+    const out = composeSettlementDescription(
+      "<p>You arrive at a windswept dome.</p>",
+      { location: "Planetside", population: "Few", authority: "Fair", projects: ["Raiding"], trouble: "Pirates" },
+    );
+    expect(out).toContain("windswept dome");
+    expect(out).toContain("<strong>Population:</strong> Few");
+    expect(out).toContain("<strong>Authority:</strong> Fair");
+    expect(out).toContain("<strong>Projects:</strong> Raiding");
+    expect(out).toContain("<strong>Trouble:</strong> Pirates");
+    expect(out).toContain("&middot;");  // facts joined with " · "
+  });
+
+  it("includes the stellar object line when present (F7 wire)", () => {
+    const out = composeSettlementDescription(
+      "<p>An orbital ring.</p>",
+      { stellar: "blazing blue star" },
+    );
+    expect(out).toContain("<strong>Stellar object:</strong> blazing blue star");
+  });
+
+  it("renders prose-only when no rolled details exist", () => {
+    const out = composeSettlementDescription("<p>Just prose.</p>", {});
+    expect(out).toBe("<p>Just prose.</p>");
+  });
+
+  it("renders facts-only when no prose is provided", () => {
+    const out = composeSettlementDescription("", { population: "Few" });
+    expect(out).toContain("<strong>Population:</strong> Few");
+    expect(out).not.toContain("<hr>");
+  });
+
+  it("wraps a plain-text prose argument in a <p>", () => {
+    const out = composeSettlementDescription("Plain text.", {});
+    expect(out).toBe("<p>Plain text.</p>");
+  });
+
+  it("escapes HTML in facts to prevent injection from oracle results", () => {
+    const out = composeSettlementDescription("<p>x</p>", { trouble: "<script>x</script>" });
+    expect(out).toContain("&lt;script&gt;");
+    expect(out).not.toContain("<script>");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// generateSector — F7 stellar object roll is shared across all settlements
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generateSector — F7 stellar object roll", () => {
+  it("rolls a stellar object and writes the same value onto every settlement", () => {
+    const sector = generateSector("terminus");
+    const stellars = sector.settlements.map(s => s.stellar);
+    expect(stellars[0]).toBeTruthy();
+    for (const s of stellars) {
+      expect(s).toBe(stellars[0]);
+    }
   });
 });

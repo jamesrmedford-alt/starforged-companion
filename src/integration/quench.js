@@ -8099,9 +8099,12 @@ function registerLocationFamilyActorWiresTests(quench) {
             type:        "Vital",
           },
           extraSystemAssertion: (actor) => {
-            // planet.js writes planet.type → actor.system.klass.
-            assert.equal(actor.system?.klass, "Vital",
-              "planet writer should map data.type → actor.system.klass");
+            // planet.js writes planet.type → actor.system.klass after
+            // normalising to the foundry-ironsworn enum's canonical lowercase
+            // short form (F6: "Vital World"/"Vital" → "vital"; titlecase
+            // values leave the sheet's "Type of planet" dropdown blank).
+            assert.equal(actor.system?.klass, "vital",
+              "planet writer should map data.type → actor.system.klass (lowercase per F6)");
           },
         },
         {
@@ -8117,8 +8120,11 @@ function registerLocationFamilyActorWiresTests(quench) {
           },
           extraSystemAssertion: (actor) => {
             // settlement.js writes settlement.location → actor.system.klass.
-            assert.equal(actor.system?.klass, "Orbital",
-              "settlement writer should map data.location → actor.system.klass");
+            // settlement.js normalises to the foundry-ironsworn enum
+            // (F6: "Orbital" → "orbital"); titlecase leaves the sheet's
+            // "Type of settlement" dropdown blank.
+            assert.equal(actor.system?.klass, "orbital",
+              "settlement writer should map data.location → actor.system.klass (lowercase per F6)");
           },
         },
         {

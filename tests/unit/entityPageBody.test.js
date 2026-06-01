@@ -50,4 +50,25 @@ describe("entity page body renderers (F19 / T3)", () => {
     expect(renderFactionBody({})).toBe("");
     expect(renderCreatureBody(null)).toBe("");
   });
+
+  it("connection body surfaces the rolled Goal (F3)", () => {
+    // Goal is rolled by the sector wizard / Make a Connection and passed
+    // to createConnection, but before F3 it had no schema home and never
+    // appeared on the journal-page body.
+    const html = renderConnectionBody({
+      name: "Amelia Stark",
+      role: "Scholar",
+      goal: "Collect a debt",
+      description: "Bookish, terse, intense eye contact.",
+    });
+    expect(html).toContain("<strong>Goal:</strong> Collect a debt");
+    expect(html).toContain("Scholar");
+    expect(html).toContain("Bookish, terse, intense eye contact.");
+  });
+
+  it("connection body omits Goal when it is missing/empty", () => {
+    const html = renderConnectionBody({ name: "X", role: "Scout" });
+    expect(html).toContain("Scout");
+    expect(html).not.toContain("<strong>Goal:</strong>");
+  });
 });

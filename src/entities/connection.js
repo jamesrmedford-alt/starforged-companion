@@ -482,6 +482,7 @@ export function renderEntityBody(connection) {
   meta("Rank", connection?.rank);
   meta("Relationship", connection?.relationshipType);
   if (connection?.description) out.push(`<p>${esc(connection.description)}</p>`);
+  meta("Goal", connection?.goal);
   if (connection?.motivation)  out.push(`<p><strong>Motivation:</strong> ${esc(connection.motivation)}</p>`);
   if (connection?.notes)       out.push(`<p>${esc(connection.notes)}</p>`);
   return out.join("");
