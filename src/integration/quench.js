@@ -4288,6 +4288,35 @@ function registerToolbarTests(quench) {
             "the pushed group should carry the companion tools",
           );
         });
+
+        it("declares an activeTool that resolves to a non-throwing onChange", async function () {
+          // v13's SceneControls.activate() → #preActivate → #onToolChange →
+          // #onChange chain reads `group.tools[group.activeTool].onChange` during
+          // every group transition. Missing activeTool → tools[undefined] is
+          // undefined → onChange read throws → every group-switch click aborts.
+          // Pin that activeTool is set and resolves to a real tool whose
+          // onChange is callable without throwing (and without GM-only visibility,
+          // so it works for player clients too).
+          const controls = { tokens: { name: "tokens", tools: {} } };
+          Hooks.callAll("getSceneControlButtons", controls);
+          const group = controls.starforgedCompanion;
+          assert.isString(group.activeTool, "group must declare an activeTool string");
+          const resolved = group.tools[group.activeTool];
+          assert.isObject(
+            resolved,
+            `activeTool '${group.activeTool}' must resolve to a real tool in group.tools`,
+          );
+          assert.isFunction(resolved.onChange, "activeTool's onChange must be a function");
+          assert.doesNotThrow(
+            () => resolved.onChange(),
+            "activeTool's onChange must not throw — Foundry calls it during group activate",
+          );
+          assert.notEqual(
+            resolved.visible,
+            false,
+            "activeTool must not be GM-gated (visible !== false) so player clients can switch groups",
+          );
+        });
       });
 
       describe("renderSceneControls — handler attachment is idempotent", function () {
