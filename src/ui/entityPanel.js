@@ -199,6 +199,8 @@ export class EntityPanelApp extends ApplicationV2 {
       setCurrentLocation: EntityPanelApp.#onSetCurrentLocation,
       finalizeEntity:     EntityPanelApp.#onFinalizeEntity,
       regenerateFlavor:   EntityPanelApp.#onRegenerateFlavor,
+      envisionShip:       EntityPanelApp.#onEnvisionShip,
+      shipHistory:        EntityPanelApp.#onShipHistory,
       switchTopTab:       EntityPanelApp.#onSwitchTopTab,
       undismiss:          EntityPanelApp.#onUndismiss,
     },
@@ -429,6 +431,27 @@ export class EntityPanelApp extends ApplicationV2 {
                ✦ Finalise
              </button>`;
 
+    const isEnvisioning = this.#generatingIds.has(`envision:${entity.journalId}`);
+    const isHistorying  = this.#generatingIds.has(`history:${entity.journalId}`);
+    const envisionBtnHtml = entity.typeKey !== 'ship'
+      ? ''
+      : isEnvisioning
+        ? `<button class="sf-envision-ship" disabled>Envisioning…</button>`
+        : `<button class="sf-envision-ship" data-action="envisionShip"
+                   data-journal-id="${escapeHtml(entity.journalId)}"
+                   title="Roll supplementary oracles (captain, crew, agenda, initial contact) and weave them into a 2-3 sentence paragraph. Appended to Notes.">
+             ✦ Envision
+           </button>`;
+    const historyBtnHtml = entity.typeKey !== 'ship'
+      ? ''
+      : isHistorying
+        ? `<button class="sf-ship-history" disabled>Generating history…</button>`
+        : `<button class="sf-ship-history" data-action="shipHistory"
+                   data-journal-id="${escapeHtml(entity.journalId)}"
+                   title="Roll Action+Theme backstory beats and a Story Clue, then ask the narrator for a 2-3 paragraph history. Appended to Notes.">
+             📜 History
+           </button>`;
+
     let portraitHtml;
     if (entity.art?.dataUri) {
       const lockBadge = entity.art.locked
@@ -503,6 +526,8 @@ export class EntityPanelApp extends ApplicationV2 {
         ${lockToggleHtml}
         ${currentLocationBtn}
         ${finalizeBtnHtml}
+        ${envisionBtnHtml}
+        ${historyBtnHtml}
       </div>`;
 
     return `
@@ -735,6 +760,118 @@ export class EntityPanelApp extends ApplicationV2 {
     } catch (err) {
       console.error(`${MODULE_ID} | finalize failed:`, err);
       ui.notifications.warn('Finalise failed. Check console for details.');
+    } finally {
+      app.#generatingIds.delete(key);
+      app.render();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Ship Envision / History handlers
+  // -----------------------------------------------------------------------
+
+  static async #onEnvisionShip(event, target) {
+    await EntityPanelApp.#shipEnvisionFlow(this, target);
+  }
+
+  static async #onShipHistory(event, target) {
+    await EntityPanelApp.#shipHistoryFlow(this, target);
+  }
+
+  static async #shipEnvisionFlow(app, target) {
+    const journalId = target.dataset.journalId;
+    if (!journalId) return;
+
+    const key = `envision:${journalId}`;
+    if (app.#generatingIds.has(key)) return;
+    app.#generatingIds.add(key);
+    app.render();
+
+    try {
+      const resolved = resolveEntityById(journalId);
+      if (!resolved || resolved.typeKey !== 'ship') {
+        ui.notifications.warn('Envision is only available on ship entities.');
+        return;
+      }
+      const actor = resolved.document;
+
+      const {
+        envisionShip,
+        renderEnvisionHtml,
+        appendNotesSection,
+      } = await import('../entities/shipEnvision.js');
+
+      const result = await envisionShip(actor, { facet: 'all' });
+      const sectionHtml = renderEnvisionHtml(result);
+
+      await ChatMessage.create({
+        content:
+          `<div class="sf-ship-envision-card">` +
+          `<strong>✦ Envision — ${escapeHtml(actor.name)} (all facets)</strong>` +
+          sectionHtml +
+          `</div>`,
+        flags: { [MODULE_ID]: { shipEnvisionCard: true, actorId: actor.id, facet: 'all' } },
+      });
+
+      if (game.user?.isGM) {
+        await appendNotesSection(actor, 'Envisioned all facets', sectionHtml).catch(err =>
+          console.warn(`${MODULE_ID} | panel envision: notes write failed:`, err?.message ?? err));
+      }
+
+      ui.notifications.info(`Envisioned new details for ${actor.name}.`);
+    } catch (err) {
+      console.error(`${MODULE_ID} | envision ship failed:`, err);
+      ui.notifications.warn('Envision failed. Check console for details.');
+    } finally {
+      app.#generatingIds.delete(key);
+      app.render();
+    }
+  }
+
+  static async #shipHistoryFlow(app, target) {
+    const journalId = target.dataset.journalId;
+    if (!journalId) return;
+
+    const key = `history:${journalId}`;
+    if (app.#generatingIds.has(key)) return;
+    app.#generatingIds.add(key);
+    app.render();
+
+    try {
+      const resolved = resolveEntityById(journalId);
+      if (!resolved || resolved.typeKey !== 'ship') {
+        ui.notifications.warn('History is only available on ship entities.');
+        return;
+      }
+      const actor = resolved.document;
+
+      const {
+        composeShipHistory,
+        renderHistoryHtml,
+        appendNotesSection,
+      } = await import('../entities/shipEnvision.js');
+
+      const result = await composeShipHistory(actor, { beats: 3 });
+      const sectionHtml = renderHistoryHtml(result);
+
+      await ChatMessage.create({
+        content:
+          `<div class="sf-ship-history-card">` +
+          `<strong>📜 History — ${escapeHtml(actor.name)}</strong>` +
+          sectionHtml +
+          `</div>`,
+        flags: { [MODULE_ID]: { shipHistoryCard: true, actorId: actor.id } },
+      });
+
+      if (game.user?.isGM) {
+        await appendNotesSection(actor, 'History', sectionHtml).catch(err =>
+          console.warn(`${MODULE_ID} | panel history: notes write failed:`, err?.message ?? err));
+      }
+
+      ui.notifications.info(`Composed history for ${actor.name}.`);
+    } catch (err) {
+      console.error(`${MODULE_ID} | ship history failed:`, err);
+      ui.notifications.warn('History failed. Check console for details.');
     } finally {
       app.#generatingIds.delete(key);
       app.render();

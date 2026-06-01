@@ -52,6 +52,12 @@ import {
 } from "./safety/sessionLifecycleDialogs.js";
 import { isClockCommand, handleClockCommand, openClocksPanel } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
+import {
+  isShipEnvisionCommand,
+  handleShipEnvisionCommand,
+  isShipHistoryCommand,
+  handleShipHistoryCommand,
+} from "./entities/shipEnvision.js";
 import { openCustomOraclesPanel } from "./oracles/customOracles.js";
 import {
   isOracleAddCommand,
@@ -618,6 +624,18 @@ export function registerChatHook() {
     // !repair — vehicle repair point-spend dialog (play kit p. 7)
     if (isRepairCommand(message)) {
       await handleRepairCommand(message);
+      return;
+    }
+
+    // !ship envision / !ship history — roll supplementary ship oracles,
+    // generate narrator prose, post a card, append a dated section to
+    // system.notes (GM-only on the write). Any player may invoke.
+    if (isShipEnvisionCommand(message)) {
+      await handleShipEnvisionCommand(message);
+      return;
+    }
+    if (isShipHistoryCommand(message)) {
+      await handleShipHistoryCommand(message);
       return;
     }
 

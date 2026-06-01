@@ -82,6 +82,7 @@ developer-only and excluded from the release.
 |------|---------|
 | `registry.js` | Host-document dispatch: routes reads/writes to Actor vs JournalEntry storage. |
 | `connection.js`, `ship.js`, `settlement.js`, `planet.js`, `location.js`, `faction.js`, `creature.js` | Per-type entity record CRUD (ships/settlements/planets/locations on Actors; others on JournalEntry pages). |
+| `shipEnvision.js` | On-demand ✦ Envision / 📜 History for ships. Rolls supplementary oracles beyond the seed (captain, crew, agenda, initial contact) + Action+Theme backstory beats; narrator-prose composer; chat-command predicates + handlers (`!ship envision` / `!ship history`); idempotent dated-subsection notes append. |
 | `entityExtractor.js` | Combined detection pass: extracts entities from narrator output + World Journal routing rule; renders draft Confirm/Dismiss cards. |
 | `folder.js` | Entity folder helpers (Entities root, per-sector subfolders). |
 | `migrator.js` | `!migrate-entities` storage migration to native Actors (7-day deferred cleanup). |
