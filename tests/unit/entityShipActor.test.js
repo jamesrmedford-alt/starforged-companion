@@ -28,6 +28,14 @@ vi.mock("../../src/api-proxy.js", () => ({
   })),
 }));
 
+vi.mock("../../src/system/ironswornPacks.js", async (importOriginal) => {
+  const orig = await importOriginal();
+  return {
+    ...orig,
+    getCanonicalAsset: vi.fn(),
+  };
+});
+
 import {
   createShip,
   getShip,
@@ -39,10 +47,12 @@ import {
   ShipSchema,
   starshipHasSeedDetail,
   seedStarshipActor,
+  installModulesForRolledIdentity,
   getCommandVehicle,
   actorHasCommandVehicleAsset,
   syncCommandVehicleFlag,
 } from "../../src/entities/ship.js";
+import { getCanonicalAsset } from "../../src/system/ironswornPacks.js";
 import { rollOracle } from "../../src/oracles/roller.js";
 import { _resetFolderCache } from "../../src/entities/folder.js";
 
@@ -472,5 +482,206 @@ describe("seedStarshipActor", () => {
     const actor = global.makeTestActor({ type: "character", name: "Not A Ship" });
     const result = await seedStarshipActor(actor, {});
     expect(result).toBeNull();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// installModulesForRolledIdentity (F18 — modules match rolled identity)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeStarshipWithEmbedSpy(name = "F18 Ship", seedItems = []) {
+  const installed = [];
+  const actor = global.makeTestActor({
+    type: "starship",
+    name,
+    items: { contents: [...seedItems] },
+  });
+  actor.createEmbeddedDocuments = async (kind, dataArr) => {
+    if (kind !== "Item") throw new Error(`unexpected kind ${kind}`);
+    for (const d of dataArr) installed.push(d);
+    return dataArr;
+  };
+  return { actor, installed };
+}
+
+function fakeCanonicalAsset(slug, name) {
+  return {
+    name,
+    type: "asset",
+    system: { category: "Module", abilities: [{ enabled: false, text: `${name} ability` }] },
+    flags: { "foundry-ironsworn": { dfid: `asset:starforged/module/${slug}` } },
+    toObject() {
+      return {
+        _id: `compendium-${slug}`,
+        name: this.name,
+        type: this.type,
+        system: JSON.parse(JSON.stringify(this.system)),
+        flags: JSON.parse(JSON.stringify(this.flags)),
+      };
+    },
+  };
+}
+
+describe("installModulesForRolledIdentity", () => {
+  beforeEach(() => {
+    getCanonicalAsset.mockReset();
+    getCanonicalAsset.mockImplementation(async (slug) => {
+      const names = {
+        heavy_cannons:   "Heavy Cannons",
+        missile_array:   "Missile Array",
+        medbay:          "Medbay",
+        stealth_tech:    "Stealth Tech",
+        engine_upgrade:  "Engine Upgrade",
+        sensor_array:    "Sensor Array",
+      };
+      const name = names[slug];
+      return name ? fakeCanonicalAsset(slug, name) : null;
+    });
+  });
+
+  it("installs modules that match the rolled identity (F18 repro case)", async () => {
+    const { actor, installed } = makeStarshipWithEmbedSpy();
+    const count = await installModulesForRolledIdentity(actor, {
+      type:      "Hunter — Stealthy attack ship",
+      firstLook: "Bristling with weapons",
+      mission:   "Provide medical aid",
+    });
+    expect(count).toBeGreaterThan(0);
+    const names = installed.map(i => i.name);
+    expect(names).toContain("Heavy Cannons");
+    expect(names).toContain("Medbay");
+  });
+
+  it("drops the compendium _id so Foundry assigns a fresh embedded id", async () => {
+    const { actor, installed } = makeStarshipWithEmbedSpy();
+    await installModulesForRolledIdentity(actor, {
+      type: "Pennant — Command ship", mission: "Command others",
+    });
+    for (const data of installed) {
+      expect(data._id).toBeUndefined();
+    }
+  });
+
+  it("embeds the canonical category and ability list (not a hand-built skeleton)", async () => {
+    const { actor, installed } = makeStarshipWithEmbedSpy();
+    await installModulesForRolledIdentity(actor, {
+      type: "Dreadnought — Heavy attack ship", firstLook: "Bristling with weapons",
+    });
+    for (const data of installed) {
+      expect(data.type).toBe("asset");
+      expect(data.system.category).toBe("Module");
+      expect(Array.isArray(data.system.abilities)).toBe(true);
+      expect(data.system.abilities.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("is idempotent — skips entirely when the actor already has any Module-category asset", async () => {
+    const existingModule = {
+      name: "Engine Upgrade",
+      type: "asset",
+      system: { category: "Module", abilities: [] },
+    };
+    const { actor, installed } = makeStarshipWithEmbedSpy("Already Equipped", [existingModule]);
+    const count = await installModulesForRolledIdentity(actor, {
+      type: "Hunter — Stealthy attack ship", firstLook: "Bristling with weapons",
+    });
+    expect(count).toBe(0);
+    expect(installed).toEqual([]);
+    expect(getCanonicalAsset).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-Module assets when checking idempotency (Command Vehicle, Companion, etc.)", async () => {
+    const commandVehicle = {
+      name: "STARSHIP", type: "asset",
+      system: { category: "Command Vehicle", abilities: [] },
+    };
+    const { actor, installed } = makeStarshipWithEmbedSpy("CV Only", [commandVehicle]);
+    await installModulesForRolledIdentity(actor, {
+      type: "Hunter — Stealthy attack ship", firstLook: "Bristling with weapons",
+    });
+    // CV asset is not a Module — install proceeds.
+    expect(installed.length).toBeGreaterThan(0);
+  });
+
+  it("returns 0 and skips embedding when no modules match (Fleet / Unusual)", async () => {
+    const { actor, installed } = makeStarshipWithEmbedSpy();
+    const count = await installModulesForRolledIdentity(actor, {
+      type: "Battle fleet", firstLook: "Ornate markings", mission: "Action + Theme",
+    });
+    expect(count).toBe(0);
+    expect(installed).toEqual([]);
+    expect(getCanonicalAsset).not.toHaveBeenCalled();
+  });
+
+  it("continues past a missing canonical asset and installs the rest", async () => {
+    getCanonicalAsset.mockImplementation(async (slug) => {
+      if (slug === "heavy_cannons") return null; // simulate pack-index miss
+      return fakeCanonicalAsset(slug, slug);
+    });
+    const { actor, installed } = makeStarshipWithEmbedSpy();
+    const count = await installModulesForRolledIdentity(actor, {
+      type: "Dreadnought — Heavy attack ship", firstLook: "Heavy armor", mission: "Defend against an attack",
+    });
+    expect(count).toBeGreaterThan(0);
+    expect(installed.map(i => i.name)).not.toContain("heavy_cannons");
+  });
+
+  it("returns 0 for a non-starship actor (defensive)", async () => {
+    const character = global.makeTestActor({ type: "character", name: "Not A Ship" });
+    const count = await installModulesForRolledIdentity(character, {
+      type: "Hunter — Stealthy attack ship",
+    });
+    expect(count).toBe(0);
+    expect(getCanonicalAsset).not.toHaveBeenCalled();
+  });
+
+  it("swallows createEmbeddedDocuments failures and returns 0", async () => {
+    const { actor } = makeStarshipWithEmbedSpy();
+    actor.createEmbeddedDocuments = async () => { throw new Error("permission denied"); };
+    const count = await installModulesForRolledIdentity(actor, {
+      type: "Hunter — Stealthy attack ship", firstLook: "Bristling with weapons",
+    });
+    expect(count).toBe(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// seedStarshipActor — modules install runs at the tail of the seed (F18)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("seedStarshipActor → installModulesForRolledIdentity wiring", () => {
+  beforeEach(() => {
+    rollOracle.mockReset?.();
+    rollOracle.mockImplementation((id) => {
+      const map = {
+        starship_type:             "Hunter — Stealthy attack ship",
+        starship_first_look:       "Bristling with weapons",
+        starship_mission_terminus: "Provide medical aid",
+      };
+      return { tableId: id, result: map[id] ?? "—" };
+    });
+    global.game.settings.get = (_mod, key) => {
+      if (key === "openRouterApiKey") return "";
+      if (key === "autoSeedStarship") return true;
+      return undefined;
+    };
+    getCanonicalAsset.mockReset();
+    getCanonicalAsset.mockImplementation(async (slug) =>
+      fakeCanonicalAsset(slug, slug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()))
+    );
+  });
+
+  it("installs matched modules at the tail of seedStarshipActor (F18 fix wired up)", async () => {
+    const { actor, installed } = makeStarshipWithEmbedSpy("Wired Hunter");
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    expect(installed.length).toBeGreaterThan(0);
+    const names = installed.map(i => i.name);
+    expect(names).toContain("Heavy Cannons");
+    expect(names).toContain("Medbay");
   });
 });

@@ -488,6 +488,16 @@ export async function seedStarshipActor(actor, campaignState) {
     }
   }
 
+  // F18: install canonical Modules that match the rolled identity. Pure mapping
+  // (no LLM/IO) runs first; the install step fetches each asset from the
+  // starforgedassets compendium and embeds it on the actor. Failures here are
+  // non-fatal — a missing compendium, an offline Forge, or a pack-index miss
+  // logs and continues without aborting the rest of the seed.
+  await installModulesForRolledIdentity(actor, {
+    type: ship.type, firstLook: ship.firstLook, mission: ship.mission,
+  }).catch(err =>
+    console.warn(`${MODULE_ID} | seedStarshipActor: module install failed:`, err?.message ?? err));
+
   // Silent portrait — gated on OpenRouter key. Failures stay silent.
   if (portraitSource && hasOpenRouterKey()) {
     try {
@@ -499,6 +509,64 @@ export async function seedStarshipActor(actor, campaignState) {
   }
 
   return ship;
+}
+
+/**
+ * Install canonical Module assets onto a starship Actor whose rolled identity
+ * suggests them. Idempotent: skips the install entirely if the actor already
+ * carries any Module-category asset, so re-running the seed (or running it on
+ * a starship the GM has hand-configured) never duplicates or overwrites
+ * existing modules.
+ *
+ * Each module is fetched from the foundry-ironsworn `starforgedassets`
+ * compendium and embedded as an `asset`-type Item via
+ * `createEmbeddedDocuments`. The canonical asset carries its full ability
+ * list, color, fields, and category — building the Item shape by hand would
+ * lose those.
+ *
+ * @param {Actor} actor                                — starship Actor
+ * @param {{ type?: string, firstLook?: string, mission?: string }} rolls
+ * @returns {Promise<number>} — number of modules actually installed
+ */
+export async function installModulesForRolledIdentity(actor, rolls) {
+  if (!actor || actor.type !== "starship") return 0;
+
+  // Idempotency gate — bail if any Module-category asset is already present.
+  const hasModule = (actor.items?.contents ?? []).some(
+    it => it?.type === "asset" && it?.system?.category === "Module"
+  );
+  if (hasModule) return 0;
+
+  const { pickModulesForRolledIdentity } = await import("./starshipModules.js");
+  const slugs = pickModulesForRolledIdentity(rolls);
+  if (slugs.length === 0) return 0;
+
+  const { getCanonicalAsset } = await import("../system/ironswornPacks.js");
+  const itemsData = [];
+  for (const slug of slugs) {
+    try {
+      const doc = await getCanonicalAsset(slug);
+      if (!doc) {
+        console.warn(`${MODULE_ID} | installModulesForRolledIdentity: canonical asset not found for slug "${slug}"`);
+        continue;
+      }
+      // Drop the compendium id so Foundry assigns a fresh one for the embedded copy.
+      const data = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+      delete data._id;
+      itemsData.push(data);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | installModulesForRolledIdentity: lookup failed for "${slug}":`, err?.message ?? err);
+    }
+  }
+  if (itemsData.length === 0) return 0;
+
+  try {
+    await actor.createEmbeddedDocuments("Item", itemsData);
+    return itemsData.length;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | installModulesForRolledIdentity: createEmbeddedDocuments failed:`, err?.message ?? err);
+    return 0;
+  }
 }
 
 function safeRoll(rollOracle, tableId) {
