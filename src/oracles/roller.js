@@ -215,6 +215,12 @@ export function unregisterOracleTable(tableId) {
 /**
  * Roll on an oracle table by ID.
  *
+ * Directive entries are resolved in-place so callers never receive raw
+ * `"Roll twice"`, `"Roll again …"`, or `"Action + Theme"` strings. See
+ * `resolveDirective` for the resolution rules. The original directive
+ * type is reported via `isRef` / `refTableId` for callers that still want
+ * to distinguish a direct hit from a resolved chain.
+ *
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
@@ -232,14 +238,62 @@ export function rollOracle(tableId, options = {}) {
     return { tableId, tableName: entry.name, roll, result: "—", isRef: false };
   }
 
+  const resolved = resolveDirective(result, entry.table);
   return {
     tableId,
     tableName: entry.name,
     roll,
-    result:     result.result,
+    result:     resolved,
     isRef:      !!result.ref,
     refTableId: result.ref ?? null,
   };
+}
+
+/**
+ * Resolve a single table-entry directive into a usable result string.
+ * Pure function — same rules as `rollTableResult` in sectorGenerator.js,
+ * but operates on a single matched entry plus its parent table so it can
+ * be invoked from `rollOracle` without needing the original d100.
+ *
+ * Resolution:
+ *   - `entry.ref === "action_theme"` → roll CORE.ACTION + CORE.THEME, join `" "`.
+ *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
+ *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `"-"`.
+ *   - otherwise → return `entry.result` verbatim.
+ *
+ * Recursion is depth-capped (`MAX_DIRECTIVE_DEPTH`); at the cap we fall back
+ * to whatever the directive entry's `result` string was so the chain
+ * terminates with something readable rather than throwing.
+ *
+ * @param {{result:string, ref?:string}} entry
+ * @param {Array<{min:number,max:number,result:string,ref?:string}>} parentTable
+ * @param {number} [depth]
+ * @returns {string}
+ */
+const MAX_DIRECTIVE_DEPTH = 4;
+
+function resolveDirective(entry, parentTable, depth = 0) {
+  if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
+
+  if (entry.ref === "action_theme") {
+    return `${rollAndResolve(CORE.ACTION, depth + 1)} ${rollAndResolve(CORE.THEME, depth + 1)}`;
+  }
+
+  if (/^Roll (twice|again)\b/i.test(entry.result)) {
+    const a = rollAndResolve(parentTable, depth + 1);
+    const b = rollAndResolve(parentTable, depth + 1);
+    const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
+    return `${a}${joiner}${b}`;
+  }
+
+  return entry.result;
+}
+
+function rollAndResolve(table, depth) {
+  const roll = rollD100();
+  const entry = findResult(table, roll);
+  if (!entry) return "—";
+  return resolveDirective(entry, table, depth);
 }
 
 /**

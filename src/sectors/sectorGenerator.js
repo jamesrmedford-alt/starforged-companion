@@ -21,6 +21,7 @@ import * as SPACE              from "../oracles/tables/space.js";
 import * as PLANETS            from "../oracles/tables/planets.js";
 import * as CHARACTERS         from "../oracles/tables/characters.js";
 import * as MISC               from "../oracles/tables/misc.js";
+import * as CORE               from "../oracles/tables/core.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const STUB_MODEL    = "claude-haiku-4-5-20251001";
@@ -538,14 +539,55 @@ ${settlementListHtml}
 /**
  * Roll on a table and return the result string.
  *
- * @param {Array<{min:number, max:number, result:string}>} table
+ * Resolves rulebook directive entries in-place so callers never see raw
+ * `"Roll twice"`, `"Roll again (paired name)"`, or `"Action + Theme"` strings:
+ *
+ *   - `"Roll twice"`     → roll twice more on the same table, join with `" / "`.
+ *   - `"Roll again …"`   → roll twice more on the same table, join with `"-"`
+ *                          (the `(paired name)` form on FAMILY_NAMES).
+ *   - `ref: "action_theme"` → roll CORE.ACTION + CORE.THEME, join with `" "`.
+ *
+ * Recursion is depth-capped (`MAX_DIRECTIVE_DEPTH`); at the cap we fall back
+ * to whatever the directive entry's `result` string was so the chain
+ * terminates with something readable rather than throwing.
+ *
+ * @param {Array<{min:number, max:number, result:string, ref?:string}>} table
  * @param {number} [fixedRoll]
+ * @param {{ depth?: number, fixedRolls?: number[] }} [opts]
  * @returns {string}
  */
-export function rollTableResult(table, fixedRoll) {
-  const roll   = fixedRoll ?? rollD100();
-  const entry  = table.find(e => roll >= e.min && roll <= e.max);
-  return entry?.result ?? "Unknown";
+const MAX_DIRECTIVE_DEPTH = 4;
+
+export function rollTableResult(table, fixedRoll, opts = {}) {
+  const depth      = opts.depth ?? 0;
+  const fixedRolls = opts.fixedRolls;
+  const roll       = fixedRoll
+    ?? (fixedRolls && fixedRolls.length ? fixedRolls.shift() : rollD100());
+  const entry      = table.find(e => roll >= e.min && roll <= e.max);
+  if (!entry) return "Unknown";
+
+  // Cross-reference directive: "Action + Theme" rolls CORE.ACTION + CORE.THEME.
+  if (entry.ref === "action_theme") {
+    if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
+    const sub = { depth: depth + 1, fixedRolls };
+    const action = rollTableResult(CORE.ACTION, undefined, sub);
+    const theme  = rollTableResult(CORE.THEME,  undefined, sub);
+    return `${action} ${theme}`;
+  }
+
+  // "Roll again …" or "Roll twice" — recurse on the same table twice and join.
+  // The `(paired name)` parenthetical (FAMILY_NAMES 81-100) signals a hyphen
+  // join for hyphenated surnames; everything else uses `" / "`.
+  if (/^Roll (twice|again)\b/i.test(entry.result)) {
+    if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
+    const sub = { depth: depth + 1, fixedRolls };
+    const a = rollTableResult(table, undefined, sub);
+    const b = rollTableResult(table, undefined, sub);
+    const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
+    return `${a}${joiner}${b}`;
+  }
+
+  return entry.result;
 }
 
 function rollD100() {
