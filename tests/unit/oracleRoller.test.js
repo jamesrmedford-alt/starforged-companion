@@ -124,3 +124,44 @@ describe("rollOracle — directive resolution", () => {
     expect(r.isRef).toBe(false);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F16 Phase E — Pay the Price sufferRoute annotations surface on rollOracle
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rollOracle — Pay the Price sufferRoute (F16 Phase E)", () => {
+  it("surfaces sufferRoute for 'You are harmed' (75-81 band)", () => {
+    const r = rollOracle("pay_the_price", { roll: 78 });
+    expect(r.result).toMatch(/harmed/i);
+    expect(r.sufferRoute).toEqual({ move: "endure_harm", amount: 1 });
+  });
+
+  it("surfaces sufferRoute for 'You are stressed' (82-88 band)", () => {
+    const r = rollOracle("pay_the_price", { roll: 85 });
+    expect(r.sufferRoute).toEqual({ move: "endure_stress", amount: 1 });
+  });
+
+  it("surfaces sufferRoute for 'You waste resources' (69-74 band)", () => {
+    const r = rollOracle("pay_the_price", { roll: 70 });
+    expect(r.sufferRoute).toEqual({ move: "sacrifice_resources", amount: 1 });
+  });
+
+  it("surfaces sufferRoute for 'Your vehicle suffers damage' (63-68 band)", () => {
+    const r = rollOracle("pay_the_price", { roll: 65 });
+    expect(r.sufferRoute).toEqual({ move: "withstand_damage", amount: 1 });
+  });
+
+  it("surfaces sufferRoute with soloFallback for 'friend in harm's way' (51-56 band)", () => {
+    const r = rollOracle("pay_the_price", { roll: 52 });
+    expect(r.sufferRoute.move).toBe("companion_takes_a_hit");
+    expect(r.sufferRoute.soloFallback).toBe("endure_harm");
+    expect(r.sufferRoute.amount).toBe(1);
+  });
+
+  it("does NOT carry sufferRoute on narrative-only entries", () => {
+    // 19-22: "A surprising development complicates your quest" — narrative
+    const r = rollOracle("pay_the_price", { roll: 20 });
+    expect(r.sufferRoute).toBeUndefined();
+  });
+});

@@ -1832,10 +1832,23 @@ async function handlePayThePriceCommand(message) {
     ? `<p><em>${escapeChatHtml(question)}</em></p>`
     : "";
 
+  // F16 Phase E: rolled entries carrying a `sufferRoute` annotation auto-fire
+  // the corresponding suffer executor against the active character. Narrative
+  // entries (no sufferRoute) pass through unchanged — narrator and GM resolve.
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
-    flags:   { [MODULE_ID]: { payThePriceCard: true } },
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+    flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
   });
+
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err),
+    );
+  }
 
   // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
   scheduleOracleNarration({
@@ -1843,6 +1856,47 @@ async function handlePayThePriceCommand(message) {
     oracleName: "Pay the Price",
     question,
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
+}
+
+/**
+ * F16 Phase E: dispatch a Pay-the-Price sufferRoute annotation into the
+ * suffer executors. `soloFallback` swaps the route when the rolled entry
+ * says "companion in harm's way" but the PC has no companion asset —
+ * routes to Endure Harm instead. The dialog (Phase D) lets the GM modify
+ * the magnitude before dispatch; if no dialog is available (test env or
+ * no-app-v2), the default -1 magnitude fires directly.
+ *
+ * @param {{ move: string, amount: number, soloFallback?: string }} route
+ */
+async function dispatchPayThePriceSufferRoute(route) {
+  const { getPlayerActors } = await import("./character/actorBridge.js");
+  const { executeSuffer } = await import("./moves/sufferExecutor.js");
+
+  const actor = getPlayerActors()[0] ?? null;
+  if (!actor) {
+    console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute: no active character`);
+    return;
+  }
+
+  // companion_takes_a_hit needs an item id. If the PC has a companion
+  // asset, surface it; otherwise fall back to Endure Harm (the "you are,
+  // if alone" branch in the entry text).
+  let move = route.move;
+  let itemId = null;
+  if (move === "companion_takes_a_hit") {
+    const companion = actor.items?.find?.(i => i?.system?.category?.toLowerCase?.() === "companion");
+    if (companion) {
+      itemId = companion.id;
+    } else if (route.soloFallback) {
+      move = route.soloFallback;
+    }
+  }
+
+  return executeSuffer(move, actor, {
+    amount: route.amount ?? 1,
+    itemId,
+    isMiss: true,  // Pay the Price always implies a miss context.
   });
 }
 

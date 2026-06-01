@@ -221,10 +221,16 @@ export function unregisterOracleTable(tableId) {
  * type is reported via `isRef` / `refTableId` for callers that still want
  * to distinguish a direct hit from a resolved chain.
  *
+ * F16 Phase E: when the matched entry carries a `sufferRoute` annotation
+ * (e.g. the Pay-the-Price entries "You are harmed" / "Your vehicle
+ * suffers damage" / etc.), surface it on the return value so the
+ * `pay_the_price` chat-command handler can dispatch into the suffer
+ * executors. Non-routable entries omit the field entirely.
+ *
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
- * @returns {{ tableId, tableName, roll, result, isRef, refTableId }}
+ * @returns {{ tableId, tableName, roll, result, isRef, refTableId, sufferRoute? }}
  */
 export function rollOracle(tableId, options = {}) {
   const entry = ORACLE_TABLES[tableId];
@@ -246,6 +252,7 @@ export function rollOracle(tableId, options = {}) {
     result:     resolved,
     isRef:      !!result.ref,
     refTableId: result.ref ?? null,
+    ...(result.sufferRoute ? { sufferRoute: result.sufferRoute } : {}),
   };
 }
 
