@@ -844,6 +844,18 @@ export function registerChatHook() {
             console.warn(`${MODULE_ID} | Token-drag commit failed:`, err),
           );
         }
+
+        // F15 (folded into F16 Phase F): surface a follow-up card so the
+        // user sees that the token moved + which destination. Before this
+        // wire, the position update fired silently and players hit F16's
+        // "narrator says something happened, sheet shows nothing" trust
+        // gap on every Set a Course. The card is informational —
+        // SufferChoiceDialog handles the actual meter changes from the
+        // weak-hit choice in parallel.
+        await postSetACourseFeedbackCard(
+          interpretation.moveTarget,
+          resolution,
+        ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
       }
 
       // Step 7: relevance resolver — picks the narrator-permission block
@@ -1832,10 +1844,23 @@ async function handlePayThePriceCommand(message) {
     ? `<p><em>${escapeChatHtml(question)}</em></p>`
     : "";
 
+  // F16 Phase E: rolled entries carrying a `sufferRoute` annotation auto-fire
+  // the corresponding suffer executor against the active character. Narrative
+  // entries (no sufferRoute) pass through unchanged — narrator and GM resolve.
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
-    flags:   { [MODULE_ID]: { payThePriceCard: true } },
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+    flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
   });
+
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err),
+    );
+  }
 
   // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
   scheduleOracleNarration({
@@ -1843,6 +1868,78 @@ async function handlePayThePriceCommand(message) {
     oracleName: "Pay the Price",
     question,
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
+}
+
+/**
+ * F16 Phase F (F15 fold-in): post an informational follow-up card to chat
+ * when Set a Course resolves to a non-miss, so players can see that the
+ * ship-position update fired. Before this card, F15 surfaced as "narrator
+ * describes arrival, but did the token actually move?" trust gap on every
+ * resolution.
+ *
+ * The card is purely informational — the weak-hit choice consequences
+ * (suffer −2, two −1s, or complication at destination) are handled
+ * separately by the SufferChoiceDialog (Phase D).
+ *
+ * @param {string|null} destination — interpretation.moveTarget
+ * @param {Object} resolution — full move resolution from resolveMove()
+ */
+async function postSetACourseFeedbackCard(destination, resolution) {
+  const dest = destination ? escapeChatHtml(destination) : "the destination";
+  const outcomeLine = resolution.outcome === "strong_hit"
+    ? `<p>Token moved to <strong>${dest}</strong>. Course held cleanly (+1 momentum).</p>`
+    : resolution.outcome === "weak_hit"
+      ? `<p>Token moved to <strong>${dest}</strong>. Arrived with cost or complication — see the suffer prompt for your choice.</p>`
+      : `<p>Token did not move (course not held).</p>`;
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Set a Course resolved</strong>${outcomeLine}</div>`,
+      flags:   { [MODULE_ID]: { setACourseFeedback: true, outcome: resolution.outcome } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postSetACourseFeedbackCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * F16 Phase E: dispatch a Pay-the-Price sufferRoute annotation into the
+ * suffer executors. `soloFallback` swaps the route when the rolled entry
+ * says "companion in harm's way" but the PC has no companion asset —
+ * routes to Endure Harm instead. The dialog (Phase D) lets the GM modify
+ * the magnitude before dispatch; if no dialog is available (test env or
+ * no-app-v2), the default -1 magnitude fires directly.
+ *
+ * @param {{ move: string, amount: number, soloFallback?: string }} route
+ */
+async function dispatchPayThePriceSufferRoute(route) {
+  const { getPlayerActors } = await import("./character/actorBridge.js");
+  const { executeSuffer } = await import("./moves/sufferExecutor.js");
+
+  const actor = getPlayerActors()[0] ?? null;
+  if (!actor) {
+    console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute: no active character`);
+    return;
+  }
+
+  // companion_takes_a_hit needs an item id. If the PC has a companion
+  // asset, surface it; otherwise fall back to Endure Harm (the "you are,
+  // if alone" branch in the entry text).
+  let move = route.move;
+  let itemId = null;
+  if (move === "companion_takes_a_hit") {
+    const companion = actor.items?.find?.(i => i?.system?.category?.toLowerCase?.() === "companion");
+    if (companion) {
+      itemId = companion.id;
+    } else if (route.soloFallback) {
+      move = route.soloFallback;
+    }
+  }
+
+  return executeSuffer(move, actor, {
+    amount: route.amount ?? 1,
+    itemId,
+    isMiss: true,  // Pay the Price always implies a miss context.
   });
 }
 

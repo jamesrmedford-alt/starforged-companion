@@ -509,7 +509,17 @@ export const MoveResolutionSchema = {
                                  // For legacy tracks (quests / bonds / discoveries)
                                  // this is treated as a raw tick count, matching the
                                  // play kit's per-rank legacy-reward values.
-    sufferMoveTriggered:   null,// e.g. { move: "endure_harm", amount: 1 }
+    sufferMoveTriggered:   null,// DEPRECATED — kept for one-release back-compat;
+                                // new code reads sufferPrompt below (F16 §5.2).
+    sufferPrompt:          null,// F16: structured prompt the SufferChoiceDialog
+                                // renders. Three shapes:
+                                //   { kind: "any", amount, count }
+                                //     → player picks any of the 6 suffer moves
+                                //   { kind: "enumerated", options: [...],
+                                //     multi?: 1|2|true, allowComplication? }
+                                //     → player picks from listed options
+                                //   null = no choice required.
+                                // See docs/moves/suffer-routing-audit.md.
     progressTrackId:       null,// Which track to apply progressMarked to
     combatPosition:        null,// "in_control" | "bad_spot" | null
                                  // Persisted onto the bound combat track's
