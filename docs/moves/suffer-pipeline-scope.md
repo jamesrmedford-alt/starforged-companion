@@ -205,9 +205,30 @@ New ApplicationV2 in `src/moves/sufferDialog.js`:
 - "Complication at destination" option (Set a Course shape) writes a
   `pendingComplication` flag onto the active scene / sector record so
   the narrator surfaces it on next scene transition.
-- Non-blocking: chat scroll continues; narrator's response card may
-  land before or after the dialog. Resolution stays "pending suffer
-  choice" in the chat card until the player picks.
+- **Blocking** (per Q1 resolution): the move-resolution pipeline awaits
+  the dialog's selection promise before posting the narrator card or
+  firing downstream side effects (entity detection, world journal
+  writes, etc.). Players see the cost-and-then-prose ordering the
+  rulebook envisions; narrator's "you pay a cost" prose lands grounded
+  in the specific choice the player made.
+
+**AFK-player escape hatch (required by Q1's blocking choice).** A
+blocking dialog with an AFK player would stall the table indefinitely;
+two mitigations:
+
+- **GM override button.** Visible only on the GM client. Lets the GM
+  pick on the player's behalf when the player is unavailable. Posts a
+  chat card recording who picked (`GM resolved Faye's suffer choice
+  on her behalf: Sacrifice Resources −1`).
+- **Resolution-cancel button.** Closes the dialog without writing
+  anything, and posts a chat card noting the resolution was abandoned
+  (`Move resolution cancelled before suffer choice. No meter changes
+  applied.`). Player can re-trigger the move when ready.
+
+There is *no* auto-timeout default — silently picking a suffer on the
+player's behalf without an explicit GM override would erode trust
+worse than the silent-meter problem this whole pipeline exists to
+fix.
 
 Permissions:
 - The player owning the active character resolves their own suffer
@@ -215,7 +236,7 @@ Permissions:
 - In solo-GM mode, the GM resolves.
 - If a player triggers but no player is connected (multiplayer with
   AFK player), the dialog appears for the GM with a "this is X's call"
-  marker, GM can pick on the player's behalf (PERSIST-001 trail).
+  marker, and the GM override button is the path forward.
 
 ### 5.4 Per-suffer-move executors
 
@@ -389,60 +410,57 @@ six PRs total. Phase A unblocks B-F; B unblocks the rest.
 - Roll Pay the Price several times; confirm routable entries write to
   the sheet, narrative entries don't.
 
-## 9. Open questions
+## 9. Resolved decisions
 
-These need user input before Phase B starts (after Phase A's audit
-lands; they may resolve themselves on read).
+User reviewed and answered §9's open questions on 2026-06-01. The
+architecture in §5 has been updated to reflect each pick; this section
+records the decision and rationale for posterity.
 
-### Q1. Dialog modality
+### Q1. Dialog modality — **Blocking** (overrode the non-blocking recommendation)
 
-The SufferChoiceDialog is **non-blocking** in the spec — chat scroll
-continues, narrator can respond. Alternative is **blocking** — the
-resolution pipeline pauses until the player picks, and the narrator
-card waits.
+The SufferChoiceDialog blocks the resolution pipeline. Narrator card
+and downstream side effects (entity detection, world journal writes,
+chronicle entries, audio narration, etc.) wait until the player
+finishes the choice. Cost-and-then-prose ordering — narrator's "you
+pay a cost" prose lands grounded in the specific suffer the player
+took.
 
-**Recommendation:** non-blocking. Narrator's prose is independent of
-which suffer move the player picks (it describes "you pay a cost", not
-"you take Endure Harm specifically"). Player can take their time on
-the suffer choice without holding up the table.
+Trade-off accepted: AFK players can stall the table. Mitigation in
+§5.3 — GM override + resolution-cancel buttons. No auto-timeout
+default (silent default picks erode trust worse than the original
+silent-meter bug).
 
-### Q2. Companion-destroyed asset deletion
+### Q2. Companion-destroyed asset deletion — **Prompt GM, manual discard** (matched recommendation)
 
-When Companion Takes a Hit lands at 0 + miss + match, the rules say
-the companion is destroyed and the asset is discarded. v1 ships the
-chat card prompt; v2 actually deletes the Item.
+v1 chat card surfaces the destruction with a button that opens the
+character sheet to the assets tab; GM (or asset-owning player) deletes
+the Item by hand. v2 (follow-up PR after F16 ships and we learn how
+often this fires in real play) automates the deletion behind an
+"undo" affordance.
 
-**Question:** should v2 be a follow-up PR after Phase F, or roll into
-Phase C?
+### Q3. Lose Momentum at −6 — **Dialog with both branches** (matched recommendation)
 
-**Recommendation:** follow-up. Touches Item-deletion which is
-permanent + unrecoverable on a player's sheet; better to ship the
-prompt first and learn how often it fires before automating the
-delete.
+When Lose Momentum applies at momentum=−6, the SufferChoiceDialog
+recurses into a sub-dialog presenting both options:
+1. **Redirect** — sub-dialog of which of the other five suffer moves
+   to take instead, at the same magnitude. Selecting recurses into
+   the chosen suffer's normal execution path.
+2. **Clear progress per rank** — opens a track-picker dialog with
+   all of the character's active progress tracks (vow, expedition,
+   connection, fight, scene challenge), GM (or track-owning player)
+   picks which to clear.
 
-### Q3. Lose Momentum at −6 redirect
+Either path posts a chat card recording the choice.
 
-The rulebook says: "If at min (−6), apply to another suffer move or
-clear progress per rank." Two paths.
+### Q4. Multiplayer relay — **Ship with GM-only writes** (matched recommendation)
 
-**Recommendation:** v1 surfaces both options as a sub-dialog ("Pick
-which suffer move to take instead, OR clear progress on which track"),
-the player picks; v1 auto-applies the suffer-move branch but the
-clear-progress branch prompts the GM to pick the track (the rulebook
-doesn't pre-specify).
-
-### Q4. Multiplayer player→GM relay
-
-PERSIST-001 is the open multiplayer gate. This scope inherits the
-GM-only write — the dialog appears for the player but the write
-happens via the GM client.
-
-**Question:** acceptable for v1, or do we need a relay first?
-
-**Recommendation:** acceptable. Solo-GM is the dominant playtest
-configuration and the relay is its own scope. The dialog UX still
-shows correctly to the player; if there's no GM connected, the
-resolution holds until one connects.
+F16 v1 inherits PERSIST-001's GM-only write gate. The dialog renders
+for the player, but the actor write only happens when a GM client is
+connected. Multiplayer with no GM holds the resolution until a GM
+connects (matches the rest of the meter-write pipeline; nothing new).
+Player→GM relay is its own follow-up scope under PERSIST-001 and
+unblocks F16's multiplayer-with-AFK-GM behaviour without further F16
+work.
 
 ## 10. Risk
 
@@ -458,10 +476,22 @@ the right person. Most failure modes are "wrong person sees it" or
 "nobody sees it". Quench Phase D pins the happy paths; live-Forge
 verification needs to cover multiplayer-with-AFK-player.
 
-**Narrator-vs-sheet ordering.** Narrator card posts asynchronously
-relative to the suffer dialog. v1 lets them race; if user playtest
-shows this is jarring, we can serialise (narrator waits for dialog
-close) in a follow-up.
+**Blocking-dialog stall.** Per Q1, the dialog blocks the pipeline.
+AFK players or open-and-forgotten dialogs hold up the table. Mitigated
+by §5.3's GM override and resolution-cancel buttons; live-Forge
+verification needs to confirm both paths are reachable from the GM
+client and produce sensible chat records. No auto-timeout — silent
+defaults are worse than the original bug.
+
+**Promise-await chain through the pipeline.** Blocking adds a real
+await on the dialog's selection promise inside the resolution flow.
+Existing pipeline assumes synchronous handoff between resolve → narrate
+→ persist → entity-detection. The Phase B refactor needs to confirm
+none of the existing post-resolution hooks rely on synchronous
+execution, and that the chat-card system handles the "resolution
+card posts, narrator card delayed" pattern cleanly. Phase B's audit
+explicitly lists every callsite that depends on the post-resolve
+timing.
 
 **Existing tests encoding the bug.** Same defect class as the F6
 klass titlecase tests — some existing Quench / unit tests may encode
