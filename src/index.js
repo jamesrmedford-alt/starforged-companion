@@ -251,6 +251,15 @@ function registerCoreSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, "sectorEntityPortraitsEnabled", {
+    name:    "Generate Sector Entity Portraits",
+    hint:    "Auto-finalize each settlement created by the Sector Creator and generate its portrait + token image. Requires the OpenRouter API key.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "autoSeedStarship", {
     name:    "Auto-Seed Starship Details",
     hint:    "When a new starship Actor is created with empty notes, roll the starship Type / First Look / Mission oracles and write them to the actor's Notes field. Triggers a silent portrait generation if an OpenRouter API key is configured. Disable to keep new starships blank.",

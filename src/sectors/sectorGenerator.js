@@ -13,6 +13,7 @@
 import { createSettlement, updateSettlement } from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
+import { finalizeEntityArtOnly } from "../entities/finalize.js";
 import { buildSettlementsListHtml } from "./sectorOverview.js";
 import { recordThreat }         from "../world/worldJournal.js";
 import { apiPost }             from "../api-proxy.js";
@@ -490,6 +491,57 @@ export async function applyStubsToSettlementEntities(settlements, stubs) {
       console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);
     }
   }
+}
+
+/**
+ * Finalize sector-created settlement entities: stamp `finalizedAt` and trigger
+ * a first-time portrait (which Foundry installs as both the Actor's `img` and
+ * its `prototypeToken.texture.src`, so the token in scenes matches the sheet).
+ * Resolves F5 from the v1.7.0 playtest — settlements landed in the world
+ * without portraits or tokens, leaving the GM to click ✦ Finalise on each one
+ * manually. Once the sector wizard runs (a deliberate GM-paid action), the
+ * settlements get the same finalize pass that the Entity Panel button does,
+ * minus the redundant Claude flavour call — the narrator stubs already
+ * generated the rich prose and we use that as the portrait source.
+ *
+ * Per-settlement failures are logged but never abort the loop; an unset
+ * OpenRouter key, a missing stub, or a write error skips the affected
+ * settlement and the rest still finalize.
+ *
+ * @param {Object} settlementsByGenId    — { sourceSettlementGenId: Actor|null } from createEntityJournals
+ * @param {{ settlements?: Object }} stubs — output from generateNarratorStubs()
+ * @param {Object} campaignState
+ * @returns {Promise<{ finalized: number, portraitsTriggered: number, skipped: number }>}
+ */
+export async function finalizeSectorEntities(settlementsByGenId, stubs, campaignState) {
+  let finalized = 0, portraitsTriggered = 0, skipped = 0;
+  if (!settlementsByGenId) return { finalized, portraitsTriggered, skipped };
+
+  for (const [genId, actor] of Object.entries(settlementsByGenId)) {
+    if (!actor?.id) { skipped++; continue; }
+    const stub = stubs?.settlements?.[genId] ?? null;
+    try {
+      const result = await finalizeEntityArtOnly(
+        "settlement",
+        actor.id,
+        campaignState,
+        { portraitSourceDescription: stub }
+      );
+      if (result.ok && result.reason === "finalized") {
+        finalized++;
+        if (result.artTriggered) portraitsTriggered++;
+      } else if (result.reason === "already-finalized") {
+        skipped++;
+      } else {
+        console.warn(`${MODULE_ID} | finalizeSectorEntities: ${actor.id} → ${result.reason}`);
+        skipped++;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | finalizeSectorEntities: ${actor.id} threw:`, err?.message ?? err);
+      skipped++;
+    }
+  }
+  return { finalized, portraitsTriggered, skipped };
 }
 
 /**

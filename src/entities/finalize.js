@@ -164,6 +164,73 @@ export async function finalizeEntity(typeKey, hostId, campaignState, { force = f
   return { ok: true, reason: force ? "regenerated" : "finalized", record: updated, artTriggered };
 }
 
+/**
+ * Stamp an entity as finalized and trigger a first-time portrait, using the
+ * entity's existing description (or a caller-provided source) as the portrait
+ * prompt source. Unlike `finalizeEntity`, this skips the Claude flavour call —
+ * for callers that have already produced rich entity prose (e.g. the sector
+ * creator's narrator stubs) and just need the portrait + finalize stamp without
+ * paying for a second LLM round-trip or clobbering the existing description.
+ *
+ * Resolves `portraitSourceDescription` in this order:
+ *   1. explicit `opts.portraitSourceDescription`
+ *   2. existing `record.portraitSourceDescription`
+ *   3. plain-text strip of `record.description`
+ * If all three are empty, returns `no-source` without writing or billing art.
+ *
+ * Idempotent on `finalizedAt`: a record already stamped is a no-op.
+ *
+ * @param {string} typeKey
+ * @param {string} hostId
+ * @param {Object} campaignState
+ * @param {{ portraitSourceDescription?: string|null }} [opts]
+ * @returns {Promise<{ ok: boolean, reason: string, record?: Object, artTriggered?: boolean }>}
+ */
+export async function finalizeEntityArtOnly(typeKey, hostId, campaignState, opts = {}) {
+  const { portraitSourceDescription = null } = opts;
+  const getter  = GETTERS[typeKey];
+  const updater = UPDATERS[typeKey];
+  if (!getter || !updater) return { ok: false, reason: "unsupported-type" };
+
+  let record;
+  try { record = getter(hostId); }
+  catch { record = null; }
+  if (!record) return { ok: false, reason: "not-found" };
+
+  if (record.finalizedAt) {
+    return { ok: true, reason: "already-finalized", record };
+  }
+
+  const source = portraitSourceDescription
+              || record.portraitSourceDescription
+              || stripTags(record.description ?? "")
+              || null;
+  if (!source) return { ok: false, reason: "no-source" };
+
+  let updated;
+  try {
+    updated = await updater(hostId, {
+      portraitSourceDescription: source,
+      finalizedAt:               new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | finalizeEntityArtOnly: write failed:`, err?.message ?? err);
+    return { ok: false, reason: "write-failed" };
+  }
+
+  let artTriggered = false;
+  if (!record.portraitId) {
+    try {
+      const asset = await generatePortrait(hostId, typeKey, updated ?? record, campaignState);
+      artTriggered = !!asset;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | finalizeEntityArtOnly: portrait generation failed:`, err?.message ?? err);
+    }
+  }
+
+  return { ok: true, reason: "finalized", record: updated, artTriggered };
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal
