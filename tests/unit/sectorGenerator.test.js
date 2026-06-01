@@ -18,6 +18,8 @@ import {
   buildSettlementStubPrompt,
   trimToLastSentence,
   applyStubsToSettlementEntities,
+  createEntityJournals,
+  storeSector,
 } from "../../src/sectors/sectorGenerator.js";
 import * as settlement from "../../src/entities/settlement.js";
 
@@ -25,6 +27,7 @@ import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
 import { SECTOR_TROUBLE } from "../../src/oracles/tables/misc.js";
 import { ROLE, GOAL, FAMILY_NAMES } from "../../src/oracles/tables/characters.js";
 import { ACTION, THEME } from "../../src/oracles/tables/core.js";
+import { _resetFolderCache } from "../../src/entities/folder.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,5 +544,86 @@ describe("applyStubsToSettlementEntities", () => {
       { settlements: { gen1: "fails", gen2: "succeeds" } },
     )).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F4 — sector-folder routing. createEntityJournals must pre-register the
+// sector in campaignState.sectors before any settlement is created, so the
+// per-sector Actor folder helpers (`getOrCreateSectorActorFolder`) resolve
+// `Sectors / <Sector Name>` instead of falling back to `Sectors / Unsorted`.
+// Without this stub, every sector-spawned settlement lands in Unsorted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createEntityJournals — F4 sector-folder pre-registration", () => {
+  beforeEach(() => {
+    if (global.game?.folders?._reset) global.game.folders._reset();
+    if (global.game?.actors?._reset)  global.game.actors._reset();
+    _resetFolderCache();
+  });
+
+  it("adds a {id, name} sector stub to campaignState.sectors before any settlement is created", async () => {
+    const sector = {
+      id:   "sector-test-001",
+      name: "Delphian Anvil",
+      settlements: [],
+      connection: { id: "c-1", name: "Amelia Stark", role: "Scholar", goal: "Collect a debt", aspect: "Calm", firstLook: ["Bookish"], homeSettlement: "the sector" },
+    };
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [] };
+
+    await createEntityJournals(sector, campaignState);
+
+    const stub = campaignState.sectors.find(s => s.id === sector.id);
+    expect(stub).toBeDefined();
+    expect(stub.name).toBe("Delphian Anvil");
+  });
+
+  it("is idempotent — running twice does not duplicate the sector record", async () => {
+    const sector = {
+      id:   "sector-test-002",
+      name: "Sulaco Arch",
+      settlements: [],
+      connection: { id: "c-2", name: "Mira Vega", role: "Pilot", goal: "Find a person", aspect: "Aloof", firstLook: ["Scarred"], homeSettlement: "the sector" },
+    };
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [] };
+
+    await createEntityJournals(sector, campaignState);
+    await createEntityJournals(sector, campaignState);
+
+    const matches = campaignState.sectors.filter(s => s.id === sector.id);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("storeSector replaces the pre-registered stub in place rather than appending a second copy", async () => {
+    const sector = {
+      id:        "sector-test-003",
+      name:      "Devil's Maw",
+      region:    "terminus",
+      regionLabel: "Terminus",
+      trouble:   "Pirates",
+      faction:   null,
+      settlements: [],
+      createdAt: new Date().toISOString(),
+      mapData:   { sectorId: "sector-test-003", gridWidth: 10, gridHeight: 8, settlements: [], passages: [], discoveries: [] },
+      connection: { id: "c-3", name: "Kael Volkov", role: "Smuggler", goal: "Gain riches", aspect: "Bold", firstLook: ["Scarred"], homeSettlement: "the sector" },
+    };
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [] };
+
+    // Step 1: createEntityJournals pre-registers a stub
+    await createEntityJournals(sector, campaignState);
+    expect(campaignState.sectors).toHaveLength(1);
+    const stub = campaignState.sectors[0];
+    expect(stub.name).toBe("Devil's Maw");
+    // The stub is a minimal {id, name} — no trouble / region / mapData yet.
+    expect(stub.trouble).toBeUndefined();
+
+    // Step 2: storeSector lands the full record and replaces the stub
+    await storeSector(sector, { settlements: {}, connectionJournalId: null }, campaignState);
+    expect(campaignState.sectors).toHaveLength(1);
+    const stored = campaignState.sectors[0];
+    expect(stored.id).toBe("sector-test-003");
+    expect(stored.trouble).toBe("Pirates");
+    expect(stored.region).toBe("terminus");
   });
 });

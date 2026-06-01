@@ -224,6 +224,20 @@ export function generateSectorName() {
 export async function createEntityJournals(sector, campaignState) {
   const settlements = {};
 
+  // Pre-register a minimal {id, name} stub for this sector in campaignState
+  // before any settlement is created. The actor-folder helpers
+  // (`getOrCreateSectorActorFolder` in src/entities/folder.js) resolve the
+  // per-sector Actor folder by walking `campaignState.sectors[]` for a
+  // matching id; without this stub, every settlement created here can't
+  // resolve its sector name and falls back to the shared `Sectors / Unsorted`
+  // folder (F4). storeSector() later replaces this stub with the full
+  // sector record — the stub just keeps the folder lookup alive during
+  // entity creation. Idempotent so re-runs don't double-register.
+  campaignState.sectors ??= [];
+  if (!campaignState.sectors.some(s => s?.id === sector.id)) {
+    campaignState.sectors.push({ id: sector.id, name: sector.name });
+  }
+
   // persist:false on the entity creators — storeSector (the only caller of
   // this function in production) performs a single batched game.settings.set
   // at the end. Multiple sequential writes against the same campaignState
@@ -346,7 +360,12 @@ export async function storeSector(sector, extras, campaignState) {
   // Defensive init — Quench test mock predates these fields in CampaignStateSchema.
   campaignState.sectors     ??= [];
   campaignState.locationIds ??= [];
-  campaignState.sectors.push(stored);
+  // createEntityJournals pre-registers a {id, name} stub so the actor-folder
+  // helpers can resolve the per-sector folder before any settlement is
+  // created (F4). Replace that stub in-place rather than push-and-duplicate.
+  const stubIdx = campaignState.sectors.findIndex(s => s?.id === stored.id);
+  if (stubIdx >= 0) campaignState.sectors[stubIdx] = stored;
+  else              campaignState.sectors.push(stored);
   campaignState.activeSectorId = stored.id;
 
   // §3.5: saveSectorToJournal removed — no production code read the
