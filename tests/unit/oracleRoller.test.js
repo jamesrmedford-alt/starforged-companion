@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { rollYesNo } from "../../src/oracles/roller.js";
+import { rollYesNo, rollOracle } from "../../src/oracles/roller.js";
 
 
 describe("rollYesNo", () => {
@@ -74,5 +74,53 @@ describe("rollYesNo", () => {
     const r2 = rollYesNo("50_50", { roll: 100 });
     expect(r2.tens).toBe(0);
     expect(r2.ones).toBe(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rollOracle — directive handling (F2). The starship seeder, the custom-oracle
+// panel, and the `!oracle` chat command all flow through rollOracle. Before
+// this fix, a roll landing on a "Roll twice" / "Action + Theme" / "Roll again"
+// row leaked the literal directive text into ship type/first-look/mission and
+// into chat cards.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rollOracle — directive resolution", () => {
+  it("never returns 'Roll twice' on character_role across the full d100 range", () => {
+    for (let roll = 1; roll <= 100; roll++) {
+      const r = rollOracle("character_role", { roll });
+      expect(r.result).not.toMatch(/^Roll twice$/i);
+    }
+  });
+
+  it("never returns 'Roll twice' on character_goal across the full d100 range", () => {
+    for (let roll = 1; roll <= 100; roll++) {
+      const r = rollOracle("character_goal", { roll });
+      expect(r.result).not.toMatch(/^Roll twice$/i);
+    }
+  });
+
+  it("never returns 'Roll twice' on starship_type across the full d100 range", () => {
+    for (let roll = 1; roll <= 100; roll++) {
+      const r = rollOracle("starship_type", { roll });
+      expect(r.result).not.toMatch(/^Roll twice$/i);
+    }
+  });
+
+  it("preserves isRef on Action+Theme rows so callers can still detect the chain shape", () => {
+    // character_role 93-95 is the action_theme row.
+    const r = rollOracle("character_role", { roll: 94 });
+    expect(r.isRef).toBe(true);
+    expect(r.refTableId).toBe("action_theme");
+    expect(r.result).not.toMatch(/^Action \+ Theme$/);
+    expect(r.result.length).toBeGreaterThan(0);
+  });
+
+  it("passes through non-directive results verbatim", () => {
+    // character_role 1-2 is "Agent" — no directive.
+    const r = rollOracle("character_role", { roll: 1 });
+    expect(r.result).toBe("Agent");
+    expect(r.isRef).toBe(false);
   });
 });

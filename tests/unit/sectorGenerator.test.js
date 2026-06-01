@@ -23,6 +23,8 @@ import * as settlement from "../../src/entities/settlement.js";
 
 import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
 import { SECTOR_TROUBLE } from "../../src/oracles/tables/misc.js";
+import { ROLE, GOAL, FAMILY_NAMES } from "../../src/oracles/tables/characters.js";
+import { ACTION, THEME } from "../../src/oracles/tables/core.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +58,72 @@ describe("SECTOR_TROUBLE table", () => {
       expect(typeof result).toBe("string");
       expect(result).not.toBe("Unknown");
     }
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rollTableResult — directive handling (F2)
+// "Roll twice" / "Roll again (paired name)" / "Action + Theme" must be resolved
+// in-place; the leaked literal strings were polluting connection names, NPC
+// goals, and settlement-roll outputs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rollTableResult — directive handling", () => {
+  it("never returns 'Roll twice' as a literal across any character table", () => {
+    for (const table of [ROLE, GOAL]) {
+      for (let roll = 1; roll <= 100; roll++) {
+        const result = rollTableResult(table, roll, { fixedRolls: [1, 1, 1, 1] });
+        expect(result).not.toMatch(/Roll twice/i);
+      }
+    }
+  });
+
+  it("never returns 'Roll again' as a literal on FAMILY_NAMES", () => {
+    for (let roll = 1; roll <= 100; roll++) {
+      const result = rollTableResult(FAMILY_NAMES, roll, { fixedRolls: [1, 1, 1, 1] });
+      expect(result).not.toMatch(/Roll again/i);
+    }
+  });
+
+  it("resolves 'Roll twice' on ROLE by combining two sub-rolls with ' / '", () => {
+    // ROLE 96-100 is "Roll twice". Force the directive on the outer roll, then
+    // force fixedRolls=[1, 3] so the two recursed rolls land on Agent (1-2) and
+    // AI (3-4) respectively.
+    const result = rollTableResult(ROLE, 96, { fixedRolls: [1, 3] });
+    expect(result).toBe("Agent / AI");
+  });
+
+  it("resolves 'Roll again (paired name)' on FAMILY_NAMES by hyphenating two sub-rolls", () => {
+    // FAMILY_NAMES 81-100 → "Roll again (paired name)". Sub-rolls of 1 / 3 land on
+    // the first two entries of FAMILY_NAMES.
+    const result = rollTableResult(FAMILY_NAMES, 81, { fixedRolls: [1, 3] });
+    expect(result).toMatch(/^[A-Z][a-z]+-[A-Z][a-z]+$/);
+    expect(result).not.toMatch(/Roll/);
+  });
+
+  it("resolves 'Action + Theme' via ref: 'action_theme'", () => {
+    // ROLE 93-95 has ref: "action_theme". Sub-rolls of 1, 1 land on the first
+    // entry of each of CORE.ACTION and CORE.THEME.
+    const result = rollTableResult(ROLE, 93, { fixedRolls: [1, 1] });
+    const firstAction = ACTION.find(e => e.min <= 1 && e.max >= 1).result;
+    const firstTheme  = THEME.find(e => e.min <= 1 && e.max >= 1).result;
+    expect(result).toBe(`${firstAction} ${firstTheme}`);
+  });
+
+  it("terminates recursion on degenerate chains (no infinite loop)", () => {
+    // Force every fixed sub-roll into the directive band (96) — without the
+    // depth cap the resolver would recurse forever. Should bail at MAX depth
+    // and fall back to the literal directive text.
+    const fixedRolls = Array(50).fill(96);
+    const result = rollTableResult(ROLE, 96, { fixedRolls });
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("passes through non-directive entries unchanged", () => {
+    expect(rollTableResult(ROLE, 1)).toBe("Agent");
+    expect(rollTableResult(GOAL, 1)).toBe("Avenge a wrong");
   });
 });
 
