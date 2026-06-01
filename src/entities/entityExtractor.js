@@ -714,14 +714,23 @@ export function entityExistsAnyType(name, campaignState) {
   const target = normalizeEntityName(name);
   if (!target) return false;
 
-  // Cross-check player characters first. The entity-type registry above
-  // covers connection/settlement/faction/ship/planet/location/creature
-  // but NOT the foundry-ironsworn `character`-type Actors that PCs are
-  // stored on. In a 2-player session this meant any narration that named
-  // Player B's PC was flagged as a "new connection" draft, since the
-  // dedup gate had no way to recognise PC names.
+  // The detector's "what's known" set is built from several layers. Any
+  // single layer missed creates the F14 defect class — we keep flagging
+  // already-known entities as new because we only checked our own
+  // bookkeeping IDs and not the canonical Foundry sources.
+  //
+  // 1. Player characters (foundry-ironsworn `character` Actors).
   if (isPlayerCharacterName(target)) return true;
 
+  // 2. Active sector + all peer sectors. The Sector Creator writes sector
+  //    names into campaignState.sectors[] but doesn't add them to any
+  //    entityIds list — so a narration that mentioned the active sector
+  //    by name (e.g. "Delphian Anvil") was being proposed as a new
+  //    Location every time.
+  if (sectorNameMatches(target, campaignState)) return true;
+
+  // 3. Our own bookkeeping ID lists (connection/settlement/faction/ship/
+  //    planet/location/creature). This was the only check before F14.
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     if (!getter) continue;
@@ -732,6 +741,58 @@ export function entityExistsAnyType(name, campaignState) {
       catch { continue; }
       if (rec?.name && normalizeEntityName(rec.name) === target) return true;
     }
+  }
+
+  // 4. Live Actor surfaces. After the Entity → Actor migration, starships
+  //    / settlements / planets / locations live as Foundry Actors; an
+  //    Actor that exists but isn't in campaignState.{shipIds,settlementIds,…}
+  //    (manually-created, vendor-seeded, or migrated out-of-band) was
+  //    invisible to the dedup gate. Walk game.actors directly so the
+  //    bookkeeping list isn't load-bearing for "what exists in Foundry".
+  if (actorNameMatches(target)) return true;
+
+  return false;
+}
+
+/**
+ * @param {string} normalisedName
+ * @param {Object} campaignState
+ * @returns {boolean} true if any sector in campaignState.sectors[] has a
+ *   name matching this (normalised). Covers both the active sector and
+ *   peer sectors so the detector never re-proposes an already-named sector
+ *   as a "new" location.
+ */
+function sectorNameMatches(normalisedName, campaignState) {
+  if (!normalisedName) return false;
+  const sectors = campaignState?.sectors ?? [];
+  for (const s of sectors) {
+    if (s?.name && normalizeEntityName(s.name) === normalisedName) return true;
+  }
+  return false;
+}
+
+/**
+ * @param {string} normalisedName
+ * @returns {boolean} true if any non-character Actor in game.actors
+ *   (starship, location-typed settlement/planet/location subtypes) matches
+ *   this name. Character actors are handled by isPlayerCharacterName.
+ *
+ * Catches the F14 case where a starship Actor (e.g. the PC's command
+ * vehicle) was named in narration but wasn't in campaignState.shipIds,
+ * so the bookkeeping-only dedup missed it.
+ */
+function actorNameMatches(normalisedName) {
+  if (!normalisedName) return false;
+  try {
+    const actors = globalThis.game?.actors ?? [];
+    for (const a of actors) {
+      if (!a?.name) continue;
+      if (a?.type === "character") continue; // covered by isPlayerCharacterName
+      if (a?.type !== "starship" && a?.type !== "location") continue;
+      if (normalizeEntityName(a.name) === normalisedName) return true;
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | actorNameMatches: actor lookup failed:`, err?.message ?? err);
   }
   return false;
 }
