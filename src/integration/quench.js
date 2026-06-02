@@ -4242,7 +4242,7 @@ function registerSafetyExtrasTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TOOLBAR — getSceneControlButtons hook registers expected tools
+// TOOLBAR — floating Companion launcher (scene-independent)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerToolbarTests(quench) {
@@ -4251,113 +4251,55 @@ function registerToolbarTests(quench) {
     (context) => {
       const { describe, it, assert } = context;
 
-      describe("getSceneControlButtons — registers companion tools", function () {
-        it("creates a dedicated Starforged Companion control group with the buttons", async function () {
-          // v13: controls is an Object keyed by group name. The Companion now
-          // registers its own top-level group (F16) instead of riding inside
-          // the tokens group, so selecting another group no longer hides it.
-          const controls = { tokens: { name: "tokens", tools: {} } };
-          Hooks.callAll("getSceneControlButtons", controls);
+      describe("companionToolbarTools — visibility", function () {
+        it("hides GM-only tools from players and gates the Private Channel button", async function () {
+          const { companionToolbarTools } = await import(`${MODULE_PATH}/ui/companionToolbarTools.js`);
 
-          const group = controls.starforgedCompanion;
-          assert.isObject(group, "a starforgedCompanion control group should be registered");
-          assert.isObject(group.tools, "the group should carry a tools object");
-          const expected = ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"];
-          for (const k of expected) {
-            assert.isTrue(
-              group.tools[k]?.name === k,
-              `tool "${k}" should be registered in the companion group`,
-            );
+          const playerKeys = companionToolbarTools({ isGM: false, privateChannelEnabled: false }).map(t => t.key);
+          assert.deepEqual(
+            playerKeys,
+            ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"],
+            "a non-GM with the private channel off sees only the player-safe tools",
+          );
+          for (const gmOnly of ["sfSettings", "sectorCreator", "worldJournal", "worldTruths", "customOracles"]) {
+            assert.notInclude(playerKeys, gmOnly, `GM-only tool '${gmOnly}' must not show for players`);
           }
-          // The buttons should NOT also be injected into the tokens group.
-          assert.isUndefined(
-            controls.tokens.tools.progressTracks,
-            "companion tools should live in their own group, not tokens",
-          );
-        });
+          const withPC = companionToolbarTools({ isGM: false, privateChannelEnabled: true }).map(t => t.key);
+          assert.include(withPC, "sfPrivateChannel", "Private Channel appears when the feature is enabled");
 
-        it("supports the v12 array-shaped controls (push a group)", async function () {
-          // v12: controls is an Array. The hook should push a group object
-          // rather than throw or silently drop the buttons.
-          const controls = [{ name: "tokens", tools: {} }];
-          Hooks.callAll("getSceneControlButtons", controls);
-          const group = controls.find(c => c?.name === "starforgedCompanion");
-          assert.isObject(group, "a companion group should be pushed onto the array");
+          const gmKeys = companionToolbarTools({ isGM: true, privateChannelEnabled: true }).map(t => t.key);
+          assert.include(gmKeys, "sfSettings", "a GM sees the GM-only tools");
+        });
+      });
+
+      describe("CompanionToolbarApp — renders a floating, scene-independent launcher", function () {
+        it("renders the expected buttons and persists its position setting", async function () {
+          const { CompanionToolbarApp } = await import(`${MODULE_PATH}/ui/companionToolbar.js`);
+
+          // The position setting must be registered (registerCompanionToolbarSettings, init hook).
           assert.isTrue(
-            group.tools.progressTracks?.name === "progressTracks",
-            "the pushed group should carry the companion tools",
+            game.settings.settings.has(`${MODULE_ID}.companionToolbarPosition`),
+            "the per-user toolbar position setting should be registered",
           );
-        });
 
-        it("declares an activeTool that resolves to a non-throwing onChange", async function () {
-          // v13's SceneControls.activate() → #preActivate → #onToolChange →
-          // #onChange chain reads `group.tools[group.activeTool].onChange` during
-          // every group transition. Missing activeTool → tools[undefined] is
-          // undefined → onChange read throws → every group-switch click aborts.
-          // Pin that activeTool is set and resolves to a real tool whose
-          // onChange is callable without throwing (and without GM-only visibility,
-          // so it works for player clients too).
-          const controls = { tokens: { name: "tokens", tools: {} } };
-          Hooks.callAll("getSceneControlButtons", controls);
-          const group = controls.starforgedCompanion;
-          assert.isString(group.activeTool, "group must declare an activeTool string");
-          const resolved = group.tools[group.activeTool];
-          assert.isObject(
-            resolved,
-            `activeTool '${group.activeTool}' must resolve to a real tool in group.tools`,
-          );
-          assert.isFunction(resolved.onChange, "activeTool's onChange must be a function");
-          assert.doesNotThrow(
-            () => resolved.onChange(),
-            "activeTool's onChange must not throw — Foundry calls it during group activate",
-          );
-          assert.notEqual(
-            resolved.visible,
-            false,
-            "activeTool must not be GM-gated (visible !== false) so player clients can switch groups",
-          );
-        });
-      });
-
-      describe("renderSceneControls — handler attachment is idempotent", function () {
-        it("does not throw when the hook fires repeatedly with the same DOM root", async function () {
-          // Synthesise a minimal HTMLElement with one button and fire the hook twice.
-          const root = document.createElement("div");
-          const btn = document.createElement("button");
-          btn.dataset.tool = "progressTracks";
-          root.appendChild(btn);
-          // Fire — handler attachment is best-effort; we assert no throw.
-          Hooks.callAll("renderSceneControls", null, root);
-          Hooks.callAll("renderSceneControls", null, root);
-          assert.isTrue(true, "hook fired twice without throwing");
-        });
-      });
-
-      describe("companion control layer — registered in the interface group", function () {
-        it("mounts the backing InteractionLayer in the same canvas group as core layers", async function () {
-          // The companion's scene-control group is backed by a canvas layer
-          // (registerCompanionControlLayer). It MUST mount into the `interface`
-          // canvas group — the same group every core interaction layer uses. A
-          // layer registered under `primary` (the stale value foundry-ironsworn
-          // still ships, broken in v13) never draws, so SceneControls.activate()
-          // can't complete on click and the toolbar group is inoperable. Pin the
-          // group against a core interaction layer so `primary` can't creep back.
-          const layer = CONFIG.Canvas.layers.starforgedCompanion;
-          assert.isObject(layer, "companion canvas layer should be registered");
-          const coreGroup =
-            CONFIG.Canvas.layers.tokens?.group ??
-            CONFIG.Canvas.layers.notes?.group ??
-            CONFIG.Canvas.layers.walls?.group;
-          assert.equal(
-            layer.group,
-            coreGroup,
-            `companion layer group ('${layer.group}') must match core interaction layers ('${coreGroup}') — not 'primary'`,
-          );
-          assert.notEqual(
-            layer.group,
-            "primary",
-            "companion layer must NOT use the 'primary' canvas group (undrawn → group won't activate)",
-          );
+          const app = CompanionToolbarApp.open();
+          try {
+            // Let the frameless app render into the DOM.
+            await new Promise(r => setTimeout(r, 50));
+            const root = app.element?.querySelector(".sf-companion-toolbar");
+            assert.isOk(root, "the toolbar root element should render");
+            const tools = Array.from(root.querySelectorAll(".sf-companion-toolbar__btn")).map(b => b.dataset.tool);
+            // GM-or-player, the always-visible player tools must be present.
+            for (const k of ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"]) {
+              assert.include(tools, k, `button '${k}' should render in the toolbar`);
+            }
+            assert.isOk(
+              app.element?.querySelector(".sf-companion-toolbar__grip"),
+              "a drag grip should render so the toolbar can be repositioned",
+            );
+          } finally {
+            await app.close();
+          }
         });
       });
     },
@@ -7885,15 +7827,25 @@ function registerPrivateChannelTests(quench) {
       afterEach(flushCleanup);
 
       describe("toolbar", function () {
-        it("exposes the Private Channel tool in the starforgedCompanion group when enabled", async function () {
+        it("exposes the Private Channel tool in the floating Companion toolbar only when enabled", async function () {
           this.timeout(20000);
+          const { companionToolbarTools } = await import(`${MODULE_PATH}/ui/companionToolbarTools.js`);
+          const { isPrivateChannelEnabled } = await import(`${MODULE_PATH}/private-channel/index.js`);
+
           await withTempSetting("privateChannel.enabled", true, async () => {
-            const controls = {};
-            Hooks.callAll("getSceneControlButtons", controls);
-            const group = controls.starforgedCompanion;
-            assert.isObject(group, "the starforgedCompanion control group should exist");
-            assert.isOk(group.tools?.sfPrivateChannel, "the sfPrivateChannel tool should be registered");
-            assert.notStrictEqual(group.tools.sfPrivateChannel.visible, false, "tool should be visible when enabled");
+            const keys = companionToolbarTools({
+              isGM: game.user.isGM,
+              privateChannelEnabled: isPrivateChannelEnabled(),
+            }).map(t => t.key);
+            assert.include(keys, "sfPrivateChannel", "the Private Channel tool should be present when enabled");
+          });
+
+          await withTempSetting("privateChannel.enabled", false, async () => {
+            const keys = companionToolbarTools({
+              isGM: game.user.isGM,
+              privateChannelEnabled: isPrivateChannelEnabled(),
+            }).map(t => t.key);
+            assert.notInclude(keys, "sfPrivateChannel", "the Private Channel tool should be hidden when disabled");
           });
         });
       });

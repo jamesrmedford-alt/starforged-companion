@@ -212,6 +212,8 @@ developer-only and excluded from the release.
 | `entityPanel.js` | Entity panel (generative tiers, links, current-location card). |
 | `progressTracks.js` | Progress-track panel (vows/expeditions/combats/connections/legacy). |
 | `sessionPanel.js` | Session moves panel — Begin/End/Flag/Fate/Break (v1.6.0). |
+| `companionToolbar.js` | Floating, draggable launcher (frameless `ApplicationV2`) for all Companion panels. Replaces the scene-controls group (v1.7.5); scene-independent so it works with no map open. Exports `openCompanionToolbar()` / `registerCompanionToolbarSettings()`. |
+| `companionToolbarTools.js` | Pure, import-free visibility/data for the launcher (`companionToolbarTools({isGM, privateChannelEnabled})`); unit-tested in isolation. |
 
 ### `world/` — World Journal
 

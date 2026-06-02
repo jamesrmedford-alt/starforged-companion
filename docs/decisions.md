@@ -386,3 +386,40 @@ Extending to them later is just adding entries to the `GETTERS`/`UPDATERS` maps.
 reason:"no-flavor" }` and writes nothing; the panel surfaces a notification.
 Generation is grounded strictly in stored fields with an explicit "do not invent
 proper nouns" instruction, so finalize can't fabricate new entities/factions.
+
+## Companion launcher: floating toolbar, NOT scene-controls (v1.7.5)
+
+**Decision:** The Companion's panel launcher is a **floating, draggable,
+frameless `ApplicationV2`** (`src/ui/companionToolbar.js`), opened at `ready` and
+pinned to the viewport — independent of the canvas. It is **not** a Foundry
+scene-control group.
+
+**Why (the bug that forced it):** F16 (v1.7.0) gave the Companion its own
+top-level scene-control group, backed by an empty `InteractionLayer`. A
+scene-control group can only be *activated* when the canvas is ready, because
+selecting a group activates its canvas layer. With **no active scene**
+(`canvas.ready === false` — the normal state for theater-of-the-mind play, and
+what a Forge "no default scene" launch setting produces) the entire
+scene-controls bar is inert: clicking **any** group icon, Foundry's own included
+(Walls, Lighting), fails to switch, with no error. The Companion buttons were one
+casualty among all groups. This was misdiagnosed twice as a problem with *our*
+group's config — first the v1.7.1 `activeTool` band-aid, then a v1.7.4
+`primary`→`interface` canvas-group change (released, but still broken for
+mapless play) — but neither could work, because the
+surface itself is dead without a canvas. Live tracing (clicking Walls also froze
+on `tokens`; `canvas.ready`/`hasScene` both `false`) confirmed it was global, not
+ours.
+
+**Consequence:** scene-controls is the wrong home for a launcher that must work
+during mapless play. The floating toolbar works with or without a scene. The
+old `getSceneControlButtons`/`renderSceneControls` hooks, `buildCompanionTools`,
+and the fake `StarforgedCompanionLayer` / `CONFIG.Canvas.layers.starforgedCompanion`
+registration are removed. Per-user position persists via a client-scoped
+`companionToolbarPosition` setting. Visibility (GM-gating, Private Channel gate)
+is a pure function in `companionToolbarTools.js`, unit-tested.
+
+**Note on foundry-ironsworn:** the vendor system registers its `ironsworn`
+control group the same way (`group: "primary"`, a 2022 value) and its group is
+broken identically with no scene — confirmed with our module disabled. That is
+an upstream bug, not ours; do not treat ironsworn's `sceneButtons.ts` as a
+template here.
