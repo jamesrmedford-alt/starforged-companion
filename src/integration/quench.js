@@ -4332,6 +4332,34 @@ function registerToolbarTests(quench) {
           assert.isTrue(true, "hook fired twice without throwing");
         });
       });
+
+      describe("companion control layer — registered in the interface group", function () {
+        it("mounts the backing InteractionLayer in the same canvas group as core layers", async function () {
+          // The companion's scene-control group is backed by a canvas layer
+          // (registerCompanionControlLayer). It MUST mount into the `interface`
+          // canvas group — the same group every core interaction layer uses. A
+          // layer registered under `primary` (the stale value foundry-ironsworn
+          // still ships, broken in v13) never draws, so SceneControls.activate()
+          // can't complete on click and the toolbar group is inoperable. Pin the
+          // group against a core interaction layer so `primary` can't creep back.
+          const layer = CONFIG.Canvas.layers.starforgedCompanion;
+          assert.isObject(layer, "companion canvas layer should be registered");
+          const coreGroup =
+            CONFIG.Canvas.layers.tokens?.group ??
+            CONFIG.Canvas.layers.notes?.group ??
+            CONFIG.Canvas.layers.walls?.group;
+          assert.equal(
+            layer.group,
+            coreGroup,
+            `companion layer group ('${layer.group}') must match core interaction layers ('${coreGroup}') — not 'primary'`,
+          );
+          assert.notEqual(
+            layer.group,
+            "primary",
+            "companion layer must NOT use the 'primary' canvas group (undrawn → group won't activate)",
+          );
+        });
+      });
     },
     { displayName: "STARFORGED: Toolbar Buttons" },
   );
