@@ -2458,8 +2458,15 @@ Hooks.once("init", () => {
  * canvas layer; selecting the group activates that layer. We don't draw
  * anything — the layer exists only so the group is selectable without hijacking
  * Foundry's token tools (where the buttons previously lived and vanished when
- * another group was selected). Mirrors foundry-ironsworn's own pattern
- * (vendor/foundry-ironsworn/src/module/features/sceneButtons.ts).
+ * another group was selected).
+ *
+ * The layer MUST mount into the `interface` canvas group: in v13 every core
+ * interaction layer (tokens/notes/walls) lives there, while `primary` is the
+ * world-space placeable-mesh group that never draws an InteractionLayer. A
+ * layer registered under `primary` stays undrawn, so the group can't complete
+ * SceneControls.activate() on click and the tool row never appears. (We do NOT
+ * mirror foundry-ironsworn's sceneButtons.ts here — its `group: "primary"` is
+ * a stale 2022 value and its own toolbar group is broken the same way in v13.)
  */
 function registerCompanionControlLayer() {
   try {
@@ -2476,7 +2483,10 @@ function registerCompanionControlLayer() {
     }
     CONFIG.Canvas.layers.starforgedCompanion = {
       layerClass: StarforgedCompanionLayer,
-      group:      "primary",
+      // Track whatever group the core interaction layers use (verified
+      // 'interface' in v13) so this can't silently go stale; fall back to the
+      // literal if no core layer is registered yet.
+      group:      CONFIG.Canvas.layers.tokens?.group ?? "interface",
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | could not register companion control layer:`, err);
@@ -2670,9 +2680,10 @@ Hooks.on("getSceneControlButtons", (controls) => {
   // Preferred: the Companion's own top-level scene-control group (F16) so the
   // buttons no longer ride inside Foundry's token tools (where selecting any
   // other group hid them, with no way back). v13 — controls is an Object keyed
-  // by group name; v12 — controls is an Array. Mirrors foundry-ironsworn's own
-  // group registration. Wrapped defensively: any failure falls back to the
-  // tokens group so the buttons can never fully disappear.
+  // by group name; v12 — controls is an Array. The group's backing canvas
+  // layer is registered in registerCompanionControlLayer() (must be the
+  // `interface` group — see the note there). Wrapped defensively: any failure
+  // falls back to the tokens group so the buttons can never fully disappear.
   let placedInOwnGroup = false;
   try {
     const group = {

@@ -1072,6 +1072,44 @@ ui.controls.render(true);
 ui.controls.render({ controls: "tokens", tool: "progressTracks" });
 ```
 
+### A custom scene-control GROUP must be backed by a canvas layer in the `interface` group
+
+A top-level scene-control group (one registered as its own entry in the
+`getSceneControlButtons` controls object, not a tool inside `tokens`) declares
+a `layer` name. Selecting the group makes Foundry call
+`SceneControls.activate()`, which activates that canvas layer. The layer must be
+registered in `CONFIG.Canvas.layers`, and **its `group` must be `"interface"`** —
+the canvas group every core interaction layer uses:
+
+```js
+// Confirmed by live console inspection (v13):
+//   CONFIG.Canvas.layers.tokens.group === "interface"
+//   CONFIG.Canvas.layers.notes.group  === "interface"
+//   CONFIG.Canvas.layers.walls.group  === "interface"
+
+// CORRECT — mounts into the interface group like every core interaction layer
+class MyControlLayer extends foundry.canvas.layers.InteractionLayer {
+  static get layerOptions() {
+    return foundry.utils.mergeObject(super.layerOptions, { zIndex: 180, name: "myGroup" });
+  }
+  get placeables() { return []; }
+}
+CONFIG.Canvas.layers.myGroup = {
+  layerClass: MyControlLayer,
+  group: CONFIG.Canvas.layers.tokens?.group ?? "interface",  // derive so it can't go stale
+};
+
+// WRONG — `primary` is the world-space placeable-mesh group. An InteractionLayer
+// registered there never draws (canvas.myGroup stays #drawn:false), so
+// SceneControls.activate() can't complete on a cold click and the group's tool
+// row never renders — the group icon appears but is inoperable.
+CONFIG.Canvas.layers.myGroup = { layerClass: MyControlLayer, group: "primary" };
+```
+
+**Note:** the `foundry-ironsworn` system registers its `ironsworn` group layer
+with the stale `group: "primary"` and its toolbar group is broken the same way
+in v13 — do not use it as a template for this.
+
 ---
 
 ## Dynamic imports in browser ES modules
