@@ -112,6 +112,10 @@ import {
 import {
   openWorldJournalPanel,
 } from "./world/worldJournalPanel.js";
+import {
+  openCompanionToolbar,
+  registerCompanionToolbarSettings,
+} from "./ui/companionToolbar.js";
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
@@ -2449,52 +2453,18 @@ Hooks.once("init", () => {
   registerCoreSettings();
   registerUISettings();
   registerPrivateChannelSettings();
-  registerCompanionControlLayer();
+  registerCompanionToolbarSettings();
 });
-
-/**
- * Register an empty Canvas InteractionLayer for the Companion's own
- * scene-control group (F16). A top-level scene-control group must reference a
- * canvas layer; selecting the group activates that layer. We don't draw
- * anything — the layer exists only so the group is selectable without hijacking
- * Foundry's token tools (where the buttons previously lived and vanished when
- * another group was selected).
- *
- * The layer MUST mount into the `interface` canvas group: in v13 every core
- * interaction layer (tokens/notes/walls) lives there, while `primary` is the
- * world-space placeable-mesh group that never draws an InteractionLayer. A
- * layer registered under `primary` stays undrawn, so the group can't complete
- * SceneControls.activate() on click and the tool row never appears. (We do NOT
- * mirror foundry-ironsworn's sceneButtons.ts here — its `group: "primary"` is
- * a stale 2022 value and its own toolbar group is broken the same way in v13.)
- */
-function registerCompanionControlLayer() {
-  try {
-    const InteractionLayer = foundry?.canvas?.layers?.InteractionLayer;
-    if (!InteractionLayer || !globalThis.CONFIG?.Canvas?.layers) return;
-    class StarforgedCompanionLayer extends InteractionLayer {
-      static get layerOptions() {
-        return foundry.utils.mergeObject(super.layerOptions, {
-          zIndex: 180,
-          name:   "starforgedCompanion",
-        });
-      }
-      get placeables() { return []; }
-    }
-    CONFIG.Canvas.layers.starforgedCompanion = {
-      layerClass: StarforgedCompanionLayer,
-      // Track whatever group the core interaction layers use (verified
-      // 'interface' in v13) so this can't silently go stale; fall back to the
-      // literal if no core layer is registered yet.
-      group:      CONFIG.Canvas.layers.tokens?.group ?? "interface",
-    };
-  } catch (err) {
-    console.warn(`${MODULE_ID} | could not register companion control layer:`, err);
-  }
-}
 
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
+
+  // Show the floating Companion launcher. It replaces the old scene-controls
+  // group, which was inert whenever no scene was active (canvas.ready === false
+  // — the normal state for theater-of-the-mind play). The toolbar is pinned to
+  // the viewport, so it works with or without a map loaded.
+  try { openCompanionToolbar(); }
+  catch (err) { console.warn(`${MODULE_ID} | could not open companion toolbar:`, err); }
 
   // Log the art-generation configuration and surface the most common
   // misconfiguration (no OpenRouter key while sector art is enabled) to the GM.
@@ -2648,118 +2618,6 @@ Hooks.once("closeWorld", async () => {
   }
   campaignState.lastSessionTimestamp = new Date().toISOString();
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
-});
-
-/**
- * Build the Companion's toolbar tools as an object keyed by tool name. Shared
- * between the dedicated Companion control group (F16) and the legacy tokens-group
- * fallback. `onChange` exists because v13 requires it on the tool object, but it
- * is never called for button:true tools — the real handlers are bound in the
- * renderSceneControls hook below (two-hook pattern).
- */
-function buildCompanionTools() {
-  const isGM = game.user.isGM;
-  return {
-    sfSession:      { name: "sfSession",      title: "Session",             icon: "fas fa-play-circle", button: true, onChange: () => openSessionPanel() },
-    progressTracks: { name: "progressTracks", title: "Progress Tracks",     icon: "fas fa-tasks",       button: true, onChange: () => openProgressTracks() },
-    entityPanel:    { name: "entityPanel",    title: "Entities",            icon: "fas fa-users",       button: true, onChange: () => openEntityPanel() },
-    chronicle:      { name: "chronicle",      title: "Character Chronicle", icon: "fas fa-book-open",    button: true, onChange: () => openChroniclePanel() },
-    sfPrivateChannel:{ name: "sfPrivateChannel", title: "Private Channel",   icon: "fas fa-comment-dots", button: true, visible: isPrivateChannelEnabled(), onChange: () => openPrivateChannel() },
-    sfSettings:     { name: "sfSettings",     title: "Companion Settings",  icon: "fas fa-shield-alt",   button: true, visible: isGM, onChange: () => openSettingsPanel() },
-    sectorCreator:  { name: "sectorCreator",  title: "Sector Creator",      icon: "fas fa-map",          button: true, visible: isGM, onChange: () => {} },
-    worldJournal:   { name: "worldJournal",   title: "World Journal",       icon: "fas fa-book",         button: true, visible: isGM, onChange: () => {} },
-    worldTruths:    { name: "worldTruths",    title: "World Truths",        icon: "fas fa-scroll",       button: true, visible: isGM, onChange: () => {} },
-    clocks:         { name: "clocks",         title: "Clocks",              icon: "fas fa-clock",        button: true, onChange: () => {} },
-    customOracles:  { name: "customOracles",  title: "Custom Oracles",      icon: "fas fa-table-list",   button: true, visible: isGM, onChange: () => {} },
-  };
-}
-
-Hooks.on("getSceneControlButtons", (controls) => {
-  const tools = buildCompanionTools();
-
-  // Preferred: the Companion's own top-level scene-control group (F16) so the
-  // buttons no longer ride inside Foundry's token tools (where selecting any
-  // other group hid them, with no way back). v13 — controls is an Object keyed
-  // by group name; v12 — controls is an Array. The group's backing canvas
-  // layer is registered in registerCompanionControlLayer() (must be the
-  // `interface` group — see the note there). Wrapped defensively: any failure
-  // falls back to the tokens group so the buttons can never fully disappear.
-  let placedInOwnGroup = false;
-  try {
-    const group = {
-      name:       "starforgedCompanion",
-      title:      "Starforged Companion",
-      icon:       "fas fa-meteor",
-      layer:      "starforgedCompanion",
-      visible:    true,
-      // v13's SceneControls.activate() → #preActivate → #onToolChange → #onChange
-      // chain does `group.tools[group.activeTool].onChange(...)` during every
-      // group transition. Without an activeTool, `tools[undefined]` is undefined
-      // and the onChange read throws — aborting the click and leaving the user
-      // unable to switch groups. Point this at a tool whose onChange is a no-op
-      // (`clocks`) so the preActivate call is benign and doesn't pop a panel as
-      // a side effect. Must be a non-GM-gated key so it resolves for player
-      // clients too.
-      activeTool: "clocks",
-      tools,
-    };
-    if (Array.isArray(controls)) {
-      controls.push(group);
-      placedInOwnGroup = true;
-    } else if (controls && typeof controls === "object") {
-      controls.starforgedCompanion = group;
-      placedInOwnGroup = true;
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | companion control group registration failed:`, err);
-  }
-
-  // Fallback: if the dedicated group couldn't be placed (unexpected controls
-  // shape), register into the tokens group as before so the buttons still show.
-  if (!placedInOwnGroup) {
-    const tokenControls = controls?.tokens ?? controls?.token;
-    if (!tokenControls) {
-      console.warn(`${MODULE_ID} | No control group available — buttons not registered`);
-      return;
-    }
-    tokenControls.tools ??= {};
-    Object.assign(tokenControls.tools, tools);
-  }
-});
-
-// Foundry v13 doesn't invoke a tool's onChange when the user *clicks* it
-// (it does call it during group activate — see the activeTool comment above —
-// but that's a different code path). Attach click listeners directly after the
-// toolbar renders so the buttons actually do something on click.
-Hooks.on("renderSceneControls", (app, html) => {
-  const root = html instanceof HTMLElement ? html : html[0];
-  if (!root) return;
-
-  const buttonMap = {
-    sfSession:      () => openSessionPanel(),
-    progressTracks: () => openProgressTracks(),
-    entityPanel:    () => openEntityPanel(),
-    chronicle:      () => openChroniclePanel(),
-    sfPrivateChannel: () => openPrivateChannel(),
-    sfSettings:     () => openSettingsPanel(),
-    sectorCreator:  () => openSectorCreator(),
-    worldJournal:   () => openWorldJournalPanel(),
-    worldTruths:    () => openSystemTruthsDialog(),
-    clocks:         () => openClocksPanel(),
-    customOracles:  () => openCustomOraclesPanel(),
-  };
-
-  for (const [name, handler] of Object.entries(buttonMap)) {
-    const btn = root.querySelector(`[data-tool="${name}"]`);
-    if (!btn) continue;
-    // Replace the node to drop any listeners attached on a previous render.
-    btn.replaceWith(btn.cloneNode(true));
-    const freshBtn = root.querySelector(`[data-tool="${name}"]`);
-    freshBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      handler();
-    });
-  }
 });
 
 /**

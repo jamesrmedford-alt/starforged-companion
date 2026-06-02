@@ -86,6 +86,37 @@ switch are GM-only by design.
 
 ## Resolved issues
 
+### TOOLBAR-001 — Companion launcher dead whenever no scene was active ✓
+
+**Status:** Resolved in v1.7.3
+
+**Symptom (historical):** Clicking the Starforged Companion buttons in the
+scene-controls toolbar (the meteor group, F16) did nothing — no panel opened,
+no console error. Reported across v1.7.0–v1.7.2 playtests.
+
+**Cause:** The launcher was a scene-control group backed by a canvas
+`InteractionLayer`. Foundry can only *activate* a control group when
+`canvas.ready === true`; with no active scene (mapless / theater-of-the-mind
+play, or a Forge launch setting with no default scene) the **entire**
+scene-controls bar is inert — clicking any group icon, Foundry's own (Walls,
+Lighting) included, fails to switch. Confirmed by live tracing
+(`canvas.ready`/`hasScene` both `false`; Walls also froze on `tokens`). Two
+earlier attempts misread it as a problem with *our* group — the v1.7.1
+`activeTool` band-aid and a v1.7.3 `primary`→`interface` canvas-group change —
+but no group-config fix can help when the surface itself needs a canvas.
+
+**Fix:** Moved the launcher off scene-controls onto a floating, draggable,
+frameless `ApplicationV2` pinned to the viewport (`src/ui/companionToolbar.js`),
+opened at `ready`, working with or without a scene. Removed the scene-controls
+group, its two hooks, `buildCompanionTools`, and the fake `StarforgedCompanionLayer`.
+See `decisions.md` → "Companion launcher: floating toolbar, NOT scene-controls".
+
+**Note:** `foundry-ironsworn`'s own `ironsworn` control group has the same defect
+in v13 (it never activates without a scene) — an upstream issue, independent of
+this module.
+
+---
+
 ### NARRATOR-001 — Loremaster removed; direct narrator now implemented ✓
 
 **Status:** Resolved
