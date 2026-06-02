@@ -358,9 +358,16 @@ describe("mapConsequences", () => {
       expect(c.otherEffect).toMatch(/both/i);
     });
 
-    it("weak hit gives +2 momentum and notes the player choice", () => {
+    it("weak hit emits a sufferPrompt for +2 momentum vs +1 next move (no baseline delta — S1)", () => {
       const c = mapConsequences("secure_an_advantage", "weak_hit", false);
-      expect(c.momentumChange).toBe(2);
+      // Baseline momentum delta must be 0 — the dialog's pick is the
+      // sole writer. Pre-S1, momentumChange was 2 here and the dialog's
+      // "+2 momentum" option double-applied (+4 total).
+      expect(c.momentumChange).toBe(0);
+      expect(c.sufferPrompt?.kind).toBe("enumerated");
+      expect(c.sufferPrompt?.options).toHaveLength(2);
+      expect(c.sufferPrompt?.options[0]).toMatchObject({ momentum: 2 });
+      expect(c.sufferPrompt?.options[1]).toMatchObject({ nextBonus: 1 });
       expect(c.otherEffect).toMatch(/choose one/i);
     });
   });
@@ -512,7 +519,7 @@ const HANDLER_CASES = [
 
   // Combat
   ["enter_the_fray",       "weak_hit",   false, { match: /choose one|control/i }],
-  ["gain_ground",          "strong_hit", false, { momentumChange: 2 }],
+  ["gain_ground",          "strong_hit", false, { combatPosition: "in_control" }],
   ["gain_ground",          "weak_hit",   false, { match: /choose one|control/i }],
   ["gain_ground",          "miss",       false, { match: /bad spot|Pay the Price/i }],
   ["strike",               "weak_hit",   false, { match: /progress|bad spot/i }],
@@ -1160,6 +1167,33 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.sufferPrompt.kind).toBe("enumerated");
     expect(c.sufferPrompt.multi).toBe(1);
     expect(c.sufferPrompt.options).toHaveLength(3);
+  });
+
+  it("gain_ground strong hit emits no baseline meter delta — sufferPrompt picks are sole writers (S1)", () => {
+    const c = mapConsequences("gain_ground", "strong_hit", false);
+    // Pre-S1: momentumChange was 2 here AND the sufferPrompt's "+2
+    // momentum" option also wrote momentum, so picking that option
+    // gave +4 momentum. Baseline must be 0.
+    expect(c.momentumChange).toBe(0);
+    expect(c.progressMarked).toBe(0);
+    // combatPosition stays — rulebook: gain_ground strong always
+    // puts you in control. Non-additive state, idempotent.
+    expect(c.combatPosition).toBe("in_control");
+  });
+
+  it("companion_takes_a_hit strong hit surfaces the +1-companion-health action through a sufferPrompt (S7)", () => {
+    const c = mapConsequences("companion_takes_a_hit", "strong_hit", false);
+    // Pre-S7: silent otherEffect text only; no mechanical surface.
+    // v1 fix: single-option sufferPrompt routes to a manual-apply
+    // card so the action is explicit. (Auto-apply via a
+    // companion-heal executor branch is a follow-up.)
+    expect(c.sufferPrompt?.kind).toBe("enumerated");
+    expect(c.sufferPrompt?.options).toHaveLength(1);
+    expect(c.sufferPrompt?.options[0]).toMatchObject({
+      route: "manual_companion_heal",
+      scope: "companion",
+    });
+    expect(c.otherEffect).toMatch(/companion rallies/i);
   });
 
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {

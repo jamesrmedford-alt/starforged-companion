@@ -195,6 +195,27 @@ async function resolveSufferPrompt(resolution, actor) {
   }
 
   await runSufferResolution(choice.calls, actor, executorOpts);
+
+  // S4: when the GM clicked "GM resolve on behalf" before picking, post
+  // a marker card so the chat log records who actually resolved the
+  // choice. The flag threads up from the dialog's _finish call.
+  if (choice.gmOverride === true) {
+    try {
+      const playerName = actor?.name ?? actor?.system?.characterName ?? "the player";
+      await globalThis.ChatMessage?.create?.({
+        content: `<div class="sf-card sf-card--suffer-gm-override"><div class="sf-card-header">GM resolved on behalf</div><div class="sf-card-body">The GM picked this suffer outcome on behalf of ${escapeChatHtml(playerName)}.</div></div>`,
+        flags: { [MODULE_ID]: { sufferGmOverride: true, moveId: resolution.moveId, onBehalfOf: actor?.id ?? null } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | resolveSufferPrompt: GM-override card post failed:`, err?.message ?? err);
+    }
+  }
+}
+
+function escapeChatHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 

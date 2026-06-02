@@ -342,6 +342,7 @@ function getDialogClass() {
       const p = this._sufferPrompt;
       const actor = this._actor;
       const isGM = !!globalThis.game?.user?.isGM;
+      const gmActive = this._opts.gmOverride === true;
       const meters = readMeterPreview(actor);
 
       let body = "";
@@ -351,12 +352,25 @@ function getDialogClass() {
         body = renderEnumeratedPicker(p, this._selectedIndices, { actor });
       }
 
+      // S4: when GM Override is engaged, render a banner so the GM sees
+      // the dialog is now resolving on the player's behalf. The next
+      // option-pick threads gmOverride: true into the result, and
+      // resolveSufferPrompt posts an annotation card so the chat log
+      // records who picked.
+      const banner = gmActive
+        ? `<div class="sf-suffer-dialog-gm-banner">GM is resolving this choice on behalf of the player. Pick an option below.</div>`
+        : "";
+      const gmButton = isGM
+        ? `<button type="button" data-action="gmOverride"${gmActive ? " disabled" : ""}>${gmActive ? "GM resolving (engaged)" : "GM resolve on behalf"}</button>`
+        : "";
+
       return `
-        <section class="sf-suffer-dialog-body">
+        <section class="sf-suffer-dialog-body${gmActive ? " sf-suffer-dialog-body--gm" : ""}">
+          ${banner}
           ${body}
           <hr/>
           <div class="sf-suffer-dialog-footer">
-            ${isGM ? `<button type="button" data-action="gmOverride">GM resolve on behalf</button>` : ""}
+            ${gmButton}
             <button type="button" data-action="cancel">Cancel resolution</button>
           </div>
         </section>
@@ -391,10 +405,17 @@ function getDialogClass() {
     }
 
     static #onGMOverride(_event, _target) {
-      // GM picks on player's behalf — same flow as the player's pick.
-      // The card postSufferCard emits will include a `gmOverride: true`
-      // marker so the chat record reflects who picked.
+      // S4: GM Override engages a banner + flag; the GM still has to
+      // pick an option (single-click or multi-confirm), and that pick
+      // threads gmOverride: true through to the result. Previous
+      // behaviour set the flag and returned silently — the button was
+      // a no-op because nothing read the flag and the dialog never
+      // closed. Re-render so the banner appears + the button shows
+      // its engaged state.
       this._opts.gmOverride = true;
+      try { this.render({ force: true }); } catch (err) {
+        console.warn(`${MODULE_ID} | sufferDialog: gmOverride re-render failed:`, err?.message ?? err);
+      }
     }
 
     static #onCancel(_event, _target) {
@@ -405,7 +426,10 @@ function getDialogClass() {
       try { await this.close(); } catch (err) {
         console.warn(`${MODULE_ID} | sufferDialog: close failed:`, err?.message ?? err);
       }
-      this._resolveResult({ cancelled, selection, calls });
+      // S4: thread the GM Override flag into the result so the caller
+      // (resolveSufferPrompt) can post a "GM resolved on behalf" card.
+      const gmOverride = this._opts.gmOverride === true;
+      this._resolveResult({ cancelled, selection, calls, gmOverride });
     }
   };
 

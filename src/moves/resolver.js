@@ -295,10 +295,12 @@ const CONSEQUENCE_MAP = {
       };
       case "weak_hit": return {
         ...emptyConsequences(),
-        // B2: enumerated. Default option is +2 momentum so the existing
-        // delta-based test fixtures keep their pre-F16 shape; the dialog
-        // surfaces the alternative.
-        momentumChange: 2,
+        // S1 (suffer-pipeline-scope §12): the previous default
+        // momentumChange: 2 here double-applied with the dialog's "+2
+        // momentum" option (player ended up with +4) and silently
+        // no-op'd when the player picked "+1 on next move" (nextBonus
+        // isn't an actor meter). No baseline meter delta — the
+        // dialog's pick is the sole writer.
         sufferPrompt: { kind: "enumerated", options: [
           { label: "+2 momentum",                momentum:   2 },
           { label: "+1 on your next move",       nextBonus:  1 },
@@ -556,11 +558,12 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return {
         ...emptyConsequences(),
-        // B2 multi: choose two of three. Defaults to (+2 momentum, mark
-        // progress) so the pre-F16 delta-based tests stay green; the
-        // dialog presents the full picker.
-        momentumChange: 2,
-        progressMarked: 0,
+        // S1 (suffer-pipeline-scope §12): the previous defaults
+        // (momentumChange: 2, progressMarked: 0) double-applied with
+        // the dialog's "+2 momentum" option. combatPosition stays as a
+        // non-additive state (rulebook: gain_ground strong always puts
+        // you in control). No baseline meter delta — the dialog's two
+        // picks are the sole writers.
         combatPosition: "in_control",
         sufferPrompt: { kind: "enumerated", multi: 2, options: [
           { label: "Mark progress",       progress:  1 },
@@ -763,7 +766,20 @@ const CONSEQUENCE_MAP = {
 
   companion_takes_a_hit: (outcome, isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        // S7 (suffer-pipeline-scope §12): surface the +1 companion-health
+        // action through the F16 dialog rather than burying it in
+        // narrator text. v1 routes to a manual-apply prompt — the
+        // companion-heal auto-write pipeline (negative-amount executor
+        // or companion-meter delta) is a follow-up scope. Single option,
+        // so the dialog renders one button: clicking posts a deferred
+        // card the player/GM apply by hand.
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Apply: +1 companion health",
+            route: "manual_companion_heal",
+            scope: "companion" },
+        ]},
         otherEffect: "Companion rallies. Give them +1 health." };
       case "weak_hit": return {
         ...emptyConsequences(),
