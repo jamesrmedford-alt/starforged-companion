@@ -2339,3 +2339,66 @@
 }
 .sf-published-reflection-label { font-size: 0.8em; opacity: 0.75; margin-bottom: 0.25rem; }
 .sf-published-reflection-body  { font-style: italic; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Floating Companion launcher (scene-independent; replaces the scene-controls
+   group). Frameless ApplicationV2 pinned to the viewport — works with or
+   without an active scene/canvas.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Neutralise any default application chrome on the frameless host element. */
+#starforged-companion-toolbar {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  z-index: var(--z-index-app, 70);
+}
+
+.sf-companion-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-bg, rgba(20, 20, 28, 0.92));
+  border: 1px solid var(--color-border-dark, #111);
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+  pointer-events: all;
+}
+
+.sf-companion-toolbar__grip {
+  cursor: grab;
+  text-align: center;
+  color: var(--color-text-light-highlight, #f0a020);
+  padding: 1px 0 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  user-select: none;
+  touch-action: none;
+}
+.sf-companion-toolbar__grip:active { cursor: grabbing; }
+
+.sf-companion-toolbar__btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text-light-1, #ddd);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sf-companion-toolbar__btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--color-text-light-highlight, #f0a020);
+  color: var(--color-text-light-highlight, #f0a020);
+}

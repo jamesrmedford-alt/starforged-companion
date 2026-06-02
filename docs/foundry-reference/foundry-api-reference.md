@@ -1110,6 +1110,18 @@ CONFIG.Canvas.layers.myGroup = { layerClass: MyControlLayer, group: "primary" };
 with the stale `group: "primary"` and its toolbar group is broken the same way
 in v13 — do not use it as a template for this.
 
+**Bigger caveat — scene-controls are inert without a canvas.** Even with a
+correctly-registered `interface` layer, a scene-control group can only be
+*activated* when `canvas.ready === true`. With no active scene (mapless /
+theater-of-the-mind play, or a launch setting with no default scene), the entire
+scene-controls bar is non-interactive — clicking *any* group, Foundry's own
+included, fails to switch. So scene-controls is the wrong surface for UI that
+must work without a map. The Companion learned this the hard way and moved its
+launcher to a frameless, viewport-pinned `ApplicationV2` (`src/ui/companionToolbar.js`);
+see `docs/decisions.md` → "Companion launcher: floating toolbar, NOT
+scene-controls". The guidance above still applies if you genuinely need a
+canvas-layer-backed group.
+
 ---
 
 ## Dynamic imports in browser ES modules
