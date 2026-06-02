@@ -304,10 +304,10 @@ export function openChroniclePanel(actorId) {
 }
 
 /**
- * Register the toolbar button for the chronicle panel in getSceneControlButtons.
- * Called from index.js alongside the other panel registrations.
+ * Placeholder hook registration for the chronicle panel. The launcher button
+ * lives on the floating Companion toolbar (src/ui/companionToolbar.js); this
+ * is kept as a no-op so callers in index.js stay stable.
  */
 export function registerChroniclePanelHooks() {
-  // Panel button is wired in index.js via getSceneControlButtons, same pattern
-  // as progressTracks and entityPanel.
+  // Panel button is on the floating Companion toolbar, same as the other panels.
 }

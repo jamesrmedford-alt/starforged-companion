@@ -7827,15 +7827,25 @@ function registerPrivateChannelTests(quench) {
       afterEach(flushCleanup);
 
       describe("toolbar", function () {
-        it("exposes the Private Channel tool in the starforgedCompanion group when enabled", async function () {
+        it("exposes the Private Channel tool in the floating Companion toolbar only when enabled", async function () {
           this.timeout(20000);
+          const { companionToolbarTools } = await import(`${MODULE_PATH}/ui/companionToolbarTools.js`);
+          const { isPrivateChannelEnabled } = await import(`${MODULE_PATH}/private-channel/index.js`);
+
           await withTempSetting("privateChannel.enabled", true, async () => {
-            const controls = {};
-            Hooks.callAll("getSceneControlButtons", controls);
-            const group = controls.starforgedCompanion;
-            assert.isObject(group, "the starforgedCompanion control group should exist");
-            assert.isOk(group.tools?.sfPrivateChannel, "the sfPrivateChannel tool should be registered");
-            assert.notStrictEqual(group.tools.sfPrivateChannel.visible, false, "tool should be visible when enabled");
+            const keys = companionToolbarTools({
+              isGM: game.user.isGM,
+              privateChannelEnabled: isPrivateChannelEnabled(),
+            }).map(t => t.key);
+            assert.include(keys, "sfPrivateChannel", "the Private Channel tool should be present when enabled");
+          });
+
+          await withTempSetting("privateChannel.enabled", false, async () => {
+            const keys = companionToolbarTools({
+              isGM: game.user.isGM,
+              privateChannelEnabled: isPrivateChannelEnabled(),
+            }).map(t => t.key);
+            assert.notInclude(keys, "sfPrivateChannel", "the Private Channel tool should be hidden when disabled");
           });
         });
       });

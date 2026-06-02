@@ -3,9 +3,10 @@
  * src/private-channel/index.js — Private Channel module entry
  *
  * Registers the feature's settings and exposes the gated open wrapper. The
- * toolbar tool itself is registered by src/index.js (buildCompanionTools() +
- * the renderSceneControls buttonMap) per private-channel-scope.md §6 — this
- * module supplies the click target and the enable gate.
+ * launcher button itself lives on the floating Companion toolbar
+ * (src/ui/companionToolbar.js); its visibility is gated by
+ * isPrivateChannelEnabled() exported here — this module supplies the click
+ * target (openPrivateChannel) and the enable gate.
  */
 
 import { PrivateChannelApp } from "./app.js";
