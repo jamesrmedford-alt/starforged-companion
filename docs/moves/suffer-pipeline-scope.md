@@ -510,6 +510,51 @@ explicitly checks tests/* for any assertions that would need updating.
 - Pay the Price narrative entries.
 - Suffer dialogs blocking the narrator pipeline.
 
+> **Inconsistency flagged 2026-06-02:** the last bullet ("Suffer dialogs
+> blocking the narrator pipeline") directly contradicts §5.3 / Q1 of the
+> Resolved decisions, which says the dialog **is** blocking. The
+> implementation (audited below) reflects the §11 line rather than the
+> §5.3 / Q1 line. Either §5.3 / Q1 was overridden post-decision (in which
+> case the scope doc still claims a blocking dialog the impl doesn't
+> ship) or the implementation deferred Q1 without saying so. Worth a
+> reader pass before any S3 fix.
+
+## 12. Post-implementation audit (2026-06-02)
+
+Audit pass against `main` after Phase A-F shipped. Scope-index marks
+the pipeline ✅ COMPLETE; this audit found two mechanical defects and
+five trust / UX gaps that warrant addressing before the COMPLETE marker
+is honest.
+
+Severities use the v1.6.1-playtest-findings convention: 🔴 high (real
+play-affecting bug), 🟡 medium (functional gap or trust-eroding
+ordering), 🟢 low (cosmetic / latent).
+
+| ID | Sev | Surface | One-line | Location |
+|---|---|---|---|---|
+| **S1** | 🔴 | `secure_an_advantage` weak | Resolver emits both `momentumChange: 2` and a `sufferPrompt` whose "+2 momentum" option *also* writes momentum, so the actor gets +4. The "+1 on next move" option's `nextBonus` key isn't a meter so picking it gives +2 momentum and nothing else. The inline comment at L298-300 admits the default delta exists to keep test fixtures passing. | `src/moves/resolver.js:296-307` + `src/moves/sufferDialog.js:141-147` |
+| **S2** | 🔴 | Miss → "Pay the Price" path | `dispatchPayThePriceSufferRoute` only fires from the `!ptp` chat command. The resolver's `pay_the_price` branch returns text only. Miss outcomes that route to PtP (Face Danger, Set a Course, Gather Information, Check Your Gear, Compel, Battle, …) describe the cost via narrator prose but never auto-fire any suffer executor unless the player separately types `!ptp`. | `src/index.js:1852/1887/1942`, `src/moves/resolver.js` pay_the_price branch |
+| **S3** | 🟡 | Pipeline ordering (Q1) | `narrateResolution` (L947) runs before `persistResolution` (L952) which opens the dialog. Q1 / §5.3 says the dialog must block before narration so "you pay a cost" prose lands grounded in the choice. Currently narration lands before the player has picked. See §11 inconsistency note above. | `src/index.js:947` vs `:952` |
+| **S4** | 🟡 | GM Override button is dead | `#onGMOverride` sets `this._opts.gmOverride = true` and returns. Never calls `_finish`, so the dialog doesn't close; the flag never threads into `selection`, `calls`, the result, or any chat-card flag. GM has to also click a normal option button; the gmOverride mark goes nowhere. | `src/moves/sufferDialog.js:393-398` |
+| **S5** | 🟡 | At-min Lose Momentum (Q3) recursion absent | Executor signals `{ atMin: true }` correctly; `runSufferResolution` pushes the result and moves on with no inspection of `atMin`, no recursion into a redirect-or-clear-progress sub-dialog. Card mentions the option in text; no follow-up prompt opens. | `src/moves/sufferExecutor.js:135`, `src/moves/sufferDialog.js:177-184` |
+| **S6** | 🟡 | `pendingComplication` flag never written | The complication call kind posts a deferred chat card but does **not** write a `pendingComplication` flag on the active scene / sector record (§5.3 said it should). Comment in the code at L200-203 says "the narrator picks it up on next scene transition" but the narrator has no canonical signal to read from. | `src/moves/sufferDialog.js:199-210` |
+| **S7** | 🟡 | `companion_takes_a_hit` strong is silent | Audit table targets shape A (+1 companion health). Code returns only `otherEffect: "Companion rallies. Give them +1 health."` with no executor call and no `companionHealth` delta. Same "narrator says it, sheet does nothing" pattern F16 was built to eliminate. | `src/moves/resolver.js:766-767` |
+| **S8** | 🟢 | F15 Set a Course feedback card is generic | Card posts at L882 before narration / dialog; can't include the §5.7 "Token moved to Hearth • Supply −2 (5 → 3)" footer because the suffer choice hasn't happened yet. Miss case also doesn't trigger or mention PtP (relates to S2). | `src/index.js:882`, `:1915-1930` |
+| **S9** | 🟢 | `kind: "complication"` top-level not implemented | Dialog renderer branches only on `"any"` vs everything-else. No CONSEQUENCE_MAP entry currently emits a top-level `kind: "complication"`, so this is latent rather than active. | `src/moves/sufferDialog.js:347-352` |
+| **S10** | 🟢 | `overcome_destruction` returns text only | Audit said "A + prompt" (mark indebted on weak/miss + XP grant + Swear-Vow prompt). Code returns only `otherEffect`. | `src/moves/resolver.js` overcome_destruction branch |
+
+**Test coverage gaps that mirror the impl gaps:**
+- No test for GM override → resolved result (covers S4).
+- No test for at-min Lose Momentum recursion (covers S5).
+- No test for vehicle-not-found in `withstandDamage` (the companion path is tested; vehicle isn't).
+- No test for `isCommandVehicle: true` with a non-catastrophic vehicle-damage roll.
+- No test for `runSufferResolution` propagating `atMin: true` to a follow-up prompt.
+
+**Scope-index status reconciliation:** the F16 row in `docs/scope-index.md`
+should drop the ✅ COMPLETE marker (or be qualified with "modulo
+S1–S7") until at least the 🔴 items are addressed. S1 in particular
+re-introduces the exact defect class F16 was built to eliminate.
+
 ## 12. Catalog
 
 Closes **F16** (suffer moves never mechanically applied — systemic).
