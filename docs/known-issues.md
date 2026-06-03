@@ -86,7 +86,8 @@ switch are GM-only by design.
 
 ### FOLDER-001 — Empty duplicate sector subfolders spawn on every world load
 
-**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+**Status:** Open — **confirmed** (persists with API keys configured); v1.7.5
+playtest (2026-06-03). The only unresolved playtest bug.
 
 **Symptom:** The per-sector Actors subfolder is now correctly named after the
 sector (e.g. "Outer Threshold"), but a new **empty** folder of the same name is
@@ -103,6 +104,10 @@ one.
 
 **Impact:** Cosmetic clutter that accumulates over a campaign; entities still
 resolve. No data loss observed.
+
+**Note (v1.7.5 playtest):** Consistent with per-load accrual — a newer sector
+("Kronos Vigil") shows a single folder while the older "Outer Threshold" shows
+four duplicates. Unaffected by the API-key fix that resolved ENTITY-002.
 
 ---
 
@@ -121,36 +126,30 @@ folder. Intended structure is undecided (e.g. dedicated "Player Characters" /
 
 **Impact:** Directory-organisation gap only; no functional break.
 
----
-
-### ENTITY-002 — Settlements created without token art or flavor text
-
-**Status:** Needs re-test — likely a config artifact (missing API keys), not a
-defect. Observed in v1.7.5 playtest (2026-06-03).
-
-**Symptom:** Newly created settlement entities (e.g. "Pinnacle", a Planetside
-settlement in Terminus) have no prototype token art (they show the default
-hooded silhouette) and no flavor/description prose on the sheet — only the
-empty oracle-roll buttons (Population, First look, Initial contact, etc.).
-Sibling settlements (Legacy, Vega) show the same default portrait.
-
-**Likely cause — confounded by config:** the API keys were **not configured**
-during this playtest. Flavor/description prose is written by Claude (via
-`src/api-proxy.js`) and portrait art is generated via OpenRouter
-(`src/art/openRouterImage.js`) — both no-op without their keys, which alone
-explains the missing prose and the un-generated portrait/token art. **Re-test
-with both keys configured before treating this as a bug.**
-
-**If it persists with keys set:** then investigate portrait/token assignment
-(`src/art/`, `src/entities/registry.js`) and whether generation fires on entity
-confirm vs. on-demand. Until then, do not assume a defect.
-
-**Impact:** With keys set, expected to resolve. Without keys, settlements arrive
-"blank" by design (generation is gated on key presence).
+**Note:** Key-independent — unaffected by the API-key fix that resolved
+ENTITY-002. Remains open pending the structure decision above.
 
 ---
 
 ## Resolved issues
+
+### ENTITY-002 — Settlements arrived blank without API keys (config, not a defect) ✓
+
+**Status:** Resolved — config artifact, not a code defect. Confirmed in the
+v1.7.5 playtest (2026-06-03).
+
+**Symptom (historical):** With no API keys configured, newly created settlements
+(e.g. "Pinnacle", "Legacy", "Vega") showed the default hooded silhouette and no
+flavor/description prose — only the empty oracle-roll buttons.
+
+**Resolution:** With both keys configured, settlements populate correctly:
+generated portrait + token art and full descriptive prose (e.g. "Lastport" in
+Kronos Vigil shows a portrait thumbnail and a paragraph of narrator prose plus
+the stat line; sibling settlements Forsaken/Hyperion/Osseus likewise show
+generated art). Description prose is written by Claude (`src/api-proxy.js`) and
+portrait art via OpenRouter (`src/art/openRouterImage.js`); both correctly no-op
+without their keys, so the entities arrived blank. Generation is properly gated
+on key presence — no code fix required.
 
 ### TOOLBAR-001 — Companion launcher dead whenever no scene was active ✓
 
