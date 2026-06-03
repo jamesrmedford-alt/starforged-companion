@@ -84,6 +84,66 @@ switch are GM-only by design.
 
 ---
 
+### FOLDER-001 — Empty duplicate sector subfolders spawn on every world load
+
+**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+
+**Symptom:** The per-sector Actors subfolder is now correctly named after the
+sector (e.g. "Outer Threshold"), but a new **empty** folder of the same name is
+created **each time the world loads**. After several loads the Actors directory
+shows multiple identically-named sector folders nested under "Sectors"
+(playtest screenshot: three "Outer Threshold" folders, with the settlements —
+Legacy, Pinnacle, Vega — living in only one of them).
+
+**Suspected area (unconfirmed):** the per-sector subfolder find-or-create helper
+in `src/entities/folder.js` — the existing-folder lookup likely fails to match
+(name vs. parent/`folder` mismatch, or a timing/case issue on the `ready` pass),
+so a fresh empty folder is created on every load instead of reusing the existing
+one.
+
+**Impact:** Cosmetic clutter that accumulates over a campaign; entities still
+resolve. No data loss observed.
+
+---
+
+### FOLDER-002 — No folder structure for PCs or NPCs
+
+**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+
+**Symptom:** Player characters and NPCs are not organised into any folder in the
+Actors directory — only the sector/settlement entities get foldered. PCs and
+NPCs sit loose at the directory root.
+
+**Suspected area (unconfirmed):** folder organisation currently only covers
+entity types routed through `src/entities/`; PC/NPC actors are never assigned a
+folder. Intended structure is undecided (e.g. dedicated "Player Characters" /
+"NPCs" folders) — needs a product decision before any fix.
+
+**Impact:** Directory-organisation gap only; no functional break.
+
+---
+
+### ENTITY-002 — Settlements created without token art or flavor text
+
+**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+
+**Symptom:** Newly created settlement entities (e.g. "Pinnacle", a Planetside
+settlement in Terminus) have no prototype token art (they show the default
+hooded silhouette) and no flavor/description prose on the sheet — only the
+empty oracle-roll buttons (Population, First look, Initial contact, etc.).
+Sibling settlements (Legacy, Vega) show the same default portrait.
+
+**Suspected area (unconfirmed):** portrait/token assignment (`src/art/`,
+`src/entities/registry.js`) and the entity description writer — either
+auto-generation isn't firing on entity confirm, or generated portrait art isn't
+being applied to the prototype token. Confirm first whether portrait + flavor
+text are expected to populate automatically on creation vs. on-demand.
+
+**Impact:** Settlements arrive "blank" — the GM must roll/generate details and
+set token art manually.
+
+---
+
 ## Resolved issues
 
 ### TOOLBAR-001 — Companion launcher dead whenever no scene was active ✓
