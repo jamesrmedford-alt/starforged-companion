@@ -279,6 +279,15 @@ function registerCoreSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, "autoSeedConnection", {
+    name:    "Auto-Seed NPC / Connection Details",
+    hint:    "When a new NPC connection card is created, roll the Character First Look / Initial Disposition / Role / Goal oracles into its Characteristics field, write an introduction to the Notes tab, and (if an OpenRouter API key is set) generate a portrait + token. Disable to keep new NPC cards blank.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
     hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
@@ -1063,6 +1072,28 @@ function registerStarshipSeedHook() {
         console.warn(`${MODULE_ID} | starship seed: dynamic import failed:`, err));
     } catch (err) {
       console.warn(`${MODULE_ID} | createActor starship-seed hook threw:`, err);
+    }
+  });
+
+  // NPC / connection cards: roll the Character oracles into Characteristics,
+  // compose Notes, and fire a silent portrait — the connection analogue of the
+  // starship seed above. connectionNeedsSeed() filters out PCs (no connection
+  // flag) and already-seeded cards.
+  Hooks.on("createActor", (actor) => {
+    try {
+      if (!game.user?.isGM) return;
+      if (actor?.type !== "character") return;
+      if (!game.settings.get(MODULE_ID, "autoSeedConnection")) return;
+
+      import("./entities/connection.js").then(async (mod) => {
+        if (!mod.connectionNeedsSeed(actor)) return;
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await mod.seedConnectionActor(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | connection seed failed for ${actor.id}:`, err));
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | connection seed: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | createActor connection-seed hook threw:`, err);
     }
   });
 }

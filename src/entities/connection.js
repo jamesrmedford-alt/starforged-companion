@@ -504,3 +504,222 @@ async function persistCampaignState(campaignState) {
     throw err;
   }
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NPC-CARD POPULATION (oracles → Characteristics, narrator/art → Notes)
+//
+// Mirrors the starship auto-envision (seedStarshipActor in ship.js). On a freshly
+// created connection NPC card, roll the Character oracles, write them to the
+// sheet's Characteristics field (system.biography), compose an atmospheric
+// introduction for the Notes tab (system.notes), and fire a silent portrait
+// generation whose art is attached to the card + prototype token and embedded
+// (large) into Notes. See decisions.md → "NPCs and connections: native ironsworn
+// `character` Actors".
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * True when a connection NPC-card actor still needs oracle/narrator/art
+ * population. Used by the createActor hook to decide whether to seed.
+ *
+ * @param {Actor} actor
+ * @returns {boolean}
+ */
+export function connectionNeedsSeed(actor) {
+  if (!actor || actor.type !== "character") return false;
+  const conn = actor.flags?.[MODULE_ID]?.[FLAG_KEY];
+  return !!conn && !conn.seeded;
+}
+
+/**
+ * Populate a connection NPC-card Actor: roll any missing Character oracles
+ * (First Look, Initial Disposition, Role, Goal), write them to the
+ * Characteristics field, compose narrator flavor for the Notes tab, and fire a
+ * silent portrait generation. Idempotent — a card already marked `seeded` is
+ * returned unchanged. Never throws; population failures are logged.
+ *
+ * @param {Actor} actor — a `character` Actor carrying a connection flag payload
+ * @param {Object} [campaignState]
+ * @returns {Promise<Object|null>} the updated connection record, or null
+ */
+export async function seedConnectionActor(actor, campaignState) {
+  if (!actor || actor.type !== "character") return null;
+  const existing = actor.flags?.[MODULE_ID]?.[FLAG_KEY];
+  if (!existing) return null;            // not a connection card
+  if (existing.seeded) return existing;  // already populated — idempotent
+
+  const { rollOracle } = await import("../oracles/roller.js");
+  const role        = existing.role || safeRoll(rollOracle, "character_role");
+  const goal        = existing.goal || safeRoll(rollOracle, "character_goal");
+  const firstLookEx = Array.isArray(existing.firstLook) ? existing.firstLook[0] : existing.firstLook;
+  const firstLook   = firstLookEx || safeRoll(rollOracle, "character_first_look");
+  const disposition = existing.disposition || safeRoll(rollOracle, "character_disposition");
+
+  const portraitSource = [firstLook, role, disposition].filter(Boolean).join(". ");
+
+  const connection = {
+    ...existing,
+    role,
+    goal,
+    firstLook:   firstLook ? [firstLook] : (Array.isArray(existing.firstLook) ? existing.firstLook : []),
+    disposition,
+    portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
+    seeded:      true,
+    updatedAt:   new Date().toISOString(),
+  };
+
+  const biographyHtml = buildConnectionBiographyHtml({ role, goal, firstLook, disposition });
+  const notesHtml     = await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition });
+
+  try {
+    await actor.update({
+      "system.biography":                 biographyHtml,
+      "system.notes":                     notesHtml,
+      [`flags.${MODULE_ID}.${FLAG_KEY}`]: connection,
+      [`flags.${MODULE_ID}.entityType`]:  actor.flags?.[MODULE_ID]?.entityType ?? "connection",
+      [`flags.${MODULE_ID}.entityId`]:    actor.flags?.[MODULE_ID]?.entityId   ?? connection._id,
+    });
+  } catch (err) {
+    console.error(`${MODULE_ID} | seedConnectionActor: update failed:`, err);
+    return null;
+  }
+
+  // Silent portrait — gated on an OpenRouter key. attachPortraitToActor sets
+  // actor.img + prototype-token art and embeds a large copy at the top of the
+  // Notes tab. Failures stay silent.
+  if (portraitSource && hasOpenRouterKey()) {
+    try {
+      const { generatePortrait } = await import("../art/generator.js");
+      await generatePortrait(actor.id, "connection", connection, campaignState ?? {});
+    } catch (err) {
+      console.warn(`${MODULE_ID} | seedConnectionActor: portrait generation failed:`, err);
+    }
+  }
+
+  return connection;
+}
+
+/**
+ * Build the Characteristics-field (system.biography) HTML from the rolled
+ * Character oracles. Empty string when nothing rolled.
+ */
+function buildConnectionBiographyHtml({ role, goal, firstLook, disposition }) {
+  const lines = [];
+  if (firstLook)   lines.push(`<li><strong>First look:</strong> ${escapeHtmlConn(firstLook)}</li>`);
+  if (disposition) lines.push(`<li><strong>Initial disposition:</strong> ${escapeHtmlConn(disposition)}</li>`);
+  if (role)        lines.push(`<li><strong>Role:</strong> ${escapeHtmlConn(role)}</li>`);
+  if (goal)        lines.push(`<li><strong>Goal:</strong> ${escapeHtmlConn(goal)}</li>`);
+  if (!lines.length) return "";
+  return `<p><em>Oracle-seeded character details:</em></p><ul>${lines.join("")}</ul>`;
+}
+
+/**
+ * Compose the Notes-tab (system.notes) HTML for a seeded connection. Tries a
+ * narrator-model call to turn the oracle rolls into a short atmospheric
+ * introduction, then appends a compact fact line. Falls back to a plain oracle
+ * bullet list when no Claude key is set or the call fails — never blocks seeding.
+ */
+async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposition }) {
+  const facts = [firstLook, disposition, role, goal].filter(Boolean);
+  if (!facts.length) return "";
+
+  const prose = await generateConnectionIntroProse({ name, role, goal, firstLook, disposition })
+    .catch(() => null);
+
+  if (!prose) {
+    return buildConnectionBiographyHtml({ role, goal, firstLook, disposition });
+  }
+
+  const paras = prose
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${escapeHtmlConn(p).replace(/\n+/g, " ")}</p>`)
+    .join("");
+  const factLine = facts.map(escapeHtmlConn).join(" &middot; ");
+  return `${paras}<p><em>${factLine}</em></p>`;
+}
+
+/**
+ * Single narrator-model call that turns the connection's oracle rolls into a
+ * 2-3 sentence introduction. Returns null (caller falls back) when no Claude
+ * key is set or the call yields nothing. All Anthropic traffic routes through
+ * src/api-proxy.js per the architecture constraint in CLAUDE.md.
+ */
+async function generateConnectionIntroProse({ name, role, goal, firstLook, disposition }) {
+  const apiKey = readClaudeKeyConn();
+  if (!apiKey) return null;
+
+  const { apiPost } = await import("../api-proxy.js");
+  const model = readModuleSettingConn("narrationModel") || "claude-sonnet-4-5-20250929";
+  const tone  = readModuleSettingConn("narrationTone")  || "wry";
+
+  const system =
+    `You are the narrator for an Ironsworn: Starforged solo campaign. ` +
+    `Tone: ${tone}. Write a short (2-3 sentence) atmospheric introduction to an ` +
+    `NPC the player has just connected with, grounded ONLY in the oracle details ` +
+    `provided. Evocative but spare. Plain prose only — no headings, lists, or ` +
+    `markdown. Do not invent proper nouns, factions, or plot beyond what the ` +
+    `details imply.`;
+
+  const userMsg = [
+    name        ? `Name: ${name}`                       : null,
+    firstLook   ? `First look: ${firstLook}`            : null,
+    disposition ? `Initial disposition: ${disposition}` : null,
+    role        ? `Role: ${role}`                       : null,
+    goal        ? `Goal: ${goal}`                       : null,
+  ].filter(Boolean).join("\n");
+
+  const body = {
+    model,
+    max_tokens: 220,
+    system:   [{ type: "text", text: system }],
+    messages: [{ role: "user", content: userMsg }],
+  };
+  const headers = {
+    "Content-Type":      "application/json",
+    "x-api-key":         apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+
+  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body);
+  const text = (data?.content ?? [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("")
+    .trim();
+  return text || null;
+}
+
+function safeRoll(rollOracle, tableId) {
+  try {
+    const r = rollOracle(tableId);
+    return r?.result && r.result !== "—" ? r.result : "";
+  } catch {
+    return "";
+  }
+}
+
+function readClaudeKeyConn() {
+  try { return globalThis.game?.settings?.get(MODULE_ID, "claudeApiKey") || null; }
+  catch { return null; }
+}
+
+function readModuleSettingConn(key) {
+  try { return globalThis.game?.settings?.get(MODULE_ID, key); }
+  catch { return undefined; }
+}
+
+function hasOpenRouterKey() {
+  try { return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey"); }
+  catch { return false; }
+}
+
+function escapeHtmlConn(s) {
+  if (typeof s !== "string") return "";
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
