@@ -40,6 +40,25 @@ const _cache = new Map();
 let _legacyCachedId = null;
 
 /**
+ * Normalise a folder's parent reference to an id (or null).
+ *
+ * Foundry v13's `Folder#folder` getter returns the **parent Folder document**,
+ * not its id — but our test mocks (and `_source.folder`) use a plain id string.
+ * Comparing the raw getter against an id string silently fails in production,
+ * which spawned a duplicate nested folder on every world load (FOLDER-001).
+ * This accepts a document, an id string, or null/undefined and always yields an
+ * id-or-null so parent comparisons are reliable in both environments.
+ *
+ * @param {object|string|null|undefined} folderRef  `f.folder` (document or id)
+ * @returns {string|null}
+ */
+export function folderParentId(folderRef) {
+  if (!folderRef) return null;
+  if (typeof folderRef === "object") return folderRef.id ?? null;
+  return folderRef;
+}
+
+/**
  * The pre-migration flat folder for every journal-backed entity. Kept for
  * connection / faction / creature; ship / planet / settlement / location
  * use the actor-folder helpers below.
@@ -94,7 +113,7 @@ export async function ensureFolderPath(type, segments) {
     let folder = folderId && globalThis.game?.folders?.get(folderId);
     if (!folder) {
       folder = globalThis.game?.folders?.find(
-        f => f.type === type && f.name === name && (f.folder ?? null) === parentId
+        f => f.type === type && f.name === name && folderParentId(f.folder) === parentId
       );
     }
     if (!folder) {

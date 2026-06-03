@@ -25,7 +25,7 @@ import { createShip }       from "./ship.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
-import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder } from "./folder.js";
+import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
   cleanupSectorRecordPages,
@@ -476,6 +476,45 @@ export async function flattenSectorActorFolders(campaignState) {
       summary.foldersDeleted += 1;
     } catch (err) {
       console.error(`${MODULE_ID} | flattenSectorActorFolders: delete folder ${folder.id} failed:`, err);
+    }
+  }
+
+  // Step 3 — remove empty *duplicate* per-sector Actor subfolders left behind by
+  // the pre-FOLDER-001-fix bug, which minted a fresh `Sectors / <Name>` folder on
+  // every world load (the parent-id comparison in ensureFolderPath compared a
+  // Folder document to an id string and never matched). For each name with more
+  // than one folder directly under the Sectors root, keep one (the populated one
+  // if any, else the first) and delete the rest — but only ever an *empty*
+  // folder (no actors, no child folders). A unique sector folder, even an empty
+  // one, is never touched.
+  if (sectorsRoot) {
+    const foldersNow = [...(globalThis.game?.folders ?? [])];
+    const sectorSubs = foldersNow.filter(
+      f => f.type === "Actor" && folderParentId(f.folder) === sectorsRoot.id
+    );
+    const isEmptyFolder = folder =>
+      !actorsAfterMove.some(a => (a.folder?.id ?? a.folder) === folder.id) &&
+      !foldersNow.some(f => folderParentId(f.folder) === folder.id);
+
+    const byName = new Map();
+    for (const f of sectorSubs) {
+      if (!byName.has(f.name)) byName.set(f.name, []);
+      byName.get(f.name).push(f);
+    }
+
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;                  // unique name → keep
+      const keeper = group.find(f => !isEmptyFolder(f)) ?? group[0];
+      for (const folder of group) {
+        if (folder.id === keeper.id) continue;
+        if (!isEmptyFolder(folder)) continue;          // never delete a populated dupe
+        try {
+          await folder.delete?.();
+          summary.foldersDeleted += 1;
+        } catch (err) {
+          console.error(`${MODULE_ID} | flattenSectorActorFolders: dedup delete folder ${folder.id} failed:`, err);
+        }
+      }
     }
   }
 
