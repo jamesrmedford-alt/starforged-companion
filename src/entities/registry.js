@@ -24,7 +24,7 @@ const MODULE_ID = 'starforged-companion';
 // JournalEntries; the Phase 2/3 rewrites flip ship/planet/settlement/location
 // to 'actors' here without touching any caller.
 const HOST_COLLECTION = {
-  connection: 'journal',
+  connection: 'actor',   // type='character' (NPC card)        — FOLDER-002
   ship:       'actor',   // type='starship'                    — Phase 2
   settlement: 'actor',   // type='location', subtype='settlement' — Phase 3
   faction:    'journal',

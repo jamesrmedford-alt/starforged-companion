@@ -423,3 +423,55 @@ control group the same way (`group: "primary"`, a 2022 value) and its group is
 broken identically with no scene — confirmed with our module disabled. That is
 an upstream bug, not ours; do not treat ironsworn's `sceneButtons.ts` as a
 template here.
+
+## NPCs and connections: native ironsworn `character` Actors, per-sector NPC folder
+
+**Decision (2026-06-03):** NPCs are represented as foundry-ironsworn
+**`character`-type Actors** (the full "character card", same sheet PCs use).
+**Connections** — the bond NPCs, including the local connection the sector
+wizard generates — are **also** created as `character` Actors, converting off
+their legacy `JournalEntry` storage. NPCs and connections for a sector live in a
+**per-sector NPC Actor folder** (`Sectors / <Sector Name> / NPCs/` in the
+**Actor** sidebar), alongside the top-level `PCs/` and `Starships/` Actor folders
+that are created on Companion module activation.
+
+**Why:** the Actor sidebar is the right home for entities with sheets, and the
+ironsworn system **does** ship native `character` / `npc` / `foe` actor types —
+so there is no reason to keep relationship NPCs as journal pages. The
+`character` card is the richest and matches how PCs are already handled by
+`actorBridge.js`.
+
+**Corrects a stale premise:** `entity-actor-migration-scope.md` §8 previously
+deferred connection migration claiming *"No native NPC actor type."* That was
+factually wrong (the system exposes `character`/`npc`/`foe`), and the error is
+why this structure repeatedly got lost between sessions. This decision
+supersedes that out-of-scope note.
+
+**Consequence (implementation, tracked under FOLDER-002 — not yet built):**
+- `src/entities/registry.js` — `connection` routes to `'actor'` (`type:
+  'character'`), no longer `'journal'`.
+- `src/entities/connection.js` — create path builds a `character` Actor instead
+  of a `JournalEntry` + page; readers/updaters follow the actor host.
+- `src/sectors/sectorGenerator.js` — the local connection is created into the
+  sector's NPC Actor folder.
+- `src/entities/folder.js` — add a per-sector NPC Actor-folder helper and
+  activation-time scaffolding for `PCs/` (adopt-or-create) and `Starships/`.
+- A migration for any existing journal-backed connections in live worlds.
+
+**NPC/connection card population (decided 2026-06-03):** when an NPC/connection
+`character` card is created, roll the Character oracles — **First Look**,
+**Initial Disposition**, **Character Role**, **Character Goal** (name handled
+separately) — and:
+- write the oracle results into the card's **Characteristics** field;
+- route them through the **narrator** (initial flavor text) and through **art
+  generation** (portrait → token image);
+- place the initial flavor text **and a large version of the token image** in the
+  card's **Notes** tab.
+
+This mirrors the existing **starship auto-envision** behaviour (the `index.js`
+setting that rolls a new starship's oracles into its Notes and fires a silent
+portrait generation) and reuses the oracle rolls `generateConnection()` in
+`sectorGenerator.js` already performs (role / goal / disposition / first look /
+name). The missing work is persisting those onto the ironsworn `character` actor
+(map to the Characteristics and Notes sheet fields via `actorBridge.js`) and
+wiring the narrator + art passes for NPCs the way settlements/ships already do.

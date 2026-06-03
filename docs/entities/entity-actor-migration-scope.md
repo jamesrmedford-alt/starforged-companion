@@ -496,7 +496,7 @@ If any phase blows out, drop the last phase and ship the prior. Each phase leave
 
 ## 8. Out of scope
 
-- **Connection migration.** No native NPC actor type. `foe` is a Dataforged-ID pointer that would mis-categorise relationships in the sidebar.
+- **Connection migration.** ~~No native NPC actor type.~~ **Superseded (2026-06-03):** the system *does* provide native `character` / `npc` / `foe` actor types. NPCs and connections now migrate to ironsworn `character` Actors in a per-sector NPC folder — see `../decisions.md` → "NPCs and connections: native ironsworn `character` Actors". This bullet was originally deferred on the mistaken premise that no NPC actor type existed; that premise was wrong.
 - **Faction migration.** No native faction type. `shared` is for multiplayer resource pools.
 - **Creature migration.** `foe` is too thin (single `dfid` field); benefit is marginal vs migration cost.
 - **Reworking `ArtAsset` storage.** Portrait b64 / regeneration history stays in `src/art/storage.js`. Only the **display** path is simplified by `actor.img`.

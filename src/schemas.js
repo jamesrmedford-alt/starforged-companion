@@ -367,6 +367,10 @@ export const ProgressTrackSchema = {
  */
 export const ConnectionSchema = {
   _id: "",
+  sectorId: null,               // Home sector — routes the NPC card into
+                                // `Sectors / <Name> / NPCs` (see decisions.md →
+                                // "NPCs and connections: native ironsworn
+                                // `character` Actors"). null → top-level NPCs/.
   name: "",                     // May be null initially ("Unknown Keeper") until named
   role: "",                     // Defining role — drives the +1 bonus on related moves
   secondRole: null,             // Set if bond forged and Expand Influence chosen

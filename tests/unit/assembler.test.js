@@ -683,16 +683,18 @@ describe("assembler — World Journal stubs (Sections 3, 4, 9, 10)", () => {
 describe("assembler — matched entity cards (Section 7)", () => {
   afterEach(() => {
     game.journal.get = () => null;
+    game.actors._reset();
   });
 
   it("renders ENTITIES IN SCENE for matched IDs/types", async () => {
-    game.journal.get = (id) => {
-      if (id !== "j-sable") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { connection: {
+    // Connections are NPC-card `character` Actors now (FOLDER-002).
+    game.actors._set("j-sable", global.makeTestActor({
+      id: "j-sable", type: "character", name: "Sable",
+      flags: { "starforged-companion": { entityType: "connection", connection: {
         _id: "conn-1", name: "Sable", role: "AI navigator",
         canonicalLocked: false, generativeTier: [],
-      }}}}] }};
-    };
+      }}},
+    }));
     const packet = await assembleContextPacket(
       baseResolution(), baseCampaignState({ connectionIds: ["j-sable"] }),
       { tokenBudget: 2000, matchedEntityIds: ["j-sable"], matchedEntityTypes: ["connection"] }
@@ -711,16 +713,18 @@ describe("assembler — matched entity cards (Section 7)", () => {
 
   it("skips IDs whose getter throws and continues with the rest", async () => {
     expectConsoleError(/getConnection.*failed/);
-    let calls = 0;
-    game.journal.get = (id) => {
-      calls++;
-      if (id === "throws") throw new Error("journal error");
-      if (id === "j-sable") return { pages: { contents: [{ flags: { "starforged-companion": { connection: {
+    // One NPC card whose getFlag throws, and one healthy one — the healthy one
+    // must still render.
+    const bad = global.makeTestActor({ id: "throws", type: "character", name: "Bad" });
+    bad.getFlag = () => { throw new Error("actor error"); };
+    game.actors._set("throws", bad);
+    game.actors._set("j-sable", global.makeTestActor({
+      id: "j-sable", type: "character", name: "Sable",
+      flags: { "starforged-companion": { entityType: "connection", connection: {
         _id: "c1", name: "Sable", role: "Navigator",
         canonicalLocked: false, generativeTier: [],
-      }}}}] }};
-      return null;
-    };
+      }}},
+    }));
     const packet = await assembleContextPacket(
       baseResolution(), baseCampaignState(),
       {
@@ -729,7 +733,6 @@ describe("assembler — matched entity cards (Section 7)", () => {
         matchedEntityTypes: ["connection", "connection"],
       }
     );
-    expect(calls).toBeGreaterThan(0);
     expect(packet.assembled).toMatch(/SABLE/);
   });
 

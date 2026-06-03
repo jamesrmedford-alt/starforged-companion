@@ -279,6 +279,15 @@ function registerCoreSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, "autoSeedConnection", {
+    name:    "Auto-Seed NPC / Connection Details",
+    hint:    "When a new NPC connection card is created, roll the Character First Look / Initial Disposition / Role / Goal oracles into its Characteristics field, write an introduction to the Notes tab, and (if an OpenRouter API key is set) generate a portrait + token. Disable to keep new NPC cards blank.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
     hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
@@ -1063,6 +1072,28 @@ function registerStarshipSeedHook() {
         console.warn(`${MODULE_ID} | starship seed: dynamic import failed:`, err));
     } catch (err) {
       console.warn(`${MODULE_ID} | createActor starship-seed hook threw:`, err);
+    }
+  });
+
+  // NPC / connection cards: roll the Character oracles into Characteristics,
+  // compose Notes, and fire a silent portrait — the connection analogue of the
+  // starship seed above. connectionNeedsSeed() filters out PCs (no connection
+  // flag) and already-seeded cards.
+  Hooks.on("createActor", (actor) => {
+    try {
+      if (!game.user?.isGM) return;
+      if (actor?.type !== "character") return;
+      if (!game.settings.get(MODULE_ID, "autoSeedConnection")) return;
+
+      import("./entities/connection.js").then(async (mod) => {
+        if (!mod.connectionNeedsSeed(actor)) return;
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await mod.seedConnectionActor(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | connection seed failed for ${actor.id}:`, err));
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | connection seed: dynamic import failed:`, err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | createActor connection-seed hook threw:`, err);
     }
   });
 }
@@ -2552,7 +2583,7 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders }) => {
+    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -2564,6 +2595,23 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | sector-folder flatten failed:`, err?.message ?? err);
+      }
+      try {
+        const scaffold = await scaffoldPcShipFolders();
+        if (scaffold.moved) {
+          console.log(`${MODULE_ID} | folder scaffold: filed ${scaffold.moved} loose actor(s) into PCs/Starships`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | folder scaffold failed:`, err?.message ?? err);
+      }
+      try {
+        const state = game.settings.get(MODULE_ID, "campaignState");
+        const conn  = await migrateJournalConnectionsToActors(state);
+        if (conn.migrated) {
+          console.log(`${MODULE_ID} | connection migration: moved ${conn.migrated} journal connection(s) to NPC-card Actors`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | connection migration failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }

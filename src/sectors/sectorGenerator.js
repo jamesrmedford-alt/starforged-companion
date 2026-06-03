@@ -292,15 +292,20 @@ export async function createEntityJournals(sector, campaignState) {
     goal:     sector.connection.goal,
     rank:     "dangerous",
     location: sector.connection.homeSettlement,
+    sectorId: sector.id,
   }, campaignState, { persist: false });
+  // connectionJournalId now carries the NPC-card Actor id (connections converted
+  // to `character` Actors under FOLDER-002); the field name is kept for the
+  // storeSector/sectorPanel call chain that threads this id through.
   const connectionJournalId = campaignState.connectionIds?.[connBeforeLen] ?? null;
   if (connectionJournalId) {
+    // Connections created by the sector wizard are canonical — lock via the
+    // actor flag, mirroring the settlement canonical-lock above.
     try {
-      const connEntry = game.journal?.get(connectionJournalId) ?? null;
-      const connPage  = connEntry?.pages?.contents?.[0];
-      if (connPage) {
-        const existing = connPage.flags?.[MODULE_ID]?.["connection"] ?? {};
-        await connPage.setFlag(MODULE_ID, "connection", {
+      const connActor = game.actors?.get(connectionJournalId) ?? null;
+      if (connActor) {
+        const existing = connActor.getFlag(MODULE_ID, "connection") ?? {};
+        await connActor.setFlag(MODULE_ID, "connection", {
           ...existing,
           canonicalLocked: true,
           updatedAt: new Date().toISOString(),

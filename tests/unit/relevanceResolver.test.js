@@ -387,19 +387,26 @@ describe("resolveRelevance — default collectAllEntities path", () => {
       flags: { "starforged-companion": { [typeKey]: payload } },
     }));
   }
+  // Connections are now NPC-card `character` Actors (FOLDER-002).
+  function stubConnectionActor(id, connection) {
+    global.game.actors._set(id, global.makeTestActor({
+      id, type: "character", name: connection.name,
+      flags: { "starforged-companion": { entityType: "connection", connection } },
+    }));
+  }
 
   it("scans every configured entity collection in the campaign state", async () => {
     stubJournal({
-      "j-conn":  { connection: { _id: "c1", name: "Sable" } },
       "j-fac":   { faction:    { _id: "f1", name: "Pelican Confederacy" } },
       "j-creat": { creature:   { _id: "cr1", name: "Forgespawn Alpha" } },
     });
+    stubConnectionActor("a-conn", { _id: "c1", name: "Sable" });
     stubShip("a-ship", { _id: "sh1", name: "Ironfold" });
     stubLocationActor("a-set",  "settlement", { _id: "s1",  name: "Bleakhold" });
     stubLocationActor("a-plan", "planet",     { _id: "p1",  name: "Cinderworld" });
     stubLocationActor("a-loc",  "location",   { _id: "l1",  name: "Glasspike Ruin" });
     const campaign = {
-      connectionIds: ["j-conn"],
+      connectionIds: ["a-conn"],
       settlementIds: ["a-set"],
       factionIds:    ["j-fac"],
       shipIds:       ["a-ship"],
@@ -416,7 +423,7 @@ describe("resolveRelevance — default collectAllEntities path", () => {
     );
     // Three matches expected (Ironfold, Bleakhold, Sable)
     expect(result.matchedNames.sort()).toEqual(["Bleakhold", "Ironfold", "Sable"]);
-    expect(result.entityIds).toContain("j-conn");
+    expect(result.entityIds).toContain("a-conn");
     expect(result.entityIds).toContain("a-set");
     expect(result.entityIds).toContain("a-ship");
   });

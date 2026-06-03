@@ -86,6 +86,69 @@ switch are GM-only by design.
 
 ## Resolved issues
 
+### FOLDER-001 — Empty duplicate sector subfolders spawned on every world load ✓
+
+**Status:** Resolved in v1.7.6 (unreleased).
+
+**Symptom (historical):** A new **empty** `Sectors / <Name>` Actor folder was
+created on every world load, accumulating identically-named duplicates (playtest:
+four "Outer Threshold" folders, settlements in only one).
+
+**Cause:** `ensureFolderPath` compared `f.folder` directly to a parent id string,
+but Foundry v13's `Folder#folder` getter returns the parent Folder **document** —
+so nested-folder lookups never matched and a duplicate was minted each load. The
+unit-test folder mock stored `folder` as an id string, which hid the bug.
+
+**Fix:** `folder.js` adds `folderParentId()` to normalise the parent ref (document
+| id | null) before comparison; `flattenSectorActorFolders` (on ready) now also
+removes empty **duplicate** per-sector folders already accumulated in live worlds,
+keeping one populated folder per name. Regression test seeds a v13
+document-getter parent. (commit `13dbcd4`)
+
+### FOLDER-002 — PC / Ship / per-sector-NPC folders + NPC card population ✓
+
+**Status:** Resolved in v1.7.6 (unreleased). Design was settled all along
+(`entity-actor-migration-scope.md` §3.4, finding **F8**); the gap was
+pre-population. See `decisions.md` → "NPCs and connections: native ironsworn
+`character` Actors".
+
+**Delivered:**
+- **Activation-time Actor folders** — `PCs/`, `Starships/`, and per-sector
+  `Sectors / <Name> / NPCs/`. Loose PCs/ships are filed into them on ready
+  (`scaffoldPcShipFolders`); module-managed NPC cards are skipped.
+- **Connections are ironsworn `character` Actors** (NPC cards), not journals —
+  `registry.js` routes `connection → actor`; `connection.js` create/read/update
+  go through the actor host; the sector wizard places its connection in the
+  sector NPC folder.
+- **NPC card auto-population** (`createActor` hook + `autoSeedConnection`
+  setting): rolls the Character oracles (First Look, Initial Disposition, Role,
+  Goal) into the **Characteristics** field (`system.biography`), composes a
+  narrator intro for the **Notes** tab (`system.notes`), and fires a silent
+  portrait that attaches to the card + prototype token and embeds a large copy
+  in Notes.
+- **Migration** of pre-existing journal-backed connections to NPC cards on ready
+  (`migrateJournalConnectionsToActors`).
+
+(commits `4c849b2`, `914bb33`, `5bec6c5`, `717e11f`)
+
+### ENTITY-002 — Settlements arrived blank without API keys (config, not a defect) ✓
+
+**Status:** Resolved — config artifact, not a code defect. Confirmed in the
+v1.7.5 playtest (2026-06-03).
+
+**Symptom (historical):** With no API keys configured, newly created settlements
+(e.g. "Pinnacle", "Legacy", "Vega") showed the default hooded silhouette and no
+flavor/description prose — only the empty oracle-roll buttons.
+
+**Resolution:** With both keys configured, settlements populate correctly:
+generated portrait + token art and full descriptive prose (e.g. "Lastport" in
+Kronos Vigil shows a portrait thumbnail and a paragraph of narrator prose plus
+the stat line; sibling settlements Forsaken/Hyperion/Osseus likewise show
+generated art). Description prose is written by Claude (`src/api-proxy.js`) and
+portrait art via OpenRouter (`src/art/openRouterImage.js`); both correctly no-op
+without their keys, so the entities arrived blank. Generation is properly gated
+on key presence — no code fix required.
+
 ### TOOLBAR-001 — Companion launcher dead whenever no scene was active ✓
 
 **Status:** Resolved in v1.7.5

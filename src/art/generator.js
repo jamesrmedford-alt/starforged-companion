@@ -238,8 +238,8 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
  * data dir and `actor.img` / the prototype-token texture point at it (per
  * docs/foundry-reference/foundry-api-reference.md → FilePicker.upload).
  *
- * No-op for journal-hosted entities (connection / faction / creature) — they
- * have no image-bearing document. GM-gated (uploads require GM). Non-blocking:
+ * No-op for journal-hosted entities (faction / creature) — they have no
+ * image-bearing document. GM-gated (uploads require GM). Non-blocking:
  * a missing Actor portrait is preferable to a broken seed or narration.
  */
 /**
@@ -283,11 +283,11 @@ async function attachPortraitToActor(journalEntryId, entityType, b64, assetId) {
       "prototypeToken.texture.src": path,
     };
 
-    // Mirror the portrait into the starship's Notes tab (F5): the sheet's
-    // header icon is small, so embed a larger copy at the top of the notes
-    // HTML. Idempotent — replace any prior companion art block rather than
-    // stacking. Only starships have a meaningful Notes tab here.
-    if (entityType === "ship") {
+    // Mirror the portrait into the Notes tab: the sheet's header icon is small,
+    // so embed a larger copy at the top of the notes HTML. Idempotent — replace
+    // any prior companion art block rather than stacking. Starships and
+    // connection NPC-cards both have a meaningful Notes tab.
+    if (entityType === "ship" || entityType === "connection") {
       const notes = String(document.system?.notes ?? "");
       update["system.notes"] = withPortraitInNotes(notes, path);
     }

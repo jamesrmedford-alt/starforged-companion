@@ -25,7 +25,7 @@ import { createShip }       from "./ship.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
-import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder } from "./folder.js";
+import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateSectorNpcActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
   cleanupSectorRecordPages,
@@ -479,6 +479,168 @@ export async function flattenSectorActorFolders(campaignState) {
     }
   }
 
+  // Step 3 — remove empty *duplicate* per-sector Actor subfolders left behind by
+  // the pre-FOLDER-001-fix bug, which minted a fresh `Sectors / <Name>` folder on
+  // every world load (the parent-id comparison in ensureFolderPath compared a
+  // Folder document to an id string and never matched). For each name with more
+  // than one folder directly under the Sectors root, keep one (the populated one
+  // if any, else the first) and delete the rest — but only ever an *empty*
+  // folder (no actors, no child folders). A unique sector folder, even an empty
+  // one, is never touched.
+  if (sectorsRoot) {
+    const foldersNow = [...(globalThis.game?.folders ?? [])];
+    const sectorSubs = foldersNow.filter(
+      f => f.type === "Actor" && folderParentId(f.folder) === sectorsRoot.id
+    );
+    const isEmptyFolder = folder =>
+      !actorsAfterMove.some(a => (a.folder?.id ?? a.folder) === folder.id) &&
+      !foldersNow.some(f => folderParentId(f.folder) === folder.id);
+
+    const byName = new Map();
+    for (const f of sectorSubs) {
+      if (!byName.has(f.name)) byName.set(f.name, []);
+      byName.get(f.name).push(f);
+    }
+
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;                  // unique name → keep
+      const keeper = group.find(f => !isEmptyFolder(f)) ?? group[0];
+      for (const folder of group) {
+        if (folder.id === keeper.id) continue;
+        if (!isEmptyFolder(folder)) continue;          // never delete a populated dupe
+        try {
+          await folder.delete?.();
+          summary.foldersDeleted += 1;
+        } catch (err) {
+          console.error(`${MODULE_ID} | flattenSectorActorFolders: dedup delete folder ${folder.id} failed:`, err);
+        }
+      }
+    }
+  }
+
+  return summary;
+}
+
+/**
+ * Activation-time scaffolding for the top-level Actor folders the Companion
+ * organises into: `PCs/` (player characters) and `Starships/` (ships). Creates
+ * each folder if absent, then reparents *loose* actors (those with no folder)
+ * into the right one — character actors into `PCs/`, starship actors into
+ * `Starships/`. Actors already filed in any folder are left untouched, so a
+ * user's own organisation is never disturbed.
+ *
+ * Guard: a `character` actor carrying a `flags[MODULE].entityType` is a
+ * module-managed NPC/connection card, not a player character, so it is skipped
+ * here and left for the per-sector NPC folder logic (see
+ * getOrCreateSectorNpcActorFolder).
+ *
+ * Idempotent and safe to run on every world load.
+ *
+ * @returns {Promise<{pcsFolder: string|null, shipsFolder: string|null, moved: number}>}
+ */
+export async function scaffoldPcShipFolders() {
+  const summary = { pcsFolder: null, shipsFolder: null, moved: 0 };
+  summary.pcsFolder   = await getOrCreateActorFolder("PCs");
+  summary.shipsFolder = await getOrCreateActorFolder("Starships");
+
+  const allActors = [...(globalThis.game?.actors ?? [])];
+  for (const actor of allActors) {
+    const parent = actor.folder?.id ?? actor.folder ?? null;
+    if (parent) continue;  // already filed — never disturb user organisation
+
+    let target = null;
+    if (actor.type === "character") {
+      if (actor.flags?.[MODULE_ID]?.entityType) continue;  // NPC/connection card, not a PC
+      target = summary.pcsFolder;
+    } else if (actor.type === "starship") {
+      target = summary.shipsFolder;
+    }
+    if (!target) continue;
+
+    try {
+      await actor.update?.({ folder: target });
+      summary.moved += 1;
+    } catch (err) {
+      console.error(`${MODULE_ID} | scaffoldPcShipFolders: move ${actor.id} failed:`, err);
+    }
+  }
+  return summary;
+}
+
+/**
+ * One-time migration of pre-existing journal-backed connections to NPC-card
+ * `character` Actors (FOLDER-002). Connections used to live on JournalEntries;
+ * after the storage flip their ids in `campaignState.connectionIds[]` would no
+ * longer resolve via the registry. This walks those ids, and for any that still
+ * point at a JournalEntry carrying a connection flag payload, creates an
+ * equivalent NPC-card Actor (in the sector's NPC folder, or top-level NPCs/),
+ * swaps the id in connectionIds, and deletes the old journal.
+ *
+ * The createActor seed hook then populates each migrated card (Characteristics /
+ * Notes / portrait) just like a freshly created connection.
+ *
+ * GM-only (creates/deletes world documents). Idempotent — ids that already
+ * resolve to an Actor are skipped, so re-running on later loads is a no-op.
+ *
+ * @param {Object} [campaignState]
+ * @returns {Promise<{migrated: number, skipped: number}>}
+ */
+export async function migrateJournalConnectionsToActors(campaignState) {
+  const summary = { migrated: 0, skipped: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+
+  const state = campaignState
+    ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")
+    ?? {};
+  const ids = Array.isArray(state.connectionIds) ? state.connectionIds : [];
+  if (!ids.length) return summary;
+
+  let changed = false;
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i];
+    if (globalThis.game?.actors?.get(id)) { summary.skipped += 1; continue; }  // already an Actor
+
+    const journal = globalThis.game?.journal?.get(id) ?? null;
+    const page    = journal?.pages?.contents?.[0];
+    const payload = page?.flags?.[MODULE_ID]?.connection;
+    if (!payload) { summary.skipped += 1; continue; }  // dangling id — leave as-is
+
+    const folderId = payload.sectorId
+      ? await getOrCreateSectorNpcActorFolder(payload.sectorId, state)
+      : await getOrCreateActorFolder("NPCs");
+
+    let actor = null;
+    try {
+      actor = await globalThis.Actor?.create?.({
+        name:   payload.name || journal.name || "Unknown Connection",
+        type:   "character",
+        folder: folderId,
+        flags:  { [MODULE_ID]: { entityType: "connection", entityId: payload._id, connection: payload } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | migrateJournalConnectionsToActors: Actor.create failed for ${id}:`, err);
+    }
+    if (!actor?.id) { summary.skipped += 1; continue; }
+
+    ids[i] = actor.id;            // swap journal id → actor id in place
+    changed = true;
+    summary.migrated += 1;
+
+    try {
+      await journal.delete?.();
+    } catch (err) {
+      console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: old journal delete failed for ${id}:`, err);
+    }
+  }
+
+  if (changed) {
+    state.connectionIds = ids;
+    try {
+      await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: persist failed:`, err);
+    }
+  }
   return summary;
 }
 
