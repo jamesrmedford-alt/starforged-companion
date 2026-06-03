@@ -25,7 +25,7 @@ import { createShip }       from "./ship.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
-import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, folderParentId } from "./folder.js";
+import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
   cleanupSectorRecordPages,
@@ -518,6 +518,52 @@ export async function flattenSectorActorFolders(campaignState) {
     }
   }
 
+  return summary;
+}
+
+/**
+ * Activation-time scaffolding for the top-level Actor folders the Companion
+ * organises into: `PCs/` (player characters) and `Starships/` (ships). Creates
+ * each folder if absent, then reparents *loose* actors (those with no folder)
+ * into the right one — character actors into `PCs/`, starship actors into
+ * `Starships/`. Actors already filed in any folder are left untouched, so a
+ * user's own organisation is never disturbed.
+ *
+ * Guard: a `character` actor carrying a `flags[MODULE].entityType` is a
+ * module-managed NPC/connection card, not a player character, so it is skipped
+ * here and left for the per-sector NPC folder logic (see
+ * getOrCreateSectorNpcActorFolder).
+ *
+ * Idempotent and safe to run on every world load.
+ *
+ * @returns {Promise<{pcsFolder: string|null, shipsFolder: string|null, moved: number}>}
+ */
+export async function scaffoldPcShipFolders() {
+  const summary = { pcsFolder: null, shipsFolder: null, moved: 0 };
+  summary.pcsFolder   = await getOrCreateActorFolder("PCs");
+  summary.shipsFolder = await getOrCreateActorFolder("Starships");
+
+  const allActors = [...(globalThis.game?.actors ?? [])];
+  for (const actor of allActors) {
+    const parent = actor.folder?.id ?? actor.folder ?? null;
+    if (parent) continue;  // already filed — never disturb user organisation
+
+    let target = null;
+    if (actor.type === "character") {
+      if (actor.flags?.[MODULE_ID]?.entityType) continue;  // NPC/connection card, not a PC
+      target = summary.pcsFolder;
+    } else if (actor.type === "starship") {
+      target = summary.shipsFolder;
+    }
+    if (!target) continue;
+
+    try {
+      await actor.update?.({ folder: target });
+      summary.moved += 1;
+    } catch (err) {
+      console.error(`${MODULE_ID} | scaffoldPcShipFolders: move ${actor.id} failed:`, err);
+    }
+  }
   return summary;
 }
 

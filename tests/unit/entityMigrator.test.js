@@ -10,6 +10,7 @@ import {
   handleMigrateEntitiesCommand,
   isMigrateEntitiesCommand,
   flattenSectorActorFolders,
+  scaffoldPcShipFolders,
 } from "../../src/entities/migrator.js";
 import {
   _resetFolderCache,
@@ -63,6 +64,46 @@ beforeEach(() => {
   global.game.settings.set = async (mod, key, val) => { if (key === "campaignState") stored = val; };
   global.game.users = { filter: () => [], get: () => null };
   global.ChatMessage = { create: async () => null };
+});
+
+describe("scaffoldPcShipFolders", () => {
+  it("creates PCs/ and Starships/ and files loose actors into them", async () => {
+    const pc   = await global.Actor.create({ type: "character", name: "Lowell" });
+    const ship = await global.Actor.create({ type: "starship",  name: "Wayfarer" });
+
+    const summary = await scaffoldPcShipFolders();
+
+    const pcs   = global.game.folders.find(f => f.type === "Actor" && f.name === "PCs");
+    const ships = global.game.folders.find(f => f.type === "Actor" && f.name === "Starships");
+    expect(pcs).toBeTruthy();
+    expect(ships).toBeTruthy();
+    expect(pc.folder).toBe(pcs.id);
+    expect(ship.folder).toBe(ships.id);
+    expect(summary.moved).toBe(2);
+  });
+
+  it("never disturbs an actor already filed in a folder", async () => {
+    const other = await global.Folder.create({ name: "My Heroes", type: "Actor" });
+    const pc = await global.Actor.create({ type: "character", name: "Filed", folder: other.id });
+
+    const summary = await scaffoldPcShipFolders();
+
+    expect(pc.folder).toBe(other.id);   // untouched
+    expect(summary.moved).toBe(0);
+  });
+
+  it("skips a module-managed NPC card (character with entityType) so it isn't filed as a PC", async () => {
+    const npc = await global.Actor.create({
+      type:  "character",
+      name:  "Maren",
+      flags: { [MODULE]: { entityType: "connection", entityId: "c1" } },
+    });
+
+    const summary = await scaffoldPcShipFolders();
+
+    expect(npc.folder).toBe(null);      // left for the per-sector NPC folder logic
+    expect(summary.moved).toBe(0);
+  });
 });
 
 describe("isMigrateEntitiesCommand", () => {

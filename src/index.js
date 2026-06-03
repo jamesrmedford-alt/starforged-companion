@@ -2552,7 +2552,7 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders }) => {
+    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -2564,6 +2564,14 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | sector-folder flatten failed:`, err?.message ?? err);
+      }
+      try {
+        const scaffold = await scaffoldPcShipFolders();
+        if (scaffold.moved) {
+          console.log(`${MODULE_ID} | folder scaffold: filed ${scaffold.moved} loose actor(s) into PCs/Starships`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | folder scaffold failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }

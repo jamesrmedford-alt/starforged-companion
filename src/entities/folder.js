@@ -169,6 +169,27 @@ export async function getOrCreateSectorActorFolder(sectorId, campaignState) {
 }
 
 /**
+ * Per-sector NPC Actor folder. NPCs and connections for a sector live in
+ * `Sectors / <Sector Name> / NPCs`. NPCs are foundry-ironsworn `character`
+ * Actors (see decisions.md → "NPCs and connections: native ironsworn
+ * `character` Actors"). Falls back to `Sectors / Unsorted / NPCs` when the
+ * sector record can't be resolved, mirroring getOrCreateSectorActorFolder.
+ *
+ * @param {string} sectorId
+ * @param {Object} [campaignState]
+ * @returns {Promise<string|null>}
+ */
+export async function getOrCreateSectorNpcActorFolder(sectorId, campaignState) {
+  const state = campaignState ?? globalThis.game?.settings?.get?.("starforged-companion", "campaignState") ?? {};
+  const sector = (state.sectors ?? []).find(s => s.id === sectorId);
+  const sectorName = sector?.name ?? "Unsorted";
+  if (!sector?.name) {
+    console.warn(`starforged-companion | folder: sector ${sectorId} not found in campaignState; NPCs fall back to Sectors / Unsorted / NPCs`);
+  }
+  return ensureFolderPath("Actor", ["Sectors", sectorName, "NPCs"]);
+}
+
+/**
  * Per-sector Journal subfolder for the sector-record JournalEntry. The leaf
  * path is `Sectors / <Sector Name>`. Used by createSectorJournal and the
  * one-time migrator.
