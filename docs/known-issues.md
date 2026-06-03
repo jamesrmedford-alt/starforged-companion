@@ -125,23 +125,31 @@ connections aren't grouped per sector. The folder helpers in
 until something happens to call them.
 
 **Settled spec (maintainer, 2026-06-03):** on Companion module activation,
-create-if-absent:
+create-if-absent, **all in the Actor sidebar**:
 - **`PCs/`** — Actor folder for player characters (adopt an existing
   character grouping if one exists, else create).
 - **`Starships/`** — Actor folder for ships.
-- **per-sector NPC folder** — each sector gets its own folder holding that
-  sector's NPCs **and connections**, including the local connection created by
-  the sector wizard.
+- **`Sectors / <Sector Name> / NPCs/`** — per-sector NPC **Actor** folder
+  holding that sector's NPCs **and connections**, including the local connection
+  created by the sector wizard.
 
-**Key technical constraint:** Foundry folders are **typed**. PCs and ships are
-**Actors**; connections (and creatures) are **JournalEntry**-backed
-(`src/entities/registry.js` → `connection: 'journal'`). So the per-sector NPC
-folder is a **JournalEntry**-sidebar folder (natural home:
-`Sectors / <Sector Name> / NPCs/` in the journal tree), distinct from the
-top-level `PCs/` and `Starships/` Actor folders. Today the sector-wizard
-connection is created in the flat "Starforged Entities" journal folder
-(`src/entities/connection.js` → `getOrCreateEntitiesFolder()`); routing it into
-the per-sector NPC folder is part of the fix.
+**NPC representation (decided 2026-06-03, see `decisions.md` → "NPCs and
+connections: native ironsworn `character` Actors"):** NPCs use the ironsworn
+**`character`** actor card, and **connections convert from `JournalEntry` to
+`character` Actors** — so the per-sector NPC folder is an **Actor** folder, not a
+Journal folder. This reverses an earlier mistaken premise (migration-scope §8
+"No native NPC actor type") and is the reason the structure kept getting lost.
+Today the sector-wizard connection is still created as a `JournalEntry` in the
+flat "Starforged Entities" folder (`src/entities/connection.js` →
+`getOrCreateEntitiesFolder()`); converting it to an NPC actor card in the
+per-sector folder is part of the fix.
+
+**Implementation surface:** `registry.js` (`connection` → `'actor'`,
+`type:'character'`), `connection.js` (create/read/update via actor host),
+`sectorGenerator.js` (place local connection in sector NPC folder),
+`folder.js` (per-sector NPC Actor-folder helper + activation-time `PCs/` /
+`Starships/` scaffolding), plus a migration for existing journal-backed
+connections.
 
 **Relationship to other work:** end-to-end tree population + reparenting was
 scoped under the **Entity → Actor Migration** plan (PLANNED). This finding is
