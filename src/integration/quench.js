@@ -3435,6 +3435,7 @@ function registerPortraitGenerationTests(quench) {
 
       let testJournalId = null;
       let stateAtStart = null;
+      let priorAutoSeed;
       const createdJournalIds = [];
 
       function track(id) { if (id) createdJournalIds.push(id); }
@@ -3463,6 +3464,12 @@ function registerPortraitGenerationTests(quench) {
       before(async function () {
         this.timeout(20000);
         if (!game.user.isGM) { this.skip(); return; }
+        // Disable NPC auto-seed for this batch: the createActor seed hook would
+        // otherwise populate portraitSourceDescription on the new card and
+        // defeat the placeholder→ready gating tests below. Restored in after().
+        priorAutoSeed = game.settings.get(MODULE, "autoSeedConnection");
+        await game.settings.set(MODULE, "autoSeedConnection", false);
+
         stateAtStart = JSON.parse(JSON.stringify(
           game.settings.get(MODULE, "campaignState") ?? {},
         ));
@@ -3484,6 +3491,7 @@ function registerPortraitGenerationTests(quench) {
         this.timeout(20000);
         await flushAllCleanup();
         if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+        if (priorAutoSeed !== undefined) await game.settings.set(MODULE, "autoSeedConnection", priorAutoSeed);
       });
 
       // Reset portrait-related fields on the test connection before each test
