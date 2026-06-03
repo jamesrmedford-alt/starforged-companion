@@ -11,6 +11,7 @@ import {
   isMigrateEntitiesCommand,
   flattenSectorActorFolders,
   scaffoldPcShipFolders,
+  migrateJournalConnectionsToActors,
 } from "../../src/entities/migrator.js";
 import {
   _resetFolderCache,
@@ -64,6 +65,66 @@ beforeEach(() => {
   global.game.settings.set = async (mod, key, val) => { if (key === "campaignState") stored = val; };
   global.game.users = { filter: () => [], get: () => null };
   global.ChatMessage = { create: async () => null };
+});
+
+function makeConnectionJournal(id, payload) {
+  const pageFlags = { [MODULE]: { connection: payload } };
+  return {
+    id,
+    name: payload.name ?? "Unknown",
+    flags: { [MODULE]: { entityType: "connection", entityId: payload._id } },
+    pages: { contents: [{ flags: pageFlags, getFlag: (m, k) => pageFlags?.[m]?.[k] }] },
+    delete: async () => {
+      const idx = global.game.journal._items.findIndex(j => j.id === id);
+      if (idx >= 0) global.game.journal._items.splice(idx, 1);
+    },
+  };
+}
+
+describe("migrateJournalConnectionsToActors", () => {
+  it("converts a journal-backed connection into an NPC-card Actor and swaps the id", async () => {
+    const payload = { _id: "c1", name: "Sable", role: "Navigator", rank: "dangerous" };
+    global.game.journal._add(makeConnectionJournal("j-conn", payload));
+    const stored = { connectionIds: ["j-conn"] };
+    global.game.settings.get = (mod, key) => (key === "campaignState" ? stored : null);
+    global.game.settings.set = async (mod, key, val) => { if (key === "campaignState") Object.assign(stored, val); };
+
+    const summary = await migrateJournalConnectionsToActors(stored);
+
+    expect(summary.migrated).toBe(1);
+    expect(stored.connectionIds).toHaveLength(1);
+    const newId = stored.connectionIds[0];
+    expect(newId).not.toBe("j-conn");
+
+    const actor = global.game.actors.get(newId);
+    expect(actor).toBeTruthy();
+    expect(actor.type).toBe("character");
+    expect(actor.flags[MODULE].connection.name).toBe("Sable");
+    expect(actor.flags[MODULE].entityType).toBe("connection");
+    // old journal removed
+    expect(global.game.journal.get("j-conn")).toBe(null);
+  });
+
+  it("skips ids that already resolve to an Actor (idempotent)", async () => {
+    global.game.actors._set("a-conn", global.makeTestActor({
+      id: "a-conn", type: "character", name: "X",
+      flags: { [MODULE]: { entityType: "connection", connection: { _id: "c2", name: "X" } } },
+    }));
+    const stored = { connectionIds: ["a-conn"] };
+
+    const summary = await migrateJournalConnectionsToActors(stored);
+
+    expect(summary.migrated).toBe(0);
+    expect(summary.skipped).toBe(1);
+    expect(stored.connectionIds).toEqual(["a-conn"]);
+  });
+
+  it("leaves a dangling id untouched when no connection payload is found", async () => {
+    const stored = { connectionIds: ["ghost"] };
+    const summary = await migrateJournalConnectionsToActors(stored);
+    expect(summary.migrated).toBe(0);
+    expect(stored.connectionIds).toEqual(["ghost"]);
+  });
 });
 
 describe("scaffoldPcShipFolders", () => {

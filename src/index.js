@@ -2583,7 +2583,7 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders }) => {
+    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -2603,6 +2603,15 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | folder scaffold failed:`, err?.message ?? err);
+      }
+      try {
+        const state = game.settings.get(MODULE_ID, "campaignState");
+        const conn  = await migrateJournalConnectionsToActors(state);
+        if (conn.migrated) {
+          console.log(`${MODULE_ID} | connection migration: moved ${conn.migrated} journal connection(s) to NPC-card Actors`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | connection migration failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }
