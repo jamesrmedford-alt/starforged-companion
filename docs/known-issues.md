@@ -125,7 +125,8 @@ folder. Intended structure is undecided (e.g. dedicated "Player Characters" /
 
 ### ENTITY-002 — Settlements created without token art or flavor text
 
-**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+**Status:** Needs re-test — likely a config artifact (missing API keys), not a
+defect. Observed in v1.7.5 playtest (2026-06-03).
 
 **Symptom:** Newly created settlement entities (e.g. "Pinnacle", a Planetside
 settlement in Terminus) have no prototype token art (they show the default
@@ -133,14 +134,19 @@ hooded silhouette) and no flavor/description prose on the sheet — only the
 empty oracle-roll buttons (Population, First look, Initial contact, etc.).
 Sibling settlements (Legacy, Vega) show the same default portrait.
 
-**Suspected area (unconfirmed):** portrait/token assignment (`src/art/`,
-`src/entities/registry.js`) and the entity description writer — either
-auto-generation isn't firing on entity confirm, or generated portrait art isn't
-being applied to the prototype token. Confirm first whether portrait + flavor
-text are expected to populate automatically on creation vs. on-demand.
+**Likely cause — confounded by config:** the API keys were **not configured**
+during this playtest. Flavor/description prose is written by Claude (via
+`src/api-proxy.js`) and portrait art is generated via OpenRouter
+(`src/art/openRouterImage.js`) — both no-op without their keys, which alone
+explains the missing prose and the un-generated portrait/token art. **Re-test
+with both keys configured before treating this as a bug.**
 
-**Impact:** Settlements arrive "blank" — the GM must roll/generate details and
-set token art manually.
+**If it persists with keys set:** then investigate portrait/token assignment
+(`src/art/`, `src/entities/registry.js`) and whether generation fires on entity
+confirm vs. on-demand. Until then, do not assume a defect.
+
+**Impact:** With keys set, expected to resolve. Without keys, settlements arrive
+"blank" by design (generation is gated on key presence).
 
 ---
 
