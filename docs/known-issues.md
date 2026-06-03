@@ -84,92 +84,52 @@ switch are GM-only by design.
 
 ---
 
-### FOLDER-001 — Empty duplicate sector subfolders spawn on every world load
+## Resolved issues
 
-**Status:** Open — **confirmed** (persists with API keys configured); v1.7.5
-playtest (2026-06-03). The only unresolved playtest bug.
+### FOLDER-001 — Empty duplicate sector subfolders spawned on every world load ✓
 
-**Symptom:** The per-sector Actors subfolder is now correctly named after the
-sector (e.g. "Outer Threshold"), but a new **empty** folder of the same name is
-created **each time the world loads**. After several loads the Actors directory
-shows multiple identically-named sector folders nested under "Sectors"
-(playtest screenshot: three "Outer Threshold" folders, with the settlements —
-Legacy, Pinnacle, Vega — living in only one of them).
+**Status:** Resolved in v1.7.6 (unreleased).
 
-**Suspected area (unconfirmed):** the per-sector subfolder find-or-create helper
-in `src/entities/folder.js` — the existing-folder lookup likely fails to match
-(name vs. parent/`folder` mismatch, or a timing/case issue on the `ready` pass),
-so a fresh empty folder is created on every load instead of reusing the existing
-one.
+**Symptom (historical):** A new **empty** `Sectors / <Name>` Actor folder was
+created on every world load, accumulating identically-named duplicates (playtest:
+four "Outer Threshold" folders, settlements in only one).
 
-**Impact:** Cosmetic clutter that accumulates over a campaign; entities still
-resolve. No data loss observed.
+**Cause:** `ensureFolderPath` compared `f.folder` directly to a parent id string,
+but Foundry v13's `Folder#folder` getter returns the parent Folder **document** —
+so nested-folder lookups never matched and a duplicate was minted each load. The
+unit-test folder mock stored `folder` as an id string, which hid the bug.
 
-**Note (v1.7.5 playtest):** Consistent with per-load accrual — a newer sector
-("Kronos Vigil") shows a single folder while the older "Outer Threshold" shows
-four duplicates. Unaffected by the API-key fix that resolved ENTITY-002.
+**Fix:** `folder.js` adds `folderParentId()` to normalise the parent ref (document
+| id | null) before comparison; `flattenSectorActorFolders` (on ready) now also
+removes empty **duplicate** per-sector folders already accumulated in live worlds,
+keeping one populated folder per name. Regression test seeds a v13
+document-getter parent. (commit `13dbcd4`)
 
----
+### FOLDER-002 — PC / Ship / per-sector-NPC folders + NPC card population ✓
 
-### FOLDER-002 — PC / Ship / per-sector-NPC folders are not pre-populated
-
-**Status:** Open — design was **settled, not undecided** (see
-`entity-actor-migration-scope.md` §3.4 and playtest finding **F8** in
-`testing/v1.6.1-playtest-findings.md`); the helpers exist but nothing
-pre-populates the tree, so actors/entities jumble. Spec clarified by the
-maintainer 2026-06-03.
-
-**Symptom:** PCs and ships sit loose at the Actors-directory root; NPCs /
-connections aren't grouped per sector. The folder helpers in
-`src/entities/folder.js` only run on demand, so the structure never appears
-until something happens to call them.
-
-**Settled spec (maintainer, 2026-06-03):** on Companion module activation,
-create-if-absent, **all in the Actor sidebar**:
-- **`PCs/`** — Actor folder for player characters (adopt an existing
-  character grouping if one exists, else create).
-- **`Starships/`** — Actor folder for ships.
-- **`Sectors / <Sector Name> / NPCs/`** — per-sector NPC **Actor** folder
-  holding that sector's NPCs **and connections**, including the local connection
-  created by the sector wizard.
-
-**NPC representation (decided 2026-06-03, see `decisions.md` → "NPCs and
-connections: native ironsworn `character` Actors"):** NPCs use the ironsworn
-**`character`** actor card, and **connections convert from `JournalEntry` to
-`character` Actors** — so the per-sector NPC folder is an **Actor** folder, not a
-Journal folder. This reverses an earlier mistaken premise (migration-scope §8
-"No native NPC actor type") and is the reason the structure kept getting lost.
-Today the sector-wizard connection is still created as a `JournalEntry` in the
-flat "Starforged Entities" folder (`src/entities/connection.js` →
-`getOrCreateEntitiesFolder()`); converting it to an NPC actor card in the
-per-sector folder is part of the fix.
-
-**Implementation surface:** `registry.js` (`connection` → `'actor'`,
-`type:'character'`), `connection.js` (create/read/update via actor host),
-`sectorGenerator.js` (place local connection in sector NPC folder),
-`folder.js` (per-sector NPC Actor-folder helper + activation-time `PCs/` /
-`Starships/` scaffolding), plus a migration for existing journal-backed
-connections.
-
-**NPC card population (decided 2026-06-03):** each NPC card rolls the Character
-oracles (First Look, Initial Disposition, Character Role, Character Goal), routes
-them through the narrator (flavor text) and art generation (portrait/token),
-writes the oracle results to the card's **Characteristics** field, and places the
-flavor text + a **large token image** in the **Notes** tab. Mirrors the existing
-starship auto-envision pattern; `generateConnection()` already rolls these
-oracles. Full detail in `decisions.md` → "NPCs and connections: native ironsworn
+**Status:** Resolved in v1.7.6 (unreleased). Design was settled all along
+(`entity-actor-migration-scope.md` §3.4, finding **F8**); the gap was
+pre-population. See `decisions.md` → "NPCs and connections: native ironsworn
 `character` Actors".
 
-**Relationship to other work:** end-to-end tree population + reparenting was
-scoped under the **Entity → Actor Migration** plan (PLANNED). This finding is
-the activation-time pre-population slice of that. Distinct from FOLDER-001
-(duplicate sector-folder spawning), though both live in `folder.js`.
+**Delivered:**
+- **Activation-time Actor folders** — `PCs/`, `Starships/`, and per-sector
+  `Sectors / <Name> / NPCs/`. Loose PCs/ships are filed into them on ready
+  (`scaffoldPcShipFolders`); module-managed NPC cards are skipped.
+- **Connections are ironsworn `character` Actors** (NPC cards), not journals —
+  `registry.js` routes `connection → actor`; `connection.js` create/read/update
+  go through the actor host; the sector wizard places its connection in the
+  sector NPC folder.
+- **NPC card auto-population** (`createActor` hook + `autoSeedConnection`
+  setting): rolls the Character oracles (First Look, Initial Disposition, Role,
+  Goal) into the **Characteristics** field (`system.biography`), composes a
+  narrator intro for the **Notes** tab (`system.notes`), and fires a silent
+  portrait that attaches to the card + prototype token and embeds a large copy
+  in Notes.
+- **Migration** of pre-existing journal-backed connections to NPC cards on ready
+  (`migrateJournalConnectionsToActors`).
 
-**Impact:** Directory-organisation gap; no functional break. Key-independent.
-
----
-
-## Resolved issues
+(commits `4c849b2`, `914bb33`, `5bec6c5`, `717e11f`)
 
 ### ENTITY-002 — Settlements arrived blank without API keys (config, not a defect) ✓
 
