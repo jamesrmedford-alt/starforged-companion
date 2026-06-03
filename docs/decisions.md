@@ -457,3 +457,21 @@ supersedes that out-of-scope note.
 - `src/entities/folder.js` — add a per-sector NPC Actor-folder helper and
   activation-time scaffolding for `PCs/` (adopt-or-create) and `Starships/`.
 - A migration for any existing journal-backed connections in live worlds.
+
+**NPC/connection card population (decided 2026-06-03):** when an NPC/connection
+`character` card is created, roll the Character oracles — **First Look**,
+**Initial Disposition**, **Character Role**, **Character Goal** (name handled
+separately) — and:
+- write the oracle results into the card's **Characteristics** field;
+- route them through the **narrator** (initial flavor text) and through **art
+  generation** (portrait → token image);
+- place the initial flavor text **and a large version of the token image** in the
+  card's **Notes** tab.
+
+This mirrors the existing **starship auto-envision** behaviour (the `index.js`
+setting that rolls a new starship's oracles into its Notes and fires a silent
+portrait generation) and reuses the oracle rolls `generateConnection()` in
+`sectorGenerator.js` already performs (role / goal / disposition / first look /
+name). The missing work is persisting those onto the ironsworn `character` actor
+(map to the Characteristics and Notes sheet fields via `actorBridge.js`) and
+wiring the narrator + art passes for NPCs the way settlements/ships already do.

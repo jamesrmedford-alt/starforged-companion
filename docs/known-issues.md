@@ -151,6 +151,15 @@ per-sector folder is part of the fix.
 `Starships/` scaffolding), plus a migration for existing journal-backed
 connections.
 
+**NPC card population (decided 2026-06-03):** each NPC card rolls the Character
+oracles (First Look, Initial Disposition, Character Role, Character Goal), routes
+them through the narrator (flavor text) and art generation (portrait/token),
+writes the oracle results to the card's **Characteristics** field, and places the
+flavor text + a **large token image** in the **Notes** tab. Mirrors the existing
+starship auto-envision pattern; `generateConnection()` already rolls these
+oracles. Full detail in `decisions.md` → "NPCs and connections: native ironsworn
+`character` Actors".
+
 **Relationship to other work:** end-to-end tree population + reparenting was
 scoped under the **Entity → Actor Migration** plan (PLANNED). This finding is
 the activation-time pre-population slice of that. Distinct from FOLDER-001
