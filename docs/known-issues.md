@@ -111,23 +111,44 @@ four duplicates. Unaffected by the API-key fix that resolved ENTITY-002.
 
 ---
 
-### FOLDER-002 — No folder structure for PCs or NPCs
+### FOLDER-002 — PC / Ship / per-sector-NPC folders are not pre-populated
 
-**Status:** Open — observed in v1.7.5 playtest (2026-06-03)
+**Status:** Open — design was **settled, not undecided** (see
+`entity-actor-migration-scope.md` §3.4 and playtest finding **F8** in
+`testing/v1.6.1-playtest-findings.md`); the helpers exist but nothing
+pre-populates the tree, so actors/entities jumble. Spec clarified by the
+maintainer 2026-06-03.
 
-**Symptom:** Player characters and NPCs are not organised into any folder in the
-Actors directory — only the sector/settlement entities get foldered. PCs and
-NPCs sit loose at the directory root.
+**Symptom:** PCs and ships sit loose at the Actors-directory root; NPCs /
+connections aren't grouped per sector. The folder helpers in
+`src/entities/folder.js` only run on demand, so the structure never appears
+until something happens to call them.
 
-**Suspected area (unconfirmed):** folder organisation currently only covers
-entity types routed through `src/entities/`; PC/NPC actors are never assigned a
-folder. Intended structure is undecided (e.g. dedicated "Player Characters" /
-"NPCs" folders) — needs a product decision before any fix.
+**Settled spec (maintainer, 2026-06-03):** on Companion module activation,
+create-if-absent:
+- **`PCs/`** — Actor folder for player characters (adopt an existing
+  character grouping if one exists, else create).
+- **`Starships/`** — Actor folder for ships.
+- **per-sector NPC folder** — each sector gets its own folder holding that
+  sector's NPCs **and connections**, including the local connection created by
+  the sector wizard.
 
-**Impact:** Directory-organisation gap only; no functional break.
+**Key technical constraint:** Foundry folders are **typed**. PCs and ships are
+**Actors**; connections (and creatures) are **JournalEntry**-backed
+(`src/entities/registry.js` → `connection: 'journal'`). So the per-sector NPC
+folder is a **JournalEntry**-sidebar folder (natural home:
+`Sectors / <Sector Name> / NPCs/` in the journal tree), distinct from the
+top-level `PCs/` and `Starships/` Actor folders. Today the sector-wizard
+connection is created in the flat "Starforged Entities" journal folder
+(`src/entities/connection.js` → `getOrCreateEntitiesFolder()`); routing it into
+the per-sector NPC folder is part of the fix.
 
-**Note:** Key-independent — unaffected by the API-key fix that resolved
-ENTITY-002. Remains open pending the structure decision above.
+**Relationship to other work:** end-to-end tree population + reparenting was
+scoped under the **Entity → Actor Migration** plan (PLANNED). This finding is
+the activation-time pre-population slice of that. Distinct from FOLDER-001
+(duplicate sector-folder spawning), though both live in `folder.js`.
+
+**Impact:** Directory-organisation gap; no functional break. Key-independent.
 
 ---
 
