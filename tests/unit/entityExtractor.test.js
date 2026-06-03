@@ -764,7 +764,7 @@ describe("appendDetailToTier", () => {
     const ref = (() => {
       const r = addConnectionEntity(installed.journals, { name: "Kael" });
       return { ...r, type: "connection", record: {
-        ...installed.journals.values().next().value.pages.contents[0].flags[MODULE_ID].connection,
+        ...global.game.actors.get(r.journalId).flags[MODULE_ID].connection,
       } };
     })();
 
@@ -776,8 +776,7 @@ describe("appendDetailToTier", () => {
   it("does not append a duplicate detail (deduplication check)", async () => {
     const installed = installJournalMock();
     const r = addConnectionEntity(installed.journals, { name: "Kael" });
-    const journal = [...installed.journals.values()][0];
-    const data = journal.pages.contents[0].flags[MODULE_ID].connection;
+    const data = global.game.actors.get(r.journalId).flags[MODULE_ID].connection;
     data.generativeTier = [
       { sessionNum: 1, detail: "Speaks in clipped sentences.", source: "narrator_extraction" },
     ];
@@ -791,8 +790,7 @@ describe("appendDetailToTier", () => {
   it("preserves pinned entries when new ones are appended", async () => {
     const installed = installJournalMock();
     const r = addConnectionEntity(installed.journals, { name: "Kael" });
-    const journal = [...installed.journals.values()][0];
-    const data = journal.pages.contents[0].flags[MODULE_ID].connection;
+    const data = global.game.actors.get(r.journalId).flags[MODULE_ID].connection;
     data.generativeTier = [
       { sessionNum: 1, detail: "Pinned forever.", pinned: true, source: "narrator_extraction" },
     ];
@@ -917,10 +915,9 @@ describe("normalizeEntityName", () => {
 describe("parseDetectionResponse — honorific dedup", () => {
   it('filters "Chen" when the established record is stored as "Dr. Chen"', () => {
     const fixture = buildFullCampaignState();
-    addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
     // Re-derive connectionIds so collectEstablishedEntityNames sees the new record.
-    const drChenJournal = [...fixture.journals.values()].find(j => j.name === "Dr. Chen");
-    fixture.campaignState.connectionIds.push(drChenJournal.id);
+    const { journalId } = addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
+    fixture.campaignState.connectionIds.push(journalId);
 
     const raw = JSON.stringify({
       entities: [
@@ -934,9 +931,8 @@ describe("parseDetectionResponse — honorific dedup", () => {
 
   it('filters "Dr. Chen" when the established record is stored as "Chen"', () => {
     const fixture = buildFullCampaignState();
-    addConnectionEntity(fixture.journals, { name: "Chen" });
-    const chenJournal = [...fixture.journals.values()].find(j => j.name === "Chen");
-    fixture.campaignState.connectionIds.push(chenJournal.id);
+    const { journalId } = addConnectionEntity(fixture.journals, { name: "Chen" });
+    fixture.campaignState.connectionIds.push(journalId);
 
     const raw = JSON.stringify({
       entities: [
@@ -952,9 +948,8 @@ describe("parseDetectionResponse — honorific dedup", () => {
 describe("entityExistsForName — honorific dedup", () => {
   it('matches "Chen" against a stored "Dr. Chen"', () => {
     const fixture = buildFullCampaignState();
-    addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
-    const j = [...fixture.journals.values()].find(j => j.name === "Dr. Chen");
-    fixture.campaignState.connectionIds.push(j.id);
+    const { journalId } = addConnectionEntity(fixture.journals, { name: "Dr. Chen" });
+    fixture.campaignState.connectionIds.push(journalId);
     expect(entityExistsForName("Chen", "connection", fixture.campaignState)).toBe(true);
     expect(entityExistsForName("CHEN", "connection", fixture.campaignState)).toBe(true);
     fixture.restore();

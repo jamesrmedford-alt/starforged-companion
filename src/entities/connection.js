@@ -11,9 +11,12 @@
  * — Context injection flags (allyFlag, sceneRelevant)
  * — GM-only visibility option for hidden antagonists
  *
- * Storage: each Connection is a JournalEntry containing one JournalEntryPage.
- * The Connection data lives in page.flags["starforged-companion"].connection.
- * The parent JournalEntry _id is stored in campaignState.connectionIds[].
+ * Storage: each Connection is a foundry-ironsworn `character` Actor (an NPC
+ * card). The Connection data lives in actor.flags["starforged-companion"].connection,
+ * and the Actor _id is stored in campaignState.connectionIds[]. NPC cards live in
+ * `Sectors / <Sector Name> / NPCs` (or the top-level `NPCs/` when no sector is
+ * known). See decisions.md → "NPCs and connections: native ironsworn `character`
+ * Actors". All host reads/writes route through src/entities/registry.js.
  *
  * Progressive disclosure principle: records start sparse. Name may be null.
  * Fields fill in through play — nothing should be fully defined upfront.
@@ -23,7 +26,8 @@
  */
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
-import { getOrCreateEntitiesFolder } from "./folder.js";
+import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -67,26 +71,26 @@ export async function createConnection(data, campaignState, { persist = true } =
     connection.rank = "dangerous";
   }
 
-  // Create the Foundry journal entry
-  const entry = await JournalEntry.create({
+  // Route the NPC card into its sector's NPC folder when a sector is known,
+  // otherwise the top-level NPCs/ (no-sector connections, e.g. a narrator-named
+  // NPC with no charted home).
+  const folderId = connection.sectorId
+    ? await getOrCreateSectorNpcActorFolder(connection.sectorId, campaignState)
+    : await getOrCreateActorFolder("NPCs");
+
+  // Create the NPC card as a foundry-ironsworn `character` Actor. The record
+  // lives on the actor flag; registry.js routes reads/writes to actor flags.
+  const actor = await Actor.create({
     name:   connection.name || "Unknown Connection",
-    folder: await getOrCreateEntitiesFolder(),
-    flags:  { [MODULE_ID]: { entityType: "connection", entityId: id } },
+    type:   "character",
+    folder: folderId,
+    flags:  { [MODULE_ID]: { entityType: "connection", entityId: id, [FLAG_KEY]: connection } },
   });
 
-  // Create the page that holds the data. Render a body from the description so
-  // the page isn't blank — the data also lives on the flag (F19, theme T3).
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Connection Data",
-    type:  "text",
-    text:  { format: 1, content: renderEntityBody(connection) },
-    flags: { [MODULE_ID]: { [FLAG_KEY]: connection } },
-  }]);
-
-  // Register in campaign state
+  // Register in campaign state (now the Actor id, not a JournalEntry id).
   if (!campaignState.connectionIds) campaignState.connectionIds = [];
-  if (!campaignState.connectionIds.includes(entry.id)) {
-    campaignState.connectionIds.push(entry.id);
+  if (actor?.id && !campaignState.connectionIds.includes(actor.id)) {
+    campaignState.connectionIds.push(actor.id);
     if (persist) await persistCampaignState(campaignState);
   }
 
@@ -100,19 +104,18 @@ export async function createConnection(data, campaignState, { persist = true } =
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Retrieve a Connection record by its Foundry journal entry ID.
+ * Retrieve a Connection record by its host document ID (the NPC-card Actor id).
  *
- * @param {string} journalEntryId — Foundry JournalEntry document ID
+ * @param {string} actorId — Foundry Actor document ID (NPC card)
  * @returns {Object|null}
  */
-export function getConnection(journalEntryId) {
+export function getConnection(actorId) {
   try {
-    const entry = game.journal?.get(journalEntryId);
-    if (!entry) return null;
-    const page = entry.pages?.contents?.[0];
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? null;
+    const document = getEntityDocument(FLAG_KEY, actorId);
+    if (!document) return null;
+    return readEntityFlag(FLAG_KEY, document);
   } catch (err) {
-    console.error(`${MODULE_ID} | getConnection(${journalEntryId}) failed:`, err);
+    console.error(`${MODULE_ID} | getConnection(${actorId}) failed:`, err);
     return null;
   }
 }
@@ -163,14 +166,11 @@ export function listSceneConnections(campaignState) {
  * @param {Object} updates — Partial ConnectionSchema fields
  * @returns {Promise<Object>} — The updated connection record
  */
-export async function updateConnection(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Connection journal entry not found: ${journalEntryId}`);
+export async function updateConnection(actorId, updates) {
+  const document = getEntityDocument(FLAG_KEY, actorId);
+  if (!document) throw new Error(`Connection actor not found: ${actorId}`);
 
-  const page = entry.pages?.contents?.[0];
-  if (!page) throw new Error(`Connection page not found in entry: ${journalEntryId}`);
-
-  const current = page.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
+  const current = readEntityFlag(FLAG_KEY, document) ?? {};
   const updated  = {
     ...current,
     ...updates,
@@ -179,11 +179,11 @@ export async function updateConnection(journalEntryId, updates) {
     updatedAt: new Date().toISOString(),
   };
 
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  await writeEntityFlag(FLAG_KEY, document, updated);
 
-  // Sync the journal entry name if the connection name changed
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
+  // Sync the NPC-card name if the connection name changed
+  if (updates.name && updates.name !== document.name) {
+    await document.update({ name: updates.name });
   }
 
   return updated;
@@ -346,8 +346,8 @@ export async function setSceneRelevant(journalEntryId, value) {
 export async function clearAllSceneFlags(campaignState) {
   const connections = listConnections(campaignState).filter(c => c.sceneRelevant);
   for (const c of connections) {
-    const journalId = resolveJournalId(c._id, campaignState);
-    if (journalId) await setSceneRelevant(journalId, false);
+    const hostId = resolveHostId(c._id, campaignState);
+    if (hostId) await setSceneRelevant(hostId, false);
   }
 }
 
@@ -456,13 +456,13 @@ export function formatForContext(connection) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Resolve the Foundry JournalEntry ID for a given connection _id.
- * Scans the journal for a matching entity flag.
+ * Resolve the host document id (NPC-card Actor id) for a given connection _id.
+ * Scans the registered connection hosts for a matching entityId flag.
  */
-function resolveJournalId(connectionId, campaignState) {
-  for (const journalId of campaignState.connectionIds ?? []) {
-    const entry = game.journal?.get(journalId);
-    if (entry?.flags?.[MODULE_ID]?.entityId === connectionId) return journalId;
+function resolveHostId(connectionId, campaignState) {
+  for (const hostId of campaignState.connectionIds ?? []) {
+    const document = getEntityDocument(FLAG_KEY, hostId);
+    if (document?.flags?.[MODULE_ID]?.entityId === connectionId) return hostId;
   }
   return null;
 }

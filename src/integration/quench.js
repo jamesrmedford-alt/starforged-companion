@@ -1102,7 +1102,7 @@ function registerSectorCreatorTests(quench) {
           }
           // v1.2.9 migration moved settlements from JournalEntry to Actor —
           // but this cleanup loop was never updated. settlementIds are Actor
-          // IDs; connectionIds remain JournalEntry IDs. Look up in the right
+          // IDs; connectionIds are now Actor IDs too (FOLDER-002). Look up in the right
           // collection or the docs leak (Hyperion, Reprise, oracle-rolled
           // settlement names piling up in the Actors sidebar).
           for (const id of createdSettlementIds.filter(Boolean)) {
@@ -1113,10 +1113,11 @@ function registerSectorCreatorTests(quench) {
             }
           }
           if (createdConnectionId) {
-            const j = game.journal?.get(createdConnectionId);
-            if (j?.delete) {
-              await j.delete().catch(err =>
-                console.warn(`starforged-companion | quench: sector connection journal cleanup failed (${createdConnectionId}):`, err));
+            // Connections are NPC-card Actors now (FOLDER-002), not journals.
+            const a = game.actors?.get(createdConnectionId);
+            if (a?.delete) {
+              await a.delete().catch(err =>
+                console.warn(`starforged-companion | quench: sector connection Actor cleanup failed (${createdConnectionId}):`, err));
             }
           }
         });
@@ -1804,12 +1805,10 @@ function registerConnectionPipelineTests(quench) {
           assert.isAtLeast(newIds.length, 1,
             "expected at least one new connection id registered in campaignState");
 
-          const entry = game.journal?.get(newIds[0]);
-          assert.isOk(entry, "the connection journal entry should exist");
-          const page = entry.pages?.contents?.[0];
-          assert.isOk(page, "the connection page should exist");
-          const conn = page.flags?.[MODULE]?.connection;
-          assert.isOk(conn, "the page should carry the connection flag payload");
+          const actor = game.actors?.get(newIds[0]);
+          assert.isOk(actor, "the connection NPC-card actor should exist");
+          const conn = actor.getFlag?.(MODULE, "connection") ?? actor.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "the actor should carry the connection flag payload");
           assert.equal(conn.name, NARRATOR_NAME,
             "the connection name should come from the stubbed detection response");
         });
@@ -1905,9 +1904,9 @@ function registerConnectionPipelineTests(quench) {
             return;
           }
 
-          const entry = game.journal?.get(newIds[0]);
-          assert.isOk(entry, "the live-generated connection journal entry should exist");
-          const conn = entry.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          const actor = game.actors?.get(newIds[0]);
+          assert.isOk(actor, "the live-generated connection NPC-card actor should exist");
+          const conn = actor.getFlag?.(MODULE, "connection") ?? actor.flags?.[MODULE]?.connection;
           assert.isOk(conn?.name, "the live-generated connection should have a name");
         });
       });
@@ -2016,9 +2015,9 @@ function registerConnectionSeedEnrichmentTests(quench) {
           assert.isAtLeast(newIds.length, 1,
             "auto-create should register a new connection in campaignState");
 
-          const entry = game.journal?.get(newIds[0]);
-          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
-          assert.isOk(conn, "page should carry the connection flag payload");
+          const actor = game.actors?.get(newIds[0]);
+          const conn  = actor?.getFlag?.(MODULE, "connection") ?? actor?.flags?.[MODULE]?.connection;
+          assert.isOk(conn, "actor should carry the connection flag payload");
 
           assert.equal(conn.role, "Mercenary",
             "role should be seeded from oracle character_role");
@@ -2116,8 +2115,8 @@ function registerConnectionSeedEnrichmentTests(quench) {
           assert.isAtLeast(newIds.length, 1,
             "Confirm click should auto-create a connection journal entry");
 
-          const entry = game.journal?.get(newIds[0]);
-          const conn  = entry?.pages?.contents?.[0]?.flags?.[MODULE]?.connection;
+          const actor = game.actors?.get(newIds[0]);
+          const conn  = actor?.getFlag?.(MODULE, "connection") ?? actor?.flags?.[MODULE]?.connection;
           assert.isOk(conn, "confirmed connection should carry a payload");
           // Fresh oracle rolls produce some non-empty role and motivation in
           // virtually all rolls — we assert at least one of the three
@@ -3216,8 +3215,9 @@ function registerEntityPanelActionsTests(quench) {
         if (app?.close) await app.close().catch(() => {});
         const state = game.settings.get(MODULE_ID, "campaignState");
         if (testJournalId) {
-          const j = game.journal?.get(testJournalId);
-          if (j?.delete) await j.delete().catch(() => {});
+          // connectionIds hold NPC-card Actor IDs now (FOLDER-002).
+          const a = game.actors?.get(testJournalId);
+          if (a?.delete) await a.delete().catch(() => {});
           state.connectionIds = (state.connectionIds ?? []).filter(id => id !== testJournalId);
         }
         if (testSettlementId) {
@@ -3298,9 +3298,9 @@ function registerEntityPanelActionsTests(quench) {
       describe("toggleCanonicalLock — DOM click flips the lock", function () {
         it("flips entity.data.canonicalLocked", async function () {
           if (!app || !testJournalId) { this.skip(); return; }
-          const journal = game.journal.get(testJournalId);
-          const page = journal?.pages?.contents?.[0];
-          assert.isOk(page, "seeded Connection page should exist");
+          const actor = game.actors?.get(testJournalId);
+          const conn  = actor?.getFlag?.(MODULE_ID, "connection") ?? actor?.flags?.[MODULE_ID]?.connection;
+          assert.isOk(conn, "seeded Connection NPC-card payload should exist");
 
           // The lock button only appears in the detail view; ensure the panel
           // is showing it (selectEntity may still be on the list view from the
@@ -3314,7 +3314,9 @@ function registerEntityPanelActionsTests(quench) {
             await awaitRender(app);
           }
 
-          const before = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
+          const readLock = () =>
+            !!(game.actors?.get(testJournalId)?.getFlag?.(MODULE_ID, "connection")?.canonicalLocked);
+          const before = readLock();
           const lockBtn = app.element.querySelector(
             `[data-action="toggleCanonicalLock"][data-journal-id="${testJournalId}"]`);
           assert.isNotNull(lockBtn, "canonical-lock button should be present in detail view");
@@ -3324,9 +3326,9 @@ function registerEntityPanelActionsTests(quench) {
           const deadline = Date.now() + 2000;
           while (Date.now() < deadline) {
             await flushMicrotasks();
-            if (!!page.getFlag(MODULE_ID, "connection")?.canonicalLocked !== before) break;
+            if (readLock() !== before) break;
           }
-          const after = !!page.getFlag(MODULE_ID, "connection")?.canonicalLocked;
+          const after = readLock();
           assert.notEqual(after, before, "canonicalLocked should toggle");
         });
       });
@@ -3501,8 +3503,8 @@ function registerPortraitGenerationTests(quench) {
       });
 
       function readConnectionData() {
-        const j = game.journal?.get(testJournalId);
-        return j?.pages?.contents?.[0]?.flags?.[MODULE]?.connection ?? null;
+        const a = game.actors?.get(testJournalId);
+        return a?.getFlag?.(MODULE, "connection") ?? a?.flags?.[MODULE]?.connection ?? null;
       }
 
       describe("Gating — placeholder, ready, locked states", function () {

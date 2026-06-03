@@ -130,27 +130,28 @@ export function addFactionEntity(journals, data) {
   return { journalId: journal.id, internalId };
 }
 
-export function addConnectionEntity(journals, data) {
+export function addConnectionEntity(_journals, data) {
+  // Connections are NPC-card `character` Actors now (FOLDER-002). Like
+  // addLocationEntity, the returned `journalId` carries the Actor id for
+  // backward-compat with callers that push it into campaignState.connectionIds.
   const internalId = `conn-${randomToken()}`;
-  const flags = {
-    [MODULE_ID]: {
-      connection: {
-        _id:           internalId,
-        name:          data.name,
-        role:          data.role ?? "",
-        rank:          data.rank ?? "dangerous",
-        relationshipType: data.relationshipType ?? "neutral",
-        active:        true,
-        canonicalLocked: data.canonicalLocked ?? false,
-        generativeTier: data.generativeTier ?? [],
-        history:       data.history ?? [],
-      },
-    },
+  const actorId    = `actor-conn-${randomToken()}`;
+  const payload = {
+    _id:           internalId,
+    name:          data.name,
+    role:          data.role ?? "",
+    rank:          data.rank ?? "dangerous",
+    relationshipType: data.relationshipType ?? "neutral",
+    active:        true,
+    canonicalLocked: data.canonicalLocked ?? false,
+    generativeTier: data.generativeTier ?? [],
+    history:       data.history ?? [],
   };
-  const journal = makeJournalWithId(`journal-conn-${randomToken()}`, data.name);
-  journal.pages.contents.push(makePage({ name: "Connection Data", flags }));
-  journals.set(journal.name, journal);
-  return { journalId: journal.id, internalId };
+  global.game.actors._set(actorId, global.makeTestActor({
+    id: actorId, type: "character", name: data.name,
+    flags: { [MODULE_ID]: { connection: payload, entityType: "connection", entityId: internalId } },
+  }));
+  return { journalId: actorId, internalId };
 }
 
 /**
