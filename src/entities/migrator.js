@@ -429,6 +429,32 @@ export async function flattenSectorActorFolders(campaignState) {
     if (!typeKey || !FLATTEN_ENTITY_TYPES.includes(typeKey)) continue;
 
     const sectorId = flags?.[typeKey]?.sectorId ?? null;
+
+    // #1 — when the sector can't be resolved (a sector record the GM removed,
+    // or a transient load-order gap on `ready`), do NOT yank an actor that is
+    // already settled in a real per-sector folder (`Sectors / <Name>`) into the
+    // `Sectors / Unsorted` fallback — leave it where the creator placed it.
+    // Actors that are loose, in `Unsorted`, or in a legacy per-type folder
+    // (`Settlements`/`Planets`/`Locations`) still get the fallback so they
+    // migrate out of the deprecated layout.
+    const sectorResolved = (state.sectors ?? []).some(s => s?.id === sectorId && s?.name);
+    if (!sectorResolved) {
+      const currentFolderId = actor.folder?.id ?? actor.folder ?? null;
+      const currentFolder   = currentFolderId ? globalThis.game?.folders?.get?.(currentFolderId) : null;
+      if (currentFolder) {
+        const parentId = folderParentId(currentFolder.folder);
+        const parent   = parentId ? globalThis.game?.folders?.get?.(parentId) : null;
+        const settledInSectorFolder =
+          parent?.type === "Actor" && parent?.name === "Sectors" && !parent?.folder &&
+          currentFolder.name !== "Unsorted" &&
+          !LEGACY_TYPE_FOLDER_NAMES.includes(currentFolder.name);
+        if (settledInSectorFolder) {
+          summary.skipped += 1;
+          continue;
+        }
+      }
+    }
+
     const targetFolderId = await getOrCreateSectorActorFolder(sectorId, state);
     if (!targetFolderId) {
       summary.skipped += 1;
