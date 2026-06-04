@@ -8620,24 +8620,26 @@ function registerStarshipNarratedNotesTests(quench) {
                 })],
               ],
               async () => {
-                const actor = await Actor.create({
-                  name: `QUENCH PROSE ${Date.now()}`,
-                  type: "starship",
-                });
-                track(actor.id);
+                await withTempSetting("autoSeedStarship", true, async () => {
+                  const actor = await Actor.create({
+                    name: `QUENCH PROSE ${Date.now()}`,
+                    type: "starship",
+                  });
+                  track(actor.id);
 
-                const ok = await waitFor(async () => {
+                  const ok = await waitFor(async () => {
+                    const fresh = game.actors.get(actor.id);
+                    return typeof fresh?.system?.notes === "string"
+                        && fresh.system.notes.includes(proseText);
+                  });
+                  assert.isTrue(ok, "Notes should contain the stubbed Sonnet prose paragraph");
+
                   const fresh = game.actors.get(actor.id);
-                  return typeof fresh?.system?.notes === "string"
-                      && fresh.system.notes.includes(proseText);
+                  assert.notInclude(fresh.system.notes, "<ul>",
+                    "prose path should not emit the oracle bullet list");
+                  assert.include(fresh.system.notes, "&middot;",
+                    "the compact fact-line separator should be present");
                 });
-                assert.isTrue(ok, "Notes should contain the stubbed Sonnet prose paragraph");
-
-                const fresh = game.actors.get(actor.id);
-                assert.notInclude(fresh.system.notes, "<ul>",
-                  "prose path should not emit the oracle bullet list");
-                assert.include(fresh.system.notes, "&middot;",
-                  "the compact fact-line separator should be present");
               },
             );
           });
@@ -8647,23 +8649,25 @@ function registerStarshipNarratedNotesTests(quench) {
           this.timeout(20000);
 
           await withTempSetting("claudeApiKey", "", async () => {
-            const actor = await Actor.create({
-              name: `QUENCH FALLBACK ${Date.now()}`,
-              type: "starship",
-            });
-            track(actor.id);
+            await withTempSetting("autoSeedStarship", true, async () => {
+              const actor = await Actor.create({
+                name: `QUENCH FALLBACK ${Date.now()}`,
+                type: "starship",
+              });
+              track(actor.id);
 
-            const ok = await waitFor(async () => {
+              const ok = await waitFor(async () => {
+                const fresh = game.actors.get(actor.id);
+                return typeof fresh?.system?.notes === "string"
+                    && fresh.system.notes.includes("Oracle-seeded starship details");
+              });
+              assert.isTrue(ok,
+                "without a key the bullet-list fallback should populate Notes");
+
               const fresh = game.actors.get(actor.id);
-              return typeof fresh?.system?.notes === "string"
-                  && fresh.system.notes.includes("Oracle-seeded starship details");
+              assert.include(fresh.system.notes, "<ul>",
+                "fallback path emits the bullet list");
             });
-            assert.isTrue(ok,
-              "without a key the bullet-list fallback should populate Notes");
-
-            const fresh = game.actors.get(actor.id);
-            assert.include(fresh.system.notes, "<ul>",
-              "fallback path emits the bullet list");
           });
         });
       });
