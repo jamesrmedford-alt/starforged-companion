@@ -411,9 +411,9 @@ export class EntityPanelApp extends ApplicationV2 {
 
     // Finalize affordance (T1) — generate a grounded narrator description (and a
     // first-time portrait) on demand; once finalized, offer a manual regenerate.
-    // Scoped to the four Actor-backed types. The flavour generating-state is keyed
-    // separately from portrait generation so the two indicators don't collide.
-    const supportsFinalizeType = ['ship', 'settlement', 'planet', 'location'].includes(entity.typeKey);
+    // ship + connection run their full oracle/module/art seed here (finalize-first,
+    // FOLDER-002); settlement/planet/location run the generic flavour pass.
+    const supportsFinalizeType = ['ship', 'settlement', 'planet', 'location', 'connection'].includes(entity.typeKey);
     const isFinalizing = this.#generatingIds.has(`flavor:${entity.journalId}`);
     const finalizeBtnHtml = !supportsFinalizeType
       ? ''

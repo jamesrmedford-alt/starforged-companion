@@ -272,20 +272,20 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "autoSeedStarship", {
     name:    "Auto-Seed Starship Details",
-    hint:    "When a new starship Actor is created with empty notes, roll the starship Type / First Look / Mission oracles and write them to the actor's Notes field. Triggers a silent portrait generation if an OpenRouter API key is configured. Disable to keep new starships blank.",
+    hint:    "Roll the starship Type / First Look / Mission oracles, install matching modules, write the Notes, and generate a portrait AT CREATION. Off by default — new starships are created blank so you can set them up first, then populate them with the ✦ Finalise button in the Entities panel.",
     scope:   "world",
     config:  true,
     type:    Boolean,
-    default: true,
+    default: false,
   });
 
   game.settings.register(MODULE_ID, "autoSeedConnection", {
     name:    "Auto-Seed NPC / Connection Details",
-    hint:    "When a new NPC connection card is created, roll the Character First Look / Initial Disposition / Role / Goal oracles into its Characteristics field, write an introduction to the Notes tab, and (if an OpenRouter API key is set) generate a portrait + token. Disable to keep new NPC cards blank.",
+    hint:    "Roll the Character First Look / Initial Disposition / Role / Goal oracles into a new NPC card's Characteristics, write a Notes introduction, and generate a portrait AT CREATION. Off by default — new NPC cards are created blank; populate them with the ✦ Finalise button in the Entities panel.",
     scope:   "world",
     config:  true,
     type:    Boolean,
-    default: true,
+    default: false,
   });
 
   game.settings.register(MODULE_ID, "speechInputEnabled", {
@@ -1056,18 +1056,29 @@ function registerStarshipSeedHook() {
     try {
       if (!game.user?.isGM) return;
       if (actor?.type !== "starship") return;
-      if (!game.settings.get(MODULE_ID, "autoSeedStarship")) return;
+
+      // Read the setting synchronously at fire time (a deferred read inside the
+      // async block below would race a test's temp-setting restore).
+      const autoSeed = game.settings.get(MODULE_ID, "autoSeedStarship");
 
       // Defer the import so this module file stays parse-only at init.
-      // The hook itself returns synchronously; seeding runs after.
+      // The hook itself returns synchronously; work runs after.
       import("./entities/ship.js").then(async (mod) => {
-        if (mod.starshipHasSeedDetail(actor)) {
-          console.log(`${MODULE_ID} | starship seed: skipping ${actor.id} (already populated)`);
-          return;
-        }
         const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        await mod.seedStarshipActor(actor, state).catch(err =>
-          console.warn(`${MODULE_ID} | starship seed failed for ${actor.id}:`, err));
+        if (autoSeed) {
+          // Opt-in: fully populate at creation (oracles/modules/notes/art).
+          if (mod.starshipHasSeedDetail(actor)) {
+            console.log(`${MODULE_ID} | starship seed: skipping ${actor.id} (already populated)`);
+            return;
+          }
+          await mod.seedStarshipActor(actor, state).catch(err =>
+            console.warn(`${MODULE_ID} | starship seed failed for ${actor.id}:`, err));
+        } else {
+          // Default: create blank but register so it shows in the Entities
+          // panel with a ✦ Finalise button (finalize-first, FOLDER-002).
+          await mod.registerStarshipActorLight(actor, state).catch(err =>
+            console.warn(`${MODULE_ID} | starship light-register failed for ${actor.id}:`, err));
+        }
       }).catch(err =>
         console.warn(`${MODULE_ID} | starship seed: dynamic import failed:`, err));
     } catch (err) {

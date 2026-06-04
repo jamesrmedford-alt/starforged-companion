@@ -2248,79 +2248,90 @@ function registerStarshipSeedHookTests(quench) {
       afterEach(flushCleanup);
 
       describe("Sidebar-created starship — auto-seed via createActor hook", function () {
-        it("populates system.notes and flags[MODULE].ship with oracle rolls", async function () {
+        it("with auto-seed ON: populates system.notes and flags[MODULE].ship with oracle rolls", async function () {
           this.timeout(20000);
 
-          // Bypass createShip() entirely — this is what a user clicking
-          // "Create Actor" → "Starship" in the sidebar does.
-          const actor = await Actor.create({
-            name: `QUENCH STARSHIP ${Date.now()}`,
-            type: "starship",
-          });
-          assert.isOk(actor, "Actor.create should succeed for type=starship");
-          track(actor.id);
+          await withTempSetting("autoSeedStarship", true, async () => {
+            // Bypass createShip() entirely — this is what a user clicking
+            // "Create Actor" → "Starship" in the sidebar does.
+            const actor = await Actor.create({
+              name: `QUENCH STARSHIP ${Date.now()}`,
+              type: "starship",
+            });
+            assert.isOk(actor, "Actor.create should succeed for type=starship");
+            track(actor.id);
 
-          // Hook runs async; poll for the flag payload to land.
-          const ok = await waitFor(async () => {
+            // Hook runs async; poll for the flag payload to land.
+            const ok = await waitFor(async () => {
+              const fresh = game.actors?.get(actor.id);
+              const ship  = fresh?.flags?.[MODULE]?.ship;
+              return !!(ship?.type || ship?.firstLook);
+            });
+            assert.isTrue(ok, "the createActor hook should populate flags[MODULE].ship within the polling window");
+
             const fresh = game.actors?.get(actor.id);
-            const ship  = fresh?.flags?.[MODULE]?.ship;
-            return !!(ship?.type || ship?.firstLook);
+            const ship  = fresh.flags[MODULE].ship;
+            assert.isOk(ship.type || ship.firstLook,
+              "either type or first-look should be set after the seed runs");
+            assert.isOk(fresh.system.notes,
+              "system.notes should be populated so the starship sheet renders the seed");
+            assert.equal(fresh.name, actor.name,
+              "the actor's user-supplied name should not be modified");
+            assert.isOk(fresh.flags[MODULE].entityType === "ship",
+              "entityType routing crumb should be stamped");
           });
-          assert.isTrue(ok, "the createActor hook should populate flags[MODULE].ship within the polling window");
-
-          const fresh = game.actors?.get(actor.id);
-          const ship  = fresh.flags[MODULE].ship;
-          assert.isOk(ship.type || ship.firstLook,
-            "either type or first-look should be set after the seed runs");
-          assert.isOk(fresh.system.notes,
-            "system.notes should be populated so the starship sheet renders the seed");
-          assert.equal(fresh.name, actor.name,
-            "the actor's user-supplied name should not be modified");
-          assert.isOk(fresh.flags[MODULE].entityType === "ship",
-            "entityType routing crumb should be stamped");
-
         });
 
-        it("registers the seeded starship on campaignState.shipIds", async function () {
+        it("by default (finalize-first): light-registers a blank ship on campaignState.shipIds", async function () {
           this.timeout(20000);
 
+          // Default — autoSeedStarship is OFF. The hook light-registers the ship
+          // (blank payload + shipIds) so it appears in the Entities panel with a
+          // ✦ Finalise button; no oracle rolls / notes / art fire at creation.
           const actor = await Actor.create({
             name: `QUENCH STARSHIP-TRACK ${Date.now()}`,
             type: "starship",
           });
           track(actor.id);
 
-          const ok = await waitFor(async () => {
+          const registered = await waitFor(async () => {
             const cur = game.settings.get(MODULE, "campaignState") ?? {};
             return (cur.shipIds ?? []).includes(actor.id);
           });
-          assert.isTrue(ok, "the seeded starship should be registered on campaignState.shipIds");
+          assert.isTrue(registered, "a blank starship should still be registered on campaignState.shipIds");
+
+          const fresh = game.actors?.get(actor.id);
+          assert.isOk(fresh.flags?.[MODULE]?.ship, "a minimal ship payload should be stamped");
+          assert.equal(fresh.flags[MODULE].ship.type ?? "", "", "type stays blank until Finalise");
+          assert.equal(fresh.system.notes ?? "", "", "notes stay blank until Finalise");
         });
       });
 
       describe("Skip clauses — actor already populated", function () {
-        it("does not seed a starship whose Notes field is already non-empty", async function () {
+        it("with auto-seed ON: does not seed a starship whose Notes field is already non-empty", async function () {
           this.timeout(20000);
 
-          const userNotes = `<p>I typed these notes myself.</p>`;
-          const actor = await Actor.create({
-            name: `QUENCH STARSHIP-NOTES ${Date.now()}`,
-            type: "starship",
-            system: { notes: userNotes },
+          await withTempSetting("autoSeedStarship", true, async () => {
+            const userNotes = `<p>I typed these notes myself.</p>`;
+            const actor = await Actor.create({
+              name: `QUENCH STARSHIP-NOTES ${Date.now()}`,
+              type: "starship",
+              system: { notes: userNotes },
+            });
+            track(actor.id);
+
+            // Wait a bit longer than the hook's seed work would normally need.
+            await new Promise(r => setTimeout(r, 1500));
+
+            const fresh = game.actors?.get(actor.id);
+            assert.equal(fresh.system.notes, userNotes,
+              "user-supplied notes should not be overwritten by the seed");
+            assert.isUndefined(fresh.flags?.[MODULE]?.ship,
+              "no flag payload should be created when the seed was skipped");
           });
-          track(actor.id);
-
-          // Wait a bit longer than the hook's seed work would normally need.
-          await new Promise(r => setTimeout(r, 1500));
-
-          const fresh = game.actors?.get(actor.id);
-          assert.equal(fresh.system.notes, userNotes,
-            "user-supplied notes should not be overwritten by the seed");
-          assert.isUndefined(fresh.flags?.[MODULE]?.ship,
-            "no flag payload should be created when the seed was skipped");
         });
 
-        it("does not seed when autoSeedStarship setting is off", async function () {
+        it("with auto-seed OFF: light-registers a blank ship (no oracle/notes/art)", async function () {
           this.timeout(20000);
 
           await withTempSetting("autoSeedStarship", false, async () => {
@@ -2330,13 +2341,17 @@ function registerStarshipSeedHookTests(quench) {
             });
             track(actor.id);
 
-            await new Promise(r => setTimeout(r, 1500));
+            // Light-register lands async — poll for the blank payload.
+            const ok = await waitFor(async () => !!game.actors?.get(actor.id)?.flags?.[MODULE]?.ship);
+            assert.isTrue(ok, "the hook should light-register a blank ship payload");
 
             const fresh = game.actors?.get(actor.id);
             assert.equal(fresh.system.notes ?? "", "",
-              "notes should remain empty when auto-seed is disabled");
-            assert.isUndefined(fresh.flags?.[MODULE]?.ship,
-              "no flag payload should be created when auto-seed is disabled");
+              "notes stay empty when auto-seed is disabled (populated later via ✦ Finalise)");
+            assert.equal(fresh.flags[MODULE].ship.type ?? "", "",
+              "the light-registered payload carries no oracle-rolled identity");
+            assert.equal(fresh.flags[MODULE].entityType, "ship",
+              "entityType routing crumb is still stamped");
           });
         });
 
