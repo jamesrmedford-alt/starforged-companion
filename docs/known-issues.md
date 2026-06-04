@@ -86,6 +86,35 @@ switch are GM-only by design.
 
 ## Resolved issues
 
+### PLAYTEST-176 — v1.7.6 playtest follow-ups (NPC-as-character ripple + finalize-first) ✓
+
+**Status:** Resolved in v1.7.7 (unreleased). Four issues found playtesting v1.7.6,
+all stemming from FOLDER-002's "NPCs are `character` actors" + auto-seed firing at
+creation:
+
+- **NPC got a PC-only momentum grant** (Begin-a-Session "+1 momentum to all
+  players"). `getPlayerActors()` filtered `type === 'character'`, which now
+  matches NPC cards; in solo play the player-owned fallback returned all
+  characters. Added `isPlayerCharacterActor()` (character **and** no module
+  `entityType` flag) and excluded NPC cards from `getPlayerActors`, the
+  chat-speaker resolver, the PC-find in `index.js`, and `isPlayerCharacterName`.
+  The assembler was likewise rendering the NPC as the PC in CHARACTER STATE.
+- **Settlements moved to `Sectors / Unsorted` on reload.** `flattenSectorActorFolders`
+  relocated a correctly-foldered settlement into Unsorted whenever its sectorId
+  didn't resolve. It now leaves an actor that's already settled in a real
+  `Sectors / <Name>` folder where it is.
+- **Ship auto-populated at creation (modules + flavour + art), no setup window,
+  no finalize.** Auto-seed (`autoSeedStarship` / `autoSeedConnection`) now defaults
+  **off**; ships are light-registered blank (so they appear in the Entities panel)
+  and NPCs are created blank. Population runs on the **✦ Finalise** affordance,
+  which delegates to `seedStarshipActor` / `seedConnectionActor`. Connection added
+  to the panel's finalize types.
+- **NPC portrait not embedded at full size in Notes.** A creation-time ordering
+  race between the seed's Notes write and the portrait attach; running the seed
+  once on Finalise (not at creation) removes it.
+
+(commits `7426743`, `b04aa6d`, `8cf07ae`)
+
 ### FOLDER-001 — Empty duplicate sector subfolders spawned on every world load ✓
 
 **Status:** Resolved in v1.7.6 (unreleased).
