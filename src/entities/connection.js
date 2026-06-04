@@ -542,11 +542,11 @@ export function connectionNeedsSeed(actor) {
  * @param {Object} [campaignState]
  * @returns {Promise<Object|null>} the updated connection record, or null
  */
-export async function seedConnectionActor(actor, campaignState) {
+export async function seedConnectionActor(actor, campaignState, { force = false } = {}) {
   if (!actor || actor.type !== "character") return null;
   const existing = actor.flags?.[MODULE_ID]?.[FLAG_KEY];
-  if (!existing) return null;            // not a connection card
-  if (existing.seeded) return existing;  // already populated — idempotent
+  if (!existing) return null;                    // not a connection card
+  if (existing.seeded && !force) return existing; // already populated — idempotent
 
   const { rollOracle } = await import("../oracles/roller.js");
   const role        = existing.role || safeRoll(rollOracle, "character_role");

@@ -47,15 +47,41 @@ beforeEach(() => {
 
 
 describe('supportsFinalize', () => {
-  it('is true for the four Actor-backed types', () => {
-    for (const t of ['ship', 'settlement', 'planet', 'location']) {
+  it('is true for the Actor-backed types incl. connection (finalize-first)', () => {
+    for (const t of ['ship', 'settlement', 'planet', 'location', 'connection']) {
       expect(supportsFinalize(t)).toBe(true);
     }
   });
   it('is false for journal-backed types and unknowns', () => {
-    for (const t of ['connection', 'faction', 'creature', 'bogus', undefined]) {
+    for (const t of ['faction', 'creature', 'bogus', undefined]) {
       expect(supportsFinalize(t)).toBe(false);
     }
+  });
+});
+
+describe('finalizeEntity — connection runs the seed (finalize-first)', () => {
+  it('seeds a blank connection card: oracles → Characteristics, marks seeded', async () => {
+    global.game.actors._reset();
+    const actor = global.makeTestActor({
+      id: 'npc-fin', type: 'character', name: 'Maren',
+      flags: { [MODULE_ID]: { entityType: 'connection', entityId: 'c1', connection: {
+        _id: 'c1', name: 'Maren', role: 'Smuggler', goal: 'Pay a debt',
+        firstLook: ['Augmetic eye'], disposition: 'Wary',
+      } } },
+    });
+    global.game.actors._set('npc-fin', actor);
+
+    const result = await finalizeEntity('connection', 'npc-fin', {});
+    expect(result.ok).toBe(true);
+    expect(actor.flags[MODULE_ID].connection.seeded).toBe(true);
+    expect(actor.system.biography).toMatch(/Smuggler/);
+  });
+
+  it('returns not-found when the host actor is missing', async () => {
+    global.game.actors._reset();
+    const result = await finalizeEntity('connection', 'ghost', {});
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('not-found');
   });
 });
 

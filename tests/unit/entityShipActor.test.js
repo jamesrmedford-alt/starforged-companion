@@ -47,6 +47,7 @@ import {
   ShipSchema,
   starshipHasSeedDetail,
   seedStarshipActor,
+  registerStarshipActorLight,
   installModulesForRolledIdentity,
   getCommandVehicle,
   actorHasCommandVehicleAsset,
@@ -156,6 +157,36 @@ describe("getShip / listShips — reads route through the registry", () => {
     await createShip({ name: "B" }, state);
     const names = listShips(state).map(s => s.name).sort();
     expect(names).toEqual(["A", "B"]);
+  });
+});
+
+describe("registerStarshipActorLight — blank registration for finalize-first", () => {
+  it("registers a minimal ship payload + shipIds without seeding oracles/notes", async () => {
+    const actor = await global.Actor.create({ type: "starship", name: "Wayfarer" });
+    const state = { shipIds: [] };
+
+    const ship = await registerStarshipActorLight(actor, state);
+
+    expect(ship).toBeTruthy();
+    expect(actor.flags[MODULE].ship._id).toBe(ship._id);
+    expect(actor.flags[MODULE].entityType).toBe("ship");
+    expect(state.shipIds).toContain(actor.id);
+    // Blank — no oracle-rolled identity or notes.
+    expect(ship.type).toBe("");
+    expect(ship.firstLook).toBe("");
+    expect(starshipHasSeedDetail(actor)).toBe(false);
+  });
+
+  it("is idempotent — skips an actor that already carries a ship payload", async () => {
+    const actor = await global.Actor.create({
+      type: "starship", name: "Has Ship",
+      flags: { [MODULE]: { ship: { _id: "pre", name: "Has Ship", type: "Shuttle" } } },
+    });
+    const state = { shipIds: [] };
+
+    const ship = await registerStarshipActorLight(actor, state);
+    expect(ship._id).toBe("pre");
+    expect(state.shipIds).not.toContain(actor.id); // not re-registered
   });
 });
 

@@ -28,6 +28,7 @@ import { getShip,       updateShip }       from "./ship.js";
 import { getSettlement, updateSettlement } from "./settlement.js";
 import { getPlanet,     updatePlanet }     from "./planet.js";
 import { getLocation,   updateLocation }   from "./location.js";
+import { getConnection }                   from "./connection.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -39,7 +40,13 @@ const GETTERS = {
   settlement: getSettlement,
   planet:     getPlanet,
   location:   getLocation,
+  connection: getConnection,
 };
+
+// Types whose ✦ Finalise runs the full oracle/module/art SEED (FOLDER-002
+// finalize-first), rather than the generic single-field flavour pass. These
+// are created blank and populated on demand.
+const SEED_FINALIZE_TYPES = new Set(["ship", "connection"]);
 
 const UPDATERS = {
   ship:       updateShip,
@@ -103,6 +110,35 @@ export function buildEntityFlavorPrompt(typeKey, record, tone = "wry") {
 }
 
 /**
+/**
+ * Run the oracle/module/art seed for a ship or connection Actor as its Finalise
+ * action. The seed functions are idempotent; `force` re-runs an already-seeded
+ * card. Never throws.
+ */
+async function finalizeViaSeed(typeKey, hostId, campaignState, force) {
+  const actor = globalThis.game?.actors?.get?.(hostId) ?? null;
+  if (!actor) return { ok: false, reason: "not-found" };
+  try {
+    if (typeKey === "ship") {
+      const { seedStarshipActor } = await import("./ship.js");
+      const ship = await seedStarshipActor(actor, campaignState ?? {});
+      return ship
+        ? { ok: true, reason: force ? "regenerated" : "finalized", record: ship, artTriggered: true }
+        : { ok: false, reason: "seed-failed" };
+    }
+    // connection
+    const { seedConnectionActor } = await import("./connection.js");
+    const conn = await seedConnectionActor(actor, campaignState ?? {}, { force });
+    return conn
+      ? { ok: true, reason: force ? "regenerated" : "finalized", record: conn, artTriggered: true }
+      : { ok: false, reason: "seed-failed" };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | finalizeEntity(${typeKey}): seed failed:`, err?.message ?? err);
+    return { ok: false, reason: "seed-failed" };
+  }
+}
+
+/**
  * Finalize an entity: generate grounded flavour, write it to the record
  * (description + portraitSourceDescription + finalizedAt), and trigger a
  * first-time portrait when the entity has none.
@@ -117,6 +153,13 @@ export function buildEntityFlavorPrompt(typeKey, record, tone = "wry") {
  * @returns {Promise<{ ok: boolean, reason: string, record?: Object, artTriggered?: boolean }>}
  */
 export async function finalizeEntity(typeKey, hostId, campaignState, { force = false } = {}) {
+  // Ship + connection are populated by their oracle/module/art seed (oracles →
+  // Notes/Characteristics, modules, narrator flavour, portrait + token) rather
+  // than the generic single-field flavour pass. The ✦ Finalise button runs it.
+  if (SEED_FINALIZE_TYPES.has(typeKey)) {
+    return finalizeViaSeed(typeKey, hostId, campaignState, force);
+  }
+
   const getter  = GETTERS[typeKey];
   const updater = UPDATERS[typeKey];
   if (!getter || !updater) return { ok: false, reason: "unsupported-type" };

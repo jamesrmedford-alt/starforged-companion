@@ -474,6 +474,28 @@ describe("flattenSectorActorFolders", () => {
     expect(actor.folder).toBe(unsorted.id);
   });
 
+  // #1 regression: a settlement already filed in a real per-sector folder must
+  // NOT be relocated to Unsorted when its sector record can't be resolved (e.g.
+  // removed sector, or a transient load-order gap on ready).
+  it("leaves a settled per-sector actor put when its sector can't be resolved", async () => {
+    const state = { sectors: [] }; // sector record unresolvable
+    const settled = await ensureFolderPath("Actor", ["Sectors", "Devil's Sanctum"]);
+    const actor = await global.Actor.create({
+      type:   "location",
+      name:   "Lastport",
+      folder: settled,
+      flags:  { [MODULE]: { entityType: "settlement", settlement: { sectorId: "sec-gone" } } },
+    });
+    enableFolderDelete();
+
+    const summary = await flattenSectorActorFolders(state);
+
+    expect(actor.folder).toBe(settled);   // stays in its sector folder
+    expect(summary.moved).toBe(0);
+    const unsorted = global.game.folders.find(f => f.name === "Unsorted");
+    expect(unsorted).toBe(null);          // Unsorted never created
+  });
+
   it("is idempotent — a second run moves nothing", async () => {
     const state = { sectors: [{ id: "sec-1", name: "X" }] };
     const legacyLeaf = await ensureFolderPath("Actor", ["Sectors", "X", "Settlements"]);

@@ -402,6 +402,56 @@ async function persistCampaignState(campaignState) {
  * @returns {Promise<Object|null>} — the resulting ship payload, or null
  *                                   on a non-fatal failure
  */
+
+/**
+ * Light registration for a freshly-created starship Actor when the auto-seed
+ * setting is OFF (the default — see FOLDER-002 finalize-first). Sets a minimal
+ * `flags[MODULE].ship` payload (no oracle rolls, modules, notes, or art) and
+ * registers the Actor in `campaignState.shipIds`, so the blank ship appears in
+ * the Entities panel with a ✦ Finalise button. Idempotent — skips an Actor that
+ * already carries a ship payload.
+ *
+ * @param {Actor} actor
+ * @param {Object} [campaignState]
+ * @returns {Promise<Object|null>} the minimal ship payload, or null
+ */
+export async function registerStarshipActorLight(actor, campaignState) {
+  if (!actor || actor.type !== "starship") return null;
+  if (actor.flags?.[MODULE_ID]?.[FLAG_KEY]) return actor.flags[MODULE_ID][FLAG_KEY];
+
+  const now = new Date().toISOString();
+  const id  = actor.flags?.[MODULE_ID]?.entityId || generateId();
+  const ship = {
+    ...ShipSchema,
+    _id:              id,
+    name:             actor.name,
+    isCommandVehicle: actorHasCommandVehicleAsset(actor),
+    createdAt:        now,
+    updatedAt:        now,
+  };
+
+  try {
+    await actor.update({
+      [`flags.${MODULE_ID}.${FLAG_KEY}`]:  ship,
+      [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
+      [`flags.${MODULE_ID}.entityId`]:     id,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | registerStarshipActorLight: update failed:`, err?.message ?? err);
+    return null;
+  }
+
+  if (campaignState) {
+    if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
+    if (!campaignState.shipIds.includes(actor.id)) {
+      campaignState.shipIds.push(actor.id);
+      await persistCampaignState(campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err));
+    }
+  }
+
+  return ship;
+}
 export async function seedStarshipActor(actor, campaignState) {
   if (!actor || actor.type !== "starship") return null;
 

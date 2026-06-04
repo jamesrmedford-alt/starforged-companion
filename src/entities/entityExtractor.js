@@ -814,6 +814,9 @@ function isPlayerCharacterName(normalisedName) {
     const actors = globalThis.game?.actors ?? [];
     for (const a of actors) {
       if (a?.type !== "character") continue;
+      // NPC/connection cards are `character` actors too (FOLDER-002) — they are
+      // entities, not player characters, and are deduped via the entity registry.
+      if (a?.flags?.[MODULE_ID]?.entityType) continue;
       if (!a?.name) continue;
       if (normalizeEntityName(a.name) === normalisedName) return true;
     }

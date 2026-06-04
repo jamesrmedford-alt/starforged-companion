@@ -42,15 +42,31 @@ const _snapshotCache = new Map();
  * for this module — there are no non-GM users, so `hasPlayerOwner` is always
  * false on every character. Falling back to all `character`-type Actors keeps
  * the recap pipeline, paced-narration character context, and the chronicle
- * panel working in solo play. Safe because foundry-ironsworn reserves the
- * `character` type for PCs — NPCs/foes/connections use different types.
+ * panel working in solo play. Excludes the Companion's NPC/connection cards,
+ * which are ALSO `character`-type Actors under FOLDER-002 (distinguished by a
+ * module `entityType` flag) — without this filter an NPC card leaks into
+ * PC-only operations (e.g. the Begin-a-Session momentum grant).
  *
  * @returns {Actor[]}
  */
 export function getPlayerActors() {
-  const characters = game.actors?.filter(a => a.type === 'character') ?? [];
+  const characters = game.actors?.filter(isPlayerCharacterActor) ?? [];
   const playerOwned = characters.filter(a => a.hasPlayerOwner);
   return playerOwned.length > 0 ? playerOwned : characters;
+}
+
+/**
+ * True when an Actor is a real player character: a `character`-type Actor that
+ * is NOT one of the Companion's NPC/connection cards. NPC cards are `character`
+ * actors too (FOLDER-002), tagged with a module `entityType` flag; PCs carry no
+ * such flag. Use this anywhere a "this is a PC" decision is made so NPC cards
+ * stay out of PC-only logic.
+ *
+ * @param {Actor} actor
+ * @returns {boolean}
+ */
+export function isPlayerCharacterActor(actor) {
+  return actor?.type === 'character' && !actor?.flags?.[MODULE_ID]?.entityType;
 }
 
 /**

@@ -984,6 +984,9 @@ describe("assembler — WJ Section 3 (confirmed lore + asserted)", () => {
 
   it("Section 3 omits asserted lore before confirmed under tight budget", async () => {
     const fixture = buildFullCampaignState();
+    // A real PC so CHARACTER STATE consumes budget (the fixture's connection
+    // card is no longer mistaken for a PC under FOLDER-002).
+    global.game.actors._set('pc-budget', global.makeTestActor({ id: 'pc-budget', type: 'character', hasPlayerOwner: true, name: 'Vesna' }));
     await seedWj(fixture, {
       lore: [
         { title: "Confirmed",                 confirmed:        true },
@@ -1033,6 +1036,8 @@ describe("assembler — WJ Section 4 (active threats)", () => {
 
   it("Section 4 drops looming threats before immediate ones", async () => {
     const fixture = buildFullCampaignState();
+    // A real PC so CHARACTER STATE consumes budget (see note above).
+    global.game.actors._set('pc-budget', global.makeTestActor({ id: 'pc-budget', type: 'character', hasPlayerOwner: true, name: 'Vesna' }));
     await seedWj(fixture, {
       threats: [
         { name: "AI fragment", severity: "immediate" },
