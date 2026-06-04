@@ -52,6 +52,9 @@ function filterPlayerOwnedCharacters(user) {
   const all = Array.from(globalThis.game.actors ?? []);
   return all.filter(a => {
     if (a?.type !== "character") return false;
+    // NPC/connection cards are `character` actors too (FOLDER-002) — never
+    // attribute a chat message to one.
+    if (a?.flags?.["starforged-companion"]?.entityType) return false;
     if (typeof a.testUserPermission === "function") {
       return a.testUserPermission(user, "OWNER");
     }

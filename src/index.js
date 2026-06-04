@@ -1770,7 +1770,7 @@ function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
                  ?? null;
     const actor = actorId
       ? game.actors?.get(actorId)
-      : (game.actors?.find(a => a?.type === "character" && a?.hasPlayerOwner) ?? null);
+      : (game.actors?.find(a => a?.type === "character" && a?.hasPlayerOwner && !a?.flags?.[MODULE_ID]?.entityType) ?? null);
     if (!actor) return null;
     return { name: actor.name ?? null };
   } catch {

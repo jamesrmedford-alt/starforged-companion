@@ -96,6 +96,34 @@ describe('getPlayerActors', () => {
     expect(result[0].id).toBe('c');
   });
 
+  // Regression for v1.7.6: NPC/connection cards are `character`-type Actors
+  // (FOLDER-002). In solo-GM play the PC has no player owner, so the fallback
+  // returns all characters — it must NOT sweep in NPC cards (they were getting
+  // a Begin-a-Session +1 momentum grant).
+  it('excludes NPC/connection cards in the solo-GM fallback', () => {
+    const pc  = makeTestActor({ id: 'pc',  type: 'character', hasPlayerOwner: false });
+    const npc = makeTestActor({
+      id: 'npc', type: 'character', hasPlayerOwner: false,
+      flags: { 'starforged-companion': { entityType: 'connection' } },
+    });
+    game.actors._setAll([pc, npc]);
+
+    const result = getPlayerActors();
+    expect(result.map(a => a.id)).toEqual(['pc']);
+  });
+
+  it('excludes NPC/connection cards even when they appear player-owned', () => {
+    const pc  = makeTestActor({ id: 'pc',  type: 'character', hasPlayerOwner: true });
+    const npc = makeTestActor({
+      id: 'npc', type: 'character', hasPlayerOwner: true,
+      flags: { 'starforged-companion': { entityType: 'connection' } },
+    });
+    game.actors._setAll([pc, npc]);
+
+    const result = getPlayerActors();
+    expect(result.map(a => a.id)).toEqual(['pc']);
+  });
+
   it('prefers player-owned characters when any exist (multi-user game)', () => {
     const owned   = makeTestActor({ id: 'owned',   type: 'character', hasPlayerOwner: true });
     const orphan  = makeTestActor({ id: 'orphan',  type: 'character', hasPlayerOwner: false });
