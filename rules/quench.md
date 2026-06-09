@@ -81,3 +81,28 @@ const MODULE_PATH = "/modules/starforged-companion/src";
 await import(`${MODULE_PATH}/context/safety.js`)  // works
 ```
 Static imports at file top resolve correctly. Only dynamic import() has this behaviour.
+
+## Unit-test mock fidelity (vitest harness, `tests/setup.js`)
+
+Mocks standing in for Foundry APIs must match the **real Foundry v13 return
+shape**, not what's convenient for assertions. A convenient-but-wrong mock
+doesn't just miss bugs — it actively conceals them by making broken production
+code pass CI.
+
+Known trap (cost multiple releases): Foundry v13's `Folder#folder` getter
+returns the parent Folder **document**, while the shared mock stored `folder`
+as an id string. `ensureFolderPath`'s parent comparison passed against the
+mock and silently failed in production, minting a duplicate sector folder on
+every world load (FOLDER-001). Same family: `Actor#folder` is also a document
+in v13 — code must normalise via `folderParentId()` (`src/entities/folder.js`)
+or `actor.folder?.id ?? actor.folder`.
+
+Rules:
+- When fixing a bug the unit mocks missed, write the regression test against
+  the **production shape** (e.g. seed a document-style parent ref), not the
+  mock's existing convention — otherwise the test re-encodes the blind spot.
+- When touching `tests/setup.js` mocks, check the real shape in
+  `docs/foundry-reference/foundry-api-reference.md` or the vendor source
+  before extending the mock's behaviour.
+- A passing unit suite plus a live-Foundry failure usually means a mock-shape
+  divergence — diff the mock against the v13 API before debugging the code.

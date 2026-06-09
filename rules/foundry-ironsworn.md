@@ -67,6 +67,16 @@ vendor/foundry-ironsworn/src/module/model/item/
 6. Stats are flat on system: `system.edge`, not `system.stats.edge`
 7. XP is a flat number: `system.xp`, not `system.xp.value`
 8. Starship is a separate Actor (`type: "starship"`), not an embedded item
+9. The system **does** ship `character` / `npc` / `foe` / `starship` /
+   `location` / `shared` / `site` actor types — never assert an actor type
+   doesn't exist without checking `vendor/.../system/template.json`. (A stale
+   "no native NPC actor type" note once deferred connection migration for
+   multiple releases.)
+10. The Companion uses `character` for **both** PCs and NPC/connection cards,
+    distinguished by `flags[MODULE].entityType` (present = NPC card, absent =
+    PC). Sheet-label field mapping: the "Characteristics" header field is
+    `system.biography`; the "Notes" tab is `system.notes` (verified against
+    `sf-characterheader.vue` / `sf-notes.vue`).
 
 **When updating `tests/setup.js` actor mock:**
 The `makeTestActor` factory must match the real schema exactly.

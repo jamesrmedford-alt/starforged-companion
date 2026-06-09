@@ -22,6 +22,19 @@ you to address a specific one in the current session conversation.
   for confirmation before making the change
 - **Implement only when asked:** a user describing a problem is not the same as
   a user asking you to fix it
+- **Audit consumers when meaning changes:** when changing what a document type,
+  flag, or setting default *means* (e.g. a new use of an actor type, flipping a
+  default), grep for **every consumer** of that type/flag/setting — `src/`,
+  `tests/`, and `src/integration/quench.js` — and update them in the same
+  commit. Three of the four v1.7.6 playtest bugs came from one unaudited
+  type-meaning change (NPCs becoming `character` actors).
+- **Settled decisions: search, don't re-derive.** If the user says a decision
+  was already made, find it (`decisions.md`, scope docs,
+  `docs/testing/*playtest-findings*`) before re-opening it. If a doc
+  contradicts the user, the doc is stale — correct it **and** record the
+  decision in `decisions.md` in the same commit. Decisions that live only in
+  scope docs get lost between sessions; `decisions.md` is the durable home
+  (the FOLDER-002 "no native NPC actor type" loop is the cautionary example).
 
 When in doubt about whether something is in scope for the current session,
 ask rather than proceed.
@@ -107,6 +120,11 @@ After completing any feature implementation or bug fix, always update both:
 
 2. **`CHANGELOG.md`** — the GitHub changelog:
    - Add an entry under `[Unreleased]` for the change
+   - **Promote on the next change after a release:** once a release is tagged,
+     the now-shipped `[Unreleased]` content still sits under that heading. The
+     next change's docs commit promotes it to its own `## [x.y.z] — date`
+     section (per the fetched latest tag) and starts a fresh `[Unreleased]`
+     for the new work. Don't open a PR just for the promotion.
 
 **Help file changelog format** (in `packs/help.json`, "Changelog" page):
 ```html
@@ -208,6 +226,10 @@ when the work involves an iterative CI loop where the loop body is
   `python3 -c "print(open(file).read()[A:B])"` if so.
 - WebFetch cannot read GitHub Actions step logs (auth-gated) or
   workflow artifact zips. Don't try; use the PR-comment bridge instead.
+- When delegating research to a sub-agent, verify its **"no changes needed" /
+  no-op claims** against the source before relying on them — a blast-radius
+  report once claimed `connection.js` needed no changes when its create path
+  explicitly built the old document type.
 - See `rules/ci-e2e.md` for the full pattern, including how the workflow
   populates the sticky comment.
 
@@ -233,6 +255,13 @@ These are deliberate decisions — do not change without reading
 - Chat message type must not be `"other"` — not valid in Foundry v13.
 - All actor reads and writes go through `src/character/actorBridge.js`.
   Never access Actor fields directly from other modules.
+- NPC/connection cards are `character`-type Actors tagged with
+  `flags[MODULE].entityType` (FOLDER-002). **Never use `type === 'character'`
+  alone to mean "player character"** — use `isPlayerCharacterActor()` /
+  `getPlayerActors()` from `actorBridge.js`, or replicate the entityType-flag
+  exclusion where importing actorBridge isn't possible. An unfiltered check
+  leaks NPC cards into PC-only logic (momentum grants, chat-speaker
+  attribution, narrator CHARACTER STATE).
 
 ---
 
