@@ -176,6 +176,10 @@ Hooks.on("quenchReady", (quench) => {
   // endpoint stubbed, asserting prose + fact-line render and the no-key
   // bullet-list fallback.
   registerStarshipNarratedNotesTests(quench);
+  // Envision an Inciting Incident — rolls the Action+Theme spark and posts the
+  // launch card. Unit tests cover the pure helpers; this batch exercises the
+  // live roll → ChatMessage post (oracle-only fallback with narration off).
+  registerIncitingIncidentTests(quench);
   // Narrator character context — the unit tests check buildCharacterBlock
   // against synthetic snapshots; this batch builds a real character Actor
   // with vow / bond / asset Items and biographical fields, then reads
@@ -10079,6 +10083,54 @@ function registerOracleNarrationTests(quench) {
 // burned. The chat-hook gate is verified by toggling `sessionActive` in
 // campaignState and asserting whether a narrator card lands.
 // ─────────────────────────────────────────────────────────────────────────────
+
+function registerIncitingIncidentTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.incitingIncident",
+    (context) => {
+      const { describe, it, assert, before, after, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      const createdMessageIds = [];
+      function track(id) { if (id) createdMessageIds.push(id); }
+      async function flushCleanup() {
+        for (const id of createdMessageIds.splice(0)) {
+          const m = game.messages?.get(id);
+          if (m?.delete) await m.delete().catch(() => {});
+        }
+      }
+
+      before(function () { if (!game.user.isGM) this.skip(); });
+      after(flushCleanup);
+      afterEach(flushCleanup);
+
+      describe("runIncitingIncident — roll + card post", function () {
+        it("rolls an Action+Theme spark and posts the launch card (oracle-only fallback when narration is off)", async function () {
+          this.timeout(20000);
+          const { runIncitingIncident } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+
+          let spark = null;
+          await withTempSetting("narrationEnabled", false, async () => {
+            const result = await runIncitingIncident(game.settings.get(MODULE, "campaignState") ?? {});
+            spark = result.spark;
+          });
+
+          assert.isOk(spark?.action, "an Action oracle should roll");
+          assert.isOk(spark?.theme,  "a Theme oracle should roll");
+
+          const created = (game.messages?.contents ?? []).filter(m => !beforeIds.has(m.id));
+          created.forEach(m => track(m.id));
+          const card = created.find(m => m.flags?.[MODULE]?.incitingIncidentCard);
+          assert.isOk(card, "an inciting-incident card should be posted");
+          assert.include(card.content, "Inciting Incident", "card carries the heading");
+          assert.include(card.content, "Spark (Action + Theme)", "card shows the oracle spark");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Inciting Incident", timeout: 60000 },
+  );
+}
 
 function registerSessionPanelTests(quench) {
   quench.registerBatch(

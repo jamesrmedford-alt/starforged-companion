@@ -185,6 +185,7 @@ developer-only and excluded from the release.
 | `lifecycle.js` | Session-active gate state machine: `isSessionActive`, `beginSession`, `endSession`, `sessionMinutesActive`. |
 | `galleyVignette.js` | Begin-Session opening galley vignette (active PCs). |
 | `endSessionVignette.js` | End-Session closing NPC vignette. |
+| `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + suggested vow, posts the launch card. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
 
 ### `system/` — foundry-ironsworn integration
 

@@ -627,6 +627,7 @@ export function registerChatHook() {
     if (isBreakCommand(message))        { openTakeABreakDialog();      return; }
     if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
     if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
+    if (isIncitingIncidentCommand(message)) { await handleIncitingIncidentCommand(message); return; }
 
     // !clock command — create / advance / list campaign and tension clocks
     if (isClockCommand(message)) {
@@ -1432,6 +1433,33 @@ export function isEndSessionCommand(message) {
   const text = message.content?.trim() ?? "";
   if (message.flags?.[MODULE_ID]?.sessionLifecycleCard) return false;
   return /^!end-session(\s|$)/i.test(text);
+}
+
+/**
+ * !incite (alias !inciting-incident) — envision the campaign's inciting
+ * incident (rulebook "Begin your adventure", step 1). Ignores our own posted
+ * card so it never self-triggers.
+ */
+export function isIncitingIncidentCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.incitingIncidentCard) return false;
+  return /^!(incite|inciting-incident)(\s|$)/i.test(text);
+}
+
+/**
+ * Roll the spark, ask the narrator to compose the inciting incident, and post
+ * the card. Runs only on the authoring client — it creates a shared chat
+ * document, so unlike a local dialog it must fire exactly once.
+ */
+async function handleIncitingIncidentCommand(message) {
+  if (message?.author?.id && message.author.id !== game.user?.id) return;
+  try {
+    const { runIncitingIncident } = await import("./session/incitingIncident.js");
+    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    await runIncitingIncident(campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | inciting incident command failed:`, err?.message ?? err);
+  }
 }
 
 /**
