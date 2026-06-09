@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Envision an Inciting Incident.** A new launch action — the ✦ Envision Inciting Incident button on the Session panel and the `!incite` chat command — rolls an Action + Theme oracle spark and asks the narrator to compose the campaign's opening dramatic event, grounded in your World Truths, starting sector, local connection, and character, then proposes a starting vow. With no Claude key it posts the oracle spark alone as a prompt to envision the incident yourself. (Rulebook "Begin your adventure", step 1.)
+
+## [1.7.7] — 2026-06-04
+
 - Fixed: **NPCs no longer receive player-only effects.** Because NPC cards are ironsworn `character` actors, they were being swept into player-character logic — most visibly, an NPC picked up the "+1 momentum to all players" grant when you Began a Session. NPC cards are now excluded from every "this is a PC" check (momentum, chat-speaker attribution, character-state context).
 - Fixed: **Settlements stay in their sector folder across reloads.** A reload could relocate a correctly-filed settlement into `Sectors / Unsorted` when its sector couldn't be momentarily resolved. The folder pass now leaves an already-filed settlement where it is.
 - Changed: **New ships and NPC cards are created blank; populate them with ✦ Finalise.** Auto-populating a ship at creation (rolling oracles, installing modules, generating flavour + art before you could set it up) is now off by default. Create the ship/NPC, set it up, then click **✦ Finalise** in the Entities panel to roll its oracles, write its Notes/Characteristics, and generate its portrait + token. The old at-creation behaviour is available via the **Auto-Seed Starship / NPC** settings (now off by default). This also fixes the NPC portrait not appearing at full size in the Notes tab.

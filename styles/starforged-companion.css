@@ -2402,3 +2402,38 @@
   border-color: var(--color-text-light-highlight, #f0a020);
   color: var(--color-text-light-highlight, #f0a020);
 }
+
+
+/* ============================================================================
+   INCITING INCIDENT CARD (Envision an Inciting Incident — play kit launch)
+   ============================================================================ */
+
+.sf-incite-card {
+  padding:      8px 10px;
+  border-left:  3px solid var(--color-border-dark, #b07830);
+  border-radius: 2px;
+  background:   var(--color-bg, #f0f0e0);
+  font-size:    0.92em;
+}
+
+.sf-incite-card > strong {
+  display:       block;
+  margin-bottom: 4px;
+  color:         var(--color-text-dark-primary, #4a2c10);
+}
+
+.sf-incite-spark {
+  font-size:  0.85em;
+  color:      var(--color-text-dark-secondary, #666);
+  margin:     2px 0 6px;
+}
+
+.sf-incite-vow {
+  margin-top:  6px;
+  padding-top: 5px;
+  border-top:  1px dashed var(--color-border-dark, #bbb);
+}
+
+.sf-incite-prompt {
+  color: var(--color-text-dark-secondary, #555);
+}

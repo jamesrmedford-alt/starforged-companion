@@ -62,6 +62,7 @@ export class SessionPanelApp extends ApplicationV2 {
       setFlag:          SessionPanelApp.#onSetFlag,
       changeFate:       SessionPanelApp.#onChangeFate,
       takeBreak:        SessionPanelApp.#onTakeBreak,
+      envisionIncite:   SessionPanelApp.#onEnvisionIncite,
     },
   };
 
@@ -147,6 +148,13 @@ export class SessionPanelApp extends ApplicationV2 {
           </button>
         </section>
 
+        <section class="launch-row">
+          <button class="session-btn" data-action="envisionIncite"
+                  ${!isGM ? "disabled title=\"GM only\"" : "title=\"Roll an Action+Theme spark and envision the campaign's inciting incident\""}>
+            ✦ Envision Inciting Incident
+          </button>
+        </section>
+
         <p class="hint">
           Pre-session, typed narration does NOT trigger the narrator or move pipeline.
           Chat cards (X-Card, draft Confirm/Dismiss) and explicit commands
@@ -188,6 +196,21 @@ export class SessionPanelApp extends ApplicationV2 {
   static async #onSetFlag()    { await openSetFlagDialog(); }
   static async #onChangeFate() { await openChangeYourFateDialog(); }
   static async #onTakeBreak()  { await openTakeABreakDialog(); }
+
+  static async #onEnvisionIncite() {
+    if (!game.user?.isGM) {
+      ui.notifications?.warn?.("Envision Inciting Incident is GM-only.");
+      return;
+    }
+    try {
+      const { runIncitingIncident } = await import("../session/incitingIncident.js");
+      const campaignState = game.settings.get("starforged-companion", "campaignState") ?? {};
+      await runIncitingIncident(campaignState);
+    } catch (err) {
+      console.warn("starforged-companion | session panel: envision incident failed:", err?.message ?? err);
+      ui.notifications?.warn?.("Envision Inciting Incident failed. Check the console.");
+    }
+  }
 }
 
 /** Convenience for the toolbar wiring. */

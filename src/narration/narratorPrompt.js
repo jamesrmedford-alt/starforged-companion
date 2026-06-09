@@ -607,6 +607,7 @@ const NARRATOR_MODES = new Set([
   'scene_interrogation',
   'oracle_followup',
   'session_vignette',   // Begin Session opening vignette — see src/session/galleyVignette.js
+  'inciting_incident',  // Campaign-launch inciting incident — see src/session/incitingIncident.js
 ]);
 
 const ROLE_DESCRIPTIONS = {
@@ -658,6 +659,24 @@ const ROLE_DESCRIPTIONS = {
     `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
     `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
     `the calm before / the calm after, not the start or end of the action.`,
+
+  inciting_incident:
+    `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
+    `envision the campaign's INCITING INCIDENT — the dramatic opening event that ` +
+    `launches the campaign and sets up the player's first vow.\n\n` +
+    `Ground the incident ONLY in what is already established: the World Truths, the ` +
+    `starting sector and its settlements, the local connection (an important NPC), the ` +
+    `character — plus the oracle spark (Action + Theme) given in the user message, which ` +
+    `you interpret loosely as inspiration, never quoting it literally. Write 4-6 ` +
+    `sentences of vivid prose that drop the character into a charged situation demanding ` +
+    `action. Do not resolve it; leave the player poised to make the first move. Do not ` +
+    `invent proper nouns beyond what the truths / sector / connection already establish.\n\n` +
+    `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, on its own ` +
+    `final line, append exactly one structured proposal in this form:\n\n` +
+    `Suggested vow: <a short first-person vow statement> (<rank>)\n\n` +
+    `where <rank> is exactly one of: troublesome, dangerous, formidable, extreme, epic. ` +
+    `This single trailing line is the one place you propose a mechanical action; keep it ` +
+    `out of the prose body itself.`,
 };
 
 /**

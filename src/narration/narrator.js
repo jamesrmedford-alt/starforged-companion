@@ -971,6 +971,66 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
 }
 
 /**
+ * Compose the campaign's inciting incident — the dramatic opening event that
+ * launches the campaign and sets up the first vow (rulebook "Begin your
+ * adventure", step 1). Grounded in the established World Truths, starting
+ * sector, local connection, and character, plus the oracle spark carried in
+ * `userMessage`. Returns prose (4-6 sentences) ending with a single
+ * `Suggested vow: … (<rank>)` line, or null when narration is disabled / no key
+ * / the call fails (the caller falls back to an oracle-spark-only card).
+ *
+ * @param {{ userMessage: string, campaignState: Object }} args
+ * @returns {Promise<string|null>}
+ */
+export async function narrateIncitingIncident({ userMessage, campaignState }) {
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+  if (campaignState?.xCardActive)  return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const character = getActiveCharacter(campaignState);
+  const currentLocationCard = formatCurrentLocation(campaignState);
+  const activeSectorBlock   = formatActiveSector(campaignState);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '',
+    {
+      mode:               'inciting_incident',
+      playerNarration:    '',
+      currentLocationCard,
+      activeSectorBlock,
+      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
+    },
+  );
+
+  const run = async () => {
+    const raw = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(480),  // 4-6 sentences + the suggested-vow line
+    });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    return (text && text.trim()) ? text : null;
+  };
+
+  try {
+    return await run();
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try {
+        await delay(RETRY_DELAY_MS);
+        return await run();
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narrateIncitingIncident retry failed:`, retryErr);
+      }
+    }
+    console.error(`${MODULE_ID} | narrateIncitingIncident failed:`, err);
+    return null;
+  }
+}
+
+/**
  * Run a narrator-only response for the pacing classifier's NARRATIVE and
  * NARRATIVE_WITH_MOVE_AVAILABLE decisions. No move is rolled, no move card is
  * posted, no chronicle entry — just a narrator card continuing the fiction
