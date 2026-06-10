@@ -757,12 +757,22 @@ const ROLE_DESCRIPTIONS = {
     `sentences of vivid prose that drop the character into a charged situation demanding ` +
     `action. Do not resolve it; leave the player poised to make the first move. Do not ` +
     `invent proper nouns beyond what the truths / sector / connection already establish.\n\n` +
-    `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, on its own ` +
-    `final line, append exactly one structured proposal in this form:\n\n` +
-    `Suggested vow: <a short first-person vow statement> (<rank>)\n\n` +
-    `where <rank> is exactly one of: troublesome, dangerous, formidable, extreme, epic. ` +
-    `This single trailing line is the one place you propose a mechanical action; keep it ` +
-    `out of the prose body itself.`,
+    `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, append a ` +
+    `short structured proposal block — each item on its own line, in this order and ` +
+    `these exact forms:\n\n` +
+    `Suggested vow: <a short first-person vow statement> (<rank>)\n` +
+    `Suggested clock: <a short clock label> (<segments> segments)\n` +
+    `Vow target: <Name> — <2-3 sentences on one line: who they are, their history with ` +
+    `the character, and their current situation and condition>\n\n` +
+    `Rules for the block: <rank> is exactly one of: troublesome, dangerous, formidable, ` +
+    `extreme, epic. The "Suggested vow" line is always present. The "Suggested clock" ` +
+    `line appears ONLY when the incident carries explicit time pressure (something fails, ` +
+    `expires, or arrives if the character is too slow) — <segments> is one of 4, 6, 8, ` +
+    `10, 12 (fewer segments = tighter deadline); omit the line entirely for vows without ` +
+    `a deadline. The "Vow target" line appears when the vow concerns a specific person, ` +
+    `creature, faction, or vessel — use their established name, keep the whole line ` +
+    `single-line. This trailing block is the one place you propose mechanics; keep all ` +
+    `of it out of the prose body itself.`,
 };
 
 /**

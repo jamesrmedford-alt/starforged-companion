@@ -185,7 +185,8 @@ developer-only and excluded from the release.
 | `lifecycle.js` | Session-active gate state machine: `isSessionActive`, `beginSession`, `endSession`, `sessionMinutesActive`. |
 | `galleyVignette.js` | Begin-Session opening galley vignette (active PCs). |
 | `endSessionVignette.js` | End-Session closing NPC vignette. |
-| `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + suggested vow, posts the launch card. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
+| `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + structured proposal (suggested vow / optional clock / vow target — parsers `splitIncitingMeta` et al.), posts the launch card with `incitingMeta` flags + ⚔ Swear button. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
+| `swearVow.js` | ⚔ Swear this vow (Cluster B — F2/F3/F4): pure planner `buildSwearVowPlan` + executor `executeSwearVow` (vow item with optional clock via `createCharacterVowItem`; vow-target connection via the make_a_connection pipeline; GM/world-write asymmetry) + `registerSwearVowHandler` chat-card wiring. |
 
 ### `system/` — foundry-ironsworn integration
 

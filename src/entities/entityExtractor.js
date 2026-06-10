@@ -547,7 +547,10 @@ function safeOracleRoll(tableId) {
  * Lives here (not in connection.js / ship.js) so the portrait-generation
  * policy is applied consistently regardless of which create path runs.
  */
-async function postCreationEnrichment(typeKey, record, campaignState) {
+// Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B),
+// which creates the vow-target connection through the exact same
+// pipeline as the make_a_connection auto-create above.
+export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!record || !record.portraitSourceDescription) return;
   if (!hasOpenRouterKey()) return;
 
@@ -1494,7 +1497,8 @@ function escapeHtml(s) {
  * button does. With no active character (sector seeding, multi-PC setups
  * with no obvious target), this is a no-op.
  */
-async function registerConnectionOnActiveCharacter(record) {
+// Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
+export async function registerConnectionOnActiveCharacter(record) {
   if (!record?._id) return;
   const actors = getPlayerActors();
   const actor = actors?.[0];

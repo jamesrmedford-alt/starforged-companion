@@ -10127,6 +10127,78 @@ function registerIncitingIncidentTests(quench) {
           assert.include(card.content, "Spark (Action + Theme)", "card shows the oracle spark");
         });
       });
+
+      describe("⚔ Swear this vow — live execution (Cluster B: F2/F3/F4)", function () {
+        it("creates the vow (with clock) on a real PC and the vow-target connection", async function () {
+          this.timeout(30000);
+          const { postIncitingIncidentCard } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+          const { executeSwearVow }          = await import(`${MODULE_PATH}/session/swearVow.js`);
+
+          // Seeded PC so getPlayerActors resolves deterministically.
+          const pc = await Actor.create({ name: "Quench Vow PC", type: "character" });
+          const targetName = `Quench Vance ${Date.now().toString(36)}`;
+
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          await postIncitingIncidentCard({
+            spark: { action: "Lose", theme: "Relationship" },
+            text: [
+              "The beacon cuts through the haze.",
+              "Suggested vow: I will reach the drifting shuttle in time (dangerous)",
+              "Suggested clock: Failing life support (6 segments)",
+              `Vow target: ${targetName} — An estranged mentor, wounded and hiding.`,
+            ].join("\n"),
+            fallback:  false,
+            sessionId: game.settings.get(MODULE, "campaignState")?.currentSessionId ?? null,
+          });
+          const created = (game.messages?.contents ?? []).filter(m => !beforeIds.has(m.id));
+          created.forEach(m => track(m.id));
+          const card = created.find(m => m.flags?.[MODULE]?.incitingIncidentCard);
+          assert.isOk(card, "the synthetic inciting card should post");
+          assert.include(card.content, 'data-action="sf-swear-vow"', "card renders the swear button");
+          assert.isOk(card.flags[MODULE].incitingMeta?.vow, "card carries the parsed vow meta");
+
+          const stateBefore = game.settings.get(MODULE, "campaignState");
+          const connIdsBefore = [...(stateBefore?.connectionIds ?? [])];
+
+          try {
+            const result = await executeSwearVow(card);
+
+            const vow = (pc.items?.contents ?? []).find(
+              i => i.type === "progress" && i.system?.subtype === "vow",
+            );
+            assert.isOk(vow, "a vow progress item should land on the PC");
+            assert.strictEqual(vow.system.hasClock, true, "the vow carries a clock");
+            assert.strictEqual(vow.system.clockMax, 6, "clock has the suggested 6 segments");
+
+            assert.isOk(result?.connection, "the vow-target connection should be created");
+            const target = game.actors.get(
+              (game.settings.get(MODULE, "campaignState")?.connectionIds ?? [])
+                .find(id => !connIdsBefore.includes(id)),
+            );
+            assert.isOk(target, "the target NPC card actor exists");
+            assert.strictEqual(target.name, targetName, "NPC card carries the narrator's name");
+
+            // Idempotency: a second click must not duplicate the vow.
+            await executeSwearVow(card);
+            const vows = (pc.items?.contents ?? []).filter(
+              i => i.type === "progress" && i.system?.subtype === "vow",
+            );
+            assert.lengthOf(vows, 1, "re-clicking does not duplicate the vow");
+          } finally {
+            // Targeted cleanup beyond the message reaper: actors + state.
+            const stateNow  = game.settings.get(MODULE, "campaignState");
+            const newConnIds = (stateNow?.connectionIds ?? []).filter(id => !connIdsBefore.includes(id));
+            for (const id of newConnIds) {
+              await game.actors.get(id)?.delete().catch(() => {});
+            }
+            if (stateNow) {
+              stateNow.connectionIds = connIdsBefore;
+              await game.settings.set(MODULE, "campaignState", stateNow);
+            }
+            await pc.delete().catch(() => {});
+          }
+        });
+      });
     },
     { displayName: "STARFORGED: Inciting Incident", timeout: 60000 },
   );
