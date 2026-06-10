@@ -250,3 +250,52 @@ describe('formatShipPositionLine', () => {
     expect(line).toMatch(/Command vehicle\b/);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// Seed-name matching robustness (Cluster C / F5 gap 3)
+// ────────────────────────────────────────────────────────────────────
+
+describe('inferShipPosition — tolerant seed matching', () => {
+  const cs = () => makeCampaignState({
+    settlements: [settlement('s-lyra', 'Lyra', 'sec-1'), settlement('s-sep', 'Sepulcher', 'sec-1')],
+    locations:   [location('l-vault', 'Vault of Tears', 'sec-1')],
+    sectors:     [sec('sec-1', 'Igneous Spine')],
+    activeSectorId: 'sec-1',
+  });
+
+  it('resolves a possessive phrase to the settlement ("Lyra\'s orbital graveyard")', () => {
+    const p = inferShipPosition("Lyra's orbital graveyard", cs(), { source: 'narrator_sidecar' });
+    expect(p.nearestSettlementId).toBe('s-lyra');
+    expect(p.freeText).toBe('');
+  });
+
+  it('resolves an article-wrapped multiword name via the word scan ("the Vault of Tears")', () => {
+    const p = inferShipPosition('the Vault of Tears', cs(), { source: 'narrator_sidecar' });
+    expect(p.sectorId).toBe('sec-1');
+    expect(p.freeText).toBe('Vault of Tears');   // location-kind keeps the name as freeText
+  });
+
+  it('prefers the exact full-name match over the word scan', () => {
+    const state = makeCampaignState({
+      settlements: [
+        settlement('s-port', 'Lyra Station'),
+        settlement('s-lyra', 'Lyra'),
+      ],
+    });
+    const p = inferShipPosition('Lyra Station', state, { source: 'at_command' });
+    expect(p.nearestSettlementId).toBe('s-port');
+  });
+
+  it('skips sub-4-character words so articles cannot false-positive', () => {
+    const state = makeCampaignState({ settlements: [settlement('s-ash', 'Ash')] });
+    const p = inferShipPosition('drifting in the ash fields', state, { source: 'narrator_sidecar' });
+    // "ash" (3 chars) is skipped by the word scan — falls through to freeText.
+    expect(p.nearestSettlementId).toBeNull();
+    expect(p.freeText).toBe('drifting in the ash fields');
+  });
+
+  it('accepts the new "expedition" provenance source', () => {
+    const p = inferShipPosition('Lyra', cs(), { source: 'expedition' });
+    expect(p.updatedBy).toBe('expedition');
+  });
+});

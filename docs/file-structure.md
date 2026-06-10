@@ -96,7 +96,7 @@ developer-only and excluded from the release.
 | `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore; clears the scene frame. |
 | `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (+ `!truth`/`!state` backing). |
 | `consistencyCheck.js` | Optional Haiku consistency audit → GM review card. |
-| `shipPosition.js` | §20 ship positioning: token auto-move on a set course. |
+| `shipPosition.js` | §20 ship positioning: `inferShipPosition` (tolerant seed matching — possessives, article-wrapped multiword names), `formatShipPositionLine`, `matchSeedAgainstIndex`. Provenance sources include `expedition` (finish_an_expedition arrivals). |
 
 ### `help/` — in-game help journal
 
@@ -176,7 +176,7 @@ developer-only and excluded from the release.
 | `sceneBuilder.js` | Foundry Scene creation (Note pins + Drawing passages). |
 | `sectorMap.js` | SVG sector map renderer. |
 | `sectorOverview.js` | Sector-record JournalEntry overview. |
-| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins. |
+| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins; command-vehicle Token drag → set_a_course; `syncCommandVehicleTokenToPosition` (position→token sync so the map follows fiction-side movement — Cluster C). |
 
 ### `session/` — session lifecycle & vignettes
 
