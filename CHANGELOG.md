@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **First Session walkthrough in the in-game help.** A new help-journal page ("First Session") lays out the exact order to stand up a new campaign — API keys → safety → World Truths → character → starship (create + ✦ Finalise) → Sector Creator → finalise entities → Begin Session → ✦ Envision Inciting Incident → swear your first vow → first move — with chat-command equivalents and a "no API key" note.
+
+## [1.7.8] — 2026-06-09
+
 - Added: **Envision an Inciting Incident.** A new launch action — the ✦ Envision Inciting Incident button on the Session panel and the `!incite` chat command — rolls an Action + Theme oracle spark and asks the narrator to compose the campaign's opening dramatic event, grounded in your World Truths, starting sector, local connection, and character, then proposes a starting vow. With no Claude key it posts the oracle spark alone as a prompt to envision the incident yourself. (Rulebook "Begin your adventure", step 1.)
 
 ## [1.7.7] — 2026-06-04
