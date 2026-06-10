@@ -194,6 +194,38 @@ hybrid moves). See §8.
 
 ---
 
+## 6.5 Token budgets — where the overhaul actually costs
+
+**Output side (the one that can fail).** Every narrator call's `maxTokens` is
+`base + SIDECAR_TOKEN_HEADROOM` (`narrator.js`; 500 since Cluster A, raised
+from 300). The post-A sidecar on a heavy turn: required stateChanges
+(~45–90) + stakes newTruths (~20–60) + sceneFrame (~50–75) + overhead (~25)
+≈ **240–290 tokens**, and the inciting premise addendum can reach ~400.
+Failure mode when headroom is too small: the fence is clipped mid-JSON,
+`extractSidecar` strips it defensively (prose stays clean, parseError
+logged) — and the turn **silently loses its frame update and required
+emissions**. `maxTokens` is a cap, not a target, so generous headroom costs
+nothing unless used. **Watch for** `"truncated by maxTokens"` warnings in
+the console during playtests; if they appear, raise the headroom further.
+
+Per-site totals (base + 500): @scene 700 · oracle follow-up 720 · paced/move
+`narrationMaxTokens`+500 (800 at default) · vignettes 880 · inciting 980.
+
+**Input side (fine; two watch items).** Per-call additions from Cluster A:
+scene frame block ~30–60; ENTITIES IN SCENE on paced/@scene ~50–150 per
+matched card (typically 1–3 cards via frame-present union) — the largest
+add, ≈ +100–450 input tokens ≈ $0.001–0.003/call at Sonnet rates; ring at
+default 3 unchanged (each step toward 10 adds ~100–200). Total system
+prompt typically grows ~5–15%; nowhere near any context-window concern.
+
+Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
+(400) only sheds *state*; truths/frame/ship render regardless. Required
+emission accumulates truths faster, so a long scene that never ends
+(`!scene end` hygiene) can exceed the cap on truths alone (~20 truths ≈
+400). Not a correctness failure — the block just runs over the soft cap —
+but it's the mechanism by which prompts grow in marathon scenes. Backlog
+§8.8 covers the elide option if playtests show it.
+
 ## 7. Tuning guide — symptom → layer
 
 | Symptom in play | Look at | Fix direction |
@@ -258,6 +290,12 @@ regressions, all are known scope cuts:
    triggers move-path context assembly; the paced path now carries entity
    cards, but a `set_a_course` nomination (Cluster D) remains the mechanical
    fix.
+8. **Truth eliding for marathon scenes.** Truths are never dropped (§6.5
+   watch item), so a scene that runs very long grows the ledger block past
+   the soft cap. If playtests show it: elide oldest-first beyond the cap
+   with a `(+N earlier truths recorded — end the scene to archive them)`
+   line, keeping retraction-defended truths verbatim. Prefer nudging scene
+   hygiene first — `!scene end` migration is the designed pressure valve.
 
 ## 9. Verification checklist for the next playtest
 

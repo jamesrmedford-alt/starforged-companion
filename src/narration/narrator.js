@@ -58,12 +58,18 @@ const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
 
 // Extra tokens reserved for the fact-continuity sidecar JSON when it ships
-// alongside narrator prose. A typical sidecar with 2–4 newTruths and 2–4
-// stateChanges runs ~150–250 tokens; we budget 300 to leave the prose its
-// full configured length plus comfortable headroom for the structured
-// block. Without this, maxTokens hits mid-JSON and the truncated fence
-// leaks into the chat card (observed on Forge with v1.3.0).
-const SIDECAR_TOKEN_HEADROOM = 300;
+// alongside narrator prose. Sized for the post-Cluster-A contract: required
+// stateChanges (NPC location/condition, ~45–90 tokens on an active turn) +
+// newTruths for intent/stakes (~20–60) + the sceneFrame snapshot (~50–75) +
+// fence/key overhead (~25) — a heavy turn runs ~240–290 and the
+// inciting-incident premise addendum can reach ~400. We budget 500 so the
+// tightest call sites (@scene at base 200) cannot clip the sidecar even on a
+// full-length answer. maxTokens is a cap, not a target — unused headroom
+// costs nothing. A truncated sidecar is silently expensive now: the
+// defensive strip in extractSidecar keeps the prose clean, but the turn
+// loses its frame update and required emissions (watch for the
+// "truncated by maxTokens" parseError warning in console).
+const SIDECAR_TOKEN_HEADROOM = 500;
 
 /**
  * Compute the maxTokens budget for a narrator API call, adding headroom
