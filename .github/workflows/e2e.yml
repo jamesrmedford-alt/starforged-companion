@@ -201,8 +201,14 @@ jobs:
       #
       # Docs-only runs skip the comment — there's no orchestrator
       # output to post and the PR thread stays uncluttered.
+      #
+      # continue-on-error: the comment is a diagnostic bridge, not a
+      # gate — a transient `gh api` auth failure (observed: HTTP 401 on
+      # run 27287037209 with JOB_STATUS=success) must not mark a green
+      # suite red. The step still annotates red on its own row.
       - name: Post orchestrator status to PR comment
         if: always() && github.event.pull_request.number && steps.changes.outputs.code == 'true'
+        continue-on-error: true
         env:
           GH_TOKEN:   ${{ github.token }}
           PR_NUMBER:  ${{ github.event.pull_request.number }}
@@ -251,9 +257,12 @@ jobs:
                 || echo "Could not delete prior sticky ${ID} (continuing)"
             done
           fi
-          gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-            -F body=@/tmp/e2e-comment.md >/dev/null
-          echo "Posted fresh sticky comment (job.status=${JOB_STATUS})"
+          if gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -F body=@/tmp/e2e-comment.md >/dev/null; then
+            echo "Posted fresh sticky comment (job.status=${JOB_STATUS})"
+          else
+            echo "::warning::Sticky-comment POST failed (gh api error) — suite status is unaffected; see run page for results."
+          fi
 
       # Always upload Cypress artifacts — screenshots from failed runs
       # let the maintainer (or an assistant with GitHub MCP access)
