@@ -156,6 +156,7 @@ import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 import {
   registerSectorSceneHooks,
   moveCommandVehicleTokenToDestination,
+  syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM }              from "./multiplayer/gmGate.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
@@ -858,13 +859,21 @@ export function registerChatHook() {
 
       const resolution = resolveMove(interpretation, campaignState, { combatPosition });
 
-      // Fact-continuity §20 — when set_a_course resolves to a non-miss,
-      // the ship arrived at the destination the player named. Infer the
-      // new position and write it onto the command vehicle BEFORE the
-      // assembler builds the context packet so Section 6.5 reflects
-      // the arrival on this same turn.
-      if (
+      // Fact-continuity §20 — when a travel move with ARRIVAL semantics
+      // resolves to a non-miss, the ship arrived at the destination the
+      // player named. Infer the new position and write it onto the
+      // command vehicle BEFORE the assembler builds the context packet so
+      // Section 6.5 reflects the arrival on this same turn.
+      //
+      // Cluster C: finish_an_expedition joins set_a_course — both mean
+      // "you reach your destination" on a hit (play kit). The
+      // undertake_an_expedition waypoint move stays deliberately unwired:
+      // a hit marks progress, not arrival.
+      const arrivalMove =
         resolution.moveId === "set_a_course"
+        || resolution.moveId === "finish_an_expedition";
+      if (
+        arrivalMove
         && resolution.outcome !== "miss"
         && getShipPositioningEnabled()
         && getShipAutoMoveOnCourse()
@@ -873,7 +882,9 @@ export function registerChatHook() {
         await maybeUpdateShipPositionFromName(
           interpretation.moveTarget,
           campaignState,
-          tokenDragSetCourse ? "scene_token" : "set_a_course",
+          tokenDragSetCourse ? "scene_token"
+            : resolution.moveId === "finish_an_expedition" ? "expedition"
+            : "set_a_course",
         );
 
         // §20.4b — when the move was initiated by a Token drag and we
@@ -2328,6 +2339,14 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     if (!cv?._id) return null;
     const position = inferShipPosition(ref, campaignState, { source });
     await updateShip(cv._id, { position });
+
+    // Cluster C — the map follows the fiction: move the sector-scene Token
+    // to the new position. The drag path already moved its own Token
+    // (moveCommandVehicleTokenToDestination), so scene_token skips the sync.
+    if (source !== "scene_token") {
+      await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err));
+    }
     return position;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | shipPosition: update from "${ref}" failed:`, err?.message ?? err);

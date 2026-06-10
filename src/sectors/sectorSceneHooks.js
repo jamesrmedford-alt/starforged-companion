@@ -214,6 +214,88 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
 }
 
 /**
+ * Find a sector Scene's Note pin for a settlement id. Pure read — used by
+ * the position→token sync so the map can follow fiction-side movement.
+ * Excludes planet/stellar pins (same predicate family as
+ * nearestSettlementNote). Returns null when no pin matches.
+ */
+export function findSettlementNoteById(scene, settlementId) {
+  if (!settlementId) return null;
+  const notes = scene?.notes?.contents ?? scene?.notes ?? [];
+  if (!Array.isArray(notes)) return null;
+  return notes.find(n => {
+    const flags = n?.flags?.[MODULE_ID];
+    return flags?.settlementId === settlementId
+      && !flags?.planetNote && !flags?.stellarNote;
+  }) ?? null;
+}
+
+/**
+ * Position→token sync (Cluster C / F5 gap 1): when the command vehicle's
+ * persistent position record updates from the fiction side — chat-typed
+ * `set_a_course` / `finish_an_expedition`, the narrator sidecar, or `!at`
+ * — move the Token on the sector Scene to match, closing the "narrator
+ * says Lyra, token sits at Sepulcher" visual lie. The token-drag path
+ * moves the Token itself (`moveCommandVehicleTokenToDestination`); callers
+ * skip this sync for `source: "scene_token"`.
+ *
+ * Free-text positions (no resolved settlement id) deliberately do NOT
+ * move the Token — there is no pin to anchor to, and parking it at an
+ * arbitrary point would be a different lie. See the ship-positioning
+ * notes in docs/narrator/narrator-memory-architecture.md §8.5.
+ *
+ * Never throws; all failure paths log at debug and return null.
+ *
+ * @param {Object} position — the just-written position record (§20.2)
+ * @param {Object} campaignState
+ * @returns {Promise<TokenDocument|null>} the moved token, or null
+ */
+export async function syncCommandVehicleTokenToPosition(position, campaignState) {
+  try {
+    if (!position?.nearestSettlementId) return null;
+    if (!game.user?.isGM) return null;
+
+    try {
+      const positioning = game.settings.get(MODULE_ID, "factContinuity.shipPositioning") !== false;
+      const tokenAfford = game.settings.get(MODULE_ID, "factContinuity.shipTokenEnabled")  !== false;
+      if (!positioning || !tokenAfford) return null;
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | token sync: settings read failed:`, err?.message ?? err);
+    }
+
+    // Resolve the sector Scene: the position's sector when known, else the
+    // active sector. Scenes are flagged { sectorScene, sectorId } by
+    // sceneBuilder.
+    const sectorId = position.sectorId ?? campaignState?.activeSectorId ?? null;
+    const scenes = game.scenes?.contents ?? [];
+    const scene = scenes.find(s =>
+      s?.flags?.[MODULE_ID]?.sectorScene
+      && (!sectorId || s.flags[MODULE_ID].sectorId === sectorId),
+    );
+    if (!scene) return null;
+
+    const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
+    const token = Array.isArray(tokens)
+      ? tokens.find(t => t?.flags?.[MODULE_ID]?.commandVehicle)
+      : null;
+    if (!token) return null;
+
+    const note = findSettlementNoteById(scene, position.nearestSettlementId);
+    if (!note) return null;
+
+    const destX = Number(note.x ?? 0);
+    const destY = Number(note.y ?? 0);
+    if (Number(token.x) === destX && Number(token.y) === destY) return token;
+
+    await token.update({ x: destX, y: destY });
+    return token;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | command-vehicle token sync failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * Move the command-vehicle Token to the destination Note's coords on a
  * non-miss `set_a_course` resolution triggered by a Token drag. Called
  * from the move pipeline in index.js after resolution. No-op when the

@@ -588,7 +588,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE, {
     name:    'Auto-Move Ship on Set a Course',
-    hint:    'When enabled, a strong / weak hit on Set a Course updates the command vehicle’s position to the destination named in the player’s narration. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
+    hint:    'When enabled, a strong / weak hit on Set a Course or Finish an Expedition updates the command vehicle’s position to the destination named in the player’s narration, and the sector-scene Token moves to match. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
     scope:   'world',
     config:  false,
     type:    Boolean,

@@ -17,6 +17,12 @@
 > `docs/narrator/narrator-memory-architecture.md` (invariants:
 > `rules/narrator-memory.md`); this scope remains the design record for the
 > ledger/correction core.
+>
+> **Cluster C (same date):** §20 gained the position→token sync for
+> fiction-side movement (`syncCommandVehicleTokenToPosition`), a REQUIRED
+> sidecar emission when prose moves the ship, `finish_an_expedition`
+> arrival wiring (with the new `expedition` provenance value), and
+> tolerant destination-name matching in `inferShipPosition`.
 
 > **Pre-drafting verification (surfaced per packet instructions).** The
 > conceptual model in the source packet referenced `docs/private-channel-scope.md`

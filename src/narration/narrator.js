@@ -1931,6 +1931,12 @@ async function applyShipPositionChanges(changes, campaignState) {
     if (!cv?._id) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
     await updateShip(cv._id, { position });
+
+    // Cluster C — the map follows the fiction (see index.js
+    // maybeUpdateShipPositionFromName for the chat-command twin).
+    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
+    await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
+      console.debug?.(`${MODULE_ID} | shipPosition: sidecar token sync failed:`, err?.message ?? err));
   } catch (err) {
     console.debug?.(`${MODULE_ID} | shipPosition: sidecar update for "${dest}" failed:`, err?.message ?? err);
   }
