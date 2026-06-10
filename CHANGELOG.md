@@ -7,6 +7,7 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Added: **First Session walkthrough in the in-game help.** A new help-journal page ("First Session") lays out the exact order to stand up a new campaign — API keys → safety → World Truths → character → starship (create + ✦ Finalise) → Sector Creator → finalise entities → Begin Session → ✦ Envision Inciting Incident → swear your first vow → first move — with chat-command equivalents and a "no API key" note.
+- Fixed: **The "Toolbar Buttons" help page caught up with the floating toolbar.** It still described the old scene-controls strip (removed in v1.7.5) and omitted several buttons; it now documents the draggable floating toolbar and the full button set (Session, Private Channel, Sector Creator, World Journal, World Truths, Custom Oracles, and the rest), including which are GM-only.
 
 ## [1.7.8] — 2026-06-09
 
