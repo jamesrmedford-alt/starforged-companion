@@ -146,6 +146,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import { registerSwearVowHandler } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -2773,6 +2774,10 @@ onChatMessageRender((message, root) => {
     );
   }).catch(err => console.warn(`${MODULE_ID} | audio module load failed:`, err));
 });
+
+// Wire the "⚔ Swear this vow" button on inciting-incident cards
+// (Cluster B — src/session/swearVow.js owns the handler + execution).
+registerSwearVowHandler();
 
 /**
  * Wire the "↻ Refresh" button on campaign recap cards.

@@ -448,8 +448,14 @@ export async function createCharacterBondItem(actor, data) {
  * The Connections tab filters subtype "vow" out — vows show up in the
  * Progress tab on the character sheet.
  *
+ * Optional `clock` attaches the sheet-native clock to the vow (progress
+ * items carry `system.hasClock` / `clockTicks` / `clockMax` — verified
+ * against vendor progress-sheet.vue; sizes 4/6/8/10/12). Used by the
+ * inciting-incident ⚔ Swear this vow flow for time-dependent vows (F4).
+ *
  * @param {Actor} actor
- * @param {{ name: string, rank?: string, vowId?: string }} data
+ * @param {{ name: string, rank?: string, vowId?: string,
+ *           clock?: { max: number } | null }} data
  * @returns {Promise<Item|null>}
  */
 export async function createCharacterVowItem(actor, data) {
@@ -459,10 +465,13 @@ export async function createCharacterVowItem(actor, data) {
     rank:       data?.rank,
     flagKey:    "vowId",
     flagValue:  data?.vowId ?? null,
+    clock:      data?.clock ?? null,
   });
 }
 
-async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue }) {
+const VALID_CLOCK_MAX = [4, 6, 8, 10, 12];
+
+async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue, clock = null }) {
   if (!actor) return null;
   const ItemCls = globalThis.Item;
   if (!ItemCls?.create) {
@@ -482,12 +491,19 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
 
   const resolvedRank = VALID_RANKS.includes(rank) ? rank : "dangerous";
 
+  const system = { subtype, rank: resolvedRank, current: 0 };
+  if (clock && Number.isFinite(Number(clock.max))) {
+    system.hasClock   = true;
+    system.clockTicks = 0;
+    system.clockMax   = VALID_CLOCK_MAX.includes(Number(clock.max)) ? Number(clock.max) : 6;
+  }
+
   try {
     const item = await ItemCls.create(
       {
         name,
         type:   "progress",
-        system: { subtype, rank: resolvedRank, current: 0 },
+        system,
         flags:  flagValue ? { [MODULE_ID]: { [flagKey]: flagValue } } : {},
       },
       { parent: actor, suppressLog: true },

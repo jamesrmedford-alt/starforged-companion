@@ -954,3 +954,15 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     expect(noFrame).not.toContain('"sceneFrame"');
   });
 });
+
+describe('inciting_incident role description — structured proposal block (Cluster B)', () => {
+  it('specifies the vow, clock, and target line formats with their conditions', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(prompt).toMatch(/Suggested vow: <a short first-person vow statement> \(<rank>\)/);
+    expect(prompt).toMatch(/Suggested clock: <a short clock label> \(<segments> segments\)/);
+    expect(prompt).toMatch(/Vow target: <Name> —/);
+    expect(prompt).toMatch(/ONLY when the incident carries explicit time pressure/);
+    expect(prompt).toMatch(/4, 6, 8,\s*10, 12/);
+  });
+});
