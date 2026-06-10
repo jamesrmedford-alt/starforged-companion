@@ -244,3 +244,70 @@ describe('getRecentNarrationContext()', () => {
     expect(result).toBe('');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. Narrator-memory A1 — scene cards feed the ring
+// ---------------------------------------------------------------------------
+
+describe('getRecentNarrationContext() — narrator-prose feed (A1)', () => {
+  const SESSION = 'session-a';
+
+  beforeEach(() => {
+    game.messages = { contents: [] };
+  });
+
+  afterEach(() => {
+    delete game.messages;
+  });
+
+  it('includes @scene answer cards carrying the narratorCard flag family', () => {
+    game.messages.contents = [
+      {
+        flags: {
+          [MODULE_ID]: {
+            sceneResponse: true,
+            sceneText:     'Shuttle on thermal, three klicks sunward.',
+            narratorCard:  true,
+            narrationText: 'Shuttle on thermal, three klicks sunward.',
+            sessionId:     SESSION,
+          },
+        },
+      },
+    ];
+    const result = getRecentNarrationContext(SESSION);
+    expect(result).toContain('Shuttle on thermal');
+  });
+
+  it('includes inciting-incident cards carrying the narratorCard flag family', () => {
+    game.messages.contents = [
+      {
+        flags: {
+          [MODULE_ID]: {
+            incitingIncidentCard: true,
+            narratorCard:         true,
+            narrationText:        'The distress beacon cuts through the methane haze.',
+            sessionId:            SESSION,
+          },
+        },
+      },
+    ];
+    const result = getRecentNarrationContext(SESSION);
+    expect(result).toContain('distress beacon');
+  });
+
+  it('still excludes scene fallback cards (no narratorCard flag)', () => {
+    game.messages.contents = [
+      {
+        flags: {
+          [MODULE_ID]: {
+            sceneResponse:  true,
+            sceneFallback:  true,
+            sceneFailReason:'API key not configured.',
+            sessionId:      SESSION,
+          },
+        },
+      },
+    ];
+    expect(getRecentNarrationContext(SESSION)).toBe('');
+  });
+});

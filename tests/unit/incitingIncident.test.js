@@ -89,3 +89,47 @@ describe("renderIncitingIncidentCard", () => {
     expect(html).toContain("Danger &lt;script&gt;");
   });
 });
+
+describe("postIncitingIncidentCard — narrator-prose feed flags (A1)", () => {
+  async function captureCard(args) {
+    const created = [];
+    const prev = globalThis.ChatMessage;
+    globalThis.ChatMessage = { create: async (data) => { created.push(data); return data; } };
+    try {
+      const { postIncitingIncidentCard } = await import("../../src/session/incitingIncident.js");
+      await postIncitingIncidentCard(args);
+    } finally {
+      globalThis.ChatMessage = prev;
+    }
+    return created[0];
+  }
+
+  it("carries narratorCard + prose-only narrationText + sessionId when text is present", async () => {
+    const text = "The beacon cuts through the haze.\n\nSuggested vow: I will reach Vance (dangerous)";
+    const card = await captureCard({
+      spark: { action: "Lose", theme: "Relationship" },
+      text,
+      fallback:  false,
+      sessionId: "ssn-42",
+    });
+    const flags = card.flags["starforged-companion"];
+    expect(flags.incitingIncidentCard).toBe(true);
+    expect(flags.narratorCard).toBe(true);
+    expect(flags.sessionId).toBe("ssn-42");
+    expect(flags.narrationText).toContain("beacon cuts through the haze");
+    expect(flags.narrationText).not.toMatch(/Suggested vow/);
+  });
+
+  it("omits the narrator-card flags on the oracle-only fallback", async () => {
+    const card = await captureCard({
+      spark: { action: "Lose", theme: "Relationship" },
+      text: null,
+      fallback: true,
+      sessionId: "ssn-42",
+    });
+    const flags = card.flags["starforged-companion"];
+    expect(flags.incitingIncidentCard).toBe(true);
+    expect(flags.narratorCard).toBeUndefined();
+    expect(flags.narrationText).toBeUndefined();
+  });
+});

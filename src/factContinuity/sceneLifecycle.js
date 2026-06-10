@@ -47,6 +47,7 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   ensureSceneStateShape(campaignState);
   campaignState.sceneState.sceneId = id;
   ensureSceneTruthsShape(campaignState);
+  campaignState.sceneFrame = null;   // A4 — frame is scene-scoped; new scene starts frameless
 
   await persistCampaignState(campaignState, `startScene (${reason})`);
   return id;
@@ -111,6 +112,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // active scene is closed.
   campaignState.sceneState  = { bySubject: {}, sceneId: null };
   campaignState.sceneTruths = [];
+  campaignState.sceneFrame  = null;
   campaignState.currentSceneId = null;
 
   await persistCampaignState(campaignState, `endScene (${reason})`);

@@ -11,9 +11,9 @@ import {
   buildPacedNarrativeUserMessage,
   formatEntityCard,
 } from './narratorPrompt.js';
-import { resolveRelevance } from '../context/relevanceResolver.js';
+import { resolveRelevance, collectAllEntities } from '../context/relevanceResolver.js';
 import { extractSidecar }     from '../factContinuity/sidecarParser.js';
-import { applySidecar }       from '../factContinuity/ledgers.js';
+import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene }         from '../factContinuity/sceneLifecycle.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
@@ -706,6 +706,11 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   // context as the move-pipeline path.
   const currentLocationCard = formatCurrentLocation(campaignState);
   const activeSectorBlock   = formatActiveSector(campaignState);
+
+  // Narrator-memory A2.5 — lexical relevance on the scene path, same as
+  // paced narration: matched entity cards + real ledger scoping.
+  const relevance = await resolvePathRelevance(question, campaignState);
+
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
@@ -713,6 +718,9 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       playerNarration: question,
       currentLocationCard,
       activeSectorBlock,
+      entityCards:      relevance.entityCards,
+      matchedEntityIds: relevance.entityIds,
+      entityNamesById:  relevance.entityNamesById,
       audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
@@ -730,7 +738,9 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(200),
     });
-    const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+    const response = applyNarratorSidecar(raw, campaignState, {
+      moveId: null, playerNarration: question, matchedEntityIds: relevance.entityIds,
+    });
 
     if (!response?.trim()) {
       await postSceneFallbackCard(question, 'Scene query returned no content — try again.', sessionId);
@@ -749,7 +759,9 @@ export async function interrogateScene(question, campaignState, _options = {}) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(200),
         });
-        const response = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+        const response = applyNarratorSidecar(raw, campaignState, {
+          moveId: null, playerNarration: question, matchedEntityIds: relevance.entityIds,
+        });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
           return response;
@@ -819,7 +831,7 @@ export async function narrateOracleFollowup({
   );
 
   const sentenceTarget = settings.narrationLength ?? 3;
-  const recentContext  = getRecentNarrationContext(sessionId, 3);
+  const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
     oracleName, question, rolledLine, recentContext, sentenceTarget,
   });
@@ -1068,6 +1080,15 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   // Both anchors closed in the same pass — see formatActiveSector() above.
   const currentLocationCard = formatCurrentLocation(campaignState);
   const activeSectorBlock   = formatActiveSector(campaignState);
+
+  // Narrator-memory A2.5 — run the relevance resolver on the paced path so
+  // matched entity records are injected as ENTITIES IN SCENE cards and the
+  // ledger's entity scoping works off real matched IDs. With moveId=null the
+  // resolver is purely lexical (no API call). Scene-frame `present` names
+  // are unioned into the match text so the active conversation partner's
+  // record stays injected even on turns that don't name them.
+  const relevance = await resolvePathRelevance(playerText, campaignState);
+
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '',
     {
@@ -1075,11 +1096,14 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       playerNarration: playerText,
       currentLocationCard,
       activeSectorBlock,
+      entityCards:      relevance.entityCards,
+      matchedEntityIds: relevance.entityIds,
+      entityNamesById:  relevance.entityNamesById,
       audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
 
-  const recentContext = getRecentNarrationContext(sessionId, 3);
+  const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const sentenceTarget = settings.narrationLength ?? 3;
   const userMessage = buildPacedNarrativeUserMessage(
     playerText, recentContext, sentenceTarget, suggestedMove,
@@ -1091,7 +1115,9 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
+    const text = applyNarratorSidecar(raw, campaignState, {
+      moveId: null, playerNarration: playerText, matchedEntityIds: relevance.entityIds,
+    });
 
     if (!text?.trim()) return null;
 
@@ -1112,7 +1138,9 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: playerText });
+        const text = applyNarratorSidecar(raw, campaignState, {
+          moveId: null, playerNarration: playerText, matchedEntityIds: relevance.entityIds,
+        });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
           schedulePacedDetection(text, campaignState);
@@ -1370,6 +1398,12 @@ async function postSceneCard(question, responseText, sessionId) {
         sceneResponse: true,
         sceneText:     responseText,
         sceneQuestion: question,
+        // Narrator-memory A1 — scene answers are narrator prose and feed
+        // the recent-narration ring + session recap. Audited consumers:
+        // the correction/audio render hooks no-op (no button markup on
+        // this card), burn-supersede requires a resolutionId.
+        narratorCard:  true,
+        narrationText: responseText,
         sessionId:     sessionId ?? null,
       },
     },
@@ -1512,13 +1546,41 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
 
     try {
+      // Narrator-memory A2 — resolve sidecar subjects against the full
+      // entity roster so a confirmed NPC's truths/state land entity-keyed
+      // (not as text subjects). Without this, entity-scoped ledger
+      // filtering never matches and entries are only found by name
+      // mention. Tolerant: an empty roster degrades to text subjects.
+      let entities = [];
+      try {
+        entities = collectAllEntities(campaignState);
+      } catch (err) {
+        console.debug?.(`${MODULE_ID} | factContinuity: entity roster collect failed:`, err?.message ?? err);
+      }
+
       applySidecar(filteredSidecar, {
         campaignState,
         sessionId: campaignState.currentSessionId ?? null,
         sceneId:   campaignState.currentSceneId   ?? null,
         moveId:    ctx.moveId ?? null,
         asserter:  'narrator',
+        entities,
       });
+
+      // Narrator-memory A4 — merge the scene-frame snapshot (full
+      // replacement; omitted frame keeps the previous one). Gated on its
+      // own setting so the frame can be disabled independently.
+      let frameEnabled = true;
+      try {
+        frameEnabled = game.settings.get(MODULE_ID, 'factContinuity.sceneFrame') ?? true;
+      } catch (err) {
+        // Unregistered (unit tests, early init) — default on.
+        console.debug?.(`${MODULE_ID} | factContinuity: sceneFrame setting read failed:`, err?.message ?? err);
+      }
+      if (frameEnabled && sidecar.sceneFrame) {
+        applySceneFrame(sidecar.sceneFrame, campaignState);
+      }
+
       game.settings.set(MODULE_ID, 'campaignState', campaignState).catch(err =>
         console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
       );
@@ -1590,6 +1652,65 @@ function audioMarkupEnabledFromSettings() {
   }
 }
 
+/**
+ * Narrator-memory A2.5 — relevance resolution for the non-move narrator
+ * paths (paced narrative, scene interrogation). Purely lexical: moveId is
+ * null, so resolveRelevance never reaches its Haiku Phase-2 classifier.
+ *
+ * The active scene frame's `present` names are unioned into the match text
+ * so entities who are in the scene stay matched — and therefore keep their
+ * ENTITIES IN SCENE card and their entity-scoped ledger entries — on turns
+ * where the player's own message doesn't name them ("What does that even
+ * mean?"). See docs/narrator/narrator-memory-architecture.md.
+ *
+ * Never throws; returns empty arrays on any failure so narration proceeds
+ * with the thinner context rather than failing the turn.
+ *
+ * @param {string} playerText
+ * @param {Object} campaignState
+ * @returns {Promise<{ entityIds: string[], entityCards: string[],
+ *                     entityNamesById: Map<string,string> }>}
+ */
+async function resolvePathRelevance(playerText, campaignState) {
+  const empty = { entityIds: [], entityCards: [], entityNamesById: new Map() };
+  try {
+    const present = Array.isArray(campaignState?.sceneFrame?.present)
+      ? campaignState.sceneFrame.present.filter(p => typeof p === 'string' && p.trim())
+      : [];
+    const matchText = present.length
+      ? `${playerText ?? ''}\n${present.join(', ')}`
+      : (playerText ?? '');
+
+    const relevance = await resolveRelevance(matchText, null, null, campaignState);
+    const ids   = relevance?.entityIds   ?? [];
+    const types = relevance?.entityTypes ?? [];
+    return {
+      entityIds:       ids,
+      entityCards:     collectEntityCards(ids, types),
+      entityNamesById: collectEntityNamesById(ids, types),
+    };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: path relevance resolution failed:`, err);
+    return empty;
+  }
+}
+
+/**
+ * Narrator-memory A3 — how many recent narrator cards feed the paced /
+ * oracle-followup user message. World setting `narratorContextCards`,
+ * default 3, clamped 1–10. Scene interrogation keeps its own
+ * `sceneContextCards` setting.
+ */
+function getNarratorContextCards() {
+  try {
+    const v = Number(game.settings.get(MODULE_ID, 'narratorContextCards'));
+    if (!Number.isFinite(v)) return 3;
+    return Math.max(1, Math.min(10, Math.round(v)));
+  } catch {
+    return 3;
+  }
+}
+
 function getNarratorSettings() {
   try {
     return {
@@ -1603,6 +1724,7 @@ function getNarratorSettings() {
       factContinuityEnabled:        game.settings.get(MODULE_ID, 'factContinuity.enabled')          ?? true,
       factContinuityLedgerInContext:game.settings.get(MODULE_ID, 'factContinuity.ledgerInContext')  ?? true,
       factContinuityMaxLedgerTokens:game.settings.get(MODULE_ID, 'factContinuity.maxLedgerTokens')  ?? 400,
+      factContinuitySceneFrame:     game.settings.get(MODULE_ID, 'factContinuity.sceneFrame')       ?? true,
     };
   } catch (err) {
     console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
@@ -1617,6 +1739,7 @@ function getNarratorSettings() {
       factContinuityEnabled:         true,
       factContinuityLedgerInContext: true,
       factContinuityMaxLedgerTokens: 400,
+      factContinuitySceneFrame:      true,
       _error:                err,
     };
   }

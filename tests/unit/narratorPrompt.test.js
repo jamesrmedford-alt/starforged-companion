@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  appendSidecarInstruction,
   buildNarratorSystemPrompt,
   buildNarratorUserMessage,
   buildPacedNarrativeUserMessage,
@@ -898,5 +899,58 @@ describe('buildShipPositionLine()', () => {
     expect(line).toContain('COMMAND VEHICLE: Pioneer');
     expect(line).toContain('SHIP POSITION:');
     expect(line).toContain('adrift in the Bleakhold expanse');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// appendSidecarInstruction — narrator-memory A2/A4 contract
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('appendSidecarInstruction (narrator-memory contract)', () => {
+  it('contains the required NPC location/condition emission rule', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes or changes WHERE a named/);
+    expect(out).toMatch(/"attribute": "location"/);
+    expect(out).toMatch(/"condition"/);
+  });
+
+  it('contains the required intent/stakes emission rule', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes WHY a character is somewhere/);
+    expect(out).toMatch(/deadline/);
+  });
+
+  it('includes the sceneFrame key and rule by default', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toContain('"sceneFrame"');
+    expect(out).toMatch(/Include it on EVERY response/);
+  });
+
+  it('omits the sceneFrame key and rule when disabled', () => {
+    const out = appendSidecarInstruction({ sceneFrameEnabled: false });
+    expect(out).not.toContain('"sceneFrame"');
+    expect(out).not.toMatch(/Include it on EVERY response/);
+  });
+
+  it('adds the premise-capture addendum in inciting_incident mode only', () => {
+    const inciting = appendSidecarInstruction({ mode: 'inciting_incident' });
+    expect(inciting).toMatch(/OPENING SCENE/);
+    expect(inciting).toMatch(/what\s+fails if the character is too late/);
+
+    const paced = appendSidecarInstruction({ mode: 'paced_narrative' });
+    expect(paced).not.toMatch(/OPENING SCENE/);
+    expect(appendSidecarInstruction()).not.toMatch(/OPENING SCENE/);
+  });
+
+  it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const withFrame = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(withFrame).toContain('"sceneFrame"');
+    expect(withFrame).toMatch(/OPENING SCENE/);
+
+    const noFrame = buildNarratorSystemPrompt(
+      cs, { factContinuitySceneFrame: false }, null, '', { mode: 'paced_narrative' },
+    );
+    expect(noFrame).not.toContain('"sceneFrame"');
   });
 });

@@ -274,3 +274,24 @@ describe('lifecycle round-trip', () => {
     expect(cs.sceneState.sceneId).toBe(id2);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scene frame lifecycle (narrator-memory A4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('scene frame lifecycle', () => {
+  it('endScene clears the scene frame', async () => {
+    const cs = makeCampaignState();
+    cs.sceneFrame = { location: 'Lyra graveyard', present: ['Vance'], situation: 'Hail', sceneId: cs.currentSceneId, updatedAt: 1 };
+    await endScene(cs, { reason: 'scene_command' });
+    expect(cs.sceneFrame).toBeNull();
+  });
+
+  it('startScene begins the new scene frameless', async () => {
+    const cs = makeCampaignState();
+    cs.sceneFrame = { location: 'Sepulcher docks', present: [], situation: 'Refuel', sceneId: cs.currentSceneId, updatedAt: 1 };
+    await startScene(cs, { reason: 'scene_command' });
+    expect(cs.sceneFrame).toBeNull();
+    expect(cs.currentSceneId).toMatch(/^sc-/);
+  });
+});

@@ -55,8 +55,33 @@ export function appendNpcMarkupInstruction() {
   ].join('\n');
 }
 
-export function appendSidecarInstruction() {
-  return [
+export function appendSidecarInstruction(options = {}) {
+  const mode              = typeof options.mode === 'string' ? options.mode : 'move_resolution';
+  const sceneFrameEnabled = options.sceneFrameEnabled !== false;
+
+  const exampleLines = [
+    '    ```json',
+    '    {',
+    '      "newTruths": [',
+    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
+    '      ],',
+    '      "stateChanges": [',
+    '        { "subject": "Vance",     "attribute": "location", "value": "aboard his shuttle" },',
+    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
+    '      ]' + (sceneFrameEnabled ? ',' : ''),
+  ];
+  if (sceneFrameEnabled) {
+    exampleLines.push(
+      '      "sceneFrame": {',
+      '        "location":  "Lyra\'s orbital graveyard",',
+      '        "present":   ["Venri Quint", "Vance"],',
+      '        "situation": "Hailing Vance\'s shuttle across the debris field"',
+      '      }',
+    );
+  }
+  exampleLines.push('    }', '    ```');
+
+  const lines = [
     '## RESPONSE FORMAT — MANDATORY SIDECAR',
     '',
     'Respond with prose followed by a single fenced JSON code block, in this',
@@ -64,17 +89,7 @@ export function appendSidecarInstruction() {
     '',
     '    <your prose narration here, no JSON inside the prose>',
     '',
-    '    ```json',
-    '    {',
-    '      "newTruths": [',
-    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
-    '      ],',
-    '      "stateChanges": [',
-    '        { "subject": "scene",     "attribute": "lighting", "value": "stable" },',
-    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
-    '      ]',
-    '    }',
-    '    ```',
+    ...exampleLines,
     '',
     'The JSON block MUST be present. Both arrays MAY be empty. The block is',
     'how this turn\'s bookkeeping is captured — the prose itself stays pure',
@@ -88,6 +103,18 @@ export function appendSidecarInstruction() {
     '- A "stateChange" is what is true right now. Use it for posture, mood,',
     '  visible state, door positions, lighting, weather. These supersede',
     '  prior state for the same subject + attribute.',
+    '- REQUIRED: when your prose establishes or changes WHERE a named',
+    '  character is (their location, the vessel or structure they are',
+    '  aboard) or their physical condition (wounded, dying, well), you MUST',
+    '  emit a stateChange for that character recording it — e.g.',
+    '  { "subject": "Vance", "attribute": "location", "value": "aboard his',
+    '  shuttle in the graveyard" } or { "subject": "Vance", "attribute":',
+    '  "condition", "value": "life support failing" }. Continuity depends',
+    '  on these; do not leave them to inference.',
+    '- REQUIRED: when your prose establishes WHY a character is somewhere,',
+    '  what they want, or what is at stake — especially anything with a',
+    '  deadline or a cost for failure — you MUST emit a newTruth recording',
+    '  it. Stakes that are not recorded will be lost.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
     '- The "ship" subject is reserved for the player\'s command vehicle.',
@@ -98,7 +125,32 @@ export function appendSidecarInstruction() {
     '  planets, and locations.',
     '- Do not declare a truth that diverges from the active scene block. If',
     '  a fact needs to change, the player or GM will retract the old one.',
-  ].join('\n');
+  ];
+
+  if (sceneFrameEnabled) {
+    lines.push(
+      '- "sceneFrame" is a full snapshot of the scene as it stands AFTER',
+      '  your narration: where the scene is set, every named character',
+      '  present or directly engaged (include characters on comms), and the',
+      '  situation in one sentence. Include it on EVERY response — it',
+      '  replaces the previous snapshot. Keep names exactly as established.',
+    );
+  }
+
+  if (mode === 'inciting_incident') {
+    lines.push(
+      '',
+      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Its premise must survive into',
+      'later sessions, so your sidecar MUST capture the load-bearing facts:',
+      '- newTruths for: who the central NPC is and their history with the',
+      '  character; why they are where they are; what is at stake and what',
+      '  fails if the character is too late (the deadline).',
+      '- stateChanges for: the central NPC\'s current location (vessel or',
+      '  structure included) and physical condition.',
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -152,11 +204,28 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
 
+  // ── Scene frame (Cluster A4) ─────────────────────────────────────────────
+  // The narrator-maintained snapshot of the active scene. Subjects named in
+  // the frame's `present` list are treated as mentioned this turn, so their
+  // ledger entries stay in scope even when the player's message doesn't name
+  // them (the conversation-partner case — see narrator-memory architecture).
+  const sceneFrameEnabled = options?.sceneFrameEnabled !== false;
+  const frame = sceneFrameEnabled && campaignState?.sceneFrame
+    && typeof campaignState.sceneFrame === 'object'
+    ? campaignState.sceneFrame
+    : null;
+  const presentNames = Array.isArray(frame?.present)
+    ? frame.present.filter(p => typeof p === 'string' && p.trim())
+    : [];
+  const scopeText = presentNames.length
+    ? `${narration} ${presentNames.join(' ').toLowerCase()}`
+    : narration;
+
   // ── Filter truths ────────────────────────────────────────────────────────
   const truthLines = [];
   for (const t of truths) {
     if (!t || t.retracted) continue;
-    if (!isSubjectInScope(t.subject, matchedIds, narration)) continue;
+    if (!isSubjectInScope(t.subject, matchedIds, scopeText)) continue;
     const label = formatSubjectLabel(t.subject, nameLookup);
     const fact  = String(t.fact ?? '').trim();
     if (!fact) continue;
@@ -168,7 +237,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
-    if (!isSubjectInScope(subjectForKey, matchedIds, narration)) continue;
+    if (!isSubjectInScope(subjectForKey, matchedIds, scopeText)) continue;
     const label = formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
@@ -178,6 +247,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
     }
   }
 
+  // ── Render the frame block ───────────────────────────────────────────────
+  // Confirmed-lore tier: never dropped under budget pressure (like the ship
+  // line) — losing "where we are and who is here" is how drift starts.
+  const frameLines = [];
+  if (frame) {
+    if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
+    if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
+    if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
+  }
+  const frameBlock = frameLines.length
+    ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')
+    : '';
+
   // ── Ship position (§20) ──────────────────────────────────────────────────
   // The command vehicle's persistent position record is fact-continuity
   // confirmed-lore tier — it is never dropped under budget pressure and
@@ -186,18 +268,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const shipPositionLine = buildShipPositionLine(campaignState);
 
   // ── Empty short-circuit ──────────────────────────────────────────────────
-  if (!truthLines.length && !stateLines.length && !shipPositionLine) {
+  if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock) {
     return {
-      header: '', truths: '', state: '', shipPosition: '', combined: '',
-      tokenEstimates: { header: 0, truths: 0, state: 0, ship: 0 },
+      header: '', frame: '', truths: '', state: '', shipPosition: '', combined: '',
+      tokenEstimates: { header: 0, frame: 0, truths: 0, state: 0, ship: 0 },
     };
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  // Header only renders when there are truths or state to introduce —
-  // the SHIP POSITION line stands on its own when it's the only thing
-  // in the block (§20).
-  const header = (truthLines.length || stateLines.length)
+  // Header only renders when there are truths, state, or a frame to
+  // introduce — the SHIP POSITION line stands on its own when it's the only
+  // thing in the block (§20).
+  const header = (truthLines.length || stateLines.length || frameBlock)
     ? [
         '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
         '',
@@ -216,29 +298,33 @@ export function buildLedgerBlock(campaignState, options = {}) {
     : '';
 
   // ── Soft-cap enforcement: drop state when over budget ────────────────────
-  // Ship position counts toward the budget for telemetry but is never
-  // dropped — it's confirmed-lore tier per scope §20.5. State drops first
-  // when the cap is exceeded.
+  // Ship position and the scene frame count toward the budget for telemetry
+  // but are never dropped — both are confirmed-lore tier (scope §20.5;
+  // narrator-memory architecture A4). State drops first when the cap is
+  // exceeded.
   const tokenEstimates = {
     header: estimateTokens(header),
+    frame:  estimateTokens(frameBlock),
     truths: estimateTokens(truthsBlock),
     state:  estimateTokens(stateBlock),
     ship:   estimateTokens(shipPositionLine),
   };
-  let total = tokenEstimates.header + tokenEstimates.truths
+  let total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
             + tokenEstimates.state + tokenEstimates.ship;
   if (total > maxTokens && stateBlock) {
     stateBlock = '';
     tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.truths + tokenEstimates.ship;
+    total = tokenEstimates.header + tokenEstimates.frame
+          + tokenEstimates.truths + tokenEstimates.ship;
   }
 
-  const combined = [header, truthsBlock, stateBlock, shipPositionLine]
+  const combined = [header, frameBlock, truthsBlock, stateBlock, shipPositionLine]
     .filter(Boolean)
     .join('\n\n');
 
   return {
     header,
+    frame:        frameBlock,
     truths:       truthsBlock,
     state:        stateBlock,
     shipPosition: shipPositionLine,
@@ -779,6 +865,7 @@ export function buildNarratorSystemPrompt(
     factContinuityEnabled         = true,
     factContinuityLedgerInContext = true,
     factContinuityMaxLedgerTokens = 400,
+    factContinuitySceneFrame      = true,
   } = narratorSettings ?? {};
 
   const {
@@ -883,6 +970,7 @@ export function buildNarratorSystemPrompt(
       playerNarration,
       maxTokens:         factContinuityMaxLedgerTokens,
       entityNamesById,
+      sceneFrameEnabled: factContinuitySceneFrame,
     });
     if (ledger.combined) parts.push(ledger.combined);
   }
@@ -896,9 +984,14 @@ export function buildNarratorSystemPrompt(
 
   // [9] Fact-continuity sidecar instruction — appended last so it is the most
   // recent guidance the model sees before generating. Applies to every mode,
-  // gated by the master Fact Continuity setting.
+  // gated by the master Fact Continuity setting. Mode-aware: the inciting
+  // incident gets a premise-capture addendum (narrator-memory architecture
+  // A2); the sceneFrame key is included only when the A4 frame is enabled.
   if (factContinuityEnabled) {
-    parts.push(appendSidecarInstruction());
+    parts.push(appendSidecarInstruction({
+      mode:              resolvedMode,
+      sceneFrameEnabled: factContinuitySceneFrame,
+    }));
   }
 
   // [10] Audio NPC-dialogue markup instruction — appended only when audio
