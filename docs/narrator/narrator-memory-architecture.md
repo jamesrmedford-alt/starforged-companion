@@ -288,10 +288,14 @@ regressions, all are known scope cuts:
    maintained prose summary (one Haiku call per N turns), replacing raw
    last-N cards. Don't build it until a playtest shows the cheaper layers
    failing.
-7. **Pacing interaction (F9).** Travel that never becomes a move also never
-   triggers move-path context assembly; the paced path now carries entity
-   cards, but a `set_a_course` nomination (Cluster D) remains the mechanical
-   fix.
+7. **Pacing interaction (F9) — shipped (Cluster D, 2026-06-10).** The
+   pacing classifier now receives the scene frame in its context (the
+   established-stakes signal) and carries a MOVEMENT WITH STAKES rule plus
+   category definitions, so hazardous/time-pressured travel nominates
+   `set_a_course` / `undertake_an_expedition` / `face_danger` instead of
+   resolving as free narration. The frame is now read by five consumers:
+   ledger scoping, paced/@scene relevance, the §6.5 block, the consistency
+   check, and the pacing classifier.
 8. **Truth eliding for marathon scenes.** Truths are never dropped (§6.5
    watch item), so a scene that runs very long grows the ledger block past
    the soft cap. If playtests show it: elide oldest-first beyond the cap
