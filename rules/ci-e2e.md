@@ -90,6 +90,39 @@ If the suite shrinks below ~100 active tests in the future, the absolute backsto
 
 **Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
 
+## Quench batch coupling — shared defaults and hooks
+
+Settings defaults and module hooks are **shared state across all Quench
+batches**. Changing a world-setting default or removing/redirecting a hook
+breaks batches that *implicitly* relied on the old behaviour — typically in
+batches you didn't write and didn't touch. Each instance cost a full CI
+round-trip in practice:
+
+- Flipping `autoSeedStarship` to default-off broke `starshipNarratedNotes`,
+  which created a starship and waited for the createActor hook to populate
+  Notes without ever pinning the setting.
+- The connection-seed hook (`autoSeedConnection`, then default-on) broke the
+  `portraitGeneration` gating test by populating `portraitSourceDescription`
+  on a card the test expected blank.
+- Removing the scene-controls group broke a `privateChannel` assertion that
+  still called `getSceneControlButtons`.
+
+Rules:
+- Before changing a setting default or hook behaviour, **grep
+  `src/integration/quench.js` for every batch that exercises that path**
+  (the setting key, the hook name, the mechanism's selectors/flags) and
+  update them in the same commit — don't wait for CI to find them.
+- A batch that depends on a specific setting value must **pin it with
+  `withTempSetting(...)`** rather than assuming the default; defaults are
+  allowed to change.
+- Hooks that read settings should read them **synchronously at fire time**,
+  not inside a deferred async block — a deferred read races
+  `withTempSetting`'s restore (see `registerStarshipSeedHook` in
+  `src/index.js`).
+- The e2e suite can't run locally in every environment; when a change lands
+  in this category, expect one CI iteration and budget for it rather than
+  assuming the first push is green.
+
 ## Accepted blind spots
 
 ### `cacheKey is stable and content-addressed` (audio batch) — secure-context skip
