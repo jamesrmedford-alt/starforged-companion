@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { extractSidecar } from '../../src/factContinuity/sidecarParser.js';
 import {
   applySidecar,
+  applySceneFrame,
   resolveSubject,
   promoteTextSubject,
   subjectKey,
@@ -421,5 +422,87 @@ describe('promoteTextSubject', () => {
     expect(posture.value).toBe('sitting');
     expect(mood.value).toBe('guarded');
     expect(cs.sceneState.bySubject.vance).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scene frame (narrator-memory A4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('extractSidecar — sceneFrame', () => {
+  it('normalises a valid sceneFrame (trimmed strings, filtered present list)', () => {
+    const text = [
+      'Prose first.',
+      '```json',
+      JSON.stringify({
+        newTruths:    [],
+        stateChanges: [],
+        sceneFrame: {
+          location:  '  Lyra\'s graveyard ',
+          present:   ['Venri Quint', '  Vance ', '', 42],
+          situation: ' Hailing Vance across the debris field ',
+        },
+      }),
+      '```',
+    ].join('\n');
+    const { sidecar } = extractSidecar(text);
+    expect(sidecar.sceneFrame).toEqual({
+      location:  "Lyra's graveyard",
+      present:   ['Venri Quint', 'Vance'],
+      situation: 'Hailing Vance across the debris field',
+    });
+  });
+
+  it('returns null sceneFrame when absent', () => {
+    const text = 'Prose.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
+    const { sidecar } = extractSidecar(text);
+    expect(sidecar.sceneFrame).toBeNull();
+  });
+
+  it.each([
+    ['array',        ['not', 'an', 'object']],
+    ['string',       'cargo bay'],
+    ['empty object', {}],
+    ['all-blank',    { location: ' ', present: [], situation: '' }],
+  ])('returns null sceneFrame for unusable shape: %s', (_label, frame) => {
+    const text = `Prose.\n\`\`\`json\n${JSON.stringify({ newTruths: [], stateChanges: [], sceneFrame: frame })}\n\`\`\``;
+    const { sidecar } = extractSidecar(text);
+    expect(sidecar.sceneFrame).toBeNull();
+  });
+});
+
+describe('applySceneFrame', () => {
+  it('applies a snapshot with sceneId and updatedAt stamped', () => {
+    const cs = makeCampaignState();
+    const ok = applySceneFrame(
+      { location: 'Lyra graveyard', present: ['Vance'], situation: 'Approach run' },
+      cs,
+    );
+    expect(ok).toBe(true);
+    expect(cs.sceneFrame.location).toBe('Lyra graveyard');
+    expect(cs.sceneFrame.present).toEqual(['Vance']);
+    expect(cs.sceneFrame.situation).toBe('Approach run');
+    expect(cs.sceneFrame.sceneId).toBe('sc-test001');
+    expect(typeof cs.sceneFrame.updatedAt).toBe('number');
+  });
+
+  it('is a full replacement — a later frame supersedes the earlier one', () => {
+    const cs = makeCampaignState();
+    applySceneFrame({ location: 'Sepulcher docks', present: ['Amelia Gray'], situation: 'Refuel' }, cs);
+    applySceneFrame({ location: 'Lyra graveyard',  present: ['Vance'],       situation: 'Hail'   }, cs);
+    expect(cs.sceneFrame.location).toBe('Lyra graveyard');
+    expect(cs.sceneFrame.present).toEqual(['Vance']);
+  });
+
+  it('rejects garbage / empty frames and leaves state untouched', () => {
+    const cs = makeCampaignState();
+    expect(applySceneFrame(null, cs)).toBe(false);
+    expect(applySceneFrame('Lyra', cs)).toBe(false);
+    expect(applySceneFrame({ location: '', present: [], situation: '' }, cs)).toBe(false);
+    expect(cs.sceneFrame).toBeUndefined();
+  });
+
+  it('returns false without a campaignState', () => {
+    expect(applySceneFrame({ location: 'X' }, null)).toBe(false);
   });
 });

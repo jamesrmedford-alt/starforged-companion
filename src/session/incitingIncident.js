@@ -114,12 +114,30 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false }) {
 
 /**
  * Post the inciting-incident chat card.
- * @param {{ spark, text, fallback }} args
+ *
+ * When narrator prose is present, the card also carries the narrator-card
+ * flag family (`narratorCard` / `narrationText` / `sessionId`) so the
+ * opening fiction feeds the recent-narration ring and session recaps —
+ * without these the campaign premise is invisible to every subsequent
+ * narrator call (v1.7.8 playtest F7). `narrationText` is the prose only;
+ * the suggested-vow line is mechanical, not fiction. Audited consumers:
+ * correction/audio render hooks no-op (no button markup here);
+ * burn-supersede requires a resolutionId.
+ *
+ * @param {{ spark, text, fallback, sessionId }} args
  */
 export async function postIncitingIncidentCard(args) {
+  const { text, fallback = false, sessionId = null } = args ?? {};
+  const narratorFlags = (!fallback && text)
+    ? {
+        narratorCard:  true,
+        narrationText: splitSuggestedVow(text).prose,
+        sessionId,
+      }
+    : {};
   await globalThis.ChatMessage?.create?.({
     content: renderIncitingIncidentCard(args),
-    flags:   { [MODULE_ID]: { incitingIncidentCard: true } },
+    flags:   { [MODULE_ID]: { incitingIncidentCard: true, ...narratorFlags } },
   });
 }
 
@@ -143,6 +161,11 @@ export async function runIncitingIncident(campaignState) {
     console.warn(`${MODULE_ID} | runIncitingIncident: narration failed:`, err?.message ?? err);
   }
 
-  await postIncitingIncidentCard({ spark, text, fallback: !text });
+  await postIncitingIncidentCard({
+    spark,
+    text,
+    fallback:  !text,
+    sessionId: campaignState?.currentSessionId ?? null,
+  });
   return { spark, text };
 }

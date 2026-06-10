@@ -6,6 +6,15 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Improved: **Narrator memory overhaul — the narrator keeps the thread.** Addresses the v1.7.8 playtest drift findings (F6/F7/F8: within ~30 minutes the campaign premise drifted across location, motivation, and stakes — see `docs/testing/v1.7.8-playtest-findings.md`). Four coordinated changes, full architecture in `docs/narrator/narrator-memory-architecture.md`:
+  - **Unified narrator-prose feed.** The Inciting Incident card and `@scene` answers now carry the narrator-card flag family, so the campaign's opening fiction and scene answers feed the recent-narration ring **and** session recaps (both were previously invisible to every subsequent narrator call).
+  - **Deterministic sidecar emission.** Recording a named character's location/vessel/physical condition (state) and why-they're-here/what's-at-stake (truths) is now REQUIRED by the sidecar contract rather than left to the model's discretion; the inciting-incident mode must capture its premise facts (vow target, history, deadline) explicitly. Sidecar subjects now resolve against the full entity roster, so confirmed NPCs ledger entity-keyed instead of as loose text.
+  - **Scene frame.** The narrator maintains a per-scene snapshot (`location` / `present` / `situation`) emitted with every response, injected at the top of the active-scene block on every call, and never dropped under budget pressure. Characters listed as present keep their ledger entries and entity cards in scope on turns that don't name them. Scene-scoped; cleared on scene end. New world setting **Scene frame** (Fact Continuity pane, default on).
+  - **Entity cards on the paced and `@scene` paths.** Both paths now run the (purely lexical — zero API cost) relevance resolver, injecting matched entity records as ENTITIES IN SCENE cards and restoring real entity-scoped ledger filtering; previously only move narration received entity cards.
+- Added: **Context cards setting** (Narrator pane, 1–10, default 3) — how many recent narrator cards feed each paced narration and oracle follow-up; raise it if the narrator forgets recent events.
+
+## [1.7.8] — 2026-06-09
+
 - Added: **Envision an Inciting Incident.** A new launch action — the ✦ Envision Inciting Incident button on the Session panel and the `!incite` chat command — rolls an Action + Theme oracle spark and asks the narrator to compose the campaign's opening dramatic event, grounded in your World Truths, starting sector, local connection, and character, then proposes a starting vow. With no Claude key it posts the oracle spark alone as a prompt to envision the incident yourself. (Rulebook "Begin your adventure", step 1.)
 
 ## [1.7.7] — 2026-06-04

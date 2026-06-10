@@ -110,5 +110,27 @@ function normaliseSidecar(parsed) {
   return {
     newTruths:    Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
     stateChanges: Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
+    sceneFrame:   normaliseSceneFrame(parsed.sceneFrame),
   };
+}
+
+/**
+ * Normalise the optional scene-frame snapshot (fact-continuity Cluster A4 —
+ * see docs/narrator/narrator-memory-architecture.md). Shape:
+ *
+ *   { "location": "Lyra's graveyard", "present": ["Venri Quint", "Vance"],
+ *     "situation": "Hailing Vance across the debris field" }
+ *
+ * Returns null when absent or unusable so callers can keep the previous
+ * frame. String fields are trimmed; `present` keeps non-empty strings only.
+ */
+function normaliseSceneFrame(frame) {
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
+  const location  = typeof frame.location  === 'string' ? frame.location.trim()  : '';
+  const situation = typeof frame.situation === 'string' ? frame.situation.trim() : '';
+  const present   = Array.isArray(frame.present)
+    ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
+    : [];
+  if (!location && !situation && !present.length) return null;
+  return { location, present, situation };
 }

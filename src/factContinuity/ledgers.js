@@ -106,6 +106,38 @@ export function applySidecar(sidecar, ctx) {
 }
 
 /**
+ * Apply a normalised scene-frame snapshot (Cluster A4 — see
+ * docs/narrator/narrator-memory-architecture.md) to the campaign state.
+ * The frame is a full replacement snapshot, not a delta: the narrator emits
+ * the current scene's location / present subjects / one-line situation on
+ * every response, and the latest emission wins. Mutates campaignState in
+ * place; persistence is the caller's responsibility (same contract as
+ * applySidecar).
+ *
+ * @param {Object|null} frame — { location, present[], situation } or null
+ * @param {Object} campaignState
+ * @returns {boolean} true when the frame was applied
+ */
+export function applySceneFrame(frame, campaignState) {
+  if (!campaignState || !frame || typeof frame !== 'object') return false;
+  const location  = typeof frame.location  === 'string' ? frame.location.trim()  : '';
+  const situation = typeof frame.situation === 'string' ? frame.situation.trim() : '';
+  const present   = Array.isArray(frame.present)
+    ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
+    : [];
+  if (!location && !situation && !present.length) return false;
+
+  campaignState.sceneFrame = {
+    location,
+    present,
+    situation,
+    sceneId:   campaignState.currentSceneId ?? null,
+    updatedAt: Date.now(),
+  };
+  return true;
+}
+
+/**
  * Resolve a free-text subject reference into a structured subject object.
  *
  *   "scene.lighting"  → { kind: "scene",  sceneId }   (attribute kept in fact text)
