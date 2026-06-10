@@ -73,7 +73,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `assembler.js` | Builds the narrator context packet (safety, truths, entity cards, tracks, character state, ledgers). |
-| `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection. |
+| `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection; exports `collectAllEntities` (full roster for sidecar subject resolution). Lexical on the paced/@scene paths (`moveId: null`). |
 | `safety.js` | Safety-config formatting — always injected first into the system prompt. |
 
 ### `entities/` — entity records & discovery
@@ -91,9 +91,9 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `sidecarParser.js` | Parses the narrator's fenced JSON sidecar (`newTruths`, `stateChanges`). |
-| `ledgers.js` | Active-scene ledgers (`sceneTruths`, `sceneState.bySubject`). |
-| `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore. |
+| `sidecarParser.js` | Parses the narrator's fenced JSON sidecar (`newTruths`, `stateChanges`, `sceneFrame`). |
+| `ledgers.js` | Active-scene ledgers (`sceneTruths`, `sceneState.bySubject`) + `applySceneFrame` (scene-frame snapshot). See `docs/narrator/narrator-memory-architecture.md`. |
+| `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore; clears the scene frame. |
 | `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (+ `!truth`/`!state` backing). |
 | `consistencyCheck.js` | Optional Haiku consistency audit → GM review card. |
 | `shipPosition.js` | §20 ship positioning: token auto-move on a set course. |

@@ -6,6 +6,18 @@
 **Dependencies:** Narrator (✅), Narrator Entity Discovery (✅), World Journal v2 (✅), Pacing (✅)
 **Related:** World Truths (constitutional axioms — distinct concept; see §1.2)
 
+> **2026-06-10 addendum (narrator memory, Cluster A).** After the v1.7.8
+> playtest drift findings (F7/F8), the sidecar contract in §7 gained
+> **required-emission rules** (NPC location/vessel/condition stateChanges;
+> intent/stakes newTruths; an inciting-incident premise addendum) and an
+> optional **`sceneFrame` key**; ledger scoping (§6) gained frame-`present`
+> subjects; sidecar subjects now resolve against the full entity roster; and
+> the paced/@scene paths run lexical relevance for entity cards. The
+> **current authority** for the memory system is
+> `docs/narrator/narrator-memory-architecture.md` (invariants:
+> `rules/narrator-memory.md`); this scope remains the design record for the
+> ledger/correction core.
+
 > **Pre-drafting verification (surfaced per packet instructions).** The
 > conceptual model in the source packet referenced `docs/private-channel-scope.md`
 > as a structural template. That file does not exist in this repository; the
