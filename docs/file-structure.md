@@ -134,7 +134,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `gmGate.js` | `isCanonicalGM()` single-emitter pipeline gate (prevents duplicate move resolution across clients). |
-| `speaker.js` | Resolves which PC a chat message belongs to. |
+| `speaker.js` | Resolves the speaking PC for a chat message: `message.speaker.actor` (token selection, PC-validated) → author's bound character → ownership scan → campaignState fallback. NPC cards and non-character actors are never speakers. |
 
 ### `narration/` — the narrative engine
 

@@ -276,6 +276,20 @@ await ChatMessage.create({
 // Author (v13) — NOT .user (deprecated, logs warning)
 const author = message.author;
 
+// Speaker (v13) — ChatSpeakerData schema: { scene, token, actor, alias }
+// - actor: Actor ID string (NOT a document); alias: display name string.
+// - Stamped by ChatMessage.getSpeaker(): a user's CONTROLLED TOKEN wins,
+//   falling back to the user's assigned character — this is Foundry's
+//   native "speaking as" mechanism (select a token → chat speaks as it).
+// - The selected token may be ANY actor (ship, NPC card) — validate the
+//   type before treating speaker.actor as a player character.
+// Verified against the pinned foundry-ironsworn v13 source:
+//   features/chat-alert.ts:412        speaker: { actor: speaker.id }
+//   rolls/ironsworn-roll-message.ts:198  speaker.actor = this.actor.id
+//   (typed via @league-of-foundry-developers ChatSpeakerData)
+const speakerActorId = message.speaker?.actor ?? null;   // id string or null
+const speakerActor   = speakerActorId ? game.actors.get(speakerActorId) : null;
+
 // Type checks — use string literals, NOT CONST.CHAT_MESSAGE_TYPES
 if (message.type === "ooc")     { /* ... */ }
 if (message.type === "roll")    { /* ... */ }

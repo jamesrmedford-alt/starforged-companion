@@ -890,6 +890,7 @@ export function buildNarratorSystemPrompt(
     matchedEntityIds     = [],
     playerNarration      = '',
     entityNamesById      = null,
+    party                = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -992,6 +993,12 @@ export function buildNarratorSystemPrompt(
 
   // [8] Character
   if (character) parts.push(buildCharacterBlock(character));
+
+  // [8b] Party roster — multiplayer speaker disambiguation. Rendered only
+  // when more than one player character shares the campaign; names the PC
+  // speaking this turn so narration never conflates the party members.
+  const partyBlock = buildPartyBlock(party);
+  if (partyBlock) parts.push(partyBlock);
 
   // [9] Fact-continuity sidecar instruction — appended last so it is the most
   // recent guidance the model sees before generating. Applies to every mode,
@@ -1120,7 +1127,7 @@ export function sanitizePlayerText(text) {
  * @param {number} sentenceTarget  — how many sentences to produce
  * @returns {string}
  */
-export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
+export function buildSceneUserMessage(question, recentContext, sentenceTarget, speakerName = null) {
   const parts = [];
 
   const cleanedRecent = stripHtml(recentContext).trim();
@@ -1128,12 +1135,19 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
     parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER QUESTION\n\n"${sanitizePlayerText(question)}"`);
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
+  parts.push(
+    `## PLAYER QUESTION${speaker ? ` — asked by ${speaker}` : ''}\n\n` +
+    `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(question)}"`,
+  );
 
   parts.push(
     `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
     `description. Do not introduce new plot elements. Stay grounded in what has already been ` +
-    `established. The narrator is a camera, not a writer, in this mode.`
+    `established. The narrator is a camera, not a writer, in this mode.` +
+    (speaker ? ` The character asking is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
@@ -1155,7 +1169,7 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
  * @param {string|null} suggestedMove
  * @returns {string}
  */
-export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove) {
+export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null) {
   const parts = [];
 
   const cleanedRecent = stripHtml(recentContext).trim();
@@ -1163,7 +1177,19 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER NARRATION\n\n"${sanitizePlayerText(playerText ?? '')}"`);
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
+  parts.push(
+    `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
+    `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(playerText ?? '')}"`,
+  );
+  if (speaker) {
+    parts.push(
+      `The character speaking and acting this turn is ${speaker}. Attribute the ` +
+      `actions and dialogue in the input to ${speaker}, not to any other player character.`,
+    );
+  }
 
   if (suggestedMove) {
     parts.push(
@@ -1203,7 +1229,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {number} sentenceTarget   — how many sentences to produce
  * @returns {string}
  */
-export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget) {
+export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null) {
   const parts = [];
 
   const moveOutcome = resolution?.loremasterContext ?? '';
@@ -1211,14 +1237,21 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
   const cleanedPlayerNarration = sanitizePlayerText(playerNarration);
   if (cleanedPlayerNarration) {
-    parts.push(`## PLAYER NARRATION\n\n"${cleanedPlayerNarration}"`);
+    parts.push(
+      `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
+      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"`,
+    );
   }
 
   parts.push(
     `Narrate the consequence in ${sentenceTarget} sentence${sentenceTarget !== 1 ? 's' : ''}. ` +
-    `Stay in the fiction. Do not explain the mechanical outcome — embody it.`
+    `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
+    (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
@@ -1227,6 +1260,38 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
 // ---------------------------------------------------------------------------
 // Section builders (pure — no async, no Foundry API)
 // ---------------------------------------------------------------------------
+
+/**
+ * Render the multiplayer party roster (section [8b]). Returns '' unless
+ * the party carries two or more PCs — solo play needs no disambiguation.
+ * Exported for unit testing.
+ *
+ * @param {{ names: string[], speaking?: string|null }|null} party
+ * @returns {string}
+ */
+export function buildPartyBlock(party) {
+  const names = Array.isArray(party?.names)
+    ? party.names.filter(n => typeof n === 'string' && n.trim()).map(n => n.trim())
+    : [];
+  if (names.length < 2) return '';
+
+  const speaking = typeof party?.speaking === 'string' && party.speaking.trim()
+    ? party.speaking.trim()
+    : null;
+  const roster = names
+    .map(n => (speaking && n === speaking ? `${n} (speaking this turn)` : n))
+    .join(', ');
+
+  return [
+    '## PARTY',
+    '',
+    `This is a multiplayer campaign. Player characters: ${roster}.`,
+    'Each chat input belongs to exactly one of them — attribute actions and',
+    'dialogue to the named speaker only, and never merge the player',
+    'characters into a single "you". Other PCs are present in the scene',
+    'only when the fiction or the scene frame says so.',
+  ].join('\n');
+}
 
 function buildWorldTruthsBlock(campaignState) {
   const truths  = campaignState?.worldTruths ?? {};

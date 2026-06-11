@@ -492,8 +492,11 @@ export function registerChatHook() {
       if (factContinuityEnabledFromSettings()) {
         await startScene(campaignState, { reason: "@scene_intercept" });
       }
+      // Full speaker resolution (token selection → bound character →
+      // ownership → fallback) — the bound-character-only read this
+      // replaces attributed every @scene to the default PC in multiplayer.
       await interrogateScene(question, campaignState, {
-        actorId: message.author?.character?.id,
+        speakerActorId: resolveSpeakerActorId(message, campaignState),
       });
       return;
     }

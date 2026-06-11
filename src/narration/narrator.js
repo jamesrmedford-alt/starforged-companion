@@ -189,13 +189,15 @@ export async function narrateResolution(resolution, contextPacket, campaignState
       matchedEntityIds:    relevance.entityIds ?? [],
       playerNarration:     resolution.playerNarration ?? '',
       entityNamesById,
+      party:               buildPartyContext(character?.name ?? null),
       audioMarkupEnabled:  audioMarkupEnabledFromSettings(),
     },
   );
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
-    settings.narrationLength
+    settings.narrationLength,
+    character?.name ?? null,
   );
 
   try {
@@ -682,7 +684,7 @@ export function markRecapInjected(sessionId) {
  * @param {string} [options.actorId]  — requesting player's actor ID (unused; reserved)
  * @returns {Promise<string|null>}    — response text, or null on failure/disabled
  */
-export async function interrogateScene(question, campaignState, _options = {}) {
+export async function interrogateScene(question, campaignState, options = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
   if (!getSceneQueryEnabled()) {
@@ -703,7 +705,11 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   }
 
   const settings = getNarratorSettings();
-  const character    = getActiveCharacter(campaignState);
+  // Multiplayer speaker disambiguation — the @scene intercept passes the
+  // resolved speaker (token selection / author binding / ownership).
+  // `actorId` is the legacy option name; both are honoured.
+  const speakerActorId = options?.speakerActorId ?? options?.actorId ?? null;
+  const character      = getActiveCharacter(campaignState, speakerActorId);
   // The @scene intercept in index.js already calls startScene; this guard
   // covers any direct interrogateScene callers that bypass the chat hook.
   await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
@@ -727,6 +733,7 @@ export async function interrogateScene(question, campaignState, _options = {}) {
       entityCards:      relevance.entityCards,
       matchedEntityIds: relevance.entityIds,
       entityNamesById:  relevance.entityNamesById,
+      party:            buildPartyContext(character?.name ?? null),
       audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
@@ -734,7 +741,9 @@ export async function interrogateScene(question, campaignState, _options = {}) {
   const contextLimit  = getSceneContextCards();
   const recentContext = getRecentNarrationContext(sessionId, contextLimit);
   const sentenceTarget = getSceneResponseLength();
-  const userMessage   = buildSceneUserMessage(question, recentContext, sentenceTarget);
+  const userMessage   = buildSceneUserMessage(
+    question, recentContext, sentenceTarget, character?.name ?? null,
+  );
 
   try {
     const raw = await callNarratorAPI({
@@ -1105,6 +1114,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       entityCards:      relevance.entityCards,
       matchedEntityIds: relevance.entityIds,
       entityNamesById:  relevance.entityNamesById,
+      party:            buildPartyContext(character?.name ?? null),
       audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     },
   );
@@ -1112,7 +1122,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const sentenceTarget = settings.narrationLength ?? 3;
   const userMessage = buildPacedNarrativeUserMessage(
-    playerText, recentContext, sentenceTarget, suggestedMove,
+    playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
   );
 
   try {
@@ -1659,6 +1669,29 @@ function audioMarkupEnabledFromSettings() {
 }
 
 /**
+ * Multiplayer speaker disambiguation — build the PARTY section payload for
+ * buildNarratorSystemPrompt extras. Returns null in solo play (one PC or
+ * fewer): no roster, no prompt cost. The speaking name comes from the
+ * already-resolved active character so the roster and the CHARACTER block
+ * always agree.
+ *
+ * @param {string|null} speakingName
+ * @returns {{ names: string[], speaking: string|null }|null}
+ */
+function buildPartyContext(speakingName = null) {
+  try {
+    const names = (getPlayerActors() ?? [])
+      .map(a => a?.name)
+      .filter(n => typeof n === 'string' && n.trim());
+    if (names.length < 2) return null;
+    return { names, speaking: speakingName ?? null };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: party context build failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * Narrator-memory A2.5 — relevance resolution for the non-move narrator
  * paths (paced narrative, scene interrogation). Purely lexical: moveId is
  * null, so resolveRelevance never reaches its Haiku Phase-2 classifier.
@@ -1763,14 +1796,20 @@ function getApiKey() {
 export function getActiveCharacter(campaignState, speakerActorId = null) {
   try {
     // Prefer the speaker if one was resolved upstream from the chat
-    // message author — without this, every narration in a 2-player
-    // session described whichever PC happened to be first in
-    // campaignState, regardless of who actually typed.
+    // message (token selection / author binding / ownership) — without
+    // this, every narration in a 2-player session described whichever PC
+    // happened to be first in campaignState, regardless of who actually
+    // typed. A stale speaker id (deleted actor) falls back to the
+    // campaign's resolved PCs rather than dropping character context.
     const ids = speakerActorId
-      ? [speakerActorId]
+      ? [speakerActorId, ..._resolveCharacterIds(campaignState)]
       : _resolveCharacterIds(campaignState);
     if (!ids.length) return null;
-    const actor = game.actors?.get?.(ids[0]);
+    let actor = null;
+    for (const id of ids) {
+      actor = game.actors?.get?.(id);
+      if (actor) break;
+    }
     if (!actor) return null;
     const snap = readCharacterSnapshot(actor);
     if (!snap) return null;

@@ -79,3 +79,56 @@ describe('resolveSpeakerActorId', () => {
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-A');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token-selection priority — message.speaker.actor (multiplayer prep)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
+  it('prefers the selected token PC over the author\'s bound character', () => {
+    const pc = makeActor({ id: 'actor-token-pc' });
+    global.game.actors._set('actor-token-pc', pc);
+
+    const msg = {
+      speaker: { scene: 's1', token: 't1', actor: 'actor-token-pc', alias: 'Kira Chen' },
+      author:  { id: 'u1', character: { id: 'actor-bound' } },
+    };
+    expect(resolveSpeakerActorId(msg, {})).toBe('actor-token-pc');
+  });
+
+  it('skips a non-character speaker (ship token) and falls back to the bound PC', () => {
+    const ship = makeActor({ id: 'actor-ship', type: 'starship' });
+    global.game.actors._set('actor-ship', ship);
+
+    const msg = {
+      speaker: { scene: 's1', token: 't1', actor: 'actor-ship', alias: 'Ship' },
+      author:  { id: 'u1', character: { id: 'actor-bound' } },
+    };
+    expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
+  });
+
+  it('skips an NPC card speaker (character actor with entityType flag — FOLDER-002)', () => {
+    const npc = makeActor({ id: 'actor-npc' });
+    npc.flags = { 'starforged-companion': { entityType: 'connection' } };
+    global.game.actors._set('actor-npc', npc);
+
+    const msg = {
+      speaker: { actor: 'actor-npc', alias: 'Vance' },
+      author:  { id: 'u1', character: { id: 'actor-bound' } },
+    };
+    expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
+  });
+
+  it('skips a speaker id whose actor no longer exists', () => {
+    const msg = {
+      speaker: { actor: 'actor-deleted' },
+      author:  { id: 'u1', character: { id: 'actor-bound' } },
+    };
+    expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
+  });
+
+  it('still reaches the campaignState fallback when speaker and author both resolve nothing', () => {
+    const msg = { speaker: { actor: null, alias: 'Gamemaster' }, author: { id: 'u1' } };
+    expect(resolveSpeakerActorId(msg, { characterIds: ['actor-fallback'] })).toBe('actor-fallback');
+  });
+});
