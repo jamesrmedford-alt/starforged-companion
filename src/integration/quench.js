@@ -2783,6 +2783,52 @@ function registerChatCommandsTests(quench) {
         return { msg, newOnes };
       }
 
+      describe("ChatMessage speaker — v13 shape + token-selection resolution (multiplayer)", function () {
+        it("round-trips speaker.actor as the Actor id and resolveSpeakerActorId honours a PC speaker", async function () {
+          this.timeout(15000);
+          const pc = await Actor.create({ name: "Quench Speaker PC", type: "character" });
+          try {
+            // Live pin of the documented ChatSpeakerData shape: getSpeaker
+            // accepts an Actor and stamps its id; the created message reads
+            // back { scene, token, actor, alias } with actor as an ID string.
+            const speaker = ChatMessage.getSpeaker({ actor: pc });
+            assert.strictEqual(speaker.actor, pc.id, "getSpeaker stamps the Actor id");
+            assert.isString(speaker.alias, "alias is a display-name string");
+
+            const msg = await ChatMessage.create({ content: "speaker shape pin", speaker });
+            created.push(msg.id);
+            assert.strictEqual(msg.speaker?.actor, pc.id, "message.speaker.actor reads back as the id");
+
+            const { resolveSpeakerActorId } = await import(
+              `/modules/${MODULE_ID}/src/multiplayer/speaker.js`
+            );
+            assert.strictEqual(
+              resolveSpeakerActorId(msg, {}), pc.id,
+              "resolveSpeakerActorId returns the token-selected PC",
+            );
+          } finally {
+            await pc.delete().catch(() => {});
+          }
+        });
+
+        it("falls past a non-PC speaker (starship) to author-based resolution", async function () {
+          this.timeout(15000);
+          const ship = await Actor.create({ name: "Quench Speaker Ship", type: "starship" });
+          try {
+            const speaker = ChatMessage.getSpeaker({ actor: ship });
+            const msg = await ChatMessage.create({ content: "ship speaker pin", speaker });
+            created.push(msg.id);
+            const { resolveSpeakerActorId } = await import(
+              `/modules/${MODULE_ID}/src/multiplayer/speaker.js`
+            );
+            const resolved = resolveSpeakerActorId(msg, {});
+            assert.notStrictEqual(resolved, ship.id, "a starship is never the speaking PC");
+          } finally {
+            await ship.delete().catch(() => {});
+          }
+        });
+      });
+
       describe("Command predicate gates", function () {
         it("isSceneQuery / isSectorCommand / isAtCommand / isJournalCommand recognise their formats", async function () {
           const idx = await import(`/modules/${MODULE_ID}/src/index.js`);

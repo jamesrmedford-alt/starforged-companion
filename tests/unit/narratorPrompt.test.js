@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   appendSidecarInstruction,
   buildNarratorSystemPrompt,
+  buildPartyBlock,
   buildNarratorUserMessage,
   buildPacedNarrativeUserMessage,
   buildSceneUserMessage,
@@ -964,5 +965,66 @@ describe('inciting_incident role description — structured proposal block (Clus
     expect(prompt).toMatch(/Vow target: <Name> —/);
     expect(prompt).toMatch(/ONLY when the incident carries explicit time pressure/);
     expect(prompt).toMatch(/4, 6, 8,\s*10, 12/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multiplayer speaker disambiguation — speaker lines + party roster
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('speaker labels in user messages (multiplayer prep)', () => {
+  it('buildPacedNarrativeUserMessage names the speaker and adds the attribution rule', () => {
+    const msg = buildPacedNarrativeUserMessage('I hail him', '', 3, null, 'Venri Quint');
+    expect(msg).toContain('## PLAYER NARRATION — spoken by Venri Quint');
+    expect(msg).toContain('Venri Quint: "I hail him"');
+    expect(msg).toMatch(/speaking and acting this turn is Venri Quint/);
+  });
+
+  it('buildSceneUserMessage names the asker', () => {
+    const msg = buildSceneUserMessage('where am I?', '', 3, 'Kira Chen');
+    expect(msg).toContain('## PLAYER QUESTION — asked by Kira Chen');
+    expect(msg).toContain('Kira Chen: "where am I?"');
+  });
+
+  it('buildNarratorUserMessage names the mover', () => {
+    const msg = buildNarratorUserMessage(
+      { loremasterContext: 'Face Danger: weak hit' }, 'I dive for cover', 3, 'Venri Quint',
+    );
+    expect(msg).toContain('## PLAYER NARRATION — spoken by Venri Quint');
+    expect(msg).toMatch(/The character who made this move is Venri Quint/);
+  });
+
+  it('all three builders render the unlabeled form when no speaker is known', () => {
+    expect(buildPacedNarrativeUserMessage('x', '', 3, null)).toContain('## PLAYER NARRATION\n\n"x"');
+    expect(buildSceneUserMessage('x', '', 3)).toContain('## PLAYER QUESTION\n\n"x"');
+    expect(buildNarratorUserMessage({}, 'x', 3)).toContain('## PLAYER NARRATION\n\n"x"');
+  });
+});
+
+describe('buildPartyBlock', () => {
+  it('renders the roster with the speaking PC marked, for two or more PCs', () => {
+    const block = buildPartyBlock({ names: ['Venri Quint', 'Kira Chen'], speaking: 'Kira Chen' });
+    expect(block).toContain('## PARTY');
+    expect(block).toContain('Venri Quint, Kira Chen (speaking this turn)');
+    expect(block).toMatch(/never merge the player\ncharacters/);
+  });
+
+  it('returns empty for solo play and for empty/garbage input', () => {
+    expect(buildPartyBlock({ names: ['Venri Quint'], speaking: 'Venri Quint' })).toBe('');
+    expect(buildPartyBlock(null)).toBe('');
+    expect(buildPartyBlock({ names: [] })).toBe('');
+  });
+
+  it('threads through buildNarratorSystemPrompt extras', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', {
+      mode: 'paced_narrative',
+      party: { names: ['A-One', 'B-Two'], speaking: 'A-One' },
+    });
+    expect(prompt).toContain('## PARTY');
+    expect(prompt).toContain('A-One (speaking this turn), B-Two');
+
+    const solo = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'paced_narrative', party: null });
+    expect(solo).not.toContain('## PARTY');
   });
 });

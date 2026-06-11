@@ -522,3 +522,42 @@ tuning guide (symptom → knob), and refinement backlog in
 `docs/narrator/narrator-memory-architecture.md`. Settings:
 `narratorContextCards` (ring depth 1–10, default 3) and
 `factContinuity.sceneFrame` (default on).
+
+---
+
+## Speaker resolution: token selection first, PC-validated (2026-06-10)
+
+**Decision:** `resolveSpeakerActorId` honours Foundry's native "speaking as"
+mechanism as the top-priority signal — `message.speaker.actor` (v13
+`ChatSpeakerData`, stamped from the user's controlled token by
+`ChatMessage.getSpeaker`) wins **when it resolves to a player character** —
+before the author's bound `User.character`, the ownership scan, and the
+campaignState fallback. Non-PC speakers (a selected starship, an NPC card —
+`character` actors carrying the module `entityType` flag, FOLDER-002) fall
+through to author-based resolution rather than being attributed.
+
+The resolved speaker reaches every narrator path (move, paced, `@scene` —
+which previously discarded its options entirely), the user message labels
+the input with the speaker's name plus an attribution rule, and a PARTY
+section (rendered only with 2+ PCs) lists the roster with the current
+speaker marked.
+
+**Reason:** first multiplayer playtest — the narrator couldn't tell who was
+speaking. Token selection is the explicit, per-message statement of intent
+Foundry players already use, and the maintainer requested it as the signal.
+The original `speaker.js` docstring framed token-selection as a player
+workaround and went author-based only; this supersedes that framing.
+
+**Rejected:**
+- *Trusting `message.speaker` unconditionally* — live playtest showed chat
+  attributed to "Ship" when the ship token was selected; unvalidated
+  speakers would attribute narration to vessels and NPC cards.
+- *Alias-based matching* (`speaker.alias` → name lookup) — the actor id is
+  authoritative and already present; alias is display-only.
+- *Per-user setting* — Foundry's existing token/character binding already
+  expresses the preference; no new configuration surface.
+
+**Verification:** v13 `speaker` shape documented in
+`docs/foundry-reference/foundry-api-reference.md` (ChatMessage section) with
+provenance from the pinned foundry-ironsworn source; live Quench assertions
+pin `getSpeaker({actor})` round-tripping the id and the non-PC fall-through.
