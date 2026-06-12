@@ -2874,8 +2874,9 @@ onChatMessageRender((message, root) => {
       // Best-effort: only the GM can mutate other users' messages.
       try {
         await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
-      } catch {
+      } catch (err) {
         // Player clients fall back to a local-only disable above.
+        console.debug?.(`${MODULE_ID} | rolled-flag update skipped (non-owner):`, err?.message ?? err);
       }
       await ChatMessage.create({
         content: f.playerText,

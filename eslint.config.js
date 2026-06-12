@@ -31,6 +31,7 @@ export default [
         CONST:        "readonly",
         foundry:      "readonly",
         Actor:        "readonly",
+        Macro:        "readonly",
         ChatMessage:  "readonly",
         JournalEntry: "readonly",
         Folder:       "readonly",
