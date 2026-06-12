@@ -8370,19 +8370,26 @@ function registerTokenDragSetACourseTests(quench) {
           }]);
           const tokenDoc = testScene.tokens.contents[0];
 
-          const messagesBefore = game.messages?.contents?.length ?? 0;
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
 
           // Simulate the drag landing within snap range of the Glimmer Note.
           const result = handleCommandVehicleTokenDrag(tokenDoc, { x: 510, y: 505 });
           assert.equal(result, false,
             "handler should return false to cancel the Token drag when within snap range");
 
-          // The dispatch is queued via setTimeout(0) — give it a tick.
-          await new Promise((resolve) => setTimeout(resolve, 50));
-
-          const newMessages = (game.messages?.contents ?? []).slice(messagesBefore);
-          const synthetic   = newMessages.find(m =>
-            m?.flags?.[MODULE]?.forcedMoveId === "set_a_course");
+          // The dispatch is queued via setTimeout(0) and then awaits a
+          // ChatMessage.create server round-trip — a single fixed 50ms tick
+          // flaked under CI load (run 27389287262: the one red test of 458).
+          // Poll up to ~3s for the synthetic message instead, and diff by
+          // message id rather than collection length so unrelated deletions
+          // can't shift the window.
+          let synthetic = null;
+          for (let i = 0; i < 60 && !synthetic; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            synthetic = (game.messages?.contents ?? []).find(m =>
+              !beforeIds.has(m.id)
+              && m?.flags?.[MODULE]?.forcedMoveId === "set_a_course");
+          }
 
           assert.isOk(synthetic,
             "expected a synthetic chat message with flags[MODULE].forcedMoveId === 'set_a_course'");
