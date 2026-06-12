@@ -146,6 +146,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import { registerSwearVowHandler } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -155,6 +156,7 @@ import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 import {
   registerSectorSceneHooks,
   moveCommandVehicleTokenToDestination,
+  syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM }              from "./multiplayer/gmGate.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
@@ -490,8 +492,11 @@ export function registerChatHook() {
       if (factContinuityEnabledFromSettings()) {
         await startScene(campaignState, { reason: "@scene_intercept" });
       }
+      // Full speaker resolution (token selection → bound character →
+      // ownership → fallback) — the bound-character-only read this
+      // replaces attributed every @scene to the default PC in multiplayer.
       await interrogateScene(question, campaignState, {
-        actorId: message.author?.character?.id,
+        speakerActorId: resolveSpeakerActorId(message, campaignState),
       });
       return;
     }
@@ -857,13 +862,21 @@ export function registerChatHook() {
 
       const resolution = resolveMove(interpretation, campaignState, { combatPosition });
 
-      // Fact-continuity §20 — when set_a_course resolves to a non-miss,
-      // the ship arrived at the destination the player named. Infer the
-      // new position and write it onto the command vehicle BEFORE the
-      // assembler builds the context packet so Section 6.5 reflects
-      // the arrival on this same turn.
-      if (
+      // Fact-continuity §20 — when a travel move with ARRIVAL semantics
+      // resolves to a non-miss, the ship arrived at the destination the
+      // player named. Infer the new position and write it onto the
+      // command vehicle BEFORE the assembler builds the context packet so
+      // Section 6.5 reflects the arrival on this same turn.
+      //
+      // Cluster C: finish_an_expedition joins set_a_course — both mean
+      // "you reach your destination" on a hit (play kit). The
+      // undertake_an_expedition waypoint move stays deliberately unwired:
+      // a hit marks progress, not arrival.
+      const arrivalMove =
         resolution.moveId === "set_a_course"
+        || resolution.moveId === "finish_an_expedition";
+      if (
+        arrivalMove
         && resolution.outcome !== "miss"
         && getShipPositioningEnabled()
         && getShipAutoMoveOnCourse()
@@ -872,7 +885,9 @@ export function registerChatHook() {
         await maybeUpdateShipPositionFromName(
           interpretation.moveTarget,
           campaignState,
-          tokenDragSetCourse ? "scene_token" : "set_a_course",
+          tokenDragSetCourse ? "scene_token"
+            : resolution.moveId === "finish_an_expedition" ? "expedition"
+            : "set_a_course",
         );
 
         // §20.4b — when the move was initiated by a Token drag and we
@@ -2327,6 +2342,14 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     if (!cv?._id) return null;
     const position = inferShipPosition(ref, campaignState, { source });
     await updateShip(cv._id, { position });
+
+    // Cluster C — the map follows the fiction: move the sector-scene Token
+    // to the new position. The drag path already moved its own Token
+    // (moveCommandVehicleTokenToDestination), so scene_token skips the sync.
+    if (source !== "scene_token") {
+      await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err));
+    }
     return position;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | shipPosition: update from "${ref}" failed:`, err?.message ?? err);
@@ -2610,6 +2633,17 @@ Hooks.once("ready", () => {
       console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
     );
 
+    // ✦ Playtest Quickstart — expose the orchestrator on the module API and
+    // ensure the hotbar Macro exists (the Macro body is a one-liner into
+    // the API so its logic lives in tested module code).
+    import("./session/quickstart.js").then(({ runPlaytestQuickstart, ensureQuickstartMacro }) => {
+      const mod = game.modules.get(MODULE_ID);
+      if (mod) mod.api = { ...(mod.api ?? {}), runPlaytestQuickstart };
+      return ensureQuickstartMacro();
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | Quickstart macro setup failed:`, err?.message ?? err)
+    );
+
     // World Journal — create the folder + four category journals if missing.
     // Phase 3 only writes; the combined detection pass that auto-populates is
     // Phase 4. Errors are logged and do not block the rest of the ready hook.
@@ -2774,6 +2808,10 @@ onChatMessageRender((message, root) => {
   }).catch(err => console.warn(`${MODULE_ID} | audio module load failed:`, err));
 });
 
+// Wire the "⚔ Swear this vow" button on inciting-incident cards
+// (Cluster B — src/session/swearVow.js owns the handler + execution).
+registerSwearVowHandler();
+
 /**
  * Wire the "↻ Refresh" button on campaign recap cards.
  * The button is rendered for the GM on every non-empty campaign recap card
@@ -2836,8 +2874,9 @@ onChatMessageRender((message, root) => {
       // Best-effort: only the GM can mutate other users' messages.
       try {
         await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
-      } catch {
+      } catch (err) {
         // Player clients fall back to a local-only disable above.
+        console.debug?.(`${MODULE_ID} | rolled-flag update skipped (non-owner):`, err?.message ?? err);
       }
       await ChatMessage.create({
         content: f.playerText,

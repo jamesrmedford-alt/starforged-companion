@@ -73,7 +73,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `assembler.js` | Builds the narrator context packet (safety, truths, entity cards, tracks, character state, ledgers). |
-| `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection. |
+| `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection; exports `collectAllEntities` (full roster for sidecar subject resolution). Lexical on the paced/@scene paths (`moveId: null`). |
 | `safety.js` | Safety-config formatting — always injected first into the system prompt. |
 
 ### `entities/` — entity records & discovery
@@ -91,12 +91,12 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `sidecarParser.js` | Parses the narrator's fenced JSON sidecar (`newTruths`, `stateChanges`). |
-| `ledgers.js` | Active-scene ledgers (`sceneTruths`, `sceneState.bySubject`). |
-| `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore. |
+| `sidecarParser.js` | Parses the narrator's fenced JSON sidecar (`newTruths`, `stateChanges`, `sceneFrame`). |
+| `ledgers.js` | Active-scene ledgers (`sceneTruths`, `sceneState.bySubject`) + `applySceneFrame` (scene-frame snapshot). See `docs/narrator/narrator-memory-architecture.md`. |
+| `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore; clears the scene frame. |
 | `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (+ `!truth`/`!state` backing). |
 | `consistencyCheck.js` | Optional Haiku consistency audit → GM review card. |
-| `shipPosition.js` | §20 ship positioning: token auto-move on a set course. |
+| `shipPosition.js` | §20 ship positioning: `inferShipPosition` (tolerant seed matching — possessives, article-wrapped multiword names), `formatShipPositionLine`, `matchSeedAgainstIndex`. Provenance sources include `expedition` (finish_an_expedition arrivals). |
 
 ### `help/` — in-game help journal
 
@@ -134,7 +134,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `gmGate.js` | `isCanonicalGM()` single-emitter pipeline gate (prevents duplicate move resolution across clients). |
-| `speaker.js` | Resolves which PC a chat message belongs to. |
+| `speaker.js` | Resolves the speaking PC for a chat message: `message.speaker.actor` (token selection, PC-validated) → author's bound character → ownership scan → campaignState fallback. NPC cards and non-character actors are never speakers. |
 
 ### `narration/` — the narrative engine
 
@@ -176,7 +176,7 @@ developer-only and excluded from the release.
 | `sceneBuilder.js` | Foundry Scene creation (Note pins + Drawing passages). |
 | `sectorMap.js` | SVG sector map renderer. |
 | `sectorOverview.js` | Sector-record JournalEntry overview. |
-| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins. |
+| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins; command-vehicle Token drag → set_a_course; `syncCommandVehicleTokenToPosition` (position→token sync so the map follows fiction-side movement — Cluster C). |
 
 ### `session/` — session lifecycle & vignettes
 
@@ -185,7 +185,9 @@ developer-only and excluded from the release.
 | `lifecycle.js` | Session-active gate state machine: `isSessionActive`, `beginSession`, `endSession`, `sessionMinutesActive`. |
 | `galleyVignette.js` | Begin-Session opening galley vignette (active PCs). |
 | `endSessionVignette.js` | End-Session closing NPC vignette. |
-| `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + suggested vow, posts the launch card. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
+| `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + structured proposal (suggested vow / optional clock / vow target — parsers `splitIncitingMeta` et al.), posts the launch card with `incitingMeta` flags + ⚔ Swear button. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
+| `quickstart.js` | ✦ Playtest Quickstart: one-click fresh world (truths + sector + PC with 2 Paths + command vehicle with 2 Modules); pure helpers (`assignStatArray`, name rollers); `ensureQuickstartMacro` hotbar Macro; exposed on `module.api`. |
+| `swearVow.js` | ⚔ Swear this vow (Cluster B — F2/F3/F4): pure planner `buildSwearVowPlan` + executor `executeSwearVow` (vow item with optional clock via `createCharacterVowItem`; vow-target connection via the make_a_connection pipeline; GM/world-write asymmetry) + `registerSwearVowHandler` chat-card wiring. |
 
 ### `system/` — foundry-ironsworn integration
 

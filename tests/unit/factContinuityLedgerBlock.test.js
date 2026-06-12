@@ -267,3 +267,79 @@ describe('fact-continuity gating in buildNarratorSystemPrompt', () => {
     expect(prompt).not.toMatch(/ACTIVE SCENE — BINDING TRUTHS/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scene frame rendering + scoping (narrator-memory A4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLedgerBlock — scene frame', () => {
+  function frameState(overrides = {}) {
+    return makeCampaignState({
+      sceneFrame: {
+        location:  "Lyra's graveyard",
+        present:   ['Venri Quint', 'Vance'],
+        situation: 'Hailing Vance across the debris field',
+        sceneId:   'sc-test',
+        updatedAt: 1,
+      },
+      ...overrides,
+    });
+  }
+
+  it('renders the SCENE FRAME segment from campaignState.sceneFrame', () => {
+    const out = buildLedgerBlock(frameState(), {});
+    expect(out.frame).toContain('SCENE FRAME');
+    expect(out.frame).toContain("Where:   Lyra's graveyard");
+    expect(out.frame).toContain('Present: Venri Quint, Vance');
+    expect(out.frame).toContain('Now:     Hailing Vance across the debris field');
+    expect(out.combined).toContain('SCENE FRAME');
+    expect(out.combined).toContain('## ACTIVE SCENE');
+  });
+
+  it('keeps a present subject\'s text-keyed entries in scope without a player mention', () => {
+    const cs = frameState();
+    seed(cs, {
+      truths:       [{ subject: 'Vance', fact: 'Life support failing' }],
+      stateChanges: [{ subject: 'Vance', attribute: 'location', value: 'aboard his shuttle' }],
+    });
+    // Player message does NOT name Vance — the frame keeps him in scope.
+    const out = buildLedgerBlock(cs, { playerNarration: 'What does that even mean?' });
+    expect(out.truths).toContain('Life support failing');
+    expect(out.state).toContain('aboard his shuttle');
+  });
+
+  it('drops out-of-scope subjects when the frame is absent and nothing mentions them', () => {
+    const cs = makeCampaignState();
+    seed(cs, { truths: [{ subject: 'Vance', fact: 'Life support failing' }] });
+    const out = buildLedgerBlock(cs, { playerNarration: 'What does that even mean?' });
+    expect(out.truths).not.toContain('Life support failing');
+  });
+
+  it('omits the frame when sceneFrameEnabled is false (scoping reverts too)', () => {
+    const cs = frameState();
+    seed(cs, { truths: [{ subject: 'Vance', fact: 'Life support failing' }] });
+    const out = buildLedgerBlock(cs, {
+      playerNarration:   'What does that even mean?',
+      sceneFrameEnabled: false,
+    });
+    expect(out.frame).toBe('');
+    expect(out.combined).not.toContain('SCENE FRAME');
+    expect(out.truths).not.toContain('Life support failing');
+  });
+
+  it('never drops the frame under budget pressure (state drops first)', () => {
+    const cs = frameState();
+    seed(cs, {
+      truths:       [{ subject: 'scene', fact: 'The storm front is closing' }],
+      stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'flickering red emergency strips' }],
+    });
+    const out = buildLedgerBlock(cs, { maxTokens: 1 });
+    expect(out.frame).toContain('SCENE FRAME');
+    expect(out.state).toBe('');
+  });
+
+  it('renders the frame even when both ledgers are empty', () => {
+    const out = buildLedgerBlock(frameState(), {});
+    expect(out.combined).toContain('SCENE FRAME');
+  });
+});

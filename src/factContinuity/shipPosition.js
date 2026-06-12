@@ -25,6 +25,7 @@ import { buildNameIndex } from "../context/relevanceResolver.js";
 const SOURCE_VALUES = new Set([
   "at_command",
   "set_a_course",
+  "expedition",          // finish_an_expedition arrival (Cluster C)
   "narrator_sidecar",
   "scene_token",
   "manual",
@@ -86,9 +87,8 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
   // best-effort match against everything currently present.
   const entities = collectEntitiesForIndex(campaignState);
   const index    = buildNameIndex(entities, []);
-  const lookup   = ref.toLowerCase();
 
-  const hit = index.get(lookup) ?? index.get(firstWord(lookup));
+  const hit = matchSeedAgainstIndex(index, ref);
   if (!hit) {
     out.freeText = ref;
     return out;
@@ -233,6 +233,34 @@ function lookupSector(id, campaignState) {
   return list.find(s => s?.id === id)?.name ?? "";
 }
 
-function firstWord(s) {
-  return String(s ?? "").split(/\s+/)[0]?.toLowerCase() ?? "";
+/**
+ * Match a free-text seed against the name index with tolerance for the
+ * phrasing narrators and players actually use (Cluster C / F5 gap 3):
+ *
+ *   "Lyra"                     → exact
+ *   "Lyra's orbital graveyard" → possessive-stripped word scan → "lyra"
+ *   "the Vault of Tears"       → word scan (words ≥ 4 chars; leftmost wins)
+ *
+ * Precedence: full ref → possessive-stripped full ref → per-word scan
+ * (possessives stripped, punctuation trimmed, words shorter than 4 chars
+ * skipped so "the"/"of" can't false-positive). Returns the index hit or
+ * null. Exported for unit testing.
+ */
+export function matchSeedAgainstIndex(index, ref) {
+  const lookup = String(ref ?? "").toLowerCase();
+  if (!lookup) return null;
+  const stripPossessive = (s) => s.replace(/[’']s\b/gu, "");
+
+  for (const candidate of [lookup, stripPossessive(lookup).trim()]) {
+    const hit = index.get(candidate);
+    if (hit) return hit;
+  }
+
+  for (const raw of stripPossessive(lookup).split(/\s+/)) {
+    const word = raw.replace(/[^\p{L}\p{N}-]/gu, "");
+    if (word.length < 4) continue;
+    const hit = index.get(word);
+    if (hit) return hit;
+  }
+  return null;
 }

@@ -55,8 +55,33 @@ export function appendNpcMarkupInstruction() {
   ].join('\n');
 }
 
-export function appendSidecarInstruction() {
-  return [
+export function appendSidecarInstruction(options = {}) {
+  const mode              = typeof options.mode === 'string' ? options.mode : 'move_resolution';
+  const sceneFrameEnabled = options.sceneFrameEnabled !== false;
+
+  const exampleLines = [
+    '    ```json',
+    '    {',
+    '      "newTruths": [',
+    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
+    '      ],',
+    '      "stateChanges": [',
+    '        { "subject": "Vance",     "attribute": "location", "value": "aboard his shuttle" },',
+    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
+    '      ]' + (sceneFrameEnabled ? ',' : ''),
+  ];
+  if (sceneFrameEnabled) {
+    exampleLines.push(
+      '      "sceneFrame": {',
+      '        "location":  "Lyra\'s orbital graveyard",',
+      '        "present":   ["Venri Quint", "Vance"],',
+      '        "situation": "Hailing Vance\'s shuttle across the debris field"',
+      '      }',
+    );
+  }
+  exampleLines.push('    }', '    ```');
+
+  const lines = [
     '## RESPONSE FORMAT — MANDATORY SIDECAR',
     '',
     'Respond with prose followed by a single fenced JSON code block, in this',
@@ -64,17 +89,7 @@ export function appendSidecarInstruction() {
     '',
     '    <your prose narration here, no JSON inside the prose>',
     '',
-    '    ```json',
-    '    {',
-    '      "newTruths": [',
-    '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
-    '      ],',
-    '      "stateChanges": [',
-    '        { "subject": "scene",     "attribute": "lighting", "value": "stable" },',
-    '        { "subject": "cargo bay", "attribute": "door",     "value": "open"   }',
-    '      ]',
-    '    }',
-    '    ```',
+    ...exampleLines,
     '',
     'The JSON block MUST be present. Both arrays MAY be empty. The block is',
     'how this turn\'s bookkeeping is captured — the prose itself stays pure',
@@ -88,17 +103,55 @@ export function appendSidecarInstruction() {
     '- A "stateChange" is what is true right now. Use it for posture, mood,',
     '  visible state, door positions, lighting, weather. These supersede',
     '  prior state for the same subject + attribute.',
+    '- REQUIRED: when your prose establishes or changes WHERE a named',
+    '  character is (their location, the vessel or structure they are',
+    '  aboard) or their physical condition (wounded, dying, well), you MUST',
+    '  emit a stateChange for that character recording it — e.g.',
+    '  { "subject": "Vance", "attribute": "location", "value": "aboard his',
+    '  shuttle in the graveyard" } or { "subject": "Vance", "attribute":',
+    '  "condition", "value": "life support failing" }. Continuity depends',
+    '  on these; do not leave them to inference.',
+    '- REQUIRED: when your prose establishes WHY a character is somewhere,',
+    '  what they want, or what is at stake — especially anything with a',
+    '  deadline or a cost for failure — you MUST emit a newTruth recording',
+    '  it. Stakes that are not recorded will be lost.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
-    '- The "ship" subject is reserved for the player\'s command vehicle.',
-    '  Use it only when narration actually moves the ship. Persistent',
-    '  position updates use the exact shape',
+    '- REQUIRED: when your prose moves the player\'s command vehicle —',
+    '  departure, transit, or arrival — emit the exact shape',
     '  { "subject": "ship", "attribute": "position", "value": "<destination',
-    '  name>" } — the value is matched against known settlements,',
-    '  planets, and locations.',
+    '  name>" }. The "ship" subject is reserved for the command vehicle;',
+    '  the value is matched against known settlements, planets, and',
+    '  locations, so prefer an established place name over an invented',
+    '  phrase. Do not emit it when the ship has not moved.',
     '- Do not declare a truth that diverges from the active scene block. If',
     '  a fact needs to change, the player or GM will retract the old one.',
-  ].join('\n');
+  ];
+
+  if (sceneFrameEnabled) {
+    lines.push(
+      '- "sceneFrame" is a full snapshot of the scene as it stands AFTER',
+      '  your narration: where the scene is set, every named character',
+      '  present or directly engaged (include characters on comms), and the',
+      '  situation in one sentence. Include it on EVERY response — it',
+      '  replaces the previous snapshot. Keep names exactly as established.',
+    );
+  }
+
+  if (mode === 'inciting_incident') {
+    lines.push(
+      '',
+      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Its premise must survive into',
+      'later sessions, so your sidecar MUST capture the load-bearing facts:',
+      '- newTruths for: who the central NPC is and their history with the',
+      '  character; why they are where they are; what is at stake and what',
+      '  fails if the character is too late (the deadline).',
+      '- stateChanges for: the central NPC\'s current location (vessel or',
+      '  structure included) and physical condition.',
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -152,11 +205,28 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
 
+  // ── Scene frame (Cluster A4) ─────────────────────────────────────────────
+  // The narrator-maintained snapshot of the active scene. Subjects named in
+  // the frame's `present` list are treated as mentioned this turn, so their
+  // ledger entries stay in scope even when the player's message doesn't name
+  // them (the conversation-partner case — see narrator-memory architecture).
+  const sceneFrameEnabled = options?.sceneFrameEnabled !== false;
+  const frame = sceneFrameEnabled && campaignState?.sceneFrame
+    && typeof campaignState.sceneFrame === 'object'
+    ? campaignState.sceneFrame
+    : null;
+  const presentNames = Array.isArray(frame?.present)
+    ? frame.present.filter(p => typeof p === 'string' && p.trim())
+    : [];
+  const scopeText = presentNames.length
+    ? `${narration} ${presentNames.join(' ').toLowerCase()}`
+    : narration;
+
   // ── Filter truths ────────────────────────────────────────────────────────
   const truthLines = [];
   for (const t of truths) {
     if (!t || t.retracted) continue;
-    if (!isSubjectInScope(t.subject, matchedIds, narration)) continue;
+    if (!isSubjectInScope(t.subject, matchedIds, scopeText)) continue;
     const label = formatSubjectLabel(t.subject, nameLookup);
     const fact  = String(t.fact ?? '').trim();
     if (!fact) continue;
@@ -168,7 +238,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
-    if (!isSubjectInScope(subjectForKey, matchedIds, narration)) continue;
+    if (!isSubjectInScope(subjectForKey, matchedIds, scopeText)) continue;
     const label = formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
@@ -178,6 +248,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
     }
   }
 
+  // ── Render the frame block ───────────────────────────────────────────────
+  // Confirmed-lore tier: never dropped under budget pressure (like the ship
+  // line) — losing "where we are and who is here" is how drift starts.
+  const frameLines = [];
+  if (frame) {
+    if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
+    if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
+    if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
+  }
+  const frameBlock = frameLines.length
+    ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')
+    : '';
+
   // ── Ship position (§20) ──────────────────────────────────────────────────
   // The command vehicle's persistent position record is fact-continuity
   // confirmed-lore tier — it is never dropped under budget pressure and
@@ -186,18 +269,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const shipPositionLine = buildShipPositionLine(campaignState);
 
   // ── Empty short-circuit ──────────────────────────────────────────────────
-  if (!truthLines.length && !stateLines.length && !shipPositionLine) {
+  if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock) {
     return {
-      header: '', truths: '', state: '', shipPosition: '', combined: '',
-      tokenEstimates: { header: 0, truths: 0, state: 0, ship: 0 },
+      header: '', frame: '', truths: '', state: '', shipPosition: '', combined: '',
+      tokenEstimates: { header: 0, frame: 0, truths: 0, state: 0, ship: 0 },
     };
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  // Header only renders when there are truths or state to introduce —
-  // the SHIP POSITION line stands on its own when it's the only thing
-  // in the block (§20).
-  const header = (truthLines.length || stateLines.length)
+  // Header only renders when there are truths, state, or a frame to
+  // introduce — the SHIP POSITION line stands on its own when it's the only
+  // thing in the block (§20).
+  const header = (truthLines.length || stateLines.length || frameBlock)
     ? [
         '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
         '',
@@ -216,29 +299,33 @@ export function buildLedgerBlock(campaignState, options = {}) {
     : '';
 
   // ── Soft-cap enforcement: drop state when over budget ────────────────────
-  // Ship position counts toward the budget for telemetry but is never
-  // dropped — it's confirmed-lore tier per scope §20.5. State drops first
-  // when the cap is exceeded.
+  // Ship position and the scene frame count toward the budget for telemetry
+  // but are never dropped — both are confirmed-lore tier (scope §20.5;
+  // narrator-memory architecture A4). State drops first when the cap is
+  // exceeded.
   const tokenEstimates = {
     header: estimateTokens(header),
+    frame:  estimateTokens(frameBlock),
     truths: estimateTokens(truthsBlock),
     state:  estimateTokens(stateBlock),
     ship:   estimateTokens(shipPositionLine),
   };
-  let total = tokenEstimates.header + tokenEstimates.truths
+  let total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
             + tokenEstimates.state + tokenEstimates.ship;
   if (total > maxTokens && stateBlock) {
     stateBlock = '';
     tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.truths + tokenEstimates.ship;
+    total = tokenEstimates.header + tokenEstimates.frame
+          + tokenEstimates.truths + tokenEstimates.ship;
   }
 
-  const combined = [header, truthsBlock, stateBlock, shipPositionLine]
+  const combined = [header, frameBlock, truthsBlock, stateBlock, shipPositionLine]
     .filter(Boolean)
     .join('\n\n');
 
   return {
     header,
+    frame:        frameBlock,
     truths:       truthsBlock,
     state:        stateBlock,
     shipPosition: shipPositionLine,
@@ -671,12 +758,22 @@ const ROLE_DESCRIPTIONS = {
     `sentences of vivid prose that drop the character into a charged situation demanding ` +
     `action. Do not resolve it; leave the player poised to make the first move. Do not ` +
     `invent proper nouns beyond what the truths / sector / connection already establish.\n\n` +
-    `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, on its own ` +
-    `final line, append exactly one structured proposal in this form:\n\n` +
-    `Suggested vow: <a short first-person vow statement> (<rank>)\n\n` +
-    `where <rank> is exactly one of: troublesome, dangerous, formidable, extreme, epic. ` +
-    `This single trailing line is the one place you propose a mechanical action; keep it ` +
-    `out of the prose body itself.`,
+    `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, append a ` +
+    `short structured proposal block — each item on its own line, in this order and ` +
+    `these exact forms:\n\n` +
+    `Suggested vow: <a short first-person vow statement> (<rank>)\n` +
+    `Suggested clock: <a short clock label> (<segments> segments)\n` +
+    `Vow target: <Name> — <2-3 sentences on one line: who they are, their history with ` +
+    `the character, and their current situation and condition>\n\n` +
+    `Rules for the block: <rank> is exactly one of: troublesome, dangerous, formidable, ` +
+    `extreme, epic. The "Suggested vow" line is always present. The "Suggested clock" ` +
+    `line appears ONLY when the incident carries explicit time pressure (something fails, ` +
+    `expires, or arrives if the character is too slow) — <segments> is one of 4, 6, 8, ` +
+    `10, 12 (fewer segments = tighter deadline); omit the line entirely for vows without ` +
+    `a deadline. The "Vow target" line appears when the vow concerns a specific person, ` +
+    `creature, faction, or vessel — use their established name, keep the whole line ` +
+    `single-line. This trailing block is the one place you propose mechanics; keep all ` +
+    `of it out of the prose body itself.`,
 };
 
 /**
@@ -779,6 +876,7 @@ export function buildNarratorSystemPrompt(
     factContinuityEnabled         = true,
     factContinuityLedgerInContext = true,
     factContinuityMaxLedgerTokens = 400,
+    factContinuitySceneFrame      = true,
   } = narratorSettings ?? {};
 
   const {
@@ -792,6 +890,7 @@ export function buildNarratorSystemPrompt(
     matchedEntityIds     = [],
     playerNarration      = '',
     entityNamesById      = null,
+    party                = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -883,6 +982,7 @@ export function buildNarratorSystemPrompt(
       playerNarration,
       maxTokens:         factContinuityMaxLedgerTokens,
       entityNamesById,
+      sceneFrameEnabled: factContinuitySceneFrame,
     });
     if (ledger.combined) parts.push(ledger.combined);
   }
@@ -894,11 +994,22 @@ export function buildNarratorSystemPrompt(
   // [8] Character
   if (character) parts.push(buildCharacterBlock(character));
 
+  // [8b] Party roster — multiplayer speaker disambiguation. Rendered only
+  // when more than one player character shares the campaign; names the PC
+  // speaking this turn so narration never conflates the party members.
+  const partyBlock = buildPartyBlock(party);
+  if (partyBlock) parts.push(partyBlock);
+
   // [9] Fact-continuity sidecar instruction — appended last so it is the most
   // recent guidance the model sees before generating. Applies to every mode,
-  // gated by the master Fact Continuity setting.
+  // gated by the master Fact Continuity setting. Mode-aware: the inciting
+  // incident gets a premise-capture addendum (narrator-memory architecture
+  // A2); the sceneFrame key is included only when the A4 frame is enabled.
   if (factContinuityEnabled) {
-    parts.push(appendSidecarInstruction());
+    parts.push(appendSidecarInstruction({
+      mode:              resolvedMode,
+      sceneFrameEnabled: factContinuitySceneFrame,
+    }));
   }
 
   // [10] Audio NPC-dialogue markup instruction — appended only when audio
@@ -1016,7 +1127,7 @@ export function sanitizePlayerText(text) {
  * @param {number} sentenceTarget  — how many sentences to produce
  * @returns {string}
  */
-export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
+export function buildSceneUserMessage(question, recentContext, sentenceTarget, speakerName = null) {
   const parts = [];
 
   const cleanedRecent = stripHtml(recentContext).trim();
@@ -1024,12 +1135,19 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
     parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER QUESTION\n\n"${sanitizePlayerText(question)}"`);
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
+  parts.push(
+    `## PLAYER QUESTION${speaker ? ` — asked by ${speaker}` : ''}\n\n` +
+    `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(question)}"`,
+  );
 
   parts.push(
     `Answer this question with ${sentenceTarget}–${sentenceTarget + 1} sentences of atmospheric ` +
     `description. Do not introduce new plot elements. Stay grounded in what has already been ` +
-    `established. The narrator is a camera, not a writer, in this mode.`
+    `established. The narrator is a camera, not a writer, in this mode.` +
+    (speaker ? ` The character asking is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
@@ -1051,7 +1169,7 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget) {
  * @param {string|null} suggestedMove
  * @returns {string}
  */
-export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove) {
+export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null) {
   const parts = [];
 
   const cleanedRecent = stripHtml(recentContext).trim();
@@ -1059,7 +1177,19 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
   }
 
-  parts.push(`## PLAYER NARRATION\n\n"${sanitizePlayerText(playerText ?? '')}"`);
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
+  parts.push(
+    `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
+    `${speaker ? `${speaker}: ` : ''}"${sanitizePlayerText(playerText ?? '')}"`,
+  );
+  if (speaker) {
+    parts.push(
+      `The character speaking and acting this turn is ${speaker}. Attribute the ` +
+      `actions and dialogue in the input to ${speaker}, not to any other player character.`,
+    );
+  }
 
   if (suggestedMove) {
     parts.push(
@@ -1099,7 +1229,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {number} sentenceTarget   — how many sentences to produce
  * @returns {string}
  */
-export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget) {
+export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null) {
   const parts = [];
 
   const moveOutcome = resolution?.loremasterContext ?? '';
@@ -1107,14 +1237,21 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
+  const speaker = typeof speakerName === 'string' && speakerName.trim()
+    ? speakerName.trim()
+    : null;
   const cleanedPlayerNarration = sanitizePlayerText(playerNarration);
   if (cleanedPlayerNarration) {
-    parts.push(`## PLAYER NARRATION\n\n"${cleanedPlayerNarration}"`);
+    parts.push(
+      `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
+      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"`,
+    );
   }
 
   parts.push(
     `Narrate the consequence in ${sentenceTarget} sentence${sentenceTarget !== 1 ? 's' : ''}. ` +
-    `Stay in the fiction. Do not explain the mechanical outcome — embody it.`
+    `Stay in the fiction. Do not explain the mechanical outcome — embody it.` +
+    (speaker ? ` The character who made this move is ${speaker}.` : ''),
   );
 
   return parts.join('\n\n');
@@ -1123,6 +1260,38 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
 // ---------------------------------------------------------------------------
 // Section builders (pure — no async, no Foundry API)
 // ---------------------------------------------------------------------------
+
+/**
+ * Render the multiplayer party roster (section [8b]). Returns '' unless
+ * the party carries two or more PCs — solo play needs no disambiguation.
+ * Exported for unit testing.
+ *
+ * @param {{ names: string[], speaking?: string|null }|null} party
+ * @returns {string}
+ */
+export function buildPartyBlock(party) {
+  const names = Array.isArray(party?.names)
+    ? party.names.filter(n => typeof n === 'string' && n.trim()).map(n => n.trim())
+    : [];
+  if (names.length < 2) return '';
+
+  const speaking = typeof party?.speaking === 'string' && party.speaking.trim()
+    ? party.speaking.trim()
+    : null;
+  const roster = names
+    .map(n => (speaking && n === speaking ? `${n} (speaking this turn)` : n))
+    .join(', ');
+
+  return [
+    '## PARTY',
+    '',
+    `This is a multiplayer campaign. Player characters: ${roster}.`,
+    'Each chat input belongs to exactly one of them — attribute actions and',
+    'dialogue to the named speaker only, and never merge the player',
+    'characters into a single "you". Other PCs are present in the scene',
+    'only when the fiction or the scene frame says so.',
+  ].join('\n');
+}
 
 function buildWorldTruthsBlock(campaignState) {
   const truths  = campaignState?.worldTruths ?? {};

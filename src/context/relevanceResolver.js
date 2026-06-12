@@ -217,8 +217,13 @@ export async function resolveRelevance(
  * Collect all entity records from the campaign state and return a flat array
  * of { _id, journalId, name, entityType } refs. Per scope §6, all connection
  * entities (and any other named entity record) are eligible for matching.
+ *
+ * Exported so the sidecar apply path (narrator.js) can resolve sidecar
+ * subjects against the full entity roster — without this, every NPC subject
+ * lands in the ledger as a text subject and entity-scoped filtering never
+ * matches (narrator-memory architecture, Cluster A2).
  */
-function collectAllEntities(campaignState) {
+export function collectAllEntities(campaignState) {
   if (!campaignState) return [];
   const groups = [
     ["connection", getConnection, campaignState.connectionIds ?? []],

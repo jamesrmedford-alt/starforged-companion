@@ -689,26 +689,55 @@ export function rollTableResult(table, fixedRoll, opts = {}) {
 
   // Cross-reference directive: "Action + Theme" rolls CORE.ACTION + CORE.THEME.
   if (entry.ref === "action_theme") {
-    if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
+    if (depth >= MAX_DIRECTIVE_DEPTH) return "Unknown";
     const sub = { depth: depth + 1, fixedRolls };
     const action = rollTableResult(CORE.ACTION, undefined, sub);
     const theme  = rollTableResult(CORE.THEME,  undefined, sub);
     return `${action} ${theme}`;
   }
 
-  // "Roll again …" or "Roll twice" — recurse on the same table twice and join.
-  // The `(paired name)` parenthetical (FAMILY_NAMES 81-100) signals a hyphen
-  // join for hyphenated surnames; everything else uses `" / "`.
+  // "Roll again …" or "Roll twice" — resolve to exactly two NON-directive
+  // entries on the same table and join. The `(paired name)` parenthetical
+  // (FAMILY_NAMES 81-100) signals a hyphen join for hyphenated surnames;
+  // everything else uses `" / "`.
+  //
+  // Each side re-rolls past further directive rows (bounded) rather than
+  // recursing into them: the 81-100 directive band re-hit ~20% of the time,
+  // compounding into multi-hyphen chains, and at the old depth cap the raw
+  // "Roll again (paired name)" literal leaked verbatim into names —
+  // surfaced by the quickstart name-roller property test, but live since
+  // v1.7.1 (sector-wizard connection surnames).
   if (/^Roll (twice|again)\b/i.test(entry.result)) {
-    if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
-    const sub = { depth: depth + 1, fixedRolls };
-    const a = rollTableResult(table, undefined, sub);
-    const b = rollTableResult(table, undefined, sub);
+    const a = rollNonDirectiveResult(table, fixedRolls);
+    const b = rollNonDirectiveResult(table, fixedRolls);
     const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
     return `${a}${joiner}${b}`;
   }
 
   return entry.result;
+}
+
+function isDirectiveEntry(entry) {
+  return entry?.ref === "action_theme"
+      || /^Roll (twice|again)\b/i.test(entry?.result ?? "");
+}
+
+/**
+ * Roll on a table until a non-directive entry lands (bounded), consuming
+ * `fixedRolls` like the main roller so deterministic test sequences keep
+ * working. Exhaustion falls back to a uniform pick over the table's
+ * non-directive entries — never the directive literal.
+ */
+function rollNonDirectiveResult(table, fixedRolls, tries = 12) {
+  for (let i = 0; i < tries; i++) {
+    const roll  = (fixedRolls && fixedRolls.length ? fixedRolls.shift() : rollD100());
+    const entry = table.find(e => roll >= e.min && roll <= e.max);
+    if (entry && !isDirectiveEntry(entry)) return entry.result;
+  }
+  const plain = table.filter(e => !isDirectiveEntry(e));
+  return plain.length
+    ? plain[Math.floor(Math.random() * plain.length)].result
+    : "Unknown";
 }
 
 function rollD100() {

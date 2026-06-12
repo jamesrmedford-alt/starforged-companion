@@ -664,3 +664,53 @@ describe('createCharacterVowItem', () => {
     expect(item.__createOptions.suppressLog).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createCharacterVowItem — clock attachment (Cluster B / F4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('createCharacterVowItem — clock', () => {
+  it('attaches the sheet-native clock fields when clock.max is valid', async () => {
+    const actor = freshActor();
+    const item = await createCharacterVowItem(actor, {
+      name: 'Reach Vance before his life support fails',
+      rank: 'dangerous', vowId: 'msg1', clock: { max: 6 },
+    });
+    expect(item.system.subtype).toBe('vow');
+    expect(item.system.hasClock).toBe(true);
+    expect(item.system.clockTicks).toBe(0);
+    expect(item.system.clockMax).toBe(6);
+  });
+
+  it('snaps an unsupported clock size to the default 6', async () => {
+    const actor = freshActor();
+    const item = await createCharacterVowItem(actor, {
+      name: 'V', vowId: 'msg2', clock: { max: 7 },
+    });
+    expect(item.system.hasClock).toBe(true);
+    expect(item.system.clockMax).toBe(6);
+  });
+
+  it('omits clock fields entirely when no clock is requested', async () => {
+    const actor = freshActor();
+    const item = await createCharacterVowItem(actor, { name: 'V', vowId: 'msg3' });
+    expect(item.system.hasClock).toBeUndefined();
+    expect(item.system.clockMax).toBeUndefined();
+  });
+
+  it('omits clock fields when clock.max is not a number', async () => {
+    const actor = freshActor();
+    const item = await createCharacterVowItem(actor, {
+      name: 'V', vowId: 'msg4', clock: { max: 'soon' },
+    });
+    expect(item.system.hasClock).toBeUndefined();
+  });
+
+  it('stays idempotent on vowId across clock variations', async () => {
+    const actor = freshActor();
+    const first  = await createCharacterVowItem(actor, { name: 'V', vowId: 'same', clock: { max: 4 } });
+    const second = await createCharacterVowItem(actor, { name: 'V', vowId: 'same', clock: { max: 8 } });
+    expect(second).toBe(first);
+    expect(actor.items.contents).toHaveLength(1);
+  });
+});

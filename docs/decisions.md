@@ -475,3 +475,89 @@ portrait generation) and reuses the oracle rolls `generateConnection()` in
 name). The missing work is persisting those onto the ironsworn `character` actor
 (map to the Characteristics and Notes sheet fields via `actorBridge.js`) and
 wiring the narrator + art passes for NPCs the way settlements/ships already do.
+
+---
+
+## Narrator memory: unified prose feed + deterministic sidecar + scene frame (2026-06-10)
+
+**Decision:** narrator continuity is owned by a four-surface memory
+architecture — (1) a unified recent-narration ring fed by the
+`narratorCard`/`narrationText`/`sessionId` flag family on **every**
+narrator-prose card (move, paced, @scene, inciting incident); (2) the
+active-scene ledger with **required** sidecar emission for NPC
+location/vessel/condition (stateChanges) and intent/stakes (newTruths),
+subjects resolved against the full entity roster; (3) a narrator-maintained
+**scene frame** (`sceneFrame` sidecar key: location / present / situation,
+full-replacement snapshot every response, scene-scoped, never dropped from
+the prompt) whose `present` list extends ledger scoping and paced/@scene
+relevance matching; (4) entity records injected via the **lexical** relevance
+resolver on the paced and @scene paths (zero API cost — `moveId: null` never
+reaches the Haiku classifier).
+
+**Reason:** v1.7.8 playtest (findings F6/F7/F8) — the campaign premise
+drifted across location, motivation, and stakes within ~30 minutes because
+the inciting incident and @scene answers were invisible to every subsequent
+narrator call (wrong flags), sidecar emission was discretionary (it kept the
+backstory, dropped the stakes), and the non-move paths injected no entity
+records at all. The one ledgered fact held firm all session: facts with homes
+get defended; facts without homes get rewritten.
+
+**Rejected:**
+- *A separate feed flag* instead of extending `narratorCard` — would have
+  left session recaps still missing the opening fiction and split the flag
+  vocabulary; consumers were audited instead (correction/audio hooks no-op
+  without their button markup; burn-supersede requires `resolutionId`).
+- *Haiku-based scene summarisation per turn* — cost/latency per narration;
+  the same generation that writes the prose already knows the frame. The
+  rolling compressed summary remains the documented escalation path
+  (architecture doc §8.6) if frame+ledger+ring prove insufficient.
+- *Code-side inference of NPC state from prose* — emission is prompt-enforced
+  (REQUIRED rules in `appendSidecarInstruction`); inference machinery only if
+  the model demonstrably ignores the contract.
+- *Frame-unioning the move path's relevance call* — deferred; it would change
+  hybrid-move permission classification (architecture doc §8.2).
+
+**Where:** invariants in `rules/narrator-memory.md`; full architecture,
+tuning guide (symptom → knob), and refinement backlog in
+`docs/narrator/narrator-memory-architecture.md`. Settings:
+`narratorContextCards` (ring depth 1–10, default 3) and
+`factContinuity.sceneFrame` (default on).
+
+---
+
+## Speaker resolution: token selection first, PC-validated (2026-06-10)
+
+**Decision:** `resolveSpeakerActorId` honours Foundry's native "speaking as"
+mechanism as the top-priority signal — `message.speaker.actor` (v13
+`ChatSpeakerData`, stamped from the user's controlled token by
+`ChatMessage.getSpeaker`) wins **when it resolves to a player character** —
+before the author's bound `User.character`, the ownership scan, and the
+campaignState fallback. Non-PC speakers (a selected starship, an NPC card —
+`character` actors carrying the module `entityType` flag, FOLDER-002) fall
+through to author-based resolution rather than being attributed.
+
+The resolved speaker reaches every narrator path (move, paced, `@scene` —
+which previously discarded its options entirely), the user message labels
+the input with the speaker's name plus an attribution rule, and a PARTY
+section (rendered only with 2+ PCs) lists the roster with the current
+speaker marked.
+
+**Reason:** first multiplayer playtest — the narrator couldn't tell who was
+speaking. Token selection is the explicit, per-message statement of intent
+Foundry players already use, and the maintainer requested it as the signal.
+The original `speaker.js` docstring framed token-selection as a player
+workaround and went author-based only; this supersedes that framing.
+
+**Rejected:**
+- *Trusting `message.speaker` unconditionally* — live playtest showed chat
+  attributed to "Ship" when the ship token was selected; unvalidated
+  speakers would attribute narration to vessels and NPC cards.
+- *Alias-based matching* (`speaker.alias` → name lookup) — the actor id is
+  authoritative and already present; alias is display-only.
+- *Per-user setting* — Foundry's existing token/character binding already
+  expresses the preference; no new configuration surface.
+
+**Verification:** v13 `speaker` shape documented in
+`docs/foundry-reference/foundry-api-reference.md` (ChatMessage section) with
+provenance from the pinned foundry-ironsworn source; live Quench assertions
+pin `getSpeaker({actor})` round-tripping the id and the non-PC fall-through.

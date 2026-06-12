@@ -180,6 +180,7 @@ Hooks.on("quenchReady", (quench) => {
   // launch card. Unit tests cover the pure helpers; this batch exercises the
   // live roll → ChatMessage post (oracle-only fallback with narration off).
   registerIncitingIncidentTests(quench);
+  registerQuickstartTests(quench);
   // Narrator character context — the unit tests check buildCharacterBlock
   // against synthetic snapshots; this batch builds a real character Actor
   // with vow / bond / asset Items and biographical fields, then reads
@@ -2782,6 +2783,52 @@ function registerChatCommandsTests(quench) {
         for (const m of newOnes) if (m.id !== msg?.id) created.push(m.id);
         return { msg, newOnes };
       }
+
+      describe("ChatMessage speaker — v13 shape + token-selection resolution (multiplayer)", function () {
+        it("round-trips speaker.actor as the Actor id and resolveSpeakerActorId honours a PC speaker", async function () {
+          this.timeout(15000);
+          const pc = await Actor.create({ name: "Quench Speaker PC", type: "character" });
+          try {
+            // Live pin of the documented ChatSpeakerData shape: getSpeaker
+            // accepts an Actor and stamps its id; the created message reads
+            // back { scene, token, actor, alias } with actor as an ID string.
+            const speaker = ChatMessage.getSpeaker({ actor: pc });
+            assert.strictEqual(speaker.actor, pc.id, "getSpeaker stamps the Actor id");
+            assert.isString(speaker.alias, "alias is a display-name string");
+
+            const msg = await ChatMessage.create({ content: "speaker shape pin", speaker });
+            created.push(msg.id);
+            assert.strictEqual(msg.speaker?.actor, pc.id, "message.speaker.actor reads back as the id");
+
+            const { resolveSpeakerActorId } = await import(
+              `/modules/${MODULE_ID}/src/multiplayer/speaker.js`
+            );
+            assert.strictEqual(
+              resolveSpeakerActorId(msg, {}), pc.id,
+              "resolveSpeakerActorId returns the token-selected PC",
+            );
+          } finally {
+            await pc.delete().catch(() => {});
+          }
+        });
+
+        it("falls past a non-PC speaker (starship) to author-based resolution", async function () {
+          this.timeout(15000);
+          const ship = await Actor.create({ name: "Quench Speaker Ship", type: "starship" });
+          try {
+            const speaker = ChatMessage.getSpeaker({ actor: ship });
+            const msg = await ChatMessage.create({ content: "ship speaker pin", speaker });
+            created.push(msg.id);
+            const { resolveSpeakerActorId } = await import(
+              `/modules/${MODULE_ID}/src/multiplayer/speaker.js`
+            );
+            const resolved = resolveSpeakerActorId(msg, {});
+            assert.notStrictEqual(resolved, ship.id, "a starship is never the speaking PC");
+          } finally {
+            await ship.delete().catch(() => {});
+          }
+        });
+      });
 
       describe("Command predicate gates", function () {
         it("isSceneQuery / isSectorCommand / isAtCommand / isJournalCommand recognise their formats", async function () {
@@ -8323,19 +8370,26 @@ function registerTokenDragSetACourseTests(quench) {
           }]);
           const tokenDoc = testScene.tokens.contents[0];
 
-          const messagesBefore = game.messages?.contents?.length ?? 0;
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
 
           // Simulate the drag landing within snap range of the Glimmer Note.
           const result = handleCommandVehicleTokenDrag(tokenDoc, { x: 510, y: 505 });
           assert.equal(result, false,
             "handler should return false to cancel the Token drag when within snap range");
 
-          // The dispatch is queued via setTimeout(0) — give it a tick.
-          await new Promise((resolve) => setTimeout(resolve, 50));
-
-          const newMessages = (game.messages?.contents ?? []).slice(messagesBefore);
-          const synthetic   = newMessages.find(m =>
-            m?.flags?.[MODULE]?.forcedMoveId === "set_a_course");
+          // The dispatch is queued via setTimeout(0) and then awaits a
+          // ChatMessage.create server round-trip — a single fixed 50ms tick
+          // flaked under CI load (run 27389287262: the one red test of 458).
+          // Poll up to ~3s for the synthetic message instead, and diff by
+          // message id rather than collection length so unrelated deletions
+          // can't shift the window.
+          let synthetic = null;
+          for (let i = 0; i < 60 && !synthetic; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            synthetic = (game.messages?.contents ?? []).find(m =>
+              !beforeIds.has(m.id)
+              && m?.flags?.[MODULE]?.forcedMoveId === "set_a_course");
+          }
 
           assert.isOk(synthetic,
             "expected a synthetic chat message with flags[MODULE].forcedMoveId === 'set_a_course'");
@@ -10084,6 +10138,98 @@ function registerOracleNarrationTests(quench) {
 // campaignState and asserting whether a narrator card lands.
 // ─────────────────────────────────────────────────────────────────────────────
 
+function registerQuickstartTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.quickstart",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+
+      before(async function () {
+        this.timeout(15000);
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(
+          game.settings.get(MODULE, "campaignState") ?? {},
+        ));
+      });
+
+      after(async function () {
+        this.timeout(15000);
+        // Created documents (actors, journals, scene, macro, messages) are
+        // reaped by the batch-level auto document cleanup (QUENCH-004);
+        // campaignState mutations are restored from the snapshot.
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      describe("✦ Playtest Quickstart — full run (fast gates off)", function () {
+        it("creates truths, a sector, a 2-path PC, and a 2-module command vehicle", async function () {
+          this.timeout(120000);
+          const { runPlaytestQuickstart } = await import(`${MODULE_PATH}/session/quickstart.js`);
+
+          const actorsBefore  = new Set(game.actors.contents.map(a => a.id));
+          const sectorsBefore = (game.settings.get(MODULE, "campaignState")?.sectors ?? []).length;
+
+          let result = null;
+          await withTempSetting("narrationEnabled", false, () =>
+            withTempSetting("sectorArtEnabled", false, () =>
+              withTempSetting("sectorNarratorStubsEnabled", false, () =>
+                withTempSetting("sectorEntityPortraitsEnabled", false, async () => {
+                  result = await runPlaytestQuickstart({ skipConfirm: true });
+                }))));
+
+          assert.isOk(result?.phases, "quickstart returns a phase report");
+          for (const phase of result.phases) {
+            assert.isTrue(phase.ok, `phase ${phase.phase} should succeed: ${phase.detail}`);
+          }
+
+          const state = game.settings.get(MODULE, "campaignState");
+          assert.lengthOf(Object.keys(state.worldTruths ?? {}), 14, "all 14 truth categories stored");
+          assert.isAbove((state.sectors ?? []).length, sectorsBefore, "a sector was stored");
+
+          const newActors = game.actors.contents.filter(a => !actorsBefore.has(a.id));
+          const pc   = newActors.find(a => a.type === "character" && !a.flags?.[MODULE]?.entityType);
+          const ship = newActors.find(a => a.type === "starship");
+          assert.isOk(pc,   "a PC actor was created");
+          assert.isOk(ship, "a starship actor was created");
+
+          const statValues = ["edge", "heart", "iron", "shadow", "wits"]
+            .map(k => pc.system?.[k]).sort((a, b) => b - a);
+          assert.deepEqual(statValues, [3, 2, 2, 1, 1], "PC carries the 3/2/2/1/1 array");
+
+          const paths = pc.items.contents.filter(
+            i => i.type === "asset" && i.system?.category === "Path");
+          assert.lengthOf(paths, 2, "PC carries exactly two Path assets");
+
+          const cv = ship.items.contents.filter(
+            i => i.type === "asset" && i.system?.category === "Command Vehicle");
+          const modules = ship.items.contents.filter(
+            i => i.type === "asset" && i.system?.category === "Module");
+          assert.lengthOf(cv, 1, "ship carries the STARSHIP command-vehicle asset");
+          assert.isAtMost(modules.length, 2, "ship carries at most two Modules");
+          assert.isTrue(
+            ship.flags?.[MODULE]?.ship?.isCommandVehicle === true,
+            "ship record is flagged as the command vehicle",
+          );
+        });
+
+        it("ensureQuickstartMacro creates a script Macro (v13 Macro API pin)", async function () {
+          this.timeout(15000);
+          const { ensureQuickstartMacro } = await import(`${MODULE_PATH}/session/quickstart.js`);
+          const macro = await ensureQuickstartMacro();
+          assert.isOk(macro, "a macro exists or was created");
+          assert.strictEqual(macro.type, "script", "macro is a script macro");
+          assert.include(macro.command, "runPlaytestQuickstart", "macro body calls the module API");
+          const again = await ensureQuickstartMacro();
+          assert.strictEqual(again.id, macro.id, "ensure is idempotent");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Playtest Quickstart", timeout: 180000 },
+  );
+}
+
 function registerIncitingIncidentTests(quench) {
   quench.registerBatch(
     "starforged-companion.incitingIncident",
@@ -10125,6 +10271,78 @@ function registerIncitingIncidentTests(quench) {
           assert.isOk(card, "an inciting-incident card should be posted");
           assert.include(card.content, "Inciting Incident", "card carries the heading");
           assert.include(card.content, "Spark (Action + Theme)", "card shows the oracle spark");
+        });
+      });
+
+      describe("⚔ Swear this vow — live execution (Cluster B: F2/F3/F4)", function () {
+        it("creates the vow (with clock) on a real PC and the vow-target connection", async function () {
+          this.timeout(30000);
+          const { postIncitingIncidentCard } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+          const { executeSwearVow }          = await import(`${MODULE_PATH}/session/swearVow.js`);
+
+          // Seeded PC so getPlayerActors resolves deterministically.
+          const pc = await Actor.create({ name: "Quench Vow PC", type: "character" });
+          const targetName = `Quench Vance ${Date.now().toString(36)}`;
+
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          await postIncitingIncidentCard({
+            spark: { action: "Lose", theme: "Relationship" },
+            text: [
+              "The beacon cuts through the haze.",
+              "Suggested vow: I will reach the drifting shuttle in time (dangerous)",
+              "Suggested clock: Failing life support (6 segments)",
+              `Vow target: ${targetName} — An estranged mentor, wounded and hiding.`,
+            ].join("\n"),
+            fallback:  false,
+            sessionId: game.settings.get(MODULE, "campaignState")?.currentSessionId ?? null,
+          });
+          const created = (game.messages?.contents ?? []).filter(m => !beforeIds.has(m.id));
+          created.forEach(m => track(m.id));
+          const card = created.find(m => m.flags?.[MODULE]?.incitingIncidentCard);
+          assert.isOk(card, "the synthetic inciting card should post");
+          assert.include(card.content, 'data-action="sf-swear-vow"', "card renders the swear button");
+          assert.isOk(card.flags[MODULE].incitingMeta?.vow, "card carries the parsed vow meta");
+
+          const stateBefore = game.settings.get(MODULE, "campaignState");
+          const connIdsBefore = [...(stateBefore?.connectionIds ?? [])];
+
+          try {
+            const result = await executeSwearVow(card);
+
+            const vow = (pc.items?.contents ?? []).find(
+              i => i.type === "progress" && i.system?.subtype === "vow",
+            );
+            assert.isOk(vow, "a vow progress item should land on the PC");
+            assert.strictEqual(vow.system.hasClock, true, "the vow carries a clock");
+            assert.strictEqual(vow.system.clockMax, 6, "clock has the suggested 6 segments");
+
+            assert.isOk(result?.connection, "the vow-target connection should be created");
+            const target = game.actors.get(
+              (game.settings.get(MODULE, "campaignState")?.connectionIds ?? [])
+                .find(id => !connIdsBefore.includes(id)),
+            );
+            assert.isOk(target, "the target NPC card actor exists");
+            assert.strictEqual(target.name, targetName, "NPC card carries the narrator's name");
+
+            // Idempotency: a second click must not duplicate the vow.
+            await executeSwearVow(card);
+            const vows = (pc.items?.contents ?? []).filter(
+              i => i.type === "progress" && i.system?.subtype === "vow",
+            );
+            assert.lengthOf(vows, 1, "re-clicking does not duplicate the vow");
+          } finally {
+            // Targeted cleanup beyond the message reaper: actors + state.
+            const stateNow  = game.settings.get(MODULE, "campaignState");
+            const newConnIds = (stateNow?.connectionIds ?? []).filter(id => !connIdsBefore.includes(id));
+            for (const id of newConnIds) {
+              await game.actors.get(id)?.delete().catch(() => {});
+            }
+            if (stateNow) {
+              stateNow.connectionIds = connIdsBefore;
+              await game.settings.set(MODULE, "campaignState", stateNow);
+            }
+            await pc.delete().catch(() => {});
+          }
         });
       });
     },

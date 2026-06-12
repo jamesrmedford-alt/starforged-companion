@@ -112,12 +112,42 @@ to matter" filter only at dial 0–5.
 Read commitment from what the player describes, not from whether they used a
 specific verb.
 
+MOVEMENT WITH STAKES — if the input expresses movement or travel intent
+(setting out, picking a route, closing on a destination) AND there is an
+established hazard or explicit time pressure — in the input itself OR the
+scene context below — then "if there's a risk, there's a move": classify at
+minimum NARRATIVE_WITH_MOVE_AVAILABLE, nominating set_a_course (known route
+or named destination), undertake_an_expedition (perilous or unknown space),
+or face_danger (crossing an immediate hazard). At dial 6+ with clear
+commitment, classify MOVE. The journey must never resolve for free when the
+fiction says failure costs something.
+Example: "Let's pick the fastest path. Getting there in time is crucial"
+through an established debris field → NARRATIVE_WITH_MOVE_AVAILABLE,
+suggestedMove set_a_course (or MOVE at dial 6+). NOT plain NARRATIVE.
+
 If recent move density in the scene is high, lean toward NARRATIVE to allow
 pacing recovery — don't stack rolls.
 
 If the addressee is a Connection (the player's input talks to, presses, reads,
 or reaches toward a named connection), bias toward MOVE in the social category.
 Random NPCs do not carry this bias.
+
+## CATEGORY DEFINITIONS
+
+Pick the category from the SITUATION, not the apparatus being used:
+
+- combat:        fighting or under direct attack right now.
+- investigation: searching, studying, questioning, analysing for answers.
+- exploration:   travel, navigation, route-finding, scanning unknowns,
+                 expedition work — including operating ship systems to move
+                 through or survey space.
+- social:        conversation, persuasion, relationships, negotiation.
+- downtime:      ONLY when there are no immediate stakes — rest, repair,
+                 resupply, reflection in genuine safety. An activity carried
+                 out under an active hazard, deadline, or pursuit is NEVER
+                 downtime: classify it by the situation (working the nav
+                 computer mid-crisis to thread a debris field = exploration;
+                 patching the hull while boarders cut through = combat).
 
 ## MOVE CATALOG (shallow)
 
@@ -412,15 +442,34 @@ function formatScene(campaignState) {
   const parts = [];
   if (campaignState?.currentLocationId && campaignState?.currentLocationType) {
     try {
-      const entry = globalThis.game?.journal?.get?.(campaignState.currentLocationId);
-      const page  = entry?.pages?.contents?.[0];
-      const data  = page?.flags?.["starforged-companion"]?.[campaignState.currentLocationType];
-      const name  = data?.name ?? entry?.name;
-      if (name) parts.push(`Current location: ${name} (${campaignState.currentLocationType})`);
+      const id   = campaignState.currentLocationId;
+      const type = campaignState.currentLocationType;
+      // Post-PR#100 location-family entities are Actors; pre-migration
+      // records were JournalEntries. Try both hosts, tolerate either.
+      const actor = globalThis.game?.actors?.get?.(id);
+      const entry = globalThis.game?.journal?.get?.(id);
+      const data  = actor?.flags?.["starforged-companion"]?.[type]
+        ?? entry?.pages?.contents?.[0]?.flags?.["starforged-companion"]?.[type];
+      const name  = data?.name ?? actor?.name ?? entry?.name;
+      if (name) parts.push(`Current location: ${name} (${type})`);
     } catch (err) {
       console.warn(`starforged-companion | pacing classifier: current-location read failed:`, err);
     }
   }
+
+  // Narrator-memory scene frame (Cluster A4) — gives the classifier the
+  // established-hazard / time-pressure signal the MOVEMENT WITH STAKES rule
+  // keys on (F9: travel was waved through as plain NARRATIVE because the
+  // classifier had no scene stakes context).
+  const frame = campaignState?.sceneFrame;
+  if (frame && typeof frame === "object") {
+    if (frame.location)  parts.push(`Scene frame — where: ${frame.location}`);
+    if (Array.isArray(frame.present) && frame.present.length) {
+      parts.push(`Scene frame — present: ${frame.present.join(", ")}`);
+    }
+    if (frame.situation) parts.push(`Scene frame — now: ${frame.situation}`);
+  }
+
   if (campaignState?.xCardActive) parts.push("X-Card is active — scene paused.");
   return parts.join("\n");
 }

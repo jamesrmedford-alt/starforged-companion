@@ -61,7 +61,14 @@ Before doing any work, read these files in order:
    read `docs/rules-reference/rulebook-summary.md` (design intent) and
    `docs/rules-reference/playkit-rules-and-coverage.md` Part 1 (verbatim rules) before
    writing code. See `rules/game-rules.md` for when to reach for which.
-7. Before writing any Foundry API code — read `rules/foundry-api.md` and
+7. When the task touches narrator **context, memory, or continuity** — the
+   sidecar contract, scene truths/state ledgers, the scene frame, the
+   recent-narration ring, narrator-card flags, relevance/entity-card
+   injection, or drift complaints from playtests — read
+   `rules/narrator-memory.md` (invariants) and
+   `docs/narrator/narrator-memory-architecture.md` (full architecture,
+   tuning guide, refinement backlog) before writing code.
+8. Before writing any Foundry API code — read `rules/foundry-api.md` and
    the relevant section of `docs/foundry-reference/foundry-api-reference.md` to confirm current
    method signatures, valid values, and deprecation status. Never rely on
    memory for Foundry APIs.
@@ -211,9 +218,15 @@ into another round of help-Changelog drift.
 
 ## PR monitoring and autonomous iteration
 
-When the user asks you to monitor, watch, babysit, or autofix a PR — or
-when the work involves an iterative CI loop where the loop body is
-"push, wait for CI, read failure, push again":
+**Standing instruction (2026-06-12): whenever you open a PR in this repo,
+immediately subscribe to it and follow through — without being asked.**
+Auto-fix CI failures, handle review comments, report green status, and
+stand down when it merges or closes. The maintainer should never need to
+say "subscribe" again.
+
+When following through on a PR — or when the work involves an iterative
+CI loop where the loop body is "push, wait for CI, read failure, push
+again":
 
 - Subscribe via `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`
   and end the turn. PR webhook events arrive as `<github-webhook-activity>`
@@ -278,4 +291,7 @@ Topic-specific rules are split out under `rules/`. Read on demand:
   PR-gating, and the subscribe-to-PR / sticky-comment iteration loop
 - `rules/game-rules.md` — Ironsworn: Starforged rules references (play-kit
   doc and rulebook summary)
+- `rules/narrator-memory.md` — narrator memory invariants (flag-family
+  contract, sidecar contract, never-dropped tiers); full architecture +
+  tuning guide in `docs/narrator/narrator-memory-architecture.md`
 - `rules/project-context.md` — module overview, transport, system dependency

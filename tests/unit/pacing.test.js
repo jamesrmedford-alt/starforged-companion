@@ -660,3 +660,89 @@ describe('markForceNextAsMove()', () => {
     expect(state.pacing.sceneOverride).toEqual({ modifier: 3, label: 'hot' });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cluster D (F9) — movement-with-stakes guidance + category definitions +
+// scene-frame context
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('classifier prompt — movement with stakes (F9)', () => {
+  const base = () => buildClassifierContext({
+    playerText:        'Let\'s pick the fastest path. Getting there in time is crucial',
+    campaignState:     {},
+    character:         null,
+    recentMoveDensity: { count: 0, window: 5 },
+    pacingConfig:      { dials: {} },
+  });
+
+  it('the system prompt carries the MOVEMENT WITH STAKES rule and its example', () => {
+    const { systemPrompt } = base();
+    expect(systemPrompt).toMatch(/MOVEMENT WITH STAKES/);
+    expect(systemPrompt).toMatch(/if there's a risk, there's a move/);
+    expect(systemPrompt).toMatch(/Getting there in time is crucial/);
+    expect(systemPrompt).toMatch(/NOT plain NARRATIVE/);
+  });
+
+  it('the system prompt defines every category and scopes downtime to no-stakes', () => {
+    const { systemPrompt } = base();
+    expect(systemPrompt).toMatch(/## CATEGORY DEFINITIONS/);
+    for (const cat of ['combat', 'investigation', 'exploration', 'social', 'downtime']) {
+      expect(systemPrompt).toMatch(new RegExp(`- ${cat}:`));
+    }
+    expect(systemPrompt).toMatch(/ONLY when there are no immediate stakes/);
+    expect(systemPrompt).toMatch(/NEVER\s+downtime/);
+    expect(systemPrompt).toMatch(/nav\s*\n?\s*computer mid-crisis.*exploration/s);
+  });
+});
+
+describe('buildClassifierContext — scene frame + actor-hosted location (F9)', () => {
+  it('includes the scene frame so the classifier sees established stakes', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText:    'I need a path through this mess',
+      campaignState: {
+        sceneFrame: {
+          location:  "Lyra's orbital graveyard",
+          present:   ['Venri Quint', 'Vance'],
+          situation: 'Racing a failing life-support clock through a lethal debris field',
+        },
+      },
+      character:         null,
+      recentMoveDensity: { count: 0, window: 5 },
+      pacingConfig:      { dials: {} },
+    });
+    expect(userMessage).toContain("Scene frame — where: Lyra's orbital graveyard");
+    expect(userMessage).toContain('Scene frame — present: Venri Quint, Vance');
+    expect(userMessage).toContain('Scene frame — now: Racing a failing life-support clock');
+  });
+
+  it('resolves the current location from an actor-hosted entity (post-migration)', () => {
+    const actor = {
+      id: 'act-lyra', name: 'Lyra',
+      flags: { 'starforged-companion': { settlement: { name: 'Lyra' } } },
+    };
+    global.game.actors._set('act-lyra', actor);
+    try {
+      const { userMessage } = buildClassifierContext({
+        playerText:    'docking now',
+        campaignState: { currentLocationId: 'act-lyra', currentLocationType: 'settlement' },
+        character:         null,
+        recentMoveDensity: { count: 0, window: 5 },
+        pacingConfig:      { dials: {} },
+      });
+      expect(userMessage).toContain('Current location: Lyra (settlement)');
+    } finally {
+      global.game.actors._reset?.();
+    }
+  });
+
+  it('omits frame lines when no scene frame exists', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText:        'hello',
+      campaignState:     {},
+      character:         null,
+      recentMoveDensity: { count: 0, window: 5 },
+      pacingConfig:      { dials: {} },
+    });
+    expect(userMessage).not.toContain('Scene frame —');
+  });
+});

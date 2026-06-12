@@ -14,6 +14,8 @@ import {
   handleSectorNoteClick,
   handleCommandVehicleTokenDrag,
   nearestSettlementNote,
+  findSettlementNoteById,
+  syncCommandVehicleTokenToPosition,
 } from '../../src/sectors/sectorSceneHooks.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -299,5 +301,132 @@ describe('handleCommandVehicleTokenDrag', () => {
     expect(flag?.tokenDragSetCourse?.destX).toBe(100);
     expect(flag?.tokenDragSetCourse?.destY).toBe(100);
     restore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Position→token sync (Cluster C / F5 gap 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('syncCommandVehicleTokenToPosition', () => {
+  function makeSyncScene({ sectorId = 'sec-1', tokenAt = { x: 100, y: 100 } } = {}) {
+    const token = {
+      x: tokenAt.x, y: tokenAt.y,
+      flags: { [MODULE_ID]: { commandVehicle: true } },
+      update: vi.fn(async function (patch) { Object.assign(this, patch); }),
+    };
+    const notes = [
+      { x: 700, y: 500, flags: { [MODULE_ID]: { settlementId: 'st-lyra' } } },
+      { x: 200, y: 200, flags: { [MODULE_ID]: { settlementId: 'st-sep' } } },
+      { x: 999, y: 999, flags: { [MODULE_ID]: { settlementId: 'st-lyra', planetNote: true } } },
+    ];
+    return {
+      scene: {
+        flags:  { [MODULE_ID]: { sectorScene: true, sectorId } },
+        tokens: { contents: [token] },
+        notes:  { contents: notes },
+      },
+      token,
+    };
+  }
+
+  function withScenes(scenes, fn) {
+    const prev = global.game.scenes;
+    global.game.scenes = { contents: scenes };
+    return Promise.resolve(fn()).finally(() => { global.game.scenes = prev; });
+  }
+
+  const position = (over = {}) => ({
+    sectorId: 'sec-1', nearestSettlementId: 'st-lyra',
+    nearestPlanetId: null, freeText: '', updatedAt: 1, updatedBy: 'set_a_course',
+    ...over,
+  });
+
+  it('moves the command-vehicle token to the matching settlement pin', async () => {
+    const { scene, token } = makeSyncScene();
+    await withScenes([scene], async () => {
+      const moved = await syncCommandVehicleTokenToPosition(position(), { activeSectorId: 'sec-1' });
+      expect(moved).toBe(token);
+      expect(token.update).toHaveBeenCalledWith({ x: 700, y: 500 });
+    });
+  });
+
+  it('excludes planet-flagged pins that share the settlement id', async () => {
+    const { scene, token } = makeSyncScene();
+    // Remove the plain settlement pin so only the planetNote one matches the id.
+    scene.notes.contents = scene.notes.contents.filter(n => !(
+      n.flags[MODULE_ID].settlementId === 'st-lyra' && !n.flags[MODULE_ID].planetNote
+    ));
+    await withScenes([scene], async () => {
+      const moved = await syncCommandVehicleTokenToPosition(position(), {});
+      expect(moved).toBeNull();
+      expect(token.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('does not move the token for free-text positions (no settlement id)', async () => {
+    const { scene, token } = makeSyncScene();
+    await withScenes([scene], async () => {
+      const moved = await syncCommandVehicleTokenToPosition(
+        position({ nearestSettlementId: null, freeText: 'drifting in the graveyard' }), {},
+      );
+      expect(moved).toBeNull();
+      expect(token.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('resolves the scene by sectorId when several sector scenes exist', async () => {
+    const a = makeSyncScene({ sectorId: 'sec-other' });
+    const b = makeSyncScene({ sectorId: 'sec-1' });
+    await withScenes([a.scene, b.scene], async () => {
+      await syncCommandVehicleTokenToPosition(position(), {});
+      expect(a.token.update).not.toHaveBeenCalled();
+      expect(b.token.update).toHaveBeenCalledWith({ x: 700, y: 500 });
+    });
+  });
+
+  it('skips the update when the token already sits on the pin', async () => {
+    const { scene, token } = makeSyncScene({ tokenAt: { x: 700, y: 500 } });
+    await withScenes([scene], async () => {
+      const moved = await syncCommandVehicleTokenToPosition(position(), {});
+      expect(moved).toBe(token);
+      expect(token.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('is GM-gated', async () => {
+    const { scene, token } = makeSyncScene();
+    const prevGM = global.game.user.isGM;
+    global.game.user.isGM = false;
+    try {
+      await withScenes([scene], async () => {
+        const moved = await syncCommandVehicleTokenToPosition(position(), {});
+        expect(moved).toBeNull();
+        expect(token.update).not.toHaveBeenCalled();
+      });
+    } finally {
+      global.game.user.isGM = prevGM;
+    }
+  });
+
+  it('respects the shipTokenEnabled gate', async () => {
+    const { scene, token } = makeSyncScene();
+    global.game.settings._store.set(`${MODULE_ID}.factContinuity.shipTokenEnabled`, false);
+    try {
+      await withScenes([scene], async () => {
+        const moved = await syncCommandVehicleTokenToPosition(position(), {});
+        expect(moved).toBeNull();
+        expect(token.update).not.toHaveBeenCalled();
+      });
+    } finally {
+      global.game.settings._store.delete(`${MODULE_ID}.factContinuity.shipTokenEnabled`);
+    }
+  });
+});
+
+describe('findSettlementNoteById', () => {
+  it('returns null without a settlement id or scene', () => {
+    expect(findSettlementNoteById(null, 'x')).toBeNull();
+    expect(findSettlementNoteById({ notes: { contents: [] } }, null)).toBeNull();
   });
 });

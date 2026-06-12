@@ -8,7 +8,9 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  appendSidecarInstruction,
   buildNarratorSystemPrompt,
+  buildPartyBlock,
   buildNarratorUserMessage,
   buildPacedNarrativeUserMessage,
   buildSceneUserMessage,
@@ -898,5 +900,131 @@ describe('buildShipPositionLine()', () => {
     expect(line).toContain('COMMAND VEHICLE: Pioneer');
     expect(line).toContain('SHIP POSITION:');
     expect(line).toContain('adrift in the Bleakhold expanse');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// appendSidecarInstruction — narrator-memory A2/A4 contract
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('appendSidecarInstruction (narrator-memory contract)', () => {
+  it('contains the required NPC location/condition emission rule', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes or changes WHERE a named/);
+    expect(out).toMatch(/"attribute": "location"/);
+    expect(out).toMatch(/"condition"/);
+  });
+
+  it('contains the required intent/stakes emission rule', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes WHY a character is somewhere/);
+    expect(out).toMatch(/deadline/);
+  });
+
+  it('includes the sceneFrame key and rule by default', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toContain('"sceneFrame"');
+    expect(out).toMatch(/Include it on EVERY response/);
+  });
+
+  it('omits the sceneFrame key and rule when disabled', () => {
+    const out = appendSidecarInstruction({ sceneFrameEnabled: false });
+    expect(out).not.toContain('"sceneFrame"');
+    expect(out).not.toMatch(/Include it on EVERY response/);
+  });
+
+  it('adds the premise-capture addendum in inciting_incident mode only', () => {
+    const inciting = appendSidecarInstruction({ mode: 'inciting_incident' });
+    expect(inciting).toMatch(/OPENING SCENE/);
+    expect(inciting).toMatch(/what\s+fails if the character is too late/);
+
+    const paced = appendSidecarInstruction({ mode: 'paced_narrative' });
+    expect(paced).not.toMatch(/OPENING SCENE/);
+    expect(appendSidecarInstruction()).not.toMatch(/OPENING SCENE/);
+  });
+
+  it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const withFrame = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(withFrame).toContain('"sceneFrame"');
+    expect(withFrame).toMatch(/OPENING SCENE/);
+
+    const noFrame = buildNarratorSystemPrompt(
+      cs, { factContinuitySceneFrame: false }, null, '', { mode: 'paced_narrative' },
+    );
+    expect(noFrame).not.toContain('"sceneFrame"');
+  });
+});
+
+describe('inciting_incident role description — structured proposal block (Cluster B)', () => {
+  it('specifies the vow, clock, and target line formats with their conditions', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(prompt).toMatch(/Suggested vow: <a short first-person vow statement> \(<rank>\)/);
+    expect(prompt).toMatch(/Suggested clock: <a short clock label> \(<segments> segments\)/);
+    expect(prompt).toMatch(/Vow target: <Name> —/);
+    expect(prompt).toMatch(/ONLY when the incident carries explicit time pressure/);
+    expect(prompt).toMatch(/4, 6, 8,\s*10, 12/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multiplayer speaker disambiguation — speaker lines + party roster
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('speaker labels in user messages (multiplayer prep)', () => {
+  it('buildPacedNarrativeUserMessage names the speaker and adds the attribution rule', () => {
+    const msg = buildPacedNarrativeUserMessage('I hail him', '', 3, null, 'Venri Quint');
+    expect(msg).toContain('## PLAYER NARRATION — spoken by Venri Quint');
+    expect(msg).toContain('Venri Quint: "I hail him"');
+    expect(msg).toMatch(/speaking and acting this turn is Venri Quint/);
+  });
+
+  it('buildSceneUserMessage names the asker', () => {
+    const msg = buildSceneUserMessage('where am I?', '', 3, 'Kira Chen');
+    expect(msg).toContain('## PLAYER QUESTION — asked by Kira Chen');
+    expect(msg).toContain('Kira Chen: "where am I?"');
+  });
+
+  it('buildNarratorUserMessage names the mover', () => {
+    const msg = buildNarratorUserMessage(
+      { loremasterContext: 'Face Danger: weak hit' }, 'I dive for cover', 3, 'Venri Quint',
+    );
+    expect(msg).toContain('## PLAYER NARRATION — spoken by Venri Quint');
+    expect(msg).toMatch(/The character who made this move is Venri Quint/);
+  });
+
+  it('all three builders render the unlabeled form when no speaker is known', () => {
+    expect(buildPacedNarrativeUserMessage('x', '', 3, null)).toContain('## PLAYER NARRATION\n\n"x"');
+    expect(buildSceneUserMessage('x', '', 3)).toContain('## PLAYER QUESTION\n\n"x"');
+    expect(buildNarratorUserMessage({}, 'x', 3)).toContain('## PLAYER NARRATION\n\n"x"');
+  });
+});
+
+describe('buildPartyBlock', () => {
+  it('renders the roster with the speaking PC marked, for two or more PCs', () => {
+    const block = buildPartyBlock({ names: ['Venri Quint', 'Kira Chen'], speaking: 'Kira Chen' });
+    expect(block).toContain('## PARTY');
+    expect(block).toContain('Venri Quint, Kira Chen (speaking this turn)');
+    expect(block).toMatch(/never merge the player\ncharacters/);
+  });
+
+  it('returns empty for solo play and for empty/garbage input', () => {
+    expect(buildPartyBlock({ names: ['Venri Quint'], speaking: 'Venri Quint' })).toBe('');
+    expect(buildPartyBlock(null)).toBe('');
+    expect(buildPartyBlock({ names: [] })).toBe('');
+  });
+
+  it('threads through buildNarratorSystemPrompt extras', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', {
+      mode: 'paced_narrative',
+      party: { names: ['A-One', 'B-Two'], speaking: 'A-One' },
+    });
+    expect(prompt).toContain('## PARTY');
+    expect(prompt).toContain('A-One (speaking this turn), B-Two');
+
+    const solo = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'paced_narrative', party: null });
+    expect(solo).not.toContain('## PARTY');
   });
 });

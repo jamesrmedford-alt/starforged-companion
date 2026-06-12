@@ -54,6 +54,7 @@ const SETTING = {
   NARRATION_LENGTH:         'narrationLength',
   NARRATION_INSTRUCTIONS:   'narrationInstructions',
   NARRATION_MAX_TOKENS:     'narrationMaxTokens',
+  NARRATOR_CONTEXT_CARDS:   'narratorContextCards',
   // ── Character management ─────────────────────────────────────────────────
   ACTIVE_CHARACTER_ID:      'activeCharacterId',
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
@@ -92,6 +93,7 @@ const SETTING = {
   FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
   FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
+  FC_SCENE_FRAME:              'factContinuity.sceneFrame',
   // ── Fact continuity — ship positioning (§20) ─────────────────────────────
   FC_SHIP_POSITIONING:         'factContinuity.shipPositioning',
   FC_SHIP_AUTO_MOVE:           'factContinuity.shipAutoMoveOnCourse',
@@ -249,6 +251,15 @@ export function registerSettings() {
     config:  false,
     type:    Number,
     default: 300,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, {
+    name:    'Narrator Context Cards',
+    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context. Higher values give the narrator a longer memory horizon at a small token cost per call. Range 1–10, default 3. Scene questions use their own Scene Context Cards setting.',
+    scope:   'world',
+    config:  false,
+    type:    Number,
+    default: 3,
   });
 
   // ── Character management settings ─────────────────────────────────────────
@@ -554,6 +565,15 @@ export function registerSettings() {
     default: false,
   });
 
+  game.settings.register(MODULE_ID, SETTING.FC_SCENE_FRAME, {
+    name:    'Scene Frame',
+    hint:    'The narrator maintains a per-scene snapshot — where the scene is set, who is present, what is happening — emitted with every response and injected into every narrator call. Subjects in the frame keep their ledger entries and entity cards in scope even on turns that don\'t name them. Prevents location/premise drift; on by default.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
   // Fact-continuity §20 — ship positioning. Four settings gate the full
   // feature: master toggle, the set_a_course auto-update, the sector-
   // Scene Token affordance, and the Token snap radius.
@@ -568,7 +588,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE, {
     name:    'Auto-Move Ship on Set a Course',
-    hint:    'When enabled, a strong / weak hit on Set a Course updates the command vehicle’s position to the destination named in the player’s narration. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
+    hint:    'When enabled, a strong / weak hit on Set a Course or Finish an Expedition updates the command vehicle’s position to the destination named in the player’s narration, and the sector-scene Token moves to match. Disable to force manual `!at` after every travel resolution. Has no effect when Ship Positioning is disabled.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -614,6 +634,11 @@ function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTIN
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
 function getNarrationInstructions() { return game.settings.get(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS) ?? ''; }
 function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 300; }
+export function getNarratorContextCards() {
+  const v = Number(game.settings.get(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS));
+  if (!Number.isFinite(v)) return 3;
+  return Math.max(1, Math.min(10, Math.round(v)));
+}
 
 // ── Previously On / recap ────────────────────────────────────────────────
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
@@ -639,6 +664,7 @@ export function getFactContinuityLedgerInContext(){ return game.settings.get(MOD
 export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
 export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
+export function getFactContinuitySceneFrame()      { return game.settings.get(MODULE_ID, SETTING.FC_SCENE_FRAME)        ?? true; }
 
 // Ship positioning (§20) — feature-gated via a master toggle plus three
 // per-trigger toggles. All four default to "on" so a fresh world that
@@ -840,6 +866,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationLength:       getNarrationLength(),
       narrationInstructions: getNarrationInstructions(),
       narrationMaxTokens:    getNarrationMaxTokens(),
+      narratorContextCards:  getNarratorContextCards(),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -856,6 +883,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         sidecarRequired:   getFactContinuitySidecarRequired(),
         maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
         consistencyCheck:  getFactContinuityConsistencyCheck(),
+        sceneFrame:        getFactContinuitySceneFrame(),
       },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
@@ -1109,6 +1137,14 @@ export class SettingsPanelApp extends ApplicationV2 {
         </div>
         <div class="pacing-field">
           <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.sceneFrame"
+                   ${ctx.factContinuity.sceneFrame ? 'checked' : ''} ${dis}>
+            Scene frame
+          </label>
+          <span class="pacing-field-hint">The narrator maintains a per-scene snapshot (where / who is present / what is happening) injected into every call. Subjects in the frame stay in scope on turns that don't name them. Prevents location and premise drift.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
             <input type="checkbox" name="factContinuity.consistencyCheck"
                    ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
             Consistency check (experimental)
@@ -1161,6 +1197,12 @@ export class SettingsPanelApp extends ApplicationV2 {
           <label class="narrator-field-label">Length (sentences)</label>
           <input class="settings-input narrator-number-input" name="narrationLength"
                  type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Context cards (memory horizon)</label>
+          <input class="settings-input narrator-number-input" name="narratorContextCards"
+                 type="number" min="1" max="10" value="${ctx.narratorContextCards}" ${dis}>
+          <span class="narrator-field-hint">How many recent narrator cards each narration sees as fiction context. Raise if the narrator forgets recent events; small token cost per call. Default 3.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -1541,6 +1583,8 @@ export class SettingsPanelApp extends ApplicationV2 {
       const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
       const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
       const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
+      const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
+      const contextCards = Math.max(1, Math.min(10, Number(contextRaw) || 3));
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
       const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
@@ -1554,6 +1598,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATION_PERSPECTIVE,  perspective),
         game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
         game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
+        game.settings.set(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, contextCards),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
@@ -1614,6 +1659,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
       const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
       const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
+      const sceneFrame       = el.querySelector('[name="factContinuity.sceneFrame"]')?.checked       ?? true;
       const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
       const maxTokens        = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
 
@@ -1623,6 +1669,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
         game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
+        game.settings.set(MODULE_ID, SETTING.FC_SCENE_FRAME,         sceneFrame),
       ]);
 
       ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');
