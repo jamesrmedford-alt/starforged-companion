@@ -31,6 +31,15 @@ import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.j
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
+// foundry-ironsworn registers the classic Ironsworn sheet as the default for
+// `character` actors (vendor src/index.ts — IronswornCharacterSheetV2 with
+// makeDefault: true); the Starforged sheet must be pinned per actor, exactly
+// as the system's own "Create Starforged character" dialog does. NPC cards
+// without the pin open with Bonds/Banes/Burdens, and the classic sheet's
+// Notes tab binds system.biography — hiding the seeded portrait + intro that
+// live on system.notes (v1.7.10 playtest findings #1/#4).
+export const STARFORGED_CHARACTER_SHEET = "ironsworn.StarforgedCharacterSheet";
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE
@@ -84,7 +93,10 @@ export async function createConnection(data, campaignState, { persist = true } =
     name:   connection.name || "Unknown Connection",
     type:   "character",
     folder: folderId,
-    flags:  { [MODULE_ID]: { entityType: "connection", entityId: id, [FLAG_KEY]: connection } },
+    flags:  {
+      [MODULE_ID]: { entityType: "connection", entityId: id, [FLAG_KEY]: connection },
+      core:        { sheetClass: STARFORGED_CHARACTER_SHEET },
+    },
   });
 
   // Register in campaign state (now the Actor id, not a JournalEntry id).

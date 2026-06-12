@@ -25,6 +25,8 @@ import { createShip }       from "./ship.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
+import { STARFORGED_CHARACTER_SHEET } from "./connection.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateSectorNpcActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
@@ -641,7 +643,10 @@ export async function migrateJournalConnectionsToActors(campaignState) {
         name:   payload.name || journal.name || "Unknown Connection",
         type:   "character",
         folder: folderId,
-        flags:  { [MODULE_ID]: { entityType: "connection", entityId: payload._id, connection: payload } },
+        flags:  {
+          [MODULE_ID]: { entityType: "connection", entityId: payload._id, connection: payload },
+          core:        { sheetClass: STARFORGED_CHARACTER_SHEET },
+        },
       });
     } catch (err) {
       console.error(`${MODULE_ID} | migrateJournalConnectionsToActors: Actor.create failed for ${id}:`, err);
@@ -676,4 +681,95 @@ export async function migrateJournalConnectionsToActors(campaignState) {
 export function isMigrateEntitiesCommand(message) {
   const text = (message?.content ?? "").trim();
   return /^!migrate-entities\b/i.test(text);
+}
+
+/**
+ * One-time repair (v1.7.10 playtest findings #1/#4): pin the Starforged
+ * character sheet on existing NPC-card Actors. Cards created before the
+ * `core.sheetClass` pin shipped open with foundry-ironsworn's default —
+ * the classic Ironsworn sheet — whose Notes tab binds system.biography,
+ * hiding the seeded portrait + narrator intro on system.notes.
+ *
+ * Only touches `character` Actors carrying the module's
+ * `entityType: "connection"` flag (NPC cards — never PCs) that have no
+ * sheet override yet; a card the GM deliberately re-sheeted is left alone.
+ * GM-only, idempotent.
+ *
+ * @returns {Promise<{updated: number}>}
+ */
+export async function backfillNpcCardSheets() {
+  const summary = { updated: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+
+  const actors = globalThis.game?.actors?.contents ?? [];
+  for (const actor of actors) {
+    if (actor?.type !== "character") continue;
+    if (actor.flags?.[MODULE_ID]?.entityType !== "connection") continue;
+    if (actor.flags?.core?.sheetClass) continue;   // explicit choice — keep
+    try {
+      await actor.update({ "flags.core.sheetClass": STARFORGED_CHARACTER_SHEET });
+      summary.updated += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | backfillNpcCardSheets: ${actor.id} failed:`, err?.message ?? err);
+    }
+  }
+  return summary;
+}
+
+// Actor-hosted entity types whose flag records carry a denormalised `name`
+// (registry.js HOST_COLLECTION === 'actor'). Journal-hosted types (faction,
+// creature) are out of scope — their host journal is named from the record.
+const ACTOR_HOSTED_NAME_SYNC = [
+  { typeKey: "connection", campaignField: "connectionIds" },
+  { typeKey: "ship",       campaignField: "shipIds"       },
+  { typeKey: "settlement", campaignField: "settlementIds" },
+  { typeKey: "planet",     campaignField: "planetIds"     },
+  { typeKey: "location",   campaignField: "locationIds"   },
+];
+
+/**
+ * Ready-time repair (v1.7.10 playtest finding #2): reconcile entity flag
+ * records whose denormalised `name` has drifted from the host Actor's name.
+ * Renaming an Actor in the sidebar only touched `actor.name`; the flag
+ * record kept the registration-time snapshot, so the Entities panel and
+ * narrator context surfaced the stale name ("Ship" instead of "Kobayashi 8")
+ * until a Finalise happened to rewrite it. Actor name is authoritative
+ * (see seedStarshipActor). The live sync is the updateActor hook in
+ * index.js; this pass repairs drift that predates it or happened while the
+ * module was disabled. GM-only, idempotent.
+ *
+ * @param {Object} [campaignState]
+ * @returns {Promise<{synced: number}>}
+ */
+export async function syncEntityRecordNames(campaignState) {
+  const summary = { synced: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+
+  const state = campaignState
+    ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")
+    ?? {};
+
+  for (const { typeKey, campaignField } of ACTOR_HOSTED_NAME_SYNC) {
+    const ids = Array.isArray(state[campaignField]) ? state[campaignField] : [];
+    for (const id of ids) {
+      try {
+        // For these typeKeys getEntityDocument only consults game.actors —
+        // the registry's host dispatch is the actor-hosted guarantee.
+        const document = getEntityDocument(typeKey, id);
+        if (!document) continue;
+        const record = readEntityFlag(typeKey, document);
+        if (!record || !document.name) continue;
+        if (record.name === document.name) continue;
+        await writeEntityFlag(typeKey, document, {
+          ...record,
+          name:      document.name,
+          updatedAt: new Date().toISOString(),
+        });
+        summary.synced += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
+      }
+    }
+  }
+  return summary;
 }

@@ -1965,11 +1965,13 @@ async function applyShipPositionChanges(changes, campaignState) {
   if (!dest) return;
 
   try {
-    const { getCommandVehicle, updateShip } = await import('../entities/ship.js');
-    const cv = getCommandVehicle(campaignState);
-    if (!cv?._id) return;
+    const { getCommandVehicleActorId, updateShip } = await import('../entities/ship.js');
+    // updateShip resolves by Actor id — the record's `_id` is a module GUID
+    // and threw "Ship actor not found" on every write here (finding #5).
+    const cvActorId = getCommandVehicleActorId(campaignState);
+    if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
-    await updateShip(cv._id, { position });
+    await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction (see index.js
     // maybeUpdateShipPositionFromName for the chat-command twin).

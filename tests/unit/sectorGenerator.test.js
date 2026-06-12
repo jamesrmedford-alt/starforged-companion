@@ -710,17 +710,26 @@ describe("composeSettlementDescription", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// generateSector — F7 stellar object roll is shared across all settlements
+// generateSector — stellar object rolled per settlement (v1.7.10 finding #3)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("generateSector — F7 stellar object roll", () => {
-  it("rolls a stellar object and writes the same value onto every settlement", () => {
+describe("generateSector — per-settlement stellar object roll", () => {
+  it("writes a stellar object onto every settlement", () => {
     const sector = generateSector("terminus");
-    const stellars = sector.settlements.map(s => s.stellar);
-    expect(stellars[0]).toBeTruthy();
-    for (const s of stellars) {
-      expect(s).toBe(stellars[0]);
+    for (const s of sector.settlements) {
+      expect(s.stellar).toBeTruthy();
     }
+  });
+
+  it("rolls independently per settlement (stars in a sector are not all identical)", () => {
+    // The v1.7.1 F7 fix rolled STELLAR_OBJECT once per sector and stamped the
+    // same value on every settlement — under that behaviour, settlements in a
+    // sector can NEVER differ. With independent per-settlement rolls, 40
+    // sectors with no internal variation is astronomically unlikely
+    // (largest table band is 15%, so P ≲ 0.15² per sector, ^40 overall).
+    const sawVariation = Array.from({ length: 40 }, () => generateSector("terminus"))
+      .some(sector => new Set(sector.settlements.map(s => s.stellar)).size > 1);
+    expect(sawVariation).toBe(true);
   });
 });
 

@@ -122,7 +122,10 @@ async function loadAllEntities() {
 
       result[typeKey].push({
         journalId: document.id,
-        name:      data.name ?? document.name,
+        // Host-document name wins: renaming the Actor in the sidebar is
+        // authoritative (v1.7.10 finding #2); the record's denormalised
+        // name is the fallback for records mid-create.
+        name:      document.name ?? data.name,
         typeKey,
         data,
         art:    art   ? { ...art, dataUri } : null,
@@ -155,7 +158,7 @@ async function findEntity(id) {
 
     return {
       journalId: id,
-      name:      data.name ?? document.name,
+      name:      document.name ?? data.name,   // host-document name wins (finding #2)
       typeKey,
       data,
       art: art ? { ...art, dataUri } : null,

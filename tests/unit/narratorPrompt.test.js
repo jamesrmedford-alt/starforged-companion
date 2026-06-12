@@ -901,6 +901,20 @@ describe('buildShipPositionLine()', () => {
     expect(line).toContain('SHIP POSITION:');
     expect(line).toContain('adrift in the Bleakhold expanse');
   });
+
+  it('emits the not-yet-established guard when a command vehicle exists with no position (finding #5)', () => {
+    // With no position signal the narrator confidently improvised one from
+    // the campaign premise; the guard line tells it not to.
+    const ship = makeTestActor({
+      id: 'cv3', type: 'starship', name: 'Kobayashi 8',
+      flags: { [MID]: { ship: { _id: 's4', name: 'Kobayashi 8', isCommandVehicle: true, position: {} } } },
+    });
+    game.actors._set('cv3', ship);
+    const line = buildShipPositionLine({ shipIds: ['cv3'] });
+    expect(line).toContain('SHIP POSITION: not yet established');
+    expect(line).toMatch(/do NOT assert or invent/);
+    expect(line).toContain('!at');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -941,6 +955,16 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     const paced = appendSidecarInstruction({ mode: 'paced_narrative' });
     expect(paced).not.toMatch(/OPENING SCENE/);
     expect(appendSidecarInstruction()).not.toMatch(/OPENING SCENE/);
+  });
+
+  it('requires the starting ship position in inciting_incident mode (finding #5)', () => {
+    // Campaigns that open in medias res never trigger the on-movement
+    // emission rule, so the opening scene must establish the anchor itself.
+    const inciting = appendSidecarInstruction({ mode: 'inciting_incident' });
+    expect(inciting).toMatch(/REQUIRED: the player's STARTING position/);
+    expect(inciting).toContain('"subject": "ship", "attribute": "position"');
+
+    expect(appendSidecarInstruction()).not.toMatch(/STARTING position/);
   });
 
   it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {

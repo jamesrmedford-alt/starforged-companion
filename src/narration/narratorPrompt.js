@@ -148,6 +148,11 @@ export function appendSidecarInstruction(options = {}) {
       '  fails if the character is too late (the deadline).',
       '- stateChanges for: the central NPC\'s current location (vessel or',
       '  structure included) and physical condition.',
+      '- REQUIRED: the player\'s STARTING position. Your opening scene places',
+      '  the character (and their ship) somewhere — emit',
+      '  { "subject": "ship", "attribute": "position", "value": "<starting',
+      '  place>" } recording it, preferring an established settlement or',
+      '  location name. Without it, later "where am I" answers have no anchor.',
     );
   }
 
@@ -390,9 +395,21 @@ export function buildShipPositionLine(campaignState) {
     }
     lines.push(`COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`);
 
-    // Position line — only when the position record carries information.
+    // Position line — when the record carries information. When it doesn't,
+    // say so explicitly: with no position signal the narrator confidently
+    // improvises one from the campaign premise (v1.7.10 finding #5 — the
+    // ship sat near Astra on the map while "where am I" answered Mudd).
     const posLine = formatShipPositionLine(payload?.position, campaignState, name);
-    if (posLine) lines.push(posLine);
+    if (posLine) {
+      lines.push(posLine);
+    } else {
+      lines.push(
+        'SHIP POSITION: not yet established — do NOT assert or invent where '
+        + 'the ship is. If the player asks where they are, say their position '
+        + 'has not been established yet and suggest anchoring it (the GM can '
+        + 'type !at <place> or position the ship token on the sector map).',
+      );
+    }
 
     return lines.join('\n');
   } catch (err) {

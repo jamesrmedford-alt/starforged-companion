@@ -24,7 +24,17 @@
  * behaviour.
  */
 
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+
 const MODULE_ID = "starforged-companion";
+
+// Update-options key stamped on every programmatic command-vehicle token
+// move (fiction→token sync, set_a_course drag commit). The token hooks
+// below skip moves carrying it — without the guard, the sync's own
+// token.update lands on a settlement pin, the preUpdateToken drag handler
+// cancels it and dispatches a *second* synthetic set_a_course, and the
+// position write loops back through the pipeline.
+export const POSITION_SYNC_OPTION = "sfcPositionSync";
 
 /**
  * Register canvas hooks + prototype override for sector-scene note
@@ -51,6 +61,15 @@ export function registerSectorSceneHooks() {
   // on the dropped-on settlement and moves the Token programmatically on
   // a non-miss outcome.
   Hooks.on("preUpdateToken", handleCommandVehicleTokenDrag);
+
+  // v1.7.10 finding #5 — a command-vehicle token ON a sector scene is an
+  // authoritative position statement. Placement (wizard or manual drop from
+  // the sidebar) and off-pin repositions write the §20 position record from
+  // the token's actual coordinates, so "where am I" is grounded the moment
+  // a token exists. On-pin drops stay with the set_a_course flow above
+  // (travel move with a roll); off-pin = position note, no move mechanics.
+  Hooks.on("createToken", handleCommandVehicleTokenPlacement);
+  Hooks.on("updateToken", handleCommandVehicleTokenReposition);
 }
 
 /**
@@ -94,10 +113,12 @@ export function handleSectorNoteClick(note) {
  *
  * @param {TokenDocument} tokenDoc
  * @param {Object} changes — diff applied to the Token
+ * @param {Object} [options] — update options (programmatic syncs carry POSITION_SYNC_OPTION)
  * @returns {false|undefined} false to cancel; undefined to let through
  */
-export function handleCommandVehicleTokenDrag(tokenDoc, changes) {
+export function handleCommandVehicleTokenDrag(tokenDoc, changes, options) {
   if (!tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) return undefined;
+  if (options?.[POSITION_SYNC_OPTION]) return undefined;   // our own sync — let through
 
   // Only fire for actual position changes, not other field edits.
   const newX = Number(changes?.x);
@@ -218,6 +239,11 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
  * the position→token sync so the map can follow fiction-side movement.
  * Excludes planet/stellar pins (same predicate family as
  * nearestSettlementNote). Returns null when no pin matches.
+ *
+ * Matches on either id space: position records written from a token
+ * (finding #5) carry the settlement's Actor document id (`flags.actorId`),
+ * while older records / wizard map data use the generator's settlement id
+ * (`flags.settlementId`).
  */
 export function findSettlementNoteById(scene, settlementId) {
   if (!settlementId) return null;
@@ -225,9 +251,132 @@ export function findSettlementNoteById(scene, settlementId) {
   if (!Array.isArray(notes)) return null;
   return notes.find(n => {
     const flags = n?.flags?.[MODULE_ID];
-    return flags?.settlementId === settlementId
+    return (flags?.settlementId === settlementId || flags?.actorId === settlementId)
       && !flags?.planetNote && !flags?.stellarNote;
   }) ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOKEN → POSITION (v1.7.10 finding #5: the map is authoritative when a
+// command-vehicle token sits on a sector scene)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// "Near" association radius for token-derived positions, in grid cells.
+// Looser than the snap radius (which triggers the set_a_course move on an
+// exact pin drop) — a token parked in a settlement's neighbourhood reads as
+// "near <settlement>", anything further is honest deep space.
+function readNearRadiusCells() {
+  return Math.max(readSnapRadius() * 3, 3);
+}
+
+/**
+ * Build a §20 position record from a token's coordinates on a sector
+ * Scene: the nearest settlement pin within the near radius when one
+ * exists, else deep space in the scene's sector. Pure read.
+ *
+ * @param {Scene} scene — a Scene flagged { sectorScene, sectorId }
+ * @param {number} x
+ * @param {number} y
+ * @returns {Object} position record (§20.2 shape)
+ */
+export function computeTokenPositionRecord(scene, x, y) {
+  const gridSize = scene?.grid?.size ?? scene?.gridSize ?? 100;
+  const radiusPx = readNearRadiusCells() * gridSize;
+  const pin      = nearestSettlementNote(scene, Number(x ?? 0), Number(y ?? 0), radiusPx);
+  const pinFlags = pin?.flags?.[MODULE_ID] ?? null;
+
+  return {
+    sectorId:            scene?.flags?.[MODULE_ID]?.sectorId ?? null,
+    nearestPlanetId:     null,
+    // Prefer the settlement's Actor document id — the id space the name
+    // lookups and updateShip share. Legacy pins without actorId fall back
+    // to the generator id; the pin label keeps the line readable either way.
+    nearestSettlementId: pinFlags?.actorId ?? pinFlags?.settlementId ?? null,
+    freeText:            pin ? String(pin.text ?? "") : "deep space",
+    updatedAt:           new Date().toISOString(),
+    updatedBy:           "scene_token",
+  };
+}
+
+/**
+ * Persist a token-derived position record onto the command vehicle.
+ * Skips when the record matches what is already stored (idempotent for
+ * the wizard's anchored placement). Never throws.
+ */
+async function writeTokenDerivedPosition(scene, x, y) {
+  try {
+    const { getCommandVehicle, getCommandVehicleActorId, updateShip } =
+      await import("../entities/ship.js");
+
+    const campaignState = game.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    const cvActorId = getCommandVehicleActorId(campaignState);
+    if (!cvActorId) return null;
+
+    const position = computeTokenPositionRecord(scene, x, y);
+    const existing = getCommandVehicle(campaignState)?.position ?? null;
+    if (
+      existing
+      && existing.nearestSettlementId === position.nearestSettlementId
+      && (existing.freeText ?? "") === position.freeText
+      && existing.sectorId === position.sectorId
+    ) return existing;   // no informational change — don't churn the record
+
+    await updateShip(cvActorId, { position });
+    console.log(
+      `${MODULE_ID} | ship position recorded from sector-scene token: ` +
+      `${position.nearestSettlementId ? `near ${position.freeText || position.nearestSettlementId}` : position.freeText}`,
+    );
+    return position;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | token-derived position write failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/** Shared gating for the two token→position handlers. */
+function tokenPositionWriteApplies(tokenDoc, options) {
+  if (!tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) return false;
+  if (options?.[POSITION_SYNC_OPTION]) return false;   // fiction→token sync echo
+  try {
+    if (game.settings.get(MODULE_ID, "factContinuity.shipPositioning") === false) return false;
+  } catch (err) {
+    // Setting unregistered (tests, early init) — default on.
+    console.debug?.(`${MODULE_ID} | token position gate: settings read failed:`, err?.message ?? err);
+  }
+  if (!isCanonicalGM()) return false;                  // world write — one client only
+  const scene = tokenDoc.parent ?? tokenDoc.scene;
+  return !!scene?.flags?.[MODULE_ID]?.sectorScene;
+}
+
+/**
+ * createToken — a command-vehicle token placed on a sector scene (wizard
+ * placement at sector creation, or the GM dropping the ship actor onto the
+ * map) establishes the ship's position from where it landed.
+ */
+export function handleCommandVehicleTokenPlacement(tokenDoc, options, _userId) {
+  if (!tokenPositionWriteApplies(tokenDoc, options)) return undefined;
+  const scene = tokenDoc.parent ?? tokenDoc.scene;
+  // Hooks ignore the return value; returning the promise lets tests await
+  // the write deterministically.
+  return writeTokenDerivedPosition(scene, tokenDoc.x, tokenDoc.y).catch(err =>
+    console.debug?.(`${MODULE_ID} | token placement position write failed:`, err?.message ?? err));
+}
+
+/**
+ * updateToken — an off-pin reposition of the command-vehicle token is a
+ * position note ("drifting near X" / deep space), with no move mechanics.
+ * On-pin drops never reach here: the preUpdateToken handler cancels them
+ * and routes through set_a_course; programmatic syncs carry
+ * POSITION_SYNC_OPTION and are skipped by the shared gate.
+ */
+export function handleCommandVehicleTokenReposition(tokenDoc, changes, options, _userId) {
+  const movedX = Number.isFinite(Number(changes?.x));
+  const movedY = Number.isFinite(Number(changes?.y));
+  if (!movedX && !movedY) return undefined;
+  if (!tokenPositionWriteApplies(tokenDoc, options)) return undefined;
+  const scene = tokenDoc.parent ?? tokenDoc.scene;
+  return writeTokenDerivedPosition(scene, tokenDoc.x, tokenDoc.y).catch(err =>
+    console.debug?.(`${MODULE_ID} | token reposition position write failed:`, err?.message ?? err));
 }
 
 /**
@@ -287,7 +436,10 @@ export async function syncCommandVehicleTokenToPosition(position, campaignState)
     const destY = Number(note.y ?? 0);
     if (Number(token.x) === destX && Number(token.y) === destY) return token;
 
-    await token.update({ x: destX, y: destY });
+    // POSITION_SYNC_OPTION marks this as a fiction→token sync so the token
+    // hooks don't treat our own move as a drag (set_a_course dispatch) or a
+    // position statement (token→record write).
+    await token.update({ x: destX, y: destY }, { [POSITION_SYNC_OPTION]: true });
     return token;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | command-vehicle token sync failed:`, err?.message ?? err);
@@ -309,7 +461,10 @@ export async function moveCommandVehicleTokenToDestination(payload) {
   const token  = Array.isArray(tokens) ? tokens.find(t => t.id === payload.tokenId) : null;
   if (!token) return;
   try {
-    await token.update({ x: payload.destX, y: payload.destY });
+    // Programmatic commit of an already-resolved set_a_course — not a drag,
+    // not a new position statement (maybeUpdateShipPositionFromName wrote
+    // the record). The option keeps the token hooks out of the way.
+    await token.update({ x: payload.destX, y: payload.destY }, { [POSITION_SYNC_OPTION]: true });
   } catch (err) {
     console.debug?.(`${MODULE_ID} | command-vehicle Token move failed:`, err?.message ?? err);
   }

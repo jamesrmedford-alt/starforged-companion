@@ -174,6 +174,34 @@ export function getCommandVehicle(campaignState) {
 }
 
 /**
+ * The command vehicle's host Actor document id — the id `updateShip` /
+ * `getShip` resolve. Same precedence as getCommandVehicle (flagged first,
+ * lone-ship fallback).
+ *
+ * The ship record's `_id` is a module GUID, NOT the Actor id; passing it to
+ * updateShip throws "Ship actor not found". Every §20 position write did
+ * exactly that (`updateShip(cv._id, …)`) and silently no-op'd at debug level
+ * — one of the reasons ship position never reached the narrator (v1.7.10
+ * playtest finding #5). Position writers must use this id instead.
+ *
+ * @param {Object} campaignState
+ * @returns {string|null}
+ */
+export function getCommandVehicleActorId(campaignState) {
+  const ids = Array.isArray(campaignState?.shipIds) ? campaignState.shipIds : [];
+  let loneId = null;
+  let count  = 0;
+  for (const id of ids) {
+    const rec = getShip(id);
+    if (!rec) continue;
+    count += 1;
+    if (count === 1) loneId = id;
+    if (rec.isCommandVehicle) return id;
+  }
+  return count === 1 ? loneId : null;
+}
+
+/**
  * True when a foundry-ironsworn `starship` Actor carries the STARSHIP /
  * Command Vehicle asset — an embedded `asset`-type Item whose
  * `system.category` is "Command Vehicle" (confirmed against vendor source
