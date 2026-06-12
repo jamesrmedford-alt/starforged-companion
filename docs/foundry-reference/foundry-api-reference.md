@@ -612,6 +612,32 @@ async function postCard(content, flags = {}) {
 
 ---
 
+## Macro
+
+**Official:** https://foundryvtt.com/api/v13/classes/foundry.documents.Macro.html
+
+```js
+// Script macro — v13 valid `type` values: "script" | "chat".
+// Live-pinned by the Quench quickstart batch (ensureQuickstartMacro).
+const macro = await Macro.create({
+  name:    "✦ Starforged Quickstart",
+  type:    "script",
+  img:     "icons/svg/dice-target.svg",
+  command: `game.modules.get("starforged-companion")?.api?.runPlaytestQuickstart?.();`,
+  flags:   { "starforged-companion": { quickstartMacro: true } },
+});
+
+// Find module-owned macros by flag, not by name (names are user-editable):
+const existing = game.macros.contents.find(
+  m => m.flags?.["starforged-companion"]?.quickstartMacro === true
+);
+```
+
+Keep macro bodies as one-line calls into `game.modules.get(id).api` — logic
+in the Macro document itself is unversioned and untestable.
+
+---
+
 ## Scene
 
 **Official:** https://foundryvtt.com/api/v13/classes/foundry.documents.Scene.html  

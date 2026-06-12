@@ -212,76 +212,8 @@ export class SectorCreatorApp extends ApplicationV2 {
   static async #onFinalizeSector(_event, _target) {
     if (!this.#sector) return;
 
-    const campaignState = game.settings.get(MODULE_ID, "campaignState");
-
     try {
-      const artEnabled   = getSetting("sectorArtEnabled",            true);
-      const stubsEnabled = getSetting("sectorNarratorStubsEnabled",  true);
-      const narratorSettings = getNarratorSettings();
-
-      await postProgressCard(`◈ Sector Creator — Generating ${this.#sector.name}…`);
-
-      // Run entity creation + art + narrator stubs in parallel
-      const [entityData, backgroundPath, stubs] = await Promise.all([
-        createEntityJournals(this.#sector, campaignState),
-        artEnabled
-          ? generateSectorBackground(this.#sector, campaignState).catch(err => {
-              // generateSectorBackground notifies its own failure paths; this
-              // catch is the safety net for anything that bubbled out.
-              console.warn(`${MODULE_ID} | Sector art unhandled rejection:`, err?.message ?? err);
-              ui.notifications?.error(
-                `Starforged Companion: Sector art failed unexpectedly: ${err?.message ?? err}`,
-                { permanent: true }
-              );
-              return null;
-            })
-          : Promise.resolve(null),
-        stubsEnabled
-          ? generateNarratorStubs(this.#sector, narratorSettings).catch(err => {
-              console.warn(`${MODULE_ID} | Narrator stubs unhandled rejection:`, err?.message ?? err);
-              return { sector: null, settlements: {} };
-            })
-          : Promise.resolve({ sector: null, settlements: {} }),
-      ]);
-
-      // Mirror settlement stubs onto the entity records so the canonical
-      // entity description matches what the sector journal page shows.
-      await applyStubsToSettlementEntities(entityData.settlements, stubs);
-
-      // F5: stamp each sector-created settlement as finalized and trigger a
-      // first-time portrait (which also becomes the token image), so the GM
-      // doesn't have to click ✦ Finalise on every settlement individually.
-      // Gated on a setting so the OpenRouter cost is opt-out.
-      const portraitsEnabled = getSetting("sectorEntityPortraitsEnabled", true);
-      if (portraitsEnabled) {
-        try {
-          await finalizeSectorEntities(entityData.settlements, stubs, campaignState);
-        } catch (err) {
-          console.warn(`${MODULE_ID} | finalizeSectorEntities unhandled rejection:`, err?.message ?? err);
-        }
-      }
-
-      // Sector journal (needs stubs + the gen-id→Actor map so the overview can
-      // emit @UUID document links to each settlement Actor — see scope §3.6);
-      // scene sequential after background resolves.
-      const sectorJournal = await createSectorJournal(this.#sector, stubs, entityData.settlements);
-      const scene         = await createSectorScene(this.#sector, backgroundPath, entityData.settlements);
-
-      const stored = await storeSector(this.#sector, {
-        settlements:         entityData.settlements,
-        connectionJournalId: entityData.connectionJournalId,
-        backgroundPath,
-        sceneId:             scene?.id     ?? null,
-        sectorJournalId:     sectorJournal?.id ?? null,
-        stubs,
-      }, campaignState);
-
-      await ChatMessage.create({
-        content: formatSectorCard(stored),
-        flags: { [MODULE_ID]: { sectorCreated: true, sectorId: stored.id } },
-      });
-
-      ui.notifications.info(`Sector "${stored.name}" created.`);
+      await runSectorCreationPipeline(this.#sector);
       this.close();
     } catch (err) {
       console.error(`${MODULE_ID} | Sector creation failed:`, err);
@@ -292,6 +224,99 @@ export class SectorCreatorApp extends ApplicationV2 {
   static #onCancel(_event, _target) {
     this.close();
   }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED CREATION PIPELINE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run the full sector-creation pipeline for an already-generated sector:
+ * entity journals/actors, background art, narrator stubs, settlement
+ * finalisation, sector journal, Scene, and campaignState persistence —
+ * each step honouring its own gating setting (`sectorArtEnabled`,
+ * `sectorNarratorStubsEnabled`, `sectorEntityPortraitsEnabled`).
+ *
+ * Extracted from the wizard's Finalize handler so the playtest quickstart
+ * (`src/session/quickstart.js`) and the wizard share one pipeline — both
+ * produce identical sectors, and gating tweaks apply to both. Throws on
+ * pipeline failure; callers own the user-facing error surface.
+ *
+ * @param {Object} sector — a SectorResult from generateSector()
+ * @returns {Promise<Object>} the stored sector record
+ */
+export async function runSectorCreationPipeline(sector) {
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  const artEnabled   = getSetting("sectorArtEnabled",            true);
+  const stubsEnabled = getSetting("sectorNarratorStubsEnabled",  true);
+  const narratorSettings = getNarratorSettings();
+
+  await postProgressCard(`◈ Sector Creator — Generating ${sector.name}…`);
+
+  // Run entity creation + art + narrator stubs in parallel
+  const [entityData, backgroundPath, stubs] = await Promise.all([
+    createEntityJournals(sector, campaignState),
+    artEnabled
+      ? generateSectorBackground(sector, campaignState).catch(err => {
+          // generateSectorBackground notifies its own failure paths; this
+          // catch is the safety net for anything that bubbled out.
+          console.warn(`${MODULE_ID} | Sector art unhandled rejection:`, err?.message ?? err);
+          ui.notifications?.error(
+            `Starforged Companion: Sector art failed unexpectedly: ${err?.message ?? err}`,
+            { permanent: true }
+          );
+          return null;
+        })
+      : Promise.resolve(null),
+    stubsEnabled
+      ? generateNarratorStubs(sector, narratorSettings).catch(err => {
+          console.warn(`${MODULE_ID} | Narrator stubs unhandled rejection:`, err?.message ?? err);
+          return { sector: null, settlements: {} };
+        })
+      : Promise.resolve({ sector: null, settlements: {} }),
+  ]);
+
+  // Mirror settlement stubs onto the entity records so the canonical
+  // entity description matches what the sector journal page shows.
+  await applyStubsToSettlementEntities(entityData.settlements, stubs);
+
+  // F5: stamp each sector-created settlement as finalized and trigger a
+  // first-time portrait (which also becomes the token image), so the GM
+  // doesn't have to click ✦ Finalise on every settlement individually.
+  // Gated on a setting so the OpenRouter cost is opt-out.
+  const portraitsEnabled = getSetting("sectorEntityPortraitsEnabled", true);
+  if (portraitsEnabled) {
+    try {
+      await finalizeSectorEntities(entityData.settlements, stubs, campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | finalizeSectorEntities unhandled rejection:`, err?.message ?? err);
+    }
+  }
+
+  // Sector journal (needs stubs + the gen-id→Actor map so the overview can
+  // emit @UUID document links to each settlement Actor — see scope §3.6);
+  // scene sequential after background resolves.
+  const sectorJournal = await createSectorJournal(sector, stubs, entityData.settlements);
+  const scene         = await createSectorScene(sector, backgroundPath, entityData.settlements);
+
+  const stored = await storeSector(sector, {
+    settlements:         entityData.settlements,
+    connectionJournalId: entityData.connectionJournalId,
+    backgroundPath,
+    sceneId:             scene?.id     ?? null,
+    sectorJournalId:     sectorJournal?.id ?? null,
+    stubs,
+  }, campaignState);
+
+  await ChatMessage.create({
+    content: formatSectorCard(stored),
+    flags: { [MODULE_ID]: { sectorCreated: true, sectorId: stored.id } },
+  });
+
+  ui.notifications.info(`Sector "${stored.name}" created.`);
+  return stored;
 }
 
 

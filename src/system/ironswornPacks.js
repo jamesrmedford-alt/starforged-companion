@@ -262,3 +262,31 @@ export async function listCanonicalTruths() {
   }
   return docs;
 }
+
+/**
+ * Return every asset Item in the starforged-assets pack whose
+ * `system.category` matches (e.g. "Path", "Module", "Companion",
+ * "Command Vehicle"). Used by the playtest quickstart to pick random
+ * Path assets for a fresh PC. Loads the pack documents once per call —
+ * acceptable for the on-demand quickstart; do not call per-turn.
+ *
+ * @param {string} category
+ * @returns {Promise<Array<Object>>} asset documents (full, embeddable)
+ */
+export async function listCanonicalAssetsByCategory(category) {
+  if (!category) return [];
+  const pack = getPack(IS_PACKS.STARFORGED_ASSETS);
+  if (!pack) return [];
+  const index = await getIndex(pack);
+  if (!index) return [];
+  const docs = [];
+  for (const entry of Array.from(index)) {
+    try {
+      const doc = await pack.getDocument(entry._id ?? entry.id);
+      if (doc?.type === "asset" && doc?.system?.category === category) docs.push(doc);
+    } catch (err) {
+      console.warn(`starforged-companion | ironswornPacks: asset load failed for ${entry._id}:`, err);
+    }
+  }
+  return docs;
+}

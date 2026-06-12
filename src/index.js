@@ -2633,6 +2633,17 @@ Hooks.once("ready", () => {
       console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
     );
 
+    // ✦ Playtest Quickstart — expose the orchestrator on the module API and
+    // ensure the hotbar Macro exists (the Macro body is a one-liner into
+    // the API so its logic lives in tested module code).
+    import("./session/quickstart.js").then(({ runPlaytestQuickstart, ensureQuickstartMacro }) => {
+      const mod = game.modules.get(MODULE_ID);
+      if (mod) mod.api = { ...(mod.api ?? {}), runPlaytestQuickstart };
+      return ensureQuickstartMacro();
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | Quickstart macro setup failed:`, err?.message ?? err)
+    );
+
     // World Journal — create the folder + four category journals if missing.
     // Phase 3 only writes; the combined detection pass that auto-populates is
     // Phase 4. Errors are logged and do not block the rest of the ready hook.
@@ -2863,8 +2874,9 @@ onChatMessageRender((message, root) => {
       // Best-effort: only the GM can mutate other users' messages.
       try {
         await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
-      } catch {
+      } catch (err) {
         // Player clients fall back to a local-only disable above.
+        console.debug?.(`${MODULE_ID} | rolled-flag update skipped (non-owner):`, err?.message ?? err);
       }
       await ChatMessage.create({
         content: f.playerText,

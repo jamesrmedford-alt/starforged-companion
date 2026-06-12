@@ -218,9 +218,15 @@ into another round of help-Changelog drift.
 
 ## PR monitoring and autonomous iteration
 
-When the user asks you to monitor, watch, babysit, or autofix a PR — or
-when the work involves an iterative CI loop where the loop body is
-"push, wait for CI, read failure, push again":
+**Standing instruction (2026-06-12): whenever you open a PR in this repo,
+immediately subscribe to it and follow through — without being asked.**
+Auto-fix CI failures, handle review comments, report green status, and
+stand down when it merges or closes. The maintainer should never need to
+say "subscribe" again.
+
+When following through on a PR — or when the work involves an iterative
+CI loop where the loop body is "push, wait for CI, read failure, push
+again":
 
 - Subscribe via `mcp__github__subscribe_pr_activity(owner, repo, pullNumber)`
   and end the turn. PR webhook events arrive as `<github-webhook-activity>`
