@@ -50,6 +50,7 @@ import {
   registerStarshipActorLight,
   installModulesForRolledIdentity,
   getCommandVehicle,
+  getCommandVehicleActorId,
   actorHasCommandVehicleAsset,
   syncCommandVehicleFlag,
 } from "../../src/entities/ship.js";
@@ -209,6 +210,33 @@ describe("getCommandVehicle — flag, then lone-ship fallback", () => {
     await createShip({ name: "A" }, state);
     await createShip({ name: "B" }, state);
     expect(getCommandVehicle(state)).toBeNull();
+  });
+});
+
+describe("getCommandVehicleActorId — the id updateShip resolves (finding #5)", () => {
+  it("returns the host Actor id, not the record GUID", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Flagship", isCommandVehicle: true }, state);
+
+    const actorId = getCommandVehicleActorId(state);
+    expect(actorId).toBe(state.shipIds[0]);
+    // The record GUID is a different id space — passing it to updateShip
+    // threw "Ship actor not found" on every §20 position write.
+    expect(actorId).not.toBe(getCommandVehicle(state)._id);
+  });
+
+  it("mirrors getCommandVehicle's precedence: flagged first, lone fallback, ambiguous null", async () => {
+    const state = { shipIds: [] };
+    await createShip({ name: "Support" }, state);
+    expect(getCommandVehicleActorId(state)).toBe(state.shipIds[0]);
+
+    await createShip({ name: "Flagship", isCommandVehicle: true }, state);
+    expect(getCommandVehicleActorId(state)).toBe(state.shipIds[1]);
+
+    const ambiguous = { shipIds: [] };
+    await createShip({ name: "A" }, ambiguous);
+    await createShip({ name: "B" }, ambiguous);
+    expect(getCommandVehicleActorId(ambiguous)).toBeNull();
   });
 });
 

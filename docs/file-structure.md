@@ -85,7 +85,7 @@ developer-only and excluded from the release.
 | `shipEnvision.js` | On-demand ✦ Envision / 📜 History for ships. Rolls supplementary oracles beyond the seed (captain, crew, agenda, initial contact) + Action+Theme backstory beats; narrator-prose composer; chat-command predicates + handlers (`!ship envision` / `!ship history`); idempotent dated-subsection notes append. |
 | `entityExtractor.js` | Combined detection pass: extracts entities from narrator output + World Journal routing rule; renders draft Confirm/Dismiss cards. |
 | `folder.js` | Entity folder helpers (Entities root, per-sector subfolders). |
-| `migrator.js` | `!migrate-entities` storage migration to native Actors (7-day deferred cleanup). |
+| `migrator.js` | `!migrate-entities` storage migration to native Actors (7-day deferred cleanup); ready-time repairs `backfillNpcCardSheets` (pin Starforged sheet on NPC cards) and `syncEntityRecordNames` (reconcile record names to Actor names) — v1.7.10 findings F1/F2. |
 
 ### `factContinuity/` — per-scene memory layer
 
@@ -96,7 +96,7 @@ developer-only and excluded from the release.
 | `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore; clears the scene frame. |
 | `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (+ `!truth`/`!state` backing). |
 | `consistencyCheck.js` | Optional Haiku consistency audit → GM review card. |
-| `shipPosition.js` | §20 ship positioning: `inferShipPosition` (tolerant seed matching — possessives, article-wrapped multiword names), `formatShipPositionLine`, `matchSeedAgainstIndex`. Provenance sources include `expedition` (finish_an_expedition arrivals). |
+| `shipPosition.js` | §20 ship positioning: `inferShipPosition` (tolerant seed matching — possessives, article-wrapped multiword names; registry-backed document-first entity resolution, `options.entities` injection), `formatShipPositionLine`, `matchSeedAgainstIndex`. Provenance sources include `expedition` (finish_an_expedition arrivals) and `scene_token` (token-derived positions). |
 
 ### `help/` — in-game help journal
 
@@ -176,7 +176,7 @@ developer-only and excluded from the release.
 | `sceneBuilder.js` | Foundry Scene creation (Note pins + Drawing passages). |
 | `sectorMap.js` | SVG sector map renderer. |
 | `sectorOverview.js` | Sector-record JournalEntry overview. |
-| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins; command-vehicle Token drag → set_a_course; `syncCommandVehicleTokenToPosition` (position→token sync so the map follows fiction-side movement — Cluster C). |
+| `sectorSceneHooks.js` | Click handlers for sector-scene Note pins; command-vehicle Token drag → set_a_course; `syncCommandVehicleTokenToPosition` (position→token sync — Cluster C); token→position authority (v1.7.10 F5): `handleCommandVehicleTokenPlacement` / `handleCommandVehicleTokenReposition` / `computeTokenPositionRecord` write the §20 record from token coords, `POSITION_SYNC_OPTION` marks programmatic moves. |
 
 ### `session/` — session lifecycle & vignettes
 

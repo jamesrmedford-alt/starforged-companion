@@ -299,3 +299,71 @@ describe('inferShipPosition — tolerant seed matching', () => {
     expect(p.updatedBy).toBe('expedition');
   });
 });
+
+
+// ────────────────────────────────────────────────────────────────────
+// Document-backed resolution (v1.7.10 finding #5)
+//
+// Production campaignState carries only the `*Ids` arrays — the record
+// arrays the fixtures above pass never exist in a live world. These
+// tests pin the registry-backed path: ids resolve through game.actors
+// (settlement/planet/location are Actor-hosted post-migration), so the
+// name index and the line formatter work against real storage.
+// ────────────────────────────────────────────────────────────────────
+
+describe('document-backed resolution (production storage shape)', () => {
+  const MID = 'starforged-companion';
+
+  function hostSettlementActor(id, record) {
+    const actor = makeTestActor({
+      id, type: 'location', name: record.name,
+      flags: { [MID]: { entityType: 'settlement', settlement: record } },
+    });
+    global.game.actors._set(id, actor);
+    return actor;
+  }
+
+  beforeEach(() => { global.game.actors._reset(); });
+
+  it('inferShipPosition resolves a settlement through game.actors with only settlementIds in state', () => {
+    hostSettlementActor('actor-astra', { _id: 'rec-astra', name: 'Astra', sectorId: 'sec-fc' });
+    const state = {
+      settlementIds: ['actor-astra'],
+      sectors: [sec('sec-fc', 'Ferrous Chasm')],
+    };
+    const p = inferShipPosition('Astra', state, { source: 'at_command' });
+    // nearestSettlementId is the HOST DOCUMENT id — the id space updateShip,
+    // the scene-pin actorId flag, and the registry getters share.
+    expect(p.nearestSettlementId).toBe('actor-astra');
+    expect(p.sectorId).toBe('sec-fc');
+    expect(p.freeText).toBe('');
+  });
+
+  it('formatShipPositionLine resolves the settlement name through the registry', () => {
+    hostSettlementActor('actor-astra', { _id: 'rec-astra', name: 'Astra', sectorId: 'sec-fc' });
+    const state = {
+      settlementIds: ['actor-astra'],
+      sectors: [sec('sec-fc', 'Ferrous Chasm')],
+    };
+    const line = formatShipPositionLine(
+      { nearestSettlementId: 'actor-astra', nearestPlanetId: null, sectorId: 'sec-fc', freeText: '' },
+      state,
+      'Kobayashi 8',
+    );
+    expect(line).toBe('SHIP POSITION: Kobayashi 8 near Astra (Ferrous Chasm)');
+  });
+
+  it('options.entities injection bypasses both storage paths', () => {
+    const p = inferShipPosition('Vault', {}, {
+      source: 'manual',
+      entities: [{ _id: 'v1', journalId: 'doc-v1', name: 'Vault of Tears', entityType: 'settlement' }],
+    });
+    expect(p.nearestSettlementId).toBe('doc-v1');
+  });
+
+  it('in-state record arrays still resolve (legacy fixture shape)', () => {
+    const state = makeCampaignState({ settlements: [settlement('s-leg', 'Legacyport')] });
+    const p = inferShipPosition('Legacyport', state, { source: 'manual' });
+    expect(p.nearestSettlementId).toBe('s-leg');
+  });
+});

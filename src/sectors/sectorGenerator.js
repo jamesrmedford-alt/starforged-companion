@@ -68,17 +68,16 @@ export function generateSector(region, _overrides = {}) {
   const cfg = REGION_CONFIG[region];
   if (!cfg) throw new Error(`Unknown region: ${region}`);
 
-  // Step 1: Stellar object — rolled once per sector and shared across all
-  // settlements / planets in that sector (F7). Drives the scene-map stellar
-  // pin (sceneBuilder.js → iconForStellarObject) which was already wired up
-  // but starved of data because nothing populated this field.
-  const stellar = rollTableResult(SPACE.STELLAR_OBJECT);
-
-  // Steps 3–5: Generate each settlement, sharing the sector's stellar object.
+  // Steps 3–5: Generate each settlement, each in its own star system with
+  // its own STELLAR_OBJECT roll (rulebook "settle a new system"; original
+  // scope: "for each settlement, optionally roll on Stellar Object").
+  // The v1.7.1 F7 fix rolled once per sector and stamped the same result on
+  // every settlement — that fed the scene-map stellar pins, but made every
+  // star in a sector identical (v1.7.10 playtest finding #3).
   const settlements = [];
   for (let i = 0; i < cfg.settlements; i++) {
     const s = generateSettlement(region);
-    s.stellar = stellar;
+    s.stellar = rollTableResult(SPACE.STELLAR_OBJECT);
     settlements.push(s);
   }
 

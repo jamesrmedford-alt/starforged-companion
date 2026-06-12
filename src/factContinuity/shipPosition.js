@@ -21,6 +21,7 @@
  */
 
 import { buildNameIndex } from "../context/relevanceResolver.js";
+import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
   "at_command",
@@ -85,7 +86,11 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
   // here — a settlement the GM dismissed from a draft card still
   // exists as a real location once the GM accepts it, and we want a
   // best-effort match against everything currently present.
-  const entities = collectEntitiesForIndex(campaignState);
+  // `options.entities` lets tests (or pre-hydrated callers) inject the
+  // roster directly.
+  const entities = Array.isArray(options.entities)
+    ? options.entities
+    : collectEntitiesForIndex(campaignState);
   const index    = buildNameIndex(entities, []);
 
   const hit = matchSeedAgainstIndex(index, ref);
@@ -160,50 +165,95 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
 // INTERNAL HELPERS
 // ─────────────────────────────────────────────────────────────────────
 
+// Per entity kind: the campaignState id list that locates its host document
+// (registry.js), and the legacy in-state record array kept for callers/tests
+// that pass pre-hydrated state. Production campaignState carries ONLY the
+// `*Ids` arrays — the original implementation read `campaignState.settlements`
+// etc., which the schema never stored, so the name index was always empty in
+// live worlds and every position degraded to free text (finding #5).
+const INDEX_SOURCES = [
+  { entityType: "settlement", idsField: "settlementIds", recordsField: "settlements" },
+  { entityType: "planet",     idsField: "planetIds",     recordsField: "planets"     },
+  { entityType: "location",   idsField: "locationIds",   recordsField: "locations"   },
+  { entityType: "ship",       idsField: "shipIds",       recordsField: "ships"       },
+  { entityType: "faction",    idsField: "factionIds",    recordsField: "factions"    },
+  { entityType: "connection", idsField: "connectionIds", recordsField: "connections" },
+  { entityType: "creature",   idsField: "creatureIds",   recordsField: "creatures"   },
+];
+
 function collectEntitiesForIndex(campaignState) {
   const out = [];
-  push(out, campaignState?.settlements, "settlement");
-  push(out, campaignState?.planets,     "planet");
-  push(out, campaignState?.locations,   "location");
-  push(out, campaignState?.ships,       "ship");
-  push(out, campaignState?.factions,    "faction");
-  push(out, campaignState?.connections, "connection");
-  push(out, campaignState?.creatures,   "creature");
+  for (const { entityType, idsField, recordsField } of INDEX_SOURCES) {
+    // Live documents first — `journalId` is the host document id, the id
+    // space getSettlement / the scene-pin actorId flags / updateShip share.
+    const ids = Array.isArray(campaignState?.[idsField]) ? campaignState[idsField] : [];
+    for (const id of ids) {
+      let record = null;
+      try {
+        record = readEntityFlag(entityType, getEntityDocument(entityType, id));
+      } catch { record = null; }
+      if (record) pushOne(out, record, entityType, id);
+    }
+    // Pre-hydrated record arrays second (legacy callers, unit fixtures).
+    const records = campaignState?.[recordsField];
+    if (Array.isArray(records)) {
+      for (const e of records) pushOne(out, e, entityType, null);
+    }
+  }
   return out;
 }
 
-function push(out, list, entityType) {
-  if (!Array.isArray(list)) return;
-  for (const e of list) {
-    if (!e || typeof e !== "object") continue;
-    out.push({
-      _id:           e._id,
-      journalId:     e.journalId ?? e._id,
-      name:          e.name,
-      entityType,
-      // The buildNameIndex output preserves the entity object verbatim,
-      // so anything we pass through here is reachable to the resolver
-      // (sectorId for location-class records, settlementIds for planets).
-      sectorId:      e.sectorId      ?? null,
-      settlementIds: Array.isArray(e.settlementIds) ? e.settlementIds : null,
-    });
-  }
+function pushOne(out, e, entityType, documentId) {
+  if (!e || typeof e !== "object") return;
+  out.push({
+    _id:           e._id,
+    journalId:     documentId ?? e.journalId ?? e._id,
+    name:          e.name,
+    entityType,
+    // The buildNameIndex output preserves the entity object verbatim,
+    // so anything we pass through here is reachable to the resolver
+    // (sectorId for location-class records, settlementIds for planets).
+    sectorId:      e.sectorId      ?? null,
+    settlementIds: Array.isArray(e.settlementIds) ? e.settlementIds : null,
+  });
 }
 
 function resolvePlanetForSettlement(settlement, campaignState) {
   // Walk planets looking for one whose `settlementIds` contains the
-  // settlement's id. Pre-PR #100 settlements lived as JournalEntries
-  // and were referenced by `_id`; post-PR #100 they're location-typed
-  // Actors with the same shape on the shadow record. Either way the
-  // _id field is the join key.
-  const planets = Array.isArray(campaignState?.planets) ? campaignState.planets : [];
-  const needle  = settlement?._id;
-  if (!needle) return null;
-  for (const p of planets) {
-    const ids = Array.isArray(p?.settlementIds) ? p.settlementIds : [];
-    if (ids.includes(needle)) return p._id ?? null;
+  // settlement's id. Records may key the join on either the module GUID
+  // (`_id`) or the host document id depending on when they were created,
+  // so both are tried.
+  const needles = [settlement?._id, settlement?.journalId].filter(Boolean);
+  if (!needles.length) return null;
+  for (const { record, documentId } of iterRecords(campaignState, "planet", "planetIds", "planets")) {
+    const ids = Array.isArray(record?.settlementIds) ? record.settlementIds : [];
+    if (needles.some(n => ids.includes(n))) return documentId ?? record._id ?? null;
   }
   return null;
+}
+
+/**
+ * Yield { record, documentId } for an entity kind — live documents first
+ * (via the registry and the campaignState `*Ids` list), then any
+ * pre-hydrated in-state record array (legacy callers, unit fixtures).
+ */
+function* iterRecords(campaignState, entityType, idsField, recordsField) {
+  const ids = Array.isArray(campaignState?.[idsField]) ? campaignState[idsField] : [];
+  for (const id of ids) {
+    let record = null;
+    try {
+      record = readEntityFlag(entityType, getEntityDocument(entityType, id));
+    } catch (err) {
+      console.warn(`starforged-companion | shipPosition: read ${entityType} ${id} failed:`, err?.message ?? err);
+    }
+    if (record) yield { record, documentId: id };
+  }
+  const records = campaignState?.[recordsField];
+  if (Array.isArray(records)) {
+    for (const record of records) {
+      if (record && typeof record === "object") yield { record, documentId: null };
+    }
+  }
 }
 
 function resolveSectorForRecord(record, campaignState) {
@@ -216,15 +266,28 @@ function resolveSectorForRecord(record, campaignState) {
 }
 
 function lookupSettlement(id, campaignState) {
-  if (!id) return "";
-  const list = Array.isArray(campaignState?.settlements) ? campaignState.settlements : [];
-  return list.find(s => s?._id === id)?.name ?? "";
+  return lookupRecordName(id, campaignState, "settlement", "settlements");
 }
 
 function lookupPlanet(id, campaignState) {
+  return lookupRecordName(id, campaignState, "planet", "planets");
+}
+
+// A position record's nearest* ids are host document ids (post-#5);
+// records written before that fix carried module GUIDs, and unit fixtures
+// pass pre-hydrated arrays — so resolve document-first, then scan any
+// in-state record array matching on either id space.
+function lookupRecordName(id, campaignState, entityType, recordsField) {
   if (!id) return "";
-  const list = Array.isArray(campaignState?.planets) ? campaignState.planets : [];
-  return list.find(p => p?._id === id)?.name ?? "";
+  try {
+    const name = readEntityFlag(entityType, getEntityDocument(entityType, id))?.name;
+    if (name) return name;
+  } catch (err) {
+    // Fall through to the in-state scan.
+    console.warn(`starforged-companion | shipPosition: lookup ${entityType} ${id} failed:`, err?.message ?? err);
+  }
+  const list = Array.isArray(campaignState?.[recordsField]) ? campaignState[recordsField] : [];
+  return list.find(r => r?._id === id || r?.journalId === id)?.name ?? "";
 }
 
 function lookupSector(id, campaignState) {

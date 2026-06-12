@@ -12,6 +12,8 @@ import {
   flattenSectorActorFolders,
   scaffoldPcShipFolders,
   migrateJournalConnectionsToActors,
+  backfillNpcCardSheets,
+  syncEntityRecordNames,
 } from "../../src/entities/migrator.js";
 import {
   _resetFolderCache,
@@ -101,6 +103,9 @@ describe("migrateJournalConnectionsToActors", () => {
     expect(actor.type).toBe("character");
     expect(actor.flags[MODULE].connection.name).toBe("Sable");
     expect(actor.flags[MODULE].entityType).toBe("connection");
+    // Starforged sheet pinned — the system's default for `character` is the
+    // classic Ironsworn sheet (v1.7.10 findings #1/#4).
+    expect(actor.flags.core?.sheetClass).toBe("ironsworn.StarforgedCharacterSheet");
     // old journal removed
     expect(global.game.journal.get("j-conn")).toBe(null);
   });
@@ -124,6 +129,84 @@ describe("migrateJournalConnectionsToActors", () => {
     const summary = await migrateJournalConnectionsToActors(stored);
     expect(summary.migrated).toBe(0);
     expect(stored.connectionIds).toEqual(["ghost"]);
+  });
+});
+
+describe("backfillNpcCardSheets (v1.7.10 findings #1/#4)", () => {
+  it("pins the Starforged sheet on NPC cards without a sheet override", async () => {
+    global.game.actors._set("npc-1", global.makeTestActor({
+      id: "npc-1", type: "character", name: "Patch Hawking",
+      flags: { [MODULE]: { entityType: "connection", connection: { _id: "c1", name: "Patch Hawking" } } },
+    }));
+
+    const summary = await backfillNpcCardSheets();
+
+    expect(summary.updated).toBe(1);
+    const npc = global.game.actors.get("npc-1");
+    expect(npc.flags.core?.sheetClass).toBe("ironsworn.StarforgedCharacterSheet");
+  });
+
+  it("never touches PCs (character actors without the entityType flag)", async () => {
+    global.game.actors._set("pc-1", global.makeTestActor({
+      id: "pc-1", type: "character", name: "Kayla Vayan", flags: {},
+    }));
+
+    const summary = await backfillNpcCardSheets();
+
+    expect(summary.updated).toBe(0);
+    expect(global.game.actors.get("pc-1").flags.core).toBeUndefined();
+  });
+
+  it("leaves a deliberately re-sheeted card alone", async () => {
+    global.game.actors._set("npc-2", global.makeTestActor({
+      id: "npc-2", type: "character", name: "Vex",
+      flags: {
+        [MODULE]: { entityType: "connection", connection: { _id: "c2", name: "Vex" } },
+        core:     { sheetClass: "ironsworn.IronswornCharacterSheetV2" },
+      },
+    }));
+
+    const summary = await backfillNpcCardSheets();
+
+    expect(summary.updated).toBe(0);
+    expect(global.game.actors.get("npc-2").flags.core.sheetClass)
+      .toBe("ironsworn.IronswornCharacterSheetV2");
+  });
+});
+
+describe("syncEntityRecordNames (v1.7.10 finding #2)", () => {
+  it("reconciles a stale record name to the Actor name (actor authoritative)", async () => {
+    global.game.actors._set("ship-1", global.makeTestActor({
+      id: "ship-1", type: "starship", name: "Kobayashi 8",
+      flags: { [MODULE]: { entityType: "ship", ship: { _id: "s1", name: "Ship" } } },
+    }));
+
+    const summary = await syncEntityRecordNames({ shipIds: ["ship-1"] });
+
+    expect(summary.synced).toBe(1);
+    const rec = global.game.actors.get("ship-1").flags[MODULE].ship;
+    expect(rec.name).toBe("Kobayashi 8");
+    expect(rec.updatedAt).toBeTruthy();
+  });
+
+  it("is a no-op when names already match", async () => {
+    global.game.actors._set("conn-1", global.makeTestActor({
+      id: "conn-1", type: "character", name: "Sable",
+      flags: { [MODULE]: { entityType: "connection", connection: { _id: "c1", name: "Sable" } } },
+    }));
+
+    const summary = await syncEntityRecordNames({ connectionIds: ["conn-1"] });
+    expect(summary.synced).toBe(0);
+  });
+
+  it("skips dangling ids and actors without records", async () => {
+    global.game.actors._set("bare", global.makeTestActor({
+      id: "bare", type: "starship", name: "Loose Ship", flags: {},
+    }));
+    const summary = await syncEntityRecordNames({
+      shipIds: ["bare", "ghost"], settlementIds: [], connectionIds: [],
+    });
+    expect(summary.synced).toBe(0);
   });
 });
 

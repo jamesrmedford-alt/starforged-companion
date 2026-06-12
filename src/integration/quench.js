@@ -8362,12 +8362,16 @@ function registerTokenDragSetACourseTests(quench) {
             flags:  { [MODULE]: { sectorPin: true, kind: "settlement", settlementId: "fake-settlement-id" } },
           }]);
 
+          // sfcPositionSync (POSITION_SYNC_OPTION) keeps the live createToken
+          // hook from treating this synthetic token as a position statement —
+          // without it the test would overwrite the world's real ship
+          // position record (finding #5 hooks; QUENCH-004 pollution class).
           await testScene.createEmbeddedDocuments("Token", [{
             name:  "Test Ship",
             x:     100,
             y:     100,
             flags: { [MODULE]: { commandVehicle: true } },
-          }]);
+          }], { sfcPositionSync: true });
           const tokenDoc = testScene.tokens.contents[0];
 
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));

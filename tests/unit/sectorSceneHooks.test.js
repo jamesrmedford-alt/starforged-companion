@@ -16,6 +16,10 @@ import {
   nearestSettlementNote,
   findSettlementNoteById,
   syncCommandVehicleTokenToPosition,
+  computeTokenPositionRecord,
+  handleCommandVehicleTokenPlacement,
+  handleCommandVehicleTokenReposition,
+  POSITION_SYNC_OPTION,
 } from '../../src/sectors/sectorSceneHooks.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -347,7 +351,9 @@ describe('syncCommandVehicleTokenToPosition', () => {
     await withScenes([scene], async () => {
       const moved = await syncCommandVehicleTokenToPosition(position(), { activeSectorId: 'sec-1' });
       expect(moved).toBe(token);
-      expect(token.update).toHaveBeenCalledWith({ x: 700, y: 500 });
+      // POSITION_SYNC_OPTION marks the move as a fiction→token sync so the
+      // token hooks don't treat it as a drag or a position statement.
+      expect(token.update).toHaveBeenCalledWith({ x: 700, y: 500 }, { sfcPositionSync: true });
     });
   });
 
@@ -381,7 +387,7 @@ describe('syncCommandVehicleTokenToPosition', () => {
     await withScenes([a.scene, b.scene], async () => {
       await syncCommandVehicleTokenToPosition(position(), {});
       expect(a.token.update).not.toHaveBeenCalled();
-      expect(b.token.update).toHaveBeenCalledWith({ x: 700, y: 500 });
+      expect(b.token.update).toHaveBeenCalledWith({ x: 700, y: 500 }, { sfcPositionSync: true });
     });
   });
 
@@ -428,5 +434,159 @@ describe('findSettlementNoteById', () => {
   it('returns null without a settlement id or scene', () => {
     expect(findSettlementNoteById(null, 'x')).toBeNull();
     expect(findSettlementNoteById({ notes: { contents: [] } }, null)).toBeNull();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token → position (v1.7.10 finding #5: the map is authoritative when a
+// command-vehicle token sits on a sector scene)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleCommandVehicleTokenDrag — programmatic-sync guard', () => {
+  it('lets a POSITION_SYNC_OPTION move through without dispatching set_a_course', () => {
+    // Without the guard, the fiction→token sync's own update lands on a pin,
+    // gets cancelled here, and dispatches a second synthetic set_a_course.
+    const scene = makeSectorScene({ notes: [makeSettlementNote('s1', 100, 100)] });
+    const result = handleCommandVehicleTokenDrag(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 100, y: 100 },
+      { [POSITION_SYNC_OPTION]: true },
+    );
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('findSettlementNoteById — id spaces', () => {
+  it('matches a pin by its actorId flag (token-derived records)', () => {
+    const pin = {
+      x: 1, y: 2,
+      flags: { [MODULE_ID]: { settlementId: 'gen-1', actorId: 'actor-astra' } },
+    };
+    const scene = { notes: { contents: [pin] } };
+    expect(findSettlementNoteById(scene, 'actor-astra')).toBe(pin);
+    expect(findSettlementNoteById(scene, 'gen-1')).toBe(pin);   // legacy id space
+    expect(findSettlementNoteById(scene, 'unknown')).toBeNull();
+  });
+});
+
+describe('computeTokenPositionRecord', () => {
+  it('associates with the nearest settlement pin and prefers its actorId', () => {
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 100, 100, 'Astra', { actorId: 'actor-astra' })],
+    });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+
+    const p = computeTokenPositionRecord(scene, 150, 150);
+    expect(p.nearestSettlementId).toBe('actor-astra');
+    expect(p.freeText).toBe('Astra');              // pin label keeps the line readable
+    expect(p.sectorId).toBe('sec-fc');
+    expect(p.updatedBy).toBe('scene_token');
+  });
+
+  it('falls back to the generator settlementId on legacy pins without actorId', () => {
+    const scene = makeSectorScene({ notes: [makeSettlementNote('gen-1', 100, 100, 'Lyra')] });
+    const p = computeTokenPositionRecord(scene, 120, 120);
+    expect(p.nearestSettlementId).toBe('gen-1');
+  });
+
+  it('records honest deep space when no pin is within the near radius', () => {
+    // Near radius default: max(snap 1 × 3, 3) = 3 cells = 300px at grid 100.
+    const scene = makeSectorScene({ notes: [makeSettlementNote('gen-1', 1000, 1000, 'Lyra')] });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+
+    const p = computeTokenPositionRecord(scene, 100, 100);
+    expect(p.nearestSettlementId).toBeNull();
+    expect(p.freeText).toBe('deep space');
+    expect(p.sectorId).toBe('sec-fc');
+    expect(p.updatedBy).toBe('scene_token');
+  });
+});
+
+describe('token placement / reposition → position record write', () => {
+  function seedCommandVehicle(id = 'cv-actor') {
+    const ship = global.makeTestActor({
+      id, type: 'starship', name: 'Kobayashi 8',
+      flags: { [MODULE_ID]: { entityType: 'ship', ship: {
+        _id: 'rec-k8', name: 'Kobayashi 8', isCommandVehicle: true,
+      } } },
+    });
+    global.game.actors._set(id, ship);
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, { shipIds: [id] });
+    return ship;
+  }
+
+  function cvToken(scene, { x = 150, y = 150 } = {}) {
+    return { flags: { [MODULE_ID]: { commandVehicle: true } }, x, y, parent: scene };
+  }
+
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.settings._store.clear();
+  });
+
+  it('placement on a sector scene writes the position from the token coords', async () => {
+    const ship = seedCommandVehicle();
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 100, 100, 'Astra', { actorId: 'actor-astra' })],
+    });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+
+    await handleCommandVehicleTokenPlacement(cvToken(scene), {}, 'test-user-gm');
+
+    const pos = ship.flags[MODULE_ID].ship.position;
+    expect(pos?.nearestSettlementId).toBe('actor-astra');
+    expect(pos?.updatedBy).toBe('scene_token');
+  });
+
+  it('an off-pin reposition records deep space', async () => {
+    const ship = seedCommandVehicle();
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 2000, 2000, 'Astra', { actorId: 'actor-astra' })],
+    });
+
+    await handleCommandVehicleTokenReposition(cvToken(scene, { x: 100, y: 100 }), { x: 100 }, {}, 'u');
+
+    const pos = ship.flags[MODULE_ID].ship.position;
+    expect(pos?.nearestSettlementId).toBeNull();
+    expect(pos?.freeText).toBe('deep space');
+  });
+
+  it('skips programmatic syncs, non-sector scenes, and no-op diffs', async () => {
+    const ship = seedCommandVehicle();
+    const sector = makeSectorScene({ notes: [] });
+    const plain  = { flags: { [MODULE_ID]: {} }, notes: [] };
+
+    await handleCommandVehicleTokenPlacement(cvToken(sector), { [POSITION_SYNC_OPTION]: true }, 'u');
+    await handleCommandVehicleTokenPlacement(cvToken(plain), {}, 'u');
+    await handleCommandVehicleTokenReposition(cvToken(sector), { name: 'renamed' }, {}, 'u');
+
+    expect(ship.flags[MODULE_ID].ship.position).toBeUndefined();
+  });
+
+  it('skips the write when the feature is disabled', async () => {
+    const ship = seedCommandVehicle();
+    global.game.settings._store.set(`${MODULE_ID}.factContinuity.shipPositioning`, false);
+    const scene = makeSectorScene({ notes: [] });
+
+    await handleCommandVehicleTokenPlacement(cvToken(scene), {}, 'u');
+
+    expect(ship.flags[MODULE_ID].ship.position).toBeUndefined();
+  });
+
+  it('does not churn the record when the recomputed position matches', async () => {
+    const ship = seedCommandVehicle();
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 100, 100, 'Astra', { actorId: 'actor-astra' })],
+    });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+
+    await handleCommandVehicleTokenPlacement(cvToken(scene), {}, 'u');
+    const first = ship.flags[MODULE_ID].ship.position;
+    expect(first?.nearestSettlementId).toBe('actor-astra');
+
+    await handleCommandVehicleTokenReposition(cvToken(scene, { x: 160, y: 160 }), { x: 160 }, {}, 'u');
+    // Same settlement, same sector — the record object is left untouched.
+    expect(ship.flags[MODULE_ID].ship.position).toBe(first);
   });
 });

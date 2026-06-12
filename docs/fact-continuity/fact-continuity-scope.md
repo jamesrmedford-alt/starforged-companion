@@ -23,6 +23,22 @@
 > sidecar emission when prose moves the ship, `finish_an_expedition`
 > arrival wiring (with the new `expedition` provenance value), and
 > tolerant destination-name matching in `inferShipPosition`.
+>
+> **2026-06-12 addendum (v1.7.10 playtest F5).** §20 is now **token-
+> authoritative when a command-vehicle token sits on a sector Scene**:
+> `createToken`/`updateToken` hooks write the position record from token
+> coordinates (`updatedBy: "scene_token"`; nearest pin within 3× snap
+> radius, else "deep space"); programmatic token moves carry the
+> `POSITION_SYNC_OPTION` update option so the hooks skip the module's own
+> syncs. The playtest also surfaced that the §20 write path had never fired
+> live — `updateShip` was called with the record GUID instead of the Actor
+> id (fixed via `getCommandVehicleActorId`), and resolution/lookup read
+> phantom `campaignState.settlements` arrays (now registry-backed,
+> document-first). Fallbacks when no token exists: REQUIRED starting-
+> position emission in inciting_incident mode, and an explicit "not yet
+> established — do NOT assert or invent" prompt line for empty records.
+> See decisions.md → "Ship position: a sector-map token is authoritative
+> when present".
 
 > **Pre-drafting verification (surfaced per packet instructions).** The
 > conceptual model in the source packet referenced `docs/private-channel-scope.md`

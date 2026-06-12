@@ -159,6 +159,7 @@ import {
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM }              from "./multiplayer/gmGate.js";
+import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
@@ -1047,6 +1048,53 @@ function registerActorHook() {
   });
 }
 
+
+// Actor-hosted entity typeKeys whose flag record denormalises `name`
+// (registry.js HOST_COLLECTION === 'actor'). Faction/creature are
+// journal-hosted and out of scope for the rename sync.
+const RENAME_SYNC_TYPES = new Set(["connection", "ship", "settlement", "planet", "location"]);
+
+/**
+ * Keep entity flag records in sync with Actor renames (v1.7.10 playtest
+ * finding #2). The Entities panel and narrator context read the record's
+ * denormalised `name`; before this hook, renaming an Actor in the sidebar
+ * left the registration-time snapshot in place ("Ship" after a rename to
+ * "Kobayashi 8") until a Finalise happened to rewrite it. Actor name is
+ * authoritative (matches seedStarshipActor / seedConnectionActor).
+ *
+ * Canonical-GM gated: updateActor fires on every connected client and the
+ * flag write is world-scoped — exactly one client should emit it. The echo
+ * update (flags only, no `name` key) fails the changes.name guard, so the
+ * hook cannot recurse. Drift that predates this hook is repaired at ready
+ * by syncEntityRecordNames (migrator.js).
+ *
+ * Exported for unit testing.
+ */
+export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) {
+  try {
+    const newName = changes?.name;
+    if (typeof newName !== "string" || !newName) return;
+    if (!isCanonicalGM()) return;
+
+    const entityType = actor?.flags?.[MODULE_ID]?.entityType;
+    if (!RENAME_SYNC_TYPES.has(entityType)) return;
+
+    const record = actor.flags?.[MODULE_ID]?.[entityType];
+    if (!record || record.name === newName) return;
+
+    actor.update({
+      [`flags.${MODULE_ID}.${entityType}.name`]:      newName,
+      [`flags.${MODULE_ID}.${entityType}.updatedAt`]: new Date().toISOString(),
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | rename sync hook threw:`, err?.message ?? err);
+  }
+}
+
+function registerEntityRenameSyncHook() {
+  Hooks.on("updateActor", syncEntityRecordNameOnUpdate);
+}
 
 /**
  * Register the `createActor` hook that oracle-seeds a freshly-created
@@ -2206,24 +2254,26 @@ export function resolveCurrentLocationName(name, campaignState) {
   if (!target) return null;
 
   const groups = [
-    ["settlement", campaignState?.settlementIds ?? [], "settlement"],
-    ["location",   campaignState?.locationIds   ?? [], "location"],
-    ["planet",     campaignState?.planetIds     ?? [], "planet"],
+    ["settlement", campaignState?.settlementIds ?? []],
+    ["location",   campaignState?.locationIds   ?? []],
+    ["planet",     campaignState?.planetIds     ?? []],
   ];
 
   // Two-pass match — exact name first, then prefix, then substring.
+  // Reads go through the entity registry: settlements/locations/planets are
+  // Actor-hosted post-migration, and the original journal-page read here
+  // never matched them — `!at <settlement>` reported "not found" for every
+  // sector-created place (v1.7.10 finding #5 fallout).
   const candidates = [];
-  for (const [type, ids, flagKey] of groups) {
-    for (const journalId of ids) {
+  for (const [type, ids] of groups) {
+    for (const id of ids) {
       try {
-        const entry = game.journal?.get(journalId);
-        const page  = entry?.pages?.contents?.[0];
-        const data  = page?.flags?.[MODULE_ID]?.[flagKey];
+        const data = readEntityFlag(type, getEntityDocument(type, id));
         if (data?.name) {
-          candidates.push({ id: journalId, type, entity: data, lc: data.name.toLowerCase() });
+          candidates.push({ id, type, entity: data, lc: data.name.toLowerCase() });
         }
       } catch (err) {
-        console.warn(`${MODULE_ID} | resolveCurrentLocationName: ${type} ${journalId} failed:`, err);
+        console.warn(`${MODULE_ID} | resolveCurrentLocationName: ${type} ${id} failed:`, err);
       }
     }
   }
@@ -2337,11 +2387,13 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
   if (!game.user?.isGM) return null;            // world-scoped write — GM only
 
   try {
-    const { getCommandVehicle, updateShip } = await import("./entities/ship.js");
-    const cv = getCommandVehicle(campaignState);
-    if (!cv?._id) return null;
+    const { getCommandVehicleActorId, updateShip } = await import("./entities/ship.js");
+    // updateShip resolves by Actor id — the record's `_id` is a module GUID
+    // and threw "Ship actor not found" on every write here (finding #5).
+    const cvActorId = getCommandVehicleActorId(campaignState);
+    if (!cvActorId) return null;
     const position = inferShipPosition(ref, campaignState, { source });
-    await updateShip(cv._id, { position });
+    await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction: move the sector-scene Token
     // to the new position. The drag path already moved its own Token
@@ -2656,7 +2708,7 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors }) => {
+    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -2686,11 +2738,34 @@ Hooks.once("ready", () => {
       } catch (err) {
         console.warn(`${MODULE_ID} | connection migration failed:`, err?.message ?? err);
       }
+      try {
+        // v1.7.10 findings #1/#4 — pin the Starforged sheet on pre-existing
+        // NPC cards (runs after the journal migration so migrated cards are
+        // covered in the same pass).
+        const sheets = await backfillNpcCardSheets();
+        if (sheets.updated) {
+          console.log(`${MODULE_ID} | NPC-card sheet backfill: pinned Starforged sheet on ${sheets.updated} card(s)`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | NPC-card sheet backfill failed:`, err?.message ?? err);
+      }
+      try {
+        // v1.7.10 finding #2 — reconcile entity record names with Actor
+        // renames that happened before the live sync hook existed.
+        const state = game.settings.get(MODULE_ID, "campaignState");
+        const names = await syncEntityRecordNames(state);
+        if (names.synced) {
+          console.log(`${MODULE_ID} | entity name sync: reconciled ${names.synced} record(s) to their Actor names`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | entity name sync failed:`, err?.message ?? err);
+      }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }
 
   registerChatHook();
   registerActorHook();
+  registerEntityRenameSyncHook();
   registerStarshipSeedHook();
   registerCommandVehicleHook();
   registerProgressTrackHooks();
