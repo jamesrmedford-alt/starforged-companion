@@ -480,7 +480,7 @@ export async function registerStarshipActorLight(actor, campaignState) {
 
   return ship;
 }
-export async function seedStarshipActor(actor, campaignState) {
+export async function seedStarshipActor(actor, campaignState, opts = {}) {
   if (!actor || actor.type !== "starship") return null;
 
   // Dynamic imports keep this file's static import graph small and avoid
@@ -571,9 +571,11 @@ export async function seedStarshipActor(actor, campaignState) {
   // starforgedassets compendium and embeds it on the actor. Failures here are
   // non-fatal — a missing compendium, an offline Forge, or a pack-index miss
   // logs and continues without aborting the rest of the seed.
-  await installModulesForRolledIdentity(actor, {
-    type: ship.type, firstLook: ship.firstLook, mission: ship.mission,
-  }).catch(err =>
+  await installModulesForRolledIdentity(
+    actor,
+    { type: ship.type, firstLook: ship.firstLook, mission: ship.mission },
+    Number.isFinite(opts.moduleLimit) ? { limit: opts.moduleLimit } : {},
+  ).catch(err =>
     console.warn(`${MODULE_ID} | seedStarshipActor: module install failed:`, err?.message ?? err));
 
   // Silent portrait — gated on OpenRouter key. Failures stay silent.
@@ -606,7 +608,7 @@ export async function seedStarshipActor(actor, campaignState) {
  * @param {{ type?: string, firstLook?: string, mission?: string }} rolls
  * @returns {Promise<number>} — number of modules actually installed
  */
-export async function installModulesForRolledIdentity(actor, rolls) {
+export async function installModulesForRolledIdentity(actor, rolls, opts = {}) {
   if (!actor || actor.type !== "starship") return 0;
 
   // Idempotency gate — bail if any Module-category asset is already present.
@@ -616,7 +618,10 @@ export async function installModulesForRolledIdentity(actor, rolls) {
   if (hasModule) return 0;
 
   const { pickModulesForRolledIdentity } = await import("./starshipModules.js");
-  const slugs = pickModulesForRolledIdentity(rolls);
+  const slugs = pickModulesForRolledIdentity(
+    rolls,
+    Number.isFinite(opts.limit) ? { limit: opts.limit } : {},
+  );
   if (slugs.length === 0) return 0;
 
   const { getCanonicalAsset } = await import("../system/ironswornPacks.js");
