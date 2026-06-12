@@ -277,12 +277,24 @@ regressions, all are known scope cuts:
    NPCs are covered via the relevance union instead. If a case appears where
    an entity-keyed entry has no card match and no mention, bridge by
    reverse-resolving frame names against the roster inside the block builder.
-5. **Cluster C shipped (2026-06-10).** Ship-position sidecar emission is
-   now REQUIRED on ship movement, and every fiction-side position write
-   moves the sector-scene Token (`syncCommandVehicleTokenToPosition`).
-   Remaining refinement: free-text positions don't move the Token (no pin
-   to anchor to) — a "position uncertain" Token badge is the open idea if
-   playtests want the map to signal approximate positions.
+5. **Cluster C shipped (2026-06-10); completed by the v1.7.10 F5 fixes
+   (2026-06-12).** Ship-position sidecar emission is REQUIRED on ship
+   movement, and every fiction-side position write moves the sector-scene
+   Token (`syncCommandVehicleTokenToPosition`). The v1.7.10 playtest found
+   the write path had never actually fired (updateShip was called with the
+   record GUID instead of the Actor id; the name index read phantom
+   `campaignState.settlements` arrays) and that nothing seeded an initial
+   position. Now: a command-vehicle token on a sector scene is
+   **authoritative** — `createToken`/`updateToken` hooks write the §20
+   record from token coordinates (`updatedBy: "scene_token"`); programmatic
+   syncs carry the `POSITION_SYNC_OPTION` update option so the hooks ignore
+   the module's own moves; the inciting incident REQUIRES a starting
+   `ship/position` emission; and an empty record renders an explicit
+   *"SHIP POSITION: not yet established — do NOT assert or invent"* guard
+   line instead of nothing (see decisions.md → "Ship position: a sector-map
+   token is authoritative when present"). Remaining refinement: free-text
+   positions still don't move the Token (no pin to anchor to) — the
+   "position uncertain" Token badge stays the open idea.
 6. **A4 escalation — rolling compressed scene summary.** If frame + ledger +
    deeper ring still lose long multi-scene threads, the next step is a
    maintained prose summary (one Haiku call per N turns), replacing raw

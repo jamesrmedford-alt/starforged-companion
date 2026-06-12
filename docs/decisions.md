@@ -561,3 +561,58 @@ workaround and went author-based only; this supersedes that framing.
 `docs/foundry-reference/foundry-api-reference.md` (ChatMessage section) with
 provenance from the pinned foundry-ironsworn source; live Quench assertions
 pin `getSpeaker({actor})` round-tripping the id and the non-PC fall-through.
+
+---
+
+## Ship position: a sector-map token is authoritative when present (2026-06-12)
+
+**Decision (maintainer, v1.7.10 playtest):** when a command-vehicle token
+sits on a sector Scene, the map IS the position statement — placement and
+off-pin repositions write the §20 position record from the token's actual
+coordinates (`createToken`/`updateToken` hooks in `sectorSceneHooks.js`:
+nearest settlement pin within 3× snap radius → "near <settlement>", else
+"deep space"). When no token exists, fiction-side fallbacks apply: the
+inciting incident must emit a starting `ship/position` sidecar change, and
+an empty record injects an explicit "not yet established — do not invent"
+guard line into the narrator prompt rather than silence.
+
+**Reporter's framing (verbatim):** *"The token was positioned on the sector.
+In that instance, it's position should be known. It sounds like there is a
+missing hook for placing it on the sector, that then populates the value. If
+it isn't on the sector, then the above fallbacks sound great."*
+
+**This refines (does not reverse) Cluster C's "the map follows the fiction":**
+both directions now write, disambiguated by provenance — fiction-side writes
+sync the token (existing), token-side writes record position
+(`updatedBy: "scene_token"`), and every programmatic token move carries the
+`POSITION_SYNC_OPTION` update option so the hooks never mistake the module's
+own syncs for player statements (without it, the sync's own update would
+re-enter the drag handler and dispatch a duplicate set_a_course).
+
+**Boundary kept deliberately:** dropping the token ON a pin (snap radius)
+still routes through the Set a Course move — travel under stakes costs a
+roll; an off-pin drop is a position note with no move mechanics. The radius
+split is the predictable rule for which is which.
+
+**Rejected:**
+- *Snap-back on off-pin drags* — punishes the common "park the ship near X"
+  gesture and leaves the record empty.
+- *Treating the token as a pure mirror (status quo)* — guaranteed the
+  narrator and the map could both be confidently wrong in different
+  directions, which is exactly the playtest failure.
+
+---
+
+## NPC cards pin the Starforged character sheet (2026-06-12)
+
+**Decision:** every NPC-card Actor the module creates carries
+`flags.core.sheetClass = 'ironsworn.StarforgedCharacterSheet'`
+(`STARFORGED_CHARACTER_SHEET` in `connection.js`), and a ready-time repair
+pins existing cards that have no explicit override. foundry-ironsworn's
+default sheet for `character` actors is the **classic Ironsworn** sheet
+(`makeDefault: true` in vendor `src/index.ts`); the system's own Starforged
+create-dialog pins the override per actor, and we must do the same. This is
+not cosmetic: the classic sheet's Notes tab binds `system.biography`, so the
+seeded portrait + narrator intro (written to `system.notes`) render nowhere
+on an unpinned card (v1.7.10 findings F1/F4). Cards a GM deliberately
+re-sheeted are left alone; PCs are never touched (entityType flag gate).

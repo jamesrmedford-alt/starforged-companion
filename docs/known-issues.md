@@ -86,6 +86,32 @@ switch are GM-only by design.
 
 ## Resolved issues
 
+### PLAYTEST-1710 — v1.7.10 playtest follow-ups (NPC sheet, name drift, stellar variety, ship position) ✓
+
+**Status:** Resolved on `claude/admiring-carson-qlzr7h` (v1.7.11). Five
+findings, full write-up in `docs/testing/v1.7.10-playtest-findings.md`:
+
+- **NPC cards opened with the classic Ironsworn sheet** (F1, causing F4's
+  invisible portrait/intro — the classic sheet's Notes tab binds
+  `system.biography`, not `system.notes`). NPC-card creation now pins
+  `core.sheetClass` to the Starforged sheet; ready-time backfill repairs
+  existing cards.
+- **Actor renames didn't propagate to entity records** (F2) — panel and
+  narrator context kept the registration-time name snapshot. Live
+  `updateActor` sync + ready-time reconciliation; panel prefers the host
+  document name.
+- **Every star in a sector was identical** (F3) — the v1.7.1 F7 fix rolled
+  STELLAR_OBJECT once per sector. Restored per-settlement rolls.
+- **`@scene where am I` invented a location** (F5) — no initial position was
+  ever seeded AND the entire §20 write/resolve chain was dormant-broken
+  (record-GUID-vs-actor-id updateShip calls, phantom
+  `campaignState.settlements` reads, journal-only `!at` resolution, a latent
+  sync→drag-handler loop). A command-vehicle token on a sector scene is now
+  authoritative for position; inciting incident seeds the start; empty
+  records inject a "not yet established" guard line.
+
+---
+
 ### PLAYTEST-176 — v1.7.6 playtest follow-ups (NPC-as-character ripple + finalize-first) ✓
 
 **Status:** Resolved in v1.7.7 (unreleased). Four issues found playtesting v1.7.6,
