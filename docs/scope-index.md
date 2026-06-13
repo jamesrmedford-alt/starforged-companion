@@ -1,7 +1,7 @@
 # Starforged Companion — Scope Index
 
 Single-glance status of all features. Start here every session to orient quickly.
-For detail on any scope, open the linked document. Latest release tag: **v1.7.10**.
+For detail on any scope, open the linked document. Latest release tag: **v1.7.11**.
 
 ---
 

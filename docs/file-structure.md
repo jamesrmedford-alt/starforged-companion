@@ -123,8 +123,9 @@ developer-only and excluded from the release.
 | `interpreter.js` | Claude call: narration → move identification + stat injection. |
 | `resolver.js` | Dice rolling, outcome calc, and the `CONSEQUENCE_MAP` (arrow-function handlers per play-kit tables). |
 | `statEnrichment.js` | Fills `interpretation.statValue` from the actor's sheet. |
-| `abilityScanner.js` | Detects asset abilities applying to the chosen move; extracts `+N` adds. |
-| `burnMomentum.js` | Burn-momentum chat-card affordance. |
+| `abilityScanner.js` | Detects asset abilities applying to the chosen move; extracts `+N` adds, stat substitution, and (v1.7.11 finding G) post-roll result-improvement (`extractResultImprovement`) + the ability's own clock fields. |
+| `burnMomentum.js` | Burn-momentum chat-card affordance (post-roll outcome upgrade). |
+| `improveResult.js` | Post-roll "improve the result" affordance (v1.7.11 finding G) — e.g. Fugitive's improve-to-strong-hit. `buildImproveState` / `renderImproveButtonHtml` / `registerImproveResultHook`; upgrades the outcome, re-narrates, advances the asset ability's clock as the cost. Modelled on burnMomentum.js. |
 | `mischief.js` | Mischief dial framing (`normalizeDial()` bridge). |
 | `persistResolution.js` | Persists outcomes to Actor state + WJ (GM-gated — see PERSIST-001). |
 | `repair.js` | `!repair` point-spend dialog (integrity/modules/health). |
