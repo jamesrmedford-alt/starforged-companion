@@ -47,6 +47,13 @@ quo. So:
 - Meter/progress writes are world-scoped → **GM-gated** at the pipeline site
   (PERSIST-001). A `riders.autoApply` world setting (default on, GM-only) can
   disable the whole feature.
+- **Routing: GM-only, no per-player key.** Both the extraction call and the
+  application run inside the move pipeline, which is gated on `isCanonicalGM()`
+  (`src/index.js`, the `createChatMessage` handler — covered by
+  `chatHookGmGate.test.js`). So extraction uses the **GM's** client-scoped
+  `claudeApiKey` (the same key narration/interpretation use); non-GM players
+  never run it and never need a key. `extractRiders` has a single call site
+  inside that gated handler.
 
 ## Scope boundaries (deferred)
 

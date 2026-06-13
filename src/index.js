@@ -344,7 +344,7 @@ function registerCoreSettings() {
   // Optional/choice/ambiguous-progress riders still prompt. GM can disable.
   game.settings.register(MODULE_ID, "riders.autoApply", {
     name: "Auto-apply asset consequence riders",
-    hint: "When a move's outcome triggers an asset effect (e.g. +1 momentum on a strong hit), apply it automatically. Optional or 'choose one' effects ask first. Requires a Claude API key (the effects are read from the asset text).",
+    hint: "When a move's outcome triggers an asset effect (e.g. +1 momentum on a strong hit), apply it automatically. Optional or 'choose one' effects ask first. Effects are read from the asset text using the GM's Claude key (the same one narration uses, via the GM client) — players don't need their own key.",
     scope: "world", config: true, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
