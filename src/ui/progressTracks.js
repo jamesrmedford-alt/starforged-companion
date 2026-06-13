@@ -761,12 +761,23 @@ export async function addProgressTrack(data) {
 }
 
 /**
+ * List the current progress tracks (id / label / rank / type / ticks) for
+ * callers outside the panel — e.g. the consequence-rider track picker.
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number}>>}
+ */
+export async function listProgressTracks() {
+  const tracks = await loadTracks();
+  return tracks.map(t => ({
+    id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks,
+  }));
+}
+
+/**
  * Mark progress on a track by ID from outside the panel (e.g. move resolver).
  * @param {string} trackId
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function markProgressById(trackId) {
-  const tracks = await loadTracks();
+export async function markProgressById(trackId) {  const tracks = await loadTracks();
   const track = tracks.find(t => t.id === trackId);
   if (!track) return null;
 

@@ -88,7 +88,16 @@ import {
   openProgressTracks,
   registerProgressTrackHooks,
   getActiveCombatPosition,
+  listProgressTracks,
+  markProgressById,
 } from "./ui/progressTracks.js";
+import {
+  extractRiders,
+  collectFiringRiders,
+  partitionRiders,
+  applyMeterRiders,
+} from "./moves/consequenceRiders.js";
+import { promptRiders } from "./moves/riderDialog.js";
 
 import {
   openEntityPanel,
@@ -329,6 +338,14 @@ function registerCoreSettings() {
   game.settings.register(MODULE_ID, "audio.enabled", {
     name: "Audio narration enabled", scope: "world", config: false,
     type: Boolean, default: false,
+  });
+  // Auto-apply asset consequence riders (momentum/meters/integrity/progress
+  // from a move's outcome) so the player doesn't adjust resources by hand.
+  // Optional/choice/ambiguous-progress riders still prompt. GM can disable.
+  game.settings.register(MODULE_ID, "riders.autoApply", {
+    name: "Auto-apply asset consequence riders",
+    hint: "When a move's outcome triggers an asset effect (e.g. +1 momentum on a strong hit), apply it automatically. Optional or 'choose one' effects ask first. Requires a Claude API key (the effects are read from the asset text).",
+    scope: "world", config: true, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
     name: "Narrator voice ID", scope: "world", config: false,
@@ -841,6 +858,22 @@ export function registerChatHook() {
       });
       interpretation.applicableAbilities = applicableAbilities;
 
+      // Extract structured consequence riders from the applicable abilities now
+      // (pre-roll, during the confirm-dialog wait) so they're ready to apply the
+      // instant the outcome is known. No key / nothing applicable → []; the
+      // post-roll step then no-ops and the ability text is just surfaced.
+      interpretation.extractedRiders =
+        (game.settings.get(MODULE_ID, "riders.autoApply") !== false && applicableAbilities.length)
+          ? await extractRiders({
+              abilities: applicableAbilities,
+              moveName:  interpretation.moveName,
+              apiKey,
+            }).catch(err => {
+              console.warn(`${MODULE_ID} | rider extraction failed:`, err?.message ?? err);
+              return [];
+            })
+          : [];
+
       const accepted = await confirmInterpretation(interpretation);
       if (!accepted) return;
 
@@ -1023,6 +1056,13 @@ export function registerChatHook() {
             [`flags.${MODULE_ID}.improve.originalApplied`]: true,
           }).catch(err => console.warn(`${MODULE_ID} | improve metadata update failed:`, err));
         }
+
+        // Auto-apply asset consequence riders from this outcome — meters and
+        // progress — so the player never adjusts resources by hand. Runs after
+        // persistResolution so the move's own consequences land first; optional
+        // / choice / ambiguous-progress riders prompt. GM-gated (world writes).
+        await applyMoveConsequenceRiders(resolution, interpretation, campaignState, burnActor)
+          .catch(err => console.warn(`${MODULE_ID} | consequence riders failed:`, err?.message ?? err));
       }
 
     } catch (err) {
@@ -2507,6 +2547,71 @@ async function handleSectorCommand(message) {
  * Post the resolved move result to chat.
  * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
+/**
+ * Apply this outcome's asset consequence riders (consequence-riders feature).
+ * Automatic meter riders apply silently; optional / "choose one" / progress
+ * riders prompt. Progress marks resolve to the sole track when unambiguous,
+ * else the picker. Posts a summary of what was applied. GM-gated by the caller.
+ *
+ * @param {Object} resolution
+ * @param {Object} interpretation — carries extractedRiders from the pre-roll pass
+ * @param {Object} campaignState
+ * @param {Actor|null} characterActor
+ */
+async function applyMoveConsequenceRiders(resolution, interpretation, campaignState, characterActor) {
+  const extracted = interpretation?.extractedRiders;
+  if (!Array.isArray(extracted) || !extracted.length) return;
+
+  const firing = collectFiringRiders(extracted, resolution.outcome, resolution.isMatch);
+  if (!firing.length) return;
+
+  const { automatic, prompted } = partitionRiders(firing);
+  const shipActorId = getCommandVehicleActor(campaignState)?.id
+    ?? (await import("./entities/ship.js")).getCommandVehicleActorId?.(campaignState)
+    ?? null;
+
+  const appliedSummary = [];
+
+  // Automatic meter riders — apply immediately.
+  const autoApplied = await applyMeterRiders(automatic, { characterActor, shipActorId });
+  appliedSummary.push(...autoApplied);
+
+  // Progress riders: auto-mark when there's exactly one track (unambiguous),
+  // otherwise route to the picker with the rest of the prompted riders.
+  const tracks = await listProgressTracks().catch(() => []);
+  const promptList = [];
+  for (const r of prompted) {
+    if (r.resource === "progress" && tracks.length === 1) {
+      await markProgressById(tracks[0].id).catch(() => {});
+      appliedSummary.push({ label: `${r.label} → ${tracks[0].label}`, assetName: r.assetName });
+    } else {
+      promptList.push(r);
+    }
+  }
+
+  // Prompt for optional / choice / ambiguous-progress riders.
+  if (promptList.length) {
+    const { apply, progress } = await promptRiders(promptList, tracks);
+    const chosenMeters = await applyMeterRiders(apply.filter(r => r.resource !== "progress"),
+      { characterActor, shipActorId });
+    appliedSummary.push(...chosenMeters);
+    for (const { rider, trackId } of progress ?? []) {
+      const track = await markProgressById(trackId).catch(() => null);
+      if (track) appliedSummary.push({ label: `${rider.label} → ${track.label}`, assetName: rider.assetName });
+    }
+  }
+
+  if (appliedSummary.length) {
+    const rows = appliedSummary
+      .map(a => `<li>${a.label}${a.assetName ? ` <em>(${a.assetName})</em>` : ""}</li>`)
+      .join("");
+    await ChatMessage.create({
+      content: `<div class="sf-rider-summary"><strong>✦ Asset effects applied</strong><ul>${rows}</ul></div>`,
+      flags:   { [MODULE_ID]: { riderSummary: true } },
+    }).catch(err => console.warn(`${MODULE_ID} | rider summary card failed:`, err?.message ?? err));
+  }
+}
+
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null) {
   return ChatMessage.create({
     content: formatMoveResult(resolution, aside, burnState, improveState),
