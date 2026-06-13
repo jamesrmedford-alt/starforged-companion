@@ -680,3 +680,43 @@ captures an `initial` view (centred, fit-scale ≤ 1) so loading or resetting
 returns to the whole-map overview. The black padding buffer is invisible
 against the starfield background, so the "edge to edge" aesthetic the `0` was
 chosen for costs nothing to drop.
+
+---
+
+## Asset consequence riders are auto-applied (LLM-extracted) (2026-06-13)
+
+**Decision (v1.7.11 playtest follow-up):** asset effects that change a player's
+resources as a result of a move's outcome — "take +1 momentum on a strong hit",
+"suffer -1 supply", "mark progress on a hit", "choose one: +1 health or +1
+momentum" — are applied automatically so the player never manipulates meters by
+hand. The effects are read out of the free-text ability descriptions by a
+single Haiku extraction pass (the Foundry asset model has no structured effect
+data, and the phrasings are too compound/conditional for regex). Optional
+("you may"), "choose one", and ambiguous-progress riders prompt first;
+everything else applies silently. Full design: `docs/moves/consequence-riders-scope.md`.
+
+**Reason:** the maintainer's directive — "the user shouldn't have to manipulate
+stats or resources." The module already auto-applied the unambiguous hooks
+(pre-roll adds, stat substitution, post-roll improve); riders were the
+remaining manual surface. ~146 of the 93 assets' ability blocks carry a rider
+phrase, so manual application was a constant tax.
+
+**Safety stance (load-bearing):** a wrong auto-apply silently corrupts game
+state, which is worse than the manual status quo. Extraction is conservative
+and every rider is validated (known resource, small integer amount, known
+condition); on a missing key, parse failure, or transport error the pass yields
+nothing and the ability text is surfaced as before — the module never applies a
+guess. Writes are GM-gated (PERSIST-001); a `riders.autoApply` world setting
+(default on) disables the feature.
+
+**Rejected:**
+- *Regex extraction* — the phrasings ("on a strong hit with a match", "you
+  may", "choose one", compound "add +1 and take +1 momentum on a hit") are an
+  NLP problem; regex would misparse and silently misapply. The user chose LLM
+  extraction.
+- *Auto-marking progress without a picker* — which track is genuinely
+  ambiguous for most moves, so progress auto-marks only the single-track case
+  and prompts otherwise (the user's choice).
+- *A full per-asset rules engine for every effect (rerolls, ammo, roll-adds)* —
+  out of scope; those stay surfaced or handled by the existing pre-roll
+  scanner. The module assists; it isn't a complete automation engine.

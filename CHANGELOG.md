@@ -6,7 +6,9 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
-All seven items resolve the v1.7.11 playtest findings (`docs/testing/v1.7.11-playtest-findings.md`).
+- Added: **Asset effects apply themselves.** When a move's outcome triggers an asset's resource effect — "take +1 momentum on a strong hit", "suffer -1 supply", "mark progress on a hit" — the module now applies it for you instead of leaving you to adjust meters by hand. Optional ("you may…") and "choose one" effects ask first; everything unambiguous applies silently, with a "✦ Asset effects applied" card showing what landed. Effects are read from the asset's own text using the GM's Claude key (the same one narration uses — only the GM needs a key, players don't); anything it can't read cleanly is left for you to apply, exactly as before. A new GM setting (**Auto-apply asset consequence riders**, on by default) turns the whole thing off. Builds on the post-roll ✦ Improve to Strong Hit affordance — together they mean a move's mechanical bookkeeping (adds, stat swaps, outcome upgrades, and now consequence riders) is handled for you. (`docs/moves/consequence-riders-scope.md`.)
+
+The seven items below resolve the v1.7.11 playtest findings (`docs/testing/v1.7.11-playtest-findings.md`).
 
 - Fixed: **Quickstart characters use the Starforged sheet** (finding A). A PC created by ✦ Playtest Quickstart opened with the classic Ironsworn sheet, because quickstart bypasses the system's create-dialog that normally pins the Starforged one. Quickstart now pins it at creation, and the world-load repair that fixes NPC cards now fixes player characters too (sheets you deliberately changed are left alone).
 - Fixed: **NPC Characteristics no longer show raw HTML** (finding B). The seeded oracle details (First look / Disposition / Role / Goal) were written as HTML into the Characteristics box, which is a plain text field — so the markup showed literally. They're now plain text; the richer Notes tab is unchanged.
