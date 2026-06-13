@@ -25,6 +25,7 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { getCommandVehicleActorId } from "../entities/ship.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -117,7 +118,7 @@ export function handleSectorNoteClick(note) {
  * @returns {false|undefined} false to cancel; undefined to let through
  */
 export function handleCommandVehicleTokenDrag(tokenDoc, changes, options) {
-  if (!tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) return undefined;
+  if (!isCommandVehicleToken(tokenDoc)) return undefined;
   if (options?.[POSITION_SYNC_OPTION]) return undefined;   // our own sync — let through
 
   // Only fire for actual position changes, not other field edits.
@@ -334,8 +335,32 @@ async function writeTokenDerivedPosition(scene, x, y) {
 }
 
 /** Shared gating for the two token→position handlers. */
+/**
+ * Recognise the command-vehicle token by flag OR by actor identity. The
+ * module stamps `flags[MODULE].commandVehicle` on tokens it auto-places, but
+ * a GM dragging the ship actor from the sidebar creates a plain token with no
+ * flag (v1.7.11 finding C) — so the position machinery, drag-to-Set-a-Course,
+ * and fiction→token sync all ignored it. Resolving the token's actorId against
+ * the registered command vehicle catches that case. Pure read; never throws.
+ *
+ * @param {TokenDocument} tokenDoc
+ * @returns {boolean}
+ */
+export function isCommandVehicleToken(tokenDoc) {
+  if (tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) return true;
+  const actorId = tokenDoc?.actorId ?? tokenDoc?.actor?.id ?? null;
+  if (!actorId) return false;
+  try {
+    const state = game.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    return actorId === getCommandVehicleActorId(state);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | isCommandVehicleToken: resolve failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
 function tokenPositionWriteApplies(tokenDoc, options) {
-  if (!tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) return false;
+  if (!isCommandVehicleToken(tokenDoc)) return false;
   if (options?.[POSITION_SYNC_OPTION]) return false;   // fiction→token sync echo
   try {
     if (game.settings.get(MODULE_ID, "factContinuity.shipPositioning") === false) return false;
@@ -356,6 +381,17 @@ function tokenPositionWriteApplies(tokenDoc, options) {
 export function handleCommandVehicleTokenPlacement(tokenDoc, options, _userId) {
   if (!tokenPositionWriteApplies(tokenDoc, options)) return undefined;
   const scene = tokenDoc.parent ?? tokenDoc.scene;
+  // Stamp the flag when this token was recognised by actor identity alone
+  // (a sidebar drop, no flag). The fiction→token sync finds the token by
+  // flag, so without this a manually-placed token would never follow later
+  // story movement (finding C). Carries POSITION_SYNC_OPTION so the stamp
+  // doesn't re-enter the position hooks.
+  if (!tokenDoc?.flags?.[MODULE_ID]?.commandVehicle) {
+    tokenDoc.update?.(
+      { [`flags.${MODULE_ID}.commandVehicle`]: true },
+      { [POSITION_SYNC_OPTION]: true },
+    ).catch(err => console.debug?.(`${MODULE_ID} | command-vehicle flag stamp failed:`, err?.message ?? err));
+  }
   // Hooks ignore the return value; returning the promise lets tests await
   // the write deterministically.
   return writeTokenDerivedPosition(scene, tokenDoc.x, tokenDoc.y).catch(err =>

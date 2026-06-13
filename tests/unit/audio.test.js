@@ -47,6 +47,8 @@ import {
   audioEnabledForThisClient,
   claimAutoplayOnce,
   _resetAutoplayGuardForTests,
+  pronounsToVoiceKey,
+  resolveNpcVoiceForCard,
 } from '../../src/audio/index.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -663,5 +665,58 @@ describe('claimAutoplayOnce (F14)', () => {
     expect(claimAutoplayOnce('card-A')).toBe(true);
     _resetAutoplayGuardForTests();
     expect(claimAutoplayOnce('card-A')).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pronoun-keyed NPC voice (v1.7.11 finding F)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('pronounsToVoiceKey', () => {
+  it('maps pronoun sets to voice keys', () => {
+    expect(pronounsToVoiceKey('she/her')).toBe('feminine');
+    expect(pronounsToVoiceKey('he/him')).toBe('masculine');
+    expect(pronounsToVoiceKey('they/them')).toBe('neutral');
+    expect(pronounsToVoiceKey('')).toBe('neutral');
+  });
+});
+
+describe('resolveNpcVoiceForCard', () => {
+  const voices = {
+    npcVoiceId: 'DEFAULT',
+    npcVoiceByKey: { feminine: 'FEM', masculine: 'MASC', neutral: '' },
+  };
+
+  function connectionActor(id, pronouns) {
+    return global.makeTestActor({
+      id, type: 'character', name: id,
+      flags: { [MODULE_ID]: { entityType: 'connection', connection: { _id: id, name: id, pronouns } } },
+    });
+  }
+
+  beforeEach(() => { global.game.actors._reset(); });
+
+  it('falls back to the default NPC voice when the card has no matched entities', async () => {
+    const message = { flags: { [MODULE_ID]: {} } };
+    expect(await resolveNpcVoiceForCard(message, voices)).toBe('DEFAULT');
+  });
+
+  it('uses the pronoun-keyed voice for a single focal connection', async () => {
+    global.game.actors._set('npc-1', connectionActor('npc-1', 'she/her'));
+    const message = { flags: { [MODULE_ID]: { matchedEntityIds: ['npc-1'] } } };
+    expect(await resolveNpcVoiceForCard(message, voices)).toBe('FEM');
+  });
+
+  it('falls back when the matched gender voice is unset (neutral here)', async () => {
+    global.game.actors._set('npc-2', connectionActor('npc-2', 'they/them'));
+    const message = { flags: { [MODULE_ID]: { matchedEntityIds: ['npc-2'] } } };
+    expect(await resolveNpcVoiceForCard(message, voices)).toBe('DEFAULT');
+  });
+
+  it('falls back when matched connections disagree on gender', async () => {
+    global.game.actors._set('npc-3', connectionActor('npc-3', 'she/her'));
+    global.game.actors._set('npc-4', connectionActor('npc-4', 'he/him'));
+    const message = { flags: { [MODULE_ID]: { matchedEntityIds: ['npc-3', 'npc-4'] } } };
+    expect(await resolveNpcVoiceForCard(message, voices)).toBe('DEFAULT');
   });
 });

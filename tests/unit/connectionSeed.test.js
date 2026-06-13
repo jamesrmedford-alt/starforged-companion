@@ -7,7 +7,12 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { seedConnectionActor, connectionNeedsSeed } from "../../src/entities/connection.js";
+import {
+  seedConnectionActor,
+  connectionNeedsSeed,
+  pickConnectionPronouns,
+  pronounsToPortraitDescriptor,
+} from "../../src/entities/connection.js";
 
 const MODULE = "starforged-companion";
 
@@ -59,6 +64,37 @@ describe("seedConnectionActor", () => {
     expect(actor.flags[MODULE].connection.seeded).toBe(true);
   });
 
+  it("writes Characteristics as PLAIN TEXT — no HTML tags (v1.7.11 finding B)", async () => {
+    // The Starforged sheet renders system.biography in a plain <textarea>;
+    // HTML there shows as literal markup. (Notes is a rich-text field — HTML ok.)
+    const actor = npcCard();
+    await seedConnectionActor(actor, {});
+    expect(actor.system.biography).not.toMatch(/<[a-z/]/i);
+    expect(actor.system.biography).toMatch(/First look:/);
+  });
+
+  it("establishes pronouns once, on the record and system.pronouns (v1.7.11 finding E)", async () => {
+    const actor = npcCard();
+    const result = await seedConnectionActor(actor, {});
+    expect(["she/her", "he/him", "they/them"]).toContain(result.pronouns);
+    expect(actor.system.pronouns).toBe(result.pronouns);
+    expect(actor.flags[MODULE].connection.pronouns).toBe(result.pronouns);
+    // Surfaced in the plain-text Characteristics too.
+    expect(actor.system.biography).toMatch(/Pronouns:/);
+  });
+
+  it("preserves pronouns already set on the record", async () => {
+    const actor = npcCard({ pronouns: "they/them" });
+    const result = await seedConnectionActor(actor, {});
+    expect(result.pronouns).toBe("they/them");
+  });
+
+  it("leads the portrait source with a gender descriptor matching pronouns", async () => {
+    const actor = npcCard({ pronouns: "she/her" });
+    const result = await seedConnectionActor(actor, {});
+    expect(result.portraitSourceDescription.startsWith("a woman")).toBe(true);
+  });
+
   it("is idempotent — a seeded card is returned unchanged", async () => {
     const actor = npcCard();
     await seedConnectionActor(actor, {});
@@ -73,5 +109,20 @@ describe("seedConnectionActor", () => {
   it("returns null for a non-connection actor", async () => {
     const pc = global.makeTestActor({ type: "character", name: "PC" });
     expect(await seedConnectionActor(pc, {})).toBe(null);
+  });
+});
+
+describe("pickConnectionPronouns / pronounsToPortraitDescriptor (finding E)", () => {
+  it("picks a known pronoun set; rng selects deterministically", () => {
+    expect(pickConnectionPronouns(() => 0)).toBe("she/her");
+    expect(pickConnectionPronouns(() => 0.5)).toBe("he/him");
+    expect(pickConnectionPronouns(() => 0.99)).toBe("they/them");
+  });
+
+  it("maps pronouns to a portrait descriptor", () => {
+    expect(pronounsToPortraitDescriptor("she/her")).toBe("a woman");
+    expect(pronounsToPortraitDescriptor("he/him")).toBe("a man");
+    expect(pronounsToPortraitDescriptor("they/them")).toBe("a person");
+    expect(pronounsToPortraitDescriptor("")).toBe("a person");
   });
 });

@@ -155,3 +155,21 @@ describe('createSectorScene — Phase 3 entryId regression', () => {
     }
   });
 });
+
+describe('createSectorScene — camera (v1.7.11 finding D)', () => {
+  it('sets non-zero padding so the camera can pan/zoom (no longer trapped at the image edge)', async () => {
+    await createSectorScene(makeSector(), null, makeEntityActors());
+    const payload = global.Scene.create.mock.calls[0][0];
+    expect(payload.padding).toBeGreaterThan(0);
+  });
+
+  it('captures an initial view centred on the map at a fit scale ≤ 1', async () => {
+    await createSectorScene(makeSector(), null, makeEntityActors());
+    const payload = global.Scene.create.mock.calls[0][0];
+    expect(payload.initial).toBeTruthy();
+    expect(payload.initial.x).toBe(Math.round(payload.width  / 2));
+    expect(payload.initial.y).toBe(Math.round(payload.height / 2));
+    expect(payload.initial.scale).toBeGreaterThan(0);
+    expect(payload.initial.scale).toBeLessThanOrEqual(1);
+  });
+});

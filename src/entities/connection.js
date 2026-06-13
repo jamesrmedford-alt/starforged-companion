@@ -566,8 +566,13 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
   const firstLookEx = Array.isArray(existing.firstLook) ? existing.firstLook[0] : existing.firstLook;
   const firstLook   = firstLookEx || safeRoll(rollOracle, "character_first_look");
   const disposition = existing.disposition || safeRoll(rollOracle, "character_disposition");
+  // Establish pronouns once (finding E) — preserved if already set.
+  const pronouns    = existing.pronouns || pickConnectionPronouns();
 
-  const portraitSource = [firstLook, role, disposition].filter(Boolean).join(". ");
+  // Lead the portrait prompt with the gender descriptor so generated art
+  // matches the established pronouns rather than guessing from role/look.
+  const portraitSource = [pronounsToPortraitDescriptor(pronouns), firstLook, role, disposition]
+    .filter(Boolean).join(". ");
 
   const connection = {
     ...existing,
@@ -575,17 +580,21 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
     goal,
     firstLook:   firstLook ? [firstLook] : (Array.isArray(existing.firstLook) ? existing.firstLook : []),
     disposition,
+    pronouns,
     portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
     seeded:      true,
     updatedAt:   new Date().toISOString(),
   };
 
-  const biographyHtml = buildConnectionBiographyHtml({ role, goal, firstLook, disposition });
-  const notesHtml     = await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition });
+  // Characteristics is a plain <textarea> on the Starforged sheet — plain text
+  // only (finding B). Notes is a rich-text field — HTML there is fine.
+  const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, disposition, pronouns });
+  const notesHtml       = await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition, pronouns });
 
   try {
     await actor.update({
-      "system.biography":                 biographyHtml,
+      "system.biography":                 characteristics,
+      "system.pronouns":                  pronouns,
       "system.notes":                     notesHtml,
       [`flags.${MODULE_ID}.${FLAG_KEY}`]: connection,
       [`flags.${MODULE_ID}.entityType`]:  actor.flags?.[MODULE_ID]?.entityType ?? "connection",
@@ -611,12 +620,63 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
   return connection;
 }
 
+// Pronoun sets assigned to NPC cards at seed time (v1.7.10/v1.7.11 finding E).
+// Without an established gender, the art model and the narrator each invented
+// one independently and diverged (male-leaning portrait, "her" in prose). One
+// rolled value, stored on the record AND system.pronouns, anchors all surfaces
+// (art prompt, seeded Notes prose, live narrator context, audio voice).
+const CONNECTION_PRONOUN_SETS = ["she/her", "he/him", "they/them"];
+
 /**
- * Build the Characteristics-field (system.biography) HTML from the rolled
- * Character oracles. Empty string when nothing rolled.
+ * Pick a pronoun set for a new NPC. Equal weighting across the three common
+ * sets. Pure — `rng` is injectable for tests.
+ * @param {() => number} [rng]
+ * @returns {string} e.g. "she/her"
  */
-function buildConnectionBiographyHtml({ role, goal, firstLook, disposition }) {
+export function pickConnectionPronouns(rng = Math.random) {
+  const idx = Math.min(CONNECTION_PRONOUN_SETS.length - 1, Math.floor(rng() * CONNECTION_PRONOUN_SETS.length));
+  return CONNECTION_PRONOUN_SETS[idx];
+}
+
+/**
+ * A short presentation descriptor for the portrait prompt, derived from the
+ * pronoun set so generated art matches the established gender. Neutral sets
+ * yield "a person" rather than forcing an androgynous render.
+ * @param {string} pronouns
+ * @returns {string}
+ */
+export function pronounsToPortraitDescriptor(pronouns) {
+  const p = String(pronouns ?? "").toLowerCase();
+  if (p.startsWith("she")) return "a woman";
+  if (p.startsWith("he"))  return "a man";
+  return "a person";
+}
+
+/**
+ * Build the Characteristics-field (system.biography) value from the rolled
+ * Character oracles. PLAIN TEXT — the Starforged sheet renders Characteristics
+ * in a plain `<textarea>` bound to system.biography (sf-characterheader.vue),
+ * so HTML markup shows as literal tags (v1.7.11 playtest finding B). Empty
+ * string when nothing rolled.
+ */
+function buildConnectionCharacteristics({ role, goal, firstLook, disposition, pronouns }) {
   const lines = [];
+  if (pronouns)    lines.push(`Pronouns: ${pronouns}`);
+  if (firstLook)   lines.push(`First look: ${firstLook}`);
+  if (disposition) lines.push(`Initial disposition: ${disposition}`);
+  if (role)        lines.push(`Role: ${role}`);
+  if (goal)        lines.push(`Goal: ${goal}`);
+  return lines.join("\n");
+}
+
+/**
+ * HTML variant of the oracle-detail block, for the Notes tab (system.notes)
+ * fallback only — that field IS a rich-text editor, so markup renders. Never
+ * write this to system.biography (see buildConnectionCharacteristics).
+ */
+function buildConnectionDetailsHtml({ role, goal, firstLook, disposition, pronouns }) {
+  const lines = [];
+  if (pronouns)    lines.push(`<li><strong>Pronouns:</strong> ${escapeHtmlConn(pronouns)}</li>`);
   if (firstLook)   lines.push(`<li><strong>First look:</strong> ${escapeHtmlConn(firstLook)}</li>`);
   if (disposition) lines.push(`<li><strong>Initial disposition:</strong> ${escapeHtmlConn(disposition)}</li>`);
   if (role)        lines.push(`<li><strong>Role:</strong> ${escapeHtmlConn(role)}</li>`);
@@ -631,15 +691,15 @@ function buildConnectionBiographyHtml({ role, goal, firstLook, disposition }) {
  * introduction, then appends a compact fact line. Falls back to a plain oracle
  * bullet list when no Claude key is set or the call fails — never blocks seeding.
  */
-async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposition }) {
-  const facts = [firstLook, disposition, role, goal].filter(Boolean);
+async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposition, pronouns }) {
+  const facts = [pronouns, firstLook, disposition, role, goal].filter(Boolean);
   if (!facts.length) return "";
 
-  const prose = await generateConnectionIntroProse({ name, role, goal, firstLook, disposition })
+  const prose = await generateConnectionIntroProse({ name, role, goal, firstLook, disposition, pronouns })
     .catch(() => null);
 
   if (!prose) {
-    return buildConnectionBiographyHtml({ role, goal, firstLook, disposition });
+    return buildConnectionDetailsHtml({ role, goal, firstLook, disposition, pronouns });
   }
 
   const paras = prose
@@ -658,7 +718,7 @@ async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposi
  * key is set or the call yields nothing. All Anthropic traffic routes through
  * src/api-proxy.js per the architecture constraint in CLAUDE.md.
  */
-async function generateConnectionIntroProse({ name, role, goal, firstLook, disposition }) {
+async function generateConnectionIntroProse({ name, role, goal, firstLook, disposition, pronouns }) {
   const apiKey = readClaudeKeyConn();
   if (!apiKey) return null;
 
@@ -670,12 +730,13 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, dispo
     `You are the narrator for an Ironsworn: Starforged solo campaign. ` +
     `Tone: ${tone}. Write a short (2-3 sentence) atmospheric introduction to an ` +
     `NPC the player has just connected with, grounded ONLY in the oracle details ` +
-    `provided. Evocative but spare. Plain prose only — no headings, lists, or ` +
-    `markdown. Do not invent proper nouns, factions, or plot beyond what the ` +
-    `details imply.`;
+    `provided. Use the NPC's stated pronouns exactly. Evocative but spare. Plain ` +
+    `prose only — no headings, lists, or markdown. Do not invent proper nouns, ` +
+    `factions, or plot beyond what the details imply.`;
 
   const userMsg = [
     name        ? `Name: ${name}`                       : null,
+    pronouns    ? `Pronouns: ${pronouns}`               : null,
     firstLook   ? `First look: ${firstLook}`            : null,
     disposition ? `Initial disposition: ${disposition}` : null,
     role        ? `Role: ${role}`                       : null,

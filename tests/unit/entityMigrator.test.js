@@ -132,7 +132,7 @@ describe("migrateJournalConnectionsToActors", () => {
   });
 });
 
-describe("backfillNpcCardSheets (v1.7.10 findings #1/#4)", () => {
+describe("backfillNpcCardSheets (v1.7.10 findings #1/#4; v1.7.11 finding A)", () => {
   it("pins the Starforged sheet on NPC cards without a sheet override", async () => {
     global.game.actors._set("npc-1", global.makeTestActor({
       id: "npc-1", type: "character", name: "Patch Hawking",
@@ -146,15 +146,18 @@ describe("backfillNpcCardSheets (v1.7.10 findings #1/#4)", () => {
     expect(npc.flags.core?.sheetClass).toBe("ironsworn.StarforgedCharacterSheet");
   });
 
-  it("never touches PCs (character actors without the entityType flag)", async () => {
+  it("also pins PCs without a sheet override (v1.7.11 finding A — quickstart PCs)", async () => {
+    // The system defaults every character actor to the classic sheet; PCs
+    // created outside the create-dialog (Playtest Quickstart) miss the pin too.
     global.game.actors._set("pc-1", global.makeTestActor({
       id: "pc-1", type: "character", name: "Kayla Vayan", flags: {},
     }));
 
     const summary = await backfillNpcCardSheets();
 
-    expect(summary.updated).toBe(0);
-    expect(global.game.actors.get("pc-1").flags.core).toBeUndefined();
+    expect(summary.updated).toBe(1);
+    expect(global.game.actors.get("pc-1").flags.core?.sheetClass)
+      .toBe("ironsworn.StarforgedCharacterSheet");
   });
 
   it("leaves a deliberately re-sheeted card alone", async () => {

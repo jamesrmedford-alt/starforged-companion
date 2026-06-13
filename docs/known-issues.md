@@ -86,6 +86,33 @@ switch are GM-only by design.
 
 ## Resolved issues
 
+### PLAYTEST-1711 — v1.7.11 playtest follow-ups (quickstart sheet, HTML characteristics, ship token, camera, pronouns, voices, post-roll improve) ✓
+
+**Status:** Resolved on `claude/admiring-carson-qlzr7h` (v1.7.12). Seven
+findings, full write-up in `docs/testing/v1.7.11-playtest-findings.md`:
+
+- **A** — quickstart PC opened with the classic Ironsworn sheet (same class as
+  v1.7.10 NPC finding, new call site). Quickstart pins the Starforged sheet;
+  the ready-time backfill now repairs PCs too.
+- **B** — NPC Characteristics rendered raw HTML (the Starforged sheet's
+  Characteristics is a plain `<textarea>`). Now written as plain text; Notes
+  (rich-text) keeps HTML.
+- **C** — a ship token dragged from the sidebar was invisible to positioning
+  (all logic gated on a flag only the module's auto-placement set).
+  `isCommandVehicleToken` now recognises by actor identity; quickstart places
+  the ship after creating it.
+- **D** — sector map camera trapped by `padding: 0` (no pan/zoom-out). Restored
+  `0.1` padding + a captured initial view.
+- **E** — NPCs had no established gender, so art/narrator/audio guessed
+  independently. Pronouns are now rolled once and propagated to all surfaces.
+- **F** — audio used one NPC voice for everyone. Optional pronoun-keyed voices;
+  the focal NPC selects the matching voice (depends on E).
+- **G** — assets like Fugitive that improve a result post-roll had no way to be
+  applied. New post-roll **✦ Improve to Strong Hit** affordance modelled on Burn
+  Momentum, advancing the asset's clock as the cost.
+
+---
+
 ### PLAYTEST-1710 — v1.7.10 playtest follow-ups (NPC sheet, name drift, stellar variety, ship position) ✓
 
 **Status:** Resolved on `claude/admiring-carson-qlzr7h` (v1.7.11). Five

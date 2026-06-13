@@ -30,7 +30,12 @@ const SCENE_CONFIG = {
   gridHeight:   10,    // ceil(1024 / 100) — covers full image height
   sceneWidth:   1792,
   sceneHeight:  1024,
-  padding:      0,     // no padding — image fills the canvas edge to edge
+  // Camera slack (v1.7.11 finding D). padding is the buffer the canvas can
+  // pan/zoom into; `0` trapped the camera at the image edge — the player
+  // could zoom in but never pan or pull back to the full map. 0.1 restores a
+  // usable camera; the buffer is solid-black, matching the starfield. (The
+  // reference doc's scene example already used 0.1 — `0` was a regression.)
+  padding:      0.1,
 };
 
 
@@ -52,6 +57,20 @@ const SCENE_CONFIG = {
  */
 export async function createSectorScene(sector, backgroundPath, entityActors) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
+
+  // Captured initial view (finding D, option b): centre the map and zoom to
+  // show the whole padded scene on a modest viewport, so loading or resetting
+  // the scene always returns to the full overview rather than wherever a
+  // speaker-pan left the camera. Scale ≤ 1; derived from a reference width so
+  // the entire map is visible on essentially any screen (the player can zoom
+  // in from there — padding above gives the camera room to move).
+  const REFERENCE_VIEWPORT_W = 1600;
+  const initialScale = Math.min(1, REFERENCE_VIEWPORT_W / (sceneWidth * (1 + padding * 2)));
+  const initialView  = {
+    x:     Math.round(sceneWidth  / 2),
+    y:     Math.round(sceneHeight / 2),
+    scale: Number(initialScale.toFixed(3)),
+  };
 
   // Foundry v13 scene background.src requires a path from the server root.
   // FilePicker.upload returns a relative path (no leading slash); add one.
@@ -76,6 +95,7 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     fogExploration: false,
     globalLight:    false,
     padding,
+    initial:        initialView,
     flags: {
       [MODULE_ID]: {
         sectorScene: true,

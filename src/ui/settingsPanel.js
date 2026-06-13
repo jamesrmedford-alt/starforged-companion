@@ -897,6 +897,9 @@ export class SettingsPanelApp extends ApplicationV2 {
         enabled:         (() => { try { return game.settings.get(MODULE_ID, 'audio.enabled') === true; } catch { return false; } })(),
         narratorVoiceId: (() => { try { return game.settings.get(MODULE_ID, 'audio.narratorVoiceId') ?? ''; } catch { return ''; } })(),
         npcVoiceId:      (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceId') ?? ''; } catch { return ''; } })(),
+        npcVoiceFeminine:  (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceFeminine')  ?? ''; } catch { return ''; } })(),
+        npcVoiceMasculine: (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceMasculine') ?? ''; } catch { return ''; } })(),
+        npcVoiceNeutral:   (() => { try { return game.settings.get(MODULE_ID, 'audio.npcVoiceNeutral')   ?? ''; } catch { return ''; } })(),
         modelId:         (() => { try { return game.settings.get(MODULE_ID, 'audio.modelId') ?? 'eleven_flash_v2_5'; } catch { return 'eleven_flash_v2_5'; } })(),
         speed:           (() => { try { return Number(game.settings.get(MODULE_ID, 'audio.speed') ?? 1.0); } catch { return 1.0; } })(),
         clientEnabled:   (() => { try { return game.settings.get(MODULE_ID, 'audio.clientEnabled') === true; } catch { return false; } })(),
@@ -1282,10 +1285,28 @@ export class SettingsPanelApp extends ApplicationV2 {
                  placeholder="e.g. 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false">
         </div>
         <div class="settings-field">
-          <label class="settings-field-label" for="sf-audio-npc-voice">NPC voice ID</label>
+          <label class="settings-field-label" for="sf-audio-npc-voice">NPC voice ID (default)</label>
           <input class="settings-input" type="text" id="sf-audio-npc-voice"
                  name="audio.npcVoiceId" value="${escAttr(a.npcVoiceId)}"
                  placeholder="e.g. pNInz6obpgDQGcFmaJgB" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-npc-voice-fem">NPC voice — feminine (she/her)</label>
+          <input class="settings-input" type="text" id="sf-audio-npc-voice-fem"
+                 name="audio.npcVoiceFeminine" value="${escAttr(a.npcVoiceFeminine)}"
+                 placeholder="optional — falls back to default NPC voice" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-npc-voice-masc">NPC voice — masculine (he/him)</label>
+          <input class="settings-input" type="text" id="sf-audio-npc-voice-masc"
+                 name="audio.npcVoiceMasculine" value="${escAttr(a.npcVoiceMasculine)}"
+                 placeholder="optional — falls back to default NPC voice" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="sf-audio-npc-voice-neut">NPC voice — neutral (they/them)</label>
+          <input class="settings-input" type="text" id="sf-audio-npc-voice-neut"
+                 name="audio.npcVoiceNeutral" value="${escAttr(a.npcVoiceNeutral)}"
+                 placeholder="optional — falls back to default NPC voice" autocomplete="off" spellcheck="false">
         </div>
         <div class="settings-field">
           <label class="settings-field-label" for="sf-audio-model">Model</label>
@@ -1723,12 +1744,19 @@ export class SettingsPanelApp extends ApplicationV2 {
         const enabled       = !!panel.querySelector('[name="audio.enabled"]')?.checked;
         const narratorVoice = panel.querySelector('[name="audio.narratorVoiceId"]')?.value?.trim();
         const npcVoice      = panel.querySelector('[name="audio.npcVoiceId"]')?.value?.trim();
+        const npcVoiceFem   = panel.querySelector('[name="audio.npcVoiceFeminine"]')?.value?.trim()  ?? '';
+        const npcVoiceMasc  = panel.querySelector('[name="audio.npcVoiceMasculine"]')?.value?.trim() ?? '';
+        const npcVoiceNeut  = panel.querySelector('[name="audio.npcVoiceNeutral"]')?.value?.trim()   ?? '';
         const modelId       = panel.querySelector('[name="audio.modelId"]')?.value?.trim();
         const speed         = Number(panel.querySelector('[name="audio.speed"]')?.value);
 
         await game.settings.set(MODULE_ID, 'audio.enabled', enabled);
         if (narratorVoice) await game.settings.set(MODULE_ID, 'audio.narratorVoiceId', narratorVoice);
         if (npcVoice)      await game.settings.set(MODULE_ID, 'audio.npcVoiceId',      npcVoice);
+        // Pronoun-keyed voices persist even when empty (empty = fall back to default).
+        await game.settings.set(MODULE_ID, 'audio.npcVoiceFeminine',  npcVoiceFem);
+        await game.settings.set(MODULE_ID, 'audio.npcVoiceMasculine', npcVoiceMasc);
+        await game.settings.set(MODULE_ID, 'audio.npcVoiceNeutral',   npcVoiceNeut);
         if (modelId)       await game.settings.set(MODULE_ID, 'audio.modelId',         modelId);
         if (Number.isFinite(speed)) await game.settings.set(MODULE_ID, 'audio.speed', speed);
       }

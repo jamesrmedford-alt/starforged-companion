@@ -704,7 +704,11 @@ export async function backfillNpcCardSheets() {
   const actors = globalThis.game?.actors?.contents ?? [];
   for (const actor of actors) {
     if (actor?.type !== "character") continue;
-    if (actor.flags?.[MODULE_ID]?.entityType !== "connection") continue;
+    // v1.7.11 finding A: also cover PCs. foundry-ironsworn defaults every
+    // `character` actor to the classic Ironsworn sheet; PCs created outside
+    // the system's Starforged create-dialog (Playtest Quickstart) miss the
+    // pin too — not just NPC cards. Pin any character lacking an explicit
+    // sheet choice; an actor the GM deliberately re-sheeted is left alone.
     if (actor.flags?.core?.sheetClass) continue;   // explicit choice — keep
     try {
       await actor.update({ "flags.core.sheetClass": STARFORGED_CHARACTER_SHEET });

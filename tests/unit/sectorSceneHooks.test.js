@@ -19,6 +19,7 @@ import {
   computeTokenPositionRecord,
   handleCommandVehicleTokenPlacement,
   handleCommandVehicleTokenReposition,
+  isCommandVehicleToken,
   POSITION_SYNC_OPTION,
 } from '../../src/sectors/sectorSceneHooks.js';
 
@@ -588,5 +589,40 @@ describe('token placement / reposition → position record write', () => {
     await handleCommandVehicleTokenReposition(cvToken(scene, { x: 160, y: 160 }), { x: 160 }, {}, 'u');
     // Same settlement, same sector — the record object is left untouched.
     expect(ship.flags[MODULE_ID].ship.position).toBe(first);
+  });
+});
+
+describe('isCommandVehicleToken — recognise by flag OR actor identity (v1.7.11 finding C)', () => {
+  function seedCv(id = 'cv-actor') {
+    const ship = global.makeTestActor({
+      id, type: 'starship', name: 'Kobayashi 8',
+      flags: { [MODULE_ID]: { entityType: 'ship', ship: { _id: 'rec', name: 'Kobayashi 8', isCommandVehicle: true } } },
+    });
+    global.game.actors._set(id, ship);
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, { shipIds: [id] });
+  }
+
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.settings._store.clear();
+  });
+
+  it('recognises a token carrying the commandVehicle flag', () => {
+    expect(isCommandVehicleToken({ flags: { [MODULE_ID]: { commandVehicle: true } } })).toBe(true);
+  });
+
+  it('recognises a flagless token whose actorId is the command vehicle (sidebar drop)', () => {
+    seedCv('cv-actor');
+    expect(isCommandVehicleToken({ actorId: 'cv-actor', flags: {} })).toBe(true);
+  });
+
+  it('rejects a token for some other actor', () => {
+    seedCv('cv-actor');
+    expect(isCommandVehicleToken({ actorId: 'someone-else', flags: {} })).toBe(false);
+  });
+
+  it('rejects when there is no command vehicle and no flag (no throw)', () => {
+    expect(isCommandVehicleToken({ actorId: 'x', flags: {} })).toBe(false);
+    expect(isCommandVehicleToken({})).toBe(false);
   });
 });

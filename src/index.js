@@ -34,6 +34,11 @@ import {
   registerBurnMomentumHook,
 } from "./moves/burnMomentum.js";
 import {
+  buildImproveState,
+  renderImproveButtonHtml,
+  registerImproveResultHook,
+} from "./moves/improveResult.js";
+import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
@@ -332,6 +337,21 @@ function registerCoreSettings() {
   game.settings.register(MODULE_ID, "audio.npcVoiceId", {
     name: "NPC voice ID", scope: "world", config: false,
     type: String, default: "pNInz6obpgDQGcFmaJgB",
+  });
+  // Pronoun-keyed NPC voices (v1.7.11 finding F). When set, an NPC card's
+  // focal connection picks the voice matching its established pronouns;
+  // empty falls back to audio.npcVoiceId so existing worlds are unchanged.
+  game.settings.register(MODULE_ID, "audio.npcVoiceFeminine", {
+    name: "NPC voice — feminine (she/her)", scope: "world", config: false,
+    type: String, default: "",
+  });
+  game.settings.register(MODULE_ID, "audio.npcVoiceMasculine", {
+    name: "NPC voice — masculine (he/him)", scope: "world", config: false,
+    type: String, default: "",
+  });
+  game.settings.register(MODULE_ID, "audio.npcVoiceNeutral", {
+    name: "NPC voice — neutral (they/them)", scope: "world", config: false,
+    type: String, default: "",
   });
   game.settings.register(MODULE_ID, "audio.modelId", {
     name: "ElevenLabs model", scope: "world", config: false,
@@ -967,10 +987,15 @@ export function registerChatHook() {
       // the dice would actually improve under burn.
       const burnActor   = getPlayerActors()[0] ?? null;
       const burnState   = buildBurnState(resolution, burnActor);
+      // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
+      // "improve the result to a strong hit" at the cost of filling its clock.
+      // Driven by the same abilities surfaced pre-roll on the confirm dialog.
+      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor);
       const moveResultMessage = await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null,
         burnState,
+        improveState,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -989,6 +1014,14 @@ export function registerChatHook() {
           await moveResultMessage.update({
             [`flags.${MODULE_ID}.burn.originalApplied`]: true,
           }).catch(err => console.warn(`${MODULE_ID} | burn metadata update failed:`, err));
+        }
+        // Same flag for the improve affordance (finding G): once the original
+        // outcome's consequences are on the sheet, the click handler must diff
+        // against them rather than re-applying from zero.
+        if (improveState && moveResultMessage) {
+          await moveResultMessage.update({
+            [`flags.${MODULE_ID}.improve.originalApplied`]: true,
+          }).catch(err => console.warn(`${MODULE_ID} | improve metadata update failed:`, err));
         }
       }
 
@@ -2474,14 +2507,15 @@ async function handleSectorCommand(message) {
  * Post the resolved move result to chat.
  * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
-async function postMoveResult(resolution, aside = null, burnState = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null) {
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState),
+    content: formatMoveResult(resolution, aside, burnState, improveState),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
         ...(burnState ? { burn: burnState } : {}),
+        ...(improveState ? { improve: improveState } : {}),
       },
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
@@ -2492,7 +2526,7 @@ async function postMoveResult(resolution, aside = null, burnState = null) {
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -2520,6 +2554,7 @@ function formatMoveResult(resolution, aside = null, burnState = null) {
         ? `<div class="sf-move-aside">🎲 ${aside}</div>`
         : ""}
       ${renderBurnButtonHtml(burnState)}
+      ${renderImproveButtonHtml(improveState)}
     </div>
   `.trim();
 }
@@ -2779,6 +2814,11 @@ Hooks.once("ready", () => {
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
   registerSettingsHooks();
   registerBurnMomentumHook({
+    narrate:  narrateResolution,
+    persist:  persistResolution,
+    assemble: assembleContextPacket,
+  });
+  registerImproveResultHook({
     narrate:  narrateResolution,
     persist:  persistResolution,
     assemble: assembleContextPacket,

@@ -102,6 +102,11 @@ function readAssetAbilities(actor, source) {
         abilityIndex:  idx,
         abilityName:   ab.name ?? "",
         text:          text.slice(0, MAX_ABILITY_TEXT_CHARS),
+        // Per-ability clock (foundry-ironsworn AssetAbilityField) — the cost
+        // some post-roll abilities pay (e.g. Fugitive's 4-segment clock).
+        hasClock:      !!ab.hasClock,
+        clockTicks:    Number(ab.clockTicks ?? 0),
+        clockMax:      Number(ab.clockMax ?? 4),
       });
     });
   }
@@ -309,8 +314,39 @@ function annotate(detection) {
     // the structured path lands here with no such field, so derive it from
     // the ability text via the regex fallback.
     statReplacement: ab.statReplacement ?? extractStatReplacement(ab.text),
+    // Post-roll outcome improvement (v1.7.11 finding G) + the per-ability
+    // clock that is its cost. Pass these through so the post-roll affordance
+    // (improveResult.js) can offer the upgrade and advance the right clock.
+    resultImprovement: extractResultImprovement(ab.text),
+    hasClock:        !!ab.hasClock,
+    clockTicks:      Number(ab.clockTicks ?? 0),
+    clockMax:        Number(ab.clockMax ?? 4),
+    assetId:         ab.assetId ?? (typeof ab.key === "string" ? ab.key.split(":")[0] : null),
+    abilityIndex:    Number.isInteger(ab.abilityIndex)
+      ? ab.abilityIndex
+      : (typeof ab.key === "string" ? Number(ab.key.split(":")[1]) : null),
     detection,
   });
+}
+
+/**
+ * Detect a post-roll "improve the result" ability (v1.7.11 finding G).
+ * Fugitive: "you may improve the result to a strong hit." The cost (filling a
+ * clock) is carried separately via the ability's hasClock/clockMax. Returns
+ * the target outcome to upgrade to, or null when the text doesn't offer one.
+ *
+ * Conservative on purpose: only matches an explicit "improve … to a strong
+ * hit" phrasing, so it never fires on adds/reroll abilities.
+ *
+ * @param {string} text — plain-text ability description
+ * @returns {{ improveTo: "strong_hit" }|null}
+ */
+export function extractResultImprovement(text) {
+  const t = String(text ?? "").toLowerCase();
+  if (/\bimprove\b[^.]*\bto a strong hit\b/.test(t)) return { improveTo: "strong_hit" };
+  if (/\bcount\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
+  if (/\btreat\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
+  return null;
 }
 
 /**

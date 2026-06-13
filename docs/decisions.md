@@ -616,3 +616,67 @@ not cosmetic: the classic sheet's Notes tab binds `system.biography`, so the
 seeded portrait + narrator intro (written to `system.notes`) render nowhere
 on an unpinned card (v1.7.10 findings F1/F4). Cards a GM deliberately
 re-sheeted are left alone; PCs are never touched (entityType flag gate).
+
+---
+
+## NPC identity is established once and propagated (pronouns) (2026-06-13)
+
+**Decision (v1.7.11 playtest E/F):** an NPC card establishes its **pronouns**
+once, at seed time (`pickConnectionPronouns` → record `pronouns` + the sheet's
+`system.pronouns`), and that single value drives every downstream surface: the
+portrait prompt (`pronounsToPortraitDescriptor` → "a woman/man/person" leads the
+art description), the seeded Notes prose, the narrator entity card
+(`CANONICAL_FIELDS_BY_TYPE.connection` now lists `Pronouns`), and the audio NPC
+voice (`pronounsToVoiceKey` → the feminine/masculine/neutral voice settings).
+
+**Reason:** without an established gender, the art model, the narrator, and the
+audio layer each invented one independently and disagreed (male-presenting
+portrait, "her" in prose, a male voice). The fix is one source of truth, not
+three coincidentally-aligned guesses — the same "facts with homes get defended"
+principle as the narrator-memory work.
+
+**Rejected:**
+- *Per-segment speaker identity in audio* — the `<npc>` markup carries no
+  identity, and audio is applied per-card. The focal-connection heuristic
+  (single matched connection → its voice; ambiguous → default) covers the
+  common case without a narrator-prompt change; multi-NPC-per-card remains a
+  documented limitation.
+- *Forcing androgynous art for they/them* — "a person" lets the model choose;
+  only she/he bias the render.
+
+---
+
+## Post-roll "improve the result" affordance (2026-06-13)
+
+**Decision (v1.7.11 playtest G):** assets that improve a result *after* the roll
+at a cost (Fugitive: "improve the result to a strong hit, then fill a clock")
+get a post-roll button on the move-result card, modelled exactly on Burn
+Momentum (`src/moves/improveResult.js`). The pre-roll ability scanner stays
+pre-roll (it folds `+N` adds before the dice); this is its post-roll
+counterpart. The cost is the ability's own per-ability clock
+(foundry-ironsworn `AssetAbilityField` `hasClock`/`clockTicks`/`clockMax`),
+advanced one segment on use.
+
+**Reason:** the scanner correctly *highlighted* Fugitive pre-roll but there was
+no way to act on the dice afterward — the reporter could see the ability but not
+adjust the result. Burn Momentum already proved the post-roll pattern
+(re-resolve → re-narrate → supersede → re-persist); reusing it keeps one mental
+model for "change the result after the roll."
+
+**Scope (kept bounded, matching burn):** non-progress moves only; only an
+explicit "improve … to a strong hit" phrasing triggers it (never adds/reroll
+abilities); offered only when the rolled outcome is below a strong hit. The
+asset clock is advanced mechanically when present; a non-clock cost is surfaced
+as a card note for the player to apply.
+
+---
+
+## Sector scene padding: never zero (2026-06-13)
+
+**Decision (v1.7.11 playtest D):** sector scenes set `padding: 0.1`, never `0`.
+Padding is the camera's pan/zoom slack; `0` traps the camera at the image edge
+(zoom in works, but no pan and no zoom-back-out to the full map). The scene also
+captures an `initial` view (centred, fit-scale ≤ 1) so loading or resetting
+returns to the whole-map overview. The black padding buffer is invisible
+against the starfield background, so the "edge to edge" aesthetic the `0` was
+chosen for costs nothing to drop.
