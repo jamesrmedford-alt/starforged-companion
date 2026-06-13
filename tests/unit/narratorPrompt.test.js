@@ -543,6 +543,11 @@ describe('formatEntityCard', () => {
     expect(card).toContain('Connection');
   });
 
+  it('surfaces pronouns so the narrator uses them consistently (v1.7.11 finding E)', () => {
+    const card = formatEntityCard(makeConnection({ pronouns: 'she/her' }), 'connection');
+    expect(card).toMatch(/Pronouns: she\/her/);
+  });
+
   it('includes canonical fields', () => {
     const card = formatEntityCard(makeConnection(), 'connection');
     expect(card).toContain('Role: AI navigator');

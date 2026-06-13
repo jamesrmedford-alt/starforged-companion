@@ -581,6 +581,7 @@ const ENTITY_TYPE_LABELS = {
 
 const CANONICAL_FIELDS_BY_TYPE = {
   connection: [
+    ['pronouns',         'Pronouns'],
     ['role',             'Role'],
     ['secondRole',       'Also'],
     ['rank',             'Rank'],

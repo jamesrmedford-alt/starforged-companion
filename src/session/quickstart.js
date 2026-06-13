@@ -30,6 +30,8 @@ import * as CHARACTERS                        from "../oracles/tables/characters
 import { getOrCreateActorFolder }             from "../entities/folder.js";
 import { getCanonicalAsset, listCanonicalAssetsByCategory } from "../system/ironswornPacks.js";
 import { seedStarshipActor }                  from "../entities/ship.js";
+import { STARFORGED_CHARACTER_SHEET }         from "../entities/connection.js";
+import { placeCommandVehicleTokenIfPresent }  from "../sectors/sceneBuilder.js";
 
 const MODULE_ID = "starforged-companion";
 const REGIONS   = ["terminus", "outlands", "expanse"];
@@ -132,12 +134,14 @@ export async function runPlaytestQuickstart(opts = {}) {
   }
 
   // 2 — Sector (re-read state: storeWorldTruths persisted a new revision)
-  let sectorName = null;
+  let sectorName   = null;
+  let sector       = null;   // hoisted: phase 4b places the ship token on its scene
+  let storedSector = null;
   try {
     const region = REGIONS[Math.floor(Math.random() * REGIONS.length)];
-    const sector = generateSector(region);
-    const stored = await runSectorCreationPipeline(sector);
-    sectorName = stored?.name ?? sector.name;
+    sector = generateSector(region);
+    storedSector = await runSectorCreationPipeline(sector);
+    sectorName = storedSector?.name ?? sector.name;
     report("Sector", true, `${sectorName} (${sector.regionLabel}, ${sector.settlements?.length ?? 0} settlements)`);
   } catch (err) {
     console.error(`${MODULE_ID} | quickstart: sector failed:`, err);
@@ -171,6 +175,22 @@ export async function runPlaytestQuickstart(opts = {}) {
     report("Starship", false, err?.message ?? "failed");
   }
 
+  // 4b — Place the command-vehicle token on the sector map. The sector (phase
+  // 2) was built before the ship (phase 4) existed, so scene-build-time
+  // auto-placement found no command vehicle and placed nothing. Place it now
+  // so the world comes up with the ship on the map — and the createToken hook
+  // records its position, so "where am I" is grounded from the start (finding C).
+  try {
+    const scene = storedSector?.sceneId ? game.scenes?.get?.(storedSector.sceneId) : null;
+    if (sector && scene) {
+      const token = await placeCommandVehicleTokenIfPresent(scene, sector);
+      report("Ship token", !!token, token ? "placed on the sector map" : "not placed (no command vehicle / token affordance off)");
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | quickstart: command-vehicle token placement failed:`, err);
+    report("Ship token", false, err?.message ?? "failed");
+  }
+
   await postQuickstartSummary(phases, sectorName);
   return { phases };
 }
@@ -181,10 +201,14 @@ export async function runPlaytestQuickstart(opts = {}) {
  */
 async function createQuickstartPc() {
   const folder = await getOrCreateActorFolder("PCs").catch(() => null);
+  // Pin the Starforged sheet — the system defaults `character` actors to the
+  // classic Ironsworn sheet, and quickstart bypasses the create-dialog that
+  // would otherwise pin it (v1.7.11 finding A).
   const actor  = await Actor.create({
     name:   rollPcName(),
     type:   "character",
     folder: folder ?? null,
+    flags:  { core: { sheetClass: STARFORGED_CHARACTER_SHEET } },
   });
   if (!actor) throw new Error("Actor.create returned nothing for the PC");
 

@@ -89,9 +89,61 @@ function getVoiceConfig() {
   return {
     narratorVoiceId: getSetting("audio.narratorVoiceId", ""),
     npcVoiceId:      getSetting("audio.npcVoiceId", ""),
+    npcVoiceByKey:   {
+      feminine:  getSetting("audio.npcVoiceFeminine",  ""),
+      masculine: getSetting("audio.npcVoiceMasculine", ""),
+      neutral:   getSetting("audio.npcVoiceNeutral",   ""),
+    },
     modelId:         getSetting("audio.modelId", "eleven_flash_v2_5"),
     speed:           Number(getSetting("audio.speed", 1.0)) || 1.0,
   };
+}
+
+/**
+ * Map a pronoun set to a voice key (v1.7.11 finding F). Mirrors the
+ * portrait-descriptor mapping in connection.js so art and audio agree.
+ * @param {string} pronouns
+ * @returns {"feminine"|"masculine"|"neutral"}
+ */
+export function pronounsToVoiceKey(pronouns) {
+  const p = String(pronouns ?? "").toLowerCase();
+  if (p.startsWith("she")) return "feminine";
+  if (p.startsWith("he"))  return "masculine";
+  return "neutral";
+}
+
+/**
+ * Resolve the NPC voice for a card from its focal connection's pronouns
+ * (v1.7.11 finding F). A narrator card stamps `matchedEntityIds`; when those
+ * resolve to connection records sharing one gender, the matching pronoun-keyed
+ * voice is used. Mixed genders, no matched NPC, or an unset pronoun voice all
+ * fall back to the single `npcVoiceId` — so this is strictly an improvement
+ * over the prior one-voice-for-every-NPC behaviour, never a regression.
+ *
+ * @param {ChatMessage} message
+ * @param {ReturnType<typeof getVoiceConfig>} voices
+ * @returns {Promise<string>} the resolved NPC voice id
+ */
+export async function resolveNpcVoiceForCard(message, voices) {
+  const fallback = voices.npcVoiceId;
+  try {
+    const ids = message?.flags?.[MODULE_ID]?.matchedEntityIds;
+    if (!Array.isArray(ids) || !ids.length) return fallback;
+
+    const { getConnection } = await import("../entities/connection.js");
+    const keys = new Set();
+    for (const id of ids) {
+      const rec = getConnection(id);            // null for non-connection ids
+      if (rec?.pronouns) keys.add(pronounsToVoiceKey(rec.pronouns));
+    }
+    if (keys.size !== 1) return fallback;        // none, or ambiguous → fallback
+
+    const [key] = [...keys];
+    return voices.npcVoiceByKey?.[key] || fallback;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | resolveNpcVoiceForCard failed:`, err?.message ?? err);
+    return fallback;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,13 +155,14 @@ function getVoiceConfig() {
  * cache hits, generate misses, return `{ src, voice, text }` entries
  * in prose order.
  */
-async function buildPlayableSegments(prose) {
+async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
   const voices = getVoiceConfig();
+  const npcVoice = npcVoiceId || voices.npcVoiceId;   // caller may override per focal NPC (finding F)
   const parts  = splitSegments(prose);
   const out    = [];
   for (const p of parts) {
     const voiceId = p.voice === SEGMENT_VOICE.NPC
-      ? voices.npcVoiceId
+      ? npcVoice
       : voices.narratorVoiceId;
     if (!voiceId) {
       throw new Error(`audio: ${p.voice} voice ID is not configured`);
@@ -315,7 +368,9 @@ async function togglePlayback(message, btn, rawProse) {
 
   setButtonLabel(btn, "loading");
   try {
-    const segments = await buildPlayableSegments(rawProse);
+    // Pick the NPC voice from the card's focal connection pronouns (finding F).
+    const npcVoiceId = await resolveNpcVoiceForCard(message, getVoiceConfig());
+    const segments = await buildPlayableSegments(rawProse, { npcVoiceId });
     if (segments.length === 0) {
       setButtonLabel(btn, "idle");
       return;
