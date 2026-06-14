@@ -325,6 +325,32 @@ characters can be added to the narrator's working lore set mid-scene.
 
 ---
 
+#### P — Stale move-in-progress state persists across session reload and triggers spurious roll on first input
+
+**Symptom:** After the v1.7.12 session ended with the move lock stuck (finding
+M/N), the module was rolled back to v1.7.11 and the world reloaded. On the
+next login, the first chat message triggered an unwanted move roll
+automatically — the stuck state had survived the session end and the module
+version change.
+
+**Implication:** The move-in-progress lock is stored in a durable location
+(world-scoped `game.settings`, `campaignState`, or a Foundry flag) rather than
+in ephemeral module memory. This means a lock that isn't cleared on error
+(finding M) will persist indefinitely across reloads, server restarts, and
+even module version changes until something explicitly resets it.
+
+**Fix needed (two parts):**
+1. Clear the lock on both success and failure in the move pipeline (root fix
+   for M/N).
+2. Add a `ready`-hook reset of the lock so any stale persisted value is
+   cleared on world load — defence-in-depth against future stuck states.
+
+**Files to check:** wherever the move-in-progress flag is written — confirm
+whether it uses `game.settings`, `campaignState`, or a Foundry document flag,
+and add the `ready`-hook reset there.
+
+---
+
 #### L — Narrator invented ship-in-motion context when docked at a station
 
 **Symptom:** The party is docked at a station waiting to hand over a fugitive.
