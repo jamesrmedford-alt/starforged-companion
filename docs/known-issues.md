@@ -278,21 +278,22 @@ be marking cards handled without attaching the Roll listener).
 
 **Symptom:** Pacing telemetry continues to log decisions (`NARRATIVE`,
 `NARRATIVE_WITH_MOVE_AVAILABLE`) for player inputs, but no narrator chat card
-is posted. The pacing classifier is working; the downstream narrator call is
-either not firing or silently failing. Occurred mid-session after several cards
-had been posted normally.
+is posted. Instead, a **blue toast appears saying "a move is being resolved"**
+each time. The pacing classifier is working; the narrator call is being
+intercepted by a move-in-progress guard that never cleared.
 
-**Likely cause:** The narrator pipeline is throwing an unhandled error and
-silently returning — possible causes include an API call failure that isn't
-surfaced to chat, a context-assembly crash (e.g. missing actor data after
-finding F's PC-as-connection confusion), or a state flag left in a bad state
-by the first Roll button fire (finding M). The pacing path and the narrator
-call are separated enough that pacing still records its decision even when
-narration errors out.
+**Likely cause:** Strongly suggests the move-in-progress lock (set when the
+first Roll button was clicked in finding M) was never released — possibly
+because the move roll didn't complete cleanly (finding M: button went dead
+after first click). Every subsequent narrator call hits the "move in flight"
+guard, posts the toast, and returns early without generating a card. The
+pacing telemetry runs before this guard and is unaffected.
 
-**Files to check:** `src/narration/narrator.js` (`narratePacedInput` — the
-try/catch or error boundary); browser console for silent errors mid-session;
-confirm `campaignState` is still valid at the point narration is called.
+**Files to check:** `src/index.js` or `src/moves/pipeline.js` — the
+move-in-progress flag / lock variable and where it is cleared; confirm it is
+reset on both success AND failure/cancellation of a move roll. This is likely
+the root cause behind both M and N: a lock set on the first roll is never
+released.
 
 ---
 
