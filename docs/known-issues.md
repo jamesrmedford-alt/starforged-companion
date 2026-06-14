@@ -53,6 +53,31 @@ to that call includes all player actors.
 
 ---
 
+#### C — Vow card connection prompt doesn't create a draft entity for the GM
+
+**Symptom:** When a non-GM player swears a vow that involves a named NPC
+(here: "Administrator Lyssa Chen"), the vow result card correctly displays
+*"Ask your GM to add Administrator Lyssa Chen as a connection (GM-only write)"*
+— but no draft entity for that connection appears in the Entities panel. The GM
+has no actionable prompt; the connection must be created entirely manually.
+
+**Expected behaviour:** The vow resolution should emit a pending-connection
+draft card (same mechanism as entity detection from narration), or at minimum
+add a draft row to the Entities panel so the GM can confirm → create the
+connection in one click.
+
+**Likely cause:** The "GM-only write" fallback path in the vow consequence
+handler only posts the advisory text and returns — it doesn't call the entity
+extractor / draft pipeline that narration-detected entities go through. The
+connection name is available at that point but is never forwarded to
+`routeEntityDrafts` or `createConnection`.
+
+**Files to check:** `src/moves/resolver.js` (vow consequence, the branch that
+emits the advisory string), `src/entities/entityExtractor.js`
+(`routeEntityDrafts` / draft card emission).
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
