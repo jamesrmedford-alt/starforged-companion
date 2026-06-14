@@ -249,6 +249,28 @@ button click handler, GM gate on move dispatch); `src/moves/pipeline.js`
 
 ---
 
+#### L — Narrator invented ship-in-motion context when docked at a station
+
+**Symptom:** The party is docked at a station waiting to hand over a fugitive.
+The narrator wrote "if you turn this ship around — the Khatri syndicate
+doesn't leave witnesses when they collect bounties" — implying the ship is
+currently underway and could change course. The ship is stationary; no
+turn-around is possible.
+
+**Root cause:** The narrator prompt lacks the ship's current position/status
+(docked vs. in transit), so the model defaults to generic "ship in space"
+framing and invents movement context. PLAYTEST-1710 F5 established that the
+command-vehicle token on the sector scene is authoritative for position, but
+that position data may not be flowing into the paced-narration context here.
+
+**Files to check:** `src/narration/narrator.js` (`narratePacedInput` — does
+the CURRENT LOCATION / ship status block reach this path?);
+`src/context/assembler.js` (ship position assembly); confirm the
+`## CURRENT LOCATION` block is populated and injected for paced narration,
+not just move-resolution narration.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
