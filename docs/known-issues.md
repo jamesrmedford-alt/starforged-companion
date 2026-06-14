@@ -188,6 +188,30 @@ URL is a path all clients can fetch.
 
 ---
 
+#### I — NPC portrait gender doesn't match rolled pronouns
+
+**Symptom:** Administrator Lyssa Chen has pronouns "she/her" (rolled and
+written to the actor), but the generated portrait is a clearly
+masculine-presenting person. The pronoun is not informing the art prompt.
+
+**Context:** PLAYTEST-1711 E/F established that pronouns should be rolled once
+and propagated to art, narrator, and audio. The propagation to the narrator
+and audio voice appears to be working, but the art generation prompt is either
+not receiving the pronoun or not using it to steer the subject's presentation.
+
+**Likely cause:** The image prompt in `src/art/openRouterImage.js` (or the
+prompt assembled before calling it for NPC portraits) does not include a
+gender/pronoun signal. The pronoun may be written to the actor flags after art
+generation fires, or the art prompt builder reads a different field than the
+one the pronoun seeder writes.
+
+**Files to check:** `src/entities/connection.js` (`seedConnectionActor` —
+the order of pronoun roll vs. art generation call); `src/art/openRouterImage.js`
+or the NPC portrait prompt builder (confirm pronoun/gender is included in the
+image generation prompt).
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
