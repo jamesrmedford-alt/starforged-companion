@@ -44,14 +44,23 @@ in the Igneous Maze sector.
   diagnostic that narrows it: rolling back to **v1.7.11 fixed it** (the button
   works correctly there), so the fix target is the `v1.7.11..v1.7.12` diff in
   the move pipeline / Roll-button path.
-- **Roll-button wiring** — J (wrong move on button), K (non-GM blocked), M
-  (one-shot on v1.7.12). (Note: the v1.7.11 button works — see P. J and K still
-  need confirming on v1.7.11.)
+- **Roll-button wiring** — J (wrong move on button), M (one-shot on v1.7.12).
+  (Note: the v1.7.11 button works — see P. J still needs confirming on
+  v1.7.11. **K was verified to have no GM gate** — likely the M/N regression,
+  not a wiring bug; see K.)
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
   R (vignette text).
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
   L (ship position), T (sector context unused).
-- **Multiplayer / non-GM parity** — E (PTT), H (audio), K (rolling).
+- **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
+  The code already supports players on all three; none is a simple `isGM`
+  render gate. **E** (PTT): client-scoped opt-in setting the player never
+  enabled — config/discoverability. **H** (audio): player playback is supported
+  (own key + blob URL); silence is downstream config or a player-path bug — the
+  Tier 3 audio smoke targets it. **K** (rolling): no gate; likely the M/N
+  regression. Lesson: the GM-only test pipeline didn't *gate* these — it just
+  never exercised a player's *settings state* (client-scoped toggles/keys) or
+  the v1.7.12 pipeline. That's what the non-GM test work below must cover.
 - **Vignette entity coverage** — B (second PC missing), R (NPC pronouns).
 
 ---
@@ -152,13 +161,24 @@ the same world; the GM's chat input shows the mic icon between the message
 field and the toolbar, while the player's chat input shows only "Enter message"
 with no mic button.
 
-**Likely cause:** The PTT button is injected into the chat DOM on a hook that
-is gated `if (game.user.isGM)`, or the button's CSS/visibility is conditioned
-on GM status when it should be available to all connected users.
+**VERIFIED cause (not a GM gate):** Read the source — there is **no
+`game.user.isGM` gate**. `injectPushToTalkButton` (`src/index.js:2690`) runs
+from the `renderChatLog`/`renderChatPanel`/`renderChatTab` hooks
+(`src/index.js:2972-2977`), gated only on
+`game.settings.get(MODULE_ID, "speechInputEnabled")`. That setting is
+**`scope: "client"`, default off** (`src/index.js:308-313`). So PTT is a
+per-client opt-in: the GM had enabled it in *their* client settings; the
+non-GM player never enabled it in *theirs*, so the button never injected for
+them. (Secondary possibility: the `PTT_HOST_SELECTORS` didn't match a
+container in the player's chat DOM — that path logs a `console.warn`.)
 
-**Files to check:** `src/audio/playback.js` or wherever the PTT button is
-injected into the chat input (search for the mic icon render / PTT hook
-registration); confirm the GM gate is not applied to button insertion.
+**This is config/discoverability, not a gating bug.** Options: (a) surface the
+client-scoped Push-to-Talk toggle more prominently for players, (b) document
+that each player enables it on their own client, or (c) reconsider whether it
+should be world-scoped with a per-client capability/feature-detect.
+
+**Files:** `src/index.js:308-313` (setting scope), `:2690-2729`
+(`injectPushToTalkButton`), `:2971-2978` (hooks).
 
 ---
 
@@ -216,27 +236,40 @@ automatically. The second (non-GM) player gets no audio. **The ▶ Play button
 *is* present on the player's card** (so the button itself is not GM-gated), but
 clicking it produces no sound — no autoplay, and the manual click is silent.
 
-**Refined diagnosis (button present rules out a render gate):** Because the
-button renders and is clickable for the player, the failure is in the
-playback/fetch path, not in button gating. Two leading candidates:
-1. **Synthesis is GM-gated, playback isn't pre-synthesised.** If the audio is
-   only synthesised lazily on click and that synthesis is gated to the GM /
-   `isCanonicalGM()` (or needs an API key the player doesn't have), the
-   player's click no-ops silently — there's no pre-made file to play.
-2. **The stored audio URL isn't fetchable by the player.** If the GM
-   synthesised and stored a path only reachable from the GM's machine (a local
-   `worlds/…` path on a desktop host, not a shared/served URL), the player's
-   `foundry.audio.Sound(src).load()` fails. Compare with AUDIO-002 (Forge
-   absolute-URL handling) — same class of "path valid for one client only."
+**VERIFIED — playback is NOT GM-gated (earlier hypothesis withdrawn):** Read
+the source. The play path explicitly supports non-GM clients:
+- The button un-hides only when `audioEnabledForThisClient()` is true
+  (`src/audio/index.js:81-86, 291`), which requires **three** settings:
+  `audio.enabled` (world, GM sets), `audio.clientEnabled` (**client**,
+  `src/index.js:391-394`), and a non-empty `elevenLabsApiKey` (**client**,
+  `src/index.js:386-390`, "Stored locally in your browser").
+- Synthesis is **lazy-on-click for every client**, using *that client's own*
+  ElevenLabs key (`src/audio/index.js:179`). `commitToCache`
+  (`src/audio/index.js:199-233`) has an explicit non-GM branch: it emits the
+  bytes to the canonical GM over a socket **and returns a local blob URL** so
+  the player can play immediately. Playback is never gated to the GM.
 
-The fix likely needs the GM to synthesise **once**, store the result at a URL
-**all clients can fetch**, and have player clicks play that shared file rather
-than attempting their own gated synthesis.
+**So because the player's button was *visible*, the player passed all three
+gates — including having their own ElevenLabs key.** The silence is therefore
+downstream, in the player's own synth→play path. Live-investigation candidates:
+1. The player's key is present-but-invalid (passes the length check, fails the
+   ElevenLabs fetch) → caught at `togglePlayback`'s `catch`
+   (`src/audio/index.js:387-392`) → button flips to **"error"/disabled**.
+   (cf. ENTITY-002: a config artifact, not a code defect.)
+2. `buildPlayableSegments` returns 0 segments for the player → silent no-op
+   (`src/audio/index.js:374-376`).
+3. A real bug in the non-GM blob-URL playback (`PlaybackSession.play()` on the
+   blob from `commitToCache`).
 
-**Files to check:** `src/audio/playback.js` (the ▶ Play click handler and
-`isCanonicalGM` gate placement), `src/multiplayer/gmGate.js`; confirm the
-gate only suppresses *synthesis*, not *playback*, and that the stored audio
-URL is a path all clients can fetch.
+**This needs the audio smoke test (Tier 3) to pinpoint** — it's the exact case
+that test should drive: a player client posting a card, clicking Play, and
+either producing a `Sound` or surfacing the real error. Note the architectural
+contrast with AUDIO-002: the design already returns a client-fetchable URL, so
+this is likely (1) config or (2)/(3) a player-path bug, not a path-scope issue.
+
+**Files:** `src/audio/index.js:81-86` (gate), `:179` (per-client key),
+`:199-233` (`commitToCache` non-GM blob branch), `:356-392` (`togglePlayback`),
+`src/multiplayer/gmGate.js` (`isCanonicalGM`).
 
 ---
 
@@ -368,20 +401,32 @@ hint and the button label come from the same source.
 
 ---
 
-#### K — Non-GM players cannot use the Roll move button
+#### K — Non-GM players cannot use the Roll move button *(observed v1.7.12)*
 
 **Symptom:** The Roll [move] button on narrator cards is non-functional for
-the second (non-GM) player — they get a permission error or nothing happens
-when clicking it.
+the second (non-GM) player — they reported a permission error / nothing
+happening on click.
 
-**Likely cause:** The click handler for the Roll button is gated on
-`game.user.isGM`, or the move pipeline entry point rejects non-GM callers.
-In multiplayer, any player should be able to trigger a roll for their own
-character from a narrator card.
+**VERIFIED — no GM gate on the button or handler (earlier hypothesis
+withdrawn):** Read the source. The handler (`src/index.js:3074-3113`) has **no
+`game.user.isGM` gate**. On click it (a) best-effort sets a `rolled` flag via
+`message.update` — which *does* fail for a non-owner player and is explicitly
+caught and logged to `console.debug` only (`src/index.js:3095-3100`), and (b)
+posts a fresh `ChatMessage` carrying `forcedMoveId` (`:3101-3108`). The move
+pipeline then runs on the **canonical GM** client (`isCanonicalGM()` at the
+pipeline entry) — correct multiplayer design (world writes belong to the GM).
 
-**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
-button click handler, GM gate on move dispatch); `src/moves/pipeline.js`
-(entry-point GM check).
+**Revised cause:** K was observed on **v1.7.12**, which finding P proved is a
+regression (v1.7.11's Roll button works). So "lacks permission to roll" is most
+likely a manifestation of the **move-lock lockup (M/N)** rather than a real
+permission gate — the player's re-posted move hit the stuck pipeline. The only
+genuine "permission" event in the path is the *caught* `message.update` for the
+`rolled` flag, which is non-fatal and not user-visible by design.
+
+**Re-test on v1.7.11** before treating K as independent of the M/N regression.
+
+**Files:** `src/index.js:3074-3113` (handler — no gate), the pipeline entry
+`isCanonicalGM()` gate (`src/index.js` ~`:758`, the `bypassPacing` branch).
 
 ---
 
