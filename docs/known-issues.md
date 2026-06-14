@@ -9,6 +9,30 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
+### PLAYTEST-1712 — v1.7.12 playtest findings (in progress)
+
+**Status:** Open — capturing findings during v1.7.12 playtesting
+
+---
+
+#### A — Sector map padding / initial camera shifted off-canvas
+
+**Symptom:** The sector map canvas extends into the black "no-scene" void on
+the left; tokens and connections are visible but the initial view is
+mis-centred, with a large portion of the scene area falling outside the
+padded region. Pan/zoom-out behaviour is unpredictable.
+
+**Likely cause:** PLAYTEST-1711 D restored `padding: 0.1` and a captured
+initial view for the sector map. Something in the v1.7.12 work has either
+reset padding to `0` again or the captured initial-view coordinates are being
+applied relative to a different origin, shifting the visible area into the
+black region.
+
+**Files to check:** `src/sector/sectorScene.js` (padding + `initialViewPosition`
+write), `src/sector/sectorMap.js`.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
