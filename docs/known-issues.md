@@ -102,6 +102,24 @@ Characteristics oracle block is assembled.
 
 ---
 
+#### E — Push-to-talk button absent for non-GM players
+
+**Symptom:** The push-to-talk microphone button renders in the chat input area
+for the GM but is invisible to the second (non-GM) player. Both players are in
+the same world; the GM's chat input shows the mic icon between the message
+field and the toolbar, while the player's chat input shows only "Enter message"
+with no mic button.
+
+**Likely cause:** The PTT button is injected into the chat DOM on a hook that
+is gated `if (game.user.isGM)`, or the button's CSS/visibility is conditioned
+on GM status when it should be available to all connected users.
+
+**Files to check:** `src/audio/playback.js` or wherever the PTT button is
+injected into the chat input (search for the mic icon render / PTT hook
+registration); confirm the GM gate is not applied to button insertion.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
