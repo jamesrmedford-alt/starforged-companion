@@ -21,11 +21,12 @@ Nazari and Mave Takara in the Igneous Maze sector.
 - Mid-session the move pipeline **locked up** (findings **M / N**): a
   move-in-progress lock set by the first Roll-button click never cleared, and a
   blue "a move is being resolved" toast then suppressed all further narration.
-- To recover, the group **rolled the module back v1.7.12 → v1.7.11**. The stale
-  move lock **persisted across the rollback** (finding **P** — the first chat
-  button on relogin fired a spurious roll), confirming the lock is stored
-  durably (world settings / `campaignState` / a document flag), not in ephemeral
-  module memory.
+- To recover, the GM **logged out, rolled the module back v1.7.12 → v1.7.11, and
+  logged back in — which fixed it** (finding **P**). On v1.7.11 the Roll button
+  then triggered a roll **correctly both times it was offered**. This pins
+  M/N as a **v1.7.12 regression**: v1.7.11 does not exhibit the stuck lock.
+  (The recovery combined a relog and a rollback, so we can't isolate which
+  cleared the lock — no conclusion that the lock is stored durably.)
 - Findings **P, Q, R** were observed on **v1.7.11** (post-rollback), continuing
   the same campaign/world.
 - Findings **S** (recap fact-drift) and **T** (inciting-incident design) span the
@@ -35,9 +36,13 @@ Nazari and Mave Takara in the Igneous Maze sector.
 
 **Root-cause clusters (several findings share one underlying bug):**
 
-- **Move-lock lifecycle** — M, N, P (and likely Q): one durable lock never
-  released on failure and never reset on load. Highest-priority fix; it bricked
-  the v1.7.12 session.
+- **Move-lock lifecycle (v1.7.12 regression)** — M, N: a move-in-progress lock
+  set on the first Roll click never released, then suppressed all narration.
+  Highest-priority fix; it bricked the v1.7.12 session. Finding **P** is the
+  diagnostic that narrows it: rolling back to **v1.7.11 fixed it** (the button
+  works correctly there), so the fix target is the `v1.7.11..v1.7.12` diff in
+  the move pipeline / Roll-button path. (Q may belong here — needs confirmation,
+  see below.)
 - **Roll-button wiring** — J (wrong move on button), K (non-GM blocked), M
   (one-shot), Q (hits the asset-Improve handler from PLAYTEST-1711 G).
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
@@ -444,30 +449,35 @@ characters can be added to the narrator's working lore set mid-scene.
 
 ---
 
-#### P — Stale move-in-progress state persists across session reload and triggers spurious roll on first input
+#### P — Rolling back to v1.7.11 cleared the stuck move-lock; Roll button works correctly on v1.7.11
 *(this finding IS the rollback boundary: v1.7.12 → v1.7.11)*
 
-**Symptom:** After the v1.7.12 session ended with the move lock stuck (finding
-M/N), the module was rolled back to v1.7.11 and the world reloaded. On the
-next login, the first chat message triggered an unwanted move roll
-automatically — the stuck state had survived the session end and the module
-version change.
+**Observation (this is a diagnostic, not a defect on v1.7.11):** After the
+v1.7.12 session locked up (findings M/N — the move-in-progress lock stuck, blue
+"a move is being resolved" toast suppressing narration), the GM **logged out,
+rolled the module back to v1.7.11, and logged back in. That recovered the
+module.** On v1.7.11 the Roll button then **triggered a roll correctly both
+times it was offered** — the stuck-lock behaviour was gone.
 
-**Implication:** The move-in-progress lock is stored in a durable location
-(world-scoped `game.settings`, `campaignState`, or a Foundry flag) rather than
-in ephemeral module memory. This means a lock that isn't cleared on error
-(finding M) will persist indefinitely across reloads, server restarts, and
-even module version changes until something explicitly resets it.
+**What this tells us:**
+- The move-lock lockup (M/N) is a **v1.7.12 regression**. v1.7.11 does **not**
+  exhibit it — the Roll button fires a roll correctly there. The fix target is
+  whatever changed in the move pipeline / Roll-button path between v1.7.11 and
+  v1.7.12.
+- The recovery combined a relog **and** a version rollback, so we cannot isolate
+  which cleared the lock. We therefore **cannot conclude** the lock is stored
+  durably (world settings / `campaignState` / flag) — the earlier "persists
+  across reload" theory is **withdrawn**; there is no evidence for it. An
+  in-memory module-state lock cleared by the reload is equally consistent.
 
-**Fix needed (two parts):**
-1. Clear the lock on both success and failure in the move pipeline (root fix
-   for M/N).
-2. Add a `ready`-hook reset of the lock so any stale persisted value is
-   cleared on world load — defence-in-depth against future stuck states.
+**Fix direction:** Diff `v1.7.11..v1.7.12` around the move pipeline and the
+Roll-button click handler to find the regression that leaves the lock set
+(findings M/N). A `ready`-hook reset of the lock is still worth adding as
+cheap defence-in-depth, but it is not established that the lock is persisted.
 
-**Files to check:** wherever the move-in-progress flag is written — confirm
-whether it uses `game.settings`, `campaignState`, or a Foundry document flag,
-and add the `ready`-hook reset there.
+**Files to check:** the move-in-progress flag / lock in `src/index.js` or
+`src/moves/pipeline.js`; the Roll-button handler in `src/index.js` /
+`src/narration/narrator.js`. Start from the v1.7.11→v1.7.12 diff.
 
 ---
 
