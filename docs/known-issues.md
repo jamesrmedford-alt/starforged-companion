@@ -212,6 +212,43 @@ image generation prompt).
 
 ---
 
+#### J — Roll button move doesn't match the move named in narrator text
+
+**Symptom:** The narrator text reads "*If you want to draw out what he's
+running from, this could be a Gather Information.*" — correctly identifying
+the move. The button rendered below says **Roll Compel**, not Roll Gather
+Information. The move identified in prose and the move wired to the button
+are different.
+
+**Likely cause:** The narrator's text generation and the roll-button injection
+are computed independently. The button may be set by a prior move context that
+hasn't been cleared, or the move-extraction regex that reads the narrator text
+to pick the button label is failing to match "Gather Information" and falling
+back to the last detected move (Compel from finding G).
+
+**Files to check:** `src/narration/narrator.js` (roll button injection, move
+extraction from narrator text); confirm the move name parsed from the italics
+hint and the button label come from the same source.
+
+---
+
+#### K — Non-GM players cannot use the Roll move button
+
+**Symptom:** The Roll [move] button on narrator cards is non-functional for
+the second (non-GM) player — they get a permission error or nothing happens
+when clicking it.
+
+**Likely cause:** The click handler for the Roll button is gated on
+`game.user.isGM`, or the move pipeline entry point rejects non-GM callers.
+In multiplayer, any player should be able to trigger a roll for their own
+character from a narrator card.
+
+**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
+button click handler, GM gate on move dispatch); `src/moves/pipeline.js`
+(entry-point GM check).
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
