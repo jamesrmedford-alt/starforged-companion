@@ -36,6 +36,40 @@ single-word move names in the prose body cannot false-match.
 
 ---
 
+## The narrator and entity detector are player-character aware
+
+**Decision:** Two narrator-adjacent paths now consult the player-character
+roster (`getPlayerActors()`, which excludes entityType-flagged NPC cards):
+
+- **Entity detection (finding F):** `collectEstablishedEntityNames`
+  (`src/entities/entityExtractor.js`) lists PC names as ESTABLISHED in the
+  detection prompt, so the model never proposes a fellow PC as a new
+  Connection. This is *in addition to* the routing gate `entityExistsAnyType`,
+  which already checked PC names but only by **exact** normalized match — and so
+  missed first-name mentions ("Kylar" vs the actor "Kylar Nazari"). Telling the
+  model upfront resolves the variant the exact gate cannot.
+- **Move suggestion (finding G):** `narratePacedInput` drops a *social* move
+  nomination (`compel`, `develop_your_relationship`, `test_your_relationship`)
+  when the player's input names a fellow PC. Inter-PC tension is roleplay, not
+  a roll. Combat moves are deliberately **not** suppressed — PvP via
+  Clash/Strike is rules-valid.
+
+**Reason:** in multiplayer with two PCs, both paths misfired — the detector
+re-proposed the co-op partner as an NPC, and the narrator offered "Roll Compel"
+against a fellow player. Both stem from the same root: narrator-side logic that
+didn't distinguish a player character from an NPC.
+
+**Rejected:**
+- *Strengthen the exact gate to fuzzy/substring-match PC names* (for F) —
+  rejected as the primary fix: substring matching risks suppressing a
+  legitimate NPC who happens to share a first name with a PC. Listing PCs in the
+  prompt lets the model disambiguate from context instead.
+- *Suppress all interaction-class moves against a PC* (for G) — rejected;
+  combat between PCs is permitted by the rules, so only the social/relationship
+  moves are gated.
+
+---
+
 ## Narrator context is assembled in one place; every mode gets the same packet
 
 **Decision:** All narrator calls build their system-prompt context through a

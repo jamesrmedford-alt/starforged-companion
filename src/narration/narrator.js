@@ -1108,7 +1108,6 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
  */
 export async function narratePacedInput(playerText, campaignState, options = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
-  const suggestedMove = options.suggestedMove ?? null;
 
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
@@ -1126,6 +1125,14 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
   const character    = getActiveCharacter(campaignState, options?.speakerActorId);
   await ensureSceneStarted(campaignState, 'first_narration_paced');
+
+  // Don't suggest a social move against a fellow player character (finding G):
+  // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
+  // the nomination before it reaches the narrator (so no hint is written) and
+  // the card (so no Roll button appears).
+  const suggestedMove = suppressPcDirectedSocialMove(
+    options.suggestedMove ?? null, playerText, character?.name ?? null,
+  );
 
   const extras = await buildNarratorExtras('paced_narrative', campaignState, {
     playerNarration: playerText,
@@ -1372,6 +1379,60 @@ export function extractMoveFromNarrationHint(narrationText) {
 export function reconcileSuggestedMove(narrationText, classifierMove) {
   if (!classifierMove) return null;
   return extractMoveFromNarrationHint(narrationText) ?? classifierMove;
+}
+
+// Social moves that act upon another character. Suggesting one against a fellow
+// player character is wrong (finding G) — Compel/relationship moves are for
+// NPCs and difficult situations; inter-PC tension is roleplay, not a roll.
+const PC_DIRECTED_SOCIAL_MOVES = new Set([
+  'compel',
+  'develop_your_relationship',
+  'test_your_relationship',
+]);
+
+/**
+ * True when `playerText` names a player character other than the speaker. Used
+ * to suppress social-move suggestions aimed at a fellow PC (finding G). Matches
+ * each other PC's full name and its first-name token as whole words.
+ *
+ * @param {string} playerText
+ * @param {string|null} speakerName
+ * @param {Array<{name?: string}>} [pcActors] — injectable for tests
+ * @returns {boolean}
+ */
+export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) {
+  const text = String(playerText ?? '').toLowerCase();
+  if (!text) return false;
+  let actors = pcActors;
+  if (!Array.isArray(actors)) {
+    try { actors = getPlayerActors(); } catch { actors = []; }
+  }
+  const speaker = String(speakerName ?? '').trim().toLowerCase();
+  for (const a of actors) {
+    const name = String(a?.name ?? '').trim();
+    if (!name || name.toLowerCase() === speaker) continue;
+    const tokens = new Set([name.toLowerCase(), name.split(/\s+/)[0].toLowerCase()]);
+    for (const t of tokens) {
+      if (t.length < 2) continue;
+      if (new RegExp(`\\b${escapeRegexLiteral(t)}\\b`).test(text)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Drop a social-move nomination that targets a fellow player character
+ * (finding G); pass any other move through unchanged.
+ *
+ * @param {string|null} suggestedMove
+ * @param {string} playerText
+ * @param {string|null} speakerName
+ * @param {Array<{name?: string}>} [pcActors] — injectable for tests
+ * @returns {string|null}
+ */
+export function suppressPcDirectedSocialMove(suggestedMove, playerText, speakerName, pcActors) {
+  if (!suggestedMove || !PC_DIRECTED_SOCIAL_MOVES.has(suggestedMove)) return suggestedMove ?? null;
+  return inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) ? null : suggestedMove;
 }
 
 // ---------------------------------------------------------------------------

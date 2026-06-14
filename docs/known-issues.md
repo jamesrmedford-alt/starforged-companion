@@ -93,14 +93,21 @@ cluster note and individual entries. The rest remain open. Two-player session
   they are introduced.
 - **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
   The code already supports players on all three; none is a simple `isGM`
-  render gate. **E** (PTT): client-scoped opt-in setting the player never
-  enabled — config/discoverability. **H** (audio): player playback is supported
-  (own key + blob URL); silence is downstream config or a player-path bug — the
-  Tier 3 audio smoke targets it. **K** (rolling): no gate; likely the M/N
-  regression. Lesson: the GM-only test pipeline didn't *gate* these — it just
+  render gate. **E** (PTT): client-scoped opt-in the player never enabled —
+  config/discoverability; **v1.7.13 clarified the setting hint** that it is
+  per-player/per-device (each player enables it themselves). **H** (audio):
+  player playback is supported (own key + blob URL); silence is downstream
+  config or a player-path bug — **v1.7.13 now surfaces the real failure reason**
+  to the player on a manual Play click (was a silent no-op / disabled button),
+  so the next playtest reports *why* instead of "no sound"; the Tier 3 audio
+  smoke remains the live pinpoint. **K** (rolling): no gate — resolved by the
+  M/N fix. Lesson: the GM-only test pipeline didn't *gate* these — it just
   never exercised a player's *settings state* (client-scoped toggles/keys) or
-  the v1.7.12 pipeline. That's what the non-GM test work below must cover.
-- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns).
+  the v1.7.12 pipeline.
+- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns — fixed
+  v1.7.13).
+- **PC-aware narrator/detector** — F (PCs proposed as Connections),
+  G (Compel suggested against a fellow PC). **Both fixed in v1.7.13.**
 
 ---
 
@@ -216,7 +223,15 @@ client-scoped Push-to-Talk toggle more prominently for players, (b) document
 that each player enables it on their own client, or (c) reconsider whether it
 should be world-scoped with a per-client capability/feature-detect.
 
-**Files:** `src/index.js:308-313` (setting scope), `:2690-2729`
+**Partial fix (v1.7.13 — option b):** the setting **hint** now states plainly
+that Push-to-Talk is per-player/per-device — "each player turns it on in their
+own client; the GM enabling it does not enable it for anyone else." The
+injection code was already robust (multi-selector fallback + a `console.warn`
+when no container matches), so no code-path change was needed; the gap was that
+nothing told a player they had to opt in themselves. Options (a)/(c) remain
+available if discoverability is still a problem in a future playtest.
+
+**Files:** `src/index.js:308-318` (setting scope + hint), `:2690-2729`
 (`injectPushToTalkButton`), `:2971-2978` (hooks).
 
 ---
@@ -231,15 +246,16 @@ Kylar as Connection entities. Both are existing player characters, not NPCs.
 they are already tracked as player-owned Actors and must not be re-proposed
 as Connections.
 
-**Likely cause:** `collectEstablishedEntityNames` (or the dedup gate in
-`routeEntityDrafts`) does not include player character actor names in the
-suppression list, so the narrator-extracted names pass the novelty check and
-surface as draft entities.
-
-**Files to check:** `src/entities/entityExtractor.js`
-(`collectEstablishedEntityNames`, `entityExistsAnyType`, and the draft
-routing gate); confirm that `getPlayerActors().map(a => a.name)` is included
-in the known-names set before extraction runs.
+**✅ FIXED in v1.7.13.** The routing gate `entityExistsAnyType` *did* check PC
+names (`isPlayerCharacterName`, added for F14, present in v1.7.12) — but it
+**exact-matches** the normalized name, so a detection of "Kylar" never matched
+the actor "Kylar Nazari" and slipped through into a draft. **Fix:**
+`collectEstablishedEntityNames` (`src/entities/entityExtractor.js`) now adds the
+PC roster (`getPlayerActors()`) to the ESTABLISHED ENTITIES list in the
+detection prompt, so the model is told not to propose them at all — and an LLM
+resolves the first-name variant ("Kylar" → "Kylar Nazari") that the exact gate
+could not. NPC/connection cards (entityType-flagged `character` actors) are
+excluded via `getPlayerActors`. Tests: `tests/unit/entityExtractorPCDedup.test.js`.
 
 ---
 
@@ -256,15 +272,16 @@ it is not appropriate to suggest one player character roll Compel against
 another PC. In multiplayer, inter-PC tension is resolved through roleplay, not
 move rolls.
 
-**Likely cause:** The narrator's move-suggestion logic classifies the target of
-a persuasive line as a valid Compel target without first checking whether the
-target is a known player character. The fix should suppress Compel (and
-similar moves with an interpersonal target) when the target name matches any
-PC actor.
-
-**Files to check:** `src/narration/narrator.js` or `src/narration/narratorPrompt.js`
-(move-suggestion / Roll button injection logic); `src/character/actorBridge.js`
-(`getPlayerActors`) for the PC name set to exclude.
+**✅ FIXED in v1.7.13.** `narratePacedInput` (`src/narration/narrator.js`) now
+runs `suppressPcDirectedSocialMove` on the classifier's nomination before it
+reaches the narrator or the card: when the nominated move is a social move that
+acts on another character (`compel`, `develop_your_relationship`,
+`test_your_relationship`) **and** the player's input names a fellow PC (full
+name or first-name token, whole-word, speaker excluded — via `getPlayerActors`),
+the suggestion is dropped to `null`. The narrator is then never instructed to
+write the move hint, and no Roll button is rendered — inter-PC tension stays
+roleplay. Combat moves are intentionally **not** suppressed (PvP via Clash/Strike
+is rules-valid). Tests: `tests/unit/narratorMoveHint.test.js`.
 
 ---
 
@@ -306,9 +323,21 @@ either producing a `Sound` or surfacing the real error. Note the architectural
 contrast with AUDIO-002: the design already returns a client-fetchable URL, so
 this is likely (1) config or (2)/(3) a player-path bug, not a path-scope issue.
 
+**Diagnostics improved (v1.7.13).** Source review confirmed the non-GM blob
+path is sound (no playback gate; `commitToCache` returns a local blob URL for
+non-GM clients), so the remaining cause is config (1) or a player-path bug
+(2)/(3) — all of which were previously **silent**. `togglePlayback`
+(`src/audio/index.js`) now surfaces the real failure to the player on a
+*deliberate* Play click (autoplay stays quiet): the catch path shows
+`Narrator audio unavailable: <reason>` (bad key, unconfigured voice id, synth
+failure), and the 0-segments case — previously a silent reset to idle — now
+warns and tells the player there was nothing to read. This converts the next
+playtest report from "no sound" into the actual reason, which is what's needed
+to close (1) vs (2)/(3). The Tier 3 smoke test remains the live pinpoint.
+
 **Files:** `src/audio/index.js:81-86` (gate), `:179` (per-client key),
-`:199-233` (`commitToCache` non-GM blob branch), `:356-392` (`togglePlayback`),
-`src/multiplayer/gmGate.js` (`isCanonicalGM`).
+`:199-233` (`commitToCache` non-GM blob branch), `togglePlayback` +
+`notifyAudioFailure`, `src/multiplayer/gmGate.js` (`isCanonicalGM`).
 
 ---
 

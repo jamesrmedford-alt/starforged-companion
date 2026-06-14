@@ -307,7 +307,7 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
-    hint:     "Enable push-to-talk speech input. Requires a Chromium-based browser and microphone permission.",
+    hint:     "Enable push-to-talk speech input (adds a 🎙 button to the chat bar). This is a per-player, per-device setting — each player turns it on in their own client; the GM enabling it does not enable it for anyone else. Requires a Chromium-based browser and microphone permission.",
     scope:    "client",
     config:   true,
     type:     Boolean,

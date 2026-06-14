@@ -12,7 +12,10 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { entityExistsAnyType } from '../../src/entities/entityExtractor.js';
+import {
+  entityExistsAnyType,
+  buildCombinedDetectionPrompt,
+} from '../../src/entities/entityExtractor.js';
 
 beforeEach(() => {
   // Restore game.actors if a prior test cleared it (the
@@ -128,5 +131,45 @@ describe('entityExistsAnyType — canonical Foundry surfaces (F14)', () => {
 
   it('returns false for a starship-shaped name that has no matching Actor or sector', () => {
     expect(entityExistsAnyType('Some Other Ship', { sectors: [], shipIds: [] })).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Finding F — PC names must be listed as ESTABLISHED in the detection prompt so
+// the model never proposes them. The exact-match gate (entityExistsAnyType)
+// misses first-name variants ("Kylar" vs the actor "Kylar Nazari"); telling the
+// model upfront resolves those before they ever become a draft.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildCombinedDetectionPrompt — player characters listed as established (finding F)', () => {
+  it('includes PC actor names in the ESTABLISHED ENTITIES section', () => {
+    global.game.actors._set('pc-1', { id: 'pc-1', type: 'character', name: 'Kylar Nazari' });
+    global.game.actors._set('pc-2', { id: 'pc-2', type: 'character', name: 'Mave Takara' });
+
+    const prompt = buildCombinedDetectionPrompt('Kylar and Mave argue.', 'face_danger', 'weak_hit', {});
+    expect(prompt).toContain('Kylar Nazari');
+    expect(prompt).toContain('Mave Takara');
+  });
+
+  it('does not list NPC/connection cards (entityType-flagged actors) as PCs here', () => {
+    // Connection cards are character actors too (FOLDER-002); they are deduped
+    // via the entity registry, not the PC roster, so they must not appear via
+    // the getPlayerActors() path.
+    global.game.actors._set('pc-1', { id: 'pc-1', type: 'character', name: 'Kylar Nazari' });
+    global.game.actors._set('npc-1', {
+      id: 'npc-1', type: 'character', name: 'Patch Hawking',
+      flags: { 'starforged-companion': { entityType: 'connection' } },
+    });
+
+    const prompt = buildCombinedDetectionPrompt('A tense standoff.', 'face_danger', 'weak_hit', {});
+    expect(prompt).toContain('Kylar Nazari');
+    expect(prompt).not.toContain('Patch Hawking');
+  });
+
+  it('renders "(none)" when there are no PCs and no campaignState entities', () => {
+    const prompt = buildCombinedDetectionPrompt('Empty void.', 'face_danger', 'weak_hit', {});
+    expect(prompt).toContain('ESTABLISHED ENTITIES');
+    expect(prompt).toContain('(none)');
   });
 });

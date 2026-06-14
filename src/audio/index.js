@@ -317,7 +317,9 @@ export async function onNarratorCardRendered(message, root) {
     event.preventDefault();
     event.stopPropagation();
     markGestureReceived();
-    await togglePlayback(message, fresh, rawProse);
+    // userInitiated: a deliberate Play click should surface failures (finding
+    // H — players got silence with no diagnostic); autoplay stays quiet.
+    await togglePlayback(message, fresh, rawProse, true);
   });
 
   // Stop button — halts whatever is currently playing (the single active
@@ -353,7 +355,7 @@ export async function onNarratorCardRendered(message, root) {
   }
 }
 
-async function togglePlayback(message, btn, rawProse) {
+async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   let session = _sessionsByCardId.get(message);
   if (session && session.state === PLAYBACK_STATE.PLAYING) {
     await session.pause();
@@ -372,7 +374,13 @@ async function togglePlayback(message, btn, rawProse) {
     const npcVoiceId = await resolveNpcVoiceForCard(message, getVoiceConfig());
     const segments = await buildPlayableSegments(rawProse, { npcVoiceId });
     if (segments.length === 0) {
+      // No synthesisable text. Previously a silent no-op — a player clicking
+      // Play saw nothing happen with no explanation (finding H). Tell them.
+      console.warn(`${MODULE_ID} | audio: no playable segments for card ${message?.id}`);
       setButtonLabel(btn, "idle");
+      if (userInitiated) {
+        notifyAudioFailure("This narration has no readable text to play.");
+      }
       return;
     }
     const volume = Number(getSetting("audio.volume", 0.8)) || 0.8;
@@ -388,7 +396,26 @@ async function togglePlayback(message, btn, rawProse) {
     console.warn(`${MODULE_ID} | audio toggle failed:`, err);
     setButtonLabel(btn, "error");
     btn.setAttribute("disabled", "true");
-    btn.setAttribute("title", typeof err?.message === "string" ? err.message : "Audio unavailable");
+    const detail = typeof err?.message === "string" && err.message ? err.message : "Audio unavailable";
+    btn.setAttribute("title", detail);
+    // Surface the real reason on a deliberate click (finding H): the button
+    // alone flipping to a disabled "Unavailable" left players guessing whether
+    // it was a bad key, a missing voice id, or a synth failure.
+    if (userInitiated) {
+      notifyAudioFailure(`Narrator audio unavailable: ${detail}`);
+    }
+  }
+}
+
+/**
+ * Surface an audio failure to the user. Best-effort — `ui` is absent in
+ * tests/headless, so guard the whole chain.
+ */
+function notifyAudioFailure(message) {
+  try {
+    globalThis.ui?.notifications?.warn?.(`Starforged Companion: ${message}`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio: notification surface failed:`, err?.message ?? err);
   }
 }
 
