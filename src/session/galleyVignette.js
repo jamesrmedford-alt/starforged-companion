@@ -79,10 +79,14 @@ export function buildGalleyVignetteUserMessage(participants, campaignState) {
     const snap = readCharacterSnapshot(actor);
     if (!snap) return `- ${actor?.name ?? "Unknown"}`;
     const callsign = snap.callsign ? ` ("${snap.callsign}")` : "";
+    // Absent crewmates are the subject of the banter, so the narrator still
+    // needs their pronouns to invent theories without misgendering them
+    // (pronoun-propagation cluster, sibling of finding R).
+    const pronouns = snap.pronouns ? ` [${snap.pronouns}]` : "";
     // Don't include the full bio for absent players — just enough hook
     // for the active PCs to invent absurd theories about them.
     const trait = (snap.biography ?? "").trim();
-    return `- ${snap.name}${callsign}${trait ? ` — ${truncate(trait, 80)}` : ""}`;
+    return `- ${snap.name}${callsign}${pronouns}${trait ? ` — ${truncate(trait, 80)}` : ""}`;
   };
 
   const activeList = active.length

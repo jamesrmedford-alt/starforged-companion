@@ -772,6 +772,18 @@ portrait, "her" in prose, a male voice). The fix is one source of truth, not
 three coincidentally-aligned guesses — the same "facts with homes get defended"
 principle as the narrator-memory work.
 
+**v1.7.13 follow-up (playtest I/R — two propagation gaps closed):**
+- *Art (I):* leading the portrait *source description* with the descriptor was
+  not enough — a single mid-prompt mention was diluted by strongly-gendered
+  "first look" oracle text. `buildEntityContext` (`src/art/promptBuilder.js`)
+  now **reinforces** the descriptor at the end of the prompt for connections,
+  reusing the same `pronounsToPortraitDescriptor` so both mentions stay in sync.
+- *Vignettes (R + sibling):* the `session_vignette` narrator mode injects no
+  entity cards, so pronouns must ride in the user-message hint. The end-session
+  NPC hint (`composeConnectionHint`) and the begin-session absent-crew summary
+  (`summariseAbsent`) now lead with `Pronouns: …`. Leading guarantees survival
+  of the hint's length truncation.
+
 **Rejected:**
 - *Per-segment speaker identity in audio* — the `<npc>` markup carries no
   identity, and audio is applied per-card. The focal-connection heuristic

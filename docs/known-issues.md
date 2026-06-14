@@ -69,7 +69,13 @@ cluster note and individual entries. The rest remain open. Two-player session
   fix** — K was verified to have no GM gate; the "can't roll" symptom was the
   stuck move-lock (M/N), now released. M one-shot fixed in v1.7.13 (see M).
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
-  R (vignette text).
+  R (vignette text). **Both fixed in v1.7.13.** I: `buildEntityContext`
+  (`src/art/promptBuilder.js`) reinforces the pronoun-derived gender descriptor
+  at the end of the portrait prompt, so strongly-gendered "first look" text can
+  no longer dilute the single leading mention. R: the `session_vignette` mode
+  injects no entity cards, so pronouns now ride in the user-message hint —
+  `composeConnectionHint` (end-session) and `summariseAbsent` (begin-session
+  absent crew) lead with `Pronouns: …`.
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
   L (ship position), T (sector context unused). **S/T fixed in v1.7.13.
   L fixed in v1.7.13** — `formatShipPositionLine` now derives a mobility
@@ -312,21 +318,19 @@ this is likely (1) config or (2)/(3) a player-path bug, not a path-scope issue.
 written to the actor), but the generated portrait is a clearly
 masculine-presenting person. The pronoun is not informing the art prompt.
 
-**Context:** PLAYTEST-1711 E/F established that pronouns should be rolled once
-and propagated to art, narrator, and audio. The propagation to the narrator
-and audio voice appears to be working, but the art generation prompt is either
-not receiving the pronoun or not using it to steer the subject's presentation.
-
-**Likely cause:** The image prompt in `src/art/openRouterImage.js` (or the
-prompt assembled before calling it for NPC portraits) does not include a
-gender/pronoun signal. The pronoun may be written to the actor flags after art
-generation fires, or the art prompt builder reads a different field than the
-one the pronoun seeder writes.
-
-**Files to check:** `src/entities/connection.js` (`seedConnectionActor` —
-the order of pronoun roll vs. art generation call); `src/art/openRouterImage.js`
-or the NPC portrait prompt builder (confirm pronoun/gender is included in the
-image generation prompt).
+**✅ FIXED in v1.7.13.** Diagnosis corrected the original hypothesis: the
+pronoun *was* reaching the prompt — `seedConnectionActor` leads
+`portraitSourceDescription` with `pronounsToPortraitDescriptor(pronouns)` ("a
+woman/man/person"), and `generatePortrait` passes that as the source
+description. But that descriptor appears **once, mid-prompt**, sandwiched
+between the style anchor and the rolled "first look" oracle text — and a
+strongly-gendered first look (e.g. "a broad-shouldered figure with a heavy
+beard") easily out-weighs a single neutral "a woman". **Fix:**
+`buildEntityContext` (`src/art/promptBuilder.js`) now **reinforces** the
+gender descriptor at the end of the prompt for connections (a high-weight slot
+for image models), reusing the same `pronounsToPortraitDescriptor` so the two
+mentions cannot drift. Only fires when the card actually has pronouns. Tests:
+`tests/unit/promptBuilder.test.js`.
 
 ---
 
@@ -337,18 +341,18 @@ image generation prompt).
 match those stored on the actor card. Same issue class as finding I (portrait
 gender mismatch) but in vignette *text* rather than art.
 
-**Likely cause:** The Begin a Session / closing vignette prompt builder
-doesn't read the NPC's stored pronouns when composing the scene. The pronoun
-field rolled by `seedConnectionActor` is written to the actor, but the vignette
-generation path either omits the NPC's actor data entirely or only reads name
-and role — not pronouns.
-
-**Files to check:** Wherever the session-opening and closing vignettes are
-generated (likely the `begin_a_session` consequence in `src/moves/resolver.js`
-or a dedicated vignette builder); confirm NPC pronoun data from the actor is
-included in the prompt alongside name and role. Also relates to finding B
-(second PC missing from begin-session vignette) — both suggest the vignette
-prompt has an incomplete picture of the entity roster.
+**✅ FIXED in v1.7.13.** Root cause confirmed: the vignettes run in the
+`session_vignette` narrator mode, which (correctly) matches no entity cards —
+there is no player narration to resolve relevance against — so the narrator
+never sees an entity card listing the NPC's `Pronouns:` field that the move/paced
+paths rely on. The NPC's only description reached the narrator through the
+user-message hint, and `composeConnectionHint`
+(`src/session/endSessionVignette.js`) read role/motivation/description but **not
+pronouns**. **Fix:** the hint now leads with `Pronouns: …` (leading guarantees it
+survives the 220-char truncation). The begin-session galley vignette had the
+same gap for *absent* crewmates (the subjects of the banter) — `summariseAbsent`
+(`src/session/galleyVignette.js`) now includes their pronouns too; active PCs
+already had them. Tests: `tests/unit/vignettePronouns.test.js`.
 
 ---
 
