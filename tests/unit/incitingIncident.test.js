@@ -5,7 +5,17 @@
  * renderer (full + oracle-only fallback).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// runIncitingIncident dynamically imports narrateIncitingIncident from
+// narrator.js. Mock it so the premise-storage path is exercised without a live
+// narrator call. Only runIncitingIncident touches narrator.js in this file, so
+// the module-wide mock is safe for the pure-helper tests above.
+vi.mock("../../src/narration/narrator.js", () => ({
+  narrateIncitingIncident: vi.fn(),
+}));
+
+import { narrateIncitingIncident } from "../../src/narration/narrator.js";
 import {
   rollIncitingSpark,
   buildIncitingIncidentUserMessage,
@@ -14,7 +24,10 @@ import {
   splitVowTarget,
   splitIncitingMeta,
   renderIncitingIncidentCard,
+  runIncitingIncident,
 } from "../../src/session/incitingIncident.js";
+
+const MODULE_ID = "starforged-companion";
 
 describe("rollIncitingSpark", () => {
   it("returns an Action + Theme pair of strings", () => {
@@ -271,6 +284,74 @@ describe("renderIncitingIncidentCard — swear-vow affordance (Cluster B)", () =
   it("renders no button when the narrator omitted the vow line", () => {
     const html = renderIncitingIncidentCard({ spark: SPARK, text: "Prose only." });
     expect(html).not.toContain('data-action="sf-swear-vow"');
+  });
+});
+
+describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", () => {
+  const MOCK_TEXT = [
+    "Councilor Vex was murdered three cycles ago aboard Paradox Station.",
+    "",
+    "Suggested vow: Expose who killed Vex (dangerous)",
+    "Suggested clock: The cover-up deepens (6 segments)",
+    "Vow target: Administrator Lyssa Chen — station authority stonewalling the inquiry.",
+  ].join("\n");
+
+  beforeEach(() => {
+    vi.mocked(narrateIncitingIncident).mockReset();
+    game.settings._store.clear();
+    game.user.isGM = true;
+  });
+
+  it("writes campaignState.incitingIncident with the parsed premise and persists it", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);
+    const campaignState = { currentSessionId: "ssn-7" };
+
+    await runIncitingIncident(campaignState);
+
+    const ii = campaignState.incitingIncident;
+    expect(ii).toBeTruthy();
+    // The load-bearing fact that drifted in the playtest ("three cycles ago")
+    // is now captured verbatim as canon.
+    expect(ii.prose).toBe("Councilor Vex was murdered three cycles ago aboard Paradox Station.");
+    expect(ii.prose).not.toMatch(/Suggested vow/);          // meta lines stripped
+    expect(ii.vow.statement).toBe("Expose who killed Vex");
+    expect(ii.vow.rank).toBe("dangerous");
+    expect(ii.clock).toEqual({ label: "The cover-up deepens", segments: 6 });
+    expect(ii.target.name).toBe("Administrator Lyssa Chen");
+    expect(ii.spark).toEqual(expect.objectContaining({
+      action: expect.any(String), theme: expect.any(String),
+    }));
+    expect(ii.sessionId).toBe("ssn-7");
+    expect(typeof ii.establishedAt).toBe("string");
+
+    // Persisted to world settings (the same superset object).
+    const persisted = game.settings._store.get(`${MODULE_ID}.campaignState`);
+    expect(persisted.incitingIncident.prose).toBe(ii.prose);
+  });
+
+  it("does not write a premise on the oracle-only fallback (no narrator text)", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(null);
+    const campaignState = { currentSessionId: "ssn-7" };
+
+    await runIncitingIncident(campaignState);
+
+    expect(campaignState.incitingIncident).toBeUndefined();
+    expect(game.settings._store.get(`${MODULE_ID}.campaignState`)).toBeUndefined();
+  });
+
+  it("does not persist the premise from a non-GM client (world-scoped write)", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);
+    const restore = asPlayer();
+    const campaignState = { currentSessionId: "ssn-7" };
+
+    try {
+      await runIncitingIncident(campaignState);
+    } finally {
+      restore();
+    }
+
+    expect(campaignState.incitingIncident).toBeUndefined();
+    expect(game.settings._store.get(`${MODULE_ID}.campaignState`)).toBeUndefined();
   });
 });
 

@@ -118,12 +118,15 @@ do not open the PR until it is included.
 
 After completing any feature implementation or bug fix, always update both:
 
-1. **`packs/help.json`** — the Foundry in-game help journal:
+1. **`src/help/helpJournal.js`** — the single source of truth for the
+   Foundry in-game help journal (the `PAGES` export; `scripts/build-help-site.mjs`
+   and the in-world journal both consume it — there is no `packs/help.json`):
    - Add new commands to the "Chat Commands" page table
    - Add new settings to the "Settings Reference" page table
    - Add new features to the relevant page (or create a new page if substantial)
    - Update the "Troubleshooting" page if the fix changes error behaviour
-   - Update the "Changelog" page with the new version entry
+   - Update the "Changelog" page with the new version entry, and bump
+     `CONTENT_VERSION` to match (see the Version pinning rule below)
 
 2. **`CHANGELOG.md`** — the GitHub changelog:
    - Add an entry under `[Unreleased]` for the change
@@ -133,7 +136,7 @@ After completing any feature implementation or bug fix, always update both:
      section (per the fetched latest tag) and starts a fresh `[Unreleased]`
      for the new work. Don't open a PR just for the promotion.
 
-**Help file changelog format** (in `packs/help.json`, "Changelog" page):
+**Help file changelog format** (in `src/help/helpJournal.js`, "Changelog" page):
 ```html
 <h3>v{version}</h3>
 <ul>

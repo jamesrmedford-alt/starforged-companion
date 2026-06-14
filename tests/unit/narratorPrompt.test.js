@@ -123,6 +123,38 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Sundering shattered');
   });
 
+  // PLAYTEST-1712 S — the inciting incident must be injected as durable canon
+  // into every narrator call so it can't age out of the ring or be cleared at
+  // scene end.
+  it('includes the CAMPAIGN PREMISE block when campaignState.incitingIncident is set', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({
+        incitingIncident: {
+          prose:  'Councilor Vex was murdered three cycles ago aboard Paradox Station.',
+          vow:    { statement: 'Expose who killed Vex', rank: 'dangerous' },
+          clock:  { label: 'The cover-up deepens', segments: 6 },
+          target: { name: 'Administrator Lyssa Chen', description: 'station authority' },
+        },
+      }),
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).toContain('CAMPAIGN PREMISE');
+    expect(prompt).toContain('three cycles ago');                 // the fact that drifted
+    expect(prompt).toContain('Administrator Lyssa Chen');
+    expect(prompt).toContain('Expose who killed Vex');
+    expect(prompt).toContain('The cover-up deepens');
+  });
+
+  it('omits the CAMPAIGN PREMISE block when no inciting incident is recorded', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),               // incitingIncident undefined
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).not.toContain('CAMPAIGN PREMISE');
+  });
+
   it('custom instructions appear in output when provided', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState(),

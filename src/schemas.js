@@ -688,6 +688,15 @@ export const CampaignStateSchema = {
   currentLocationId:   null,    // JournalEntry ID of current settlement/location/planet
   currentLocationType: null,    // "settlement" | "location" | "planet"
 
+  // Campaign premise — the inciting incident's load-bearing fiction, captured
+  // once when ✦ Envision Inciting Incident runs. Campaign-level and never
+  // scene-scoped: injected into EVERY narrator call as canon so the opening
+  // premise (who / where / stakes / deadline) cannot age out of the recent-
+  // narration ring or be cleared by a scene transition (PLAYTEST-1712 S; the
+  // narrator-memory "never-dropped" tier). null until the incident is composed.
+  // Shape: { prose, spark:{action,theme}, vow, clock, target, sessionId, establishedAt }
+  incitingIncident: null,
+
   // Entity names suppressed from narrator extraction. Populated by the
   // entity panel's dismiss action.
   dismissedEntities:   [],

@@ -856,6 +856,8 @@ export function resolveNarrationPerspective(setting) {
  *   2. Narrator permissions                 (per-move-class block; never dropped)
  *   3. Oracle seeds                         (when resolution provides them)
  *   4. World truths
+ *   4a. Campaign truths                     (foundry-ironsworn digest, when present)
+ *   4b. Campaign premise                    (inciting incident as canon; never dropped)
  *   5. Current location card                (when set)
  *   6. Matched entity cards                 (relevance resolver results)
  *   7. Active connections summary
@@ -968,6 +970,13 @@ export function buildNarratorSystemPrompt(
   if (typeof campaignTruthsBlock === 'string' && campaignTruthsBlock.trim()) {
     parts.push(campaignTruthsBlock.trim());
   }
+
+  // [4b] Campaign premise — the inciting incident as durable canon. Campaign-
+  //      level and never dropped (unlike the scene-scoped §6.5 ledger), so the
+  //      opening premise can't age out of the ring or be cleared at scene end
+  //      (PLAYTEST-1712 S).
+  const incitingBlock = buildIncitingIncidentBlock(campaignState);
+  if (incitingBlock) parts.push(incitingBlock);
 
   // [5] Current location card — always injected when set
   if (currentLocationCard?.trim()) {
@@ -1323,6 +1332,47 @@ function buildWorldTruthsBlock(campaignState) {
 
   if (!entries.length) return '';
   return '## WORLD TRUTHS\n\n' + entries.join('\n');
+}
+
+/**
+ * Campaign premise block — the inciting incident's load-bearing fiction,
+ * captured once at the campaign's outset (`campaignState.incitingIncident`,
+ * written by `runIncitingIncident`) and injected as canon into EVERY narrator
+ * call. Campaign-level and never dropped: it gives the opening premise (who /
+ * where / timeframe / stakes / deadline) a durable home so it can't age out of
+ * the recent-narration ring or be cleared at scene end (PLAYTEST-1712 S — the
+ * inciting incident drifted and the end-of-session recap crystallised the drift
+ * because the premise had no permanent home). Returns '' until composed.
+ */
+function buildIncitingIncidentBlock(campaignState) {
+  const ii    = campaignState?.incitingIncident;
+  const prose = typeof ii?.prose === 'string' ? ii.prose.trim() : '';
+  if (!prose) return '';
+
+  const lines = [
+    '## CAMPAIGN PREMISE',
+    '',
+    'The inciting incident below opened the campaign. Treat it as canon: its',
+    'people, places, timeframe, and stakes are established fact — never',
+    'contradict, re-date, or reinvent them.',
+    '',
+    prose,
+  ];
+
+  const target = ii.target;
+  if (target?.name) {
+    lines.push('', `Central figure: ${target.name}${target.description ? ` — ${target.description}` : ''}`);
+  }
+  const vow = ii.vow;
+  if (vow?.statement) {
+    lines.push(`At stake (first vow): ${vow.statement}${vow.rank ? ` (${vow.rank})` : ''}`);
+  }
+  const clock = ii.clock;
+  if (clock?.label) {
+    lines.push(`Deadline: ${clock.label}${clock.segments ? ` (${clock.segments}-segment clock)` : ''}`);
+  }
+
+  return lines.join('\n');
 }
 
 function buildConnectionsSummary(campaignState) {

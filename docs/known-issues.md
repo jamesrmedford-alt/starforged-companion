@@ -67,7 +67,12 @@ Mave Takara in the Igneous Maze sector.
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
   R (vignette text).
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
-  L (ship position), T (sector context unused).
+  L (ship position), T (sector context unused). **S fixed in v1.7.13** — the
+  inciting incident now has a campaign-level durable home
+  (`campaignState.incitingIncident`) injected as canon into every narrator call
+  (never dropped, never scene-scoped); this also mitigates O for the inciting
+  case (the dead character's facts ride in the premise prose) and prevents the
+  recap drift at its source. L and T remain open.
 - **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
   The code already supports players on all three; none is a simple `isGM`
   render gate. **E** (PTT): client-scoped opt-in setting the player never
@@ -337,6 +342,24 @@ prompt has an incomplete picture of the entity roster.
 
 #### S — Inciting incident facts age out of narrator context too quickly; recap adopts drifted version
 *(spans rollback: inciting incident on v1.7.12, end-of-session recap on v1.7.11)*
+
+**✅ FIXED in v1.7.13.** Root cause confirmed: there was **no campaign-level
+home** for the premise. `runIncitingIncident` posted the opening fiction as a
+chat card but never wrote it to `campaignState`; it survived only in the
+recent-narration ring (last 3 cards — scrolls out fast) and, if the model
+emitted them, scene-scoped `sceneTruths` (cleared/migrated at scene end). So the
+premise aged out within a session and the narrator drifted on its load-bearing
+facts ("three cycles" → "three weeks"); the recap then aggregated the drifted
+beats. **Fix:** `runIncitingIncident` now captures the premise to a durable
+`campaignState.incitingIncident` record (prose + vow/clock/target), and
+`buildNarratorSystemPrompt` injects a `## CAMPAIGN PREMISE` section as canon on
+**every** narrator call — campaign-level, never dropped, never scene-scoped
+(unlike the §6.5 ledger). Because the narrator no longer drifts, the recap no
+longer crystallises drift (fixed at the source, not after the fact). Tests:
+`tests/unit/incitingIncident.test.js`, `tests/unit/narratorPrompt.test.js`.
+Partially addresses **O** for the inciting case (the dead character's facts ride
+in the premise prose); the general referenced-but-absent-character case is still
+open.
 
 **Symptom:** The inciting incident established "murdered Councilor Vex **three
 cycles ago**". Within the same session the narrator drifted to "**three weeks
