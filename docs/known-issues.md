@@ -142,6 +142,31 @@ in the known-names set before extraction runs.
 
 ---
 
+#### G — Narrator suggested Compel against a fellow player character
+
+**Symptom:** Mave's player typed "Kylar, let him go, this is getting out of
+hand" — an in-character appeal to the other PC. The narrator responded with a
+narration ending "*If you want Kylar to stand down, that's going to take more
+than asking nicely—this could be a Compel.*" and offered a **Roll Compel**
+button targeting Kylar.
+
+**Problem:** Compel is a move for influencing NPCs and difficult situations;
+it is not appropriate to suggest one player character roll Compel against
+another PC. In multiplayer, inter-PC tension is resolved through roleplay, not
+move rolls.
+
+**Likely cause:** The narrator's move-suggestion logic classifies the target of
+a persuasive line as a valid Compel target without first checking whether the
+target is a known player character. The fix should suppress Compel (and
+similar moves with an interpersonal target) when the target name matches any
+PC actor.
+
+**Files to check:** `src/narration/narrator.js` or `src/narration/narratorPrompt.js`
+(move-suggestion / Roll button injection logic); `src/character/actorBridge.js`
+(`getPlayerActors`) for the PC name set to exclude.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
