@@ -351,6 +351,32 @@ and add the `ready`-hook reset there.
 
 ---
 
+#### Q — Roll button on narrator card fired wrong action: consumed an asset trait instead of rolling the move
+
+**Symptom:** On the second Roll button click (GM client), the button did
+respond — but instead of triggering a move roll, it consumed/activated the
+Courier asset trait on the GM's character card. No move roll occurred; the
+asset was modified as a side effect.
+
+**Likely cause:** The click handler is resolving the wrong target. Possible
+causes:
+- The button's `data-move` / `data-action` attribute is missing or wrong on
+  the second card, so the handler falls through to a different registered
+  action that happens to match the Courier asset's click listener.
+- The Roll button selector is too broad (e.g. matching `button[data-action]`
+  without a card-type scope), causing it to hit the asset button that was
+  rendered at the same DOM position.
+- The post-roll Improve affordance added in PLAYTEST-1711 G (which advances
+  an asset's clock) shares a click-handler path with the Roll button, and
+  a card context mismatch routes the click to the Improve path.
+
+**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
+button click handler — confirm it scopes by card flag/type and
+`data-move` attribute before dispatching); cross-check with the asset
+Improve handler added for PLAYTEST-1711 G.
+
+---
+
 #### L — Narrator invented ship-in-motion context when docked at a station
 
 **Symptom:** The party is docked at a station waiting to hand over a fugitive.
