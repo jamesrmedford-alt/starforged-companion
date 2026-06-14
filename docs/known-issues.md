@@ -592,13 +592,14 @@ throwaways.
 
 **✅ FIXED (general case) in v1.7.13.** A new REQUIRED emission rule added to
 `appendSidecarInstruction` (`src/narration/narratorPrompt.js`) now instructs the
-narrator to emit a `newTruth` for any named character on their FIRST mention in
-the scene, when they do not appear in the ENTITIES IN SCENE cards. The truth
-must anchor their identity — name, role/profession, and relationship to the
-player character. Once captured into `sceneTruths`, the fact rides in subsequent
-turns' ACTIVE SCENE block, giving the model a stable ground-truth anchor to
-write against for the rest of the scene. The Narrative Review continues to
-catch post-generation drift; this prevents it at generation time.
+narrator to emit a `newTruth` for any named character or faction on their FIRST
+mention in the scene, when they do not appear in the ENTITIES IN SCENE cards.
+The truth must anchor their identity — name, role/profession or agenda, and
+relationship to the player character. Once captured into `sceneTruths`, the fact
+rides in subsequent turns' ACTIVE SCENE block, giving the model a stable
+ground-truth anchor to write against for the rest of the scene. The Narrative
+Review continues to catch post-generation drift; this prevents it at generation
+time.
 
 ---
 
