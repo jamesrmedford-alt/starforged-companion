@@ -12,10 +12,10 @@ _Last audited against the code at v1.6.0 (2026-05)._
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
 **Status:** Open — playthrough complete (2026-06-14). 19 active findings
-(A–T; **Q withdrawn** — confirmed correct behaviour). **M/N fixed in v1.7.13**
-(the move-lock lockup — see those entries and the cluster note below); the rest
-remain open. Two-player session (GM + one non-GM player); PCs Kylar Nazari and
-Mave Takara in the Igneous Maze sector.
+(A–T; **Q withdrawn** — confirmed correct behaviour). **M/N/S/T fixed in v1.7.13**
+(move-lock lockup and narrator-memory anchoring). **L/O fixed in v1.7.13** — see
+cluster note and individual entries. The rest remain open. Two-player session
+(GM + one non-GM player); PCs Kylar Nazari and Mave Takara in the Igneous Maze sector.
 
 **Version timeline (important — the session spanned a rollback):**
 
@@ -67,17 +67,20 @@ Mave Takara in the Igneous Maze sector.
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
   R (vignette text).
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
-  L (ship position), T (sector context unused). **S fixed in v1.7.13** — the
-  inciting incident now has a campaign-level durable home
-  (`campaignState.incitingIncident`) injected as canon into every narrator call
-  (never dropped, never scene-scoped); this also mitigates O for the inciting
-  case (the dead character's facts ride in the premise prose) and prevents the
-  recap drift at its source. **T fixed in v1.7.13** — `formatActiveSector` now
-  surfaces each settlement's Authority/Trouble and the sector's established NPC
-  roster (with a no-official-for-a-lawless-settlement directive and a
-  prefer-existing-NPCs directive), so the inciting incident stops inventing
-  authority figures that contradict settlement attributes and leverages the
-  existing cast. L and the general (non-inciting) O case remain open.
+  L (ship position), T (sector context unused). **S/T fixed in v1.7.13.
+  L fixed in v1.7.13** — `formatShipPositionLine` now derives a mobility
+  status from the position source (`updatedBy`): `scene_token`/`at_command`/
+  `expedition` → "docked at {place}"; `set_a_course` → "in transit to
+  {destination}"; ambiguous sources keep neutral "near" phrasing. The narrator
+  can no longer improvise an underway framing when the ship is stationary, and
+  cannot write the ship as docked when a course has been set.
+  **O (general case) fixed in v1.7.13** — a new REQUIRED rule in
+  `appendSidecarInstruction` instructs the narrator to emit a `newTruth`
+  anchoring the identity of any named character who does not appear in the
+  ENTITIES IN SCENE cards (name, role, relationship to PC) on first mention.
+  Without this anchor, mid-scene characters accumulated contradictory details
+  turn by turn; now their key facts are captured into `sceneTruths` the moment
+  they are introduced.
 - **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
   The code already supports players on all three; none is a simple `isGM`
   render gate. **E** (PTT): client-scoped opt-in setting the player never
@@ -581,15 +584,21 @@ third-party names are handled); `docs/narrator/narrator-memory-architecture.md`
 (scene truths / entity-card injection) — determine whether referenced-but-absent
 characters can be added to the narrator's working lore set mid-scene.
 
-**Partial mitigation (v1.7.13):** Two changes reduce the rate without closing
-the finding. (1) Finding S records the inciting incident as durable canon, so a
-character named only in the opening premise (Vex) now rides in the CAMPAIGN
-PREMISE block every turn — anchoring *that* character's facts. (2) The
-reuse-before-invent / CAST DISCIPLINE rule (decisions.md) steers the narrator
-away from minting parallel throwaways in the first place. The core ask remains
-open: a *mid-scene* referenced name that is neither in the premise nor a
-confirmed entity still has no fact home — capturing it into scene-truths on
-first mention is the outstanding work.
+**Partial mitigation (v1.7.13 — earlier):** Two changes reduced the rate. (1) Finding
+S records the inciting incident as durable canon, so a character named only in
+the opening premise (Vex) now rides in the CAMPAIGN PREMISE block every turn.
+(2) The CAST DISCIPLINE rule steers the narrator away from minting parallel
+throwaways.
+
+**✅ FIXED (general case) in v1.7.13.** A new REQUIRED emission rule added to
+`appendSidecarInstruction` (`src/narration/narratorPrompt.js`) now instructs the
+narrator to emit a `newTruth` for any named character on their FIRST mention in
+the scene, when they do not appear in the ENTITIES IN SCENE cards. The truth
+must anchor their identity — name, role/profession, and relationship to the
+player character. Once captured into `sceneTruths`, the fact rides in subsequent
+turns' ACTIVE SCENE block, giving the model a stable ground-truth anchor to
+write against for the rest of the scene. The Narrative Review continues to
+catch post-generation drift; this prevents it at generation time.
 
 ---
 
@@ -662,11 +671,14 @@ framing and invents movement context. PLAYTEST-1710 F5 established that the
 command-vehicle token on the sector scene is authoritative for position, but
 that position data may not be flowing into the paced-narration context here.
 
-**Files to check:** `src/narration/narrator.js` (`narratePacedInput` — does
-the CURRENT LOCATION / ship status block reach this path?);
-`src/context/assembler.js` (ship position assembly); confirm the
-`## CURRENT LOCATION` block is populated and injected for paced narration,
-not just move-resolution narration.
+**✅ FIXED in v1.7.13.** `formatShipPositionLine` (`src/factContinuity/shipPosition.js`)
+now derives a mobility signal from the `updatedBy` source field on the position
+record: `scene_token` / `at_command` / `expedition` → "docked at {settlement}";
+`set_a_course` → "in transit to {destination}"; ambiguous sources (`narrator_sidecar`,
+`manual`, `null`) keep neutral "near" / "in orbit of" phrasing (no false certainty).
+The SHIP POSITION line in the narrator system prompt now explicitly names the
+ship's mobility state, preventing the model from improvising underway framing
+when docked or vice versa.
 
 ---
 

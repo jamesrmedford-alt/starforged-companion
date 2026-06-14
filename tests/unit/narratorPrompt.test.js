@@ -1004,6 +1004,16 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     expect(appendSidecarInstruction()).not.toMatch(/STARTING position/);
   });
 
+  it('requires identity anchor for characters not in entity cards (Finding O)', () => {
+    // Characters named in prose who have no entity card accumulate contradictory
+    // details without a newTruth anchor. Every mode must carry this rule.
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: the first time your prose introduces or names a character/);
+    expect(out).toMatch(/does NOT appear in the ENTITIES IN SCENE cards/);
+    expect(out).toMatch(/anchoring their identity/);
+    expect(out).toContain('"subject": "Kael Dros"');
+  });
+
   it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {
     const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
     const withFrame = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
