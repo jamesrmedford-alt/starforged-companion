@@ -33,6 +33,26 @@ write), `src/sector/sectorMap.js`.
 
 ---
 
+#### B — Begin a Session spotlight vignette omits second player character
+
+**Symptom:** With two player characters (Kylar and Mave), the Begin a Session
+spotlight vignette only features one character (Kylar). Mave is absent from
+the generated opening scene entirely.
+
+**Likely cause:** The vignette prompt either only resolves the first entry from
+`getPlayerActors()` / `characterIds`, or the assembler's CHARACTER STATE block
+is only injecting one character into the narrator context that generates the
+opening scene. The "+1 momentum to all players" line on the move card suggests
+both PCs are known to the consequence layer — the gap is in the vignette
+narration prompt specifically.
+
+**Files to check:** wherever the Begin a Session opening vignette is generated
+(likely `src/moves/resolver.js` CONSEQUENCE_MAP entry for `begin_a_session`,
+or `src/narration/narratorPrompt.js`); confirm the CHARACTER STATE block passed
+to that call includes all player actors.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
