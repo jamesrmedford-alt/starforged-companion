@@ -36,6 +36,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
+import { MOVES } from '../schemas.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -1153,7 +1154,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     if (!text?.trim()) return null;
 
-    await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
+    const buttonMove = reconcileSuggestedMove(text, suggestedMove);
+    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
     schedulePacedDetection(text, campaignState);
     scheduleChronicleEntry({
       narrationText: text,
@@ -1174,7 +1176,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           moveId: null, playerNarration: playerText, matchedEntityIds: extras.matchedEntityIds,
         });
         if (text?.trim()) {
-          await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
+          const buttonMove = reconcileSuggestedMove(text, suggestedMove);
+          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
           schedulePacedDetection(text, campaignState);
           scheduleChronicleEntry({
             narrationText: text,
@@ -1294,6 +1297,81 @@ function formatMoveLabel(moveId) {
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
     .trim() || 'Move';
+}
+
+function escapeRegexLiteral(s) {
+  return String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Move-name → id matchers, built once. Sorted by display-name length descending
+// so the most specific name wins (e.g. "face desolation" before "face death"
+// could ever shadow it, and multi-word names before single-word ones). Each
+// matcher is a whole-phrase, case-insensitive regex.
+const MOVE_HINT_MATCHERS = Object.keys(MOVES)
+  .map(id => ({ id, name: formatMoveLabel(id).toLowerCase() }))
+  .filter(m => m.name && m.name !== 'move')
+  .sort((a, b) => b.name.length - a.name.length)
+  .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'i') }));
+
+/**
+ * Extract the content of the LAST italic span in a narration string. The
+ * paced-narrative move hint is, by instruction, the single italicized
+ * sentence at the very end of the prose. Handles both markdown (`*…*`) and
+ * HTML (`<em>…</em>` / `<i>…</i>`) emphasis. Returns '' when none is found.
+ */
+function lastItalicSpan(text) {
+  const s = String(text ?? '');
+  let best = '';
+  let bestIdx = -1;
+  const patterns = [
+    /\*([^*\n]+)\*/g,                               // *markdown italics*
+    /<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)>/gi,    // <em>/<i> html italics
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index >= bestIdx) {
+        bestIdx = m.index;
+        best = m[1];
+      }
+    }
+  }
+  return best.trim();
+}
+
+/**
+ * Read the move the narrator actually invited from its closing italic hint.
+ * Returns the matched move id, or null when the hint names no recognised move
+ * (or there is no hint). Only the final italic span is scanned, so single-word
+ * move names ("Compel", "Strike") in the prose body cannot false-match.
+ *
+ * @param {string} narrationText
+ * @returns {string|null}
+ */
+export function extractMoveFromNarrationHint(narrationText) {
+  const hint = lastItalicSpan(narrationText);
+  if (!hint) return null;
+  for (const { id, re } of MOVE_HINT_MATCHERS) {
+    if (re.test(hint)) return id;
+  }
+  return null;
+}
+
+/**
+ * Reconcile the move the pacing classifier nominated with the move the
+ * narrator actually named in its closing italic hint (finding J). The two are
+ * computed independently — the classifier picks before the narrator runs, and
+ * the narrator has creative latitude to invite a different move. The prose is
+ * the source of truth the player reads, so when the hint names a recognised
+ * move it wins; otherwise the classifier's nomination stands.
+ *
+ * @param {string} narrationText
+ * @param {string|null} classifierMove
+ * @returns {string|null}
+ */
+export function reconcileSuggestedMove(narrationText, classifierMove) {
+  if (!classifierMove) return null;
+  return extractMoveFromNarrationHint(narrationText) ?? classifierMove;
 }
 
 // ---------------------------------------------------------------------------

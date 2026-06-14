@@ -61,9 +61,13 @@ cluster note and individual entries. The rest remain open. Two-player session
   helper. Tests: `tests/unit/pipeline.test.js`. **K** should now be re-tested —
   it was almost certainly this lockup, not a permission gate.
 - **Roll-button wiring** — J (wrong move on button), M (one-shot on v1.7.12).
-  (Note: the v1.7.11 button works — see P. J still needs confirming on
-  v1.7.11. **K was verified to have no GM gate** — likely the M/N regression,
-  not a wiring bug; see K.)
+  **J fixed in v1.7.13** — the button move and the move named in the narrator's
+  closing italic hint were computed independently (the pacing classifier nominates
+  before the narrator runs; the narrator may invite a different move). The button
+  now reconciles to the move the prose actually names (`reconcileSuggestedMove` in
+  `narrator.js`), so label, rolled move, and prose agree. **K resolved by the M/N
+  fix** — K was verified to have no GM gate; the "can't roll" symptom was the
+  stuck move-lock (M/N), now released. M one-shot fixed in v1.7.13 (see M).
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
   R (vignette text).
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
@@ -454,19 +458,36 @@ the move. The button rendered below says **Roll Compel**, not Roll Gather
 Information. The move identified in prose and the move wired to the button
 are different.
 
-**Likely cause:** The narrator's text generation and the roll-button injection
-are computed independently. The button may be set by a prior move context that
-hasn't been cleared, or the move-extraction regex that reads the narrator text
-to pick the button label is failing to match "Gather Information" and falling
-back to the last detected move (Compel from finding G).
+**✅ FIXED in v1.7.13.** The original hypothesis (a move-extraction regex failing
+to match) was **wrong** — no such regex existed. The button label was set
+**entirely from the pacing classifier's `suggestedMove`**, computed at pipeline
+entry *before* the narrator runs. The narrator is then merely *asked* to write a
+closing italic hint about that move, but has explicit creative latitude to invite
+a different move instead (e.g. the classifier picks Compel; the narrator decides
+Gather Information fits the scene better and writes that). Label and prose then
+diverge — and because the button re-posts with `forcedMoveId: suggestedMove`, the
+*rolled* move was the classifier's, not the one the player read.
 
-**Files to check:** `src/narration/narrator.js` (roll button injection, move
-extraction from narrator text); confirm the move name parsed from the italics
-hint and the button label come from the same source.
+**Fix:** after the narration is generated, `reconcileSuggestedMove(text,
+classifierMove)` (`src/narration/narrator.js`) reads the move named in the
+narrator's final italic span and, when it names a recognised move, uses *that*
+for the button (label + `suggestedMove` flag). The prose the player reads is the
+source of truth; the classifier's nomination is the fallback when the hint names
+no recognised move or the narrator wrote none. Only the last italic span is
+scanned, so single-word move names ("Strike", "Compel") in the prose body cannot
+false-match. Tests: `tests/unit/narratorMoveHint.test.js`.
 
 ---
 
 #### K — Non-GM players cannot use the Roll move button *(observed v1.7.12)*
+
+**✅ RESOLVED by the M/N fix in v1.7.13.** Source review confirmed there is **no
+GM gate** on the button or its handler (see "VERIFIED" below); K was observed
+only on v1.7.12, which the M/N move-lock regression bricked. The non-GM player's
+re-posted move hit the stuck `pendingMove` lock, so the click appeared to do
+nothing / surfaced the caught permission debug-log. With the lock now released
+before the rider prompt (M/N), the canonical-GM pipeline runs the player's
+re-posted move as designed. No independent permission defect remained.
 
 **Symptom:** The Roll [move] button on narrator cards is non-functional for
 the second (non-GM) player — they reported a permission error / nothing

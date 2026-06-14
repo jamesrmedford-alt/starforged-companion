@@ -6,6 +6,36 @@ rejected.
 
 ---
 
+## The Roll button reflects the narrator's prose, not the classifier's nomination
+
+**Decision:** On a paced-narrative card, the move wired to the Roll button (its
+label *and* the `suggestedMove` flag the click forces) is reconciled against the
+move the narrator names in its closing italic hint —
+`reconcileSuggestedMove(text, classifierMove)` in `src/narration/narrator.js`.
+When the hint names a recognised move, it wins; the pacing classifier's
+nomination is only the fallback (no hint, or the hint names no recognised move).
+
+**Reason:** The two were computed independently and could diverge (finding J).
+The classifier picks `suggestedMove` at pipeline entry, *before* the narrator
+runs; the narrator is then asked to write a hint about it but has explicit
+creative latitude to invite a different move. The player acts on the prose they
+read, so the prose is the source of truth — and because the button re-posts with
+`forcedMoveId: suggestedMove`, reconciling the flag (not just the label) means
+the *rolled* move matches too. Only the final italic span is scanned, so
+single-word move names in the prose body cannot false-match.
+
+**Rejected:**
+- *Make the classifier authoritative and forbid the narrator from deviating* —
+  rejected; the narrator sees the assembled scene the classifier never did, so
+  its choice is usually the better one. Constraining it would trade a cosmetic
+  mismatch for worse move suggestions.
+- *Suppress the button whenever the prose names no recognised move* — rejected
+  as scope creep beyond finding J; the narrator may invite a move via paraphrase
+  we don't lexically match, and dropping the button there would lose a valid
+  affordance. Keeping the classifier fallback is the safe default.
+
+---
+
 ## Narrator context is assembled in one place; every mode gets the same packet
 
 **Decision:** All narrator calls build their system-prompt context through a
