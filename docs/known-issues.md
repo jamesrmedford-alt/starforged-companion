@@ -120,6 +120,28 @@ registration); confirm the GM gate is not applied to button insertion.
 
 ---
 
+#### F — Entity detector proposes player characters as new Connections
+
+**Symptom:** After the Begin a Session opening narration (which featured both
+PCs by name), the "New Entities Detected" card proposed creating Mave and
+Kylar as Connection entities. Both are existing player characters, not NPCs.
+
+**Expected behaviour:** PC names should be excluded from entity detection —
+they are already tracked as player-owned Actors and must not be re-proposed
+as Connections.
+
+**Likely cause:** `collectEstablishedEntityNames` (or the dedup gate in
+`routeEntityDrafts`) does not include player character actor names in the
+suppression list, so the narrator-extracted names pass the novelty check and
+surface as draft entities.
+
+**Files to check:** `src/entities/entityExtractor.js`
+(`collectEstablishedEntityNames`, `entityExistsAnyType`, and the draft
+routing gate); confirm that `getPlayerActors().map(a => a.name)` is included
+in the known-names set before extraction runs.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
