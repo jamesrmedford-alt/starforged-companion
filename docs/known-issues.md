@@ -167,23 +167,24 @@ PC actor.
 
 ---
 
-#### H — Narrator audio does not autoplay for non-GM players
+#### H — Narrator audio does not play at all for non-GM players
 
 **Symptom:** When a narrator card is posted, the GM hears the audio
-automatically. The second (non-GM) player does not — they must manually click
-▶ Play on the card to hear it.
+automatically. The second (non-GM) player gets no audio — neither autoplay
+nor manually clicking ▶ Play produces any sound on their client.
 
-**Likely cause:** Audio synthesis and the autoplay trigger both run on the GM
-client (the canonical narrator). The synthesised audio URL is stored on the
-chat message, but no signal is sent to connected player clients to trigger
-playback on their end. The `isCanonicalGM()` guard in the playback path that
-prevents duplicate emission may also be suppressing autoplay on all non-GM
-clients.
+**Likely cause:** Audio synthesis runs on the GM client and the resulting
+audio URL is written to the chat message flags. Player clients likely have
+the `isCanonicalGM()` guard blocking the entire playback path — including
+the manual ▶ Play handler — so non-GM clients never attempt to load or play
+the audio file at all. Alternatively, the synthesised audio URL may resolve
+to a path that is only accessible from the GM's machine (e.g. a local
+`worlds/…` path unreachable by Forge/browser clients).
 
-**Files to check:** `src/audio/playback.js` (autoplay trigger, `isCanonicalGM`
-gate), `src/multiplayer/gmGate.js`; check whether a socket message or
-flag-watch is needed to tell player clients to begin playback once the audio
-URL is available on the message.
+**Files to check:** `src/audio/playback.js` (the ▶ Play click handler and
+`isCanonicalGM` gate placement), `src/multiplayer/gmGate.js`; confirm the
+gate only suppresses *synthesis*, not *playback*, and that the stored audio
+URL is a path all clients can fetch.
 
 ---
 
