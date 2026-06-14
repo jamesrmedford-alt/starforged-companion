@@ -12,6 +12,7 @@ import {
   connectionNeedsSeed,
   pickConnectionPronouns,
   pronounsToPortraitDescriptor,
+  roleTitleFromName,
 } from "../../src/entities/connection.js";
 
 const MODULE = "starforged-companion";
@@ -124,5 +125,77 @@ describe("pickConnectionPronouns / pronounsToPortraitDescriptor (finding E)", ()
     expect(pronounsToPortraitDescriptor("he/him")).toBe("a man");
     expect(pronounsToPortraitDescriptor("they/them")).toBe("a person");
     expect(pronounsToPortraitDescriptor("")).toBe("a person");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Finding D — a title in the name is the established role; don't roll a
+// contradictory one ("Administrator Lyssa Chen" must not become a Shipwright).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("roleTitleFromName (finding D)", () => {
+  it("extracts a leading title as the role", () => {
+    expect(roleTitleFromName("Administrator Lyssa Chen")).toBe("Administrator");
+    expect(roleTitleFromName("Captain Reyes")).toBe("Captain");
+    expect(roleTitleFromName("Governor Okafor")).toBe("Governor");
+  });
+
+  it("normalises abbreviated and spelt-out doctor", () => {
+    expect(roleTitleFromName("Dr. Chen")).toBe("Doctor");
+    expect(roleTitleFromName("Dr Vance")).toBe("Doctor");
+    expect(roleTitleFromName("Doctor Sato")).toBe("Doctor");
+  });
+
+  it("accepts both councilor spellings", () => {
+    expect(roleTitleFromName("Councilor Vex")).toBe("Councilor");
+    expect(roleTitleFromName("Councillor Vex")).toBe("Councilor");
+  });
+
+  it("is case-insensitive", () => {
+    expect(roleTitleFromName("captain reyes")).toBe("Captain");
+  });
+
+  it("returns null when there is no recognised title", () => {
+    expect(roleTitleFromName("Maren Vix")).toBeNull();
+    expect(roleTitleFromName("Lyra")).toBeNull();
+    expect(roleTitleFromName("")).toBeNull();
+    expect(roleTitleFromName(null)).toBeNull();
+  });
+
+  it("does not match a title that is only a substring of the first word", () => {
+    // "Captainous" / "Drake" must not trip the Captain / Dr matchers.
+    expect(roleTitleFromName("Drake Holloway")).toBeNull();
+    expect(roleTitleFromName("Commandant Roe")).toBeNull();
+  });
+});
+
+describe("seedConnectionActor — title-derived role (finding D)", () => {
+  beforeEach(() => { global.game?.actors?._reset?.(); });
+
+  it("uses the title from the name as ROLE instead of rolling", async () => {
+    // No explicit role on the record → without the fix it would roll the
+    // Character Role oracle. With the fix the name's title wins.
+    const card = global.makeTestActor({
+      id: "npc-admin", type: "character", name: "Administrator Lyssa Chen",
+      flags: { [MODULE]: { entityType: "connection", entityId: "c-admin", connection: {
+        _id: "c-admin", name: "Administrator Lyssa Chen",
+        goal: "Keep the station running", firstLook: ["Crisp uniform"], disposition: "Wary",
+      }}},
+    });
+    const rec = await seedConnectionActor(card, {});
+    expect(rec.role).toBe("Administrator");
+    expect(card.system.biography).toContain("Role: Administrator");
+  });
+
+  it("still honours an explicit role over a title in the name", async () => {
+    const card = global.makeTestActor({
+      id: "npc-x", type: "character", name: "Captain Reyes",
+      flags: { [MODULE]: { entityType: "connection", entityId: "c-x", connection: {
+        _id: "c-x", name: "Captain Reyes", role: "Double agent",
+        goal: "x", firstLook: ["y"], disposition: "z",
+      }}},
+    });
+    const rec = await seedConnectionActor(card, {});
+    expect(rec.role).toBe("Double agent");
   });
 });

@@ -143,8 +143,8 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `narrator.js` | `narrateResolution`, `narratePacedInput`, `interrogateScene`, recap + vignette helpers, `resolveNarrationPerspective()`. |
-| `narratorPrompt.js` | Builds the narrator system prompt (tone/perspective/length + all context sections). |
+| `narrator.js` | `narrateResolution`, `narratePacedInput`, `interrogateScene`, recap + vignette helpers, `resolveNarrationPerspective()`. **`buildNarratorExtras(mode, …)` is the single assembly point for every narrator call's system-prompt context** — extend it, not the call sites. `reconcileSuggestedMove(text, classifierMove)` / `extractMoveFromNarrationHint(text)` align the paced-narrative Roll button with the move the narrator named in its closing italic hint (finding J). `suppressPcDirectedSocialMove()` / `inputNamesOtherPlayerCharacter()` drop a Compel/relationship suggestion aimed at a fellow PC (finding G). |
+| `narratorPrompt.js` | Builds the narrator system prompt (tone/perspective/length + all context sections). Per-mode default creative-latitude class via `DEFAULT_PERMISSION_CLASS_BY_MODE`; `META_MODES` (recap) skip the sidecar/audio/permission blocks. |
 
 ### `oracles/` — oracle tables & rolling
 
@@ -186,7 +186,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `lifecycle.js` | Session-active gate state machine: `isSessionActive`, `beginSession`, `endSession`, `sessionMinutesActive`. |
-| `galleyVignette.js` | Begin-Session opening galley vignette (active PCs). |
+| `galleyVignette.js` | Begin-Session opening galley vignette. `collectGalleyParticipants()` enumerates the PC roster (`getPlayerActors`) and splits present/absent by `User.active` — every PC appears even if unassigned to a connected user (finding B). |
 | `endSessionVignette.js` | End-Session closing NPC vignette. |
 | `incitingIncident.js` | Envision an Inciting Incident (rulebook "Begin your adventure" §1): rolls the Action+Theme spark, routes it through the narrator (`inciting_incident` mode) for a grounded opening event + structured proposal (suggested vow / optional clock / vow target — parsers `splitIncitingMeta` et al.), posts the launch card with `incitingMeta` flags + ⚔ Swear button. Oracle-only fallback with no key. Backs the Session-panel ✦ button and `!incite`. |
 | `quickstart.js` | ✦ Playtest Quickstart: one-click fresh world (truths + sector + PC with 2 Paths + command vehicle with 2 Modules); pure helpers (`assignStatArray`, name rollers); `ensureQuickstartMacro` hotbar Macro; exposed on `module.api`. |

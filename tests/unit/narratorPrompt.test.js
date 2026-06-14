@@ -123,6 +123,38 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Sundering shattered');
   });
 
+  // PLAYTEST-1712 S — the inciting incident must be injected as durable canon
+  // into every narrator call so it can't age out of the ring or be cleared at
+  // scene end.
+  it('includes the CAMPAIGN PREMISE block when campaignState.incitingIncident is set', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({
+        incitingIncident: {
+          prose:  'Councilor Vex was murdered three cycles ago aboard Paradox Station.',
+          vow:    { statement: 'Expose who killed Vex', rank: 'dangerous' },
+          clock:  { label: 'The cover-up deepens', segments: 6 },
+          target: { name: 'Administrator Lyssa Chen', description: 'station authority' },
+        },
+      }),
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).toContain('CAMPAIGN PREMISE');
+    expect(prompt).toContain('three cycles ago');                 // the fact that drifted
+    expect(prompt).toContain('Administrator Lyssa Chen');
+    expect(prompt).toContain('Expose who killed Vex');
+    expect(prompt).toContain('The cover-up deepens');
+  });
+
+  it('omits the CAMPAIGN PREMISE block when no inciting incident is recorded', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),               // incitingIncident undefined
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).not.toContain('CAMPAIGN PREMISE');
+  });
+
   it('custom instructions appear in output when provided', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState(),
@@ -972,6 +1004,20 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     expect(appendSidecarInstruction()).not.toMatch(/STARTING position/);
   });
 
+  it('requires identity anchor for characters and factions not in entity cards (Finding O)', () => {
+    // Characters and factions named in prose who have no entity card accumulate
+    // contradictory details without a newTruth anchor.
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: the first time your prose introduces or names a character or/);
+    expect(out).toMatch(/faction who does NOT appear in the ENTITIES IN SCENE cards/);
+    expect(out).toMatch(/anchoring their identity/);
+    // Character example
+    expect(out).toContain('"subject": "Kael Dros"');
+    // Faction example
+    expect(out).toContain('"subject": "Khatri Syndicate"');
+    expect(out).toMatch(/pursuing the PC for an outstanding debt/);
+  });
+
   it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {
     const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
     const withFrame = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
@@ -1055,5 +1101,86 @@ describe('buildPartyBlock', () => {
 
     const solo = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'paced_narrative', party: null });
     expect(solo).not.toContain('## PARTY');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uniform permission class per mode (narrator-context unification, option B)
+// Every prose mode carries a creative-latitude block: move's is dynamic, the
+// rest fall back to a per-mode default. Meta modes (recap) carry none.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('uniform permission class per mode', () => {
+  const promptFor = (mode, extra = {}) =>
+    buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', { mode, ...extra });
+
+  it('paced_narrative defaults to the INTERACTION block', () => {
+    expect(promptFor('paced_narrative')).toContain('INTERACTION MODE');
+  });
+
+  it.each(['scene_interrogation', 'oracle_followup', 'session_vignette'])(
+    '%s defaults to the EMBELLISHMENT block',
+    (mode) => {
+      expect(promptFor(mode)).toContain('EMBELLISHMENT MODE');
+    },
+  );
+
+  it('inciting_incident defaults to the DISCOVERY block', () => {
+    expect(promptFor('inciting_incident')).toContain('DISCOVERY MODE');
+  });
+
+  it('an explicit narratorClass overrides the mode default', () => {
+    const prompt = promptFor('scene_interrogation', { narratorClass: 'discovery' });
+    expect(prompt).toContain('DISCOVERY MODE');
+    expect(prompt).not.toContain('EMBELLISHMENT MODE');
+  });
+
+  it('move_resolution with no narratorClass still omits the block (dynamic, supplied per call)', () => {
+    expect(promptFor('move_resolution')).not.toContain('NARRATOR PERMISSIONS');
+  });
+
+  it('permission-block openers no longer assume a move happened', () => {
+    for (const key of ['discovery', 'interaction', 'embellishment']) {
+      expect(NARRATOR_PERMISSIONS[key]).not.toContain('This move');
+    }
+  });
+
+  it('the discovery block requires reuse before inventing (throwaway-character rule)', () => {
+    const d = NARRATOR_PERMISSIONS.discovery;
+    expect(d).toContain('Reuse before you invent');
+    expect(d.toLowerCase()).toContain('only when none of the established cast can');
+    expect(d.toLowerCase()).toContain('scope any genuinely new entity to the active sector');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// campaign_recap — meta mode (no sidecar, no audio markup, recap role, no block)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('campaign_recap meta mode', () => {
+  const recap = (extra = {}) =>
+    buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', { mode: 'campaign_recap', ...extra });
+
+  it('uses the between-sessions recap role description', () => {
+    const prompt = recap();
+    expect(prompt).toContain('between-sessions recap');
+    expect(prompt).not.toContain('mechanical consequences of move outcomes');
+  });
+
+  it('omits the mandatory-sidecar instruction (its output is consumed verbatim)', () => {
+    expect(recap()).not.toContain('MANDATORY SIDECAR');
+    // Control: a normal prose mode still carries it.
+    const paced = buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', { mode: 'paced_narrative' });
+    expect(paced).toContain('MANDATORY SIDECAR');
+  });
+
+  it('omits the NPC audio-markup instruction even when audio is enabled', () => {
+    expect(recap({ audioMarkupEnabled: true })).not.toContain('NPC DIALOGUE MARKUP');
+  });
+
+  it('carries no creative-latitude permission block', () => {
+    expect(recap()).not.toContain('NARRATOR PERMISSIONS');
   });
 });

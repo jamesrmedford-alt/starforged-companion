@@ -271,6 +271,32 @@ export async function runIncitingIncident(campaignState) {
     console.warn(`${MODULE_ID} | runIncitingIncident: narration failed:`, err?.message ?? err);
   }
 
+  // Capture the premise as campaign-level canon (PLAYTEST-1712 S). Without a
+  // durable home the opening fiction lived only in the recent-narration ring
+  // (last 3 cards) and scene-scoped sceneTruths (cleared at scene end), so it
+  // aged out within a session and the narrator drifted on its load-bearing
+  // facts. narratorPrompt injects this record into EVERY call as canon.
+  // campaignState flows here by reference from narrateIncitingIncident →
+  // applyNarratorSidecar, which already persisted the sidecar writes onto this
+  // same object; we add the premise and persist the superset. GM-gated.
+  if (text && campaignState && globalThis.game?.user?.isGM) {
+    try {
+      const meta = splitIncitingMeta(text);
+      campaignState.incitingIncident = {
+        prose:         meta.prose,
+        spark,
+        vow:           meta.vow,
+        clock:         meta.clock,
+        target:        meta.target,
+        sessionId:     campaignState?.currentSessionId ?? null,
+        establishedAt: new Date().toISOString(),
+      };
+      await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | runIncitingIncident: premise persist failed:`, err?.message ?? err);
+    }
+  }
+
   await postIncitingIncidentCard({
     spark,
     text,

@@ -252,6 +252,86 @@ describe('formatShipPositionLine', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// Finding L — docked vs in-transit status signal
+// ────────────────────────────────────────────────────────────────────
+
+describe('formatShipPositionLine — mobility status (Finding L)', () => {
+  const state = makeCampaignState({
+    settlements: [settlement('s1', 'Bleakhold Station')],
+    planets:     [planet('p1', 'Bleakhold', ['s1'])],
+    sectors:     [sec('sec1', 'Outlands Mark')],
+  });
+  const pos = {
+    nearestSettlementId: 's1',
+    nearestPlanetId:     'p1',
+    sectorId:            'sec1',
+    freeText:            '',
+  };
+
+  it('scene_token source → "docked at" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'scene_token' }, state, 'Vanguard');
+    expect(line).toContain('docked at Bleakhold Station');
+    expect(line).not.toContain('near ');
+    expect(line).not.toContain('in transit');
+  });
+
+  it('at_command source → "docked at" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'at_command' }, state, 'Vanguard');
+    expect(line).toContain('docked at Bleakhold Station');
+  });
+
+  it('expedition source → "docked at" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'expedition' }, state, 'Vanguard');
+    expect(line).toContain('docked at Bleakhold Station');
+  });
+
+  it('set_a_course source → "in transit to" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'set_a_course' }, state, 'Vanguard');
+    expect(line).toContain('in transit to Bleakhold Station');
+    expect(line).not.toContain('near ');
+    expect(line).not.toContain('docked');
+  });
+
+  it('set_a_course with planet-only → "in transit to {planet}"', () => {
+    const planetState = makeCampaignState({
+      planets: [planet('p2', 'Tartarus')],
+      sectors: [sec('sec1', 'Outlands Mark')],
+    });
+    const line = formatShipPositionLine(
+      { nearestPlanetId: 'p2', sectorId: 'sec1', nearestSettlementId: null, freeText: '', updatedBy: 'set_a_course' },
+      planetState,
+      'Vanguard',
+    );
+    expect(line).toContain('in transit to Tartarus');
+    expect(line).not.toContain('in orbit of');
+  });
+
+  it('set_a_course with freeText → "in transit ({freeText})"', () => {
+    const line = formatShipPositionLine(
+      { nearestSettlementId: null, nearestPlanetId: null, sectorId: null, freeText: 'the void', updatedBy: 'set_a_course' },
+      makeCampaignState({}),
+      'Vanguard',
+    );
+    expect(line).toContain('in transit (the void)');
+  });
+
+  it('narrator_sidecar source → neutral "near" phrasing (no status claim)', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'narrator_sidecar' }, state, 'Vanguard');
+    expect(line).toContain('near Bleakhold Station');
+  });
+
+  it('manual source → neutral "near" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'manual' }, state, 'Vanguard');
+    expect(line).toContain('near Bleakhold Station');
+  });
+
+  it('null updatedBy → neutral "near" phrasing (existing records)', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: null }, state, 'Vanguard');
+    expect(line).toContain('near Bleakhold Station');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // Seed-name matching robustness (Cluster C / F5 gap 3)
 // ────────────────────────────────────────────────────────────────────
 

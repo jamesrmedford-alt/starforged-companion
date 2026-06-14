@@ -1422,6 +1422,19 @@ function emptyDetection() {
 function collectEstablishedEntityNames(campaignState) {
   if (!campaignState) return [];
   const names = new Set();
+  // Player characters are established actors and must never be proposed as new
+  // Connections (finding F). The downstream gate (entityExistsAnyType) also
+  // checks PC names, but it exact-matches the normalized name — so a detection
+  // of "Kylar" never matches the actor "Kylar Nazari" and slips through.
+  // Listing the PCs here tells the detector model not to return them at all,
+  // and it resolves first-name variants the exact gate cannot.
+  try {
+    for (const a of getPlayerActors()) {
+      if (a?.name) names.add(a.name.trim());
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | collectEstablishedEntityNames: PC roster lookup failed:`, err?.message ?? err);
+  }
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     const ids    = campaignState[idsField] ?? [];

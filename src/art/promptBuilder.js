@@ -33,6 +33,8 @@
  *   planet      — landscape, orbital or surface view
  */
 
+import { pronounsToPortraitDescriptor } from "../entities/connection.js";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLE ANCHOR
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,6 +230,14 @@ function buildEntityContext(entityType, entity) {
 
     case "connection": {
       const parts = [];
+      // Reinforce the established gender (finding I). The portrait source
+      // description already leads with this descriptor, but a single
+      // mid-prompt mention is easily diluted by strongly-gendered "first
+      // look" oracle text — so repeat it here, where buildEntityContext lands
+      // at the end of the prompt (a high-weight slot for most image models).
+      // Only when pronouns are actually set, so unseeded cards are unaffected.
+      const gender = entity.pronouns ? pronounsToPortraitDescriptor(entity.pronouns) : "";
+      if (gender)        parts.push(gender);
       if (entity.role)   parts.push(`role: ${entity.role}`);
       if (entity.bonded) parts.push("trusted ally");
       return parts.length ? parts.join(", ") : "";

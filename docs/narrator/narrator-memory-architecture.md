@@ -35,6 +35,28 @@ state, World Journal injections) rides alongside these in the system prompt —
 see `buildNarratorSystemPrompt` (`src/narration/narratorPrompt.js`) section
 map `[0]`–`[10]`.
 
+**Single assembly point.** Every narrator call — move resolution, paced,
+`@scene`, oracle follow-up, vignette, inciting incident, campaign recap — builds
+its system-prompt context through **`buildNarratorExtras(mode, campaignState,
+opts)`** (`src/narration/narrator.js`). This is the one seam to extend when
+adding context; do not hand-assemble `extras` at a call site. The packet is
+uniform across modes — only two things legitimately vary, because they are not
+"context" at all:
+
+1. **Relevance** (entity cards + matched IDs) follows one rule with two arms:
+   the move path uses the FULL resolver result it already computed (with the
+   dynamic permission class + oracle seeds — data that only a move produces);
+   every other mode resolves lexically (`resolveRelevance` with `moveId: null`,
+   zero API cost). No-text modes (vignette/inciting/recap) match nothing and
+   lean on the active-sector roster for their cast.
+2. **Creative-latitude permission class** is also uniform but resolved one level
+   up in `buildNarratorSystemPrompt`: `move_resolution`'s class is dynamic
+   (passed in), and every other mode falls back to a per-mode default
+   (`DEFAULT_PERMISSION_CLASS_BY_MODE` — paced→interaction, scene/oracle/
+   vignette→embellishment, inciting→discovery). Meta modes (`campaign_recap`)
+   carry no latitude block, no sidecar instruction, and no audio markup — their
+   output is consumed verbatim, so a stray sidecar JSON block would leak.
+
 ### Data flow per turn
 
 ```

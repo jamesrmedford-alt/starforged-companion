@@ -115,6 +115,15 @@ export function appendSidecarInstruction(options = {}) {
     '  what they want, or what is at stake — especially anything with a',
     '  deadline or a cost for failure — you MUST emit a newTruth recording',
     '  it. Stakes that are not recorded will be lost.',
+    '- REQUIRED: the first time your prose introduces or names a character or',
+    '  faction who does NOT appear in the ENTITIES IN SCENE cards, emit a',
+    '  newTruth anchoring their identity — who or what they are, their role',
+    '  in this context, their agenda, and their relationship to the player',
+    '  character — e.g. { "subject": "Kael Dros", "fact": "dockmaster at',
+    '  Bleakhold Station; meeting the PC here for the first time" } or',
+    '  { "subject": "Khatri Syndicate", "fact": "bounty-hunting cartel;',
+    '  pursuing the PC for an outstanding debt" }. Without this anchor,',
+    '  the same entity can be written differently each turn.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
     '- REQUIRED: when your prose moves the player\'s command vehicle —',
@@ -141,7 +150,12 @@ export function appendSidecarInstruction(options = {}) {
   if (mode === 'inciting_incident') {
     lines.push(
       '',
-      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Its premise must survive into',
+      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
+      'sector: when an existing NPC (see the ACTIVE SECTOR cast) or settlement',
+      'trouble can carry the incident, build on them rather than cold-inventing',
+      'a new NPC, and never give a settlement an authority figure its Authority',
+      'rules out (a lawless settlement has no administrator or governor).',
+      'Its premise must survive into',
       'later sessions, so your sidecar MUST capture the load-bearing facts:',
       '- newTruths for: who the central NPC is and their history with the',
       '  character; why they are where they are; what is at stake and what',
@@ -493,15 +507,22 @@ export const NARRATOR_PERMISSIONS = {
 
   discovery: `## NARRATOR PERMISSIONS — DISCOVERY MODE
 
-This move reveals something new. You have expanded creative latitude.
+Something new may enter the fiction this turn. You have expanded creative latitude.
 
-You MAY introduce:
+You MAY introduce, but only when no established character or place can already
+fill the role the scene needs:
 - One named NPC, creature, or entity (keep initial details spare — leave
   room to develop across sessions)
 - One named location or structure (atmosphere and first impression only)
 - One factual revelation about the world or setting
 
 You MUST:
+- Reuse before you invent: when the scene needs someone (or somewhere) to fill
+  a role, first check whether an established character or place — see the
+  ACTIVE SECTOR roster and any ENTITIES IN SCENE — can fill it, and use them by
+  name if so. Mint a new named entity only when none of the established cast can
+- Scope any genuinely new entity to the active sector, consistent with its
+  established authority and troubles, with enough substance to recur
 - Keep new entities consistent with established world truths
 - Keep new factions consistent with the established political landscape
 - Keep new locations consistent with the active sector's character
@@ -518,7 +539,7 @@ not narrate the act of bookkeeping.`,
 
   interaction: `## NARRATOR PERMISSIONS — INTERACTION MODE
 
-This move involves established entities. Consistency is required.
+This turn centres on established entities. Consistency is required.
 
 Use the entity cards provided. Established facts are fixed — honour
 them. Generative details are soft-established and should be carried
@@ -544,7 +565,7 @@ not narrate the act of bookkeeping.`,
 
   embellishment: `## NARRATOR PERMISSIONS — EMBELLISHMENT MODE
 
-This move has a mechanical consequence. Narrate its texture.
+This turn is texture, not revelation. Narrate its mood and detail.
 
 You MUST:
 - Focus on sensory, atmospheric, and emotional detail
@@ -553,7 +574,7 @@ You MUST:
 You may NOT introduce any new named entity (no new named entity may appear
 in this narration — no person, ship, location, faction, or creature). You
 may not introduce any new plot element or revelation, and you may not
-advance any story thread beyond the immediate consequence of this move.
+advance any story thread beyond the immediate moment.
 
 Speak only as the fiction. Never reference module mechanics, settings,
 journals, panels, records, dice, moves, contradictions, or anything in
@@ -564,6 +585,27 @@ The narrator is a camera here, not a writer.`,
 };
 
 const NARRATOR_PERMISSION_KEYS = new Set(Object.keys(NARRATOR_PERMISSIONS));
+
+// Per-mode default creative-latitude class, so EVERY mode carries an explicit
+// permission block (one uniform mechanism rather than latitude scattered across
+// role descriptions). move_resolution is dynamic — the relevance resolver
+// classifies the move outcome and passes the class in via extras.narratorClass,
+// so its default is null. campaign_recap is a meta mode with no latitude block
+// (its role description governs). The rest map to the block that matches the
+// mode's job: paced continuation deepens established entities (interaction);
+// scene answers, oracle flavour, and vignettes add texture only (embellishment);
+// the inciting incident opens the campaign and may introduce its central figure,
+// reuse-first (discovery — see its reuse-before-invent rule). An explicit
+// extras.narratorClass always overrides the default.
+const DEFAULT_PERMISSION_CLASS_BY_MODE = {
+  move_resolution:     null,
+  paced_narrative:     'interaction',
+  scene_interrogation: 'embellishment',
+  oracle_followup:     'embellishment',
+  session_vignette:    'embellishment',
+  inciting_incident:   'discovery',
+  campaign_recap:      null,
+};
 
 // ---------------------------------------------------------------------------
 // Entity card formatter — narrator-entity-discovery scope §3, §7
@@ -713,7 +755,15 @@ const NARRATOR_MODES = new Set([
   'oracle_followup',
   'session_vignette',   // Begin Session opening vignette — see src/session/galleyVignette.js
   'inciting_incident',  // Campaign-launch inciting incident — see src/session/incitingIncident.js
+  'campaign_recap',     // Between-sessions recap generation — see getCampaignRecap (narrator.js)
 ]);
+
+// Meta modes produce out-of-fiction text (a retrospective summary), not live
+// scene prose. They MUST NOT receive the fact-continuity sidecar instruction
+// (their output is consumed verbatim and never run through applyNarratorSidecar,
+// so a stray JSON block would leak straight into the recap) nor the NPC
+// audio-markup instruction.
+const META_MODES = new Set(['campaign_recap']);
 
 const ROLE_DESCRIPTIONS = {
   move_resolution:
@@ -734,8 +784,7 @@ const ROLE_DESCRIPTIONS = {
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
     `answer the player's question about the current scene as vivid, atmospheric prose ` +
     `that serves the story.\n\n` +
-    `The narrator is a camera here, not a writer. Describe what is already established; ` +
-    `do not introduce new plot elements.`,
+    `Describe only what is already established — answer the question, do not invent.`,
 
   oracle_followup:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -774,8 +823,9 @@ const ROLE_DESCRIPTIONS = {
     `character — plus the oracle spark (Action + Theme) given in the user message, which ` +
     `you interpret loosely as inspiration, never quoting it literally. Write 4-6 ` +
     `sentences of vivid prose that drop the character into a charged situation demanding ` +
-    `action. Do not resolve it; leave the player poised to make the first move. Do not ` +
-    `invent proper nouns beyond what the truths / sector / connection already establish.\n\n` +
+    `action. Do not resolve it; leave the player poised to make the first move. Prefer the ` +
+    `proper nouns the truths / sector / connection already establish; introduce a new named ` +
+    `figure only if none of them can carry the incident, and scope it to the starting sector.\n\n` +
     `The "depict, do not offer" rule governs the PROSE BODY. AFTER the prose, append a ` +
     `short structured proposal block — each item on its own line, in this order and ` +
     `these exact forms:\n\n` +
@@ -792,6 +842,15 @@ const ROLE_DESCRIPTIONS = {
     `creature, faction, or vessel — use their established name, keep the whole line ` +
     `single-line. This trailing block is the one place you propose mechanics; keep all ` +
     `of it out of the prose body itself.`,
+
+  campaign_recap:
+    `You are the narrator for an Ironsworn: Starforged campaign, writing a ` +
+    `between-sessions recap. Your role is to summarise the campaign so far as a ` +
+    `concise, vivid retrospective that reminds the players where things stand.\n\n` +
+    `This is a meta-summary, not a live scene: do not advance the story, stage new ` +
+    `events, introduce new entities, or propose actions. Draw only on the chronicle ` +
+    `provided and the established campaign context. Keep it tight and respectful of ` +
+    `what the players have accomplished.`,
 };
 
 /**
@@ -856,6 +915,8 @@ export function resolveNarrationPerspective(setting) {
  *   2. Narrator permissions                 (per-move-class block; never dropped)
  *   3. Oracle seeds                         (when resolution provides them)
  *   4. World truths
+ *   4a. Campaign truths                     (foundry-ironsworn digest, when present)
+ *   4b. Campaign premise                    (inciting incident as canon; never dropped)
  *   5. Current location card                (when set)
  *   6. Matched entity cards                 (relevance resolver results)
  *   7. Active connections summary
@@ -913,6 +974,7 @@ export function buildNarratorSystemPrompt(
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
   const roleDescription = ROLE_DESCRIPTIONS[resolvedMode];
+  const isMetaMode      = META_MODES.has(resolvedMode);
 
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective);
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
@@ -950,10 +1012,15 @@ export function buildNarratorSystemPrompt(
   const safetyContent = formatSafetyContext(campaignState);
   if (safetyContent) parts.push(safetyContent);
 
-  // [2] Narrator permissions — appears immediately after safety, before any
-  //     other contextual section. Resolved by the relevance resolver.
-  if (narratorClass && NARRATOR_PERMISSION_KEYS.has(narratorClass)) {
-    parts.push(NARRATOR_PERMISSIONS[narratorClass]);
+  // [2] Narrator permissions — the creative-latitude block, immediately after
+  //     safety and before any other contextual section. Every prose mode has a
+  //     latitude class: move_resolution's is resolved dynamically from the move
+  //     outcome (passed in via extras.narratorClass); the other modes fall back
+  //     to their per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE). Meta modes
+  //     (recap) carry no latitude block — their role description governs.
+  const effectiveClass = (narratorClass ?? DEFAULT_PERMISSION_CLASS_BY_MODE[resolvedMode]) ?? null;
+  if (!isMetaMode && effectiveClass && NARRATOR_PERMISSION_KEYS.has(effectiveClass)) {
+    parts.push(NARRATOR_PERMISSIONS[effectiveClass]);
   }
 
   // [3] Oracle seeds — only when the resolved move provides them
@@ -968,6 +1035,13 @@ export function buildNarratorSystemPrompt(
   if (typeof campaignTruthsBlock === 'string' && campaignTruthsBlock.trim()) {
     parts.push(campaignTruthsBlock.trim());
   }
+
+  // [4b] Campaign premise — the inciting incident as durable canon. Campaign-
+  //      level and never dropped (unlike the scene-scoped §6.5 ledger), so the
+  //      opening premise can't age out of the ring or be cleared at scene end
+  //      (PLAYTEST-1712 S).
+  const incitingBlock = buildIncitingIncidentBlock(campaignState);
+  if (incitingBlock) parts.push(incitingBlock);
 
   // [5] Current location card — always injected when set
   if (currentLocationCard?.trim()) {
@@ -1023,7 +1097,7 @@ export function buildNarratorSystemPrompt(
   // gated by the master Fact Continuity setting. Mode-aware: the inciting
   // incident gets a premise-capture addendum (narrator-memory architecture
   // A2); the sceneFrame key is included only when the A4 frame is enabled.
-  if (factContinuityEnabled) {
+  if (factContinuityEnabled && !isMetaMode) {
     parts.push(appendSidecarInstruction({
       mode:              resolvedMode,
       sceneFrameEnabled: factContinuitySceneFrame,
@@ -1033,9 +1107,10 @@ export function buildNarratorSystemPrompt(
   // [10] Audio NPC-dialogue markup instruction — appended only when audio
   // narration is enabled. Tells the narrator to wrap NPC speech with
   // <npc>…</npc> so the audio pipeline can dispatch a distinct voice. See
-  // docs/audio/audio-narration-scope.md §6.
+  // docs/audio/audio-narration-scope.md §6. Skipped for meta modes (a recap
+  // carries no live NPC dialogue to voice).
   const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
-  if (audioMarkupEnabled) {
+  if (audioMarkupEnabled && !isMetaMode) {
     parts.push(appendNpcMarkupInstruction());
   }
 
@@ -1323,6 +1398,47 @@ function buildWorldTruthsBlock(campaignState) {
 
   if (!entries.length) return '';
   return '## WORLD TRUTHS\n\n' + entries.join('\n');
+}
+
+/**
+ * Campaign premise block — the inciting incident's load-bearing fiction,
+ * captured once at the campaign's outset (`campaignState.incitingIncident`,
+ * written by `runIncitingIncident`) and injected as canon into EVERY narrator
+ * call. Campaign-level and never dropped: it gives the opening premise (who /
+ * where / timeframe / stakes / deadline) a durable home so it can't age out of
+ * the recent-narration ring or be cleared at scene end (PLAYTEST-1712 S — the
+ * inciting incident drifted and the end-of-session recap crystallised the drift
+ * because the premise had no permanent home). Returns '' until composed.
+ */
+function buildIncitingIncidentBlock(campaignState) {
+  const ii    = campaignState?.incitingIncident;
+  const prose = typeof ii?.prose === 'string' ? ii.prose.trim() : '';
+  if (!prose) return '';
+
+  const lines = [
+    '## CAMPAIGN PREMISE',
+    '',
+    'The inciting incident below opened the campaign. Treat it as canon: its',
+    'people, places, timeframe, and stakes are established fact — never',
+    'contradict, re-date, or reinvent them.',
+    '',
+    prose,
+  ];
+
+  const target = ii.target;
+  if (target?.name) {
+    lines.push('', `Central figure: ${target.name}${target.description ? ` — ${target.description}` : ''}`);
+  }
+  const vow = ii.vow;
+  if (vow?.statement) {
+    lines.push(`At stake (first vow): ${vow.statement}${vow.rank ? ` (${vow.rank})` : ''}`);
+  }
+  const clock = ii.clock;
+  if (clock?.label) {
+    lines.push(`Deadline: ${clock.label}${clock.segments ? ` (${clock.segments}-segment clock)` : ''}`);
+  }
+
+  return lines.join('\n');
 }
 
 function buildConnectionsSummary(campaignState) {

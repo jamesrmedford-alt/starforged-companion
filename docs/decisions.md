@@ -6,6 +6,195 @@ rejected.
 
 ---
 
+## The Roll button reflects the narrator's prose, not the classifier's nomination
+
+**Decision:** On a paced-narrative card, the move wired to the Roll button (its
+label *and* the `suggestedMove` flag the click forces) is reconciled against the
+move the narrator names in its closing italic hint —
+`reconcileSuggestedMove(text, classifierMove)` in `src/narration/narrator.js`.
+When the hint names a recognised move, it wins; the pacing classifier's
+nomination is only the fallback (no hint, or the hint names no recognised move).
+
+**Reason:** The two were computed independently and could diverge (finding J).
+The classifier picks `suggestedMove` at pipeline entry, *before* the narrator
+runs; the narrator is then asked to write a hint about it but has explicit
+creative latitude to invite a different move. The player acts on the prose they
+read, so the prose is the source of truth — and because the button re-posts with
+`forcedMoveId: suggestedMove`, reconciling the flag (not just the label) means
+the *rolled* move matches too. Only the final italic span is scanned, so
+single-word move names in the prose body cannot false-match.
+
+**Rejected:**
+- *Make the classifier authoritative and forbid the narrator from deviating* —
+  rejected; the narrator sees the assembled scene the classifier never did, so
+  its choice is usually the better one. Constraining it would trade a cosmetic
+  mismatch for worse move suggestions.
+- *Suppress the button whenever the prose names no recognised move* — rejected
+  as scope creep beyond finding J; the narrator may invite a move via paraphrase
+  we don't lexically match, and dropping the button there would lose a valid
+  affordance. Keeping the classifier fallback is the safe default.
+
+---
+
+## A title in an NPC name is its role; don't roll a contradictory one
+
+**Decision (finding D):** `seedConnectionActor` resolves an NPC's Role with the
+precedence *explicit role → title parsed from the name
+(`roleTitleFromName`) → Character Role oracle*. A leading honorific that doubles
+as a role (Administrator, Captain, Doctor/Dr, Councilor, Governor, …) is used
+verbatim; the oracle only rolls when the name carries no such title.
+
+**Reason:** a vow target created as "Administrator Lyssa Chen" then rolled
+ROLE = "Shipwright", so the card contradicted its own name. The name is the
+authored, load-bearing fact; the oracle is the fallback for when we have nothing.
+
+**Rejected:** *blank the role on conflict* — leaves an obviously-incomplete
+card; using the title is strictly more informative. *Strip the title from the
+name instead* — the title is part of how the players refer to the NPC; keep it.
+
+---
+
+## The narrator and entity detector are player-character aware
+
+**Decision:** Two narrator-adjacent paths now consult the player-character
+roster (`getPlayerActors()`, which excludes entityType-flagged NPC cards):
+
+- **Entity detection (finding F):** `collectEstablishedEntityNames`
+  (`src/entities/entityExtractor.js`) lists PC names as ESTABLISHED in the
+  detection prompt, so the model never proposes a fellow PC as a new
+  Connection. This is *in addition to* the routing gate `entityExistsAnyType`,
+  which already checked PC names but only by **exact** normalized match — and so
+  missed first-name mentions ("Kylar" vs the actor "Kylar Nazari"). Telling the
+  model upfront resolves the variant the exact gate cannot.
+- **Move suggestion (finding G):** `narratePacedInput` drops a *social* move
+  nomination (`compel`, `develop_your_relationship`, `test_your_relationship`)
+  when the player's input names a fellow PC. Inter-PC tension is roleplay, not
+  a roll. Combat moves are deliberately **not** suppressed — PvP via
+  Clash/Strike is rules-valid.
+
+**Reason:** in multiplayer with two PCs, both paths misfired — the detector
+re-proposed the co-op partner as an NPC, and the narrator offered "Roll Compel"
+against a fellow player. Both stem from the same root: narrator-side logic that
+didn't distinguish a player character from an NPC.
+
+**Rejected:**
+- *Strengthen the exact gate to fuzzy/substring-match PC names* (for F) —
+  rejected as the primary fix: substring matching risks suppressing a
+  legitimate NPC who happens to share a first name with a PC. Listing PCs in the
+  prompt lets the model disambiguate from context instead.
+- *Suppress all interaction-class moves against a PC* (for G) — rejected;
+  combat between PCs is permitted by the rules, so only the social/relationship
+  moves are gated.
+
+---
+
+## Narrator context is assembled in one place; every mode gets the same packet
+
+**Decision:** All narrator calls build their system-prompt context through a
+single function, `buildNarratorExtras(mode, campaignState, opts)`
+(`src/narration/narrator.js`). The seven call sites (move resolution, paced,
+`@scene`, oracle follow-up, session vignette, inciting incident, campaign recap)
+no longer hand-assemble their own `extras`. The context packet is **uniform
+across modes**; the only per-mode variation is (a) the role description (the
+mode's job) and (b) data that physically only exists after a move — the oracle
+seeds and the dynamically-classified permission class.
+
+The **creative-latitude permission block is uniform too**: `move_resolution`'s
+class is resolved dynamically from the move outcome and passed in; every other
+mode falls back to a per-mode default (`DEFAULT_PERMISSION_CLASS_BY_MODE` in
+`narratorPrompt.js` — paced→interaction, scene/oracle/vignette→embellishment,
+inciting→discovery). The permission-block opening lines were reworded to stop
+assuming a move happened ("This turn…" not "This move…") since they now render
+outside the move path.
+
+**Reason:** Before this, context reached modes inconsistently — campaign truths
+were move-only, entity cards reached three paths, the party roster three, and
+the recap call passed *no* extras (so it silently used the move-resolution role
+and got no sector/location/character). Adding any new context meant editing up
+to seven call sites and risking another asymmetry. One assembly point makes "add
+context to the narrator" a one-line change that reaches every path.
+
+**Rejected:**
+- *Keep latitude in role descriptions for non-move modes* (no permission block
+  off the move path) — considered, but it leaves "what may the narrator invent"
+  living in two mechanisms that can drift. A single uniform permission class is
+  the one source of truth; role descriptions were trimmed of the now-duplicated
+  latitude language (and the inciting role's "do not invent proper nouns" was
+  reconciled with the discovery block's reuse-first rule).
+- *Make `campaign_recap` a full prose mode* — it is a meta mode: its output is
+  used verbatim and never parsed, so it must NOT receive the sidecar instruction
+  (a stray JSON block would leak into the recap) nor audio markup nor a latitude
+  block. `META_MODES` gates all three.
+
+**Trade-off accepted:** non-move modes now run a (cheap, API-free) lexical
+relevance pass and carry a permission block + campaign-truths digest they did
+not before — a few hundred input tokens per call, far below any context-window
+concern, in exchange for uniformity and the recap/oracle/vignette gaining
+context they were missing.
+
+## Reuse before you invent — no throwaway characters
+
+**Decision:** When the fiction needs a character to fill a functional role (an
+official, a vendor, a pilot, a witness, a voice on the comm), the narrator must
+first try an established character — the active-sector NPC roster, a player
+character, or an entity already in the scene — and introduce a brand-new named
+character **only when none can plausibly fill the role**. Any genuinely new
+character is scoped to the **current sector**, consistent with its authority and
+troubles, with enough substance to recur. This is enforced two ways: a CAST
+DISCIPLINE directive in the active-sector block (`formatActiveSector`, every
+prose path, even when the roster is empty) and a reuse-first rule in the
+DISCOVERY permission block (`narratorPrompt.js`).
+
+**Reason:** v1.7.12 playtest drift (findings D/F and the general O case): the
+narrator minted one-off named NPCs to fill momentary roles — and, worse,
+invented officials for settlements whose Authority is "lawless" — accumulating
+contradictory throwaways that never recurred and had no entity home. Anchoring
+new cast to the established roster and the current sector keeps the world small,
+consistent, and recurring.
+
+**Rejected:** *Forbid new named NPCs off the discovery path entirely* — too
+strict; the discovery move (e.g. `make_a_connection`) legitimately introduces
+people. The rule is reuse-*first*, not reuse-only.
+
+## Move-concurrency lock covers narration + persistence, not post-roll prompts
+
+**Decision:** The `campaignState.pendingMove` lock (the one-move-at-a-time guard
+in the `createChatMessage` pipeline, `src/index.js`) is released on the success
+path **before** the interactive consequence-rider prompt (`promptRiders`,
+`src/moves/riderDialog.js`), through the `releasePendingMoveLock()` helper. The
+pipeline's `finally` re-releases idempotently for the throw / cancelled-confirm
+paths.
+
+**Reason:** The lock exists to stop two pipelines racing on `campaignState`
+writes and posting duplicate narration. Both of those — `persistResolution` and
+the narration call — are finished before the rider step runs. v1.7.12 added
+`applyMoveConsequenceRiders` *inside* the locked region; its GM dialog held the
+world-scoped lock open while waiting for input, so a missed or unanswered popup
+blocked every other player with "a move is already being resolved", recoverable
+only by a reload (which fires the `ready`-hook stale-lock reset). This bricked
+the v1.7.12 multiplayer playtest (known-issues PLAYTEST-1712 M/N); v1.7.11 had
+no post-roll dialog and never wedged.
+
+**Rejected:**
+- *Timeout / auto-dismiss the rider dialog* — silently skipping a GM decision
+  contradicts the consequence-riders scope doc's "never apply a guess, surface
+  what you can't resolve" intent, and is poor UX.
+- *Keep the lock across the prompt with a watchdog* — papers over the real
+  issue: an interactive prompt must never hold a cross-client concurrency lock.
+
+**Trade-off accepted:** after the early release a second move can begin while the
+GM is still resolving the previous move's rider prompt. The rider application
+writes actor meters / progress (not the narration path the lock guards) and
+re-reads fresh state, so the residual race is narrow and strictly better than
+wedging the session. Pre-roll dialogs (`confirmInterpretation`,
+`ClarificationDialog`) still hold the lock by design — they are the move's own
+expected confirm step, at the start, where a cancel releases the lock immediately.
+
+**Files:** `src/index.js` (`releasePendingMoveLock`, the release sites in the
+pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`.
+
+---
+
 ## Chat command prefix: `!` not `/`
 
 **Decision:** All module commands use `!` prefix (`!x`, `!recap`, `!journal`, `!sector`).
@@ -634,6 +823,18 @@ audio layer each invented one independently and disagreed (male-presenting
 portrait, "her" in prose, a male voice). The fix is one source of truth, not
 three coincidentally-aligned guesses — the same "facts with homes get defended"
 principle as the narrator-memory work.
+
+**v1.7.13 follow-up (playtest I/R — two propagation gaps closed):**
+- *Art (I):* leading the portrait *source description* with the descriptor was
+  not enough — a single mid-prompt mention was diluted by strongly-gendered
+  "first look" oracle text. `buildEntityContext` (`src/art/promptBuilder.js`)
+  now **reinforces** the descriptor at the end of the prompt for connections,
+  reusing the same `pronounsToPortraitDescriptor` so both mentions stay in sync.
+- *Vignettes (R + sibling):* the `session_vignette` narrator mode injects no
+  entity cards, so pronouns must ride in the user-message hint. The end-session
+  NPC hint (`composeConnectionHint`) and the begin-session absent-crew summary
+  (`summariseAbsent`) now lead with `Pronouns: …`. Leading guarantees survival
+  of the hint's length truncation.
 
 **Rejected:**
 - *Per-segment speaker identity in audio* — the `<npc>` markup carries no

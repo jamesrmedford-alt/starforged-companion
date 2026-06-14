@@ -44,11 +44,24 @@ describe('buildSwearVowPlan', () => {
     expect(plan.targetNotice).toMatch(/already established/);
   });
 
-  it('skips target creation with a GM notice for non-GM clickers (world-write gate)', () => {
+  it('queues a GM-actionable target draft for non-GM clickers instead of a dead advisory (finding C)', () => {
     const plan = buildSwearVowPlan(META, { ...CTX, isGM: false });
     expect(plan.ok).toBe(true);              // the vow itself still lands
-    expect(plan.createTarget).toBe(false);
-    expect(plan.targetNotice).toMatch(/Ask your GM/);
+    expect(plan.createTarget).toBe(false);   // world-write stays GM-only
+    expect(plan.queueTargetDraft).toBe(true);
+    expect(plan.targetNotice).toMatch(/queued as a connection for your GM/);
+  });
+
+  it('does not queue a draft when the target already exists', () => {
+    const plan = buildSwearVowPlan(META, { ...CTX, isGM: false, targetExists: true });
+    expect(plan.queueTargetDraft).toBeFalsy();
+    expect(plan.targetNotice).toMatch(/already established/);
+  });
+
+  it('does not queue a draft for a GM (it creates directly)', () => {
+    const plan = buildSwearVowPlan(META, { ...CTX, isGM: true });
+    expect(plan.queueTargetDraft).toBeFalsy();
+    expect(plan.createTarget).toBe(true);
   });
 
   it('plans no target work when the narrator named none', () => {

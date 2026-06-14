@@ -108,10 +108,15 @@ export function selectEndSessionNPC(campaignState) {
 }
 
 function composeConnectionHint(c) {
+  // Pronouns lead the hint (finding R): the vignette runs in the
+  // session_vignette narrator mode, which injects no entity cards, so the
+  // user-message hint is the narrator's only source for the NPC's established
+  // gender. Placing it first guarantees it survives the 220-char truncation.
+  const pron  = c.pronouns    ? `Pronouns: ${c.pronouns}` : "";
   const role  = c.role        ? `Role: ${c.role}` : "";
   const motiv = c.motivation  ? `Motivation: ${c.motivation}` : "";
   const desc  = c.description ? c.description : "";
-  return [role, motiv, desc].filter(Boolean).join(" · ").slice(0, 220);
+  return [pron, role, motiv, desc].filter(Boolean).join(" · ").slice(0, 220);
 }
 
 /**
