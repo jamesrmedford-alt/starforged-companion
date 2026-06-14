@@ -249,6 +249,31 @@ button click handler, GM gate on move dispatch); `src/moves/pipeline.js`
 
 ---
 
+#### M — Roll button works only on the first narrator card; dead on all subsequent cards
+
+**Symptom:** The Roll [move] button in narrator chat cards fires correctly the
+first time it is clicked in a session. All subsequent Roll buttons on later
+cards do nothing — no roll, no error.
+
+**Likely cause:** The click handler is registered once (e.g. via a
+`renderChatMessageHTML` hook with an internal guard that prevents
+re-registration, or an `addEventListener` with `{ once: true }`) and is
+consumed on the first click. Later cards render new button elements that never
+get a handler attached, or the handler lookup finds a stale/already-consumed
+reference.
+
+May interact with finding K (non-GM permission block) — if the handler exits
+early on the first non-GM attempt, the GM's handler may also be considered
+consumed.
+
+**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
+button `addEventListener` / hook registration — check for `{ once: true }` or
+a WeakSet/Set guard that marks the element as handled); `src/system/chatHooks.js`
+(`onChatMessageRender` dedup logic — the WeakSet dedup added for V13-002 may
+be marking cards handled without attaching the Roll listener).
+
+---
+
 #### L — Narrator invented ship-in-motion context when docked at a station
 
 **Symptom:** The party is docked at a station waiting to hand over a fugitive.
