@@ -36,6 +36,24 @@ single-word move names in the prose body cannot false-match.
 
 ---
 
+## A title in an NPC name is its role; don't roll a contradictory one
+
+**Decision (finding D):** `seedConnectionActor` resolves an NPC's Role with the
+precedence *explicit role → title parsed from the name
+(`roleTitleFromName`) → Character Role oracle*. A leading honorific that doubles
+as a role (Administrator, Captain, Doctor/Dr, Councilor, Governor, …) is used
+verbatim; the oracle only rolls when the name carries no such title.
+
+**Reason:** a vow target created as "Administrator Lyssa Chen" then rolled
+ROLE = "Shipwright", so the card contradicted its own name. The name is the
+authored, load-bearing fact; the oracle is the fallback for when we have nothing.
+
+**Rejected:** *blank the role on conflict* — leaves an obviously-incomplete
+card; using the title is strictly more informative. *Strip the title from the
+name instead* — the title is part of how the players refer to the NPC; keep it.
+
+---
+
 ## The narrator and entity detector are player-character aware
 
 **Decision:** Two narrator-adjacent paths now consult the player-character

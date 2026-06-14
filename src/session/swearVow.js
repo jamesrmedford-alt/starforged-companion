@@ -24,7 +24,7 @@
 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { getPlayerActors, createCharacterVowItem } from "../character/actorBridge.js";
-import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
+import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, routeEntityDrafts }
   from "../entities/entityExtractor.js";
 
 const MODULE_ID = "starforged-companion";
@@ -58,7 +58,12 @@ export function buildSwearVowPlan(meta, ctx = {}) {
     if (ctx.targetExists) {
       plan.targetNotice = `${meta.target.name} is already established — no new record created.`;
     } else if (!ctx.isGM) {
-      plan.targetNotice = `Ask your GM to add ${meta.target.name} as a connection (GM-only write).`;
+      // Non-GM can't write the connection (world-scoped), but instead of a dead
+      // "ask your GM" advisory (finding C) we queue a GM-actionable draft —
+      // same pipeline as narration-detected entities, so it lands in the
+      // Entities review with a one-click Confirm.
+      plan.queueTargetDraft = true;
+      plan.targetNotice = `${meta.target.name} has been queued as a connection for your GM to confirm.`;
     } else {
       plan.createTarget = true;
     }
@@ -152,6 +157,20 @@ export async function executeSwearVow(message) {
       ui?.notifications?.warn(
         `Starforged Companion: vow created, but adding ${meta.target.name} failed — see console.`,
       );
+    }
+  }
+
+  // 2b. Non-GM target: queue a draft so the GM gets a one-click Confirm
+  //     (finding C). createTarget already handled the GM path above.
+  if (plan.queueTargetDraft && meta.target?.name) {
+    try {
+      await routeEntityDrafts(
+        [{ name: meta.target.name, type: "connection", description: meta.target.description ?? "" }],
+        campaignState ?? {},
+        { source: "vow_target", sessionId: campaignState?.currentSessionId ?? null },
+      );
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: vow-target draft queue failed:`, err?.message ?? err);
     }
   }
 

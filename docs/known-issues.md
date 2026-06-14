@@ -11,11 +11,14 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
-**Status:** Open — playthrough complete (2026-06-14). 19 active findings
-(A–T; **Q withdrawn** — confirmed correct behaviour). **M/N/S/T fixed in v1.7.13**
-(move-lock lockup and narrator-memory anchoring). **L/O fixed in v1.7.13** — see
-cluster note and individual entries. The rest remain open. Two-player session
-(GM + one non-GM player); PCs Kylar Nazari and Mave Takara in the Igneous Maze sector.
+**Status:** Largely resolved — playthrough complete (2026-06-14). 19 findings
+(A–T; **Q withdrawn** — confirmed correct behaviour). **All fixed in v1.7.13**
+except **E** (config/discoverability — setting hint clarified; not a code bug)
+and **H** (diagnostics added; root cause needs the Tier-3 audio smoke to confirm
+live). **K** was resolved by the M/N move-lock fix. Finding **A**'s camera fix
+should be eyeballed in a live session (geometry can't be unit-verified). See the
+cluster notes and individual entries. Two-player session (GM + one non-GM
+player); PCs Kylar Nazari and Mave Takara in the Igneous Maze sector.
 
 **Version timeline (important — the session spanned a rollback):**
 
@@ -104,8 +107,8 @@ cluster note and individual entries. The rest remain open. Two-player session
   M/N fix. Lesson: the GM-only test pipeline didn't *gate* these — it just
   never exercised a player's *settings state* (client-scoped toggles/keys) or
   the v1.7.12 pipeline.
-- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns — fixed
-  v1.7.13).
+- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns).
+  **Both fixed in v1.7.13.**
 - **PC-aware narrator/detector** — F (PCs proposed as Connections),
   G (Compel suggested against a fellow PC). **Both fixed in v1.7.13.**
 
@@ -119,14 +122,18 @@ the left; tokens and connections are visible but the initial view is
 mis-centred, with a large portion of the scene area falling outside the
 padded region. Pan/zoom-out behaviour is unpredictable.
 
-**Likely cause:** PLAYTEST-1711 D restored `padding: 0.1` and a captured
-initial view for the sector map. Something in the v1.7.12 work has either
-reset padding to `0` again or the captured initial-view coordinates are being
-applied relative to a different origin, shifting the visible area into the
-black region.
+**✅ FIXED in v1.7.13 (verify in a live session).** Padding was NOT the
+regression — it is still `0.1` (`src/sectors/sceneBuilder.js`). The captured
+initial view set `initial.x = sceneWidth/2`, `initial.y = sceneHeight/2` — raw
+**background-image** coordinates that ignore the padding offset of the scene
+rectangle within the padded canvas. Foundry's `initialViewPosition` defaults the
+centre to the padding-aware scene-rect midpoint (`sceneX + sceneWidth/2`); the
+explicit half-dimensions bypassed that and landed ~`padding` pixels up-and-left,
+pulling the view into the black void past the top-left edge. **Fix:** supply only
+`scale` in `initial` and let Foundry compute the padding-aware centre. (Camera
+geometry can't be unit-verified; confirm the load view is centred in a session.)
 
-**Files to check:** `src/sector/sectorScene.js` (padding + `initialViewPosition`
-write), `src/sector/sectorMap.js`.
+**Files:** `src/sectors/sceneBuilder.js` (`initialView` / `padding`).
 
 ---
 
@@ -136,17 +143,16 @@ write), `src/sector/sectorMap.js`.
 spotlight vignette only features one character (Kylar). Mave is absent from
 the generated opening scene entirely.
 
-**Likely cause:** The vignette prompt either only resolves the first entry from
-`getPlayerActors()` / `characterIds`, or the assembler's CHARACTER STATE block
-is only injecting one character into the narrator context that generates the
-opening scene. The "+1 momentum to all players" line on the move card suggests
-both PCs are known to the consequence layer — the gap is in the vignette
-narration prompt specifically.
-
-**Files to check:** wherever the Begin a Session opening vignette is generated
-(likely `src/moves/resolver.js` CONSEQUENCE_MAP entry for `begin_a_session`,
-or `src/narration/narratorPrompt.js`); confirm the CHARACTER STATE block passed
-to that call includes all player actors.
+**✅ FIXED in v1.7.13.** Root cause: `collectGalleyParticipants`
+(`src/session/galleyVignette.js`) enumerated PCs from `game.users[].character`
+— the per-user character assignment — not the actor roster. A PC actor that no
+*connected* user had selected as their `User.character` was never added to
+either the active or absent list, so it vanished from the prompt entirely. **Fix:**
+enumerate the canonical PC roster (`getPlayerActors()`, which excludes NPC cards)
+and use the user list only to decide present (assigned user is active) vs absent
+(assigned user offline, or no assigned user). Every PC now appears — present ones
+in the galley, the rest named in the banter. Falls back to the old enumeration if
+the roster is somehow empty. Tests: `tests/unit/galleyParticipants.test.js`.
 
 ---
 
@@ -163,15 +169,15 @@ draft card (same mechanism as entity detection from narration), or at minimum
 add a draft row to the Entities panel so the GM can confirm → create the
 connection in one click.
 
-**Likely cause:** The "GM-only write" fallback path in the vow consequence
-handler only posts the advisory text and returns — it doesn't call the entity
-extractor / draft pipeline that narration-detected entities go through. The
-connection name is available at that point but is never forwarded to
-`routeEntityDrafts` or `createConnection`.
-
-**Files to check:** `src/moves/resolver.js` (vow consequence, the branch that
-emits the advisory string), `src/entities/entityExtractor.js`
-(`routeEntityDrafts` / draft card emission).
+**✅ FIXED in v1.7.13.** The non-GM branch of `buildSwearVowPlan`
+(`src/session/swearVow.js`) previously set only an advisory string and returned.
+It now sets `queueTargetDraft`, and `executeSwearVow` routes the named target
+through `routeEntityDrafts([{ name, type: 'connection', description }], …)` —
+the exact pipeline narration-detected entities use — so a GM-actionable draft
+card appears with a one-click Confirm. The confirmation notice changed from
+"Ask your GM to add …" to "… has been queued as a connection for your GM to
+confirm." The world-write itself stays GM-only (PERSIST-001 family); only the
+*draft* is emitted by the player. Tests: `tests/unit/swearVow.test.js`.
 
 ---
 
@@ -189,13 +195,14 @@ oracle ROLE roll should either be suppressed and the title used instead, or
 the seeder should detect the conflict and leave ROLE blank/set it to the
 title derived from the name.
 
-**Likely cause:** `seedConnectionActor` (or `autoSeedConnection`) always rolls
-the Character Role oracle unconditionally — there is no pre-check for a title
-already present in the actor name.
-
-**Files to check:** `src/entities/connection.js` (`seedConnectionActor` /
-oracle roll for ROLE), `src/narration/narratorPrompt.js` or wherever the
-Characteristics oracle block is assembled.
+**✅ FIXED in v1.7.13.** `seedConnectionActor` (`src/entities/connection.js`)
+rolled the Character Role oracle whenever the record carried no explicit role.
+It now consults `roleTitleFromName(actor.name)` first: a recognised leading
+title (Administrator, Captain, Doctor/Dr, Councilor/Councillor, Governor, …) is
+used as the Role verbatim, so "Administrator Lyssa Chen" gets Role =
+"Administrator" rather than a contradictory oracle roll. Precedence: explicit
+role → title-from-name → oracle roll. Whole-word matched (no "Drake" → Captain
+false-positives). Tests: `tests/unit/connectionSeed.test.js`.
 
 ---
 

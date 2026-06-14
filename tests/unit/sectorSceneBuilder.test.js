@@ -163,12 +163,17 @@ describe('createSectorScene — camera (v1.7.11 finding D)', () => {
     expect(payload.padding).toBeGreaterThan(0);
   });
 
-  it('captures an initial view centred on the map at a fit scale ≤ 1', async () => {
+  it('captures an initial view scale ≤ 1 and defers centring to Foundry (finding A)', async () => {
     await createSectorScene(makeSector(), null, makeEntityActors());
     const payload = global.Scene.create.mock.calls[0][0];
     expect(payload.initial).toBeTruthy();
-    expect(payload.initial.x).toBe(Math.round(payload.width  / 2));
-    expect(payload.initial.y).toBe(Math.round(payload.height / 2));
+    // x/y are intentionally omitted: Foundry's initialViewPosition defaults the
+    // centre to the padding-aware scene-rect midpoint. An explicit width/2,
+    // height/2 used raw image coordinates that ignore the padding offset, so the
+    // camera landed ~padding pixels up-and-left, into the black void past the
+    // top-left scene edge (finding A).
+    expect(payload.initial.x).toBeUndefined();
+    expect(payload.initial.y).toBeUndefined();
     expect(payload.initial.scale).toBeGreaterThan(0);
     expect(payload.initial.scale).toBeLessThanOrEqual(1);
   });

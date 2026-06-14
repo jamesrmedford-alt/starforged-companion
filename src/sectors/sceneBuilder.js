@@ -58,19 +58,21 @@ const SCENE_CONFIG = {
 export async function createSectorScene(sector, backgroundPath, entityActors) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
 
-  // Captured initial view (finding D, option b): centre the map and zoom to
-  // show the whole padded scene on a modest viewport, so loading or resetting
-  // the scene always returns to the full overview rather than wherever a
-  // speaker-pan left the camera. Scale ≤ 1; derived from a reference width so
-  // the entire map is visible on essentially any screen (the player can zoom
-  // in from there — padding above gives the camera room to move).
+  // Captured initial view (finding D, option b): zoom to show the whole padded
+  // scene on a modest viewport, so loading or resetting the scene returns to
+  // the full overview rather than wherever a speaker-pan left the camera.
+  //
+  // Centre (finding A): we deliberately DO NOT set x/y. Foundry's
+  // `initialViewPosition` already defaults the centre to the padding-aware
+  // scene-rect midpoint (`sceneX + sceneWidth/2`, `sceneY + sceneHeight/2`).
+  // The previous explicit `x: sceneWidth/2, y: sceneHeight/2` were raw
+  // background-image coordinates that ignore the padding offset, so the camera
+  // landed ~`padding` pixels up-and-left — pulling the view into the black void
+  // past the top-left scene edge. Supplying only `scale` keeps the zoom intent
+  // while letting Foundry compute the correct, padding-aware centre.
   const REFERENCE_VIEWPORT_W = 1600;
   const initialScale = Math.min(1, REFERENCE_VIEWPORT_W / (sceneWidth * (1 + padding * 2)));
-  const initialView  = {
-    x:     Math.round(sceneWidth  / 2),
-    y:     Math.round(sceneHeight / 2),
-    scale: Number(initialScale.toFixed(3)),
-  };
+  const initialView  = { scale: Number(initialScale.toFixed(3)) };
 
   // Foundry v13 scene background.src requires a path from the server root.
   // FilePicker.upload returns a relative path (no leading slash); add one.

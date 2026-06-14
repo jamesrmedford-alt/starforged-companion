@@ -22,28 +22,48 @@
  * for the next narration after the session begins.
  */
 
-import { readCharacterSnapshot } from "../character/actorBridge.js";
+import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge.js";
 import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
 /**
- * Collect every Foundry User that has a `User.character` set, split by
- * connected state. The GM is included on both sides — see the file
- * header.
+ * Collect every player character actor, split by connected state. The roster
+ * is the canonical PC list (`getPlayerActors`, which excludes NPC/connection
+ * cards), NOT the set of users with a `User.character` assignment — a PC actor
+ * that no connected user has selected as their character was previously dropped
+ * from the vignette entirely (finding B: the second PC was missing). Every PC
+ * now appears: present when a connected user is assigned to it, otherwise in the
+ * absent list so the banter still references them. The GM is included on both
+ * sides via their own assigned PC — see the file header.
  *
  * @returns {{ active: Array<{ user, actor }>, absent: Array<{ user, actor }> }}
  */
 export function collectGalleyParticipants() {
-  const users = globalThis.game?.users?.contents ?? [];
-  const active = [];
-  const absent = [];
+  const users   = globalThis.game?.users?.contents ?? [];
+  const actors  = (() => { try { return getPlayerActors() ?? []; } catch { return []; } })();
+  const active  = [];
+  const absent  = [];
 
-  for (const user of users) {
-    const actor = user?.character;
+  for (const actor of actors) {
     if (!actor) continue;
-    if (user.active === true) active.push({ user, actor });
-    else                       absent.push({ user, actor });
+    // Presence is by User.active, not GM status (a GM owns every actor, so
+    // ownership can't distinguish who is actually at the table). Match the
+    // user who has selected this actor as their character.
+    const assigned = users.find(u => u?.character?.id === actor.id) ?? null;
+    if (assigned?.active === true) active.push({ user: assigned, actor });
+    else                          absent.push({ user: assigned, actor });
+  }
+
+  // Fallback: if the PC roster came back empty (unusual config), preserve the
+  // old user.character enumeration so we never regress to an empty vignette.
+  if (!active.length && !absent.length) {
+    for (const user of users) {
+      const actor = user?.character;
+      if (!actor) continue;
+      if (user.active === true) active.push({ user, actor });
+      else                      absent.push({ user, actor });
+    }
   }
 
   return { active, absent };

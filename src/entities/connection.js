@@ -561,7 +561,11 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
   if (existing.seeded && !force) return existing; // already populated — idempotent
 
   const { rollOracle } = await import("../oracles/roller.js");
-  const role        = existing.role || safeRoll(rollOracle, "character_role");
+  // A title baked into the name is the established role (finding D): a vow
+  // target "Administrator Lyssa Chen" must not then roll ROLE = "Shipwright"
+  // and contradict itself. Precedence: an explicit role, else a title parsed
+  // from the name, else the oracle roll.
+  const role        = existing.role || roleTitleFromName(actor.name) || safeRoll(rollOracle, "character_role");
   const goal        = existing.goal || safeRoll(rollOracle, "character_goal");
   const firstLookEx = Array.isArray(existing.firstLook) ? existing.firstLook[0] : existing.firstLook;
   const firstLook   = firstLookEx || safeRoll(rollOracle, "character_first_look");
@@ -626,6 +630,48 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
 // rolled value, stored on the record AND system.pronouns, anchors all surfaces
 // (art prompt, seeded Notes prose, live narrator context, audio voice).
 const CONNECTION_PRONOUN_SETS = ["she/her", "he/him", "they/them"];
+
+// Leading honorific/title tokens that double as an NPC's established role
+// (finding D). Matched against the start of the name, case-insensitive; the
+// canonical role string is used verbatim in the Role field.
+const NAME_TITLE_ROLES = [
+  [/^administrator\b/i,    "Administrator"],
+  [/^admiral\b/i,         "Admiral"],
+  [/^ambassador\b/i,      "Ambassador"],
+  [/^captain\b/i,         "Captain"],
+  [/^chancellor\b/i,      "Chancellor"],
+  [/^chief\b/i,           "Chief"],
+  [/^commander\b/i,       "Commander"],
+  [/^councill?or\b/i,     "Councilor"],
+  [/^director\b/i,        "Director"],
+  [/^(?:doctor|dr\.?)\b/i, "Doctor"],
+  [/^elder\b/i,           "Elder"],
+  [/^foreman\b/i,         "Foreman"],
+  [/^governor\b/i,        "Governor"],
+  [/^lieutenant\b/i,      "Lieutenant"],
+  [/^magistrate\b/i,      "Magistrate"],
+  [/^overseer\b/i,        "Overseer"],
+  [/^professor\b/i,       "Professor"],
+  [/^sergeant\b/i,        "Sergeant"],
+  [/^warden\b/i,          "Warden"],
+];
+
+/**
+ * Derive a role from a leading title in an NPC name (finding D). Returns the
+ * canonical role (e.g. "Administrator" for "Administrator Lyssa Chen",
+ * "Doctor" for "Dr. Chen") or null when the name carries no recognised title.
+ * Pure — exported for unit testing.
+ * @param {string} name
+ * @returns {string|null}
+ */
+export function roleTitleFromName(name) {
+  const n = String(name ?? "").trim();
+  if (!n) return null;
+  for (const [re, role] of NAME_TITLE_ROLES) {
+    if (re.test(n)) return role;
+  }
+  return null;
+}
 
 /**
  * Pick a pronoun set for a new NPC. Equal weighting across the three common
