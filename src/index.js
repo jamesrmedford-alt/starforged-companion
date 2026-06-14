@@ -1057,10 +1057,22 @@ export function registerChatHook() {
           }).catch(err => console.warn(`${MODULE_ID} | improve metadata update failed:`, err));
         }
 
+        // The move is resolved, persisted, and narrated — the critical section
+        // the concurrency lock guards (campaignState writes + narration) is now
+        // complete. Release the lock HERE, before the interactive rider prompt.
+        // applyMoveConsequenceRiders can open a GM dialog (riderDialog.js); if it
+        // held the lock, an unanswered or unnoticed dialog left
+        // campaignState.pendingMove = true and every subsequent player input hit
+        // the "a move is already being resolved" guard — the v1.7.12 lockup
+        // (known-issues PLAYTEST-1712 M/N, fixed here). The finally above
+        // re-releases idempotently for the throw / cancelled-confirm paths.
+        await releasePendingMoveLock();
+
         // Auto-apply asset consequence riders from this outcome — meters and
         // progress — so the player never adjusts resources by hand. Runs after
         // persistResolution so the move's own consequences land first; optional
-        // / choice / ambiguous-progress riders prompt. GM-gated (world writes).
+        // / choice / ambiguous-progress riders prompt. That prompt no longer
+        // holds the move lock (released just above). GM-gated (world writes).
         await applyMoveConsequenceRiders(resolution, interpretation, campaignState, burnActor)
           .catch(err => console.warn(`${MODULE_ID} | consequence riders failed:`, err?.message ?? err));
       }
@@ -1072,14 +1084,10 @@ export function registerChatHook() {
         "Check your API key in module settings and try again."
       );
     } finally {
-      // Always release the lock, even if the pipeline threw. Re-read the
-      // latest state so we don't overwrite changes made during the pipeline
-      // (entity records, progress ticks, recap caches, etc).
-      const latestState = game.settings.get(MODULE_ID, "campaignState");
-      latestState.pendingMove = false;
-      await game.settings.set(MODULE_ID, "campaignState", latestState).catch(err =>
-        console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err)
-      );
+      // Safety net: always release the lock, even if the pipeline threw or the
+      // confirm dialog was cancelled before the success-path release below ran.
+      // Idempotent — when the early release already cleared it, this no-ops.
+      await releasePendingMoveLock();
     }
   });
 }
@@ -1088,6 +1096,27 @@ export function registerChatHook() {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Release the move-concurrency lock (`campaignState.pendingMove`).
+ *
+ * Idempotent and safe to call more than once. The move pipeline releases the
+ * lock on the success path *before* the interactive consequence-rider prompt,
+ * so an unanswered or unnoticed GM dialog can't wedge the lock and block all
+ * subsequent narration (PLAYTEST-1712 M/N — the v1.7.12 lockup). The pipeline's
+ * `finally` calls this again as a safety net for the throw / cancelled-confirm
+ * paths. Re-reads the latest campaignState each call so it never clobbers
+ * writes made during the pipeline (entity records, progress ticks, recap
+ * caches). World-scoped write → effective on the GM client only.
+ */
+export async function releasePendingMoveLock() {
+  const latestState = game.settings.get(MODULE_ID, "campaignState");
+  if (!latestState?.pendingMove) return;   // already released — cheap no-op
+  latestState.pendingMove = false;
+  await game.settings.set(MODULE_ID, "campaignState", latestState).catch(err =>
+    console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err),
+  );
+}
 
 /**
  * Register the updateActor hook.

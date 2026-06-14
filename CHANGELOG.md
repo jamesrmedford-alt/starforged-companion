@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **Multiplayer no longer locks up after a move with an asset effect.** When a move's outcome offered an optional asset effect that needed a decision — "you may take +1 momentum", "choose one: +1 health or +1 momentum", or which track to mark progress on — the prompt to resolve it held the table's "one move at a time" lock open on the GM's screen. Until the GM answered it (and if the auto-popup went unnoticed, that could be a while), every other player's narration was turned away with "a move is already being resolved", recoverable only by reloading. The lock is now released the moment the move is resolved and narrated — *before* that optional prompt appears — so the rest of the table keeps playing while the GM resolves the effect at their own pace. (v1.7.12 playtest findings M/N.)
+
+## [1.7.12] — 2026-06-13
+
 - Added: **Asset effects apply themselves.** When a move's outcome triggers an asset's resource effect — "take +1 momentum on a strong hit", "suffer -1 supply", "mark progress on a hit" — the module now applies it for you instead of leaving you to adjust meters by hand. Optional ("you may…") and "choose one" effects ask first; everything unambiguous applies silently, with a "✦ Asset effects applied" card showing what landed. Effects are read from the asset's own text using the GM's Claude key (the same one narration uses — only the GM needs a key, players don't); anything it can't read cleanly is left for you to apply, exactly as before. A new GM setting (**Auto-apply asset consequence riders**, on by default) turns the whole thing off. Builds on the post-roll ✦ Improve to Strong Hit affordance — together they mean a move's mechanical bookkeeping (adds, stat swaps, outcome upgrades, and now consequence riders) is handled for you. (`docs/moves/consequence-riders-scope.md`.)
 
 The seven items below resolve the v1.7.11 playtest findings (`docs/testing/v1.7.11-playtest-findings.md`).

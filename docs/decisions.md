@@ -6,6 +6,45 @@ rejected.
 
 ---
 
+## Move-concurrency lock covers narration + persistence, not post-roll prompts
+
+**Decision:** The `campaignState.pendingMove` lock (the one-move-at-a-time guard
+in the `createChatMessage` pipeline, `src/index.js`) is released on the success
+path **before** the interactive consequence-rider prompt (`promptRiders`,
+`src/moves/riderDialog.js`), through the `releasePendingMoveLock()` helper. The
+pipeline's `finally` re-releases idempotently for the throw / cancelled-confirm
+paths.
+
+**Reason:** The lock exists to stop two pipelines racing on `campaignState`
+writes and posting duplicate narration. Both of those — `persistResolution` and
+the narration call — are finished before the rider step runs. v1.7.12 added
+`applyMoveConsequenceRiders` *inside* the locked region; its GM dialog held the
+world-scoped lock open while waiting for input, so a missed or unanswered popup
+blocked every other player with "a move is already being resolved", recoverable
+only by a reload (which fires the `ready`-hook stale-lock reset). This bricked
+the v1.7.12 multiplayer playtest (known-issues PLAYTEST-1712 M/N); v1.7.11 had
+no post-roll dialog and never wedged.
+
+**Rejected:**
+- *Timeout / auto-dismiss the rider dialog* — silently skipping a GM decision
+  contradicts the consequence-riders scope doc's "never apply a guess, surface
+  what you can't resolve" intent, and is poor UX.
+- *Keep the lock across the prompt with a watchdog* — papers over the real
+  issue: an interactive prompt must never hold a cross-client concurrency lock.
+
+**Trade-off accepted:** after the early release a second move can begin while the
+GM is still resolving the previous move's rider prompt. The rider application
+writes actor meters / progress (not the narration path the lock guards) and
+re-reads fresh state, so the residual race is narrow and strictly better than
+wedging the session. Pre-roll dialogs (`confirmInterpretation`,
+`ClarificationDialog`) still hold the lock by design — they are the move's own
+expected confirm step, at the start, where a cancel releases the lock immediately.
+
+**Files:** `src/index.js` (`releasePendingMoveLock`, the release sites in the
+pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`.
+
+---
+
 ## Chat command prefix: `!` not `/`
 
 **Decision:** All module commands use `!` prefix (`!x`, `!recap`, `!journal`, `!sector`).

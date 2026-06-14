@@ -12,9 +12,10 @@ _Last audited against the code at v1.6.0 (2026-05)._
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
 **Status:** Open — playthrough complete (2026-06-14). 19 active findings
-(A–T; **Q withdrawn** — confirmed correct behaviour), none yet fixed.
-Two-player session (GM + one non-GM player); PCs Kylar Nazari and Mave Takara
-in the Igneous Maze sector.
+(A–T; **Q withdrawn** — confirmed correct behaviour). **M/N fixed in v1.7.13**
+(the move-lock lockup — see those entries and the cluster note below); the rest
+remain open. Two-player session (GM + one non-GM player); PCs Kylar Nazari and
+Mave Takara in the Igneous Maze sector.
 
 **Version timeline (important — the session spanned a rollback):**
 
@@ -44,6 +45,21 @@ in the Igneous Maze sector.
   diagnostic that narrows it: rolling back to **v1.7.11 fixed it** (the button
   works correctly there), so the fix target is the `v1.7.11..v1.7.12` diff in
   the move pipeline / Roll-button path.
+  **✅ FIXED in v1.7.13.** Root cause confirmed via the diff: v1.7.12 added
+  `applyMoveConsequenceRiders` (consequence-riders feature) *inside* the
+  `pendingMove` lock's critical section. It can open an interactive GM dialog
+  (`src/moves/riderDialog.js`, `promptRiders`) for optional / "choose one" /
+  progress riders; while that dialog was open the world-scoped
+  `campaignState.pendingMove` stayed `true`, so every later player input hit the
+  "a move is already being resolved" guard (N) and Roll buttons looked dead (M).
+  The relog+rollback recovered it only because the `ready`-hook stale-lock reset
+  (`src/index.js`, "Reset stale pendingMove lock on ready") cleared it — and
+  v1.7.11 never re-wedged because it has no post-roll dialog. **Fix:** release
+  the lock on the success path *before* the rider prompt (the lock guards
+  narration + campaignState persistence, which are already done by then); the
+  `finally` re-releases idempotently via the new `releasePendingMoveLock()`
+  helper. Tests: `tests/unit/pipeline.test.js`. **K** should now be re-tested —
+  it was almost certainly this lockup, not a permission gate.
 - **Roll-button wiring** — J (wrong move on button), M (one-shot on v1.7.12).
   (Note: the v1.7.11 button works — see P. J still needs confirming on
   v1.7.11. **K was verified to have no GM gate** — likely the M/N regression,
@@ -432,6 +448,14 @@ genuine "permission" event in the path is the *caught* `message.update` for the
 
 #### M — Roll button works only on the first narrator card; dead on all subsequent cards
 
+**✅ FIXED in v1.7.13** — see the Move-lock cluster note above. The button was
+never the problem: after the first move whose outcome opened a consequence-rider
+prompt, the held `pendingMove` lock made every subsequent move's re-posted input
+short-circuit at the concurrency guard. Releasing the lock before the rider
+prompt restores repeated Roll-button use. The original analysis (handler
+registered `{ once: true }` / consumed reference) was **not** the cause —
+verified against `src/index.js:3074-3113`, which re-binds per render.
+
 **Symptom:** The Roll [move] button in narrator chat cards fires correctly the
 first time it is clicked in a session. All subsequent Roll buttons on later
 cards do nothing — no roll, no error.
@@ -456,6 +480,13 @@ be marking cards handled without attaching the Roll listener).
 ---
 
 #### N — Narrator card stops appearing for paced inputs mid-session
+
+**✅ FIXED in v1.7.13** — same root cause as M (see the Move-lock cluster note
+above). The "move in flight" guard the inputs hit was the held `pendingMove`
+lock, kept `true` by the consequence-rider dialog open on the GM's screen. The
+diagnosis below ("lock set on the first roll never released") was correct in
+shape; the specific never-releasing await was the post-roll rider prompt, fixed
+by releasing the lock before it.
 
 **Symptom:** Pacing telemetry continues to log decisions (`NARRATIVE`,
 `NARRATIVE_WITH_MOVE_AVAILABLE`) for player inputs, but no narrator chat card
@@ -531,6 +562,14 @@ times it was offered** — the stuck-lock behaviour was gone.
 Roll-button click handler to find the regression that leaves the lock set
 (findings M/N). A `ready`-hook reset of the lock is still worth adding as
 cheap defence-in-depth, but it is not established that the lock is persisted.
+
+**✅ RESOLVED in v1.7.13.** The diff confirmed the regression (consequence-rider
+dialog inside the lock — see the Move-lock cluster note and M/N). Notes now
+verified: the lock **is** persisted (it lives in `campaignState.pendingMove`, a
+world setting), and the `ready`-hook stale-lock reset already existed
+(`src/index.js`, "Reset stale pendingMove lock on ready") — that reset is
+exactly why the relog/rollback recovered the session, and why we couldn't
+isolate relog-vs-rollback (either path fires the same `ready` reset).
 
 **Files to check:** the move-in-progress flag / lock in `src/index.js` or
 `src/moves/pipeline.js`; the Roll-button handler in `src/index.js` /
