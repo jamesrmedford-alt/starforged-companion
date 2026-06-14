@@ -92,6 +92,95 @@ function maxTokensWithSidecar(baseMaxTokens) {
 let _lastRecapInjectedSessionId = null;
 
 // ---------------------------------------------------------------------------
+// Unified narrator context assembly
+// ---------------------------------------------------------------------------
+
+/**
+ * The narrator's system-prompt context is assembled in exactly ONE place: here.
+ * Every narrator call site — move resolution, paced narrative, scene query,
+ * oracle follow-up, session vignette, inciting incident, campaign recap —
+ * builds its `extras` packet through this function, so new context added here
+ * reaches every path at once. This is the single seam to extend going forward;
+ * do not hand-assemble `extras` at a call site (that is the per-path drift this
+ * unifies away — campaign truths used to reach only the move path, entity cards
+ * only three paths, the party roster only three, and the recap none).
+ *
+ * Context EVERY path receives (the uniform packet):
+ *   - current location card, active sector anchor, campaign-truths digest
+ *   - multiplayer party roster, audio-markup flag, the mode + player text
+ * The creative-latitude permission block is also uniform, but resolved one
+ * level up in buildNarratorSystemPrompt: move_resolution's class is dynamic
+ * (passed in via the relevance result below); every other mode falls back to a
+ * per-mode default (DEFAULT_PERMISSION_CLASS_BY_MODE).
+ *
+ * Relevance (entity cards + matched IDs + name map) has just two rules:
+ *   - move_resolution: derived from the FULL relevance result the caller
+ *     already resolved (it owns the clarification-dialog control flow and the
+ *     dynamic permission class); oracle seeds — which only a move produces —
+ *     ride along here too.
+ *   - every other mode: resolved here lexically (no API call) from the player
+ *     text ∪ scene-frame present names. Modes with no player text (vignette /
+ *     inciting / recap) match nothing and rely on the sector roster for cast.
+ *
+ * @param {string} mode               — narrator mode (see NARRATOR_MODES)
+ * @param {Object} campaignState
+ * @param {Object} [opts]
+ * @param {string} [opts.playerNarration] — player text this turn (ledger scoping + lexical relevance)
+ * @param {Object|null} [opts.character]  — resolved active character (names the speaking PC for the roster)
+ * @param {Object|null} [opts.relevance]  — pre-resolved FULL relevance result (move path only)
+ * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
+ * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
+ */
+export async function buildNarratorExtras(mode, campaignState, opts = {}) {
+  const {
+    playerNarration = '',
+    character       = null,
+    relevance       = null,
+    oracleSeeds     = null,
+  } = opts;
+
+  // Context every narrator path receives.
+  const extras = {
+    mode,
+    playerNarration,
+    currentLocationCard: formatCurrentLocation(campaignState),
+    activeSectorBlock:   formatActiveSector(campaignState),
+    campaignTruthsBlock: await buildCampaignTruthsBlock(campaignState).catch(err => {
+      console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
+      return '';
+    }),
+    party:              buildPartyContext(character?.name ?? null),
+    audioMarkupEnabled: audioMarkupEnabledFromSettings(),
+  };
+
+  if (mode === 'move_resolution') {
+    // The move pipeline resolves relevance itself (clarification dialog +
+    // dynamic permission class) and hands the result in; oracle seeds (which
+    // only a move resolution produces) ride along here too.
+    if (relevance) {
+      extras.narratorClass    = relevance.resolvedClass;
+      extras.entityCards      = collectEntityCards(relevance.entityIds, relevance.entityTypes);
+      extras.matchedEntityIds = relevance.entityIds ?? [];
+      extras.entityNamesById  = collectEntityNamesById(relevance.entityIds, relevance.entityTypes);
+    }
+    extras.oracleSeeds = oracleSeeds;
+  } else {
+    // One uniform rule for every non-move mode: resolve relevance lexically
+    // (no API cost). Modes with no player text (vignette / inciting / recap)
+    // naturally match nothing and get no entity cards — the active-sector
+    // roster carries their cast — so this stays a single rule, not per-mode
+    // special-casing. The permission class for these modes is supplied by
+    // buildNarratorSystemPrompt's per-mode default, not here.
+    const lexical = await resolvePathRelevance(playerNarration, campaignState);
+    extras.entityCards      = lexical.entityCards;
+    extras.matchedEntityIds = lexical.entityIds;
+    extras.entityNamesById  = lexical.entityNamesById;
+  }
+
+  return extras;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -167,31 +256,15 @@ export async function narrateResolution(resolution, contextPacket, campaignState
     );
   }
 
-  const entityCards = collectEntityCards(relevance.entityIds, relevance.entityTypes);
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
-  const campaignTruthsBlock = await buildCampaignTruthsBlock(campaignState).catch(err => {
-    console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
-    return '';
+  const extras = await buildNarratorExtras('move_resolution', campaignState, {
+    playerNarration: resolution.playerNarration ?? '',
+    character,
+    relevance,
+    oracleSeeds:     resolution.oracleSeeds ?? null,
   });
-  const entityNamesById = collectEntityNamesById(relevance.entityIds, relevance.entityTypes);
 
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, recapContext,
-    {
-      mode:                'move_resolution',
-      narratorClass:       relevance.resolvedClass,
-      entityCards,
-      currentLocationCard,
-      activeSectorBlock,
-      oracleSeeds:         resolution.oracleSeeds ?? null,
-      campaignTruthsBlock,
-      matchedEntityIds:    relevance.entityIds ?? [],
-      playerNarration:     resolution.playerNarration ?? '',
-      entityNamesById,
-      party:               buildPartyContext(character?.name ?? null),
-      audioMarkupEnabled:  audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, recapContext, extras,
   );
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -564,7 +637,8 @@ export async function getCampaignRecap(campaignState, options = {}) {
 
   const settings    = getNarratorSettings();
   const character   = getActiveCharacter(campaignState);
-  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character);
+  const extras      = await buildNarratorExtras('campaign_recap', campaignState, { character });
+  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
   const userMessage  = buildCampaignRecapUserMessage(chronicleEntries);
 
   try {
@@ -713,29 +787,13 @@ export async function interrogateScene(question, campaignState, options = {}) {
   // The @scene intercept in index.js already calls startScene; this guard
   // covers any direct interrogateScene callers that bypass the chat hook.
   await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
-  // SECTOR-001 anchors (see formatActiveSector() above) ensure paced and
-  // scene-query paths get the same establishments + current-location
-  // context as the move-pipeline path.
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
-
-  // Narrator-memory A2.5 — lexical relevance on the scene path, same as
-  // paced narration: matched entity cards + real ledger scoping.
-  const relevance = await resolvePathRelevance(question, campaignState);
+  const extras = await buildNarratorExtras('scene_interrogation', campaignState, {
+    playerNarration: question,
+    character,
+  });
 
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '',
-    {
-      mode:            'scene_interrogation',
-      playerNarration: question,
-      currentLocationCard,
-      activeSectorBlock,
-      entityCards:      relevance.entityCards,
-      matchedEntityIds: relevance.entityIds,
-      entityNamesById:  relevance.entityNamesById,
-      party:            buildPartyContext(character?.name ?? null),
-      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, '', extras,
   );
 
   const contextLimit  = getSceneContextCards();
@@ -754,7 +812,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       maxTokens: maxTokensWithSidecar(200),
     });
     const response = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, playerNarration: question, matchedEntityIds: relevance.entityIds,
+      moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds,
     });
 
     if (!response?.trim()) {
@@ -775,7 +833,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
           maxTokens: maxTokensWithSidecar(200),
         });
         const response = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, playerNarration: question, matchedEntityIds: relevance.entityIds,
+          moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds,
         });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
@@ -830,19 +888,12 @@ export async function narrateOracleFollowup({
   if (!apiKey) return null;
 
   const character = getActiveCharacter(campaignState);
-  // Reuse the same sector + current-location anchors the paced / scene paths
-  // use so the narrator references the right place + established names.
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
+  const extras = await buildNarratorExtras('oracle_followup', campaignState, {
+    playerNarration: question,
+    character,
+  });
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '',
-    {
-      mode:               'oracle_followup',
-      playerNarration:    question,
-      currentLocationCard,
-      activeSectorBlock,
-      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, '', extras,
   );
 
   const sentenceTarget = settings.narrationLength ?? 3;
@@ -956,17 +1007,9 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
   if (!apiKey) return null;
 
   const character = getActiveCharacter(campaignState);
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
+  const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '',
-    {
-      mode:               'session_vignette',
-      playerNarration:    '',
-      currentLocationCard,
-      activeSectorBlock,
-      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, '', extras,
   );
 
   try {
@@ -1018,17 +1061,9 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
   if (!apiKey) return null;
 
   const character = getActiveCharacter(campaignState);
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
+  const extras = await buildNarratorExtras('inciting_incident', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '',
-    {
-      mode:               'inciting_incident',
-      playerNarration:    '',
-      currentLocationCard,
-      activeSectorBlock,
-      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, '', extras,
   );
 
   const run = async () => {
@@ -1090,33 +1125,14 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
   const character    = getActiveCharacter(campaignState, options?.speakerActorId);
   await ensureSceneStarted(campaignState, 'first_narration_paced');
-  // Paced narrator previously had zero sector / current-location context and
-  // would invent new settlement names for places that already exist (SECTOR-001).
-  // Both anchors closed in the same pass — see formatActiveSector() above.
-  const currentLocationCard = formatCurrentLocation(campaignState);
-  const activeSectorBlock   = formatActiveSector(campaignState);
 
-  // Narrator-memory A2.5 — run the relevance resolver on the paced path so
-  // matched entity records are injected as ENTITIES IN SCENE cards and the
-  // ledger's entity scoping works off real matched IDs. With moveId=null the
-  // resolver is purely lexical (no API call). Scene-frame `present` names
-  // are unioned into the match text so the active conversation partner's
-  // record stays injected even on turns that don't name them.
-  const relevance = await resolvePathRelevance(playerText, campaignState);
+  const extras = await buildNarratorExtras('paced_narrative', campaignState, {
+    playerNarration: playerText,
+    character,
+  });
 
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '',
-    {
-      mode:            'paced_narrative',
-      playerNarration: playerText,
-      currentLocationCard,
-      activeSectorBlock,
-      entityCards:      relevance.entityCards,
-      matchedEntityIds: relevance.entityIds,
-      entityNamesById:  relevance.entityNamesById,
-      party:            buildPartyContext(character?.name ?? null),
-      audioMarkupEnabled: audioMarkupEnabledFromSettings(),
-    },
+    campaignState, settings, character, '', extras,
   );
 
   const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
@@ -1132,7 +1148,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
     const text = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, playerNarration: playerText, matchedEntityIds: relevance.entityIds,
+      moveId: null, playerNarration: playerText, matchedEntityIds: extras.matchedEntityIds,
     });
 
     if (!text?.trim()) return null;
@@ -1155,7 +1171,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
         const text = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, playerNarration: playerText, matchedEntityIds: relevance.entityIds,
+          moveId: null, playerNarration: playerText, matchedEntityIds: extras.matchedEntityIds,
         });
         if (text?.trim()) {
           await postPacedNarrativeCard(text, playerText, sessionId, suggestedMove);
@@ -1435,11 +1451,32 @@ export function formatActiveSector(campaignState) {
   if (npcLines.length) {
     lines.push(
       '',
-      'Established NPCs in this sector (prefer building on these — their goals, ' +
-      'troubles, and relationships — over inventing parallel new ones):',
+      'Established NPCs in this sector:',
       ...npcLines,
     );
   }
+
+  // Cast discipline — reuse before you invent (PLAYTEST-1712, throwaway
+  // characters). When the fiction needs someone to fill a functional role, the
+  // narrator should try an established character first and only mint a new one
+  // when none can plausibly fit — and any new character is scoped to THIS
+  // sector, consistent with its authority and troubles, so it can recur rather
+  // than being a drifting one-off. Always emitted when a sector is active, even
+  // when the roster is empty (the sector-scoping half still applies).
+  const reuseTarget = npcLines.length
+    ? 'one of the NPCs listed above, a player character, or any entity already in the scene'
+    : 'a player character, an entity already in the scene, or any character established elsewhere in the campaign';
+  lines.push(
+    '',
+    'CAST DISCIPLINE — reuse before you invent: when this scene needs a ' +
+    'character to fill a role (an official, a vendor, a pilot, a fixer, a guard, ' +
+    'a witness, a contact, a voice on the comm), FIRST decide whether an ' +
+    `established character — ${reuseTarget} — can plausibly fill it, and if so ` +
+    'use them by name. Introduce a brand-new named character ONLY when none of ' +
+    `the established cast can fill the role; any new character you do introduce ` +
+    `belongs to ${sector.name}, consistent with its authority and troubles, and ` +
+    'should be given enough substance to recur — not a single throwaway mention.',
+  );
 
   return lines.join('\n');
 }

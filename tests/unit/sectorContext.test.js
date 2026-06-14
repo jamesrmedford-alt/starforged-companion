@@ -129,4 +129,28 @@ describe("formatActiveSector — sector cast & attributes (PLAYTEST-1712 T)", ()
   it("returns empty string when no active sector is set", () => {
     expect(formatActiveSector({ activeSectorId: null })).toBe("");
   });
+
+  // PLAYTEST-1712 — throwaway characters. The narrator must try an established
+  // character before inventing one, and any new character is scoped to this
+  // sector so it can recur instead of drifting away after one mention.
+  it("emits a CAST DISCIPLINE directive that reuses first and scopes new NPCs to the sector", () => {
+    vi.mocked(listConnections).mockReturnValue([
+      { name: "Nova Petrov", sectorId: "sec-1", role: "Captain" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).toContain("CAST DISCIPLINE");
+    expect(block.toLowerCase()).toContain("reuse before you invent");
+    expect(block.toLowerCase()).toContain("only when none of the established cast");
+    expect(block).toContain("belongs to Igneous Maze");   // new NPCs scoped to this sector
+    expect(block).toContain("the NPCs listed above");      // roster-aware wording
+  });
+
+  it("still emits the cast directive when the sector has no established NPCs", () => {
+    vi.mocked(listConnections).mockReturnValue([]);   // empty roster
+    const block = formatActiveSector(state());
+    expect(block).toContain("CAST DISCIPLINE");
+    expect(block).toContain("belongs to Igneous Maze");
+    // roster-empty wording variant points elsewhere for reuse candidates
+    expect(block.toLowerCase()).toContain("established elsewhere in the campaign");
+  });
 });

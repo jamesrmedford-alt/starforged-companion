@@ -6,6 +6,74 @@ rejected.
 
 ---
 
+## Narrator context is assembled in one place; every mode gets the same packet
+
+**Decision:** All narrator calls build their system-prompt context through a
+single function, `buildNarratorExtras(mode, campaignState, opts)`
+(`src/narration/narrator.js`). The seven call sites (move resolution, paced,
+`@scene`, oracle follow-up, session vignette, inciting incident, campaign recap)
+no longer hand-assemble their own `extras`. The context packet is **uniform
+across modes**; the only per-mode variation is (a) the role description (the
+mode's job) and (b) data that physically only exists after a move — the oracle
+seeds and the dynamically-classified permission class.
+
+The **creative-latitude permission block is uniform too**: `move_resolution`'s
+class is resolved dynamically from the move outcome and passed in; every other
+mode falls back to a per-mode default (`DEFAULT_PERMISSION_CLASS_BY_MODE` in
+`narratorPrompt.js` — paced→interaction, scene/oracle/vignette→embellishment,
+inciting→discovery). The permission-block opening lines were reworded to stop
+assuming a move happened ("This turn…" not "This move…") since they now render
+outside the move path.
+
+**Reason:** Before this, context reached modes inconsistently — campaign truths
+were move-only, entity cards reached three paths, the party roster three, and
+the recap call passed *no* extras (so it silently used the move-resolution role
+and got no sector/location/character). Adding any new context meant editing up
+to seven call sites and risking another asymmetry. One assembly point makes "add
+context to the narrator" a one-line change that reaches every path.
+
+**Rejected:**
+- *Keep latitude in role descriptions for non-move modes* (no permission block
+  off the move path) — considered, but it leaves "what may the narrator invent"
+  living in two mechanisms that can drift. A single uniform permission class is
+  the one source of truth; role descriptions were trimmed of the now-duplicated
+  latitude language (and the inciting role's "do not invent proper nouns" was
+  reconciled with the discovery block's reuse-first rule).
+- *Make `campaign_recap` a full prose mode* — it is a meta mode: its output is
+  used verbatim and never parsed, so it must NOT receive the sidecar instruction
+  (a stray JSON block would leak into the recap) nor audio markup nor a latitude
+  block. `META_MODES` gates all three.
+
+**Trade-off accepted:** non-move modes now run a (cheap, API-free) lexical
+relevance pass and carry a permission block + campaign-truths digest they did
+not before — a few hundred input tokens per call, far below any context-window
+concern, in exchange for uniformity and the recap/oracle/vignette gaining
+context they were missing.
+
+## Reuse before you invent — no throwaway characters
+
+**Decision:** When the fiction needs a character to fill a functional role (an
+official, a vendor, a pilot, a witness, a voice on the comm), the narrator must
+first try an established character — the active-sector NPC roster, a player
+character, or an entity already in the scene — and introduce a brand-new named
+character **only when none can plausibly fill the role**. Any genuinely new
+character is scoped to the **current sector**, consistent with its authority and
+troubles, with enough substance to recur. This is enforced two ways: a CAST
+DISCIPLINE directive in the active-sector block (`formatActiveSector`, every
+prose path, even when the roster is empty) and a reuse-first rule in the
+DISCOVERY permission block (`narratorPrompt.js`).
+
+**Reason:** v1.7.12 playtest drift (findings D/F and the general O case): the
+narrator minted one-off named NPCs to fill momentary roles — and, worse,
+invented officials for settlements whose Authority is "lawless" — accumulating
+contradictory throwaways that never recurred and had no entity home. Anchoring
+new cast to the established roster and the current sector keeps the world small,
+consistent, and recurring.
+
+**Rejected:** *Forbid new named NPCs off the discovery path entirely* — too
+strict; the discovery move (e.g. `make_a_connection`) legitimately introduces
+people. The rule is reuse-*first*, not reuse-only.
+
 ## Move-concurrency lock covers narration + persistence, not post-roll prompts
 
 **Decision:** The `campaignState.pendingMove` lock (the one-move-at-a-time guard

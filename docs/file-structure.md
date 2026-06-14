@@ -143,8 +143,8 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `narrator.js` | `narrateResolution`, `narratePacedInput`, `interrogateScene`, recap + vignette helpers, `resolveNarrationPerspective()`. |
-| `narratorPrompt.js` | Builds the narrator system prompt (tone/perspective/length + all context sections). |
+| `narrator.js` | `narrateResolution`, `narratePacedInput`, `interrogateScene`, recap + vignette helpers, `resolveNarrationPerspective()`. **`buildNarratorExtras(mode, …)` is the single assembly point for every narrator call's system-prompt context** — extend it, not the call sites. |
+| `narratorPrompt.js` | Builds the narrator system prompt (tone/perspective/length + all context sections). Per-mode default creative-latitude class via `DEFAULT_PERMISSION_CLASS_BY_MODE`; `META_MODES` (recap) skip the sidecar/audio/permission blocks. |
 
 ### `oracles/` — oracle tables & rolling
 

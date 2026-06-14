@@ -581,6 +581,16 @@ third-party names are handled); `docs/narrator/narrator-memory-architecture.md`
 (scene truths / entity-card injection) — determine whether referenced-but-absent
 characters can be added to the narrator's working lore set mid-scene.
 
+**Partial mitigation (v1.7.13):** Two changes reduce the rate without closing
+the finding. (1) Finding S records the inciting incident as durable canon, so a
+character named only in the opening premise (Vex) now rides in the CAMPAIGN
+PREMISE block every turn — anchoring *that* character's facts. (2) The
+reuse-before-invent / CAST DISCIPLINE rule (decisions.md) steers the narrator
+away from minting parallel throwaways in the first place. The core ask remains
+open: a *mid-scene* referenced name that is neither in the premise nor a
+confirmed entity still has no fact home — capturing it into scene-truths on
+first mention is the outstanding work.
+
 ---
 
 #### P — Rolling back to v1.7.11 cleared the stuck move-lock; Roll button works correctly on v1.7.11
