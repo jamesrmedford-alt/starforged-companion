@@ -274,6 +274,28 @@ be marking cards handled without attaching the Roll listener).
 
 ---
 
+#### N — Narrator card stops appearing for paced inputs mid-session
+
+**Symptom:** Pacing telemetry continues to log decisions (`NARRATIVE`,
+`NARRATIVE_WITH_MOVE_AVAILABLE`) for player inputs, but no narrator chat card
+is posted. The pacing classifier is working; the downstream narrator call is
+either not firing or silently failing. Occurred mid-session after several cards
+had been posted normally.
+
+**Likely cause:** The narrator pipeline is throwing an unhandled error and
+silently returning — possible causes include an API call failure that isn't
+surfaced to chat, a context-assembly crash (e.g. missing actor data after
+finding F's PC-as-connection confusion), or a state flag left in a bad state
+by the first Roll button fire (finding M). The pacing path and the narrator
+call are separated enough that pacing still records its decision even when
+narration errors out.
+
+**Files to check:** `src/narration/narrator.js` (`narratePacedInput` — the
+try/catch or error boundary); browser console for silent errors mid-session;
+confirm `campaignState` is still valid at the point narration is called.
+
+---
+
 #### L — Narrator invented ship-in-motion context when docked at a station
 
 **Symptom:** The party is docked at a station waiting to hand over a fugitive.
