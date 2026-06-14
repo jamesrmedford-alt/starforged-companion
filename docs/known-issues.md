@@ -233,6 +233,37 @@ prompt has an incomplete picture of the entity roster.
 
 ---
 
+#### S — Inciting incident facts age out of narrator context too quickly; recap adopts drifted version
+
+**Symptom:** The inciting incident established "murdered Councilor Vex **three
+cycles ago**". Within the same session the narrator drifted to "**three weeks
+ago**" (finding O), and by end-of-session the campaign recap had fully adopted
+the drifted version — the recap says "murdered on Paradox three weeks ago",
+overwriting the inciting incident's ground truth.
+
+**Root cause:** The inciting incident's key facts (time, location, method,
+parties) are not being written to the narrator sidecar with sufficient
+permanence. They should be tier-0 immutable truths — always injected into
+every narrator call for the life of the campaign. Instead they appear to be
+stored as ordinary recent-narration entries that scroll out of the ring buffer
+as the session progresses, leaving the narrator with no anchor and free to
+reinvent details. The Narrative Review catches the drift (finding O) but only
+after the fact, and the recap then crystallises the wrong version into campaign
+history.
+
+**Expected behaviour:** The inciting incident's extracted facts should be
+written to the sidecar's permanent/never-dropped tier (see
+`rules/narrator-memory.md` invariants) on creation and re-injected on every
+narrator call, regardless of session length.
+
+**Files to check:** `src/narration/narrator.js` or `src/context/assembler.js`
+(where inciting incident data is assembled for the narrator context);
+`rules/narrator-memory.md` (never-dropped tier contract);
+`docs/narrator/narrator-memory-architecture.md` (sidecar write path for
+inciting incident).
+
+---
+
 #### J — Roll button move doesn't match the move named in narrator text
 
 **Symptom:** The narrator text reads "*If you want to draw out what he's
