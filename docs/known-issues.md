@@ -297,6 +297,34 @@ released.
 
 ---
 
+#### O — Referenced dead character accumulates contradictory details across turns
+
+**Symptom:** Councilor Vex (murdered before the session, never an active
+entity) is described inconsistently within a single scene: the narrator said
+"three weeks ago" in one turn; the Narrative Review flagged an earlier
+statement of "three cycles ago" for the same event. The Narrative Review is
+working correctly — it caught the contradiction — but there is nothing to
+prevent the contradiction from occurring in the first place.
+
+**Root cause:** Vex has no entity record in the Entities panel. Without a
+persistent fact sheet, each narrator call can freely invent or misremember
+details (time of death, location, method, relationship to other characters).
+The Narrative Review catches deviations after the fact but cannot enforce
+consistency at generation time.
+
+**Desired behaviour:** When the narrator introduces a referenced character
+with a name (Councilor Vex, Silas Kade, etc.), their key facts should be
+captured in a scene-truths / lore entry the first time they appear and
+included in the narrator context for all subsequent turns, so the model has
+a ground-truth anchor to write against.
+
+**Files to check:** `src/narration/narratorPrompt.js` (how referenced
+third-party names are handled); `docs/narrator/narrator-memory-architecture.md`
+(scene truths / entity-card injection) — determine whether referenced-but-absent
+characters can be added to the narrator's working lore set mid-scene.
+
+---
+
 #### L — Narrator invented ship-in-motion context when docked at a station
 
 **Symptom:** The party is docked at a station waiting to hand over a fugitive.
