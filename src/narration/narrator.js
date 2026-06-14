@@ -25,8 +25,8 @@ import {
   PACED_NARRATIVE_MOVE_ID,
   PACED_NARRATIVE_OUTCOME,
 } from '../entities/entityExtractor.js';
-import { getConnection }  from '../entities/connection.js';
-import { getSettlement }  from '../entities/settlement.js';
+import { getConnection, listConnections }  from '../entities/connection.js';
+import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction }     from '../entities/faction.js';
 import { getShip }        from '../entities/ship.js';
 import { getPlanet }      from '../entities/planet.js';
@@ -1371,7 +1371,7 @@ function formatCurrentLocation(campaignState) {
  * pushed to *reuse* the established settlement names rather than inventing
  * alternatives. Returns empty string when no active sector is set.
  */
-function formatActiveSector(campaignState) {
+export function formatActiveSector(campaignState) {
   const id     = campaignState?.activeSectorId;
   if (!id) return '';
   const sector = (campaignState?.sectors ?? []).find(s => s.id === id);
@@ -1384,16 +1384,60 @@ function formatActiveSector(campaignState) {
   if (sector.trouble) lines.push(`Trouble: ${sector.trouble}`);
   if (sector.faction) lines.push(`Faction control: ${sector.faction}`);
 
-  const settlements = (sector.mapData?.settlements ?? [])
-    .map(s => s?.name)
-    .filter(Boolean);
-  if (settlements.length) {
+  // Established settlements WITH their rolled attributes (PLAYTEST-1712 T).
+  // Surfacing each settlement's Authority and Trouble stops the narrator
+  // inventing an official or governing figure for a settlement whose Authority
+  // is "none / lawless" (the playtest created an "Administrator of Hypatia" for
+  // a lawless settlement), and anchors new fiction to the established troubles.
+  // Falls back to the map-data names when the Settlement Actor records can't be
+  // read (e.g. mid-migration).
+  let settlementLines = [];
+  try {
+    settlementLines = listSettlements(campaignState)
+      .filter(s => s && (!s.sectorId || s.sectorId === id))
+      .map(s => {
+        const bits = [];
+        if (s.authority) bits.push(`Authority: ${s.authority}`);
+        if (s.trouble)   bits.push(`Trouble: ${s.trouble}`);
+        return `- ${s.name}${bits.length ? ` (${bits.join('; ')})` : ''}`;
+      });
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: settlement read failed:`, err?.message ?? err);
+  }
+  if (!settlementLines.length) {
+    settlementLines = (sector.mapData?.settlements ?? [])
+      .map(s => s?.name).filter(Boolean).map(n => `- ${n}`);
+  }
+  if (settlementLines.length) {
     lines.push(
-      `Established settlements in this sector: ${settlements.join(', ')}.`,
+      '',
+      'Established settlements (reuse these names and respect each one\'s ' +
+      'Authority and Trouble — do not invent a new settlement for the same ' +
+      'place, and do not introduce an official, administrator, or governing ' +
+      'figure for a settlement whose Authority is none or lawless):',
+      ...settlementLines,
     );
+  }
+
+  // Established NPCs in this sector (PLAYTEST-1712 T). Listing the existing cast
+  // with their roles pushes the narrator to build on them — especially when
+  // envisioning an inciting incident — rather than always cold-inventing a new
+  // NPC. Capped so a large campaign can't bloat the prompt.
+  let npcLines = [];
+  try {
+    npcLines = listConnections(campaignState)
+      .filter(c => c && (!c.sectorId || c.sectorId === id))
+      .slice(0, 12)
+      .map(c => `- ${c.name}${c.role ? ` — ${c.role}` : ''}`);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: connection read failed:`, err?.message ?? err);
+  }
+  if (npcLines.length) {
     lines.push(
-      `When the scene is set in a settlement, reuse one of the established ` +
-      `names above. Do not invent a new settlement name for the same place.`,
+      '',
+      'Established NPCs in this sector (prefer building on these — their goals, ' +
+      'troubles, and relationships — over inventing parallel new ones):',
+      ...npcLines,
     );
   }
 

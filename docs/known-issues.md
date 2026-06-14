@@ -72,7 +72,12 @@ Mave Takara in the Igneous Maze sector.
   (`campaignState.incitingIncident`) injected as canon into every narrator call
   (never dropped, never scene-scoped); this also mitigates O for the inciting
   case (the dead character's facts ride in the premise prose) and prevents the
-  recap drift at its source. L and T remain open.
+  recap drift at its source. **T fixed in v1.7.13** — `formatActiveSector` now
+  surfaces each settlement's Authority/Trouble and the sector's established NPC
+  roster (with a no-official-for-a-lawless-settlement directive and a
+  prefer-existing-NPCs directive), so the inciting incident stops inventing
+  authority figures that contradict settlement attributes and leverages the
+  existing cast. L and the general (non-inciting) O case remain open.
 - **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
   The code already supports players on all three; none is a simple `isGM`
   render gate. **E** (PTT): client-scoped opt-in setting the player never
@@ -392,6 +397,24 @@ inciting incident).
 
 #### T — Inciting incident ignores existing sector NPCs and settlement attributes; consistently invents new ones
 *(inciting incident generated v1.7.12; reported after rollback)*
+
+**✅ FIXED in v1.7.13.** Root cause: the narrator's ACTIVE SECTOR anchor
+(`formatActiveSector`, `src/narration/narrator.js`) passed only settlement
+*names* — the rolled Authority/Population/Trouble live on the Settlement Actor
+records, and the existing NPC roster was surfaced only as a bare count
+(`buildConnectionsSummary`). So the inciting-incident narrator had no idea
+Hypatia was lawless or that Nova Petrov already existed, and freely invented an
+"Administrator". **Fix:** `formatActiveSector` now reads `listSettlements` /
+`listConnections` and surfaces, for the active sector, each settlement with its
+**Authority** and **Trouble** (plus a directive not to introduce an official /
+administrator / governing figure where Authority is none/lawless) and the
+established **NPC roster** with roles (plus a prefer-build-on-these directive,
+capped at 12). The `inciting_incident` sidecar addendum gains a matching
+"ground it in the established sector; reuse an existing NPC or settlement trouble
+before inventing" instruction. Tests: `tests/unit/sectorContext.test.js`. Note
+this enriches the anchor for **all** narrator paths (paced/move/scene/inciting),
+so authority contradictions are discouraged everywhere, not just at campaign
+start.
 
 **Symptom:** The inciting incident created "Administrator Lyssa Chen" as the
 authority figure at Hypatia — but Hypatia's own sheet says **Authority: None

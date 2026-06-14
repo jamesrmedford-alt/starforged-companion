@@ -141,7 +141,12 @@ export function appendSidecarInstruction(options = {}) {
   if (mode === 'inciting_incident') {
     lines.push(
       '',
-      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Its premise must survive into',
+      'THIS IS THE CAMPAIGN\'S OPENING SCENE. Ground it in the established',
+      'sector: when an existing NPC (see the ACTIVE SECTOR cast) or settlement',
+      'trouble can carry the incident, build on them rather than cold-inventing',
+      'a new NPC, and never give a settlement an authority figure its Authority',
+      'rules out (a lawless settlement has no administrator or governor).',
+      'Its premise must survive into',
       'later sessions, so your sidecar MUST capture the load-bearing facts:',
       '- newTruths for: who the central NPC is and their history with the',
       '  character; why they are where they are; what is at stake and what',
