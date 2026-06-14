@@ -212,6 +212,27 @@ image generation prompt).
 
 ---
 
+#### R — Session vignettes use wrong pronouns for NPCs
+
+**Symptom:** The closing vignette for Nova Petrov used pronouns that don't
+match those stored on the actor card. Same issue class as finding I (portrait
+gender mismatch) but in vignette *text* rather than art.
+
+**Likely cause:** The Begin a Session / closing vignette prompt builder
+doesn't read the NPC's stored pronouns when composing the scene. The pronoun
+field rolled by `seedConnectionActor` is written to the actor, but the vignette
+generation path either omits the NPC's actor data entirely or only reads name
+and role — not pronouns.
+
+**Files to check:** Wherever the session-opening and closing vignettes are
+generated (likely the `begin_a_session` consequence in `src/moves/resolver.js`
+or a dedicated vignette builder); confirm NPC pronoun data from the actor is
+included in the prompt alongside name and role. Also relates to finding B
+(second PC missing from begin-session vignette) — both suggest the vignette
+prompt has an incomplete picture of the entity roster.
+
+---
+
 #### J — Roll button move doesn't match the move named in narrator text
 
 **Symptom:** The narrator text reads "*If you want to draw out what he's
