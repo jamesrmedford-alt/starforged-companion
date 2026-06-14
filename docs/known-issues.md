@@ -264,6 +264,35 @@ inciting incident).
 
 ---
 
+#### T — Inciting incident ignores existing sector NPCs and settlement attributes; consistently invents new ones
+
+**Symptom:** The inciting incident created "Administrator Lyssa Chen" as the
+authority figure at Hypatia — but Hypatia's own sheet says **Authority: None
+/ lawless**. An administrator cannot exist for a lawless settlement. Across
+multiple recent sessions the inciting incident has always invented a new NPC
+and attached a new clock, never leveraging the sector's existing cast or
+world details.
+
+**Expected behaviour:** Before generating an inciting incident NPC, the
+generator should:
+1. Read the hub settlement's **Authority** field — if lawless, do not create
+   a governing/official role for the inciting NPC.
+2. Check whether the sector already has registered NPCs (e.g. Nova Petrov in
+   Igneous Maze) and prefer one of them as the inciting actor when the
+   scenario permits, rather than always cold-creating a new connection. NPCs
+   that were sector-seeded likely have more world context already attached.
+3. At minimum, constrain the inciting NPC's role to something consistent with
+   the hub settlement's populated attributes (Authority, Population, Projects,
+   Trouble).
+
+**Files to check:** Wherever the inciting incident is generated — likely
+`src/moves/resolver.js` (the `begin_a_session` / inciting incident
+consequence) or a dedicated inciting-incident builder; confirm it reads
+`campaignState` settlement attributes and the sector's existing NPC list
+before creating a new actor.
+
+---
+
 #### J — Roll button move doesn't match the move named in narrator text
 
 **Symptom:** The narrator text reads "*If you want to draw out what he's
