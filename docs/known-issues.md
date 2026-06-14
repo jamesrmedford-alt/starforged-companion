@@ -167,6 +167,26 @@ PC actor.
 
 ---
 
+#### H — Narrator audio does not autoplay for non-GM players
+
+**Symptom:** When a narrator card is posted, the GM hears the audio
+automatically. The second (non-GM) player does not — they must manually click
+▶ Play on the card to hear it.
+
+**Likely cause:** Audio synthesis and the autoplay trigger both run on the GM
+client (the canonical narrator). The synthesised audio URL is stored on the
+chat message, but no signal is sent to connected player clients to trigger
+playback on their end. The `isCanonicalGM()` guard in the playback path that
+prevents duplicate emission may also be suppressing autoplay on all non-GM
+clients.
+
+**Files to check:** `src/audio/playback.js` (autoplay trigger, `isCanonicalGM`
+gate), `src/multiplayer/gmGate.js`; check whether a socket message or
+flag-watch is needed to tell player clients to begin playback once the audio
+URL is available on the message.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
