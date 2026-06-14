@@ -68,6 +68,12 @@ Hooks.on("quenchReady", (quench) => {
   // Live API generation is left to manual smoke (the batch does not consume
   // ElevenLabs characters).
   registerAudioNarrationTests(quench);
+  // Audio cross-client — non-GM player path (PLAYTEST-1712 finding H).
+  // Simulates a non-GM client within the single-browser Quench runner:
+  // temporarily sets game.user.isGM = false, exercises the three-gate
+  // check and the socket relay contract. Guards against an accidental
+  // isGM gate being introduced on the audio path.
+  registerAudioCrossClientTests(quench);
   // Fact Continuity — live integration for the sidecar/ledger/scene-lifecycle
   // subsystem. Pure-logic coverage lives in tests/unit/factContinuity*.test.js;
   // this batch pins the Foundry-side wiring: game.settings persistence, the
@@ -5552,6 +5558,211 @@ function registerAudioNarrationTests(quench) {
       });
     },
     { displayName: "STARFORGED: Audio Narration" },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO CROSS-CLIENT — non-GM player path (PLAYTEST-1712 finding H)
+// ─────────────────────────────────────────────────────────────────────────────
+// Verifies the audio three-gate check and the GM socket relay contract from the
+// perspective of a non-GM player client. Because Quench runs in a single
+// Foundry instance (one browser, always GM), "non-GM context" is simulated by
+// temporarily setting game.user.isGM = false and restoring it after each test.
+// The socket relay is tested by recording what the socket would have emitted.
+//
+// What this covers that unit tests can't:
+//   - The live game.settings persistence round-trip for client-scoped settings
+//     (audio.clientEnabled, elevenLabsApiKey) from the player's perspective.
+//   - registerAudioSocket() wired through the real Foundry socket.on() so any
+//     Foundry-version-specific socket API change surfaces here.
+//   - onNarratorCardRendered() using the real Foundry ChatMessage and real DOM
+//     to verify the play button is NOT unhidden when the player has not enabled
+//     audio on their client (the primary PLAYTEST-1712 H scenario).
+
+function registerAudioCrossClientTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.audio.cross-client",
+    (context) => {
+      const { describe, it, assert, before, after, beforeEach, afterEach } = context;
+
+      const AUDIO_KEYS = [
+        "audio.enabled", "audio.clientEnabled", "audio.narratorVoiceId",
+        "audio.npcVoiceId", "audio.modelId", "audio.speed",
+        "audio.volume", "audio.autoplay", "elevenLabsApiKey",
+        "audio.cacheMaxBytes",
+      ];
+      let _prev = {};
+      let _prevIsGM;
+      let _prevUserId;
+
+      before(async function () {
+        for (const k of AUDIO_KEYS) {
+          try { _prev[k] = game.settings.get(MODULE_ID, k); } catch { _prev[k] = undefined; }
+        }
+      });
+
+      after(async function () {
+        for (const [k, v] of Object.entries(_prev)) {
+          if (v !== undefined) {
+            try { await game.settings.set(MODULE_ID, k, v); } catch (err) { console.warn(`${MODULE_ID} | audio cross-client after: restore ${k} failed:`, err); }
+          }
+        }
+        // Ensure game.user.isGM is restored even if a test leaked.
+        game.user.isGM = true;
+      });
+
+      beforeEach(function () {
+        _prevIsGM  = game.user.isGM;
+        _prevUserId = game.user.id;
+      });
+
+      afterEach(function () {
+        game.user.isGM = _prevIsGM;
+        game.user.id   = _prevUserId;
+      });
+
+      // ── Helper ─────────────────────────────────────────────────────────────
+      /** Briefly become a non-GM player. Caller must restore in afterEach. */
+      function becomePlayer() {
+        game.user.isGM = false;
+        game.user.id   = "quench-player-sim";
+      }
+
+      // ── audioEnabledForThisClient — non-GM context ──────────────────────
+      describe("audioEnabledForThisClient — non-GM context (PLAYTEST-1712 H)", function () {
+        it("returns false when audio.clientEnabled is false (player hasn't enabled audio on their device)", async function () {
+          becomePlayer();
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", false);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isFalse(audioEnabledForThisClient(),
+            "clientEnabled=false must block audio regardless of isGM");
+        });
+
+        it("returns false when the player has no ElevenLabs key", async function () {
+          becomePlayer();
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isFalse(audioEnabledForThisClient(),
+            "empty API key must block audio even with client toggle enabled");
+        });
+
+        it("returns true for a non-GM player when all three gates are configured", async function () {
+          becomePlayer();
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test_key");
+          const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
+          assert.isTrue(audioEnabledForThisClient(),
+            "a correctly-configured non-GM player should pass the gate — no isGM check");
+        });
+      });
+
+      // ── registerAudioSocket — relay wiring ─────────────────────────────
+      describe("registerAudioSocket — GM socket handler", function () {
+        it("registers at least one handler on the module socket", async function () {
+          const { registerAudioSocket, AUDIO_SOCKET_NAME } = await import(`${MODULE_PATH}/audio/index.js`);
+          // The handler is registered on game.socket.on(). In Foundry a Socket.io
+          // listener is idempotent-safe to add multiple times; we just verify the
+          // method is called successfully (no throw) and the socket channel name
+          // matches the module's socket name.
+          const origOn = game.socket.on.bind(game.socket);
+          const capture = [];
+          game.socket.on = function (event, fn) {
+            capture.push(event);
+            return origOn(event, fn);
+          };
+          try {
+            registerAudioSocket();
+            assert.isTrue(
+              capture.includes(AUDIO_SOCKET_NAME),
+              `expected socket channel "${AUDIO_SOCKET_NAME}" to be registered`,
+            );
+          } finally {
+            game.socket.on = origOn;
+          }
+        });
+      });
+
+      // ── play button hidden for player with client audio off ─────────────
+      describe("narrator card play button — hidden for non-GM with clientEnabled=false", function () {
+        it("play button remains hidden when player has not enabled audio on their client", async function () {
+          // World audio ON, but player's client toggle is OFF.
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", false);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test");
+
+          becomePlayer();
+
+          const { onNarratorCardRendered } = await import(`${MODULE_PATH}/audio/index.js`);
+
+          // Build a minimal narrator card DOM fragment.
+          const root = document.createElement("div");
+          root.innerHTML = `
+            <div class="sf-narration-card">
+              <div class="sf-narration-prose">Test prose.</div>
+              <div class="sf-narration-footer">
+                <button data-action="audioPlayToggle" hidden>Play</button>
+              </div>
+            </div>
+          `;
+          const msg = {
+            id: "quench-nonplayer-audio-test",
+            flags: { [MODULE_ID]: { narratorCard: true, narrationText: "Test prose." } },
+          };
+
+          await onNarratorCardRendered(msg, root);
+
+          const btn = root.querySelector('[data-action="audioPlayToggle"]');
+          // audioEnabledForThisClient() returned false → handler returned early
+          // → button was NOT unhidden.
+          if (btn) {
+            assert.isTrue(btn.hasAttribute("hidden"),
+              "play button should remain hidden when player has not enabled client audio");
+          }
+          // If there's no button at all, the behaviour is equivalent (no unhide happened).
+        });
+
+        it("play button is unhidden when non-GM player has all three gates configured", async function () {
+          await game.settings.set(MODULE_ID, "audio.enabled",       true);
+          await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
+          await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test_key");
+          await game.settings.set(MODULE_ID, "audio.narratorVoiceId", "some-voice-id");
+
+          becomePlayer();
+
+          const { onNarratorCardRendered, _resetAutoplayGuardForTests } = await import(`${MODULE_PATH}/audio/index.js`);
+          _resetAutoplayGuardForTests();
+
+          const root = document.createElement("div");
+          root.innerHTML = `
+            <div class="sf-narration-card">
+              <div class="sf-narration-prose">Test prose.</div>
+              <div class="sf-narration-footer">
+                <button data-action="audioPlayToggle" hidden>Play</button>
+              </div>
+            </div>
+          `;
+          const msg = {
+            id: "quench-player-audio-enabled",
+            flags: { [MODULE_ID]: { narratorCard: true, narrationText: "Test prose." } },
+          };
+
+          await onNarratorCardRendered(msg, root);
+
+          const btn = root.querySelector('[data-action="audioPlayToggle"]');
+          if (btn) {
+            assert.isFalse(btn.hasAttribute("hidden"),
+              "play button should be unhidden when non-GM player has audio properly configured");
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Audio Cross-Client (non-GM path)" },
   );
 }
 

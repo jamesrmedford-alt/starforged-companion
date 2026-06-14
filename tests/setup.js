@@ -289,6 +289,30 @@ global.game.actors = (() => {
 global.game.user.character = null;
 
 // ---------------------------------------------------------------------------
+// withUser — temporarily override game.user properties within a test.
+//
+// Returns a restore function. Pair with beforeEach / afterEach:
+//
+//   let restore;
+//   beforeEach(() => { restore = withUser({ isGM: false, id: 'test-player' }); });
+//   afterEach(() => restore());
+//
+// Or inline in a single test:
+//   const restore = withUser({ isGM: false });
+//   expect(someGate()).toBe(false);
+//   restore();
+// ---------------------------------------------------------------------------
+
+global.withUser = (overrides = {}) => {
+  const saved = { ...global.game.user };
+  Object.assign(global.game.user, overrides);
+  return () => { Object.assign(global.game.user, saved); };
+};
+
+/** Convenience alias — sets up game.user as a non-GM player. */
+global.asPlayer = () => global.withUser({ isGM: false, id: 'test-user-player' });
+
+// ---------------------------------------------------------------------------
 // makeTestActor — factory for mock Ironsworn Actor documents
 //
 // Usage in tests:
