@@ -9,13 +9,48 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
-### PLAYTEST-1712 — v1.7.12 playtest findings (in progress)
+### PLAYTEST-1712 — v1.7.12 playtest findings
 
-**Status:** Open — capturing findings during v1.7.12 playtesting
+**Status:** Open — playthrough complete (2026-06-14), 20 findings captured
+(A–T), none yet fixed. Two-player session (GM + one non-GM player); PCs Kylar
+Nazari and Mave Takara in the Igneous Maze sector.
+
+**Version timeline (important — the session spanned a rollback):**
+
+- Findings **A–O** were observed on **v1.7.12**.
+- Mid-session the move pipeline **locked up** (findings **M / N**): a
+  move-in-progress lock set by the first Roll-button click never cleared, and a
+  blue "a move is being resolved" toast then suppressed all further narration.
+- To recover, the group **rolled the module back v1.7.12 → v1.7.11**. The stale
+  move lock **persisted across the rollback** (finding **P** — the first chat
+  button on relogin fired a spurious roll), confirming the lock is stored
+  durably (world settings / `campaignState` / a document flag), not in ephemeral
+  module memory.
+- Findings **P, Q, R** were observed on **v1.7.11** (post-rollback), continuing
+  the same campaign/world.
+- Findings **S** (recap fact-drift) and **T** (inciting-incident design) span the
+  boundary: the inciting incident was generated on **v1.7.12**, but the
+  end-of-session recap that crystallised the drifted "three weeks ago" fact was
+  produced on **v1.7.11**.
+
+**Root-cause clusters (several findings share one underlying bug):**
+
+- **Move-lock lifecycle** — M, N, P (and likely Q): one durable lock never
+  released on failure and never reset on load. Highest-priority fix; it bricked
+  the v1.7.12 session.
+- **Roll-button wiring** — J (wrong move on button), K (non-GM blocked), M
+  (one-shot), Q (hits the asset-Improve handler from PLAYTEST-1711 G).
+- **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
+  R (vignette text).
+- **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
+  L (ship position), T (sector context unused).
+- **Multiplayer / non-GM parity** — E (PTT), H (audio), K (rolling).
+- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns).
 
 ---
 
 #### A — Sector map padding / initial camera shifted off-canvas
+*(observed v1.7.12)*
 
 **Symptom:** The sector map canvas extends into the black "no-scene" void on
 the left; tokens and connections are visible but the initial view is
@@ -213,6 +248,7 @@ image generation prompt).
 ---
 
 #### R — Session vignettes use wrong pronouns for NPCs
+*(observed v1.7.11, post-rollback)*
 
 **Symptom:** The closing vignette for Nova Petrov used pronouns that don't
 match those stored on the actor card. Same issue class as finding I (portrait
@@ -234,6 +270,7 @@ prompt has an incomplete picture of the entity roster.
 ---
 
 #### S — Inciting incident facts age out of narrator context too quickly; recap adopts drifted version
+*(spans rollback: inciting incident on v1.7.12, end-of-session recap on v1.7.11)*
 
 **Symptom:** The inciting incident established "murdered Councilor Vex **three
 cycles ago**". Within the same session the narrator drifted to "**three weeks
@@ -265,6 +302,7 @@ inciting incident).
 ---
 
 #### T — Inciting incident ignores existing sector NPCs and settlement attributes; consistently invents new ones
+*(inciting incident generated v1.7.12; reported after rollback)*
 
 **Symptom:** The inciting incident created "Administrator Lyssa Chen" as the
 authority figure at Hypatia — but Hypatia's own sheet says **Authority: None
@@ -407,6 +445,7 @@ characters can be added to the narrator's working lore set mid-scene.
 ---
 
 #### P — Stale move-in-progress state persists across session reload and triggers spurious roll on first input
+*(this finding IS the rollback boundary: v1.7.12 → v1.7.11)*
 
 **Symptom:** After the v1.7.12 session ended with the move lock stuck (finding
 M/N), the module was rolled back to v1.7.11 and the world reloaded. On the
@@ -433,6 +472,7 @@ and add the `ready`-hook reset there.
 ---
 
 #### Q — Roll button on narrator card fired wrong action: consumed an asset trait instead of rolling the move
+*(observed v1.7.11, post-rollback)*
 
 **Symptom:** On the second Roll button click (GM client), the button did
 respond — but instead of triggering a move roll, it consumed/activated the
