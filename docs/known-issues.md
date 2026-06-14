@@ -9,6 +9,572 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
+### PLAYTEST-1712 — v1.7.12 playtest findings
+
+**Status:** Open — playthrough complete (2026-06-14). 19 active findings
+(A–T; **Q withdrawn** — confirmed correct behaviour), none yet fixed.
+Two-player session (GM + one non-GM player); PCs Kylar Nazari and Mave Takara
+in the Igneous Maze sector.
+
+**Version timeline (important — the session spanned a rollback):**
+
+- Findings **A–O** were observed on **v1.7.12**.
+- Mid-session the move pipeline **locked up** (findings **M / N**): a
+  move-in-progress lock set by the first Roll-button click never cleared, and a
+  blue "a move is being resolved" toast then suppressed all further narration.
+- To recover, the GM **logged out, rolled the module back v1.7.12 → v1.7.11, and
+  logged back in — which fixed it** (finding **P**). On v1.7.11 the Roll button
+  then triggered a roll **correctly both times it was offered**. This pins
+  M/N as a **v1.7.12 regression**: v1.7.11 does not exhibit the stuck lock.
+  (The recovery combined a relog and a rollback, so we can't isolate which
+  cleared the lock — no conclusion that the lock is stored durably.)
+- Findings **P** and **R** were observed on **v1.7.11** (post-rollback),
+  continuing the same campaign/world. (**Q**, also v1.7.11, was withdrawn —
+  it turned out to be correct behaviour.)
+- Findings **S** (recap fact-drift) and **T** (inciting-incident design) span the
+  boundary: the inciting incident was generated on **v1.7.12**, but the
+  end-of-session recap that crystallised the drifted "three weeks ago" fact was
+  produced on **v1.7.11**.
+
+**Root-cause clusters (several findings share one underlying bug):**
+
+- **Move-lock lifecycle (v1.7.12 regression)** — M, N: a move-in-progress lock
+  set on the first Roll click never released, then suppressed all narration.
+  Highest-priority fix; it bricked the v1.7.12 session. Finding **P** is the
+  diagnostic that narrows it: rolling back to **v1.7.11 fixed it** (the button
+  works correctly there), so the fix target is the `v1.7.11..v1.7.12` diff in
+  the move pipeline / Roll-button path.
+- **Roll-button wiring** — J (wrong move on button), M (one-shot on v1.7.12).
+  (Note: the v1.7.11 button works — see P. J still needs confirming on
+  v1.7.11. **K was verified to have no GM gate** — likely the M/N regression,
+  not a wiring bug; see K.)
+- **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
+  R (vignette text).
+- **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
+  L (ship position), T (sector context unused).
+- **Multiplayer / non-GM "parity" — RE-CHARACTERISED after reading source.**
+  The code already supports players on all three; none is a simple `isGM`
+  render gate. **E** (PTT): client-scoped opt-in setting the player never
+  enabled — config/discoverability. **H** (audio): player playback is supported
+  (own key + blob URL); silence is downstream config or a player-path bug — the
+  Tier 3 audio smoke targets it. **K** (rolling): no gate; likely the M/N
+  regression. Lesson: the GM-only test pipeline didn't *gate* these — it just
+  never exercised a player's *settings state* (client-scoped toggles/keys) or
+  the v1.7.12 pipeline. That's what the non-GM test work below must cover.
+- **Vignette entity coverage** — B (second PC missing), R (NPC pronouns).
+
+---
+
+#### A — Sector map padding / initial camera shifted off-canvas
+*(observed v1.7.12)*
+
+**Symptom:** The sector map canvas extends into the black "no-scene" void on
+the left; tokens and connections are visible but the initial view is
+mis-centred, with a large portion of the scene area falling outside the
+padded region. Pan/zoom-out behaviour is unpredictable.
+
+**Likely cause:** PLAYTEST-1711 D restored `padding: 0.1` and a captured
+initial view for the sector map. Something in the v1.7.12 work has either
+reset padding to `0` again or the captured initial-view coordinates are being
+applied relative to a different origin, shifting the visible area into the
+black region.
+
+**Files to check:** `src/sector/sectorScene.js` (padding + `initialViewPosition`
+write), `src/sector/sectorMap.js`.
+
+---
+
+#### B — Begin a Session spotlight vignette omits second player character
+
+**Symptom:** With two player characters (Kylar and Mave), the Begin a Session
+spotlight vignette only features one character (Kylar). Mave is absent from
+the generated opening scene entirely.
+
+**Likely cause:** The vignette prompt either only resolves the first entry from
+`getPlayerActors()` / `characterIds`, or the assembler's CHARACTER STATE block
+is only injecting one character into the narrator context that generates the
+opening scene. The "+1 momentum to all players" line on the move card suggests
+both PCs are known to the consequence layer — the gap is in the vignette
+narration prompt specifically.
+
+**Files to check:** wherever the Begin a Session opening vignette is generated
+(likely `src/moves/resolver.js` CONSEQUENCE_MAP entry for `begin_a_session`,
+or `src/narration/narratorPrompt.js`); confirm the CHARACTER STATE block passed
+to that call includes all player actors.
+
+---
+
+#### C — Vow card connection prompt doesn't create a draft entity for the GM
+
+**Symptom:** When a non-GM player swears a vow that involves a named NPC
+(here: "Administrator Lyssa Chen"), the vow result card correctly displays
+*"Ask your GM to add Administrator Lyssa Chen as a connection (GM-only write)"*
+— but no draft entity for that connection appears in the Entities panel. The GM
+has no actionable prompt; the connection must be created entirely manually.
+
+**Expected behaviour:** The vow resolution should emit a pending-connection
+draft card (same mechanism as entity detection from narration), or at minimum
+add a draft row to the Entities panel so the GM can confirm → create the
+connection in one click.
+
+**Likely cause:** The "GM-only write" fallback path in the vow consequence
+handler only posts the advisory text and returns — it doesn't call the entity
+extractor / draft pipeline that narration-detected entities go through. The
+connection name is available at that point but is never forwarded to
+`routeEntityDrafts` or `createConnection`.
+
+**Files to check:** `src/moves/resolver.js` (vow consequence, the branch that
+emits the advisory string), `src/entities/entityExtractor.js`
+(`routeEntityDrafts` / draft card emission).
+
+---
+
+#### D — Auto-seeded connection gets a contradictory oracle-rolled role when the name already encodes one
+
+**Symptom:** "Administrator Lyssa Chen" was created as a connection whose name
+already carries a narrative role ("Administrator" — established by the vow
+context). The oracle seeder independently rolled ROLE = "Shipwright", which
+contradicts the established narrative. The Entities panel shows both: name
+says Administrator, ROLE field says Shipwright.
+
+**Expected behaviour:** When a connection name contains a recognised title or
+role token (e.g. "Administrator", "Captain", "Doctor", "Councilor"), the
+oracle ROLE roll should either be suppressed and the title used instead, or
+the seeder should detect the conflict and leave ROLE blank/set it to the
+title derived from the name.
+
+**Likely cause:** `seedConnectionActor` (or `autoSeedConnection`) always rolls
+the Character Role oracle unconditionally — there is no pre-check for a title
+already present in the actor name.
+
+**Files to check:** `src/entities/connection.js` (`seedConnectionActor` /
+oracle roll for ROLE), `src/narration/narratorPrompt.js` or wherever the
+Characteristics oracle block is assembled.
+
+---
+
+#### E — Push-to-talk button absent for non-GM players
+
+**Symptom:** The push-to-talk microphone button renders in the chat input area
+for the GM but is invisible to the second (non-GM) player. Both players are in
+the same world; the GM's chat input shows the mic icon between the message
+field and the toolbar, while the player's chat input shows only "Enter message"
+with no mic button.
+
+**VERIFIED cause (not a GM gate):** Read the source — there is **no
+`game.user.isGM` gate**. `injectPushToTalkButton` (`src/index.js:2690`) runs
+from the `renderChatLog`/`renderChatPanel`/`renderChatTab` hooks
+(`src/index.js:2972-2977`), gated only on
+`game.settings.get(MODULE_ID, "speechInputEnabled")`. That setting is
+**`scope: "client"`, default off** (`src/index.js:308-313`). So PTT is a
+per-client opt-in: the GM had enabled it in *their* client settings; the
+non-GM player never enabled it in *theirs*, so the button never injected for
+them. (Secondary possibility: the `PTT_HOST_SELECTORS` didn't match a
+container in the player's chat DOM — that path logs a `console.warn`.)
+
+**This is config/discoverability, not a gating bug.** Options: (a) surface the
+client-scoped Push-to-Talk toggle more prominently for players, (b) document
+that each player enables it on their own client, or (c) reconsider whether it
+should be world-scoped with a per-client capability/feature-detect.
+
+**Files:** `src/index.js:308-313` (setting scope), `:2690-2729`
+(`injectPushToTalkButton`), `:2971-2978` (hooks).
+
+---
+
+#### F — Entity detector proposes player characters as new Connections
+
+**Symptom:** After the Begin a Session opening narration (which featured both
+PCs by name), the "New Entities Detected" card proposed creating Mave and
+Kylar as Connection entities. Both are existing player characters, not NPCs.
+
+**Expected behaviour:** PC names should be excluded from entity detection —
+they are already tracked as player-owned Actors and must not be re-proposed
+as Connections.
+
+**Likely cause:** `collectEstablishedEntityNames` (or the dedup gate in
+`routeEntityDrafts`) does not include player character actor names in the
+suppression list, so the narrator-extracted names pass the novelty check and
+surface as draft entities.
+
+**Files to check:** `src/entities/entityExtractor.js`
+(`collectEstablishedEntityNames`, `entityExistsAnyType`, and the draft
+routing gate); confirm that `getPlayerActors().map(a => a.name)` is included
+in the known-names set before extraction runs.
+
+---
+
+#### G — Narrator suggested Compel against a fellow player character
+
+**Symptom:** Mave's player typed "Kylar, let him go, this is getting out of
+hand" — an in-character appeal to the other PC. The narrator responded with a
+narration ending "*If you want Kylar to stand down, that's going to take more
+than asking nicely—this could be a Compel.*" and offered a **Roll Compel**
+button targeting Kylar.
+
+**Problem:** Compel is a move for influencing NPCs and difficult situations;
+it is not appropriate to suggest one player character roll Compel against
+another PC. In multiplayer, inter-PC tension is resolved through roleplay, not
+move rolls.
+
+**Likely cause:** The narrator's move-suggestion logic classifies the target of
+a persuasive line as a valid Compel target without first checking whether the
+target is a known player character. The fix should suppress Compel (and
+similar moves with an interpersonal target) when the target name matches any
+PC actor.
+
+**Files to check:** `src/narration/narrator.js` or `src/narration/narratorPrompt.js`
+(move-suggestion / Roll button injection logic); `src/character/actorBridge.js`
+(`getPlayerActors`) for the PC name set to exclude.
+
+---
+
+#### H — Narrator audio produces no sound for non-GM players (Play button present but silent)
+
+**Symptom:** When a narrator card is posted, the GM hears the audio
+automatically. The second (non-GM) player gets no audio. **The ▶ Play button
+*is* present on the player's card** (so the button itself is not GM-gated), but
+clicking it produces no sound — no autoplay, and the manual click is silent.
+
+**VERIFIED — playback is NOT GM-gated (earlier hypothesis withdrawn):** Read
+the source. The play path explicitly supports non-GM clients:
+- The button un-hides only when `audioEnabledForThisClient()` is true
+  (`src/audio/index.js:81-86, 291`), which requires **three** settings:
+  `audio.enabled` (world, GM sets), `audio.clientEnabled` (**client**,
+  `src/index.js:391-394`), and a non-empty `elevenLabsApiKey` (**client**,
+  `src/index.js:386-390`, "Stored locally in your browser").
+- Synthesis is **lazy-on-click for every client**, using *that client's own*
+  ElevenLabs key (`src/audio/index.js:179`). `commitToCache`
+  (`src/audio/index.js:199-233`) has an explicit non-GM branch: it emits the
+  bytes to the canonical GM over a socket **and returns a local blob URL** so
+  the player can play immediately. Playback is never gated to the GM.
+
+**So because the player's button was *visible*, the player passed all three
+gates — including having their own ElevenLabs key.** The silence is therefore
+downstream, in the player's own synth→play path. Live-investigation candidates:
+1. The player's key is present-but-invalid (passes the length check, fails the
+   ElevenLabs fetch) → caught at `togglePlayback`'s `catch`
+   (`src/audio/index.js:387-392`) → button flips to **"error"/disabled**.
+   (cf. ENTITY-002: a config artifact, not a code defect.)
+2. `buildPlayableSegments` returns 0 segments for the player → silent no-op
+   (`src/audio/index.js:374-376`).
+3. A real bug in the non-GM blob-URL playback (`PlaybackSession.play()` on the
+   blob from `commitToCache`).
+
+**This needs the audio smoke test (Tier 3) to pinpoint** — it's the exact case
+that test should drive: a player client posting a card, clicking Play, and
+either producing a `Sound` or surfacing the real error. Note the architectural
+contrast with AUDIO-002: the design already returns a client-fetchable URL, so
+this is likely (1) config or (2)/(3) a player-path bug, not a path-scope issue.
+
+**Files:** `src/audio/index.js:81-86` (gate), `:179` (per-client key),
+`:199-233` (`commitToCache` non-GM blob branch), `:356-392` (`togglePlayback`),
+`src/multiplayer/gmGate.js` (`isCanonicalGM`).
+
+---
+
+#### I — NPC portrait gender doesn't match rolled pronouns
+
+**Symptom:** Administrator Lyssa Chen has pronouns "she/her" (rolled and
+written to the actor), but the generated portrait is a clearly
+masculine-presenting person. The pronoun is not informing the art prompt.
+
+**Context:** PLAYTEST-1711 E/F established that pronouns should be rolled once
+and propagated to art, narrator, and audio. The propagation to the narrator
+and audio voice appears to be working, but the art generation prompt is either
+not receiving the pronoun or not using it to steer the subject's presentation.
+
+**Likely cause:** The image prompt in `src/art/openRouterImage.js` (or the
+prompt assembled before calling it for NPC portraits) does not include a
+gender/pronoun signal. The pronoun may be written to the actor flags after art
+generation fires, or the art prompt builder reads a different field than the
+one the pronoun seeder writes.
+
+**Files to check:** `src/entities/connection.js` (`seedConnectionActor` —
+the order of pronoun roll vs. art generation call); `src/art/openRouterImage.js`
+or the NPC portrait prompt builder (confirm pronoun/gender is included in the
+image generation prompt).
+
+---
+
+#### R — Session vignettes use wrong pronouns for NPCs
+*(observed v1.7.11, post-rollback)*
+
+**Symptom:** The closing vignette for Nova Petrov used pronouns that don't
+match those stored on the actor card. Same issue class as finding I (portrait
+gender mismatch) but in vignette *text* rather than art.
+
+**Likely cause:** The Begin a Session / closing vignette prompt builder
+doesn't read the NPC's stored pronouns when composing the scene. The pronoun
+field rolled by `seedConnectionActor` is written to the actor, but the vignette
+generation path either omits the NPC's actor data entirely or only reads name
+and role — not pronouns.
+
+**Files to check:** Wherever the session-opening and closing vignettes are
+generated (likely the `begin_a_session` consequence in `src/moves/resolver.js`
+or a dedicated vignette builder); confirm NPC pronoun data from the actor is
+included in the prompt alongside name and role. Also relates to finding B
+(second PC missing from begin-session vignette) — both suggest the vignette
+prompt has an incomplete picture of the entity roster.
+
+---
+
+#### S — Inciting incident facts age out of narrator context too quickly; recap adopts drifted version
+*(spans rollback: inciting incident on v1.7.12, end-of-session recap on v1.7.11)*
+
+**Symptom:** The inciting incident established "murdered Councilor Vex **three
+cycles ago**". Within the same session the narrator drifted to "**three weeks
+ago**" (finding O), and by end-of-session the campaign recap had fully adopted
+the drifted version — the recap says "murdered on Paradox three weeks ago",
+overwriting the inciting incident's ground truth.
+
+**Root cause:** The inciting incident's key facts (time, location, method,
+parties) are not being written to the narrator sidecar with sufficient
+permanence. They should be tier-0 immutable truths — always injected into
+every narrator call for the life of the campaign. Instead they appear to be
+stored as ordinary recent-narration entries that scroll out of the ring buffer
+as the session progresses, leaving the narrator with no anchor and free to
+reinvent details. The Narrative Review catches the drift (finding O) but only
+after the fact, and the recap then crystallises the wrong version into campaign
+history.
+
+**Expected behaviour:** The inciting incident's extracted facts should be
+written to the sidecar's permanent/never-dropped tier (see
+`rules/narrator-memory.md` invariants) on creation and re-injected on every
+narrator call, regardless of session length.
+
+**Files to check:** `src/narration/narrator.js` or `src/context/assembler.js`
+(where inciting incident data is assembled for the narrator context);
+`rules/narrator-memory.md` (never-dropped tier contract);
+`docs/narrator/narrator-memory-architecture.md` (sidecar write path for
+inciting incident).
+
+---
+
+#### T — Inciting incident ignores existing sector NPCs and settlement attributes; consistently invents new ones
+*(inciting incident generated v1.7.12; reported after rollback)*
+
+**Symptom:** The inciting incident created "Administrator Lyssa Chen" as the
+authority figure at Hypatia — but Hypatia's own sheet says **Authority: None
+/ lawless**. An administrator cannot exist for a lawless settlement. Across
+multiple recent sessions the inciting incident has always invented a new NPC
+and attached a new clock, never leveraging the sector's existing cast or
+world details.
+
+**Expected behaviour:** Before generating an inciting incident NPC, the
+generator should:
+1. Read the hub settlement's **Authority** field — if lawless, do not create
+   a governing/official role for the inciting NPC.
+2. Check whether the sector already has registered NPCs (e.g. Nova Petrov in
+   Igneous Maze) and prefer one of them as the inciting actor when the
+   scenario permits, rather than always cold-creating a new connection. NPCs
+   that were sector-seeded likely have more world context already attached.
+3. At minimum, constrain the inciting NPC's role to something consistent with
+   the hub settlement's populated attributes (Authority, Population, Projects,
+   Trouble).
+
+**Files to check:** Wherever the inciting incident is generated — likely
+`src/moves/resolver.js` (the `begin_a_session` / inciting incident
+consequence) or a dedicated inciting-incident builder; confirm it reads
+`campaignState` settlement attributes and the sector's existing NPC list
+before creating a new actor.
+
+---
+
+#### J — Roll button move doesn't match the move named in narrator text
+
+**Symptom:** The narrator text reads "*If you want to draw out what he's
+running from, this could be a Gather Information.*" — correctly identifying
+the move. The button rendered below says **Roll Compel**, not Roll Gather
+Information. The move identified in prose and the move wired to the button
+are different.
+
+**Likely cause:** The narrator's text generation and the roll-button injection
+are computed independently. The button may be set by a prior move context that
+hasn't been cleared, or the move-extraction regex that reads the narrator text
+to pick the button label is failing to match "Gather Information" and falling
+back to the last detected move (Compel from finding G).
+
+**Files to check:** `src/narration/narrator.js` (roll button injection, move
+extraction from narrator text); confirm the move name parsed from the italics
+hint and the button label come from the same source.
+
+---
+
+#### K — Non-GM players cannot use the Roll move button *(observed v1.7.12)*
+
+**Symptom:** The Roll [move] button on narrator cards is non-functional for
+the second (non-GM) player — they reported a permission error / nothing
+happening on click.
+
+**VERIFIED — no GM gate on the button or handler (earlier hypothesis
+withdrawn):** Read the source. The handler (`src/index.js:3074-3113`) has **no
+`game.user.isGM` gate**. On click it (a) best-effort sets a `rolled` flag via
+`message.update` — which *does* fail for a non-owner player and is explicitly
+caught and logged to `console.debug` only (`src/index.js:3095-3100`), and (b)
+posts a fresh `ChatMessage` carrying `forcedMoveId` (`:3101-3108`). The move
+pipeline then runs on the **canonical GM** client (`isCanonicalGM()` at the
+pipeline entry) — correct multiplayer design (world writes belong to the GM).
+
+**Revised cause:** K was observed on **v1.7.12**, which finding P proved is a
+regression (v1.7.11's Roll button works). So "lacks permission to roll" is most
+likely a manifestation of the **move-lock lockup (M/N)** rather than a real
+permission gate — the player's re-posted move hit the stuck pipeline. The only
+genuine "permission" event in the path is the *caught* `message.update` for the
+`rolled` flag, which is non-fatal and not user-visible by design.
+
+**Re-test on v1.7.11** before treating K as independent of the M/N regression.
+
+**Files:** `src/index.js:3074-3113` (handler — no gate), the pipeline entry
+`isCanonicalGM()` gate (`src/index.js` ~`:758`, the `bypassPacing` branch).
+
+---
+
+#### M — Roll button works only on the first narrator card; dead on all subsequent cards
+
+**Symptom:** The Roll [move] button in narrator chat cards fires correctly the
+first time it is clicked in a session. All subsequent Roll buttons on later
+cards do nothing — no roll, no error.
+
+**Likely cause:** The click handler is registered once (e.g. via a
+`renderChatMessageHTML` hook with an internal guard that prevents
+re-registration, or an `addEventListener` with `{ once: true }`) and is
+consumed on the first click. Later cards render new button elements that never
+get a handler attached, or the handler lookup finds a stale/already-consumed
+reference.
+
+May interact with finding K (non-GM permission block) — if the handler exits
+early on the first non-GM attempt, the GM's handler may also be considered
+consumed.
+
+**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
+button `addEventListener` / hook registration — check for `{ once: true }` or
+a WeakSet/Set guard that marks the element as handled); `src/system/chatHooks.js`
+(`onChatMessageRender` dedup logic — the WeakSet dedup added for V13-002 may
+be marking cards handled without attaching the Roll listener).
+
+---
+
+#### N — Narrator card stops appearing for paced inputs mid-session
+
+**Symptom:** Pacing telemetry continues to log decisions (`NARRATIVE`,
+`NARRATIVE_WITH_MOVE_AVAILABLE`) for player inputs, but no narrator chat card
+is posted. Instead, a **blue toast appears saying "a move is being resolved"**
+each time. The pacing classifier is working; the narrator call is being
+intercepted by a move-in-progress guard that never cleared.
+
+**Likely cause:** Strongly suggests the move-in-progress lock (set when the
+first Roll button was clicked in finding M) was never released — possibly
+because the move roll didn't complete cleanly (finding M: button went dead
+after first click). Every subsequent narrator call hits the "move in flight"
+guard, posts the toast, and returns early without generating a card. The
+pacing telemetry runs before this guard and is unaffected.
+
+**Files to check:** `src/index.js` or `src/moves/pipeline.js` — the
+move-in-progress flag / lock variable and where it is cleared; confirm it is
+reset on both success AND failure/cancellation of a move roll. This is likely
+the root cause behind both M and N: a lock set on the first roll is never
+released.
+
+---
+
+#### O — Referenced dead character accumulates contradictory details across turns
+
+**Symptom:** Councilor Vex (murdered before the session, never an active
+entity) is described inconsistently within a single scene: the narrator said
+"three weeks ago" in one turn; the Narrative Review flagged an earlier
+statement of "three cycles ago" for the same event. The Narrative Review is
+working correctly — it caught the contradiction — but there is nothing to
+prevent the contradiction from occurring in the first place.
+
+**Root cause:** Vex has no entity record in the Entities panel. Without a
+persistent fact sheet, each narrator call can freely invent or misremember
+details (time of death, location, method, relationship to other characters).
+The Narrative Review catches deviations after the fact but cannot enforce
+consistency at generation time.
+
+**Desired behaviour:** When the narrator introduces a referenced character
+with a name (Councilor Vex, Silas Kade, etc.), their key facts should be
+captured in a scene-truths / lore entry the first time they appear and
+included in the narrator context for all subsequent turns, so the model has
+a ground-truth anchor to write against.
+
+**Files to check:** `src/narration/narratorPrompt.js` (how referenced
+third-party names are handled); `docs/narrator/narrator-memory-architecture.md`
+(scene truths / entity-card injection) — determine whether referenced-but-absent
+characters can be added to the narrator's working lore set mid-scene.
+
+---
+
+#### P — Rolling back to v1.7.11 cleared the stuck move-lock; Roll button works correctly on v1.7.11
+*(this finding IS the rollback boundary: v1.7.12 → v1.7.11)*
+
+**Observation (this is a diagnostic, not a defect on v1.7.11):** After the
+v1.7.12 session locked up (findings M/N — the move-in-progress lock stuck, blue
+"a move is being resolved" toast suppressing narration), the GM **logged out,
+rolled the module back to v1.7.11, and logged back in. That recovered the
+module.** On v1.7.11 the Roll button then **triggered a roll correctly both
+times it was offered** — the stuck-lock behaviour was gone.
+
+**What this tells us:**
+- The move-lock lockup (M/N) is a **v1.7.12 regression**. v1.7.11 does **not**
+  exhibit it — the Roll button fires a roll correctly there. The fix target is
+  whatever changed in the move pipeline / Roll-button path between v1.7.11 and
+  v1.7.12.
+- The recovery combined a relog **and** a version rollback, so we cannot isolate
+  which cleared the lock. We therefore **cannot conclude** the lock is stored
+  durably (world settings / `campaignState` / flag) — the earlier "persists
+  across reload" theory is **withdrawn**; there is no evidence for it. An
+  in-memory module-state lock cleared by the reload is equally consistent.
+
+**Fix direction:** Diff `v1.7.11..v1.7.12` around the move pipeline and the
+Roll-button click handler to find the regression that leaves the lock set
+(findings M/N). A `ready`-hook reset of the lock is still worth adding as
+cheap defence-in-depth, but it is not established that the lock is persisted.
+
+**Files to check:** the move-in-progress flag / lock in `src/index.js` or
+`src/moves/pipeline.js`; the Roll-button handler in `src/index.js` /
+`src/narration/narrator.js`. Start from the v1.7.11→v1.7.12 diff.
+
+---
+
+#### Q — WITHDRAWN (not a bug — confirmed correct behaviour on v1.7.11)
+
+**Originally logged as:** "Roll button consumed an asset trait instead of
+rolling the move."
+
+**Resolution:** Confirmed with the playtester — this was **working as
+intended**. On v1.7.11 the Roll button rolled correctly both times it was
+offered (finding P). The "pulled the Courier trait off my card" behaviour was
+the move correctly **identifying the player's Courier asset as relevant and
+offering the option to use it** — a feature, not a side effect. No move roll was
+lost. The letter Q is retained as a withdrawn placeholder so the A–T sequence
+and existing cross-references stay stable.
+
+---
+
+#### L — Narrator invented ship-in-motion context when docked at a station
+
+**Symptom:** The party is docked at a station waiting to hand over a fugitive.
+The narrator wrote "if you turn this ship around — the Khatri syndicate
+doesn't leave witnesses when they collect bounties" — implying the ship is
+currently underway and could change course. The ship is stationary; no
+turn-around is possible.
+
+**Root cause:** The narrator prompt lacks the ship's current position/status
+(docked vs. in transit), so the model defaults to generic "ship in space"
+framing and invents movement context. PLAYTEST-1710 F5 established that the
+command-vehicle token on the sector scene is authoritative for position, but
+that position data may not be flowing into the paced-narration context here.
+
+**Files to check:** `src/narration/narrator.js` (`narratePacedInput` — does
+the CURRENT LOCATION / ship status block reach this path?);
+`src/context/assembler.js` (ship position assembly); confirm the
+`## CURRENT LOCATION` block is populated and injected for paced narration,
+not just move-resolution narration.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
