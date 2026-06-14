@@ -78,6 +78,30 @@ emits the advisory string), `src/entities/entityExtractor.js`
 
 ---
 
+#### D — Auto-seeded connection gets a contradictory oracle-rolled role when the name already encodes one
+
+**Symptom:** "Administrator Lyssa Chen" was created as a connection whose name
+already carries a narrative role ("Administrator" — established by the vow
+context). The oracle seeder independently rolled ROLE = "Shipwright", which
+contradicts the established narrative. The Entities panel shows both: name
+says Administrator, ROLE field says Shipwright.
+
+**Expected behaviour:** When a connection name contains a recognised title or
+role token (e.g. "Administrator", "Captain", "Doctor", "Councilor"), the
+oracle ROLE roll should either be suppressed and the title used instead, or
+the seeder should detect the conflict and leave ROLE blank/set it to the
+title derived from the name.
+
+**Likely cause:** `seedConnectionActor` (or `autoSeedConnection`) always rolls
+the Character Role oracle unconditionally — there is no pre-check for a title
+already present in the actor name.
+
+**Files to check:** `src/entities/connection.js` (`seedConnectionActor` /
+oracle roll for ROLE), `src/narration/narratorPrompt.js` or wherever the
+Characteristics oracle block is assembled.
+
+---
+
 ### PERSIST-001 — persistResolution gated to GM only
 
 **Status:** Open — acceptable for solo play, needs a player→GM relay for multiplayer
