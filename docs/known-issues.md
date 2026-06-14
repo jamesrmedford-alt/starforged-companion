@@ -209,19 +209,29 @@ PC actor.
 
 ---
 
-#### H — Narrator audio does not play at all for non-GM players
+#### H — Narrator audio produces no sound for non-GM players (Play button present but silent)
 
 **Symptom:** When a narrator card is posted, the GM hears the audio
-automatically. The second (non-GM) player gets no audio — neither autoplay
-nor manually clicking ▶ Play produces any sound on their client.
+automatically. The second (non-GM) player gets no audio. **The ▶ Play button
+*is* present on the player's card** (so the button itself is not GM-gated), but
+clicking it produces no sound — no autoplay, and the manual click is silent.
 
-**Likely cause:** Audio synthesis runs on the GM client and the resulting
-audio URL is written to the chat message flags. Player clients likely have
-the `isCanonicalGM()` guard blocking the entire playback path — including
-the manual ▶ Play handler — so non-GM clients never attempt to load or play
-the audio file at all. Alternatively, the synthesised audio URL may resolve
-to a path that is only accessible from the GM's machine (e.g. a local
-`worlds/…` path unreachable by Forge/browser clients).
+**Refined diagnosis (button present rules out a render gate):** Because the
+button renders and is clickable for the player, the failure is in the
+playback/fetch path, not in button gating. Two leading candidates:
+1. **Synthesis is GM-gated, playback isn't pre-synthesised.** If the audio is
+   only synthesised lazily on click and that synthesis is gated to the GM /
+   `isCanonicalGM()` (or needs an API key the player doesn't have), the
+   player's click no-ops silently — there's no pre-made file to play.
+2. **The stored audio URL isn't fetchable by the player.** If the GM
+   synthesised and stored a path only reachable from the GM's machine (a local
+   `worlds/…` path on a desktop host, not a shared/served URL), the player's
+   `foundry.audio.Sound(src).load()` fails. Compare with AUDIO-002 (Forge
+   absolute-URL handling) — same class of "path valid for one client only."
+
+The fix likely needs the GM to synthesise **once**, store the result at a URL
+**all clients can fetch**, and have player clicks play that shared file rather
+than attempting their own gated synthesis.
 
 **Files to check:** `src/audio/playback.js` (the ▶ Play click handler and
 `isCanonicalGM` gate placement), `src/multiplayer/gmGate.js`; confirm the
