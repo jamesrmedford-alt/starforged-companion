@@ -11,9 +11,10 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
-**Status:** Open — playthrough complete (2026-06-14), 20 findings captured
-(A–T), none yet fixed. Two-player session (GM + one non-GM player); PCs Kylar
-Nazari and Mave Takara in the Igneous Maze sector.
+**Status:** Open — playthrough complete (2026-06-14). 19 active findings
+(A–T; **Q withdrawn** — confirmed correct behaviour), none yet fixed.
+Two-player session (GM + one non-GM player); PCs Kylar Nazari and Mave Takara
+in the Igneous Maze sector.
 
 **Version timeline (important — the session spanned a rollback):**
 
@@ -27,8 +28,9 @@ Nazari and Mave Takara in the Igneous Maze sector.
   M/N as a **v1.7.12 regression**: v1.7.11 does not exhibit the stuck lock.
   (The recovery combined a relog and a rollback, so we can't isolate which
   cleared the lock — no conclusion that the lock is stored durably.)
-- Findings **P, Q, R** were observed on **v1.7.11** (post-rollback), continuing
-  the same campaign/world.
+- Findings **P** and **R** were observed on **v1.7.11** (post-rollback),
+  continuing the same campaign/world. (**Q**, also v1.7.11, was withdrawn —
+  it turned out to be correct behaviour.)
 - Findings **S** (recap fact-drift) and **T** (inciting-incident design) span the
   boundary: the inciting incident was generated on **v1.7.12**, but the
   end-of-session recap that crystallised the drifted "three weeks ago" fact was
@@ -41,10 +43,10 @@ Nazari and Mave Takara in the Igneous Maze sector.
   Highest-priority fix; it bricked the v1.7.12 session. Finding **P** is the
   diagnostic that narrows it: rolling back to **v1.7.11 fixed it** (the button
   works correctly there), so the fix target is the `v1.7.11..v1.7.12` diff in
-  the move pipeline / Roll-button path. (Q may belong here — needs confirmation,
-  see below.)
+  the move pipeline / Roll-button path.
 - **Roll-button wiring** — J (wrong move on button), K (non-GM blocked), M
-  (one-shot), Q (hits the asset-Improve handler from PLAYTEST-1711 G).
+  (one-shot on v1.7.12). (Note: the v1.7.11 button works — see P. J and K still
+  need confirming on v1.7.11.)
 - **Pronoun propagation (PLAYTEST-1711 E/F regression/gap)** — I (art),
   R (vignette text).
 - **Narrator memory / fact anchoring** — O (symptom), S (structural cause),
@@ -481,30 +483,18 @@ cheap defence-in-depth, but it is not established that the lock is persisted.
 
 ---
 
-#### Q — Roll button on narrator card fired wrong action: consumed an asset trait instead of rolling the move
-*(observed v1.7.11, post-rollback)*
+#### Q — WITHDRAWN (not a bug — confirmed correct behaviour on v1.7.11)
 
-**Symptom:** On the second Roll button click (GM client), the button did
-respond — but instead of triggering a move roll, it consumed/activated the
-Courier asset trait on the GM's character card. No move roll occurred; the
-asset was modified as a side effect.
+**Originally logged as:** "Roll button consumed an asset trait instead of
+rolling the move."
 
-**Likely cause:** The click handler is resolving the wrong target. Possible
-causes:
-- The button's `data-move` / `data-action` attribute is missing or wrong on
-  the second card, so the handler falls through to a different registered
-  action that happens to match the Courier asset's click listener.
-- The Roll button selector is too broad (e.g. matching `button[data-action]`
-  without a card-type scope), causing it to hit the asset button that was
-  rendered at the same DOM position.
-- The post-roll Improve affordance added in PLAYTEST-1711 G (which advances
-  an asset's clock) shares a click-handler path with the Roll button, and
-  a card context mismatch routes the click to the Improve path.
-
-**Files to check:** `src/index.js` or `src/narration/narrator.js` (Roll
-button click handler — confirm it scopes by card flag/type and
-`data-move` attribute before dispatching); cross-check with the asset
-Improve handler added for PLAYTEST-1711 G.
+**Resolution:** Confirmed with the playtester — this was **working as
+intended**. On v1.7.11 the Roll button rolled correctly both times it was
+offered (finding P). The "pulled the Courier trait off my card" behaviour was
+the move correctly **identifying the player's Courier asset as relevant and
+offering the option to use it** — a feature, not a side effect. No move roll was
+lost. The letter Q is retained as a withdrawn placeholder so the A–T sequence
+and existing cross-references stay stable.
 
 ---
 
