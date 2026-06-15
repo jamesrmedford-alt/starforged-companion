@@ -1011,6 +1011,29 @@ returns to the whole-map overview. The black padding buffer is invisible
 against the starfield background, so the "edge to edge" aesthetic the `0` was
 chosen for costs nothing to drop.
 
+**Refinement — placeables MUST be offset by the scene-rect inset (2026-06-15,
+v1.7.14, PLAYTEST-1712 A):** turning padding on has a non-obvious consequence
+that bit two releases. With `padding > 0` Foundry centres the background (the
+"scene rectangle") inside a *larger* canvas at `(sceneX, sceneY)`, but
+embedded-document coordinates (Notes, Drawings, Tokens) are absolute from the
+**padded-canvas top-left** — so a pin placed at raw `gridX*size` lands
+`(sceneX, sceneY)` px up-and-left of the background, out in the black void.
+`createSectorScene` therefore reads `scene.dimensions` (Foundry's authoritative
+`BaseGrid#calculateDimensions` result, via the `sceneRectOffset` helper) and
+adds `(sceneX, sceneY)` to **every** placeable coordinate. The initial-view
+centre is then set **explicitly** to `(sceneX + sceneWidth/2, sceneY +
+sceneHeight/2)` from the same offset — we do **not** rely on Foundry's default
+centring (the camera-geometry note flags it as unverifiable, and a stale API
+doc describes the default as the scene *top-left*, not its centre).
+
+This is the correct fix for finding A. The v1.7.13 attempt mis-diagnosed it as
+a pure camera bug: padding was never the regression, and the placeables were
+never offset — v1.7.13 only moved the camera to the true scene-rect centre,
+which *de-aligned* the view from the still-cornered content and made it look
+**worse** ("completely off the map"). When changing padding or any sector-scene
+geometry, keep the placeable offset and the camera centre derived from the same
+`sceneRectOffset(scene, …)` so they cannot drift apart again.
+
 ---
 
 ## Asset consequence riders are auto-applied (LLM-extracted) (2026-06-13)
