@@ -115,6 +115,11 @@ export function appendSidecarInstruction(options = {}) {
     '  what they want, or what is at stake — especially anything with a',
     '  deadline or a cost for failure — you MUST emit a newTruth recording',
     '  it. Stakes that are not recorded will be lost.',
+    '- Name sparingly. Give a proper name only to a character who will matter',
+    '  beyond this moment. Leave one-off functionaries generic and unnamed — "a',
+    '  dock worker", "the comms officer", "a guard" — so they stay light and',
+    '  freely mutable rather than entering the record. A name is a commitment to',
+    '  keep that character consistent forever; do not spend it on a spear-carrier.',
     '- REQUIRED: the first time your prose introduces or names a character or',
     '  faction who does NOT appear in the ENTITIES IN SCENE cards, emit a',
     '  newTruth anchoring their identity — who or what they are, their role',
@@ -521,6 +526,11 @@ You MUST:
   a role, first check whether an established character or place — see the
   ACTIVE SECTOR roster and any ENTITIES IN SCENE — can fill it, and use them by
   name if so. Mint a new named entity only when none of the established cast can
+- Name sparingly: a functionary the scene needs only for a moment (a guard, a
+  clerk, a deckhand, a voice on the comm) should stay generic and unnamed. Give
+  a proper name only to a character meant to recur — an unnamed figure stays
+  light and disposable, a named one becomes tracked canon you must keep
+  consistent
 - Scope any genuinely new entity to the active sector, consistent with its
   established authority and troubles, with enough substance to recur
 - Keep new entities consistent with established world truths

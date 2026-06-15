@@ -832,6 +832,65 @@ describe("appendGenerativeTierUpdates", () => {
     const result = await appendGenerativeTierUpdates("n", [], "s", 1);
     expect(result).toEqual([]);
   });
+
+  it("prompts for salient developments and a salience rating", async () => {
+    const installed = installJournalMock();
+    const ref = addConnectionEntity(installed.journals, { name: "Kael" });
+    let receivedPrompt = null;
+    const callTierAPI = vi.fn().mockImplementation(async (prompt) => {
+      receivedPrompt = prompt;
+      return JSON.stringify({ updates: [] });
+    });
+    await appendGenerativeTierUpdates(
+      "text", [{ journalId: ref.journalId, type: "connection" }], "ses-1", 1, { callTierAPI },
+    );
+    expect(receivedPrompt).toContain('"salience"');
+    expect(receivedPrompt.toLowerCase()).toContain("development");
+    installed.restore();
+  });
+
+  it("drops an update below the salience floor (trivia stays off the card)", async () => {
+    const installed = installJournalMock();
+    const ref = addConnectionEntity(installed.journals, { name: "Kael" });
+    const callTierAPI = vi.fn().mockResolvedValue(
+      JSON.stringify({ updates: [{ entityId: ref.journalId, detail: "Shifted his weight.", salience: "scene" }] }),
+    );
+    const applied = await appendGenerativeTierUpdates(
+      "Kael shifts his weight.", [{ journalId: ref.journalId, type: "connection" }],
+      "ses-1", 1, { callTierAPI },
+    );
+    expect(applied).toHaveLength(0);
+    installed.restore();
+  });
+
+  it("keeps an update at or above the salience floor", async () => {
+    const installed = installJournalMock();
+    const ref = addConnectionEntity(installed.journals, { name: "Kael" });
+    const callTierAPI = vi.fn().mockResolvedValue(
+      JSON.stringify({ updates: [{ entityId: ref.journalId, detail: "Betrayed the crew to the Syndicate.", salience: "significant" }] }),
+    );
+    const applied = await appendGenerativeTierUpdates(
+      "Kael sells them out.", [{ journalId: ref.journalId, type: "connection" }],
+      "ses-1", 1, { callTierAPI },
+    );
+    expect(applied).toHaveLength(1);
+    expect(applied[0].detail).toContain("Betrayed the crew");
+    installed.restore();
+  });
+
+  it("is fail-open: an unrated update is still captured", async () => {
+    const installed = installJournalMock();
+    const ref = addConnectionEntity(installed.journals, { name: "Kael" });
+    const callTierAPI = vi.fn().mockResolvedValue(
+      JSON.stringify({ updates: [{ entityId: ref.journalId, detail: "Carries an old service pistol." }] }),
+    );
+    const applied = await appendGenerativeTierUpdates(
+      "An old pistol rides his hip.", [{ journalId: ref.journalId, type: "connection" }],
+      "ses-1", 1, { callTierAPI },
+    );
+    expect(applied).toHaveLength(1);
+    installed.restore();
+  });
 });
 
 describe("parseTierUpdateResponse", () => {

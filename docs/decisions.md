@@ -788,6 +788,61 @@ persistence in `src/safety/sessionLifecycleDialogs.js` + `writeSessionLog`
 
 ---
 
+## Named-NPC continuity: paced-path generative tier, salience-gated, + cast hygiene (2026-06-15)
+
+**Decision:** strengthen per-entity memory along three axes, all keyed on the
+existing named/unnamed split (a confirmed record = named; no record = ephemeral):
+
+1. **The generative tier now updates on the paced/free-narration path**, not
+   only on interaction-class move resolution. `narratePacedInput` schedules
+   `appendGenerativeTierUpdates` for the in-scene matched entities
+   (`schedulePacedTierUpdate`), mirroring the move path's post-narration pass.
+   Conversation/roleplay scenes are where an NPC's character is most
+   established, and they were previously writing nothing to the card.
+2. **Tier capture is salience-gated and biased toward actions/developments.**
+   The tier-update prompt now asks for *significant* developments — what the
+   character did, decided, revealed; shifts in disposition/allegiance/relationship
+   to the PC — and rates each with a salience. `appendGenerativeTierUpdates`
+   drops anything below a fixed `TIER_SALIENCE_FLOOR = "notable"` (more
+   permissive than the chronicle/lore floors, because an NPC's card should hold
+   character-relevant beats even if they aren't campaign-defining). Fail-open:
+   an unrated update still lands, so model drift degrades to the prior
+   capture-all behaviour rather than emptying the tier.
+3. **The narrator is nudged away from naming minor characters.** A "name
+   sparingly" rule sits in the discovery permission block *and*, paired with the
+   Finding-O anchor, in `appendSidecarInstruction` (universal, non-meta): leave
+   one-off functionaries generic ("a guard", "the comms officer"); spend a
+   proper name only on a character meant to recur. This is the chosen
+   alternative to a graded-importance data model — instead of grading named
+   NPCs, reduce the population of named-but-minor ones, so the cast that gets
+   tracked is the cast that matters.
+
+**Reason:** the narrator's structured memory of an NPC (motivation, disposition,
+faction relationship) exists only as entity-card fields surfaced when the entity
+is confirmed AND matched. For invented/unmatched figures it improvises, and
+un-homed facts drift. (1)+(2) give in-scene named NPCs a durable, low-noise
+behavioural record on every narration path; (3) keeps the un-homed population
+small so improvisation drift is confined to genuinely disposable figures.
+
+**Rejected / deferred:**
+- *Graded importance flag on named NPCs (minor vs central)* — replaced by the
+  prose nudge in (3); revisit only if naming discipline proves insufficient.
+- *Appending to the user-facing `notes` field* (the original sketch) — the
+  generative tier is the right home: capped at 5 on the card, deduped, pinned,
+  and auto-promoted to WJ Lore at scene end. `notes` would bloat unboundedly.
+- *A scene-end per-NPC rollup* (one summary entry per scene instead of per-turn
+  details) — a clean follow-up, not built yet.
+- *A new salience setting for the tier* — used a fixed floor instead, per the
+  "don't add knobs before using the existing ones" rule.
+
+**Where:** `schedulePacedTierUpdate` (`src/narration/narrator.js`);
+`TIER_SALIENCE_FLOOR` + `buildTierUpdatePrompt` + salience gate in
+`appendGenerativeTierUpdates` (`src/entities/entityExtractor.js`); cast nudge in
+`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`
+(`src/narration/narratorPrompt.js`). Architecture doc §5.
+
+---
+
 ## Speaker resolution: token selection first, PC-validated (2026-06-10)
 
 **Decision:** `resolveSpeakerActorId` honours Foundry's native "speaking as"

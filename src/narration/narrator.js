@@ -181,9 +181,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // special-casing. The permission class for these modes is supplied by
     // buildNarratorSystemPrompt's per-mode default, not here.
     const lexical = await resolvePathRelevance(playerNarration, campaignState);
-    extras.entityCards      = lexical.entityCards;
-    extras.matchedEntityIds = lexical.entityIds;
-    extras.entityNamesById  = lexical.entityNamesById;
+    extras.entityCards        = lexical.entityCards;
+    extras.matchedEntityIds   = lexical.entityIds;
+    extras.matchedEntityTypes = lexical.entityTypes;
+    extras.entityNamesById    = lexical.entityNamesById;
   }
 
   return extras;
@@ -1332,6 +1333,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     const buttonMove = reconcileSuggestedMove(text, suggestedMove);
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
     schedulePacedDetection(text, campaignState);
+    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
       narrationText: text,
       campaignState,
@@ -1354,6 +1356,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           const buttonMove = reconcileSuggestedMove(text, suggestedMove);
           await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
           schedulePacedDetection(text, campaignState);
+          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
             narrationText: text,
             campaignState,
@@ -1383,6 +1386,32 @@ export function schedulePacedDetection(narrationText, campaignState) {
   setTimeout(() => {
     runPacedDetection(narrationText, campaignState)
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));
+  }, ASYNC_DETECTION_DELAY_MS);
+}
+
+/**
+ * Paced-narrative counterpart to the move path's interaction-class generative
+ * tier update (see runPostNarrationPasses). Free narration defaults to the
+ * interaction class, so the established entities the narrator just developed in
+ * a conversation or roleplay scene should accrue to their cards too — otherwise
+ * an NPC's behaviour during paced play never lands on their record. The append
+ * pass is salience-gated (entityExtractor TIER_SALIENCE_FLOOR), so chatty
+ * narration doesn't flood the tier. Fire-and-forget, matching
+ * schedulePacedDetection's delay; no-op when nothing was matched in scene.
+ *
+ * @param {string}   narrationText
+ * @param {string[]} matchedEntityIds   — in-scene confirmed entity ids (extras)
+ * @param {string[]} matchedEntityTypes — parallel entity types (extras)
+ * @param {Object}   campaignState
+ */
+export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matchedEntityTypes, campaignState) {
+  if (!Array.isArray(matchedEntityIds) || !matchedEntityIds.length) return;
+  setTimeout(() => {
+    const refs = matchedEntityIds.map((id, i) => ({ journalId: id, type: matchedEntityTypes?.[i] }));
+    appendGenerativeTierUpdates(
+      narrationText, refs,
+      campaignState?.currentSessionId, campaignState?.sessionNumber,
+    ).catch(err => console.error(`${MODULE_ID} | paced tier update failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
 
@@ -2099,7 +2128,7 @@ function buildPartyContext(speakingName = null) {
  *                     entityNamesById: Map<string,string> }>}
  */
 async function resolvePathRelevance(playerText, campaignState) {
-  const empty = { entityIds: [], entityCards: [], entityNamesById: new Map() };
+  const empty = { entityIds: [], entityTypes: [], entityCards: [], entityNamesById: new Map() };
   try {
     const present = Array.isArray(campaignState?.sceneFrame?.present)
       ? campaignState.sceneFrame.present.filter(p => typeof p === 'string' && p.trim())
@@ -2113,6 +2142,7 @@ async function resolvePathRelevance(playerText, campaignState) {
     const types = relevance?.entityTypes ?? [];
     return {
       entityIds:       ids,
+      entityTypes:     types,
       entityCards:     collectEntityCards(ids, types),
       entityNamesById: collectEntityNamesById(ids, types),
     };

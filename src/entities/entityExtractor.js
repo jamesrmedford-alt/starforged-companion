@@ -837,6 +837,14 @@ function isPlayerCharacterName(normalisedName) {
 // GENERATIVE TIER UPDATES — interaction-class moves with matched entities
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Salience floor for generative-tier capture. The tier records an entity's
+// durable developments/actions, so trivia and incidental motion are dropped
+// while character-relevant beats ("may echo later") and up are kept — a more
+// permissive floor than the chronicle/lore channels by design. Fail-open via
+// passesSalience: an unrated update still lands (degrades to capture-all), so
+// model format drift never silently empties the tier.
+const TIER_SALIENCE_FLOOR = "notable";
+
 /**
  * Run a Haiku pass to identify narrator-added details about known entities
  * present in the scene, then append them to the corresponding generativeTier
@@ -887,6 +895,8 @@ export async function appendGenerativeTierUpdates(
 
   for (const update of parsed.updates ?? []) {
     if (!update?.entityId || !update?.detail) continue;
+    // Salience gate (fail-open) — keep consequential developments, drop trivia.
+    if (!passesSalience(update.salience, TIER_SALIENCE_FLOOR)) continue;
     const matched = records.find(r =>
       r.journalId === update.entityId
       || r.record?._id === update.entityId
@@ -951,17 +961,25 @@ function buildTierUpdatePrompt(narrationText, records) {
   }).join("\n\n");
 
   return [
-    `Given the following entity records and a narration, identify any NEW`,
-    `detail the narrator added about each entity that is NOT already in the`,
-    `record below. Only return genuinely new observations, not restatements.`,
+    `Given the following established entity records and a passage of narration,`,
+    `capture any SIGNIFICANT new development about each entity that is NOT already`,
+    `in the record below — what the character did, decided, or revealed; how their`,
+    `disposition, allegiance, or relationship to the player character shifted; a`,
+    `durable new trait or piece of history. Record consequential beats, not`,
+    `incidental motion, passing scenery, or restatements of what is already known.`,
     ``,
     formatted,
     ``,
+    `Rate each update with a "salience" — one of trivial, scene, notable,`,
+    `significant, defining — for how much it matters to that entity's ongoing`,
+    `story. Be conservative: most narration is "scene" or "trivial" and should be`,
+    `omitted entirely.`,
+    ``,
     `Return a single JSON object (no prose):`,
-    `{ "updates": [ { "entityId": string, "detail": string } ] }`,
+    `{ "updates": [ { "entityId": string, "detail": string, "salience": string } ] }`,
     ``,
     `entityId must match the id shown in the record header (e.g. "id: ABC123").`,
-    `detail should be one short sentence — the new observation only.`,
+    `detail should be one short sentence — the new development only.`,
     ``,
     `Narration:`,
     narrationText ?? "",

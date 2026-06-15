@@ -520,6 +520,12 @@ describe('NARRATOR_PERMISSIONS', () => {
     expect(NARRATOR_PERMISSIONS.embellishment.toLowerCase()).toContain('no new named entity');
   });
 
+  it('discovery block discourages naming minor/one-off characters', () => {
+    const d = NARRATOR_PERMISSIONS.discovery.toLowerCase();
+    expect(d).toContain('name sparingly');
+    expect(d).toContain('generic and unnamed');
+  });
+
   it('permissions appear after safety, before world truths in the system prompt', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState({
@@ -1016,6 +1022,15 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     // Faction example
     expect(out).toContain('"subject": "Khatri Syndicate"');
     expect(out).toMatch(/pursuing the PC for an outstanding debt/);
+  });
+
+  it('discourages naming minor characters, paired with the anchor rule (away from named minor)', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/Name sparingly/);
+    expect(out).toMatch(/generic and unnamed/);
+    // The nudge precedes the anchor REQUIRED rule it is paired with.
+    expect(out.indexOf('Name sparingly'))
+      .toBeLessThan(out.indexOf('the first time your prose introduces or names'));
   });
 
   it('threads mode + sceneFrameEnabled through buildNarratorSystemPrompt', () => {

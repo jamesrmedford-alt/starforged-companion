@@ -204,6 +204,18 @@ The **move path is unchanged** this round: its relevance call doesn't union
 frame names (changing it would alter narrator-permission class selection for
 hybrid moves). See §8.
 
+**Write side (2026-06-15).** Paced narration now also *writes* to the entity
+generative tier, not just reads cards from it. `narratePacedInput` schedules
+`schedulePacedTierUpdate` → `appendGenerativeTierUpdates` for the in-scene
+matched entities, mirroring the interaction-class move pass — so a Named NPC's
+significant actions/developments in a conversation or roleplay scene accrue to
+their card. Capture is salience-gated (`TIER_SALIENCE_FLOOR = "notable"`,
+fail-open) and biased toward developments over trivia. Unnamed/uncarded figures
+match nothing → no record → stay freely mutable, which the "name sparingly"
+casting nudge (`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`)
+reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
+"Named-NPC continuity".
+
 ---
 
 ## 6. Knobs (all world-scoped, Companion Settings panel)
