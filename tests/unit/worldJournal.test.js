@@ -526,6 +526,28 @@ describe("writeSessionLog", () => {
     expect(page.text.content).toContain("Session summary");  // wrap-up added
     expect(page.text.content).toContain("Wartime munitions");
   });
+
+  // Rolling session summary (architecture §8.6) — the finalised "story so far"
+  // prose is recorded under the Session summary section for subsequent use.
+  it("records the rolling narrative summary for the current session", async () => {
+    const cs = campaign({
+      currentSessionId: "ses-N",
+      sessionNumber: 9,
+      sessionSummary: { text: "The crew chased the signal to Bleakhold and crossed the Khatri Syndicate.", sessionId: "ses-N" },
+    });
+    const page = await writeSessionLog(cs);
+    expect(page.text.content).toContain("Story so far");
+    expect(page.text.content).toContain("crossed the Khatri Syndicate");
+  });
+
+  it("ignores a rolling summary that belongs to a different session", async () => {
+    const cs = campaign({
+      currentSessionId: "ses-N",
+      sessionSummary: { text: "Stale prior-session prose.", sessionId: "ses-OLD" },
+    });
+    const page = await writeSessionLog(cs);
+    expect(page.text.content).not.toContain("Stale prior-session prose.");
+  });
 });
 
 

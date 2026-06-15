@@ -970,6 +970,7 @@ export function buildNarratorSystemPrompt(
     playerNarration      = '',
     entityNamesById      = null,
     party                = null,
+    rollingSummary       = '',
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1042,6 +1043,15 @@ export function buildNarratorSystemPrompt(
   //      (PLAYTEST-1712 S).
   const incitingBlock = buildIncitingIncidentBlock(campaignState);
   if (incitingBlock) parts.push(incitingBlock);
+
+  // [4c] Story so far — the rolling, session-scoped narrative summary
+  //      (architecture §8.6). Bridges the arc the verbatim ring drops once a
+  //      session runs long. Droppable continuity, not a fact store: it sheds
+  //      before any §6.5 ledger tier and is never rendered for meta modes. See
+  //      decisions.md → "Rolling session summary: a debounced trailing tier".
+  if (!isMetaMode && typeof rollingSummary === 'string' && rollingSummary.trim()) {
+    parts.push(`## STORY SO FAR (THIS SESSION)\n\n${rollingSummary.trim()}`);
+  }
 
   // [5] Current location card — always injected when set
   if (currentLocationCard?.trim()) {

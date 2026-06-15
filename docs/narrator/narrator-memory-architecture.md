@@ -29,6 +29,7 @@ durability, capacity, and write discipline:
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers) | permanent | entity confirm flow, scene-end truth migration, tier updates | relevance resolver → ENTITIES IN SCENE cards | per-entity |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed, debounced at ~1.5×N | every non-meta narrator call (system prompt §[4c]) | ~≤320 tokens (Haiku-capped) |
 
 Durable campaign context (world truths, sector, current location, character
 state, World Journal injections) rides alongside these in the system prompt —
@@ -109,6 +110,9 @@ should remember* must carry all three flags:
 **Audited consumers of `narratorCard`** (re-audit when adding a card type —
 CLAUDE.md "audit consumers" rule):
 - ring (`getRecentNarrationContext`) — the point
+- rolling session summary (`sessionNarratorCards` → `getRollingSessionSummary`)
+  — shares the ring's source reader + defensive excludes; reads the full feed,
+  not the last N
 - session recap (`postSessionRecap`) — inclusion intended
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
@@ -206,8 +210,9 @@ hybrid moves). See §8.
 
 | Setting | Default | Pane | Effect |
 |---|---|---|---|
-| `narratorContextCards` | 3 (1–10) | Narrator | ring depth for paced + oracle follow-ups |
+| `narratorContextCards` | 3 (1–10) | Narrator | ring depth for paced + oracle follow-ups; also sets the rolling-summary debounce K = round(1.5 × N) |
 | `sceneContextCards` | (existing) | Narrator | ring depth for @scene answers |
+| `narratorSessionSummary` | true | Narrator | maintain + render the rolling session summary (surface 5); archived to the Session Log at End Session |
 | `factContinuity.enabled` | true | Fact Continuity | master switch: sidecar instruction + parse + ledger |
 | `factContinuity.ledgerInContext` | true | Fact Continuity | §6.5 block injection |
 | `factContinuity.sceneFrame` | true | Fact Continuity | frame emission + block + scoping/relevance unions |
@@ -317,11 +322,18 @@ regressions, all are known scope cuts:
    token is authoritative when present"). Remaining refinement: free-text
    positions still don't move the Token (no pin to anchor to) — the
    "position uncertain" Token badge stays the open idea.
-6. **A4 escalation — rolling compressed scene summary.** If frame + ledger +
-   deeper ring still lose long multi-scene threads, the next step is a
-   maintained prose summary (one Haiku call per N turns), replacing raw
-   last-N cards. Don't build it until a playtest shows the cheaper layers
-   failing.
+6. **A4 escalation — rolling session summary. ✅ shipped (2026-06-15).** A
+   maintained, session-scoped prose "story so far" that *complements* the
+   verbatim ring (the original sketch's "replace last-N cards" was not taken —
+   the ring carries phrasing the summary flattens). Summarised **from source**
+   (the full session card feed, never summary-of-summary) via one Haiku call,
+   **debounced at K = round(1.5 × N)** cards (N = `narratorContextCards`), so
+   most turns are a free cached read. Stored on `campaignState.sessionSummary`
+   (keyed by `sessionId`), rendered as system-prompt §[4c] *STORY SO FAR (THIS
+   SESSION)*, and written to the World Journal Session Log at End Session for
+   subsequent use. GM-gated + fail-open; toggle `narratorSessionSummary`
+   (default on). Drop priority + the "not a fact store" invariant: decisions.md
+   → "Rolling session summary: a debounced trailing memory tier".
 7. **Pacing interaction (F9) — shipped (Cluster D, 2026-06-10).** The
    pacing classifier now receives the scene frame in its context (the
    established-stakes signal) and carries a MOVEMENT WITH STAKES rule plus
