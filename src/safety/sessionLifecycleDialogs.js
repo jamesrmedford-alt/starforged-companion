@@ -186,6 +186,17 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
     } catch (err) {
       console.warn(`${MODULE_ID} | endSession state flip failed:`, err?.message ?? err);
     }
+
+    // Finalise the rolling session summary (architecture §8.6) before the
+    // Session Log write, so the log captures the tail since the last debounced
+    // regen. Self-gates on narratorSessionSummary; fail-open.
+    try {
+      const { getRollingSessionSummary } = await import("../narration/narrator.js");
+      await getRollingSessionSummary(state, { forceRefresh: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | rolling session summary finalise failed:`, err?.message ?? err);
+    }
+
     await game.settings.set(MODULE_ID, "campaignState", state);
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 

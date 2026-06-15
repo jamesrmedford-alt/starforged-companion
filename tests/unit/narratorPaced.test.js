@@ -17,14 +17,16 @@ vi.mock("../../src/entities/entityExtractor.js", async () => {
     runCombinedDetectionPass: vi.fn(),
     routeWorldJournalResults: vi.fn(async () => {}),
     routeEntityDrafts:        vi.fn(async () => ({ created: [], queued: [] })),
+    appendGenerativeTierUpdates: vi.fn(async () => []),
   };
 });
 
-import { schedulePacedDetection, runPacedDetection } from "../../src/narration/narrator.js";
+import { schedulePacedDetection, runPacedDetection, schedulePacedTierUpdate } from "../../src/narration/narrator.js";
 import {
   runCombinedDetectionPass,
   routeWorldJournalResults,
   routeEntityDrafts,
+  appendGenerativeTierUpdates,
   PACED_NARRATIVE_MOVE_ID,
   PACED_NARRATIVE_OUTCOME,
 } from "../../src/entities/entityExtractor.js";
@@ -58,6 +60,41 @@ describe("schedulePacedDetection()", () => {
     schedulePacedDetection("text", BASE_STATE);
     await vi.runAllTimersAsync();
     expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// schedulePacedTierUpdate — paced narration feeds the entity generative tier
+// ---------------------------------------------------------------------------
+
+describe("schedulePacedTierUpdate()", () => {
+  it("does not call appendGenerativeTierUpdates synchronously", () => {
+    schedulePacedTierUpdate("text", ["e1"], ["connection"], BASE_STATE);
+    expect(appendGenerativeTierUpdates).not.toHaveBeenCalled();
+  });
+
+  it("appends to the matched entities' tiers after the async delay, mapping id→type refs", async () => {
+    schedulePacedTierUpdate(
+      "Maren reveals her allegiance to the Hegemony.",
+      ["e1", "e2"], ["connection", "faction"], BASE_STATE,
+    );
+    await vi.runAllTimersAsync();
+    expect(appendGenerativeTierUpdates).toHaveBeenCalledTimes(1);
+    const [narration, refs, sessionId, sessionNum] = appendGenerativeTierUpdates.mock.calls[0];
+    expect(narration).toContain("Maren");
+    expect(refs).toEqual([
+      { journalId: "e1", type: "connection" },
+      { journalId: "e2", type: "faction" },
+    ]);
+    expect(sessionId).toBe("test-session");
+    expect(sessionNum).toBe(1);
+  });
+
+  it("is a no-op when no entities were matched in scene", async () => {
+    schedulePacedTierUpdate("text", [], [], BASE_STATE);
+    await vi.runAllTimersAsync();
+    expect(appendGenerativeTierUpdates).not.toHaveBeenCalled();
   });
 });
 

@@ -154,6 +154,14 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
   };
 
+  // Rolling session summary (architecture §8.6) — maintain it (debounced regen
+  // from source) and attach for rendering. Skipped for campaign_recap, which is
+  // itself a summary. getRollingSessionSummary is fail-open and GM-gates its
+  // own write, so this never blocks the prompt build.
+  extras.rollingSummary = (mode === 'campaign_recap')
+    ? ''
+    : await getRollingSessionSummary(campaignState);
+
   if (mode === 'move_resolution') {
     // The move pipeline resolves relevance itself (clarification dialog +
     // dynamic permission class) and hands the result in; oracle seeds (which
@@ -173,9 +181,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // special-casing. The permission class for these modes is supplied by
     // buildNarratorSystemPrompt's per-mode default, not here.
     const lexical = await resolvePathRelevance(playerNarration, campaignState);
-    extras.entityCards      = lexical.entityCards;
-    extras.matchedEntityIds = lexical.entityIds;
-    extras.entityNamesById  = lexical.entityNamesById;
+    extras.entityCards        = lexical.entityCards;
+    extras.matchedEntityIds   = lexical.entityIds;
+    extras.matchedEntityTypes = lexical.entityTypes;
+    extras.entityNamesById    = lexical.entityNamesById;
   }
 
   return extras;
@@ -500,21 +509,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
  */
 export function getRecentNarrationContext(sessionId, limit = 3) {
   try {
-    return (game.messages?.contents ?? [])
-      .filter(m => {
-        const f = m.flags?.[MODULE_ID];
-        if (!f?.narratorCard) return false;
-        if (f.sessionId !== sessionId) return false;
-        // Defensive excludes — even if a future code path co-marks a system
-        // card as a narratorCard, none of these should ever feed back into
-        // the narrator's user message. Avoids module-meta leaking into prose.
-        if (f.worldJournalContradiction) return false;
-        if (f.worldJournalCard) return false;
-        if (f.recapCard) return false;
-        if (f.draftEntityCard) return false;
-        if (Array.isArray(m.whisper) && m.whisper.length) return false;
-        return true;
-      })
+    return sessionNarratorCards(sessionId)
       .slice(-limit)
       .map(m => m.flags?.[MODULE_ID]?.narrationText)
       .filter(Boolean)
@@ -523,6 +518,33 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
     console.warn(`${MODULE_ID} | narrator: getRecentNarrationContext failed:`, err);
     return '';
   }
+}
+
+/**
+ * All narrator-prose cards for a session, oldest → newest. The single source
+ * both the recent-narration ring (last N) and the rolling session summary
+ * (full feed) read from, so the flag-family contract + defensive excludes are
+ * defined once. Audited consumer of `narratorCard` (narrator-memory
+ * architecture §2) — added with the rolling session summary.
+ *
+ * @param {string} sessionId
+ * @returns {Array<Object>} ChatMessage documents
+ */
+function sessionNarratorCards(sessionId) {
+  return (game.messages?.contents ?? []).filter(m => {
+    const f = m.flags?.[MODULE_ID];
+    if (!f?.narratorCard) return false;
+    if (f.sessionId !== sessionId) return false;
+    // Defensive excludes — even if a future code path co-marks a system card
+    // as a narratorCard, none of these should ever feed back into the
+    // narrator's context. Avoids module-meta leaking into prose.
+    if (f.worldJournalContradiction) return false;
+    if (f.worldJournalCard) return false;
+    if (f.recapCard) return false;
+    if (f.draftEntityCard) return false;
+    if (Array.isArray(m.whisper) && m.whisper.length) return false;
+    return true;
+  });
 }
 
 /**
@@ -666,6 +688,153 @@ export async function getCampaignRecap(campaignState, options = {}) {
     console.error(`${MODULE_ID} | getCampaignRecap failed:`, err);
     return '';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Rolling session summary (narrator-memory architecture §8.6)
+//
+// A trailing, session-scoped prose "story so far" that bridges the gap the
+// verbatim ring leaves: after the first card of a session the ring shows only
+// the last N cards, so the narrative ARC of everything older survives only as
+// discrete ledger facts. This maintains a compressed summary regenerated from
+// SOURCE (all of the session's narrator cards — never summary-of-summary) on a
+// debounce of ~1.5×N aged-out cards, runs the whole session, and is written to
+// the World Journal Session Log at End Session for subsequent use. The §8.6
+// escalation, taken with debounce answering the original cost objection (see
+// decisions.md → "Rolling session summary").
+// ---------------------------------------------------------------------------
+
+const ROLLING_SUMMARY_MODEL     = 'claude-haiku-4-5-20251001';
+const ROLLING_SUMMARY_MAX_TOK   = 320;
+const ROLLING_SUMMARY_DEBOUNCE  = 1.5;
+
+const ROLLING_SUMMARY_SYSTEM_PROMPT =
+  `You are the continuity scribe for an Ironsworn: Starforged campaign. You are ` +
+  `given the narrator's prose for the current play session, oldest first. Write a ` +
+  `tight "story so far" summary of THIS SESSION for the narrator to hold as ` +
+  `background memory.\n\n` +
+  `Capture the through-line: where the characters have been, who they met and what ` +
+  `those figures want, decisions made, promises and threats now in play, and any ` +
+  `unresolved tension the next beat should honour. Prefer the proper nouns the prose ` +
+  `establishes. Past tense, plain prose, 4-8 sentences, no headings or lists.\n\n` +
+  `This is narrative memory, not a recap card: do not address the player, do not ` +
+  `propose actions, do not mention dice, moves, momentum, or any game mechanic. ` +
+  `Summarise only what the prose contains — never invent.`;
+
+/**
+ * Debounce threshold — how many new narrator cards must accrue before the
+ * rolling summary regenerates, derived from the ring depth: K = round(1.5 × N),
+ * floor 1. Because 1.5 × N always exceeds N, a summary only ever materialises
+ * once there is a tail beyond the verbatim ring.
+ *
+ * @param {number} ringDepth — `narratorContextCards`
+ * @returns {number}
+ */
+export function rollingSummaryThreshold(ringDepth) {
+  const n = Number(ringDepth);
+  const base = (!Number.isFinite(n) || n < 1) ? 3 : n;
+  return Math.max(1, Math.round(ROLLING_SUMMARY_DEBOUNCE * base));
+}
+
+function rollingSummaryEnabled() {
+  try { return game.settings.get(MODULE_ID, 'narratorSessionSummary') ?? true; }
+  catch { return true; }
+}
+
+/**
+ * Pure read of the current session's rolling summary text — no API, no write.
+ * Returns '' when disabled, absent, or stale (stored summary belongs to a
+ * different session). Used by `buildNarratorExtras` to render the block.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+export function getRollingSummaryText(campaignState) {
+  if (!rollingSummaryEnabled()) return '';
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const cache     = campaignState?.sessionSummary ?? null;
+  if (!sessionId || !cache || cache.sessionId !== sessionId) return '';
+  return typeof cache.text === 'string' ? cache.text : '';
+}
+
+/**
+ * Maintain (and return) the rolling session summary. Debounced: regenerates
+ * from the full session card feed only once ≥ K new cards have accrued since
+ * the last regeneration (K = `rollingSummaryThreshold(ring depth)`); otherwise
+ * returns the cached text. GM-gated on the write (world-scoped campaignState),
+ * like the campaign recap and chronicle writer. Fail-open — any error returns
+ * the previous text so a summary hiccup never blocks a narration.
+ *
+ * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {boolean} [options.forceRefresh] — regenerate regardless of debounce
+ * @returns {Promise<string>}
+ */
+export async function getRollingSessionSummary(campaignState, options = {}) {
+  if (!rollingSummaryEnabled()) return '';
+  const sessionId = campaignState?.currentSessionId ?? null;
+  if (!sessionId) return '';
+
+  const cache      = (campaignState.sessionSummary?.sessionId === sessionId)
+                       ? campaignState.sessionSummary : null;
+  const cachedText = typeof cache?.text === 'string' ? cache.text : '';
+
+  let cards;
+  try { cards = sessionNarratorCards(sessionId); }
+  catch { return cachedText; }
+  const total = cards.length;
+  if (total === 0) return cachedText;
+
+  const K       = rollingSummaryThreshold(getNarratorContextCards());
+  const covered = Number(cache?.coveredCount) || 0;
+
+  // Debounce: nothing new enough to re-summarise.
+  if (!options.forceRefresh && (total - covered) < K) return cachedText;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return cachedText;
+
+  const sourceProse = cards
+    .map(m => m.flags?.[MODULE_ID]?.narrationText)
+    .filter(Boolean)
+    .join('\n\n---\n\n');
+  if (!sourceProse.trim()) return cachedText;
+
+  let text;
+  try {
+    text = await callNarratorAPI({
+      apiKey,
+      systemPrompt: ROLLING_SUMMARY_SYSTEM_PROMPT,
+      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}`,
+      model:        ROLLING_SUMMARY_MODEL,
+      maxTokens:    ROLLING_SUMMARY_MAX_TOK,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: rolling summary generation failed:`, err?.message ?? err);
+    return cachedText;
+  }
+  if (!text?.trim()) return cachedText;
+
+  const record = {
+    text:         text.trim(),
+    coveredCount: total,
+    sessionId,
+    updatedAt:    new Date().toISOString(),
+  };
+  campaignState.sessionSummary = record;
+
+  // GM-gated persist (world-scoped write). Non-GM clients keep the fresh text
+  // for this call but leave the durable write to the GM's own narration pass.
+  if (globalThis.game?.user?.isGM) {
+    try {
+      const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
+      stored.sessionSummary = record;
+      await game.settings.set(MODULE_ID, 'campaignState', stored);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
+    }
+  }
+  return record.text;
 }
 
 /**
@@ -1164,6 +1333,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     const buttonMove = reconcileSuggestedMove(text, suggestedMove);
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
     schedulePacedDetection(text, campaignState);
+    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
       narrationText: text,
       campaignState,
@@ -1186,6 +1356,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           const buttonMove = reconcileSuggestedMove(text, suggestedMove);
           await postPacedNarrativeCard(text, playerText, sessionId, buttonMove);
           schedulePacedDetection(text, campaignState);
+          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
             narrationText: text,
             campaignState,
@@ -1215,6 +1386,32 @@ export function schedulePacedDetection(narrationText, campaignState) {
   setTimeout(() => {
     runPacedDetection(narrationText, campaignState)
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));
+  }, ASYNC_DETECTION_DELAY_MS);
+}
+
+/**
+ * Paced-narrative counterpart to the move path's interaction-class generative
+ * tier update (see runPostNarrationPasses). Free narration defaults to the
+ * interaction class, so the established entities the narrator just developed in
+ * a conversation or roleplay scene should accrue to their cards too — otherwise
+ * an NPC's behaviour during paced play never lands on their record. The append
+ * pass is salience-gated (entityExtractor TIER_SALIENCE_FLOOR), so chatty
+ * narration doesn't flood the tier. Fire-and-forget, matching
+ * schedulePacedDetection's delay; no-op when nothing was matched in scene.
+ *
+ * @param {string}   narrationText
+ * @param {string[]} matchedEntityIds   — in-scene confirmed entity ids (extras)
+ * @param {string[]} matchedEntityTypes — parallel entity types (extras)
+ * @param {Object}   campaignState
+ */
+export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matchedEntityTypes, campaignState) {
+  if (!Array.isArray(matchedEntityIds) || !matchedEntityIds.length) return;
+  setTimeout(() => {
+    const refs = matchedEntityIds.map((id, i) => ({ journalId: id, type: matchedEntityTypes?.[i] }));
+    appendGenerativeTierUpdates(
+      narrationText, refs,
+      campaignState?.currentSessionId, campaignState?.sessionNumber,
+    ).catch(err => console.error(`${MODULE_ID} | paced tier update failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
 
@@ -1931,7 +2128,7 @@ function buildPartyContext(speakingName = null) {
  *                     entityNamesById: Map<string,string> }>}
  */
 async function resolvePathRelevance(playerText, campaignState) {
-  const empty = { entityIds: [], entityCards: [], entityNamesById: new Map() };
+  const empty = { entityIds: [], entityTypes: [], entityCards: [], entityNamesById: new Map() };
   try {
     const present = Array.isArray(campaignState?.sceneFrame?.present)
       ? campaignState.sceneFrame.present.filter(p => typeof p === 'string' && p.trim())
@@ -1945,6 +2142,7 @@ async function resolvePathRelevance(playerText, campaignState) {
     const types = relevance?.entityTypes ?? [];
     return {
       entityIds:       ids,
+      entityTypes:     types,
       entityCards:     collectEntityCards(ids, types),
       entityNamesById: collectEntityNamesById(ids, types),
     };

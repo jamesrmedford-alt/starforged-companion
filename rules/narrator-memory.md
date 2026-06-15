@@ -47,8 +47,18 @@ layers. This file is the never-break list.
    confirmed NPCs ledger entity-keyed. Don't remove that argument; text
    subjects are the fallback, not the norm.
 
+8. **The rolling session summary is a droppable convenience, not a fact
+   store.** It is summarised *from source* (never summary-of-summary),
+   debounced at `round(1.5 × narratorContextCards)`, and must never be retained
+   at the expense of any §6.5 ledger tier or the never-dropped facts (frame /
+   binding truths / ship position) — those defend load-bearing facts; the
+   summary only carries narrative texture. Keep it GM-gated + fail-open: a
+   summary error returns the prior text and never blocks a narration. Full drop
+   priority in `decisions.md` → "Rolling session summary".
+
 ## Tuning knobs (don't add new ones before using these)
 
 `narratorContextCards` (ring depth) · `sceneContextCards` ·
+`narratorSessionSummary` (rolling session summary on/off) ·
 `factContinuity.sceneFrame` · `factContinuity.maxLedgerTokens` ·
 `factContinuity.consistencyCheck`. Symptom → knob table: architecture doc §7.

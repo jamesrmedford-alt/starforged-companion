@@ -696,10 +696,11 @@ get defended; facts without homes get rewritten.
   left session recaps still missing the opening fiction and split the flag
   vocabulary; consumers were audited instead (correction/audio hooks no-op
   without their button markup; burn-supersede requires `resolutionId`).
-- *Haiku-based scene summarisation per turn* — cost/latency per narration;
-  the same generation that writes the prose already knows the frame. The
-  rolling compressed summary remains the documented escalation path
-  (architecture doc §8.6) if frame+ledger+ring prove insufficient.
+- *Haiku-based scene summarisation **per turn*** — rejected at Cluster A for
+  cost/latency per narration. The §8.6 escalation has since been **taken** as a
+  *debounced* rolling session summary (regenerated once per ~1.5×N cards, not
+  per turn), which answers the original cost objection. See "Rolling session
+  summary: a debounced trailing memory tier" below.
 - *Code-side inference of NPC state from prose* — emission is prompt-enforced
   (REQUIRED rules in `appendSidecarInstruction`); inference machinery only if
   the model demonstrably ignores the contract.
@@ -711,6 +712,134 @@ tuning guide (symptom → knob), and refinement backlog in
 `docs/narrator/narrator-memory-architecture.md`. Settings:
 `narratorContextCards` (ring depth 1–10, default 3) and
 `factContinuity.sceneFrame` (default on).
+
+---
+
+## Rolling session summary: a debounced trailing memory tier (2026-06-15)
+
+**Decision:** the narrator gains a fifth memory surface — a **rolling,
+session-scoped prose "story so far"** that complements the verbatim
+recent-narration ring rather than replacing it (the §8.6 escalation, promoted
+to a build). Mechanics:
+
+- **Summarised from source, never from itself.** Each regeneration reads the
+  full feed of the session's narrator cards (`sessionNarratorCards`) and
+  produces a fresh summary via one cheap Haiku call. No incremental
+  summary-of-summary, so it cannot drift by compounding.
+- **Debounced at K = round(1.5 × N)** where N is `narratorContextCards`. The
+  summary regenerates only once K new cards have accrued since the last regen;
+  every other turn is a free cached read. Because 1.5 × N > N, a summary only
+  ever appears once there is a tail of cards beyond the verbatim ring.
+- **Runs the whole session** (not scene-scoped). Stored on
+  `campaignState.sessionSummary = { text, coveredCount, sessionId, updatedAt }`,
+  keyed by `sessionId` so a new session ignores the stale prior summary.
+- **Written to the Session Log at End Session.** The End Session flow does a
+  final `forceRefresh` regen, then `writeSessionLog` records the prose under
+  the page's "Session summary → Story so far" heading for subsequent use.
+- **GM-gated, fail-open.** Non-GM clients use the cached text but leave the
+  durable write to the GM; any generation error returns the previous text, so
+  a summary hiccup never blocks a narration. Gated by the world setting
+  `narratorSessionSummary` (default on).
+- **Rendered** as system-prompt section `[4c] STORY SO FAR (THIS SESSION)`,
+  between the campaign premise `[4b]` and the current location `[5]`; never
+  rendered for meta modes (`campaign_recap`).
+
+**Drop priority (the explicit ordering — lowest = shed first under budget
+pressure, highest = never dropped):**
+
+1. Scene state (existing — sheds first inside the §6.5 ledger)
+2. Recent-narration ring depth (trim toward fewer verbatim cards)
+3. **Rolling session summary** ← this tier sheds here
+4. Entity cards · current location · active sector · world/campaign truths ·
+   inciting premise
+5. **Never dropped:** scene frame · binding truths · ship position
+
+**Hard invariant:** the session summary is a *droppable continuity
+convenience, not a fact store*. It must never be retained at the expense of any
+§6.5 ledger tier or the never-dropped facts. This is satisfied structurally
+today — it is a single, bounded (~≤320-token Haiku-capped), self-contained
+prose block that is appended only when present and is always safe to omit; it
+does not participate in or compete with the §6.5 `maxLedgerTokens` budget.
+Load-bearing facts still live in the ledger / entity tiers / WJ Lore, which
+defend them; the summary only carries narrative *texture* the ring would
+otherwise drop.
+
+**Reason:** after the first card of a session the ring shows only the last N
+cards, so the narrative arc of everything older survived solely as discrete
+ledger facts — tone, dramatic through-line, and unresolved tension were lost
+mid-session, and the campaign recap (the cross-session summariser) is injected
+only at session start. The rolling summary fills that middle band cheaply.
+
+**Rejected / deferred:**
+- *Scene-scoped instead of session-scoped* — the felt gap spans scene
+  boundaries within a sitting; the §6.5 ledger already covers the current scene.
+- *Replacing the ring (per §8.6's original sketch)* — the verbatim ring carries
+  phrasing the summary necessarily flattens; they are complementary.
+- *A ledger-duplication guard* — the summary may restate facts already in the
+  ledger. Deliberately **waived** until it demonstrably causes a problem
+  (contradiction or token bloat); revisit by biasing the summariser prompt away
+  from facts if a playtest shows it.
+
+**Where:** `getRollingSessionSummary` / `getRollingSummaryText` /
+`rollingSummaryThreshold` in `src/narration/narrator.js`; rendering in
+`buildNarratorSystemPrompt` (`src/narration/narratorPrompt.js`); End Session
+persistence in `src/safety/sessionLifecycleDialogs.js` + `writeSessionLog`
+(`src/world/worldJournal.js`). Architecture doc §8.6.
+
+---
+
+## Named-NPC continuity: paced-path generative tier, salience-gated, + cast hygiene (2026-06-15)
+
+**Decision:** strengthen per-entity memory along three axes, all keyed on the
+existing named/unnamed split (a confirmed record = named; no record = ephemeral):
+
+1. **The generative tier now updates on the paced/free-narration path**, not
+   only on interaction-class move resolution. `narratePacedInput` schedules
+   `appendGenerativeTierUpdates` for the in-scene matched entities
+   (`schedulePacedTierUpdate`), mirroring the move path's post-narration pass.
+   Conversation/roleplay scenes are where an NPC's character is most
+   established, and they were previously writing nothing to the card.
+2. **Tier capture is salience-gated and biased toward actions/developments.**
+   The tier-update prompt now asks for *significant* developments — what the
+   character did, decided, revealed; shifts in disposition/allegiance/relationship
+   to the PC — and rates each with a salience. `appendGenerativeTierUpdates`
+   drops anything below a fixed `TIER_SALIENCE_FLOOR = "notable"` (more
+   permissive than the chronicle/lore floors, because an NPC's card should hold
+   character-relevant beats even if they aren't campaign-defining). Fail-open:
+   an unrated update still lands, so model drift degrades to the prior
+   capture-all behaviour rather than emptying the tier.
+3. **The narrator is nudged away from naming minor characters.** A "name
+   sparingly" rule sits in the discovery permission block *and*, paired with the
+   Finding-O anchor, in `appendSidecarInstruction` (universal, non-meta): leave
+   one-off functionaries generic ("a guard", "the comms officer"); spend a
+   proper name only on a character meant to recur. This is the chosen
+   alternative to a graded-importance data model — instead of grading named
+   NPCs, reduce the population of named-but-minor ones, so the cast that gets
+   tracked is the cast that matters.
+
+**Reason:** the narrator's structured memory of an NPC (motivation, disposition,
+faction relationship) exists only as entity-card fields surfaced when the entity
+is confirmed AND matched. For invented/unmatched figures it improvises, and
+un-homed facts drift. (1)+(2) give in-scene named NPCs a durable, low-noise
+behavioural record on every narration path; (3) keeps the un-homed population
+small so improvisation drift is confined to genuinely disposable figures.
+
+**Rejected / deferred:**
+- *Graded importance flag on named NPCs (minor vs central)* — replaced by the
+  prose nudge in (3); revisit only if naming discipline proves insufficient.
+- *Appending to the user-facing `notes` field* (the original sketch) — the
+  generative tier is the right home: capped at 5 on the card, deduped, pinned,
+  and auto-promoted to WJ Lore at scene end. `notes` would bloat unboundedly.
+- *A scene-end per-NPC rollup* (one summary entry per scene instead of per-turn
+  details) — a clean follow-up, not built yet.
+- *A new salience setting for the tier* — used a fixed floor instead, per the
+  "don't add knobs before using the existing ones" rule.
+
+**Where:** `schedulePacedTierUpdate` (`src/narration/narrator.js`);
+`TIER_SALIENCE_FLOOR` + `buildTierUpdatePrompt` + salience gate in
+`appendGenerativeTierUpdates` (`src/entities/entityExtractor.js`); cast nudge in
+`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`
+(`src/narration/narratorPrompt.js`). Architecture doc §5.
 
 ---
 

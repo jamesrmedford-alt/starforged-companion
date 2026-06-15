@@ -549,8 +549,15 @@ function renderSessionLogContent(flag) {
   }
 
   const summary = flag.summary;
-  if (summary && (summary.lore?.length || summary.threats?.length)) {
+  const hasNarrative = !!(summary && typeof summary.narrative === "string" && summary.narrative.trim());
+  if (summary && (hasNarrative || summary.lore?.length || summary.threats?.length)) {
     lines.push("<h3>Session summary</h3>");
+    if (hasNarrative) {
+      lines.push("<h4>Story so far</h4>");
+      for (const p of summary.narrative.trim().split(/\n\n+/)) {
+        lines.push(`<p>${escapeHtml(p.trim())}</p>`);
+      }
+    }
     if (summary.lore?.length) {
       lines.push("<h4>Lore this session</h4><ul>");
       for (const t of summary.lore) lines.push(`<li>${escapeHtml(t)}</li>`);
@@ -663,7 +670,15 @@ export async function writeSessionLog(campaignState) {
   const recentThreats = readEntries(await getOrCreateJournal(JOURNAL_NAMES.threats), FLAG_KEYS.threats)
                          .filter(e => e.lastUpdated === sessionId);
 
+  // The rolling narrative summary (architecture §8.6), finalised by the End
+  // Session flow before this write. Only adopt it when it belongs to this
+  // session so a stale prior-session summary never leaks onto the page.
+  const narrative = (campaignState?.sessionSummary?.sessionId === sessionId)
+    ? (campaignState.sessionSummary.text ?? "")
+    : "";
+
   flag.summary = {
+    narrative,
     lore:      recentLore.map(l => l.title),
     threats:   recentThreats.map(t => ({ name: t.name, severity: t.severity })),
     writtenAt: new Date().toISOString(),
