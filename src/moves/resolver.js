@@ -221,6 +221,15 @@ function emptyConsequences() {
     sufferPrompt:        null,
     progressTrackId:     null,
     combatPosition:      null,
+    // Exploration lifecycle: when true, the pipeline marks one rank-step on the
+    // shared expedition progress track (resolve-or-create). See moves/expedition.js.
+    expeditionProgress:  false,
+    // { track: "discoveries"|"quests"|"bonds", ticks } — pipeline marks the
+    // legacy track (Make a Discovery / Confront Chaos). null = none.
+    legacyMark:          null,
+    // { ranksDown } — pipeline completes the open expedition track and pays its
+    // rank's legacy reward (Finish an Expedition). null = not a finish.
+    finishExpedition:    null,
     otherEffect:         "",
   };
 }
@@ -458,11 +467,11 @@ const CONSEQUENCE_MAP = {
 
   undertake_an_expedition: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), expeditionProgress: true,
         otherEffect: "Reach a waypoint. Mark progress per expedition rank." };
       case "weak_hit": return {
         ...emptyConsequences(),
-        progressMarked: 0,
+        expeditionProgress: true,
         sufferPrompt: { kind: "enumerated", options: [
           { label: "One suffer move (-2)",        kind: "any", amount: 2, count: 1 },
           { label: "Two suffer moves (-1 each)",  kind: "any", amount: 1, count: 2 },
@@ -477,11 +486,17 @@ const CONSEQUENCE_MAP = {
 
   explore_a_waypoint: (outcome, isMatch) => {
     switch (outcome) {
+      // Strong hit grants expedition progress (the play-kit "gain progress on
+      // your expedition" branch), marked on the active expedition track via the
+      // pipeline handler. The alternative "find an opportunity (+2 momentum)"
+      // is offered in the card text for the player/GM to take instead — a true
+      // in-dialog momentum-vs-progress toggle is a follow-up (it shares the
+      // currently-dormant combat `progress` option). See decisions.md.
       case "strong_hit": return { ...emptyConsequences(),
-        momentumChange: isMatch ? 0 : 2,
+        expeditionProgress: true,
         otherEffect: isMatch
-          ? "Strong hit with a match — may Make a Discovery instead of choosing. Otherwise: find opportunity (+2 momentum) OR gain progress on expedition."
-          : "Choose: find opportunity (+2 momentum) OR gain progress on expedition per rank." };
+          ? "Strong hit with a match — gain progress on the expedition (or forgo it for +2 momentum). With the match you may instead Make a Discovery."
+          : "Strong hit — gain progress on the expedition. (You may forgo the progress for +2 momentum instead.)" };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Interesting find bound up in peril or ominous aspect. Take +1 momentum." };
       case "miss": return { ...emptyConsequences(),
@@ -492,11 +507,13 @@ const CONSEQUENCE_MAP = {
   },
 
   finish_an_expedition: (outcome, _isMatch) => {
-    // Progress move
+    // Progress move. Strong/weak complete the open expedition track and pay its
+    // legacy reward (weak = one rank lower) via the pipeline finishExpedition
+    // handler; a miss leaves the track open (abandon or recommit — GM-adjudicated).
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
+      case "strong_hit": return { ...emptyConsequences(), finishExpedition: { ranksDown: 0 },
         otherEffect: "Expedition complete. Mark legacy reward on discoveries track per rank." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), finishExpedition: { ranksDown: 1 },
         otherEffect: "Complete but with unforeseen complication. Legacy reward one rank lower (none for troublesome). Envision what you encounter." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Destination lost or true cost revealed. Choose: abandon (Pay the Price) OR return (roll challenge dice, clear lowest in progress boxes, raise rank by one)." };
@@ -523,11 +540,15 @@ const CONSEQUENCE_MAP = {
 
   make_a_discovery: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    legacyMark: { track: "discoveries", ticks: 2 },
     otherEffect: "Mark 2 ticks on discoveries legacy track. Roll or choose a discovery from the table.",
   }),
 
   confront_chaos: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    // 1 tick for the minimum (one aspect); mark again for each further aspect
+    // confronted — the per-aspect count is the player's call, surfaced in text.
+    legacyMark: { track: "discoveries", ticks: 1 },
     otherEffect: "Decide aspects (1-3). Roll or choose on Confront Chaos table. Mark 1 tick on discoveries per aspect confronted.",
   }),
 

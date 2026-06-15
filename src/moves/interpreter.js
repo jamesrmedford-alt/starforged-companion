@@ -141,6 +141,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "isProgressMove": false,
   "progressTicks": 0,
   "moveTarget": null,
+  "expeditionRank": null,
   "rationale": "Player is threading their ship through a debris field — risky navigation requiring focus and observation.",
   "mischiefApplied": false,
   "confidence": "high"
@@ -149,7 +150,8 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: leave as 0 — filled in from the character sheet by the calling code (enrichInterpretationStatValue in src/moves/statEnrichment.js).
 progressTicks: only relevant for progress moves — leave as 0 otherwise.
-moveTarget: for movement moves (set_a_course, undertake_an_expedition, finish_an_expedition), the named destination the player stated in their narration ("Bleakhold Station", "the Vault of Tears"). null when the move is not a movement move or no destination is implied.`;
+moveTarget: for movement moves (set_a_course, undertake_an_expedition, finish_an_expedition), the named destination the player stated in their narration ("Bleakhold Station", "the Vault of Tears"). null when the move is not a movement move or no destination is implied.
+expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.`;
 }
 
 
@@ -365,6 +367,7 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
     isProgressMove:         moveData.progressMove === true,
     progressTicks:          parsed.progressTicks ?? 0,
     moveTarget:              typeof parsed.moveTarget === "string" && parsed.moveTarget.trim() ? parsed.moveTarget.trim() : null,
+    expeditionRank:          typeof parsed.expeditionRank === "string" && parsed.expeditionRank.trim() ? parsed.expeditionRank.trim().toLowerCase() : null,
     rationale:               parsed.rationale ?? parsed.interpretationRationale ?? "",
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",
@@ -390,6 +393,7 @@ function fallbackInterpretation(narration, mischiefLevel) {
     isProgressMove:          false,
     progressTicks:           0,
     moveTarget:              null,
+    expeditionRank:          null,
     rationale:               "Fallback — API response could not be parsed.",
     mischiefApplied:         false,
     confidence:              "low",

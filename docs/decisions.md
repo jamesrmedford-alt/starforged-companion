@@ -843,6 +843,61 @@ small so improvisation drift is confined to genuinely disposable figures.
 
 ---
 
+## Exploration lifecycle: expedition + waypoint moves wired to the live track (2026-06-15)
+
+**Decision:** the exploration cluster now applies its mechanical effects instead
+of leaving them as instructional text (closes audit 3.18–3.21):
+
+- **Undertake an Expedition** and **Explore a Waypoint** mark progress on a
+  shared **expedition** progress track via `expedition.applyExpeditionProgress`
+  + a GM-gated pipeline handler. The track is resolved by destination
+  (`moveTarget`), else the single open expedition, else **auto-created** at an
+  **interpreter-inferred rank** (`expeditionRank`; validated, `dangerous`
+  default, re-rankable in the panel — the inference is a best guess, kept cheap
+  to correct).
+- **Make a Discovery / Confront Chaos** mark the **discoveries** legacy track
+  (2 ticks / 1 tick-per-aspect) via a `legacyMark` consequence.
+- **Finish an Expedition** completes the open expedition track and pays its
+  rank's **legacy reward** onto discoveries (`legacyRewardTicks`, the play-kit
+  1-tick→3-box table; weak hit one rank lower, troublesome→none; a miss leaves
+  the track open).
+
+**Integrate via the live track store.** The canonical progress-track store is
+the flag-array model behind the panel (`ui/progressTracks.js`). The
+`persistResolution.progressTrackId` path (and `campaignState.progressTrackIds`)
+is **vestigial — never written from a resolution** (combat's `progress` suffer
+option is dormant for the same reason), so the move→track wiring lives in
+`src/moves/expedition.js` (dependency-injected, Foundry-free, unit-tested) and a
+GM-gated handler in `index.js`. Legacy/finish writes mutate `campaignState` in
+place; the GM's `persistResolution` deep-clones and persists it (no race).
+
+**Rejected / deferred:**
+- *Activating the `progressMarked + progressTrackId` persist path* — it targets
+  the vestigial store; the panel store is the real one.
+- *A true in-dialog momentum-vs-progress choice for Explore a Waypoint* — the
+  strong hit auto-marks progress (dropping the contradictory baked-in
+  `momentumChange:2`), with +2 momentum offered in the card text. A real toggle
+  shares the **dormant combat `progress` suffer option**, so wiring it properly
+  is a cross-cutting suffer-dialog change beyond this cluster.
+- *Populating `currentWaypoint`* — redundant with the progress-track context the
+  assembler already injects (the track's label is the destination); the field's
+  semantics are underspecified, so it stays unused until a concrete consumer
+  defines them.
+- *One-click "Make a Discovery / Confront Chaos" buttons on the Explore result*
+  — the chained moves already work when typed/suggested; a button needs a
+  programmatic move-dispatch path (its own piece of work).
+- *XP-on-box-completion for the legacy marks* — mirrors the existing `!bond`
+  handler (raw tick add, capped 40); the Earn Experience box accounting is a
+  pre-existing gap shared with bonds, not introduced here.
+
+**Where:** `src/moves/expedition.js` (`applyExpeditionProgress`,
+`finishExpedition`, `selectExpeditionTrack`, `legacyRewardTicks`); resolver
+consequence flags (`expeditionProgress` / `legacyMark` / `finishExpedition`);
+`interpreter.expeditionRank`; pipeline handlers + feedback cards in `index.js`;
+`progressTracks.completeProgressTrack`. Tests: `tests/unit/expedition.test.js`.
+
+---
+
 ## Speaker resolution: token selection first, PC-validated (2026-06-10)
 
 **Decision:** `resolveSpeakerActorId` honours Foundry's native "speaking as"

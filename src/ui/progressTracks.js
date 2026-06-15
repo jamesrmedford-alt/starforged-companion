@@ -761,15 +761,33 @@ export async function addProgressTrack(data) {
 }
 
 /**
- * List the current progress tracks (id / label / rank / type / ticks) for
- * callers outside the panel — e.g. the consequence-rider track picker.
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number}>>}
+ * List the current progress tracks for callers outside the panel — e.g. the
+ * consequence-rider track picker and the expedition lifecycle (moves/expedition.js,
+ * which needs `completed` + `type` to pick the open expedition track).
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
   return tracks.map(t => ({
-    id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks,
+    id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks, completed: t.completed === true,
   }));
+}
+
+/**
+ * Mark a track completed by ID from outside the panel (e.g. Finish an
+ * Expedition). Completed tracks move to the panel's archive section but are
+ * kept for the campaign record. GM-only (journal write); null if not found.
+ * @param {string} trackId
+ * @returns {Promise<object|null>}  Updated track or null if not found
+ */
+export async function completeProgressTrack(trackId) {
+  const tracks = await loadTracks();
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track) return null;
+  track.completed   = true;
+  track.completedAt = Date.now();
+  await saveTracks(tracks);
+  return track;
 }
 
 /**

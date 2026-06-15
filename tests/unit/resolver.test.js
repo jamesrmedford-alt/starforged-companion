@@ -498,7 +498,7 @@ const HANDLER_CASES = [
   ["undertake_an_expedition", "strong_hit", false, { match: /waypoint|progress/i }],
   ["undertake_an_expedition", "weak_hit",   false, { match: /cost|peril/i }],
   ["undertake_an_expedition", "miss",       false, { match: /Pay the Price|crisis/i }],
-  ["explore_a_waypoint",      "strong_hit", false, { momentumChange: 2, match: /opportunity/i }],
+  ["explore_a_waypoint",      "strong_hit", false, { match: /progress|expedition/i }],
   ["explore_a_waypoint",      "weak_hit",   false, { momentumChange: 1, match: /peril|ominous/i }],
   ["explore_a_waypoint",      "miss",       false, { match: /Pay the Price/i }],
   ["finish_an_expedition",    "strong_hit", false, { match: /Expedition complete|legacy/i }],
@@ -1146,6 +1146,29 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.sufferPrompt.kind).toBe("enumerated");
     expect(c.sufferPrompt.options).toHaveLength(3);
     expect(c.sufferPrompt.options.find(o => o.complication)?.scope).toBe("waypoint");
+  });
+
+  it("undertake_an_expedition flags expeditionProgress on a hit, not on a miss (audit 3.18)", () => {
+    expect(mapConsequences("undertake_an_expedition", "strong_hit", false).expeditionProgress).toBe(true);
+    expect(mapConsequences("undertake_an_expedition", "weak_hit", false).expeditionProgress).toBe(true);
+    expect(mapConsequences("undertake_an_expedition", "miss", false).expeditionProgress).toBe(false);
+  });
+
+  it("explore_a_waypoint strong hit feeds the expedition track (no baked-in momentum)", () => {
+    const c = mapConsequences("explore_a_waypoint", "strong_hit", false);
+    expect(c.expeditionProgress).toBe(true);
+    expect(c.momentumChange).toBe(0);   // momentum is the offered alternative, not auto-applied
+  });
+
+  it("make_a_discovery / confront_chaos mark the discoveries legacy track (audit 3.20)", () => {
+    expect(mapConsequences("make_a_discovery", "strong_hit", false).legacyMark).toEqual({ track: "discoveries", ticks: 2 });
+    expect(mapConsequences("confront_chaos", "strong_hit", false).legacyMark).toEqual({ track: "discoveries", ticks: 1 });
+  });
+
+  it("finish_an_expedition flags completion + legacy reward (one rank lower on a weak hit; none on a miss) (audit 3.21)", () => {
+    expect(mapConsequences("finish_an_expedition", "strong_hit", false).finishExpedition).toEqual({ ranksDown: 0 });
+    expect(mapConsequences("finish_an_expedition", "weak_hit", false).finishExpedition).toEqual({ ranksDown: 1 });
+    expect(mapConsequences("finish_an_expedition", "miss", false).finishExpedition).toBeNull();
   });
 
   it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
