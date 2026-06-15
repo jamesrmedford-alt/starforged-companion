@@ -114,26 +114,47 @@ player); PCs Kylar Nazari and Mave Takara in the Igneous Maze sector.
 
 ---
 
-#### A — Sector map padding / initial camera shifted off-canvas
-*(observed v1.7.12)*
+#### A — Sector map placeables off the background / initial camera shifted off-canvas
+*(observed v1.7.12; the v1.7.13 fix attempt made it worse — reported "completely
+off the map on v1.7.13")*
 
 **Symptom:** The sector map canvas extends into the black "no-scene" void on
 the left; tokens and connections are visible but the initial view is
 mis-centred, with a large portion of the scene area falling outside the
-padded region. Pan/zoom-out behaviour is unpredictable.
+padded region. Pan/zoom-out behaviour is unpredictable. **On v1.7.13 the
+content appears completely off the map.**
 
-**✅ FIXED in v1.7.13 (verify in a live session).** Padding was NOT the
-regression — it is still `0.1` (`src/sectors/sceneBuilder.js`). The captured
-initial view set `initial.x = sceneWidth/2`, `initial.y = sceneHeight/2` — raw
-**background-image** coordinates that ignore the padding offset of the scene
-rectangle within the padded canvas. Foundry's `initialViewPosition` defaults the
-centre to the padding-aware scene-rect midpoint (`sceneX + sceneWidth/2`); the
-explicit half-dimensions bypassed that and landed ~`padding` pixels up-and-left,
-pulling the view into the black void past the top-left edge. **Fix:** supply only
-`scale` in `initial` and let Foundry compute the padding-aware centre. (Camera
-geometry can't be unit-verified; confirm the load view is centred in a session.)
+**❌ v1.7.13 attempt was incomplete and regressed.** It mis-diagnosed finding A
+as a pure *camera* bug. The captured initial view had set `initial.x =
+sceneWidth/2, y = sceneHeight/2`; v1.7.13 dropped them so Foundry would centre
+on the scene-rect midpoint. But that left the **real** bug untouched and made the
+result worse: see the root cause below.
 
-**Files:** `src/sectors/sceneBuilder.js` (`initialView` / `padding`).
+**✅ FIXED PROPERLY in v1.7.14.** Root cause: every placeable (settlement /
+planet / stellar **Notes**, passage **Drawings**, the command-vehicle **Token**)
+is placed at raw `gridX * gridCellSize` — coordinates with their origin at the
+**padded-canvas** top-left. With `padding: 0.1` Foundry insets the background
+("scene rectangle") inside a larger canvas at `(sceneX, sceneY) ≈ (200, 200)`,
+so every placeable lands ~200 px up-and-left of the background — out in the black
+void. (Confirmed empirically: the misalignment appeared exactly when finding D
+turned padding `0 → 0.1`; at `padding: 0` `sceneX = 0` and the offset is nil.)
+The old camera `x: sceneWidth/2` happened to *also* ignore the inset, so it
+accidentally framed the (cornered) content; v1.7.13's "correct" re-centre on the
+scene-rect midpoint **de-aligned** the camera from the still-cornered content,
+pushing it fully off-view. **Fix:** read `scene.dimensions` (Foundry's
+authoritative `BaseGrid#calculateDimensions` result, via a `sceneRectOffset`
+helper) and add `(sceneX, sceneY)` to **every** placeable coordinate, then set
+the initial-view centre **explicitly** to `(sceneX + sceneWidth/2, sceneY +
+sceneHeight/2)` from the same offset (not relying on Foundry's default centring,
+which is unverifiable here). Content and camera now derive from one offset and
+cannot drift apart. Tests: `tests/unit/sectorSceneBuilder.test.js` (offset +
+centred-camera + dimensions-fallback). Camera geometry still can't be
+unit-verified — confirm the load view is centred and the pins sit on the
+background in a live session. See `decisions.md` → "Sector scene padding: never
+zero" → the 2026-06-15 placeable-offset refinement.
+
+**Files:** `src/sectors/sceneBuilder.js` (`sceneRectOffset`, note/drawing/token
+placement, `initial` centre).
 
 ---
 

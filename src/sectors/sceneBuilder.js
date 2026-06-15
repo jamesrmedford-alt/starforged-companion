@@ -58,21 +58,15 @@ const SCENE_CONFIG = {
 export async function createSectorScene(sector, backgroundPath, entityActors) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SCENE_CONFIG;
 
-  // Captured initial view (finding D, option b): zoom to show the whole padded
-  // scene on a modest viewport, so loading or resetting the scene returns to
-  // the full overview rather than wherever a speaker-pan left the camera.
-  //
-  // Centre (finding A): we deliberately DO NOT set x/y. Foundry's
-  // `initialViewPosition` already defaults the centre to the padding-aware
-  // scene-rect midpoint (`sceneX + sceneWidth/2`, `sceneY + sceneHeight/2`).
-  // The previous explicit `x: sceneWidth/2, y: sceneHeight/2` were raw
-  // background-image coordinates that ignore the padding offset, so the camera
-  // landed ~`padding` pixels up-and-left — pulling the view into the black void
-  // past the top-left scene edge. Supplying only `scale` keeps the zoom intent
-  // while letting Foundry compute the correct, padding-aware centre.
+  // Initial-view zoom (finding D): show the whole padded scene on a modest
+  // viewport so loading or resetting the scene returns to the overview rather
+  // than wherever a speaker-pan left the camera. The centre is set explicitly
+  // AFTER creation, once the scene-rect inset is known — see the offset note
+  // below (PLAYTEST-1712 A).
   const REFERENCE_VIEWPORT_W = 1600;
-  const initialScale = Math.min(1, REFERENCE_VIEWPORT_W / (sceneWidth * (1 + padding * 2)));
-  const initialView  = { scale: Number(initialScale.toFixed(3)) };
+  const initialScale = Number(
+    Math.min(1, REFERENCE_VIEWPORT_W / (sceneWidth * (1 + padding * 2))).toFixed(3),
+  );
 
   // Foundry v13 scene background.src requires a path from the server root.
   // FilePicker.upload returns a relative path (no leading slash); add one.
@@ -97,7 +91,7 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     fogExploration: false,
     globalLight:    false,
     padding,
-    initial:        initialView,
+    initial:        { scale: initialScale },   // centre set post-create (below)
     flags: {
       [MODULE_ID]: {
         sectorScene: true,
@@ -105,6 +99,18 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
       },
     },
   });
+
+  // PLAYTEST-1712 A — the actual fix. With padding > 0 Foundry centres the
+  // background ("scene rectangle") inside a larger canvas at (sceneX, sceneY),
+  // but embedded-document coordinates (Notes, Drawings, Tokens) are absolute
+  // from the *padded-canvas* top-left. A pin placed at raw (gridX*size) lands
+  // (sceneX, sceneY) px up-and-left of the background — out in the black void.
+  // v1.7.13 re-centred only the camera, which de-aligned the view from the
+  // still-cornered content and made it look worse ("completely off the map").
+  // Offset every placeable by the scene-rect inset so the content sits ON the
+  // background; the explicit centre below then frames it. `scene.dimensions`
+  // is Foundry's own computation (no padding maths re-derived here).
+  const offset = sceneRectOffset(scene, SCENE_CONFIG);
 
   // Build lookup from full settlement objects (which carry planet and stellar)
   const fullSettlementById = Object.fromEntries(
@@ -128,9 +134,14 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
       // handler in registerSectorSceneHooks() opens the Actor sheet.
       const settlementActor = entityActors?.[s.id] ?? null;
       const locationType    = s.locationType ?? s.type;
+      // Inset into the scene rectangle (PLAYTEST-1712 A) so the pin lands on
+      // the background, not in the padding void. Planet/stellar pins below
+      // share this base so the trio stays clustered.
+      const baseX = offset.x + (s.gridX * gridCellSize);
+      const baseY = offset.y + (s.gridY * gridCellSize);
       noteData.push({
-        x:          s.gridX * gridCellSize,
-        y:          s.gridY * gridCellSize,
+        x:          baseX,
+        y:          baseY,
         texture: {
           src:  iconPathForLocationType(locationType),
           tint: tintForLocationType(locationType),
@@ -159,8 +170,8 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
       // pin's click target is the parent settlement Actor.
       if (full?.planet) {
         noteData.push({
-          x:         (s.gridX * gridCellSize) + 70,
-          y:         (s.gridY * gridCellSize) + 40,
+          x:         baseX + 70,
+          y:         baseY + 40,
           texture:   { src: iconForPlanetType(full.planet.type) },
           iconSize:  52,
           text:      full.planet.name,
@@ -183,8 +194,8 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
       // the click handler intentionally no-ops on these.
       if (full?.stellar) {
         noteData.push({
-          x:         (s.gridX * gridCellSize) - 60,
-          y:         (s.gridY * gridCellSize) + 30,
+          x:         baseX - 60,
+          y:         baseY + 30,
           texture:   { src: iconForStellarObject(full.stellar) },
           iconSize:  44,
           text:      full.stellar,
@@ -244,7 +255,7 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
           const ex     = edgeX - fromX;
           const ey     = edgeY - fromY;
           return makeDrawingData({
-            x: fromX, y: fromY, dx: ex, dy: ey, strokeAlpha: 0.4,
+            x: offset.x + fromX, y: offset.y + fromY, dx: ex, dy: ey, strokeAlpha: 0.4,
             flags: { sectorPassage: true, toEdge: true, fromId: p.fromId },
           });
         }
@@ -255,7 +266,7 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
         const toX = to.gridX * gridCellSize;
         const toY = to.gridY * gridCellSize;
         return makeDrawingData({
-          x: fromX, y: fromY, dx: toX - fromX, dy: toY - fromY, strokeAlpha: 0.8,
+          x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY, strokeAlpha: 0.8,
           flags: { sectorPassage: true, fromId: p.fromId, toId: p.toId ?? null },
         });
       })
@@ -284,6 +295,23 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     await placeCommandVehicleTokenIfPresent(scene, sector);
   } catch (err) {
     console.warn(`${MODULE_ID} | createSectorScene: command-vehicle Token placement failed:`, err);
+  }
+
+  // Point the captured initial view at the padding-aware scene-rect centre
+  // now that the inset is known. Set explicitly from the same `offset` used to
+  // place the content — rather than leaning on Foundry's default centring,
+  // which the camera-geometry note flags as unverifiable — so the load view
+  // frames the placed pins, not the void (PLAYTEST-1712 A).
+  try {
+    await scene.update({
+      initial: {
+        x:     Math.round(offset.x + (offset.sceneWidth  / 2)),
+        y:     Math.round(offset.y + (offset.sceneHeight / 2)),
+        scale: initialScale,
+      },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | createSectorScene: initial-view centre update failed:`, err);
   }
 
   // Note: scene.activate() is intentionally NOT called.
@@ -350,12 +378,15 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
     : null;
 
   const { gridCellSize, sceneWidth, sceneHeight } = SCENE_CONFIG;
-  const tokenX = anchorSettlement
+  // Same scene-rect inset as the settlement Notes (PLAYTEST-1712 A) so the
+  // Token lands on its anchor pin, not (sceneX, sceneY) px up-and-left of it.
+  const offset = sceneRectOffset(scene, SCENE_CONFIG);
+  const tokenX = offset.x + (anchorSettlement
     ? anchorSettlement.gridX * gridCellSize
-    : Math.floor(sceneWidth  / 2 / gridCellSize) * gridCellSize;
-  const tokenY = anchorSettlement
+    : Math.floor(sceneWidth  / 2 / gridCellSize) * gridCellSize);
+  const tokenY = offset.y + (anchorSettlement
     ? anchorSettlement.gridY * gridCellSize
-    : Math.floor(sceneHeight / 2 / gridCellSize) * gridCellSize;
+    : Math.floor(sceneHeight / 2 / gridCellSize) * gridCellSize);
 
   const cvActor = game.actors?.get?.(commandActorId);
   const iconSrc = cvActor?.img && !cvActor.img.endsWith("mystery-man.svg")
@@ -394,6 +425,49 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The scene rectangle's top-left inset within the padded canvas — the offset
+ * every embedded-document coordinate needs so it lands on the background image
+ * rather than in the black padding void (PLAYTEST-1712 A).
+ *
+ * With `padding > 0` Foundry centres the background ("scene rectangle") inside
+ * a larger canvas at `(sceneX, sceneY)`; placeable coordinates are absolute
+ * from the padded-canvas top-left, so `(sceneX, sceneY)` is exactly the amount
+ * a raw `gridX*size` pin is shifted up-and-left of the background. When
+ * `padding` is 0 the inset is `(0, 0)` and this is a no-op.
+ *
+ * We read `scene.dimensions` — Foundry's authoritative computation
+ * (`BaseGrid#calculateDimensions`) — so the inset always matches where Foundry
+ * actually draws the background. The square-grid formula is a labelled
+ * fallback for a minimal scene stub that exposes no dimensions; real Foundry
+ * always provides them.
+ *
+ * @param {Scene} scene
+ * @param {{sceneWidth:number,sceneHeight:number,gridCellSize:number,padding:number}} cfg
+ * @returns {{x:number,y:number,sceneWidth:number,sceneHeight:number}}
+ */
+function sceneRectOffset(scene, { sceneWidth, sceneHeight, gridCellSize, padding }) {
+  const dims = scene?.dimensions ?? scene?.getDimensions?.() ?? null;
+  const sx = Number(dims?.sceneX);
+  const sy = Number(dims?.sceneY);
+  if (Number.isFinite(sx) && Number.isFinite(sy)) {
+    return {
+      x: sx,
+      y: sy,
+      sceneWidth:  Number(dims?.sceneWidth)  || sceneWidth,
+      sceneHeight: Number(dims?.sceneHeight) || sceneHeight,
+    };
+  }
+  // Fallback — Foundry's square-grid padding inset, grid-snapped (matches
+  // BaseGrid#calculateDimensions for type-1 grids). Only reached by stubs.
+  return {
+    x: Math.ceil((padding * sceneWidth)  / gridCellSize) * gridCellSize,
+    y: Math.ceil((padding * sceneHeight) / gridCellSize) * gridCellSize,
+    sceneWidth,
+    sceneHeight,
+  };
+}
 
 /**
  * Build a passage Drawing payload with every v13-mandatory field set.
