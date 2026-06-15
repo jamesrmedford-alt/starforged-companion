@@ -122,6 +122,7 @@ developer-only and excluded from the release.
 |------|---------|
 | `interpreter.js` | Claude call: narration → move identification + stat injection. |
 | `resolver.js` | Dice rolling, outcome calc, and the `CONSEQUENCE_MAP` (arrow-function handlers per play-kit tables). |
+| `expedition.js` | Exploration lifecycle (audit 3.18–3.21): `applyExpeditionProgress` (resolve-or-create the shared expedition track + mark a rank-step), `selectExpeditionTrack`, `finishExpedition` + `legacyRewardTicks`, `normalizeExpeditionRank`. Dependency-injected over the live `progressTracks.js` store; Foundry-free + unit-tested. Wired via GM-gated handlers in `index.js`. |
 | `statEnrichment.js` | Fills `interpretation.statValue` from the actor's sheet. |
 | `abilityScanner.js` | Detects asset abilities applying to the chosen move; extracts `+N` adds, stat substitution, and (v1.7.11 finding G) post-roll result-improvement (`extractResultImprovement`) + the ability's own clock fields. |
 | `burnMomentum.js` | Burn-momentum chat-card affordance (post-roll outcome upgrade). |

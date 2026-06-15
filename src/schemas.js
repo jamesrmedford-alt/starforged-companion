@@ -532,6 +532,16 @@ export const MoveResolutionSchema = {
                                  // Strike, Take Decisive Action) or reactive
                                  // (React Under Fire, Clash) moves. Play kit
                                  // p. 5 "In Control / In a Bad Spot".
+    expeditionProgress:    false,// Exploration lifecycle: mark one rank-step on
+                                 // the shared expedition track (Undertake an
+                                 // Expedition / Explore a Waypoint). See
+                                 // src/moves/expedition.js.
+    legacyMark:            null, // { track: "discoveries"|"quests"|"bonds", ticks }
+                                 // — mark a legacy track (Make a Discovery / Confront
+                                 // Chaos). null = none.
+    finishExpedition:      null, // { ranksDown } — complete the open expedition
+                                 // track and pay its rank's legacy reward (Finish
+                                 // an Expedition). null = not a finish.
     otherEffect:           "",  // Narrative consequence for Loremaster
   },
 

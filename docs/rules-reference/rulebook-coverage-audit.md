@@ -175,11 +175,11 @@ Relationship`, `Forge a Bond`.
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
 | 3.17 | Set a Course: chooses destination; applies supply / time cost | MOVE | PINNED (token path) | `tokenDragSetACourse` covers Token-drag dispatch | — | also covered by typed `!set_a_course` via `pipeline`; consider explicit assertion |
-| 3.18 | Undertake an Expedition: creates progress track at rank | MOVE | GAP | none | Medium | NEEDS-TEST |
-| 3.19 | Explore a Waypoint: during-expedition investigation | MOVE | GAP | none | Low | NEEDS-TEST |
-| 3.20 | Make a Discovery: marks discoveries legacy track | MOVE | GAP | none | Medium | NEEDS-TEST |
-| 3.21 | Finish an Expedition: progress move | MOVE | GAP | none | Medium | NEEDS-TEST |
-| 3.22 | Confront Chaos: d100 oracle table for chaos manifestations | MOVE | GAP NEEDS-FEATURE | per playkit §3.2 — d100 table currently substituted with paired oracles | Low | feature backlog |
+| 3.18 | Undertake an Expedition: resolve-or-create expedition track at rank, mark progress on a hit | MOVE | DONE | `expedition.applyExpeditionProgress` (interpreter-inferred rank, re-rankable in panel) | — | `expedition` unit batch |
+| 3.19 | Explore a Waypoint: during-expedition investigation; strong hit feeds the expedition track | MOVE | DONE | momentum-vs-progress in-dialog toggle deferred (shares the dormant combat `progress` option) | — | `resolver` + `expedition` |
+| 3.20 | Make a Discovery: marks 2 ticks on the discoveries legacy track | MOVE | DONE | `legacyMark` consequence → GM-gated pipeline handler | — | `resolver` |
+| 3.21 | Finish an Expedition: completes the track + legacy reward per rank (weak = one lower) | MOVE | DONE | `expedition.finishExpedition` + `legacyRewardTicks` (1-tick→3-box) | — | `expedition` unit batch |
+| 3.22 | Confront Chaos: d100 oracle table; marks 1 tick/aspect on discoveries legacy | MOVE | PARTIAL | discoveries legacy mark wired (`legacyMark`); d100 table still substituted with paired oracles (playkit §3.2) | Low | feature backlog (table) |
 
 ### Combat Moves (8)
 
