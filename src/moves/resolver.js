@@ -480,11 +480,17 @@ const CONSEQUENCE_MAP = {
 
   explore_a_waypoint: (outcome, isMatch) => {
     switch (outcome) {
+      // Strong hit grants expedition progress (the play-kit "gain progress on
+      // your expedition" branch), marked on the active expedition track via the
+      // pipeline handler. The alternative "find an opportunity (+2 momentum)"
+      // is offered in the card text for the player/GM to take instead — a true
+      // in-dialog momentum-vs-progress toggle is a follow-up (it shares the
+      // currently-dormant combat `progress` option). See decisions.md.
       case "strong_hit": return { ...emptyConsequences(),
-        momentumChange: isMatch ? 0 : 2,
+        expeditionProgress: true,
         otherEffect: isMatch
-          ? "Strong hit with a match — may Make a Discovery instead of choosing. Otherwise: find opportunity (+2 momentum) OR gain progress on expedition."
-          : "Choose: find opportunity (+2 momentum) OR gain progress on expedition per rank." };
+          ? "Strong hit with a match — gain progress on the expedition (or forgo it for +2 momentum). With the match you may instead Make a Discovery."
+          : "Strong hit — gain progress on the expedition. (You may forgo the progress for +2 momentum instead.)" };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Interesting find bound up in peril or ominous aspect. Take +1 momentum." };
       case "miss": return { ...emptyConsequences(),

@@ -498,7 +498,7 @@ const HANDLER_CASES = [
   ["undertake_an_expedition", "strong_hit", false, { match: /waypoint|progress/i }],
   ["undertake_an_expedition", "weak_hit",   false, { match: /cost|peril/i }],
   ["undertake_an_expedition", "miss",       false, { match: /Pay the Price|crisis/i }],
-  ["explore_a_waypoint",      "strong_hit", false, { momentumChange: 2, match: /opportunity/i }],
+  ["explore_a_waypoint",      "strong_hit", false, { match: /progress|expedition/i }],
   ["explore_a_waypoint",      "weak_hit",   false, { momentumChange: 1, match: /peril|ominous/i }],
   ["explore_a_waypoint",      "miss",       false, { match: /Pay the Price/i }],
   ["finish_an_expedition",    "strong_hit", false, { match: /Expedition complete|legacy/i }],
@@ -1152,6 +1152,12 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("undertake_an_expedition", "strong_hit", false).expeditionProgress).toBe(true);
     expect(mapConsequences("undertake_an_expedition", "weak_hit", false).expeditionProgress).toBe(true);
     expect(mapConsequences("undertake_an_expedition", "miss", false).expeditionProgress).toBe(false);
+  });
+
+  it("explore_a_waypoint strong hit feeds the expedition track (no baked-in momentum)", () => {
+    const c = mapConsequences("explore_a_waypoint", "strong_hit", false);
+    expect(c.expeditionProgress).toBe(true);
+    expect(c.momentumChange).toBe(0);   // momentum is the offered alternative, not auto-applied
   });
 
   it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
