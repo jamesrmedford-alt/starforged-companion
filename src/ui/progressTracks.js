@@ -761,14 +761,15 @@ export async function addProgressTrack(data) {
 }
 
 /**
- * List the current progress tracks (id / label / rank / type / ticks) for
- * callers outside the panel — e.g. the consequence-rider track picker.
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number}>>}
+ * List the current progress tracks for callers outside the panel — e.g. the
+ * consequence-rider track picker and the expedition lifecycle (moves/expedition.js,
+ * which needs `completed` + `type` to pick the open expedition track).
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
   return tracks.map(t => ({
-    id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks,
+    id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks, completed: t.completed === true,
   }));
 }
 

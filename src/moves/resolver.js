@@ -221,6 +221,9 @@ function emptyConsequences() {
     sufferPrompt:        null,
     progressTrackId:     null,
     combatPosition:      null,
+    // Exploration lifecycle: when true, the pipeline marks one rank-step on the
+    // shared expedition progress track (resolve-or-create). See moves/expedition.js.
+    expeditionProgress:  false,
     otherEffect:         "",
   };
 }
@@ -458,11 +461,11 @@ const CONSEQUENCE_MAP = {
 
   undertake_an_expedition: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 0,
+      case "strong_hit": return { ...emptyConsequences(), expeditionProgress: true,
         otherEffect: "Reach a waypoint. Mark progress per expedition rank." };
       case "weak_hit": return {
         ...emptyConsequences(),
-        progressMarked: 0,
+        expeditionProgress: true,
         sufferPrompt: { kind: "enumerated", options: [
           { label: "One suffer move (-2)",        kind: "any", amount: 2, count: 1 },
           { label: "Two suffer moves (-1 each)",  kind: "any", amount: 1, count: 2 },

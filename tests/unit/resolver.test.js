@@ -1148,6 +1148,12 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.sufferPrompt.options.find(o => o.complication)?.scope).toBe("waypoint");
   });
 
+  it("undertake_an_expedition flags expeditionProgress on a hit, not on a miss (audit 3.18)", () => {
+    expect(mapConsequences("undertake_an_expedition", "strong_hit", false).expeditionProgress).toBe(true);
+    expect(mapConsequences("undertake_an_expedition", "weak_hit", false).expeditionProgress).toBe(true);
+    expect(mapConsequences("undertake_an_expedition", "miss", false).expeditionProgress).toBe(false);
+  });
+
   it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
     const c = mapConsequences("gain_ground", "strong_hit", false);
     expect(c.sufferPrompt.kind).toBe("enumerated");
