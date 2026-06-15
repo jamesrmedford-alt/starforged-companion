@@ -12,6 +12,9 @@ import {
   normalizeExpeditionRank,
   selectExpeditionTrack,
   applyExpeditionProgress,
+  legacyRewardTicks,
+  finishExpedition,
+  LEGACY_REWARD,
   EXPEDITION_RANKS,
   DEFAULT_EXPEDITION_RANK,
 } from "../../src/moves/expedition.js";
@@ -103,5 +106,52 @@ describe("applyExpeditionProgress", () => {
 
   it("returns null when deps are incomplete (defensive)", async () => {
     expect(await applyExpeditionProgress({ moveTarget: "x" }, {})).toBeNull();
+  });
+});
+
+describe("legacyRewardTicks", () => {
+  it("pays the play-kit reward per rank (1 tick → 3 boxes)", () => {
+    expect(legacyRewardTicks("troublesome")).toBe(1);
+    expect(legacyRewardTicks("dangerous")).toBe(2);
+    expect(legacyRewardTicks("formidable")).toBe(4);
+    expect(legacyRewardTicks("extreme")).toBe(8);
+    expect(legacyRewardTicks("epic")).toBe(12);
+    expect(LEGACY_REWARD.epic).toBe(12);
+  });
+  it("pays one rank lower on a weak hit, and nothing below troublesome", () => {
+    expect(legacyRewardTicks("dangerous", 1)).toBe(1);   // → troublesome
+    expect(legacyRewardTicks("epic", 1)).toBe(8);        // → extreme
+    expect(legacyRewardTicks("troublesome", 1)).toBe(0); // none
+  });
+});
+
+describe("finishExpedition", () => {
+  function deps(tracks) {
+    const completed = [];
+    return {
+      completed,
+      listTracks:    vi.fn(async () => tracks),
+      completeTrack: vi.fn(async (id) => { const t = tracks.find(x => x.id === id); if (t) { t.completed = true; completed.push(id); } return t; }),
+    };
+  }
+
+  it("completes the matched expedition and reports its rank's legacy reward", async () => {
+    const d = deps([exp({ id: "a", label: "The Vault of Tears", rank: "formidable" })]);
+    const res = await finishExpedition({ moveTarget: "Vault of Tears", ranksDown: 0 }, d);
+    expect(res.track.id).toBe("a");
+    expect(res.legacyTicks).toBe(4);     // formidable
+    expect(d.completed).toEqual(["a"]);
+  });
+
+  it("pays one rank lower on a weak finish (ranksDown:1)", async () => {
+    const d = deps([exp({ id: "a", label: "Crossing", rank: "dangerous" })]);
+    const res = await finishExpedition({ moveTarget: null, ranksDown: 1 }, d);
+    expect(res.legacyTicks).toBe(1);     // dangerous → troublesome
+  });
+
+  it("returns null when there is no open expedition to finish", async () => {
+    const d = deps([exp({ id: "done", completed: true })]);
+    expect(await finishExpedition({ moveTarget: null }, d)).toBeNull();
+    expect(d.completeTrack).not.toHaveBeenCalled();
   });
 });

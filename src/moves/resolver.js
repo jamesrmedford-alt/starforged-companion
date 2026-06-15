@@ -224,6 +224,12 @@ function emptyConsequences() {
     // Exploration lifecycle: when true, the pipeline marks one rank-step on the
     // shared expedition progress track (resolve-or-create). See moves/expedition.js.
     expeditionProgress:  false,
+    // { track: "discoveries"|"quests"|"bonds", ticks } — pipeline marks the
+    // legacy track (Make a Discovery / Confront Chaos). null = none.
+    legacyMark:          null,
+    // { ranksDown } — pipeline completes the open expedition track and pays its
+    // rank's legacy reward (Finish an Expedition). null = not a finish.
+    finishExpedition:    null,
     otherEffect:         "",
   };
 }
@@ -501,11 +507,13 @@ const CONSEQUENCE_MAP = {
   },
 
   finish_an_expedition: (outcome, _isMatch) => {
-    // Progress move
+    // Progress move. Strong/weak complete the open expedition track and pay its
+    // legacy reward (weak = one rank lower) via the pipeline finishExpedition
+    // handler; a miss leaves the track open (abandon or recommit — GM-adjudicated).
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
+      case "strong_hit": return { ...emptyConsequences(), finishExpedition: { ranksDown: 0 },
         otherEffect: "Expedition complete. Mark legacy reward on discoveries track per rank." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), finishExpedition: { ranksDown: 1 },
         otherEffect: "Complete but with unforeseen complication. Legacy reward one rank lower (none for troublesome). Envision what you encounter." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Destination lost or true cost revealed. Choose: abandon (Pay the Price) OR return (roll challenge dice, clear lowest in progress boxes, raise rank by one)." };
@@ -532,11 +540,15 @@ const CONSEQUENCE_MAP = {
 
   make_a_discovery: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    legacyMark: { track: "discoveries", ticks: 2 },
     otherEffect: "Mark 2 ticks on discoveries legacy track. Roll or choose a discovery from the table.",
   }),
 
   confront_chaos: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    // 1 tick for the minimum (one aspect); mark again for each further aspect
+    // confronted — the per-aspect count is the player's call, surfaced in text.
+    legacyMark: { track: "discoveries", ticks: 1 },
     otherEffect: "Decide aspects (1-3). Roll or choose on Confront Chaos table. Mark 1 tick on discoveries per aspect confronted.",
   }),
 

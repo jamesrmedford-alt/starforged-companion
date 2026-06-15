@@ -91,8 +91,9 @@ import {
   listProgressTracks,
   markProgressById,
   addProgressTrack,
+  completeProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress } from "./moves/expedition.js";
+import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -991,6 +992,39 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | expedition progress failed:`, err?.message ?? err);
+        }
+      }
+
+      // Legacy-track marks (Make a Discovery / Confront Chaos). Mutate the
+      // legacy track in place — persistResolution (below, GM-gated) deep-clones
+      // and persists campaignState, so no separate write is needed.
+      if (resolution.consequences?.legacyMark && game.user.isGM) {
+        const { track, ticks } = resolution.consequences.legacyMark;
+        if (track && ticks > 0) {
+          addLegacyTicks(campaignState, track, ticks);
+          await postLegacyMarkCard(track, ticks).catch(err =>
+            console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
+        }
+      }
+
+      // Finish an Expedition — complete the open expedition track and pay its
+      // rank's legacy reward (weak hit pays one rank lower) onto discoveries.
+      if (resolution.consequences?.finishExpedition && game.user.isGM) {
+        try {
+          const fin = await finishExpedition(
+            { moveTarget: interpretation.moveTarget, ranksDown: resolution.consequences.finishExpedition.ranksDown ?? 0 },
+            {
+              listTracks:   () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+            },
+          );
+          if (fin?.track) {
+            if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "discoveries", fin.legacyTicks);
+            await postExpeditionFinishCard(fin).catch(err =>
+              console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
         }
       }
 
@@ -2216,6 +2250,49 @@ async function postExpeditionProgressCard({ track, created }) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionProgressCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bonds" };
+
+/**
+ * Add ticks to a legacy track on campaignState (capped at the 40-tick / 10-box
+ * maximum), creating the entry if absent. Mutates in place; the caller's
+ * persistResolution pass persists it. Mirrors the !bond legacy write.
+ */
+function addLegacyTicks(campaignState, key, ticks) {
+  campaignState.legacyTracks ??= {};
+  const t = campaignState.legacyTracks[key] ?? { ticks: 0, cleared: false };
+  t.ticks = Math.min((t.ticks ?? 0) + ticks, 40);
+  campaignState.legacyTracks[key] = t;
+}
+
+/** Feedback for a Make a Discovery / Confront Chaos legacy mark. */
+async function postLegacyMarkCard(track, ticks) {
+  const label = LEGACY_LABELS[track] ?? track;
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy</strong><p>Marked ${ticks} tick${ticks === 1 ? "" : "s"} on your ${escapeChatHtml(String(label).toLowerCase())} legacy track.</p></div>`,
+      flags:   { [MODULE_ID]: { legacyMarkCard: true, track, ticks } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postLegacyMarkCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+/** Feedback for Finish an Expedition — track completed + legacy reward. */
+async function postExpeditionFinishCard({ track, legacyTicks }) {
+  const label = escapeChatHtml(track?.label ?? "Expedition");
+  const reward = legacyTicks > 0
+    ? `Marked ${legacyTicks} tick${legacyTicks === 1 ? "" : "s"} on your Discoveries legacy track.`
+    : `No legacy reward (a weak hit on a troublesome expedition).`;
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Expedition complete</strong><p><strong>${label}</strong> is finished. ${reward}</p></div>`,
+      flags:   { [MODULE_ID]: { expeditionFinishCard: true, legacyTicks } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postExpeditionFinishCard: chat post failed:`, err?.message ?? err);
   }
 }
 

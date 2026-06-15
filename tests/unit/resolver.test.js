@@ -1160,6 +1160,17 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.momentumChange).toBe(0);   // momentum is the offered alternative, not auto-applied
   });
 
+  it("make_a_discovery / confront_chaos mark the discoveries legacy track (audit 3.20)", () => {
+    expect(mapConsequences("make_a_discovery", "strong_hit", false).legacyMark).toEqual({ track: "discoveries", ticks: 2 });
+    expect(mapConsequences("confront_chaos", "strong_hit", false).legacyMark).toEqual({ track: "discoveries", ticks: 1 });
+  });
+
+  it("finish_an_expedition flags completion + legacy reward (one rank lower on a weak hit; none on a miss) (audit 3.21)", () => {
+    expect(mapConsequences("finish_an_expedition", "strong_hit", false).finishExpedition).toEqual({ ranksDown: 0 });
+    expect(mapConsequences("finish_an_expedition", "weak_hit", false).finishExpedition).toEqual({ ranksDown: 1 });
+    expect(mapConsequences("finish_an_expedition", "miss", false).finishExpedition).toBeNull();
+  });
+
   it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
     const c = mapConsequences("gain_ground", "strong_hit", false);
     expect(c.sufferPrompt.kind).toBe("enumerated");

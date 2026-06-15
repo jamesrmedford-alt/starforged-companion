@@ -88,3 +88,44 @@ export async function applyExpeditionProgress({ moveTarget, expeditionRank }, de
   const updated = await deps.markProgress(track.id);
   return { track: updated ?? track, created };
 }
+
+// Legacy reward (Earn Experience) for completing a progress track, per rank —
+// the play kit's "1 tick → 3 boxes" table (1 box = 4 ticks). Scales UP with
+// rank, the inverse of progress-per-mark. See playkit-rules-and-coverage Part 1.
+export const LEGACY_REWARD = { troublesome: 1, dangerous: 2, formidable: 4, extreme: 8, epic: 12 };
+const RANK_ORDER = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
+
+/**
+ * Legacy reward ticks for finishing a track of the given rank. `ranksDown`
+ * shifts the reward down (a weak hit pays one rank lower; troublesome → none).
+ *
+ * @param {string} rank
+ * @param {number} [ranksDown]
+ * @returns {number}
+ */
+export function legacyRewardTicks(rank, ranksDown = 0) {
+  const idx = RANK_ORDER.indexOf(normalizeExpeditionRank(rank));
+  const effective = idx - Math.max(0, ranksDown);
+  if (effective < 0) return 0;
+  return LEGACY_REWARD[RANK_ORDER[effective]] ?? 0;
+}
+
+/**
+ * Finish an expedition: find the open expedition track (by destination, else
+ * the single open one), mark it complete, and report the legacy reward owed.
+ * Pure orchestration over injected deps:
+ *   deps.listTracks()           -> Promise<track[]>
+ *   deps.completeTrack(trackId) -> Promise<track|null>
+ *
+ * @param {{ moveTarget:string|null, ranksDown?:number }} move
+ * @param {Object} deps
+ * @returns {Promise<{ track:Object, legacyTicks:number }|null>}
+ */
+export async function finishExpedition({ moveTarget, ranksDown = 0 }, deps) {
+  if (!deps?.listTracks || !deps?.completeTrack) return null;
+  const all   = await deps.listTracks();
+  const track = selectExpeditionTrack(all, moveTarget);
+  if (!track) return null;
+  const completed = await deps.completeTrack(track.id);
+  return { track: completed ?? track, legacyTicks: legacyRewardTicks(track.rank, ranksDown) };
+}

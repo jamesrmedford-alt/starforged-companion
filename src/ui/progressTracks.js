@@ -774,6 +774,23 @@ export async function listProgressTracks() {
 }
 
 /**
+ * Mark a track completed by ID from outside the panel (e.g. Finish an
+ * Expedition). Completed tracks move to the panel's archive section but are
+ * kept for the campaign record. GM-only (journal write); null if not found.
+ * @param {string} trackId
+ * @returns {Promise<object|null>}  Updated track or null if not found
+ */
+export async function completeProgressTrack(trackId) {
+  const tracks = await loadTracks();
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track) return null;
+  track.completed   = true;
+  track.completedAt = Date.now();
+  await saveTracks(tracks);
+  return track;
+}
+
+/**
  * Mark progress on a track by ID from outside the panel (e.g. move resolver).
  * @param {string} trackId
  * @returns {Promise<object|null>}  Updated track or null if not found
