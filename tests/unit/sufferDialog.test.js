@@ -135,14 +135,29 @@ describe("resolveSufferSelection — B2 enumerated prompts", () => {
     expect(b).toEqual([{ kind: "route", route: "swear_an_iron_vow", rank: "formidable" }]);
   });
 
-  it("multi: handles multiple selected indices", () => {
+  it("combatProgress option emits combat-progress call", () => {
+    const prompt = { kind: "enumerated", options: [{ label: "Mark progress", combatProgress: 1 }] };
+    expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "combat-progress", count: 1 }]);
+  });
+
+  it("expeditionProgress option emits expedition-progress call", () => {
+    const prompt = { kind: "enumerated", options: [{ label: "Mark expedition progress", expeditionProgress: 1 }] };
+    expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "expedition-progress", count: 1 }]);
+  });
+
+  it("nextBonus option emits next-bonus call", () => {
+    const prompt = { kind: "enumerated", options: [{ label: "+1 on next move", nextBonus: 1 }] };
+    expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "next-bonus", amount: 1 }]);
+  });
+
+  it("multi: handles multiple selected indices — combat-progress + momentum", () => {
     const prompt = { kind: "enumerated", multi: 2, options: [
-      { label: "Mark progress",   progress:  1 },
-      { label: "+2 momentum",     momentum:  2 },
-      { label: "+1 next move",    nextBonus: 1 },
+      { label: "Mark progress",   combatProgress: 1 },
+      { label: "+2 momentum",     momentum:       2 },
+      { label: "+1 next move",    nextBonus:      1 },
     ]};
     const r = resolveSufferSelection(prompt, { optionIndices: [0, 1] });
-    expect(r).toContainEqual({ kind: "meter", meterKey: "progress",  delta: 1 });
+    expect(r).toContainEqual({ kind: "combat-progress", count: 1 });
     expect(r).toContainEqual({ kind: "meter", meterKey: "momentum",  delta: 2 });
   });
 

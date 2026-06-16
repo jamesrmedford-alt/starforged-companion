@@ -230,6 +230,12 @@ function emptyConsequences() {
     // { ranksDown } — pipeline completes the open expedition track and pays its
     // rank's legacy reward (Finish an Expedition). null = not a finish.
     finishExpedition:    null,
+    // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
+    enterCombat:         false,
+    // Pipeline marks progress N times on the active combat track (Strike/Clash).
+    combatProgress:      0,
+    // true → pipeline completes the active combat track (Take Decisive Action hit, Face Defeat).
+    endCombat:           false,
     otherEffect:         "",
   };
 }
@@ -486,17 +492,18 @@ const CONSEQUENCE_MAP = {
 
   explore_a_waypoint: (outcome, isMatch) => {
     switch (outcome) {
-      // Strong hit grants expedition progress (the play-kit "gain progress on
-      // your expedition" branch), marked on the active expedition track via the
-      // pipeline handler. The alternative "find an opportunity (+2 momentum)"
-      // is offered in the card text for the player/GM to take instead — a true
-      // in-dialog momentum-vs-progress toggle is a follow-up (it shares the
-      // currently-dormant combat `progress` option). See decisions.md.
-      case "strong_hit": return { ...emptyConsequences(),
-        expeditionProgress: true,
+      // Strong hit: player chooses expedition progress OR +2 momentum.
+      // The dialog surfaces this as a B2 single-pick; the "expedition-progress"
+      // option kind marks the active expedition track from inside the dialog runner.
+      case "strong_hit": return {
+        ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", multi: 1, options: [
+          { label: "Mark expedition progress", expeditionProgress: 1 },
+          { label: "+2 momentum",              momentum: 2 },
+        ]},
         otherEffect: isMatch
-          ? "Strong hit with a match — gain progress on the expedition (or forgo it for +2 momentum). With the match you may instead Make a Discovery."
-          : "Strong hit — gain progress on the expedition. (You may forgo the progress for +2 momentum instead.)" };
+          ? "Strong hit with a match — choose: mark expedition progress OR take +2 momentum. With the match you may instead Make a Discovery."
+          : "Strong hit — choose: mark expedition progress OR take +2 momentum." };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Interesting find bound up in peril or ominous aspect. Take +1 momentum." };
       case "miss": return { ...emptyConsequences(),
@@ -557,18 +564,19 @@ const CONSEQUENCE_MAP = {
 
   enter_the_fray: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2, combatPosition: "in_control",
+      case "strong_hit": return { ...emptyConsequences(), enterCombat: true, momentumChange: 2, combatPosition: "in_control",
         otherEffect: "Strong hit: take both — +2 momentum AND you are in control." };
       case "weak_hit": return {
         ...emptyConsequences(),
+        enterCombat: true,
         // B2: choose one — +2 momentum OR in control. No pre-set position.
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "+2 momentum",   momentum: 2 },
+          { label: "+2 momentum",        momentum: 2 },
           { label: "You are in control", combatPosition: "in_control" },
         ]},
         otherEffect: "Weak hit: choose one — +2 momentum OR you are in control."
       };
-      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
+      case "miss": return { ...emptyConsequences(), enterCombat: true, combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };
     }
   },
@@ -577,16 +585,13 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return {
         ...emptyConsequences(),
-        // B2 multi: choose two of three. Defaults to (+2 momentum, mark
-        // progress) so the pre-F16 delta-based tests stay green; the
-        // dialog presents the full picker.
-        momentumChange: 2,
-        progressMarked: 0,
         combatPosition: "in_control",
+        // B2 multi: choose two of three. The dialog marks combat progress,
+        // applies the momentum delta, or posts a next-bonus reminder.
         sufferPrompt: { kind: "enumerated", multi: 2, options: [
-          { label: "Mark progress",       progress:  1 },
-          { label: "+2 momentum",         momentum:  2 },
-          { label: "+1 on your next move", nextBonus: 1 },
+          { label: "Mark progress",        combatProgress: 1 },
+          { label: "+2 momentum",          momentum:       2 },
+          { label: "+1 on your next move", nextBonus:      1 },
         ]},
         otherEffect: "In control. Strong hit: choose two — mark progress / +2 momentum / +1 on next move."
       };
@@ -594,9 +599,9 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         combatPosition: "in_control",
         sufferPrompt: { kind: "enumerated", multi: 1, options: [
-          { label: "Mark progress",       progress:  1 },
-          { label: "+2 momentum",         momentum:  2 },
-          { label: "+1 on your next move", nextBonus: 1 },
+          { label: "Mark progress",        combatProgress: 1 },
+          { label: "+2 momentum",          momentum:       2 },
+          { label: "+1 on your next move", nextBonus:      1 },
         ]},
         otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move."
       };
@@ -607,9 +612,9 @@ const CONSEQUENCE_MAP = {
 
   strike: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
+      case "strong_hit": return { ...emptyConsequences(), combatProgress: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Dominate foe, stay in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "bad_spot",
+      case "weak_hit": return { ...emptyConsequences(), combatProgress: 2, combatPosition: "bad_spot",
         otherEffect: "Mark progress twice, but expose yourself to danger. You are in a bad spot." };
       case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Fight turns against you. You are in a bad spot. Pay the Price." };
@@ -618,9 +623,9 @@ const CONSEQUENCE_MAP = {
 
   clash: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), progressMarked: 2, combatPosition: "in_control",
+      case "strong_hit": return { ...emptyConsequences(), combatProgress: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Overwhelm foe, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), progressMarked: 1, combatPosition: "bad_spot",
+      case "weak_hit": return { ...emptyConsequences(), combatProgress: 1, combatPosition: "bad_spot",
         otherEffect: "Mark progress, but dealt a counterblow. Stay in a bad spot. Pay the Price." };
       case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
         otherEffect: "Foe dominates. Stay in a bad spot. Pay the Price." };
@@ -651,10 +656,10 @@ const CONSEQUENCE_MAP = {
     // combat track's controlState is "bad_spot"; this handler maps the
     // post-downgrade outcome to consequences.
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 1, combatPosition: "in_control",
-        otherEffect: "Prevail. Take +1 momentum. If fight continues, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), combatPosition: "bad_spot",
-        otherEffect: "Objective achieved but at cost. Roll or choose from weak hit table. If fight continues, you are in a bad spot." };
+      case "strong_hit": return { ...emptyConsequences(), endCombat: true, momentumChange: 1,
+        otherEffect: "Prevail. Take +1 momentum." };
+      case "weak_hit": return { ...emptyConsequences(), endCombat: true,
+        otherEffect: "Objective achieved but at cost. Roll or choose from weak hit table." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Defeated or objective lost. Pay the Price." };
     }
@@ -662,8 +667,8 @@ const CONSEQUENCE_MAP = {
 
   face_defeat: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    combatPosition: "bad_spot",
-    otherEffect: "Objective abandoned or deprived. Clear objective and Pay the Price. Fight continues in a bad spot.",
+    endCombat: true,
+    otherEffect: "Objective abandoned. Clear the combat objective and Pay the Price.",
   }),
 
   battle: (outcome, _isMatch) => {
