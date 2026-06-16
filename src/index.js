@@ -88,12 +88,15 @@ import {
   openProgressTracks,
   registerProgressTrackHooks,
   getActiveCombatPosition,
+  getActiveCombatTrack,
+  setCombatTrackPosition,
   listProgressTracks,
   markProgressById,
   addProgressTrack,
   completeProgressTrack,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
+import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1025,6 +1028,79 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
+        }
+      }
+
+      // Combat lifecycle — Enter the Fray creates/reuses the combat track (rank
+      // inferred from narration). Strike and Clash mark progress directly (×2 or
+      // ×1). Position is written after the track exists. Take Decisive Action and
+      // Face Defeat complete the track. All GM-gated (track journal writes).
+      if (resolution.consequences?.enterCombat && game.user.isGM) {
+        try {
+          const result = await applyCombatProgress(
+            { moveTarget: interpretation.moveTarget, combatRank: interpretation.combatRank, markCount: 0 },
+            {
+              listTracks:   () => listProgressTracks(),
+              createTrack:  (data) => addProgressTrack(data),
+              markProgress: (id) => markProgressById(id),
+            },
+          );
+          if (result?.track) {
+            await postCombatTrackCard(result).catch(err =>
+              console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | enter combat failed:`, err?.message ?? err);
+        }
+      }
+
+      if ((resolution.consequences?.combatProgress ?? 0) > 0 && game.user.isGM) {
+        try {
+          const count = resolution.consequences.combatProgress;
+          const result = await applyCombatProgress(
+            { moveTarget: interpretation.moveTarget, combatRank: interpretation.combatRank, markCount: count },
+            {
+              listTracks:   () => listProgressTracks(),
+              createTrack:  (data) => addProgressTrack(data),
+              markProgress: (id) => markProgressById(id),
+            },
+          );
+          if (result?.track) {
+            await postCombatProgressCard(result).catch(err =>
+              console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | combat progress failed:`, err?.message ?? err);
+        }
+      }
+
+      if (resolution.consequences?.combatPosition && game.user.isGM) {
+        try {
+          const track = await getActiveCombatTrack();
+          if (track) {
+            await setCombatTrackPosition(track.id, resolution.consequences.combatPosition).catch(err =>
+              console.warn(`${MODULE_ID} | combat position write failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
+        }
+      }
+
+      if (resolution.consequences?.endCombat && game.user.isGM) {
+        try {
+          const result = await finishCombatTrack(
+            { moveTarget: interpretation.moveTarget },
+            {
+              listTracks:    () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+            },
+          );
+          if (result?.track) {
+            await postCombatFinishCard(result).catch(err =>
+              console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
         }
       }
 
@@ -2293,6 +2369,47 @@ async function postExpeditionFinishCard({ track, legacyTicks }) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionFinishCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+async function postCombatTrackCard({ track, created }) {
+  const label = escapeChatHtml(track?.label ?? "Combat");
+  const rank  = track?.rank ? ` (${track.rank})` : "";
+  const body  = created
+    ? `Created combat track <strong>${label}</strong>${rank}. Re-rank in the Progress Tracks panel if needed.`
+    : `Resumed combat track <strong>${label}</strong>${rank}.`;
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p></div>`,
+      flags:   { [MODULE_ID]: { combatTrackCard: true, created } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCombatTrackCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+async function postCombatProgressCard({ track, marksApplied }) {
+  const label = escapeChatHtml(track?.label ?? "Combat");
+  const times = marksApplied === 1 ? "once" : `${marksApplied} times`;
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Combat progress</strong><p>Marked progress ${times} on <strong>${label}</strong>.</p></div>`,
+      flags:   { [MODULE_ID]: { combatProgressCard: true, marksApplied } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCombatProgressCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+async function postCombatFinishCard({ track }) {
+  const label = escapeChatHtml(track?.label ?? "Combat");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Fight over</strong><p><strong>${label}</strong> marked complete.</p></div>`,
+      flags:   { [MODULE_ID]: { combatFinishCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCombatFinishCard: chat post failed:`, err?.message ?? err);
   }
 }
 

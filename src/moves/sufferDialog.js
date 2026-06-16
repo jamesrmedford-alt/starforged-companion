@@ -117,6 +117,22 @@ function optionToCalls(opt, selection) {
     return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}) }];
   }
 
+  // Combat progress mark — marks the active combat track N times.
+  if (typeof opt.combatProgress === 'number') {
+    return [{ kind: "combat-progress", count: opt.combatProgress }];
+  }
+
+  // Expedition progress mark — marks the active expedition track N times.
+  if (typeof opt.expeditionProgress === 'number') {
+    return [{ kind: "expedition-progress", count: opt.expeditionProgress }];
+  }
+
+  // "+1 on next move" situational bonus — surfaced as a reminder card;
+  // the player applies it manually to the next action die roll.
+  if (typeof opt.nextBonus === 'number') {
+    return [{ kind: "next-bonus", amount: opt.nextBonus }];
+  }
+
   // Suffer route via id (e.g. "Sacrifice Resources (-1)") OR generic
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
@@ -195,6 +211,44 @@ export async function runSufferResolution(calls, actor, opts = {}) {
       }
       case "noop":
         results.push({ kind: "noop" });
+        break;
+      case "combat-progress": {
+        const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
+        const allTracks = await listProgressTracks();
+        const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
+        if (open.length === 1) {
+          for (let i = 0; i < (call.count ?? 1); i++) {
+            await markProgressById(open[0].id).catch(err =>
+              console.warn("starforged-companion | combat-progress executor:", err));
+          }
+          results.push({ kind: "combat-progress", count: call.count, trackId: open[0].id });
+        } else {
+          results.push({ kind: "combat-progress", count: call.count, skipped: true });
+        }
+        break;
+      }
+      case "expedition-progress": {
+        const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
+        const allTracks = await listProgressTracks();
+        const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
+        if (open.length === 1) {
+          for (let i = 0; i < (call.count ?? 1); i++) {
+            await markProgressById(open[0].id).catch(err =>
+              console.warn("starforged-companion | expedition-progress executor:", err));
+          }
+          results.push({ kind: "expedition-progress", count: call.count, trackId: open[0].id });
+        } else {
+          results.push({ kind: "expedition-progress", count: call.count, skipped: true });
+        }
+        break;
+      }
+      case "next-bonus":
+        await postDeferredCard(
+          `+${call.amount} on your next move`,
+          `Remember to add +${call.amount} to your action die result on the next roll.`,
+          { nextBonus: true, amount: call.amount },
+        );
+        results.push({ kind: "next-bonus", amount: call.amount });
         break;
       case "complication":
         // Surface a chat card; the narrator picks it up on next scene

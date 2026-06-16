@@ -453,6 +453,7 @@ const REQUIRED_KEYS = [
   "momentumChange", "healthChange", "spiritChange", "supplyChange",
   "progressMarked", "sufferMoveTriggered", "sufferPrompt",
   "progressTrackId", "otherEffect",
+  "enterCombat", "combatProgress", "endCombat",
 ];
 
 const HANDLER_CASES = [
@@ -512,7 +513,7 @@ const HANDLER_CASES = [
 
   // Combat
   ["enter_the_fray",       "weak_hit",   false, { match: /choose one|control/i }],
-  ["gain_ground",          "strong_hit", false, { momentumChange: 2 }],
+  ["gain_ground",          "strong_hit", false, { match: /choose two|control/i }],
   ["gain_ground",          "weak_hit",   false, { match: /choose one|control/i }],
   ["gain_ground",          "miss",       false, { match: /bad spot|Pay the Price/i }],
   ["strike",               "weak_hit",   false, { match: /progress|bad spot/i }],
@@ -1154,10 +1155,14 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("undertake_an_expedition", "miss", false).expeditionProgress).toBe(false);
   });
 
-  it("explore_a_waypoint strong hit feeds the expedition track (no baked-in momentum)", () => {
+  it("explore_a_waypoint strong hit offers a dialog choice: expedition progress or +2 momentum", () => {
     const c = mapConsequences("explore_a_waypoint", "strong_hit", false);
-    expect(c.expeditionProgress).toBe(true);
-    expect(c.momentumChange).toBe(0);   // momentum is the offered alternative, not auto-applied
+    expect(c.expeditionProgress).toBe(false);  // no auto-apply; dialog mediates the choice
+    expect(c.momentumChange).toBe(0);
+    expect(c.sufferPrompt?.kind).toBe("enumerated");
+    const opts = c.sufferPrompt.options;
+    expect(opts.some(o => typeof o.expeditionProgress === 'number')).toBe(true);
+    expect(opts.some(o => o.momentum === 2)).toBe(true);
   });
 
   it("make_a_discovery / confront_chaos mark the discoveries legacy track (audit 3.20)", () => {
@@ -1171,11 +1176,14 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("finish_an_expedition", "miss", false).finishExpedition).toBeNull();
   });
 
-  it("gain_ground strong hit emits a multi:2 of three options (progress / momentum / next-bonus)", () => {
+  it("gain_ground strong hit emits a multi:2 of three options (combatProgress / momentum / next-bonus)", () => {
     const c = mapConsequences("gain_ground", "strong_hit", false);
     expect(c.sufferPrompt.kind).toBe("enumerated");
     expect(c.sufferPrompt.multi).toBe(2);
     expect(c.sufferPrompt.options).toHaveLength(3);
+    expect(c.sufferPrompt.options.some(o => typeof o.combatProgress === 'number')).toBe(true);
+    expect(c.sufferPrompt.options.some(o => o.momentum === 2)).toBe(true);
+    expect(c.sufferPrompt.options.some(o => typeof o.nextBonus === 'number')).toBe(true);
   });
 
   it("gain_ground weak hit emits multi:1 of the same three options", () => {
@@ -1183,6 +1191,42 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.sufferPrompt.kind).toBe("enumerated");
     expect(c.sufferPrompt.multi).toBe(1);
     expect(c.sufferPrompt.options).toHaveLength(3);
+  });
+
+  it("enter_the_fray sets enterCombat:true and combatPosition on all outcomes (audit 3.24)", () => {
+    const strong = mapConsequences("enter_the_fray", "strong_hit", false);
+    expect(strong.enterCombat).toBe(true);
+    expect(strong.combatPosition).toBe("in_control");
+
+    const weak = mapConsequences("enter_the_fray", "weak_hit", false);
+    expect(weak.enterCombat).toBe(true);
+    expect(weak.sufferPrompt?.kind).toBe("enumerated");
+
+    const miss = mapConsequences("enter_the_fray", "miss", false);
+    expect(miss.enterCombat).toBe(true);
+    expect(miss.combatPosition).toBe("bad_spot");
+  });
+
+  it("strike marks progress twice via combatProgress on strong and weak hits (audit 3.26)", () => {
+    expect(mapConsequences("strike", "strong_hit", false).combatProgress).toBe(2);
+    expect(mapConsequences("strike", "weak_hit",   false).combatProgress).toBe(2);
+    expect(mapConsequences("strike", "miss",        false).combatProgress).toBe(0);
+  });
+
+  it("clash marks progress twice on strong hit, once on weak (audit 3.26)", () => {
+    expect(mapConsequences("clash", "strong_hit", false).combatProgress).toBe(2);
+    expect(mapConsequences("clash", "weak_hit",   false).combatProgress).toBe(1);
+    expect(mapConsequences("clash", "miss",        false).combatProgress).toBe(0);
+  });
+
+  it("take_decisive_action strong/weak set endCombat:true; miss does not (audit 3.27)", () => {
+    expect(mapConsequences("take_decisive_action", "strong_hit", false).endCombat).toBe(true);
+    expect(mapConsequences("take_decisive_action", "weak_hit",   false).endCombat).toBe(true);
+    expect(mapConsequences("take_decisive_action", "miss",        false).endCombat).toBe(false);
+  });
+
+  it("face_defeat sets endCombat:true (audit 3.28)", () => {
+    expect(mapConsequences("face_defeat", "miss", false).endCombat).toBe(true);
   });
 
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {

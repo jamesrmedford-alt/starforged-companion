@@ -705,6 +705,42 @@ export function openProgressTracks() {
 }
 
 /**
+ * Return the single active (open, non-completed) combat track, or null if
+ * there are zero or multiple. Used by the pipeline to route combat progress
+ * marks and position writes.
+ *
+ * @returns {Promise<object|null>}
+ */
+export async function getActiveCombatTrack() {
+  try {
+    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    if (!journal) return null;
+    const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
+    const open = tracks.filter(t => t.type === 'combat' && !t.completed);
+    return open.length === 1 ? open[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write the combat position to a specific track. Called by the pipeline after
+ * any combat move that sets consequences.combatPosition.
+ *
+ * @param {string} trackId
+ * @param {'in_control'|'bad_spot'|null} position
+ * @returns {Promise<object|null>}  Updated track or null if not found
+ */
+export async function setCombatTrackPosition(trackId, position) {
+  const tracks = await loadTracks();
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track) return null;
+  track.combatState = position;
+  await saveTracks(tracks);
+  return track;
+}
+
+/**
  * Add a track programmatically — called from connection.js when a new
  * Connection is formalised, or from the move resolver when an Expedition begins.
  *
