@@ -190,10 +190,10 @@ Relationship`, `Forge a Bond`.
 |---|---|---|---|---|---|
 | 3.23 | Battle Stations! opens fight; sets position | MOVE | GAP | none | Medium | NEEDS-TEST |
 | 3.24 | Enter the Fray / Gain Ground / React Under Fire / Strike / Clash run resolveMove | MOVE | PARTIAL | `pipeline` resolves moves; no batch asserts the combat-specific outcomes (position transitions) | Medium | NEEDS-TEST — at minimum, one fixture per combat outcome shape |
-| 3.25 | Combat positioning (in control / in a bad spot) persists between moves | PIPELINE | GAP NEEDS-FEATURE | per playkit §3.3.3 — position not persisted | Medium | feature backlog |
-| 3.26 | Strike / Clash strong hit marks progress *twice* | MOVE | GAP NEEDS-FEATURE | per playkit §3.3.2 — text-only, not applied | Medium | feature backlog |
-| 3.27 | Take Decisive Action triggered when progress full; weak-hit d100 table | MOVE | GAP | combat progress closure untested; weak-hit table missing per playkit §3.2 | Medium | NEEDS-TEST + NEEDS-FEATURE (table) |
-| 3.28 | Face Defeat: lose fight; outcome determines cost and escape | MOVE | GAP | none | Low | NEEDS-TEST |
+| 3.25 | Combat positioning (in control / in a bad spot) persists between moves | PIPELINE | DONE | pipeline writes `combatPosition` to the active combat track after every combat move; panel reads it back | — | `resolver` + `progressTracks` |
+| 3.26 | Strike / Clash strong hit marks progress *twice* | MOVE | DONE | `combatProgress: 2` consequence → GM-gated pipeline handler marks twice via `applyCombatProgress` | — | `combat` unit batch |
+| 3.27 | Take Decisive Action triggered when progress full; weak-hit d100 table | MOVE | PARTIAL | `endCombat: true` closes the track; weak-hit d100 table still text-only | Low | feature backlog (table) |
+| 3.28 | Face Defeat: lose fight; outcome determines cost and escape | MOVE | PARTIAL | `endCombat: true` closes the track; outcome description surfaced in otherEffect text | Low | feature backlog (pay-the-price routing) |
 | 3.29 | Battle: single roll for entire fight | MOVE | GAP | none | Low | NEEDS-TEST |
 
 ### Suffer Moves (6)

@@ -1128,3 +1128,35 @@ guess. Writes are GM-gated (PERSIST-001); a `riders.autoApply` world setting
 - *A full per-asset rules engine for every effect (rerolls, ammo, roll-adds)* —
   out of scope; those stay surfaced or handled by the existing pre-roll
   scanner. The module assists; it isn't a complete automation engine.
+
+---
+
+### Combat lifecycle (audit 3.24–3.27) — 2026-06-16
+
+**Decision:** Mirror the expedition lifecycle for combat. Enter the Fray
+resolve-or-creates a combat progress track (rank LLM-inferred from narration,
+defaulting to `dangerous`, re-rankable in the Progress Tracks panel). Strike
+and Clash mark progress the correct number of times via the GM-gated pipeline
+handler (`combatProgress: N` consequence → `applyCombatProgress`). Gain
+Ground's "mark progress" dialog choice now emits a `combat-progress` call kind
+that marks the active combat track. Explore a Waypoint's "gain expedition
+progress OR +2 momentum" choice is now a real dialog picker (the
+`expedition-progress` call kind). Combat position is written to the track after
+every combat move. Take Decisive Action and Face Defeat close the track with
+`endCombat: true`. The "+1 on your next move" option in Gain Ground posts a
+reminder card — not auto-applied, no campaignState field, player applies it.
+
+**Reason:** the maintainer asked to "plan and execute" the combat progress +
+in-dialogue momentum-vs-progress gap, with full lifecycle mirror and
+LLM-inferred rank (matching the expedition rank pattern already shipped in
+v1.7.14).
+
+**Architecture:** `src/moves/combat.js` (new, mirrors `expedition.js`); new
+exports `getActiveCombatTrack` + `setCombatTrackPosition` on
+`progressTracks.js`; new call kinds `combat-progress`, `expedition-progress`,
+`next-bonus` in `sufferDialog.js`; `combatRank` field added to interpreter
+response schema alongside `expeditionRank`.
+
+**`progressTrackId` path:** unchanged — still dead for combat (guards require a
+non-null `progressTrackId` that no resolver ever sets). All new combat writes go
+through the injected-deps orchestration module (testable without Foundry).

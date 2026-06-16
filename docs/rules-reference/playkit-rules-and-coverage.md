@@ -435,19 +435,16 @@ momentum and is wrong.
 twist), and a chat surface (e.g. `!oracle yes|no <odds> [question]`) or
 panel control. Touch point: `src/oracles/roller.js`, `src/index.js`.
 
-**3.3.2 "Mark progress twice" on Strike and Clash strong hits.**
-`src/moves/resolver.js:482-501` describes "mark progress twice" in
-`otherEffect` text but `src/ui/progressTracks.js:397-413` only adds
-`ticksPerMark` once per click; nothing in the persist path doubles ticks for
-these moves. Consequence: combat tracks fill at half the intended rate.
+**3.3.2 "Mark progress twice" on Strike and Clash strong hits. — FIXED**
+`combatProgress: 2` consequence on strike/clash strong (and weak) hits drives
+`applyCombatProgress({ markCount: 2 })` in the GM-gated pipeline handler.
+`src/moves/combat.js`, wired in `src/index.js`.
 
-**3.3.3 Combat positioning not persisted.**
-Resolver returns "in control" / "in a bad spot" in `otherEffect` text but no
-actor field tracks state across moves (`src/moves/resolver.js:460-541`).
-Take Decisive Action's bad-spot downgrade (`src/moves/resolver.js:516-525`)
-cannot self-check the position — the player must remember to mention it.
-Add a combat-track flag (likely on the progress-track object) and surface
-it in the Progress Tracks panel.
+**3.3.3 Combat positioning not persisted. — FIXED**
+`combatPosition` from resolver consequences is now written to the active combat
+track via `setCombatTrackPosition` after every combat move resolution. The panel
+reads and toggles `combatState` on the track object. `src/ui/progressTracks.js`.
+Take Decisive Action reads back via `getActiveCombatPosition()` (unchanged).
 
 **3.3.4 Higher-of-two-stat selection not dynamic for Endure Harm / Stress.**
 The play kit says "roll +health **or** +iron, whichever is higher" (and
