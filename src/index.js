@@ -1104,6 +1104,21 @@ export function registerChatHook() {
         }
       }
 
+      // TDA weak hit — roll decisive_action_cost d100 and post a visible card.
+      // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
+      // B1 generic suffer picker so the player can choose which move takes -2.
+      if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
+        await postDecisiveActionCostCard().catch(err =>
+          console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
+      }
+
+      // Face Defeat — roll pay_the_price d100, post a visible card, and dispatch
+      // any routable suffer entry (same behaviour as typing !pay-the-price).
+      if (resolution.consequences?.routePayThePrice && game.user.isGM) {
+        await postFaceDefeatPayThePriceCard().catch(err =>
+          console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err));
+      }
+
       // Step 7: relevance resolver — picks the narrator-permission block
       // and identifies which entity records to inject as cards. For hybrid
       // moves with implicit references, we pause the pipeline for a
@@ -2413,6 +2428,66 @@ async function postCombatFinishCard({ track }) {
   }
 }
 
+async function postDecisiveActionCostCard() {
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = rollOracle("decisive_action_cost");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | decisive_action_cost roll failed:`, err);
+    return;
+  }
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Triggers: choose a suffer move (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Decisive Action — Cost</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+      flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoute: result.sufferRoute ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
+    return;
+  }
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | decisive action cost suffer dispatch failed:`, err?.message ?? err));
+  }
+}
+
+async function postFaceDefeatPayThePriceCard() {
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = rollOracle("pay_the_price");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | face defeat pay_the_price roll failed:`, err);
+    return;
+  }
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+      flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postFaceDefeatPayThePriceCard: chat post failed:`, err?.message ?? err);
+    return;
+  }
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
+  }
+  scheduleOracleNarration({
+    kind:       "pay_the_price",
+    oracleName: "Pay the Price",
+    question:   "Face Defeat",
+    rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
+}
+
 /**
  * F16 Phase E: dispatch a Pay-the-Price sufferRoute annotation into the
  * suffer executors. `soloFallback` swaps the route when the rolled entry
@@ -2430,6 +2505,20 @@ async function dispatchPayThePriceSufferRoute(route) {
   const actor = getPlayerActors()[0] ?? null;
   if (!actor) {
     console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute: no active character`);
+    return;
+  }
+
+  // "any" means "player chooses which suffer move" — open the B1 generic picker.
+  if (route.move === "any") {
+    const { promptSufferChoice, runSufferResolution } = await import("./moves/sufferDialog.js");
+    const result = await promptSufferChoice(
+      { kind: "any", amount: route.amount ?? 2, count: 1 },
+      actor,
+    );
+    if (!result.cancelled) {
+      await runSufferResolution(result.calls, actor, { isMiss: true }).catch(err =>
+        console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute any-route failed:`, err?.message ?? err));
+    }
     return;
   }
 

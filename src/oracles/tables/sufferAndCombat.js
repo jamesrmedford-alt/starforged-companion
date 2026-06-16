@@ -13,7 +13,8 @@
  */
 
 export const DECISIVE_ACTION_COST = [
-  { min:   1, max:  40,  result: "It's worse than you thought: make a suffer move (-2)" },
+  { min:   1, max:  40,  result: "It's worse than you thought: make a suffer move (-2)",
+    sufferRoute: { move: "any", amount: 2 } },
   { min:  41, max:  52,  result: "Victory is short-lived: a new peril or foe appears" },
   { min:  53, max:  64,  result: "You face collateral damage: something is lost, damaged, or broken" },
   { min:  65, max:  76,  result: "Others pay the price: someone else suffers the cost" },

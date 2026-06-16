@@ -192,8 +192,8 @@ Relationship`, `Forge a Bond`.
 | 3.24 | Enter the Fray / Gain Ground / React Under Fire / Strike / Clash run resolveMove | MOVE | PARTIAL | `pipeline` resolves moves; no batch asserts the combat-specific outcomes (position transitions) | Medium | NEEDS-TEST — at minimum, one fixture per combat outcome shape |
 | 3.25 | Combat positioning (in control / in a bad spot) persists between moves | PIPELINE | DONE | pipeline writes `combatPosition` to the active combat track after every combat move; panel reads it back | — | `resolver` + `progressTracks` |
 | 3.26 | Strike / Clash strong hit marks progress *twice* | MOVE | DONE | `combatProgress: 2` consequence → GM-gated pipeline handler marks twice via `applyCombatProgress` | — | `combat` unit batch |
-| 3.27 | Take Decisive Action triggered when progress full; weak-hit d100 table | MOVE | PARTIAL | `endCombat: true` closes the track; weak-hit d100 table still text-only | Low | feature backlog (table) |
-| 3.28 | Face Defeat: lose fight; outcome determines cost and escape | MOVE | PARTIAL | `endCombat: true` closes the track; outcome description surfaced in otherEffect text | Low | feature backlog (pay-the-price routing) |
+| 3.27 | Take Decisive Action triggered when progress full; weak-hit d100 table | MOVE | DONE | `endCombat: true` closes the track; `rollDecisiveActionCost: true` fires the DECISIVE_ACTION_COST table card in the pipeline; entry 1-40 has `sufferRoute:{move:"any",amount:2}` which opens the B1 generic suffer picker | — | `sufferAndCombat.js` + pipeline |
+| 3.28 | Face Defeat: lose fight; outcome determines cost and escape | MOVE | DONE | `endCombat: true` closes the track; `routePayThePrice: true` fires Pay the Price d100 card in the pipeline with full suffer routing | — | `resolver` + pipeline |
 | 3.29 | Battle: single roll for entire fight | MOVE | GAP | none | Low | NEEDS-TEST |
 
 ### Suffer Moves (6)
