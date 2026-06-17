@@ -453,9 +453,9 @@ const CONSEQUENCE_MAP = {
 
   test_your_relationship: (outcome, _isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
+      case "strong_hit": return { ...emptyConsequences(), developRelationship: true,
         otherEffect: "Develop Your Relationship." };
-      case "weak_hit": return { ...emptyConsequences(),
+      case "weak_hit": return { ...emptyConsequences(), developRelationship: true,
         otherEffect: "Develop Your Relationship, but with a demand or complication as fallout." };
       case "miss": return {
         ...emptyConsequences(),

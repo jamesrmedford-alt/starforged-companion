@@ -9,6 +9,8 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Bonding pays off — developing a bonded connection builds your legacy.** When you Develop Your Relationship with someone you've already bonded with, your bonds legacy track is marked for you (two ticks on a strong hit, one on a weak), and a match nudges that connection's rank up. Developing an un-bonded connection still simply advances that relationship. No manual legacy ticking.
 - Added: **Battle resolves an entire fight in one roll.** When you choose to settle a clash in a single stroke rather than blow-by-blow, Battle now closes out any open combat track and — on a weak hit or miss — rolls Pay the Price and applies the fallout for you.
 - Added: **Take Decisive Action and Face Defeat see the fight through.** On a Take Decisive Action weak hit, the six-entry cost table is rolled and shown as a card (the "make a suffer move" entry opens the suffer picker so you choose which meter takes the hit). Face Defeat rolls Pay the Price and applies any routable consequence automatically.
+- Fixed: **Test Your Relationship now follows through to Develop Your Relationship on a hit.** A strong or weak hit automatically triggers the Develop Your Relationship pipeline (marking connection progress or bonds legacy), matching what the move text says to do and rounding out the connection move chain.
+- Added: **Quickstart creates two ready-to-play characters.** The Playtest Quickstart macro now creates two separate PCs (each with a random name, the 3/2/2/1/1 stat array, and two random Path assets) rather than one, ready for co-op sessions out of the box.
 
 ## [1.7.14] — 2026-06-16
 
