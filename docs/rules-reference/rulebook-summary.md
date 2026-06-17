@@ -365,8 +365,7 @@ shifts: combat is structured around **position** (in control / in a bad
 spot), **range** (close / near / far), **objectives** (defeat / escape
 / protect / etc.), and **scale** (a brawl vs. a battle vs. mass combat):
 
-- **Battle Stations!** — open the fight, set position
-- **Enter the Fray** — first move in a fight
+- **Enter the Fray** — open the fight; first move in a fight, sets position
 - **Gain Ground** — reposition, advance, or set up
 - **React Under Fire** — combat-specific version of Face Danger
 - **Strike** — initiate violence from a position of control
