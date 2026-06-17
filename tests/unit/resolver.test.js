@@ -1240,6 +1240,29 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(c.routePayThePrice).toBe(true);
   });
 
+  it("battle resolves the whole fight: endCombat on every outcome; PtP on weak+miss (audit 3.29)", () => {
+    const strong = mapConsequences("battle", "strong_hit", false);
+    expect(strong.endCombat).toBe(true);
+    expect(strong.momentumChange).toBe(2);
+    expect(strong.routePayThePrice).toBe(false);
+
+    const weak = mapConsequences("battle", "weak_hit", false);
+    expect(weak.endCombat).toBe(true);
+    expect(weak.routePayThePrice).toBe(true);
+
+    const miss = mapConsequences("battle", "miss", false);
+    expect(miss.endCombat).toBe(true);
+    expect(miss.routePayThePrice).toBe(true);
+  });
+
+  it("develop_your_relationship flags developRelationship and no longer uses the dead progressMarked path (audit 3.14)", () => {
+    for (const outcome of ["strong_hit", "weak_hit", "miss"]) {
+      const c = mapConsequences("develop_your_relationship", outcome, false);
+      expect(c.developRelationship).toBe(true);
+      expect(c.progressMarked).toBe(0);
+    }
+  });
+
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {
     const c = mapConsequences("endure_harm", "strong_hit", false);
     const healthOpt = c.sufferPrompt.options.find(o => o.health === 1);

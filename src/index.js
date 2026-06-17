@@ -97,6 +97,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
+import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1007,6 +1008,43 @@ export function registerChatHook() {
           addLegacyTicks(campaignState, track, ticks);
           await postLegacyMarkCard(track, ticks).catch(err =>
             console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
+        }
+      }
+
+      // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
+      // connection marks its own relationship track ("no roll, mark progress");
+      // a bonded connection marks the bonds legacy track per the rolled outcome
+      // (§3.3.5: strong 2 / weak 1 / miss 0), and a match raises its rank by one.
+      if (resolution.consequences?.developRelationship && game.user.isGM) {
+        try {
+          const conn = await import("./entities/connection.js");
+          // Preserve each connection's host actor id (the value stored in
+          // connectionIds); connection._id is a separate generated id that the
+          // write helpers (getEntityDocument → game.actors.get) do not accept.
+          const connections = (campaignState.connectionIds ?? [])
+            .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+            .filter(Boolean);
+          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
+
+          if (plan.action === "bond-legacy") {
+            if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
+            if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
+              await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
+                console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
+            }
+            await postDevelopRelationshipCard(plan).catch(err =>
+              console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+          } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
+            await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
+              console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
+            await postDevelopRelationshipCard(plan).catch(err =>
+              console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+          }
+          // action "none" → no resolvable connection; the move card's otherEffect
+          // already tells the player to develop a relationship.
+        } catch (err) {
+          console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err);
         }
       }
 
@@ -2413,6 +2451,29 @@ async function postCombatProgressCard({ track, marksApplied }) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatProgressCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+async function postDevelopRelationshipCard(plan) {
+  const name = escapeChatHtml(plan?.connection?.name || "your connection");
+  let body;
+  if (plan.action === "bond-legacy") {
+    body = plan.ticks > 0
+      ? `Marked ${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on your bonds legacy track for your bond with <strong>${name}</strong>.`
+      : `No bonds legacy progress with <strong>${name}</strong> this time.`;
+    if (plan.raiseRank && plan.newRank) {
+      body += ` Match — ${name}'s rank rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.`;
+    }
+  } else {
+    body = `Marked progress on your relationship with <strong>${name}</strong>.`;
+  }
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong><p>${body}</p></div>`,
+      flags:   { [MODULE_ID]: { developRelationshipCard: true, action: plan.action } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postDevelopRelationshipCard: chat post failed:`, err?.message ?? err);
   }
 }
 
