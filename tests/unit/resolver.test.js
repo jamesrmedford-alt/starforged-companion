@@ -454,6 +454,7 @@ const REQUIRED_KEYS = [
   "progressMarked", "sufferMoveTriggered", "sufferPrompt",
   "progressTrackId", "otherEffect",
   "enterCombat", "combatProgress", "endCombat",
+  "rollDecisiveActionCost", "routePayThePrice",
 ];
 
 const HANDLER_CASES = [
@@ -1219,14 +1220,47 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("clash", "miss",        false).combatProgress).toBe(0);
   });
 
-  it("take_decisive_action strong/weak set endCombat:true; miss does not (audit 3.27)", () => {
-    expect(mapConsequences("take_decisive_action", "strong_hit", false).endCombat).toBe(true);
-    expect(mapConsequences("take_decisive_action", "weak_hit",   false).endCombat).toBe(true);
-    expect(mapConsequences("take_decisive_action", "miss",        false).endCombat).toBe(false);
+  it("take_decisive_action strong/weak set endCombat:true; only weak sets rollDecisiveActionCost (audit 3.27)", () => {
+    const strong = mapConsequences("take_decisive_action", "strong_hit", false);
+    expect(strong.endCombat).toBe(true);
+    expect(strong.rollDecisiveActionCost).toBe(false);
+
+    const weak = mapConsequences("take_decisive_action", "weak_hit", false);
+    expect(weak.endCombat).toBe(true);
+    expect(weak.rollDecisiveActionCost).toBe(true);
+
+    const miss = mapConsequences("take_decisive_action", "miss", false);
+    expect(miss.endCombat).toBe(false);
+    expect(miss.rollDecisiveActionCost).toBe(false);
   });
 
-  it("face_defeat sets endCombat:true (audit 3.28)", () => {
-    expect(mapConsequences("face_defeat", "miss", false).endCombat).toBe(true);
+  it("face_defeat sets endCombat:true and routePayThePrice:true (audit 3.28)", () => {
+    const c = mapConsequences("face_defeat", "miss", false);
+    expect(c.endCombat).toBe(true);
+    expect(c.routePayThePrice).toBe(true);
+  });
+
+  it("battle resolves the whole fight: endCombat on every outcome; PtP on weak+miss (audit 3.29)", () => {
+    const strong = mapConsequences("battle", "strong_hit", false);
+    expect(strong.endCombat).toBe(true);
+    expect(strong.momentumChange).toBe(2);
+    expect(strong.routePayThePrice).toBe(false);
+
+    const weak = mapConsequences("battle", "weak_hit", false);
+    expect(weak.endCombat).toBe(true);
+    expect(weak.routePayThePrice).toBe(true);
+
+    const miss = mapConsequences("battle", "miss", false);
+    expect(miss.endCombat).toBe(true);
+    expect(miss.routePayThePrice).toBe(true);
+  });
+
+  it("develop_your_relationship flags developRelationship and no longer uses the dead progressMarked path (audit 3.14)", () => {
+    for (const outcome of ["strong_hit", "weak_hit", "miss"]) {
+      const c = mapConsequences("develop_your_relationship", outcome, false);
+      expect(c.developRelationship).toBe(true);
+      expect(c.progressMarked).toBe(0);
+    }
   });
 
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {
@@ -1253,5 +1287,27 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("face_danger", "strong_hit", false).sufferPrompt).toBeNull();
     expect(mapConsequences("face_danger", "miss", false).sufferPrompt).toBeNull();
     expect(mapConsequences("gather_information", "strong_hit", false).sufferPrompt).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECISIVE_ACTION_COST table — sufferRoute annotation (audit 3.27)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("DECISIVE_ACTION_COST — sufferRoute annotation", () => {
+  // Test the table data directly (rollOracle is mocked at module level above).
+  it("1-40 entry carries sufferRoute move:any amount:2", async () => {
+    const { DECISIVE_ACTION_COST } = await import("../../src/oracles/tables/sufferAndCombat.js");
+    const low = DECISIVE_ACTION_COST.find(e => e.min === 1);
+    expect(low?.sufferRoute).toEqual({ move: "any", amount: 2 });
+  });
+
+  it("41-100 entries carry no sufferRoute", async () => {
+    const { DECISIVE_ACTION_COST } = await import("../../src/oracles/tables/sufferAndCombat.js");
+    const upper = DECISIVE_ACTION_COST.filter(e => e.min >= 41);
+    expect(upper.length).toBeGreaterThan(0);
+    for (const e of upper) {
+      expect(e.sufferRoute).toBeUndefined();
+    }
   });
 });

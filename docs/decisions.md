@@ -1160,3 +1160,52 @@ response schema alongside `expeditionRank`.
 **`progressTrackId` path:** unchanged — still dead for combat (guards require a
 non-null `progressTrackId` that no resolver ever sets). All new combat writes go
 through the injected-deps orchestration module (testable without Foundry).
+
+---
+
+### Develop Your Relationship bond legacy + Battle + audit reconciliation — 2026-06-17
+
+**Develop Your Relationship (audit 3.14).** An un-bonded connection marks its
+own relationship track ("no roll, mark progress", via `markRelationshipProgress`).
+A *bonded* connection instead marks the bonds legacy track by the rolled outcome
+— **strong hit 2 ticks, weak hit 1, miss 0** — and a **match on a hit raises the
+connection's rank by one** (play kit §3.3.5). Orchestration is a pure module
+`src/moves/developRelationship.js` (`selectConnection` + `planDevelopRelationship`,
+mirroring `expedition.js`/`combat.js`); the resolver emits a `developRelationship`
+consequence flag and the GM-gated pipeline handler resolves the target connection
+and applies the writes.
+
+- **Weak-hit = 1 tick is a deliberate fill-in.** The play kit text in
+  `playkit-rules-and-coverage.md` §3.3.5 only specifies the strong-hit value (2).
+  We chose strong 2 / weak 1 / miss 0 — "diminished but present" on a weak hit,
+  consistent with the game's general outcome philosophy — rather than leave weak
+  undefined. Recorded here so it isn't re-litigated.
+- **Target resolution.** The connection is resolved from `interpretation.moveTarget`
+  (the named connection) with the same exact→substring→sole-fallback ladder as
+  expeditions/combat, except the fallback prefers the **sole bonded** connection,
+  then the sole active one. Ambiguous (multiple, no match) → no-op; the move card
+  still tells the player to develop a relationship.
+- **The old `progressMarked: 1` on this move was a dead no-op** — persistence only
+  marks when `progressTrackId` is set, which no resolver populates. Removed.
+
+**Battle (audit 3.29).** Battle resolves an entire fight in one roll, so every
+outcome sets `endCombat: true` (closes any open combat track — a safe no-op when
+none exists, since Battle is typically used *instead* of a move-by-move track).
+Weak hit and miss set `routePayThePrice: true` (visible PtP card + suffer
+dispatch, same as Face Defeat); strong hit keeps +2 momentum.
+
+**"Battle Stations!" is not a Starforged move.** The official combat set is eight
+moves (Enter the Fray, Gain Ground, React Under Fire, Strike, Clash, Take Decisive
+Action, Face Defeat, Battle). `schemas.js` has no `battle_stations` entry and the
+play kit lists no such move. It was a stray line in `rulebook-summary.md` (now
+corrected) that propagated into the coverage audit as phantom row 3.23 (now
+struck). "Open the fight / set position" is **Enter the Fray** (3.24).
+
+**Audit reconciliation.** `rulebook-coverage-audit.md` was written 2026-05-29 and
+overtaken within hours (P1–P20 closed the same night by `03070a4` + `943265e`),
+then further by weeks of feature work, without the matrix being updated. The
+matrix, summaries, and priority list have now been reconciled against the tree.
+Verified-closed rows were flipped to PINNED/DONE with batch/file evidence;
+genuinely-open rows kept their GAP/PARTIAL status. Two commit-message closure
+claims did **not** hold against the tree and are flagged: 3.11/3.12 (Fulfill /
+Forsake Your Vow are not in `moveOutcomeMatrix`) and P13 recover moves (no batch).

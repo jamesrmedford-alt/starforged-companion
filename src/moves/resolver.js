@@ -231,11 +231,18 @@ function emptyConsequences() {
     // rank's legacy reward (Finish an Expedition). null = not a finish.
     finishExpedition:    null,
     // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
-    enterCombat:         false,
+    enterCombat:           false,
     // Pipeline marks progress N times on the active combat track (Strike/Clash).
-    combatProgress:      0,
+    combatProgress:        0,
     // true → pipeline completes the active combat track (Take Decisive Action hit, Face Defeat).
-    endCombat:           false,
+    endCombat:             false,
+    // true → pipeline rolls decisive_action_cost d100 and posts a visible card (TDA weak hit).
+    rollDecisiveActionCost: false,
+    // true → pipeline rolls pay_the_price d100 and posts a visible card (Face Defeat, Battle).
+    routePayThePrice:      false,
+    // true → pipeline resolves the target connection and marks connection progress
+    // (un-bonded) or bonds legacy (bonded, §3.3.5). See developRelationship.js.
+    developRelationship:   false,
     otherEffect:         "",
   };
 }
@@ -435,8 +442,13 @@ const CONSEQUENCE_MAP = {
 
   develop_your_relationship: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 1,   // One mark; persistence multiplies by track's ticksPerMark
-    otherEffect: "Mark progress on connection track per connection rank.",
+    // Pipeline (GM-gated) resolves the target connection and applies either a
+    // connection-track mark (un-bonded) or a bonds-legacy mark (bonded, per
+    // §3.3.5). See src/moves/developRelationship.js. The old `progressMarked: 1`
+    // was a dead no-op — persistence only marks when progressTrackId is set,
+    // which no resolver populates.
+    developRelationship: true,
+    otherEffect: "Develop the relationship: mark connection progress, or — if you are bonded — mark your bonds legacy track.",
   }),
 
   test_your_relationship: (outcome, _isMatch) => {
@@ -658,8 +670,8 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), endCombat: true, momentumChange: 1,
         otherEffect: "Prevail. Take +1 momentum." };
-      case "weak_hit": return { ...emptyConsequences(), endCombat: true,
-        otherEffect: "Objective achieved but at cost. Roll or choose from weak hit table." };
+      case "weak_hit": return { ...emptyConsequences(), endCombat: true, rollDecisiveActionCost: true,
+        otherEffect: "Objective achieved but at cost. Roll on the weak hit table." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Defeated or objective lost. Pay the Price." };
     }
@@ -667,18 +679,23 @@ const CONSEQUENCE_MAP = {
 
   face_defeat: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    endCombat: true,
+    endCombat:        true,
+    routePayThePrice: true,
     otherEffect: "Objective abandoned. Clear the combat objective and Pay the Price.",
   }),
 
   battle: (outcome, _isMatch) => {
+    // Battle resolves an entire fight in one roll, so every outcome ends combat
+    // (endCombat closes any open combat track — a no-op when none exists, since
+    // Battle is typically used without a move-by-move track). Weak hit and miss
+    // both "Pay the Price", routed through the pipeline like Face Defeat.
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(), momentumChange: 2,
-        otherEffect: "Objective achieved unconditionally. You and allies may take +2 momentum." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Objective achieved but at cost. Pay the Price." };
-      case "miss": return { ...emptyConsequences(),
-        otherEffect: "Defeated or objective lost. Pay the Price." };
+      case "strong_hit": return { ...emptyConsequences(), endCombat: true, momentumChange: 2,
+        otherEffect: "Objective achieved unconditionally. You and allies may take +2 momentum. The fight is over." };
+      case "weak_hit": return { ...emptyConsequences(), endCombat: true, routePayThePrice: true,
+        otherEffect: "Objective achieved but at cost. The fight is over. Pay the Price." };
+      case "miss": return { ...emptyConsequences(), endCombat: true, routePayThePrice: true,
+        otherEffect: "Defeated or objective lost. The fight is over. Pay the Price." };
     }
   },
 
@@ -1218,6 +1235,15 @@ export function buildOracleSeeds(moveId, outcome, isMatch) {
           const cost = safeRoll("decisive_action_cost");
           if (cost) results.push(`Decisive-action cost: ${cost}`);
         }
+        break;
+      }
+
+      case "face_defeat": {
+        // Face Defeat always calls Pay the Price — seed the narrator with the roll
+        // so it can ground the narration. A second visible card is also posted by
+        // the pipeline (routePayThePrice: true → postFaceDefeatPayThePriceCard).
+        const ptp = safeRoll("pay_the_price");
+        if (ptp) results.push(`Pay the Price: ${ptp}`);
         break;
       }
 

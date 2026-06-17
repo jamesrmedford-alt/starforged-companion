@@ -97,6 +97,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
+import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1010,6 +1011,43 @@ export function registerChatHook() {
         }
       }
 
+      // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
+      // connection marks its own relationship track ("no roll, mark progress");
+      // a bonded connection marks the bonds legacy track per the rolled outcome
+      // (§3.3.5: strong 2 / weak 1 / miss 0), and a match raises its rank by one.
+      if (resolution.consequences?.developRelationship && game.user.isGM) {
+        try {
+          const conn = await import("./entities/connection.js");
+          // Preserve each connection's host actor id (the value stored in
+          // connectionIds); connection._id is a separate generated id that the
+          // write helpers (getEntityDocument → game.actors.get) do not accept.
+          const connections = (campaignState.connectionIds ?? [])
+            .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+            .filter(Boolean);
+          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
+
+          if (plan.action === "bond-legacy") {
+            if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
+            if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
+              await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
+                console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
+            }
+            await postDevelopRelationshipCard(plan).catch(err =>
+              console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+          } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
+            await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
+              console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
+            await postDevelopRelationshipCard(plan).catch(err =>
+              console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+          }
+          // action "none" → no resolvable connection; the move card's otherEffect
+          // already tells the player to develop a relationship.
+        } catch (err) {
+          console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err);
+        }
+      }
+
       // Finish an Expedition — complete the open expedition track and pay its
       // rank's legacy reward (weak hit pays one rank lower) onto discoveries.
       if (resolution.consequences?.finishExpedition && game.user.isGM) {
@@ -1102,6 +1140,21 @@ export function registerChatHook() {
         } catch (err) {
           console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
         }
+      }
+
+      // TDA weak hit — roll decisive_action_cost d100 and post a visible card.
+      // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
+      // B1 generic suffer picker so the player can choose which move takes -2.
+      if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
+        await postDecisiveActionCostCard().catch(err =>
+          console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
+      }
+
+      // Face Defeat — roll pay_the_price d100, post a visible card, and dispatch
+      // any routable suffer entry (same behaviour as typing !pay-the-price).
+      if (resolution.consequences?.routePayThePrice && game.user.isGM) {
+        await postFaceDefeatPayThePriceCard().catch(err =>
+          console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err));
       }
 
       // Step 7: relevance resolver — picks the narrator-permission block
@@ -2401,6 +2454,29 @@ async function postCombatProgressCard({ track, marksApplied }) {
   }
 }
 
+async function postDevelopRelationshipCard(plan) {
+  const name = escapeChatHtml(plan?.connection?.name || "your connection");
+  let body;
+  if (plan.action === "bond-legacy") {
+    body = plan.ticks > 0
+      ? `Marked ${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on your bonds legacy track for your bond with <strong>${name}</strong>.`
+      : `No bonds legacy progress with <strong>${name}</strong> this time.`;
+    if (plan.raiseRank && plan.newRank) {
+      body += ` Match — ${name}'s rank rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.`;
+    }
+  } else {
+    body = `Marked progress on your relationship with <strong>${name}</strong>.`;
+  }
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong><p>${body}</p></div>`,
+      flags:   { [MODULE_ID]: { developRelationshipCard: true, action: plan.action } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postDevelopRelationshipCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
 async function postCombatFinishCard({ track }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   try {
@@ -2411,6 +2487,66 @@ async function postCombatFinishCard({ track }) {
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatFinishCard: chat post failed:`, err?.message ?? err);
   }
+}
+
+async function postDecisiveActionCostCard() {
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = rollOracle("decisive_action_cost");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | decisive_action_cost roll failed:`, err);
+    return;
+  }
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Triggers: choose a suffer move (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Decisive Action — Cost</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+      flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoute: result.sufferRoute ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
+    return;
+  }
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | decisive action cost suffer dispatch failed:`, err?.message ?? err));
+  }
+}
+
+async function postFaceDefeatPayThePriceCard() {
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = rollOracle("pay_the_price");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | face defeat pay_the_price roll failed:`, err);
+    return;
+  }
+  const routeFooter = result.sufferRoute
+    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
+    : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+      flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postFaceDefeatPayThePriceCard: chat post failed:`, err?.message ?? err);
+    return;
+  }
+  if (result.sufferRoute) {
+    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
+  }
+  scheduleOracleNarration({
+    kind:       "pay_the_price",
+    oracleName: "Pay the Price",
+    question:   "Face Defeat",
+    rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
 }
 
 /**
@@ -2430,6 +2566,20 @@ async function dispatchPayThePriceSufferRoute(route) {
   const actor = getPlayerActors()[0] ?? null;
   if (!actor) {
     console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute: no active character`);
+    return;
+  }
+
+  // "any" means "player chooses which suffer move" — open the B1 generic picker.
+  if (route.move === "any") {
+    const { promptSufferChoice, runSufferResolution } = await import("./moves/sufferDialog.js");
+    const result = await promptSufferChoice(
+      { kind: "any", amount: route.amount ?? 2, count: 1 },
+      actor,
+    );
+    if (!result.cancelled) {
+      await runSufferResolution(result.calls, actor, { isMiss: true }).catch(err =>
+        console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute any-route failed:`, err?.message ?? err));
+    }
     return;
   }
 

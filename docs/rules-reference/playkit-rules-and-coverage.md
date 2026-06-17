@@ -297,7 +297,7 @@ to find each move's resolver branch.
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |
 | Progress tracks worksheet (vow/expedition/connection/combat/scene_challenge) | ✅ | `src/schemas.js:183`, `src/ui/progressTracks.js:44-49` |
-| Bond legacy ticks on Develop Your Relationship (when bonded) | 🔄 | resolver acknowledges; no automated tick on bonds legacy when developing a bonded connection |
+| Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → bonds legacy (2/1/0 by outcome, match raises rank); un-bonded → connection track |
 
 ### 2.6 Safety, scene, and session lifecycle
 
@@ -453,11 +453,14 @@ options but `src/moves/resolver.js:552, 563` does not pick the higher; the
 player gets whatever stat was chosen by the interpreter. Either pre-resolve
 the higher in `statEnrichment.js` or add a stat picker in the confirm dialog.
 
-**3.3.5 Develop Your Relationship — bond legacy ticks when bonded.**
-Per rules, once bonded, Develop Your Relationship rolls +rank against
-challenge dice and on a strong hit marks 2 ticks on the bonds legacy track
-(extra: a match raises rank by 1). `src/moves/resolver.js:365-369` does not
-implement this branch.
+**3.3.5 Develop Your Relationship — bond legacy ticks when bonded. — FIXED (2026-06-17)**
+Once bonded, Develop Your Relationship marks the bonds legacy track by outcome
+(strong 2 / weak 1 / miss 0) and a match raises the connection's rank by one;
+un-bonded connections mark their own relationship track ("no roll, mark
+progress"). Implemented in `src/moves/developRelationship.js` (pure, unit-tested)
++ a GM-gated pipeline handler in `src/index.js`. The resolver emits a
+`developRelationship` consequence flag; the pipeline resolves the target
+connection (by name, with a sole-bonded/sole-active fallback) and applies it.
 
 **3.3.6 Vehicle Repair point spends not applied automatically.**
 `src/moves/resolver.js:650-658` surfaces the points table but no code
