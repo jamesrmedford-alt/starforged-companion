@@ -1270,8 +1270,11 @@ async function handleDraftConfirm(message, draftIndex) {
       }, campaignState);
     } else {
       record = await creator({
-        name:        draft.name,
-        description: draft.description ?? "",
+        name:                      draft.name,
+        description:               draft.description ?? "",
+        // Seed the portrait source from the detected description so the entity
+        // can generate art immediately instead of showing "Awaiting description".
+        portraitSourceDescription: draft.description ?? "",
       }, campaignState);
     }
   } catch (err) {
@@ -1284,6 +1287,23 @@ async function handleDraftConfirm(message, draftIndex) {
 
   if (record) {
     await postCreationEnrichment(draft.type, record, campaignState);
+
+    // Mirror a confirmed faction into the World Journal — Factions page so it
+    // lands as established lore. The WJ faction loop (routeWorldJournalResults)
+    // skips any faction that already has an entity record, so without this the
+    // entity and the journal stay disconnected and the Factions page stays
+    // empty (playtest finding).
+    if (draft.type === "faction") {
+      try {
+        await recordFactionIntelligence(draft.name, {
+          attitude: "unknown",
+          summary:  draft.description ?? "",
+          entityId: record._id,
+        }, campaignState);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
+      }
+    }
 
     // Promote any free-text fact-continuity ledger entries that were
     // captured against this name into entity-scoped entries pointing at

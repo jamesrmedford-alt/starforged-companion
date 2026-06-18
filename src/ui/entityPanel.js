@@ -64,11 +64,11 @@ const DETAIL_FIELDS = {
     { key: 'notes',      label: 'Notes'      },
   ],
   faction: [
-    { key: 'type',     label: 'Type'     },
-    { key: 'goal',     label: 'Goal'     },
-    { key: 'identity', label: 'Identity' },
-    { key: 'quirks',   label: 'Quirks'   },
-    { key: 'notes',    label: 'Notes'    },
+    { key: 'type',         label: 'Type'         },
+    { key: 'relationship', label: 'Relationship' },
+    { key: 'influence',    label: 'Influence'    },
+    { key: 'description',  label: 'Description'   },
+    { key: 'notes',        label: 'Notes'        },
   ],
   planet: [
     { key: 'type',    label: 'Type'    },
