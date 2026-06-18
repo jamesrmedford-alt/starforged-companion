@@ -247,6 +247,35 @@ export async function createClock(input) {
   return clock;
 }
 
+/**
+ * Advance every active tension clock by one segment. The module's clock
+ * contract (file header above; docs/clocks/clocks-scope.md) is that tension
+ * clocks advance when you Pay the Price or a complication is rolled — this is
+ * the programmatic hook the move pipeline calls on a Pay the Price (playtest
+ * finding #10: the wiring was documented but never built). Campaign clocks are
+ * left alone (they advance at Begin a Session). The caller GM-gates the call
+ * (world-scoped write).
+ *
+ * @returns {Promise<Array<{name:string, filled:number, segments:number, triggered:boolean}>>}
+ *   one entry per clock advanced; empty when there are no active tension clocks.
+ */
+export async function advanceTensionClocksForPayThePrice() {
+  const state = readState();
+  const eligible = (state.clocks ?? []).filter(
+    c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
+  );
+  if (!eligible.length) return [];
+  const now = new Date().toISOString();
+  const advanced = [];
+  for (const c of eligible) {
+    c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
+    c.updatedAt = now;
+    advanced.push({ name: c.name, filled: c.filled, segments: c.segments, triggered: c.filled >= c.segments });
+  }
+  await writeState(state);
+  return advanced;
+}
+
 export async function handleClockCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!clock".length).trim().split(/\s+/);

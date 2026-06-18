@@ -346,7 +346,7 @@ function registerCoreSettings() {
   // -------------------------------------------------------------------------
   game.settings.register(MODULE_ID, "audio.enabled", {
     name: "Audio narration enabled", scope: "world", config: false,
-    type: Boolean, default: false,
+    type: Boolean, default: true,
   });
   // Auto-apply asset consequence riders (momentum/meters/integrity/progress
   // from a move's outcome) so the player doesn't adjust resources by hand.
@@ -358,7 +358,7 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
     name: "Narrator voice ID", scope: "world", config: false,
-    type: String, default: "21m00Tcm4TlvDq8ikWAM",
+    type: String, default: "fNmw8sukfGuvWVOp33Ge",
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceId", {
     name: "NPC voice ID", scope: "world", config: false,
@@ -367,9 +367,11 @@ function registerCoreSettings() {
   // Pronoun-keyed NPC voices (v1.7.11 finding F). When set, an NPC card's
   // focal connection picks the voice matching its established pronouns;
   // empty falls back to audio.npcVoiceId so existing worlds are unchanged.
+  // Feminine defaults to Rachel (21m00…) so she/her NPCs sound distinct from
+  // the narrator out of the box.
   game.settings.register(MODULE_ID, "audio.npcVoiceFeminine", {
     name: "NPC voice — feminine (she/her)", scope: "world", config: false,
-    type: String, default: "",
+    type: String, default: "21m00Tcm4TlvDq8ikWAM",
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceMasculine", {
     name: "NPC voice — masculine (he/him)", scope: "world", config: false,
@@ -399,7 +401,7 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.clientEnabled", {
     name: "Enable audio narration on this client", scope: "client",
-    config: false, type: Boolean, default: false,
+    config: false, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "audio.volume", {
     name: "Audio volume", scope: "client", config: false,
@@ -2389,6 +2391,9 @@ async function handlePayThePriceCommand(message) {
     );
   }
 
+  await advanceClocksOnPayThePrice().catch(err =>
+    console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+
   // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
   scheduleOracleNarration({
     kind:       "pay_the_price",
@@ -2501,11 +2506,12 @@ async function postCombatTrackCard({ track, created }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
   const body  = created
-    ? `Created combat track <strong>${label}</strong>${rank}. Re-rank in the Progress Tracks panel if needed.`
+    ? `Created combat track <strong>${label}</strong>${rank}. This fight's progress lives in the Progress Tracks panel.`
     : `Resumed combat track <strong>${label}</strong>${rank}.`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p>`
+        + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button></p></div>`,
       flags:   { [MODULE_ID]: { combatTrackCard: true, created } },
     });
   } catch (err) {
@@ -2613,12 +2619,64 @@ async function postFaceDefeatPayThePriceCard() {
     await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
       console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
   }
+  await advanceClocksOnPayThePrice().catch(err =>
+    console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err));
   scheduleOracleNarration({
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
     question:   "Face Defeat",
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
   });
+}
+
+/**
+ * Advance countdown clocks in response to a Pay the Price. The module's clock
+ * contract is that tension clocks advance when you Pay the Price (clocks.js
+ * header; docs/clocks/clocks-scope.md) — wiring that was documented but never
+ * built (playtest finding #10: "I had a pay the price this session, but the vow
+ * clock is unmoved"). This advances, by one segment:
+ *   - every active campaignState tension clock (the !clock / Clocks panel), and
+ *   - the countdown clock on each player character's active vows (e.g. the
+ *     inciting incident's "Dani's captivity" clock, stored on the vow item).
+ * Campaign clocks are untouched (they advance at Begin a Session). GM-gated —
+ * world/actor writes are GM-only, so on a player client this is a silent no-op.
+ */
+async function advanceClocksOnPayThePrice() {
+  if (!game.user?.isGM) return;
+  const advanced = [];
+
+  try {
+    const { advanceTensionClocksForPayThePrice } = await import("./clocks/clocks.js");
+    for (const c of await advanceTensionClocksForPayThePrice()) {
+      advanced.push({ name: c.name, filled: c.filled, segments: c.segments, triggered: c.triggered });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: tension clocks failed:`, err?.message ?? err);
+  }
+
+  try {
+    const { getPlayerActors, advanceVowClocks } = await import("./character/actorBridge.js");
+    for (const actor of getPlayerActors()) {
+      for (const v of await advanceVowClocks(actor)) {
+        advanced.push({ name: v.name, filled: v.ticks, segments: v.max, triggered: v.triggered });
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: vow clocks failed:`, err?.message ?? err);
+  }
+
+  if (!advanced.length) return;
+  const lines = advanced.map(a =>
+    `<li>${escapeChatHtml(a.name)} — ${a.filled}/${a.segments}${a.triggered ? " <strong>(TRIGGERED)</strong>" : ""}</li>`,
+  ).join("");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-clock-card"><strong>⏳ The clock turns</strong><p>Paying the price advances the countdown:</p><ul>${lines}</ul></div>`,
+      flags:   { [MODULE_ID]: { clockCard: true, payThePriceAdvance: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: card post failed:`, err?.message ?? err);
+  }
 }
 
 async function postFulfillVowCard({ track, legacyTicks }) {
@@ -3506,6 +3564,25 @@ onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.setupCard) return;
   root.querySelector('[data-action="openTruthsDialog"]')
     ?.addEventListener("click", () => openSystemTruthsDialog());
+});
+
+/**
+ * Wire the "Open Progress Tracks" button on the Enter the Fray combat-track
+ * card (playtest finding #9: the combat track lives only in the module panel
+ * and players couldn't find it). One click opens the panel where the fight's
+ * progress, rank, and in-control / bad-spot position live.
+ */
+onChatMessageRender((message, root) => {
+  if (!message.flags?.[MODULE_ID]?.combatTrackCard) return;
+  const btn = root.querySelector('[data-action="openProgressTracks"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openProgressTracks();
+  });
 });
 
 /**

@@ -313,6 +313,23 @@ export async function createEntityJournals(sector, campaignState) {
     } catch (err) {
       console.error(`${MODULE_ID} | sectorGenerator: failed to lock connection ${connectionJournalId}:`, err);
     }
+
+    // Mirror the sector connection onto every existing PC's Connections tab so
+    // it shows on the character sheet (createCharacterBondItem is idempotent).
+    // When the sector is generated before any PC exists (quickstart order) this
+    // no-ops, and the PC-creation backfill in quickstart.js handles it instead.
+    try {
+      const { getConnection } = await import("../entities/connection.js");
+      const { getPlayerActors, createCharacterBondItem } = await import("../character/actorBridge.js");
+      const conn = getConnection(connectionJournalId);
+      if (conn?._id) {
+        for (const pc of getPlayerActors()) {
+          await createCharacterBondItem(pc, { name: conn.name, rank: conn.rank, connectionId: conn._id });
+        }
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sectorGenerator: connection→PC link failed:`, err?.message ?? err);
+    }
   }
 
   return { settlements, connectionJournalId };

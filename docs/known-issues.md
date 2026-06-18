@@ -1522,11 +1522,21 @@ work correctly.
 
 ### ASSEMBLER-002 — Progress tracks section always empty ✓
 
-**Resolved in:** Post-session-3 hardening
+**Resolved in:** Post-session-3 hardening; **flag-location follow-up:** v1.7.16
 
 **Fix:** `buildProgressTracksSection` now loads the dedicated "Starforged
 Progress Tracks" journal directly by name instead of scanning
 `campaignState.progressTrackIds`.
+
+**Follow-up (v1.7.16):** the original fix loaded the right journal but read
+the tracks from `journal.pages.contents[0].flags` (page-level) while
+`progressTracks.js` writes them with `journal.setFlag(...)` (document-level) —
+so the section was *still* always empty in live play, including for an open
+combat track. This surfaced as playtest finding #9 ("it claims there is a
+combat progress, but I don't know where"): the narrator never saw the track
+in context. `buildProgressTracksSection` now reads `journal.getFlag(MODULE_ID,
+"tracks")` (document-level), matching the writer. The unit test previously
+mocked the page-level shape, masking the bug; it now mocks `getFlag`.
 
 ---
 

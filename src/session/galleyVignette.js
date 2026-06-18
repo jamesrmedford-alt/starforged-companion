@@ -165,12 +165,24 @@ function truncate(s, max) {
  */
 export async function postGalleyVignetteCard({ text, kind, sessionId = null }) {
   await globalThis.ChatMessage?.create?.({
-    content: `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
+    content:
+      `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong>` +
+      `<p class="sf-narration-prose">${escapeHtml(stripMarkup(text))}</p>` +
+      `<div class="sf-narration-footer">` +
+      `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
+      `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +
+      `</div></div>`,
+    // narratorCard + narrationText bring the card into the audio render path
+    // (onChatMessageRender gates on narratorCard; audio synthesises narrationText,
+    // which keeps any <npc> markup for voice splitting). The display prose above
+    // is already markup-stripped.
     flags:   {
       [MODULE_ID]: {
         sessionVignetteCard: true,
         vignetteKind:        kind,
         sessionId:           sessionId ?? "",
+        narratorCard:        true,
+        narrationText:       text,
       },
     },
   });

@@ -112,6 +112,25 @@ to matter" filter only at dial 0–5.
 Read commitment from what the player describes, not from whether they used a
 specific verb.
 
+COMBAT IS ACTIVE — when the CURRENT SCENE below reports "COMBAT STATUS:
+ACTIVE", a fight is underway and this rule OVERRIDES every category dial:
+
+  - Classify as MOVE any input that describes a character action — attacking,
+    shooting, striking, maneuvering, taking cover, using gear, or speaking
+    with stakes (threatening, demanding, pleading under fire) — in ANY
+    category, not just combat. The player's words are their DESIRED outcome, a
+    suggestion to the narrator; the roll decides what actually happens.
+  - A player may NOT narrate the result of an action against an adversary for
+    free. "I gun down the raiders", "I catch one in the arm", "I take out the
+    turret" are attempts (MOVE), never accomplished facts (NARRATIVE) — even
+    when phrased in the past tense or as a finished deed. This is the whole
+    point of combat: outcomes are earned with dice, not asserted.
+  - The ONLY inputs that stay NARRATIVE during active combat are those with NO
+    character action: pure observation ("the bay fills with smoke"), internal
+    monologue ("I wonder if they'll break"), or a question to the narrator.
+  - Never answer NARRATIVE_WITH_MOVE_AVAILABLE during active combat — if a move
+    is available, the answer is MOVE.
+
 MOVEMENT WITH STAKES — if the input expresses movement or travel intent
 (setting out, picking a route, closing on a destination) AND there is an
 established hazard or explicit time pressure — in the input itself OR the
@@ -216,11 +235,16 @@ FATE
  */
 export function buildClassifierContext({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
+  combatActive = false,
 }) {
   const effective = {};
   for (const cat of PACING_CATEGORIES) {
     effective[cat] = effectiveDial(cat, pacingConfig);
   }
+  // A fight in progress is a high-roll context regardless of the configured
+  // combat dial — pin it to 10 so an in-combat action is never waved through as
+  // narration. The cross-category override lives in the COMBAT IS ACTIVE rule.
+  if (combatActive) effective.combat = 10;
 
   const overrideLabel = pacingConfig?.sceneOverride?.label
     ? `${pacingConfig.sceneOverride.label} (${pacingConfig.sceneOverride.modifier >= 0 ? "+" : ""}${pacingConfig.sceneOverride.modifier})`
@@ -231,6 +255,9 @@ export function buildClassifierContext({
 
   const connectionLine = formatConnections(campaignState, character);
   const sceneLine      = formatScene(campaignState);
+  const combatLine     = combatActive
+    ? "COMBAT STATUS: ACTIVE — a fight is underway. Apply the COMBAT IS ACTIVE rule: any input describing a character action is a MOVE; the player's words are a suggested outcome, not an established fact."
+    : null;
 
   const parts = [
     "## PACING DIALS (effective values)",
@@ -250,6 +277,7 @@ export function buildClassifierContext({
     connectionLine,
     "",
     "## CURRENT SCENE",
+    ...(combatLine ? [combatLine] : []),
     sceneLine || "(no scene context available)",
     "",
     "## PLAYER INPUT",
@@ -294,13 +322,13 @@ export function buildClassifierContext({
  */
 export async function classifyInput({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  apiKey, model,
+  apiKey, model, combatActive = false,
 }) {
   if (!apiKey)             return fallbackDecision("missing api key");
   if (!playerText?.trim()) return fallbackDecision("empty input");
 
   const { systemPrompt, userMessage } = buildClassifierContext({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, combatActive,
   });
 
   try {

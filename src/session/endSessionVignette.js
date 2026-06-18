@@ -172,12 +172,21 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState) {
  */
 export async function postEndSessionVignetteCard({ text, npcName, sessionId = null }) {
   await globalThis.ChatMessage?.create?.({
-    content: `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
+    content:
+      `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong>` +
+      `<p class="sf-narration-prose">${escapeHtml(stripMarkup(text))}</p>` +
+      `<div class="sf-narration-footer">` +
+      `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
+      `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +
+      `</div></div>`,
+    // narratorCard + narrationText bring the card into the audio render path.
     flags:   {
       [MODULE_ID]: {
         sessionVignetteCard: true,
         vignetteKind:        "npc_end",
         sessionId:           sessionId ?? "",
+        narratorCard:        true,
+        narrationText:       text,
       },
     },
   });

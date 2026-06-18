@@ -238,6 +238,22 @@ async function createQuickstartPc({ setActive = false } = {}) {
     console.warn(`${MODULE_ID} | quickstart: no Path assets found in the canonical pack`);
   }
 
+  // Backfill connection bonds: the quickstart sector (phase 2) is generated
+  // before the PCs (phase 3), so its connection NPC(s) have no bond Item on the
+  // sheet yet. Mirror every tracked connection onto this PC's Connections tab
+  // (createCharacterBondItem is idempotent, so this is safe alongside the
+  // sector-path linking).
+  try {
+    const { listConnections }          = await import("../entities/connection.js");
+    const { createCharacterBondItem }  = await import("../character/actorBridge.js");
+    const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    for (const conn of listConnections(cs)) {
+      await createCharacterBondItem(actor, { name: conn.name, rank: conn.rank, connectionId: conn._id });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | quickstart: connection backfill failed:`, err?.message ?? err);
+  }
+
   if (setActive) {
     await game.settings.set(MODULE_ID, "activeCharacterId", actor.id).catch(err =>
       console.warn(`${MODULE_ID} | quickstart: activeCharacterId set failed:`, err));

@@ -211,7 +211,15 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
           `<span class="sf-incite-hint">Creates ${creates}.</span>` +
           `</div>`;
     }
-    body = `${sparkLine}${proseHtml}${vowHtml}${actionHtml}`;
+    // Audio controls — the card already carries narratorCard + narrationText
+    // (set in postIncitingIncidentCard), so the audio render hook plays the
+    // prose once these buttons are present.
+    const audioFooter =
+      `<div class="sf-narration-footer">` +
+      `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
+      `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +
+      `</div>`;
+    body = `${sparkLine}${proseHtml}${audioFooter}${vowHtml}${actionHtml}`;
   }
 
   return `<div class="sf-incite-card"><strong>✦ Inciting Incident</strong>${body}</div>`;
@@ -303,5 +311,22 @@ export async function runIncitingIncident(campaignState) {
     fallback:  !text,
     sessionId: campaignState?.currentSessionId ?? null,
   });
+
+  // Capture entities the opening fiction invented (e.g. a new faction) into the
+  // World Journal / Entities review. The inciting path does NOT go through the
+  // move pipeline's post-narration detection, so run the same detection the
+  // paced-narrative path uses. GM-gated; fail-open. (Playtest: the "Velvet
+  // Knife" faction was invented in the inciting prose but never recorded until
+  // it happened to recur in a later move.)
+  if (text && globalThis.game?.user?.isGM) {
+    try {
+      const { runPacedDetection } = await import("../narration/narrator.js");
+      const { prose } = splitIncitingMeta(text);
+      await runPacedDetection(prose, campaignState ?? {});
+    } catch (err) {
+      console.warn(`${MODULE_ID} | runIncitingIncident: entity detection failed:`, err?.message ?? err);
+    }
+  }
+
   return { spark, text };
 }

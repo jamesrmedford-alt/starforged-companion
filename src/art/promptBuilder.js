@@ -116,6 +116,35 @@ export function buildRegenerationPrompt(entityType, sourceDescription, entity = 
   };
 }
 
+/**
+ * Build a neutral prompt from the entity's card fields alone — style anchor,
+ * type style, and structured context (gender / role / type) — dropping the
+ * narrator scene description entirely.
+ *
+ * Used as the moderation-retry fallback: the scene prose (a kidnapping,
+ * raiders, blood) is the usual content-filter trigger, and a portrait rarely
+ * needs it. The narration remains the authoritative description; this just
+ * lets the image succeed instead of failing outright.
+ *
+ * @param {string} entityType
+ * @param {Object} [entity]
+ * @returns {{ prompt: string, size: string }}
+ */
+export function buildNeutralPortraitPrompt(entityType, entity = {}) {
+  const typeStyle = TYPE_STYLE[entityType] ?? TYPE_STYLE.connection;
+  const prompt = [
+    STYLE_ANCHOR,
+    typeStyle,
+    buildEntityContext(entityType, entity),
+  ].filter(Boolean).join(". ");
+
+  const size = entityType === "ship" || entityType === "planet"
+    ? "1792x1024"
+    : "1024x1024";
+
+  return { prompt, size };
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXTRACTION
@@ -207,6 +236,20 @@ function sanitiseForPolicy(text, _entityType) {
     "weathered and haggard");
   s = s.replace(/\b(sickness|sick|disease|diseased|plague)\b/gi,
     "visibly worn");
+
+  // Captivity / abduction → neutral guarded bearing. A portrait rarely needs
+  // the kidnapping context, and image moderation (e.g. Black Forest Labs)
+  // flags it as Violence; the narration stays the authoritative description.
+  s = s.replace(/\b(kidnapp?ed|kidnapping|kidnap|abducted|abduction|captive|captivity|hostages?|prisoners?|imprisoned|shackled|chained|gagged)\b/gi,
+    "with a wary, guarded bearing");
+
+  // Raiders / marauders / pirates / slavers → neutral rough-edged spacer.
+  s = s.replace(/\b(raiders?|raiding|marauders?|pirates?|slavers?)\b/gi,
+    "rough-edged spacer");
+
+  // Direct violence vocabulary → hardened, weathered.
+  s = s.replace(/\b(torture[d]?|beaten|brutal|brutality|assault(?:ed)?|violence|violent|massacre[d]?|slaughter(?:ed)?)\b/gi,
+    "hardened");
 
   return s;
 }

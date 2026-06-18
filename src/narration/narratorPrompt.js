@@ -1012,7 +1012,13 @@ export function buildNarratorSystemPrompt(
     `### DEPICT, DO NOT OFFER\n\n` +
     `${ANTI_SUGGESTION_CLAUSE}\n\n` +
     `### STYLE\n\n` +
-    styleLines.join('\n')
+    styleLines.join('\n') + `\n\n` +
+    `### DIALOGUE\n\n` +
+    `When a character speaks, write their words in the first person — a speaking ` +
+    `character refers to themselves as "I"/"me", never in the third person. A ` +
+    `captured or absent character pleading over the comm says "if you want me ` +
+    `back," not "if you want her back." Use third person only for what the ` +
+    `narrator or OTHER characters say about someone, never for that person's own speech.`
   );
 
   // [0b] Campaign recap — injected at session start only

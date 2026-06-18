@@ -42,11 +42,14 @@ export const ELEVENLABS_MODELS = Object.freeze([
 /**
  * Default voice IDs from ElevenLabs' public sample library — used as
  * settings defaults so the feature works on first open without forcing
- * the GM to pick voices before testing. Rachel = `21m00Tcm4TlvDq8ikWAM`,
- * Adam = `pNInz6obpgDQGcFmaJgB`.
+ * the GM to pick voices before testing.
+ *   Narrator default = `fNmw8sukfGuvWVOp33Ge`.
+ *   Feminine NPC default (she/her) = Rachel `21m00Tcm4TlvDq8ikWAM`.
+ *   Generic NPC fallback = Adam `pNInz6obpgDQGcFmaJgB`.
  */
-export const DEFAULT_NARRATOR_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
-export const DEFAULT_NPC_VOICE_ID      = "pNInz6obpgDQGcFmaJgB";
+export const DEFAULT_NARRATOR_VOICE_ID      = "fNmw8sukfGuvWVOp33Ge";
+export const DEFAULT_NPC_VOICE_ID           = "pNInz6obpgDQGcFmaJgB";
+export const DEFAULT_NPC_FEMININE_VOICE_ID  = "21m00Tcm4TlvDq8ikWAM";
 
 function trimKey(apiKey) {
   return typeof apiKey === "string" ? apiKey.trim() : "";

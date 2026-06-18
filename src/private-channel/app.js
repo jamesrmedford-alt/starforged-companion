@@ -151,30 +151,37 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.turns.push(playerTurn);
     appendToBuffer(this.userId, playerTurn);
     this.busy = true;
-    await this.render();
+    try {
+      await this.render();
 
-    const campaignState  = game.settings?.get?.(MODULE_ID, "campaignState") ?? {};
-    const result = await requestPrivateNarration({
-      campaignState,
-      userId:          this.userId,
-      actorId:         this.#resolveActorId(),
-      transcriptTurns: this.turns.map(t => `${t.name}: ${t.text}`),
-      playerMessage:   message,
-    });
+      const campaignState  = game.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+      const result = await requestPrivateNarration({
+        campaignState,
+        userId:          this.userId,
+        actorId:         this.#resolveActorId(),
+        transcriptTurns: this.turns.map(t => `${t.name}: ${t.text}`),
+        playerMessage:   message,
+      });
 
-    this.busy = false;
-    if (result.ok) {
-      const narratorTurn = { who: "narrator", name: "Narrator", text: result.text };
-      this.turns.push(narratorTurn);
-      appendToBuffer(this.userId, narratorTurn);
-      scheduleDebouncedWrite(this.userId);
-    } else {
-      this.errorBanner = {
-        "no-key":       "Add your Claude API key in Companion Settings → About.",
-        "no-character": "Set up your character first.",
-        "empty":        "The narrator had nothing to say — try rephrasing.",
-        "error":        "The narrator call failed. Your message is preserved; try again.",
-      }[result.reason] ?? "Something went wrong. Try again.";
+      if (result.ok) {
+        const narratorTurn = { who: "narrator", name: "Narrator", text: result.text };
+        this.turns.push(narratorTurn);
+        appendToBuffer(this.userId, narratorTurn);
+        scheduleDebouncedWrite(this.userId);
+      } else {
+        this.errorBanner = {
+          "no-key":       "Add your Claude API key in Companion Settings → About.",
+          "no-character": "Set up your character first.",
+          "empty":        "The narrator had nothing to say — try rephrasing.",
+          "error":        "The narrator call failed. Your message is preserved; try again.",
+        }[result.reason] ?? "Something went wrong. Try again.";
+      }
+    } finally {
+      // Always clear the busy guard, even if render() or the narrator call
+      // throws. Otherwise a single failure wedges the channel — every later
+      // send hits `if (this.busy) return` and silently no-ops. Same
+      // guard-not-released-on-throw class as the move pipeline pendingMove lock.
+      this.busy = false;
     }
     await this.render();
   }
