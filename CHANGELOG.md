@@ -10,6 +10,9 @@ All notable changes to Starforged Companion are documented here.
 - Changed: **New default voices.** The narrator uses a new default voice, and she/her NPCs default to a distinct feminine voice (Rachel) so they no longer sound like the narrator.
 - Fixed: **Companion panel buttons are always readable.** Buttons in the Settings, Progress Tracks, and Entities panels now use dark text on a light button, instead of pale text that could disappear against a light background.
 - Fixed: **The opening galley vignette can be turned off.** Begin a Session now has an "Include an opening galley vignette" checkbox (on by default); unchecking it skips the narrator-written opening scene. Previously the scene ran regardless of the Spotlight Vignette checkbox.
+- Fixed: **The inciting incident and session vignettes are voiced.** The Envision Inciting Incident card and the opening/closing session vignettes now carry Play/Stop buttons and are narrated with audio like every other narrator card.
+- Fixed: **Entities the inciting incident invents are captured.** The opening fiction now runs the same entity detection as the rest of play, so a faction or character named in your campaign's opening is recorded (or offered for review) instead of being lost until it happens to recur later.
+- Fixed: **A sector's connection NPC now appears on your character sheet.** Sector creation links the generated connection to your player character(s) Connections tab — including when the sector is built before the characters (e.g. via the Playtest Quickstart). Previously the NPC existed only in the sector's folder.
 
 ## [1.7.15] — 2026-06-18
 
