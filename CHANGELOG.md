@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Changed: **During a fight, your actions are rolled, not narrated.** Once combat is active (an open combat track), any action you describe — shooting, maneuvering, taking cover, or threatening under fire — is treated as a suggested outcome that triggers a move and a roll, in any category. You can no longer end a fight by simply asserting that you cut down the enemy; the dice decide. Pure observation ("the bay fills with smoke") still reads as narration.
+
 - Changed: **Audio narration is on by default.** New worlds start with audio enabled (world and per-client), so once you add your ElevenLabs key in Companion Settings → About, narrator cards play without flipping any toggles. You can still turn it off per client, and prose stays click-to-play (no surprise autoplay).
 - Changed: **New default voices.** The narrator uses a new default voice, and she/her NPCs default to a distinct feminine voice (Rachel) so they no longer sound like the narrator.
 - Fixed: **Companion panel buttons are always readable.** Buttons in the Settings, Progress Tracks, and Entities panels now use dark text on a light button, instead of pale text that could disappear against a light background.

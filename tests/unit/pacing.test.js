@@ -36,9 +36,14 @@ vi.mock('../../src/pacing/telemetry.js', () => ({
   logPacingDecision: vi.fn(async () => {}),
 }));
 
+vi.mock('../../src/ui/progressTracks.js', () => ({
+  listProgressTracks: vi.fn(async () => []),
+}));
+
 import { apiPost } from '../../src/api-proxy.js';
 import { narratePacedInput } from '../../src/narration/narrator.js';
 import { logPacingDecision } from '../../src/pacing/telemetry.js';
+import { listProgressTracks } from '../../src/ui/progressTracks.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -215,6 +220,62 @@ describe('classifier system prompt — dial-driven decision guidance', () => {
     const { systemPrompt } = buildClassifierContext(baseArgs());
     expect(systemPrompt).toMatch(/9[–-]10:\s*classify as MOVE whenever the player describes a character action/);
     expect(systemPrompt).toMatch(/inputs that contain NO character action/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Combat-active pacing — actions during a fight are forced to MOVE
+// ---------------------------------------------------------------------------
+
+describe('classifier — combat active', () => {
+  it('the system prompt carries the COMBAT IS ACTIVE override rule', () => {
+    const { systemPrompt } = buildClassifierContext({
+      playerText: 'x', campaignState: BASE_STATE, character: null,
+      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: BASE_PACING_CFG,
+    });
+    expect(systemPrompt).toMatch(/COMBAT IS ACTIVE/);
+    expect(systemPrompt).toMatch(/may NOT narrate the result of an action against an adversary/i);
+    expect(systemPrompt).toMatch(/Never answer NARRATIVE_WITH_MOVE_AVAILABLE during active combat/);
+  });
+
+  it('adds a COMBAT STATUS: ACTIVE line and pins the combat dial to 10 when active', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText: 'I gun down the raiders',
+      campaignState: BASE_STATE,
+      character: { name: 'Kira' },
+      recentMoveDensity: { count: 0, window: 5 },
+      pacingConfig: { ...BASE_PACING_CFG, dials: { ...BASE_PACING_CFG.dials, combat: 6 } },
+      combatActive: true,
+    });
+    expect(userMessage).toContain('COMBAT STATUS: ACTIVE');
+    expect(userMessage).toMatch(/combat:\s+10\/10/);
+  });
+
+  it('omits the COMBAT STATUS line and keeps the configured dial when not active', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText: 'I look around',
+      campaignState: BASE_STATE,
+      character: null,
+      recentMoveDensity: { count: 0, window: 5 },
+      pacingConfig: { ...BASE_PACING_CFG, dials: { ...BASE_PACING_CFG.dials, combat: 6 } },
+    });
+    expect(userMessage).not.toContain('COMBAT STATUS');
+    expect(userMessage).toMatch(/combat:\s+6\/10/);
+  });
+
+  it('classifyInput renders COMBAT STATUS: ACTIVE into the API call when combatActive', async () => {
+    apiPost.mockReset();
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'strike', category: 'combat', confidence: 0.9,
+    }));
+    await classifyInput({
+      playerText: 'I fire at the gunner',
+      campaignState: BASE_STATE, character: { name: 'Kira' },
+      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: BASE_PACING_CFG,
+      apiKey: 'sk-ant-test', combatActive: true,
+    });
+    const body = apiPost.mock.calls[0][2];
+    expect(body.messages[0].content).toContain('COMBAT STATUS: ACTIVE');
   });
 });
 
@@ -412,6 +473,8 @@ describe('routePacedInput()', () => {
     apiPost.mockReset();
     narratePacedInput.mockReset();
     logPacingDecision.mockReset();
+    listProgressTracks.mockReset();
+    listProgressTracks.mockResolvedValue([]);   // default: no combat in progress
     resetRecentDensity();
 
     game.settings._store.clear();
@@ -571,6 +634,85 @@ describe('routePacedInput()', () => {
     expect(result.runMove).toBe(true);
     expect(apiPost).not.toHaveBeenCalled();
     expect(state.pacing.forceNextAsMove).toBe(false);
+  });
+
+  it('forces NARRATIVE_WITH_MOVE_AVAILABLE to MOVE when combat is active', async () => {
+    listProgressTracks.mockResolvedValue([{ id: 'c1', type: 'combat', completed: false }]);
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE_WITH_MOVE_AVAILABLE',
+      suggestedMove: 'strike',
+      category: 'combat',
+      confidence: 0.7,
+      reasoning: 'could strike',
+    }));
+
+    const result = await routePacedInput({
+      playerText: 'I line up a shot on the gunner',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+    });
+
+    expect(result.runMove).toBe(true);
+    expect(result.decision).toBe('MOVE');
+    expect(narratePacedInput).not.toHaveBeenCalled();
+  });
+
+  it('leaves plain NARRATIVE intact during combat (pure observation, no action)', async () => {
+    listProgressTracks.mockResolvedValue([{ id: 'c1', type: 'combat', completed: false }]);
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE',
+      suggestedMove: null,
+      category: 'combat',
+      confidence: 0.8,
+      reasoning: 'pure observation',
+    }));
+
+    const result = await routePacedInput({
+      playerText: 'The bay fills with smoke and the alarms keep wailing',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: null,
+      apiKey: 'sk-ant-test',
+    });
+
+    expect(result.runMove).toBe(false);
+    expect(result.decision).toBe('NARRATIVE');
+    expect(narratePacedInput).toHaveBeenCalledTimes(1);
+  });
+
+  it('threads combatActive into the classifier when a combat track is open', async () => {
+    listProgressTracks.mockResolvedValue([{ id: 'c1', type: 'combat', completed: false }]);
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'clash', category: 'combat', confidence: 0.9,
+    }));
+
+    await routePacedInput({
+      playerText: 'I dive behind the crates and return fire',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+    });
+
+    const body = apiPost.mock.calls[0][2];
+    expect(body.messages[0].content).toContain('COMBAT STATUS: ACTIVE');
+  });
+
+  it('does not force when the only combat track is completed', async () => {
+    listProgressTracks.mockResolvedValue([{ id: 'c1', type: 'combat', completed: true }]);
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'compel',
+      category: 'social', confidence: 0.6, reasoning: 'post-fight talk',
+    }));
+
+    const result = await routePacedInput({
+      playerText: 'I ask if they are ready to talk now',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+    });
+
+    expect(result.runMove).toBe(false);
+    expect(result.decision).toBe('NARRATIVE_WITH_MOVE_AVAILABLE');
   });
 });
 

@@ -178,10 +178,22 @@ export async function routePacedInput({
   const sceneTag = campaignState?.currentSessionId ?? "global";
 
   const recentMoveDensity = getRecentMoveDensity(pacingConfig.densityWindow);
+  const combatActive      = await detectCombatActive();
 
   const result = await classifyInput({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive,
   });
+
+  // Backstop: during an active fight the classifier must not hedge. If it
+  // returned NARRATIVE_WITH_MOVE_AVAILABLE it already identified a move — in
+  // combat, that means roll it. Plain NARRATIVE (pure observation, no action)
+  // is left untouched. Mirrors the COMBAT IS ACTIVE rule in the classifier so
+  // the routing holds even when the model under-commits — a player can't end a
+  // fight by asserting an outcome against an adversary as narration.
+  if (combatActive && result.decision === PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE) {
+    result.decision  = PACING_DECISION.MOVE;
+    result.reasoning = `[combat-active backstop: NWMA→MOVE] ${result.reasoning ?? ""}`.trim();
+  }
 
   // Record the decision for both the in-memory density window and the
   // persistent telemetry journal.
@@ -230,6 +242,28 @@ export async function routePacedInput({
     confidence: result.confidence,
     reasoning: result.reasoning,
   };
+}
+
+/**
+ * Detect whether a fight is currently underway — i.e. there is at least one
+ * open (non-completed) combat progress track. When true, the classifier and
+ * router force player actions through the move pipeline so combat outcomes are
+ * earned with dice rather than asserted as narration (playtest finding:
+ * "I was able to thwart the drama during combat by asserting outcomes").
+ *
+ * Lazy-imports progressTracks to avoid load-order coupling, and fails open to
+ * `false` (no combat) so a storage hiccup never blocks normal narration.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function detectCombatActive() {
+  try {
+    const { listProgressTracks } = await import("../ui/progressTracks.js");
+    const tracks = await listProgressTracks();
+    return Array.isArray(tracks) && tracks.some(t => t.type === "combat" && !t.completed);
+  } catch {
+    return false;
+  }
 }
 
 async function clearForceMove(campaignState) {
