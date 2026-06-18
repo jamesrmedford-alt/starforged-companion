@@ -17,6 +17,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Confirmed factions are recorded in the World Journal — Factions page.** A faction captured as an entity never appeared in the Factions journal, leaving it empty; it is now mirrored there as established lore (linked to the entity record).
 - Fixed: **NPCs speak in the first person.** A captured or absent character speaking over the comm no longer refers to themselves in the third person ("if you want her back" from the captive herself); the narrator now keeps a speaking character's own words in first person.
 - Fixed: **Move pipeline no longer locks up when the suffer dialog is dismissed via the X button.** Closing the "Resolve consequence" dialog without clicking a button (Cancel or an option) left the move pipeline permanently locked, preventing any further moves with a "A move is already being resolved" toast. The dialog now correctly releases the pipeline lock on window close.
+- Fixed: **The private channel no longer wedges if a narrator turn fails.** A render or narrator-call error mid-send could leave the private channel permanently "busy", silently ignoring every later message; the busy state is now always cleared.
 
 ## [1.7.15] — 2026-06-18
 
