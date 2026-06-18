@@ -36,6 +36,46 @@ single-word move names in the prose body cannot false-match.
 
 ---
 
+## Combat cards carry move buttons: TDA on blow-by-blow cards, Battle only at fight start
+
+**Decision:** Two chat-card affordances, both built on the existing forced-move
+bridge (`flags[MODULE].forcedMoveId` + `bypassPacing` → `buildForcedInterpretation`,
+the same path as the NWMA "Roll <move>" button and the token-drag Set a Course):
+
+1. **Take Decisive Action button** appears on the result cards of the four
+   blow-by-blow combat moves only — `TDA_OFFER_MOVES = {strike, clash,
+   gain_ground, react_under_fire}` in `src/index.js`. Deliberately **not** on
+   Enter the Fray (the fight just started — zero progress, so a TDA roll is
+   almost always a trap), nor on Take Decisive Action / Face Defeat / Battle
+   (the fight is already ending). Posting still routes through
+   `confirmInterpretation`, so it is never fired silently.
+2. **Battle button** appears on the Enter the Fray combat-track card **only when
+   the track is freshly created** (`created === true`), never on a resumed
+   track. Battle replaces the whole blow-by-blow minigame with a single roll;
+   once progress is on the track the player has committed to the track, so the
+   bypass is offered only at the moment the objective is established (the
+   reporter's framing: "when establishing a combat progress meter and objective,
+   there should be a separate option to battle instead"). `battle`'s resolver
+   already sets `endCombat` on every outcome (`resolver.test.js`), so clicking it
+   cleanly completes the track Enter the Fray just opened — no orphan track.
+
+The two render handlers (`wireTakeDecisiveActionButton`,
+`wireCombatTrackCardButtons`) are exported from `src/index.js` so Quench can
+drive them with a synthetic message + detached root (same approach as the audio
+card handlers); behaviour is covered by the `combatCardButtons` Quench batch.
+
+**Rejected:**
+- *Show the TDA button on every combat card (incl. Enter the Fray)* — rejected;
+  it would invite a 0-progress TDA the instant a fight starts.
+- *Offer Battle on resumed/in-progress tracks too* — rejected; Battle discards
+  the track's accumulated progress, so offering it mid-fight is a trap and
+  contradicts the "when establishing" framing.
+- *Open a free-text dialog so the player narrates the TDA/Battle* — rejected as
+  scope creep; the canned narration + the existing confirm dialog are enough,
+  and match how the NWMA button already re-posts.
+
+---
+
 ## The interpreter is fed the combat position and forced to a position-legal move
 
 **Decision:** When a single combat track is active, `getActiveCombatPosition()`

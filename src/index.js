@@ -2539,10 +2539,22 @@ async function postCombatTrackCard({ track, created }) {
   const body  = created
     ? `Created combat track <strong>${label}</strong>${rank}. This fight's progress lives in the Progress Tracks panel.`
     : `Resumed combat track <strong>${label}</strong>${rank}.`;
+  // Battle is the alternative to the blow-by-blow track: one roll resolves the
+  // whole fight (and ends this track via endCombat). Only offered when the
+  // track is freshly established — once progress is on the track, the player
+  // has already committed to the blow-by-blow.
+  const battleBtn = created
+    ? ` <button type="button" data-action="sf-battle" class="entity-btn" title="Resolve the entire fight with a single roll instead of the blow-by-blow track">⚔ Battle instead</button>`
+    : "";
+  const battleHint = created
+    ? `<p class="sf-card-hint">Prefer to settle it in one stroke? <strong>Battle</strong> resolves the whole fight with a single roll instead of marking the track move by move.</p>`
+    : "";
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p>`
-        + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button></p></div>`,
+        + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button>${battleBtn}</p>`
+        + battleHint
+        + `</div>`,
       flags:   { [MODULE_ID]: { combatTrackCard: true, created } },
     });
   } catch (err) {
@@ -3222,6 +3234,13 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   }
 }
 
+// Combat blow-by-blow moves after which the player may want to cash in the
+// combat progress track via Take Decisive Action. Their result cards carry a
+// "Take Decisive Action" button. Enter the Fray (fight just started — no
+// progress yet), Take Decisive Action itself, Face Defeat, and Battle are
+// excluded.
+const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
+
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null) {
   return ChatMessage.create({
     content: formatMoveResult(resolution, aside, burnState, improveState),
@@ -3229,6 +3248,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
+        ...(TDA_OFFER_MOVES.has(resolution.moveId) ? { combatMoveCard: true } : {}),
         ...(burnState ? { burn: burnState } : {}),
         ...(improveState ? { improve: improveState } : {}),
       },
@@ -3270,6 +3290,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
+      ${TDA_OFFER_MOVES.has(resolution.moveId)
+        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Take Decisive Action</button></div>`
+        : ""}
     </div>
   `.trim();
 }
@@ -3600,23 +3623,55 @@ onChatMessageRender((message, root) => {
 });
 
 /**
- * Wire the "Open Progress Tracks" button on the Enter the Fray combat-track
- * card (playtest finding #9: the combat track lives only in the module panel
- * and players couldn't find it). One click opens the panel where the fight's
- * progress, rank, and in-control / bad-spot position live.
+ * Wire the buttons on the Enter the Fray combat-track card:
+ *  - "Open Progress Tracks" (playtest finding #9: the combat track lives only
+ *    in the module panel and players couldn't find it) opens the panel where
+ *    the fight's progress, rank, and in-control / bad-spot position live.
+ *  - "Battle instead" (only present on freshly-created tracks) re-posts a forced
+ *    battle move to resolve the whole fight in one roll.
+ *
+ * Exported so Quench can drive it with a synthetic message + root (same pattern
+ * as the audio card handlers).
  */
-onChatMessageRender((message, root) => {
-  if (!message.flags?.[MODULE_ID]?.combatTrackCard) return;
-  const btn = root.querySelector('[data-action="openProgressTracks"]');
-  if (!btn) return;
-  const fresh = btn.cloneNode(true);
-  btn.replaceWith(fresh);
-  fresh.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openProgressTracks();
-  });
-});
+export function wireCombatTrackCardButtons(message, root) {
+  if (!message?.flags?.[MODULE_ID]?.combatTrackCard) return;
+
+  const btn = root?.querySelector?.('[data-action="openProgressTracks"]');
+  if (btn) {
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openProgressTracks();
+    });
+  }
+
+  // "Battle instead" — resolve the whole fight in one roll. Re-posts a forced
+  // battle move (same forced-move bridge as the NWMA "Roll <move>" button).
+  // battle's resolver sets endCombat, so the track created by Enter the Fray
+  // is closed when the move resolves.
+  const battleBtn = root?.querySelector?.('[data-action="sf-battle"]');
+  if (battleBtn) {
+    const freshBattle = battleBtn.cloneNode(true);
+    battleBtn.replaceWith(freshBattle);
+    freshBattle.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      freshBattle.disabled = true;
+      try {
+        await ChatMessage.create({
+          content: "Battle — resolve the fight in a single, decisive clash.",
+          flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "battle" } },
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | Battle button failed:`, err);
+        freshBattle.disabled = false;
+      }
+    });
+  }
+}
+onChatMessageRender((message, root) => wireCombatTrackCardButtons(message, root));
 
 /**
  * Wire the "Correct a fact" button on narrator cards
@@ -3693,6 +3748,40 @@ onChatMessageRender((message, root) => {
     }
   });
 });
+
+/**
+ * Wire the "Take Decisive Action" button on combat move result cards
+ * (Strike / Clash / Gain Ground / React Under Fire). One click re-posts a
+ * forced take_decisive_action move so the player can cash in the combat
+ * progress track without retyping — same forced-move bridge as the NWMA
+ * "Roll <move>" button. The confirm dialog still appears, so the action is
+ * never fired silently.
+ *
+ * Exported so Quench can drive it with a synthetic message + root (same
+ * pattern as the audio card handlers).
+ */
+export function wireTakeDecisiveActionButton(message, root) {
+  if (!message?.flags?.[MODULE_ID]?.combatMoveCard) return;
+  const btn = root?.querySelector?.('[data-action="sf-take-decisive-action"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    try {
+      await ChatMessage.create({
+        content: "Take decisive action to seize the objective.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "take_decisive_action" } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | Take Decisive Action button failed:`, err);
+      fresh.disabled = false;
+    }
+  });
+}
+onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
 
 /**
  * Wire the "Roll <move>" button on NWMA cards.
