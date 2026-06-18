@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Docs: **Progress Tracks help page now explains the combat mini-game** — the two-track race (progress climbing vs. meters eroding), position (in control / bad spot) as the tempo lever, range (close quarters +iron / distance +edge for Strike and Clash), and the timing decision for Take Decisive Action including the bad-spot downgrade rule.
+
 ## [1.7.16] — 2026-06-18
 
 - Changed: **During a fight, your actions are rolled, not narrated.** Once combat is active (an open combat track), any action you describe — shooting, maneuvering, taking cover, or threatening under fire — is treated as a suggested outcome that triggers a move and a roll, in any category. You can no longer end a fight by simply asserting that you cut down the enemy; the dice decide. Pure observation ("the bay fills with smoke") still reads as narration.
