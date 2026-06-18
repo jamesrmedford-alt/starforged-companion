@@ -50,6 +50,14 @@ const TRACK_TYPES = {
   scene_challenge: 'Scene Challenge',
 };
 
+// Vows and connections have homes on the character sheet and connections tab;
+// the panel shows only the track types with no dedicated sheet panel.
+const PANEL_TRACK_TYPES = {
+  combat:          'Combat',
+  expedition:      'Expedition',
+  scene_challenge: 'Scene Challenge',
+};
+
 // ---------------------------------------------------------------------------
 // ProgressTrack data model (plain object, persisted in journal flags)
 // ---------------------------------------------------------------------------
@@ -266,11 +274,14 @@ export class ProgressTrackApp extends ApplicationV2 {
       };
     });
 
-    // Group: active (not completed) then completed.
-    const active = annotated.filter(t => !t.completed);
-    const completed = annotated.filter(t => t.completed);
+    // Panel shows only combat, expeditions, and scene challenges — vows and
+    // connections live on the character sheet and connections tab respectively.
+    const panelVisible = annotated.filter(t => t.type in PANEL_TRACK_TYPES);
 
-    return { active, completed, rankOptions: RANKS, typeOptions: TRACK_TYPES };
+    const active    = panelVisible.filter(t => !t.completed);
+    const completed = panelVisible.filter(t => t.completed);
+
+    return { active, completed, rankOptions: RANKS, typeOptions: PANEL_TRACK_TYPES };
   }
 
   /** @override */
@@ -365,7 +376,7 @@ export class ProgressTrackApp extends ApplicationV2 {
         <section class="tracks-section active-tracks">
           ${active.length
             ? active.map(renderTrack).join('')
-            : '<p class="empty-state">No active tracks. Swear a vow to begin.</p>'
+            : '<p class="empty-state">No active combat, expedition, or scene challenge tracks.</p>'
           }
         </section>
 
