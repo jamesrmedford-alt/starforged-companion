@@ -267,6 +267,14 @@ These are deliberate decisions — do not change without reading
 - No jQuery. DOM API only (`querySelector`, `createElement`, `addEventListener`).
 - `game.settings` world-scoped writes require GM permissions. Player-triggered
   actions that need to persist state must use a GM-check gate.
+- Concurrency guards and pipeline locks (e.g. `campaignState.pendingMove`, an
+  ApplicationV2's `busy` flag) must be released in a `finally`, never on the
+  happy path alone. An exception — or an awaited promise that never settles —
+  between claiming and releasing the guard wedges it permanently: every later
+  action then no-ops or shows "a move is already being resolved". Blocking
+  dialogs awaited inside a guarded section must themselves settle on close
+  (see `rules/foundry-api.md`), or the `finally` never runs. Both v1.7.16
+  lock-ups — the suffer dialog and the private-channel `busy` flag — were this.
 - `src/foundry-shim.js` does not exist and must not be recreated.
 - Chat message type must not be `"other"` — not valid in Foundry v13.
 - All actor reads and writes go through `src/character/actorBridge.js`.

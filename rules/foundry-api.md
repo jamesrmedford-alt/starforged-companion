@@ -76,6 +76,43 @@ Hooks.on("renderSceneControls", (app, html) => {
 Cannot introspect registered hooks via `Hooks._hooks` — undefined in v13.
 Use `CONFIG.debug.hooks = true` in the console to trace hook firing.
 
+**Blocking ApplicationV2 dialogs must resolve their promise on close — not only from button handlers:**
+
+A dialog that hand-rolls a promise (`new Promise(resolve => { this.#resolve = resolve; })`)
+and calls `resolve` only from its action handlers (accept / cancel / pick)
+**hangs forever** when the user dismisses it via the window **X**, Escape, or a
+programmatic close — those paths run `close()` / `_onClose`, never an action
+handler. The un-settled `await` wedges every caller, including the move
+pipeline's `pendingMove` lock: the pipeline's `finally` never runs and every
+later input shows "A move is already being resolved" (the v1.7.16 lock-up —
+`SufferChoiceDialog` was missing this net; `MoveConfirmDialog` and
+`ClarificationDialog` already had it).
+
+Rule: override `close()` (or `_onClose`) to settle the promise with a
+cancel/default value, idempotently — a one-shot guard so a button click
+followed by `close()` cannot double-resolve.
+
+```js
+// Canonical pattern — MoveConfirmDialog (ui/settingsPanel.js),
+// ClarificationDialog (world/clarificationDialog.js).
+#decided = false;
+#settle(value) {
+  if (this.#decided) return;            // first call wins: button OR close, never both
+  this.#decided = true;
+  const r = this.#resolve; this.#resolve = null;
+  r?.(value);
+}
+async close(options) {
+  this.#settle(false);                  // X / Escape / programmatic close → cancel
+  return super.close(options);
+}
+```
+
+**Prefer the framework primitives** `DialogV2.wait` / `.prompt` / `.confirm`
+wherever the dialog fits them: they already settle on close (reject or
+resolve-null) and cannot hang. Reserve the custom-promise ApplicationV2
+pattern for dialogs the primitives can't express.
+
 **Specific things confirmed to have changed in v13 — always verify:**
 
 | API | v12 | v13 | Status in this codebase |
