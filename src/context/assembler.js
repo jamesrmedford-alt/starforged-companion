@@ -807,19 +807,25 @@ async function buildCharacterStateSection(_campaignState) {
  * `progressTrack` flag. That was never how progressTracks.js stored data.
  *
  * progressTracks.js stores ALL tracks as a single array in a dedicated
- * JournalEntry named "Starforged Progress Tracks", under
- * page.flags["starforged-companion"].tracks.
+ * JournalEntry named "Starforged Progress Tracks", as a DOCUMENT-level flag:
+ * journal.setFlag("starforged-companion", "tracks", [...]).
  *
- * This function now loads that journal directly, reads the tracks array,
- * filters to active non-completed tracks, and formats the top 4.
+ * This function loads that journal by name and reads the document flag
+ * (journal.getFlag) — matching the writer. Reading page.flags instead left
+ * the section silently empty in live play, even with an open combat track
+ * (ASSEMBLER-002 follow-up; the original "fix" loaded the right journal but
+ * still read the wrong flag location). Filters to active non-completed tracks
+ * and formats the top 4.
  */
 async function buildProgressTracksSection() {
   try {
     const journal = game.journal?.getName(TRACKS_JOURNAL);
     if (!journal) return { content: "", trackIds: [] };
 
-    const page   = journal.pages?.contents?.[0];
-    const tracks = page?.flags?.[MODULE_ID]?.[TRACKS_FLAG_KEY];
+    // Document-level flag (matches progressTracks.js saveTracks). The
+    // page-level read is a defensive fallback for any legacy data.
+    const tracks = journal.getFlag?.(MODULE_ID, TRACKS_FLAG_KEY)
+      ?? journal.pages?.contents?.[0]?.flags?.[MODULE_ID]?.[TRACKS_FLAG_KEY];
     if (!Array.isArray(tracks) || !tracks.length) {
       return { content: "", trackIds: [] };
     }

@@ -1222,3 +1222,48 @@ Verified-closed rows were flipped to PINNED/DONE with batch/file evidence;
 genuinely-open rows kept their GAP/PARTIAL status. Two commit-message closure
 claims did **not** hold against the tree and are flagged: 3.11/3.12 (Fulfill /
 Forsake Your Vow are not in `moveOutcomeMatrix`) and P13 recover moves (no batch).
+
+---
+
+## v1.7.16 — Combat pacing, Pay-the-Price clocks, and progress-track surfacing
+
+**Active combat forces moves (playtest finding).** A player could end a fight by
+asserting an outcome against nameless NPCs as narration ("I gun them down"); the
+pacing classifier let it through as NARRATIVE and the narrator confirmed it, so
+combat resolved with no dice. Decision: when an open combat track exists, the
+player's words are a *suggested outcome*, not an established fact. The pacing
+router detects active combat and the classifier applies a "COMBAT IS ACTIVE"
+rule — any character action in any category is a MOVE; outcomes against
+adversaries are never free narration. Only pure observation / internal monologue
+/ questions stay NARRATIVE. A router backstop converts NWMA→MOVE during combat.
+Detection fails open to "no combat" so a storage hiccup never blocks narration.
+
+**Pay the Price advances countdown clocks (#10).** The clock contract
+(`clocks.js` header; `docs/clocks/clocks-scope.md`) always said tension clocks
+advance when you Pay the Price — but the wiring was never built, and the
+inciting incident's "Dani's captivity" clock lives on the *vow item*
+(`system.hasClock/clockTicks/clockMax`), a second clock model nothing advanced
+either. Decision: on a Pay the Price (miss → routePayThePrice / Face Defeat, and
+`!ptp`), advance BOTH — every active `campaignState` tension clock AND each PC's
+active vow-item countdown clock — by one segment, GM-gated, with a summary card.
+Campaign clocks are untouched (they advance at Begin a Session). In the common
+single-clock game this advances exactly the inciting captivity clock. Advancing
+*all* active countdown clocks (rather than one "relevant" clock) is the
+deliberate v1 behaviour, matching the documented "tension clocks advance on Pay
+the Price" contract and the user's automation preference; per-clock relevance is
+a possible future refinement.
+
+**Portrait moderation (#3).** Entity portrait prompts carry the narrator scene
+prose, which for a kidnapping/raid scene tripped the image provider's Violence
+filter. Decision: expand the policy sanitiser (captivity/raider/violence terms)
+and add a moderation-detect-and-retry that falls back to a neutral, card-only
+portrait prompt (style + gender/role, no scene description). The narration stays
+authoritative; the portrait just succeeds instead of failing.
+
+**ASSEMBLER-002 flag-location follow-up (#9).** The "resolved" progress-tracks
+context section was still always empty: it read page-level flags while
+`progressTracks.js` writes a document-level flag. Fixed to read
+`journal.getFlag` (document-level); the masking unit test was corrected in
+lockstep. This is why the narrator could mention a combat track it had no
+context for. The combat-track chat card also now carries an "Open Progress
+Tracks" button so the fight's progress is one click away.

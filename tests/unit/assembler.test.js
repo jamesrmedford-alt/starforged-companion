@@ -428,13 +428,18 @@ describe("buildProgressTracksSection", () => {
     game.journal.getName = () => null;
   });
 
+  // Tracks are stored as a DOCUMENT-level flag (journal.getFlag), matching
+  // progressTracks.js saveTracks — not page.flags (the ASSEMBLER-002 follow-up).
+  const trackJournalMock = (tracks) => (name) => {
+    if (name !== "Starforged Progress Tracks") return null;
+    return { getFlag: (mod, key) =>
+      (mod === "starforged-companion" && key === "tracks") ? tracks : undefined };
+  };
+
   it("formats active tracks with rank", async () => {
-    game.journal.getName = (name) => {
-      if (name !== "Starforged Progress Tracks") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
-        { id: "t1", label: "Find the lost colony", type: "vow", rank: "Epic", ticks: 8, completed: false },
-      ]}}}] }};
-    };
+    game.journal.getName = trackJournalMock([
+      { id: "t1", label: "Find the lost colony", type: "vow", rank: "Epic", ticks: 8, completed: false },
+    ]);
     const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
     expect(packet.assembled).toMatch(/PROGRESS TRACKS/i);
     expect(packet.assembled).toMatch(/Find the lost colony/);
@@ -442,23 +447,26 @@ describe("buildProgressTracksSection", () => {
   });
 
   it("formats active tracks without rank", async () => {
-    game.journal.getName = (name) => {
-      if (name !== "Starforged Progress Tracks") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
-        { id: "t2", label: "Explore the ruin", type: "expedition", ticks: 16, completed: false },
-      ]}}}] }};
-    };
+    game.journal.getName = trackJournalMock([
+      { id: "t2", label: "Explore the ruin", type: "expedition", ticks: 16, completed: false },
+    ]);
     const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
     expect(packet.assembled).toMatch(/Explore the ruin/);
   });
 
+  it("surfaces an open combat track (the #9 discoverability path)", async () => {
+    game.journal.getName = trackJournalMock([
+      { id: "c1", label: "Combat", type: "combat", rank: "Dangerous", ticks: 0, completed: false },
+    ]);
+    const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
+    expect(packet.assembled).toMatch(/PROGRESS TRACKS/i);
+    expect(packet.assembled).toMatch(/Combat/);
+  });
+
   it("omits progress tracks section when all tracks are completed", async () => {
-    game.journal.getName = (name) => {
-      if (name !== "Starforged Progress Tracks") return null;
-      return { pages: { contents: [{ flags: { "starforged-companion": { tracks: [
-        { id: "t3", label: "Done quest", type: "vow", ticks: 40, completed: true },
-      ]}}}] }};
-    };
+    game.journal.getName = trackJournalMock([
+      { id: "t3", label: "Done quest", type: "vow", ticks: 40, completed: true },
+    ]);
     const packet = await assembleContextPacket(baseResolution(), baseCampaignState(), { tokenBudget: 2000 });
     expect(packet.assembled).not.toMatch(/PROGRESS TRACKS/i);
   });

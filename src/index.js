@@ -2506,11 +2506,12 @@ async function postCombatTrackCard({ track, created }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
   const body  = created
-    ? `Created combat track <strong>${label}</strong>${rank}. Re-rank in the Progress Tracks panel if needed.`
+    ? `Created combat track <strong>${label}</strong>${rank}. This fight's progress lives in the Progress Tracks panel.`
     : `Resumed combat track <strong>${label}</strong>${rank}.`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p>`
+        + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button></p></div>`,
       flags:   { [MODULE_ID]: { combatTrackCard: true, created } },
     });
   } catch (err) {
@@ -3563,6 +3564,25 @@ onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.setupCard) return;
   root.querySelector('[data-action="openTruthsDialog"]')
     ?.addEventListener("click", () => openSystemTruthsDialog());
+});
+
+/**
+ * Wire the "Open Progress Tracks" button on the Enter the Fray combat-track
+ * card (playtest finding #9: the combat track lives only in the module panel
+ * and players couldn't find it). One click opens the panel where the fight's
+ * progress, rank, and in-control / bad-spot position live.
+ */
+onChatMessageRender((message, root) => {
+  if (!message.flags?.[MODULE_ID]?.combatTrackCard) return;
+  const btn = root.querySelector('[data-action="openProgressTracks"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openProgressTracks();
+  });
 });
 
 /**
