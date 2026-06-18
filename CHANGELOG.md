@@ -6,6 +6,13 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Changed: **Audio narration is on by default.** New worlds start with audio enabled (world and per-client), so once you add your ElevenLabs key in Companion Settings → About, narrator cards play without flipping any toggles. You can still turn it off per client, and prose stays click-to-play (no surprise autoplay).
+- Changed: **New default voices.** The narrator uses a new default voice, and she/her NPCs default to a distinct feminine voice (Rachel) so they no longer sound like the narrator.
+- Fixed: **Companion panel buttons are always readable.** Buttons in the Settings, Progress Tracks, and Entities panels now use dark text on a light button, instead of pale text that could disappear against a light background.
+- Fixed: **The opening galley vignette can be turned off.** Begin a Session now has an "Include an opening galley vignette" checkbox (on by default); unchecking it skips the narrator-written opening scene. Previously the scene ran regardless of the Spotlight Vignette checkbox.
+
+## [1.7.15] — 2026-06-18
+
 - Added: **Bonding pays off — developing a bonded connection builds your legacy.** When you Develop Your Relationship with someone you've already bonded with, your bonds legacy track is marked for you (two ticks on a strong hit, one on a weak), and a match nudges that connection's rank up. Developing an un-bonded connection still simply advances that relationship. No manual legacy ticking.
 - Added: **Battle resolves an entire fight in one roll.** When you choose to settle a clash in a single stroke rather than blow-by-blow, Battle now closes out any open combat track and — on a weak hit or miss — rolls Pay the Price and applies the fallout for you.
 - Added: **Take Decisive Action and Face Defeat see the fight through.** On a Take Decisive Action weak hit, the six-entry cost table is rolled and shown as a card (the "make a suffer move" entry opens the suffer picker so you choose which meter takes the hit). Face Defeat rolls Pay the Price and applies any routable consequence automatically.

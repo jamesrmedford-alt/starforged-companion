@@ -49,6 +49,10 @@ export async function openBeginSessionDialog() {
         <input type="checkbox" name="vignette" value="1">
         Roll a Spotlight Vignette (+1 momentum to all players)
       </label>
+      <label class="row">
+        <input type="checkbox" name="galleyVignette" value="1" checked>
+        Include an opening galley vignette (narrator-written scene)
+      </label>
     </form>
   `;
 
@@ -59,14 +63,15 @@ export async function openBeginSessionDialog() {
       label:    "Begin",
       callback: async (_event, button) => {
         const form = button.form;
-        const rollVignette = form?.querySelector('input[name="vignette"]')?.checked;
-        await postBeginSessionCard(rollVignette);
+        const rollVignette  = form?.querySelector('input[name="vignette"]')?.checked;
+        const includeGalley = form?.querySelector('input[name="galleyVignette"]')?.checked ?? true;
+        await postBeginSessionCard(rollVignette, includeGalley);
       },
     },
   });
 }
 
-async function postBeginSessionCard(rollVignette) {
+async function postBeginSessionCard(rollVignette, includeGalley = true) {
   let vignetteBlock = "";
   if (rollVignette) {
     try {
@@ -106,7 +111,10 @@ async function postBeginSessionCard(rollVignette) {
   // Fire-and-forget galley vignette — narrator-generated 4-6 sentence
   // opening scene describing the active PCs in the ship's galley
   // bantering about the absent ones. Silent skip when the Claude key
-  // is unset or narration is disabled.
+  // is unset or narration is disabled. Gated on the dialog's "Include an
+  // opening galley vignette" checkbox (default on) so unchecking it
+  // suppresses the scene (playtest finding: it ran regardless).
+  if (!includeGalley) return;
   setTimeout(async () => {
     try {
       const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }

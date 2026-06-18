@@ -346,7 +346,7 @@ function registerCoreSettings() {
   // -------------------------------------------------------------------------
   game.settings.register(MODULE_ID, "audio.enabled", {
     name: "Audio narration enabled", scope: "world", config: false,
-    type: Boolean, default: false,
+    type: Boolean, default: true,
   });
   // Auto-apply asset consequence riders (momentum/meters/integrity/progress
   // from a move's outcome) so the player doesn't adjust resources by hand.
@@ -358,7 +358,7 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
     name: "Narrator voice ID", scope: "world", config: false,
-    type: String, default: "21m00Tcm4TlvDq8ikWAM",
+    type: String, default: "fNmw8sukfGuvWVOp33Ge",
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceId", {
     name: "NPC voice ID", scope: "world", config: false,
@@ -367,9 +367,11 @@ function registerCoreSettings() {
   // Pronoun-keyed NPC voices (v1.7.11 finding F). When set, an NPC card's
   // focal connection picks the voice matching its established pronouns;
   // empty falls back to audio.npcVoiceId so existing worlds are unchanged.
+  // Feminine defaults to Rachel (21m00…) so she/her NPCs sound distinct from
+  // the narrator out of the box.
   game.settings.register(MODULE_ID, "audio.npcVoiceFeminine", {
     name: "NPC voice — feminine (she/her)", scope: "world", config: false,
-    type: String, default: "",
+    type: String, default: "21m00Tcm4TlvDq8ikWAM",
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceMasculine", {
     name: "NPC voice — masculine (he/him)", scope: "world", config: false,
@@ -399,7 +401,7 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.clientEnabled", {
     name: "Enable audio narration on this client", scope: "client",
-    config: false, type: Boolean, default: false,
+    config: false, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "audio.volume", {
     name: "Audio volume", scope: "client", config: false,

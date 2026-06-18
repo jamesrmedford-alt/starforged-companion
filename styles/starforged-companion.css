@@ -288,9 +288,12 @@
 
 .track-btn {
   appearance: none;
-  border: 1px solid var(--color-border-light, #bbb);
+  border: 1px solid #b8b8c2;
   border-radius: 3px;
-  background: var(--color-bg-btn, #f0f0f0);
+  /* Explicit light surface + dark text so the label is always readable —
+     never inherits a pale themed colour onto a light button (readability fix). */
+  background: #e9e9ef;
+  color: #16161d;
   cursor: pointer;
   font-size: var(--font-size-13, 13px);
   line-height: 1;
@@ -299,8 +302,8 @@
 }
 
 .track-btn:hover:not(:disabled) {
-  background: var(--color-bg-btn-hover, #dde);
-  border-color: var(--color-border-dark, #888);
+  background: #d6d6e2;
+  border-color: #8a8a96;
 }
 
 .track-btn:disabled {
@@ -707,9 +710,11 @@
 
 .entity-btn {
   appearance: none;
-  border: 1px solid var(--color-border-light, #bbb);
+  border: 1px solid #b8b8c2;
   border-radius: 3px;
-  background: var(--color-bg-btn, #f0f0f0);
+  /* Explicit light surface + dark text — always readable (readability fix). */
+  background: #e9e9ef;
+  color: #16161d;
   cursor: pointer;
   font-size: var(--font-size-12, 12px);
   padding: 0.2rem 0.55rem;
@@ -717,8 +722,8 @@
 }
 
 .entity-btn:hover:not(:disabled) {
-  background: var(--color-bg-btn-hover, #dde);
-  border-color: var(--color-border-dark, #888);
+  background: #d6d6e2;
+  border-color: #8a8a96;
 }
 
 .entity-btn:disabled {
@@ -1220,9 +1225,12 @@
 
 .settings-btn {
   appearance: none;
-  border: 1px solid var(--color-border-light, #bbb);
+  border: 1px solid #b8b8c2;
   border-radius: 3px;
-  background: var(--color-bg-btn, #f0f0f0);
+  /* Explicit light surface + dark text so labels like "Save Audio Settings"
+     are always readable — never pale text on a light button (readability fix). */
+  background: #e9e9ef;
+  color: #16161d;
   cursor: pointer;
   font-size: var(--font-size-12, 12px);
   padding: 0.2rem 0.5rem;
@@ -1231,8 +1239,8 @@
 }
 
 .settings-btn:hover:not(:disabled) {
-  background: var(--color-bg-btn-hover, #dde);
-  border-color: var(--color-border-dark, #888);
+  background: #d6d6e2;
+  border-color: #8a8a96;
 }
 
 .btn-add-item {
