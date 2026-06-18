@@ -404,6 +404,7 @@ function getDialogClass() {
       this._opts            = opts;
       this._selectedIndices = new Set();
       this._anyChoice       = null;
+      this._finished        = false;
     }
 
     /** Render the HTML body inline (no template file needed). */
@@ -471,10 +472,24 @@ function getDialogClass() {
     }
 
     async _finish({ selection = {}, calls = [], cancelled = false }) {
+      if (this._finished) return;
+      this._finished = true;
       try { await this.close(); } catch (err) {
         console.warn(`${MODULE_ID} | sufferDialog: close failed:`, err?.message ?? err);
       }
       this._resolveResult({ cancelled, selection, calls });
+    }
+
+    // When the user closes via the window X (not a button), resolve with
+    // cancelled so the pipeline's await doesn't hang and pendingMove stays
+    // stuck (playtest lock-up finding — compel miss → Pay the Price suffer
+    // dialog dismissed via X → lock never released).
+    async _onClose(options) {
+      await super._onClose(options);
+      if (!this._finished) {
+        this._finished = true;
+        this._resolveResult({ cancelled: true, selection: {}, calls: [] });
+      }
     }
   };
 

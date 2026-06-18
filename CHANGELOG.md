@@ -16,6 +16,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **A confirmed faction shows its description and can generate a portrait.** Detected factions stored the narrator's description but the faction panel never displayed it and the portrait stayed stuck on "Awaiting description." The faction detail now shows Description, Relationship, and Influence, and seeds the portrait from the detected description.
 - Fixed: **Confirmed factions are recorded in the World Journal — Factions page.** A faction captured as an entity never appeared in the Factions journal, leaving it empty; it is now mirrored there as established lore (linked to the entity record).
 - Fixed: **NPCs speak in the first person.** A captured or absent character speaking over the comm no longer refers to themselves in the third person ("if you want her back" from the captive herself); the narrator now keeps a speaking character's own words in first person.
+- Fixed: **Move pipeline no longer locks up when the suffer dialog is dismissed via the X button.** Closing the "Resolve consequence" dialog without clicking a button (Cancel or an option) left the move pipeline permanently locked, preventing any further moves with a "A move is already being resolved" toast. The dialog now correctly releases the pipeline lock on window close.
 
 ## [1.7.15] — 2026-06-18
 
