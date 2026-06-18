@@ -2391,6 +2391,9 @@ async function handlePayThePriceCommand(message) {
     );
   }
 
+  await advanceClocksOnPayThePrice().catch(err =>
+    console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+
   // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
   scheduleOracleNarration({
     kind:       "pay_the_price",
@@ -2615,12 +2618,64 @@ async function postFaceDefeatPayThePriceCard() {
     await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
       console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
   }
+  await advanceClocksOnPayThePrice().catch(err =>
+    console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err));
   scheduleOracleNarration({
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
     question:   "Face Defeat",
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
   });
+}
+
+/**
+ * Advance countdown clocks in response to a Pay the Price. The module's clock
+ * contract is that tension clocks advance when you Pay the Price (clocks.js
+ * header; docs/clocks/clocks-scope.md) — wiring that was documented but never
+ * built (playtest finding #10: "I had a pay the price this session, but the vow
+ * clock is unmoved"). This advances, by one segment:
+ *   - every active campaignState tension clock (the !clock / Clocks panel), and
+ *   - the countdown clock on each player character's active vows (e.g. the
+ *     inciting incident's "Dani's captivity" clock, stored on the vow item).
+ * Campaign clocks are untouched (they advance at Begin a Session). GM-gated —
+ * world/actor writes are GM-only, so on a player client this is a silent no-op.
+ */
+async function advanceClocksOnPayThePrice() {
+  if (!game.user?.isGM) return;
+  const advanced = [];
+
+  try {
+    const { advanceTensionClocksForPayThePrice } = await import("./clocks/clocks.js");
+    for (const c of await advanceTensionClocksForPayThePrice()) {
+      advanced.push({ name: c.name, filled: c.filled, segments: c.segments, triggered: c.triggered });
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: tension clocks failed:`, err?.message ?? err);
+  }
+
+  try {
+    const { getPlayerActors, advanceVowClocks } = await import("./character/actorBridge.js");
+    for (const actor of getPlayerActors()) {
+      for (const v of await advanceVowClocks(actor)) {
+        advanced.push({ name: v.name, filled: v.ticks, segments: v.max, triggered: v.triggered });
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: vow clocks failed:`, err?.message ?? err);
+  }
+
+  if (!advanced.length) return;
+  const lines = advanced.map(a =>
+    `<li>${escapeChatHtml(a.name)} — ${a.filled}/${a.segments}${a.triggered ? " <strong>(TRIGGERED)</strong>" : ""}</li>`,
+  ).join("");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-clock-card"><strong>⏳ The clock turns</strong><p>Paying the price advances the countdown:</p><ul>${lines}</ul></div>`,
+      flags:   { [MODULE_ID]: { clockCard: true, payThePriceAdvance: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: card post failed:`, err?.message ?? err);
+  }
 }
 
 async function postFulfillVowCard({ track, legacyTicks }) {

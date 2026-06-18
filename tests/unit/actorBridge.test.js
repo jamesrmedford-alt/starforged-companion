@@ -20,6 +20,7 @@ import {
   invalidateActorCache,
   createCharacterBondItem,
   createCharacterVowItem,
+  advanceVowClocks,
 } from '../../src/character/actorBridge.js';
 
 
@@ -635,6 +636,23 @@ describe('readVows', () => {
     });
   });
 
+  it('surfaces the vow countdown clock when present, null otherwise', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          { id: 'v1', type: 'progress', name: 'Save Dani',
+            system: { subtype: 'vow', rank: 'dangerous', progress: 8,
+                      hasClock: true, clockTicks: 2, clockMax: 6 } },
+          { id: 'v2', type: 'progress', name: 'No clock vow',
+            system: { subtype: 'vow', rank: 'epic', progress: 0 } },
+        ],
+      },
+    });
+    const vows = readVows(actor);
+    expect(vows[0].clock).toEqual({ ticks: 2, max: 6 });
+    expect(vows[1].clock).toBeNull();
+  });
+
   it('returns empty array when actor has no vow items', () => {
     const actor = freshActor();
     expect(readVows(actor)).toEqual([]);
@@ -712,5 +730,69 @@ describe('createCharacterVowItem — clock', () => {
     const second = await createCharacterVowItem(actor, { name: 'V', vowId: 'same', clock: { max: 8 } });
     expect(second).toBe(first);
     expect(actor.items.contents).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// advanceVowClocks — Pay the Price advances vow countdown clocks (#10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('advanceVowClocks', () => {
+  function clockVow({ id, name = 'V', ticks = 0, max = 6, hasClock = true, completed = false }) {
+    const item = {
+      id, type: 'progress', name,
+      system: {
+        subtype: 'vow', rank: 'dangerous', current: 0, completed,
+        ...(hasClock ? { hasClock: true, clockTicks: ticks, clockMax: max } : {}),
+      },
+      async update(changes) {
+        for (const [path, val] of Object.entries(changes)) {
+          const parts = path.split('.');
+          let t = item;
+          for (let i = 0; i < parts.length - 1; i++) t = (t[parts[i]] ??= {});
+          t[parts[parts.length - 1]] = val;
+        }
+      },
+    };
+    return item;
+  }
+
+  it('advances each vow clock by one segment and reports it', async () => {
+    const actor = freshActor({ items: { contents: [
+      clockVow({ id: 'v1', name: 'Save Dani', ticks: 2, max: 6 }),
+    ] } });
+    const advanced = await advanceVowClocks(actor);
+    expect(advanced).toEqual([{ name: 'Save Dani', ticks: 3, max: 6, triggered: false }]);
+    expect(actor.items.contents[0].system.clockTicks).toBe(3);
+  });
+
+  it('caps at clockMax and flags triggered', async () => {
+    const actor = freshActor({ items: { contents: [
+      clockVow({ id: 'v1', name: 'Deadline', ticks: 5, max: 6 }),
+    ] } });
+    const advanced = await advanceVowClocks(actor);
+    expect(advanced[0]).toMatchObject({ ticks: 6, triggered: true });
+  });
+
+  it('skips vows with no clock, a full clock, or completed', async () => {
+    const actor = freshActor({ items: { contents: [
+      clockVow({ id: 'v1', name: 'No clock', hasClock: false }),
+      clockVow({ id: 'v2', name: 'Full',     ticks: 6, max: 6 }),
+      clockVow({ id: 'v3', name: 'Done',     ticks: 1, max: 6, completed: true }),
+    ] } });
+    const advanced = await advanceVowClocks(actor);
+    expect(advanced).toEqual([]);
+  });
+
+  it('returns [] for a null actor', async () => {
+    expect(await advanceVowClocks(null)).toEqual([]);
+  });
+
+  it('honours a custom step via opts.by', async () => {
+    const actor = freshActor({ items: { contents: [
+      clockVow({ id: 'v1', name: 'Save Dani', ticks: 0, max: 8 }),
+    ] } });
+    const advanced = await advanceVowClocks(actor, { by: 2 });
+    expect(advanced[0].ticks).toBe(2);
   });
 });

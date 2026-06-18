@@ -7,6 +7,7 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Changed: **During a fight, your actions are rolled, not narrated.** Once combat is active (an open combat track), any action you describe — shooting, maneuvering, taking cover, or threatening under fire — is treated as a suggested outcome that triggers a move and a roll, in any category. You can no longer end a fight by simply asserting that you cut down the enemy; the dice decide. Pure observation ("the bay fills with smoke") still reads as narration.
+- Fixed: **Paying the Price now turns your countdown clocks.** When a miss sends you to Pay the Price (or you Face Defeat), the danger advances: every active tension clock and every vow's countdown clock (e.g. the inciting incident's "Dani's captivity" clock) ticks forward one segment, with a card showing what moved. Previously the clock sat still no matter how badly things went.
 
 - Changed: **Audio narration is on by default.** New worlds start with audio enabled (world and per-client), so once you add your ElevenLabs key in Companion Settings → About, narrator cards play without flipping any toggles. You can still turn it off per client, and prose stays click-to-play (no surprise autoplay).
 - Changed: **New default voices.** The narrator uses a new default voice, and she/her NPCs default to a distinct feminine voice (Rachel) so they no longer sound like the narrator.

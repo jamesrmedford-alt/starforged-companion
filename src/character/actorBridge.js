@@ -195,6 +195,7 @@ export function readVows(actor) {
 
   return vows.map((v, i) => {
     const ticks = Number(v.system?.progress ?? v.system?.current ?? 0);
+    const hasClock = v.system?.hasClock === true;
     return {
       id:           v.id ?? v._id ?? null,
       name:         v.name ?? '',
@@ -203,6 +204,12 @@ export function readVows(actor) {
       progress:     Math.floor(ticks / 4),
       completed:    !!v.system?.completed,
       isBackground: i === 0,
+      // Countdown clock (the deadline/threat running against the hero, e.g.
+      // "Dani's captivity"), surfaced so the narrator can reference it and the
+      // pipeline can advance it on a Pay the Price. null when the vow has none.
+      clock:        hasClock
+        ? { ticks: Number(v.system?.clockTicks ?? 0), max: Number(v.system?.clockMax ?? 0) }
+        : null,
     };
   });
 }
@@ -514,6 +521,47 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
     console.error(`actorBridge | createCharacterProgressItem (${subtype}) failed:`, err);
     return null;
   }
+}
+
+/**
+ * Advance the countdown clock on the character's active vows by one segment
+ * each. A vow's clock (system.hasClock / clockTicks / clockMax) is the deadline
+ * or threat running against the hero — e.g. the inciting incident's "Dani's
+ * captivity" clock. It advances when the fiction turns against the hero; the
+ * move pipeline calls this on a Pay the Price (playtest finding #10: the vow
+ * clock never moved on a miss). Vows with no clock, an already-full clock, or
+ * marked completed are skipped. Returns what advanced, for the chat summary.
+ *
+ * @param {Actor} actor
+ * @param {{ by?: number }} [opts]
+ * @returns {Promise<Array<{name:string, ticks:number, max:number, triggered:boolean}>>}
+ */
+export async function advanceVowClocks(actor, { by = 1 } = {}) {
+  if (!actor) return [];
+  const items = actor.items?.contents ?? actor.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  const vows  = list.filter(
+    i => i?.type === "progress"
+      && i?.system?.subtype === "vow"
+      && i?.system?.hasClock === true
+      && !i?.system?.completed,
+  );
+
+  const advanced = [];
+  for (const v of vows) {
+    const max = Number(v.system?.clockMax ?? 0);
+    const cur = Number(v.system?.clockTicks ?? 0);
+    if (!max || cur >= max) continue;
+    const next = Math.min(cur + by, max);
+    try {
+      await v.update({ "system.clockTicks": next }, { suppressLog: true });
+      advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max });
+    } catch (err) {
+      console.error(`actorBridge | advanceVowClocks failed for ${v.name ?? "vow"}:`, err);
+    }
+  }
+  if (advanced.length) invalidateActorCache(actor.id);
+  return advanced;
 }
 
 
