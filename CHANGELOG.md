@@ -15,6 +15,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **A sector's connection NPC now appears on your character sheet.** Sector creation links the generated connection to your player character(s) Connections tab — including when the sector is built before the characters (e.g. via the Playtest Quickstart). Previously the NPC existed only in the sector's folder.
 - Fixed: **A confirmed faction shows its description and can generate a portrait.** Detected factions stored the narrator's description but the faction panel never displayed it and the portrait stayed stuck on "Awaiting description." The faction detail now shows Description, Relationship, and Influence, and seeds the portrait from the detected description.
 - Fixed: **Confirmed factions are recorded in the World Journal — Factions page.** A faction captured as an entity never appeared in the Factions journal, leaving it empty; it is now mirrored there as established lore (linked to the entity record).
+- Fixed: **NPCs speak in the first person.** A captured or absent character speaking over the comm no longer refers to themselves in the third person ("if you want her back" from the captive herself); the narrator now keeps a speaking character's own words in first person.
 
 ## [1.7.15] — 2026-06-18
 
