@@ -76,7 +76,7 @@ import {
   postSessionRecap,
   postCampaignRecap,
 } from "./narration/narrator.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -99,6 +99,15 @@ import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js
 import { finishVow } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
+import {
+  trackPosToActorPos,
+  findCombatForTrack,
+  enterCombatTracker,
+  endCombatTracker,
+  updateCombatantPosition,
+  registerCombatTrackerHooks,
+  registerCombatTrackerSettings,
+} from "./moves/combatTracker.js";
 import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
 import {
   extractRiders,
@@ -1160,6 +1169,9 @@ export function registerChatHook() {
           if (result?.track) {
             await postCombatTrackCard(result).catch(err =>
               console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
+            // Open a Foundry combat tracker linked to this track
+            await enterCombatTracker(result.track.id, getPlayerActors()).catch(err =>
+              console.warn(`${MODULE_ID} | combat tracker open failed:`, err?.message ?? err));
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | enter combat failed:`, err?.message ?? err);
@@ -1190,8 +1202,20 @@ export function registerChatHook() {
         try {
           const track = await getActiveCombatTrack();
           if (track) {
-            await setCombatTrackPosition(track.id, resolution.consequences.combatPosition).catch(err =>
+            const pipelinePos = resolution.consequences.combatPosition;
+            await setCombatTrackPosition(track.id, pipelinePos).catch(err =>
               console.warn(`${MODULE_ID} | combat position write failed:`, err?.message ?? err));
+            // Also write the actor's combatPosition field and the combatant flag
+            if (speakerActor) {
+              const actorPos = trackPosToActorPos(pipelinePos);
+              await setCombatPosition(speakerActor, actorPos).catch(err =>
+                console.warn(`${MODULE_ID} | combat actor position write failed:`, err?.message ?? err));
+              const combat = findCombatForTrack(track.id);
+              if (combat) {
+                await updateCombatantPosition(combat, speakerActor, actorPos).catch(err =>
+                  console.warn(`${MODULE_ID} | combat combatant position write failed:`, err?.message ?? err));
+              }
+            }
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
@@ -1210,6 +1234,9 @@ export function registerChatHook() {
           if (result?.track) {
             await postCombatFinishCard(result).catch(err =>
               console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err));
+            // Delete the Foundry combat tracker for this track
+            await endCombatTracker(result.track.id).catch(err =>
+              console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
@@ -3315,6 +3342,7 @@ function injectPushToTalkButton(html) {
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initialising`);
   registerCoreSettings();
+  registerCombatTrackerSettings();
   registerUISettings();
   registerPrivateChannelSettings();
   registerCompanionToolbarSettings();
@@ -3488,6 +3516,7 @@ Hooks.once("ready", () => {
   registerStarshipSeedHook();
   registerCommandVehicleHook();
   registerProgressTrackHooks();
+  registerCombatTrackerHooks();
   registerEntityPanelHooks();
   registerDraftCardHooks();
   registerSectorOverviewSync();
