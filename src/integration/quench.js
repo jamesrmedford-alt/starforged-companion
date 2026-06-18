@@ -168,6 +168,7 @@ Hooks.on("quenchReady", (quench) => {
   // batch pins both halves of that contract (cancel-the-drag and message-
   // landed-in-game.messages).
   registerTokenDragSetACourseTests(quench);
+  registerCombatCardButtonTests(quench);
   // Sector enhanced — background art upload path + Scene grid config +
   // sectorScene flag round-trip. Priority 8 of the behaviour-coverage
   // audit (Lens 2 PARTIAL findings on Sector Creator Enhanced).
@@ -8601,6 +8602,118 @@ function registerTokenDragSetACourseTests(quench) {
       });
     },
     { displayName: "STARFORGED: Token-Drag Set a Course", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMBAT CARD BUTTONS — the "Take Decisive Action" button on combat move
+// result cards and the "Battle instead" button on the Enter the Fray combat
+// track card. Both re-post a synthetic ChatMessage carrying the forced move
+// id, mirroring the NWMA "Roll <move>" bridge. We drive the exported render
+// handlers with a synthetic message + detached root (same approach as the
+// audio card handler tests), then assert the forced-move message lands.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerCombatCardButtonTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.combatCardButtons",
+    (context) => {
+      const { describe, it, assert, afterEach } = context;
+      const MODULE = "starforged-companion";
+
+      const createdMessageIds = [];
+      function track(id) { if (id) createdMessageIds.push(id); }
+
+      afterEach(async function () {
+        this.timeout(15000);
+        for (const id of createdMessageIds.splice(0)) {
+          await game.messages?.get(id)?.delete().catch(() => {});
+        }
+      });
+
+      // Poll game.messages for a freshly-created message carrying the expected
+      // forced move id (the click handler awaits a ChatMessage.create server
+      // round-trip — poll rather than assume a fixed delay, per the
+      // set_a_course batch's CI-flake note).
+      async function awaitForcedMove(beforeIds, forcedMoveId) {
+        let found = null;
+        for (let i = 0; i < 60 && !found; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          found = (game.messages?.contents ?? []).find(m =>
+            !beforeIds.has(m.id) && m?.flags?.[MODULE]?.forcedMoveId === forcedMoveId);
+        }
+        return found;
+      }
+
+      describe("Take Decisive Action button (combat move result cards)", function () {
+        it("clicking it posts a forced take_decisive_action message", async function () {
+          this.timeout(15000);
+          const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-move-result">`
+            + `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Take Decisive Action</button></div></div>`;
+          const msg = { id: "quench-tda-btn", flags: { [MODULE]: { combatMoveCard: true } } };
+
+          wireTakeDecisiveActionButton(msg, root);
+          const btn = root.querySelector('[data-action="sf-take-decisive-action"]');
+          assert.isOk(btn, "the wired button should still be present in the root");
+
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "take_decisive_action");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic,
+            "expected a synthetic message with flags[MODULE].forcedMoveId === 'take_decisive_action'");
+          assert.isTrue(synthetic.flags[MODULE].bypassPacing,
+            "the forced TDA message should bypass the pacing classifier");
+        });
+
+        it("no-ops when the card is not a combat move card", async function () {
+          this.timeout(5000);
+          const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+          const root = document.createElement("div");
+          root.innerHTML = `<button type="button" data-action="sf-take-decisive-action">x</button>`;
+          // Missing combatMoveCard flag → the handler must not arm the button.
+          const before = new Set((game.messages?.contents ?? []).map(m => m.id));
+          wireTakeDecisiveActionButton({ id: "x", flags: {} }, root);
+          root.querySelector('[data-action="sf-take-decisive-action"]')
+            ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 150));
+          const fired = (game.messages?.contents ?? []).some(m =>
+            !before.has(m.id) && m?.flags?.[MODULE]?.forcedMoveId === "take_decisive_action");
+          assert.isFalse(fired, "an unflagged card must not post a forced TDA move");
+        });
+      });
+
+      describe("Battle button (Enter the Fray combat track card)", function () {
+        it("clicking 'Battle instead' posts a forced battle message", async function () {
+          this.timeout(15000);
+          const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-ptp-card"><p>`
+            + `<button type="button" data-action="openProgressTracks">Open</button>`
+            + `<button type="button" data-action="sf-battle">⚔ Battle instead</button></p></div>`;
+          const msg = { id: "quench-battle-btn", flags: { [MODULE]: { combatTrackCard: true, created: true } } };
+
+          wireCombatTrackCardButtons(msg, root);
+          const btn = root.querySelector('[data-action="sf-battle"]');
+          assert.isOk(btn, "the wired Battle button should still be present");
+
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "battle");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic,
+            "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Combat Card Buttons", timeout: 60000 },
   );
 }
 

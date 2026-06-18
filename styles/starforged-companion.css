@@ -133,6 +133,47 @@
   opacity:      0.85;
 }
 
+/* Combat follow-up action button — "Take Decisive Action" on Strike / Clash /
+   Gain Ground / React Under Fire result cards. Warm/amber to read as a
+   decisive, distinct affordance versus the burn/improve buttons above it. */
+.sf-combat-followup {
+  margin-top:  8px;
+  padding-top: 6px;
+  border-top:  1px dashed var(--color-border-dark, #bbb);
+}
+
+.sf-followup-btn {
+  appearance:    none;
+  border:        1px solid #8a5a2b;
+  border-radius: 3px;
+  background:    #f3e2c7;
+  color:         #4a2f12;
+  cursor:        pointer;
+  font-size:     var(--font-size-12, 12px);
+  font-weight:   600;
+  padding:       0.25rem 0.6rem;
+  transition:    background 0.15s;
+}
+
+.sf-followup-btn:hover:not(:disabled) {
+  background:    #e8cfa3;
+  border-color:  #6a4420;
+}
+
+.sf-followup-btn:disabled {
+  opacity: 0.45;
+  cursor:  not-allowed;
+}
+
+/* Subdued explanatory hint under card action buttons (e.g. the Battle option) */
+.sf-card-hint {
+  margin-top: 6px;
+  font-size:  0.82em;
+  font-style: italic;
+  color:      var(--color-text-dark-secondary, #777);
+  opacity:    0.9;
+}
+
 /* Shared move card base — used by progress rolls and X-Card */
 .starforged-move-card {
   padding: 8px 10px;
