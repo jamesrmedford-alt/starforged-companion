@@ -852,12 +852,20 @@ export function registerChatHook() {
     const dial   = getMischiefDial();
 
     try {
+      // Resolve the single active combat track's position once. Fed to the
+      // interpreter so it only proposes position-appropriate combat moves
+      // (constrainMoveToPosition forces the result legal), and reused below for
+      // the Take Decisive Action bad-spot downgrade. null out of combat, or when
+      // there are zero/multiple active combat tracks.
+      const combatPosition = await getActiveCombatPosition();
+
       const interpretation = forcedMoveId
         ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget)
         : await interpretMove(narration, {
             campaignState,
             mischiefLevel: dial,
             apiKey,
+            combatPosition,
           });
 
       if (interpretation.mischiefApplied) {
@@ -936,14 +944,10 @@ export function registerChatHook() {
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
 
-      // Take Decisive Action — auto-detect the bound combat track's
-      // position so the resolver can apply the bad-spot downgrade
-      // (play kit p. 5). Returns null if there are zero or multiple
-      // active combat tracks; the downgrade is skipped in both cases.
-      const combatPosition = interpretation.moveId === "take_decisive_action"
-        ? await getActiveCombatPosition()
-        : null;
-
+      // Take Decisive Action — the resolver applies the bad-spot downgrade
+      // (play kit p. 5) from combatPosition resolved at the top of this block.
+      // resolveMove gates the downgrade on moveId, so passing the position for
+      // every move is safe (it is a no-op for non-TDA moves).
       const resolution = resolveMove(interpretation, campaignState, { combatPosition });
 
       // Fact-continuity §20 — when a travel move with ARRIVAL semantics

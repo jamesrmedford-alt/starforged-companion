@@ -36,6 +36,48 @@ single-word move names in the prose body cannot false-match.
 
 ---
 
+## The interpreter is fed the combat position and forced to a position-legal move
+
+**Decision:** When a single combat track is active, `getActiveCombatPosition()`
+(`src/ui/progressTracks.js`) is resolved once at the top of the chat pipeline
+(`src/index.js`) and passed to `interpretMove(... { combatPosition })`. The
+interpreter applies it two ways:
+
+1. **Soft steer** — `buildCombatPositionDirective(position)` adds a `COMBAT
+   POSITION` block to the *user* message (the cached system prompt stays
+   position-agnostic) naming the moves available for the position and forbidding
+   the others.
+2. **Hard guarantee** — `constrainMoveToPosition(moveId, position)` in
+   `parseInterpretation` deterministically remaps a wrong-position
+   attack/maneuver to its same-position counterpart via `POSITION_MOVE_REMAP`:
+   in control ⇒ Clash→Strike, React Under Fire→Gain Ground; in a bad spot ⇒
+   Strike→Clash, Gain Ground→React Under Fire. The same value is reused for the
+   Take Decisive Action bad-spot downgrade (it was already fetched only for TDA
+   before — now fetched once and shared).
+
+`combatPosition` is `null` out of combat *and* when there are 0 or multiple
+active combat tracks, so behaviour is unchanged in every non-combat path.
+
+**Reason:** the interpreter knew the *concept* of position (move descriptions +
+interpretation rule 1) but was never told the *current* position, so it could
+return Strike while the character was in a bad spot — a move the rules don't
+allow there. Stat options are identical within each remap pair (`schemas.js`:
+Strike/Clash `[iron,edge]`; Gain Ground/React Under Fire
+`[edge,heart,iron,shadow,wits]`), so the model's chosen stat survives the remap
+untouched.
+
+**Rejected:**
+- *Prompt steering alone* — the model can still ignore the directive; the
+  deterministic remap is what makes the result actually legal.
+- *Reject/error on a wrong-position move* — remapping preserves intent (an
+  attack stays an attack, just the correct variant) and keeps the pipeline
+  flowing; the confirm dialog still lets the player override.
+- *Force every move to be a combat move while in combat* — rejected; non-combat
+  moves (Ask the Oracle, Face Danger for the environment, etc.) remain valid
+  mid-fight, so only the four position-locked combat moves are remapped.
+
+---
+
 ## A title in an NPC name is its role; don't roll a contradictory one
 
 **Decision (finding D):** `seedConnectionActor` resolves an NPC's Role with the
