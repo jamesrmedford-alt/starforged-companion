@@ -43,10 +43,13 @@ What changed since the original pass:
   exploration lifecycle (3.18–3.21) and combat lifecycle (3.24–3.28), Develop
   Your Relationship bond legacy (3.14), Battle (3.29), and clocks (3.48/3.49,
   shipped COMPLETE per scope-index).
-- **"Battle Stations!" is not a Starforged move** — it was a stray entry copied
-  from a `rulebook-summary.md` error (now corrected). The official combat set is
-  eight moves; "open the fight / set position" is **Enter the Fray** (3.24). The
-  old row 3.23 is struck below.
+- **"Battle Stations!" is a real rulebook section, not a move** (corrected
+  2026-06-18; an earlier pass wrongly struck it as a phantom — that strike is
+  reversed). It is the shipboard-combat framework of Chapter 3 (pp. 184–187): 11
+  example crew roles resolved through the existing combat/suffer/recover moves,
+  with per-character position and Aid Your Ally transferring control. It has no
+  roll/stat/outcome, so it correctly has no `schemas.js` entry; row 3.23 is
+  reclassified below as a narration/reference feature (DONE), not a move gap.
 
 Rows updated in place. Genuinely-open items remain flagged GAP/PARTIAL with the
 reason. See `decisions.md` → "Audit reconciliation 2026-06-17".
@@ -227,7 +230,7 @@ Relationship`, `Forge a Bond`.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| ~~3.23~~ | ~~Battle Stations! opens fight; sets position~~ | — | STRUCK | **Not a Starforged move** — stray entry from a `rulebook-summary.md` error (now corrected). "Open the fight / set position" is **Enter the Fray** (3.24). | — | n/a |
+| 3.23 | Battle Stations! — shipboard-combat framework (11 crew roles; rulebook pp. 184–187) | DOC/NARRATION | DONE | **Not a move** (no roll/stat/outcome → no `schemas.js` entry). Resolves via the existing combat/suffer/recover moves with per-character position + Aid Your Ally control hand-off. Module surfaces the 11 roles to the narrator (conditional shipboard-combat guidance) and players (`!stations` + help page). Ship-map mini-game planned (`docs/combat/shipboard-combat-minigame.md`). | Low | `battleStations.js` |
 | 3.24 | Enter the Fray / Gain Ground / React Under Fire / Strike / Clash run resolveMove | MOVE | PINNED | `moveOutcomeMatrix` pins enter_the_fray / gain_ground outcome shapes (incl. in_control / bad_spot position); combat-lifecycle wiring done (3.25/3.26). React Under Fire / Clash shapes not separately fixtured | — | mostly done |
 | 3.25 | Combat positioning (in control / in a bad spot) persists between moves | PIPELINE | DONE | pipeline writes `combatPosition` to the active combat track after every combat move; panel reads it back | — | `resolver` + `progressTracks` |
 | 3.26 | Strike / Clash strong hit marks progress *twice* | MOVE | DONE | `combatProgress: 2` consequence → GM-gated pipeline handler marks twice via `applyCombatProgress` | — | `combat` unit batch |
@@ -441,7 +444,7 @@ updated only when the rule is user-visible.
 | 11 | Adventure-move outcome shapes (3.7) | rulebook | Medium | Per-move outcome consequence templates not pinned | `adventureMoveOutcomes` batch — fixture per move (face_danger / gather_information / compel / etc.) → expected `otherEffect` skeleton |
 | 12 | Quest-move resolution (3.10, 3.11, 3.12) — Reach a Milestone parametric, Fulfill, Forsake | rulebook | High | Vow lifecycle is core; partial coverage today | `questMoves` batch |
 | 13 | Recover-move meter restoration (3.37, 3.38) | rulebook | Medium | Heal/Hearten/Resupply/Repair/Sojourn — meter delta per move | `recoverMoves` batch |
-| 14 | Combat outcome shapes (3.24, 3.27, 3.28, 3.29) | rulebook | Medium | Battle Stations through Take Decisive Action + Face Defeat + Battle | `combatMoves` batch |
+| 14 | Combat outcome shapes (3.24, 3.27, 3.28, 3.29) | rulebook | Medium | Enter the Fray through Take Decisive Action + Face Defeat + Battle | `combatMoves` batch |
 | 15 | Connection lifecycle (3.15, 3.16) — Test Your Relationship, Forge a Bond | rulebook | Medium | Test triggered on stress; Forge a Bond awards Bond asset | `connectionResolution` batch |
 | 16 | Exploration moves (3.18–3.21) — Undertake / Explore Waypoint / Make a Discovery / Finish | rulebook | Medium | Expedition lifecycle plus Discovery legacy mark | `explorationMoves` batch |
 | 17 | Threshold-move triggers (3.40–3.42) — meter=0 → Face Death / Desolation / Overcome Destruction | rulebook | Medium | Trigger detection is testable even when the d100 outcome table is missing | `thresholdTriggers` batch — three triggers, no outcome resolution required |

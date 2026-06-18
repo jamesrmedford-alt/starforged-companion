@@ -96,6 +96,8 @@ import {
   completeProgressTrack,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
+import { finishVow } from "./moves/vow.js";
+import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
 import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
 import {
@@ -691,6 +693,16 @@ export function registerChatHook() {
       return;
     }
 
+    // !stations — post the Battle Stations! shipboard-combat play aid (the 11
+    // crew roles). Any player may invoke; it's a static reference card.
+    if (isBattleStationsCommand(message)) {
+      await ChatMessage.create({
+        content: renderBattleStationsCardHtml(),
+        flags:   { [MODULE_ID]: { battleStationsCard: true } },
+      }).catch(err => console.warn(`${MODULE_ID} | !stations card failed:`, err?.message ?? err));
+      return;
+    }
+
     // !ship envision / !ship history — roll supplementary ship oracles,
     // generate narrator prose, post a card, append a dated section to
     // system.notes (GM-only on the write). Any player may invoke.
@@ -1011,6 +1023,19 @@ export function registerChatHook() {
         }
       }
 
+      // Companion Takes a Hit strong hit — direct +1 companion health, no dialog.
+      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM) {
+        try {
+          const { applyMeterChanges } = await import("./character/actorBridge.js");
+          const companionActor = speakerActor ?? getPlayerActors()[0] ?? null;
+          if (companionActor) {
+            await applyMeterChanges(companionActor, { companionHealth: resolution.consequences.companionHealthChange });
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | companion health change failed:`, err?.message ?? err);
+        }
+      }
+
       // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
       // connection marks its own relationship track ("no roll, mark progress");
       // a bonded connection marks the bonds legacy track per the rolled outcome
@@ -1048,6 +1073,32 @@ export function registerChatHook() {
         }
       }
 
+      // Forge a Bond strong hit — mark connection as bonded and pay bonds legacy.
+      // The Bolster/Expand Influence choice is surfaced in the card text; it affects
+      // connection influence (currently tracked manually in the character sheet).
+      if (resolution.consequences?.forgeABond && game.user.isGM) {
+        try {
+          const conn = await import("./entities/connection.js");
+          const connections = (campaignState.connectionIds ?? [])
+            .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+            .filter(Boolean);
+          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          if (target?.__hostId) {
+            await conn.forgeBond(target.__hostId).catch(err =>
+              console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
+            const ticks = (() => {
+              const LEGACY_REWARD = { troublesome: 1, dangerous: 2, formidable: 4, extreme: 8, epic: 12 };
+              return LEGACY_REWARD[target.rank] ?? 2;
+            })();
+            if (ticks > 0) addLegacyTicks(campaignState, "bonds", ticks);
+            await postForgeABondCard(target, ticks).catch(err =>
+              console.warn(`${MODULE_ID} | forge bond card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | forge a bond failed:`, err?.message ?? err);
+        }
+      }
+
       // Finish an Expedition — complete the open expedition track and pay its
       // rank's legacy reward (weak hit pays one rank lower) onto discoveries.
       if (resolution.consequences?.finishExpedition && game.user.isGM) {
@@ -1066,6 +1117,27 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
+        }
+      }
+
+      // Fulfill Your Vow — close the target vow track and mark the quests legacy
+      // reward. Weak hit pays one rank lower (ranksDown: 1).
+      if (resolution.consequences?.fulfillVow && game.user.isGM) {
+        try {
+          const fin = await finishVow(
+            { moveTarget: interpretation.moveTarget, ranksDown: resolution.consequences.fulfillVow.ranksDown ?? 0 },
+            {
+              listTracks:    () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+            },
+          );
+          if (fin?.track) {
+            if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
+            await postFulfillVowCard(fin).catch(err =>
+              console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | fulfill vow failed:`, err?.message ?? err);
         }
       }
 
@@ -2547,6 +2619,31 @@ async function postFaceDefeatPayThePriceCard() {
     question:   "Face Defeat",
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
   });
+}
+
+async function postFulfillVowCard({ track, legacyTicks }) {
+  const rankLabel = track.rank ? track.rank.charAt(0).toUpperCase() + track.rank.slice(1) : "unknown";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-card--vow-fulfilled"><div class="sf-card-header">⚑ Vow Fulfilled: ${escapeHtml(track.label ?? "vow")}</div><div class="sf-card-body"><p>The <strong>${rankLabel}</strong> vow is complete. Quests legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked.</p></div></div>`,
+      flags: { [MODULE_ID]: { fulfillVowCard: true, trackLabel: track.label, legacyTicks } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postFulfillVowCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+async function postForgeABondCard(connection, legacyTicks) {
+  const nameLabel = connection.name ?? "connection";
+  const rankLabel = connection.rank ? connection.rank.charAt(0).toUpperCase() + connection.rank.slice(1) : "unknown";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-card--forge-bond"><div class="sf-card-header">⚑ Bond Forged: ${escapeHtml(nameLabel)}</div><div class="sf-card-body"><p>${escapeHtml(nameLabel)} is now bonded. Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).</p><p><em>Choose: <strong>Bolster Influence</strong> (add +2) or <strong>Expand Influence</strong> (second role, add +1).</em></p></div></div>`,
+      flags: { [MODULE_ID]: { forgeABondCard: true, connectionName: nameLabel, legacyTicks } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postForgeABondCard: chat post failed:`, err?.message ?? err);
+  }
 }
 
 /**

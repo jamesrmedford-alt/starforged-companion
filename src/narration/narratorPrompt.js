@@ -981,6 +981,7 @@ export function buildNarratorSystemPrompt(
     entityNamesById      = null,
     party                = null,
     rollingSummary       = '',
+    shipboardGuidance    = '',
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1033,6 +1034,13 @@ export function buildNarratorSystemPrompt(
   if (!isMetaMode && effectiveClass && NARRATOR_PERMISSION_KEYS.has(effectiveClass)) {
     parts.push(NARRATOR_PERMISSIONS[effectiveClass]);
   }
+
+  // [2.5] Shipboard combat (Battle Stations!) — additive rules framing when a
+  //       fight is active aboard the command vehicle. Supplements (does not
+  //       replace) the permission class with the canonical crew-role context.
+  //       The detection + text live in moves/battleStations.js (pure); extras
+  //       carries the rendered block in, or '' when not applicable.
+  if (shipboardGuidance) parts.push(shipboardGuidance);
 
   // [3] Oracle seeds — only when the resolved move provides them
   const seedsBlock = formatOracleSeedsBlock(oracleSeeds);

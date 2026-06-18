@@ -375,6 +375,17 @@ spot), **range** (close / near / far), **objectives** (defeat / escape
 - **Battle** — when fights aren't worth resolving move-by-move, run
   the whole thing as a single action roll
 
+**Battle Stations! (shipboard combat).** A Chapter-3 framework (pp.
+184–187), *not* a move, for running starship/vehicle combat with a crew.
+The same combat moves apply, but **position is tracked per character**
+and **Aid Your Ally** hands control between crew members. The rulebook is
+explicit that there are "no strict shipboard combat roles," but lists 11
+example crew tasks — Command, Countermeasures, Damage Control,
+Engineering, Escort, Gunnery, Infantry, Medical, Piloting, Sensors,
+Systems — that a PC, companion, or ally can adopt and fluidly switch
+between as the fight develops (drop out of the gun turret to fight an
+engine-room fire). Solo players jump between or prioritise stations.
+
 The position/range/objectives model means combat in Starforged is
 narrative, not tactical. There is no grid. Range is fictional — "near"
 means whatever the fiction says it means.

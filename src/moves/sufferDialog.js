@@ -133,6 +133,12 @@ function optionToCalls(opt, selection) {
     return [{ kind: "next-bonus", amount: opt.nextBonus }];
   }
 
+  // Clear a character impact (e.g. clear "wounded" on a successful Heal,
+  // "shaken" on Hearten, "unprepared" on Resupply).
+  if (opt.clearImpact) {
+    return [{ kind: "clear-impact", debility: opt.clearImpact }];
+  }
+
   // Suffer route via id (e.g. "Sacrifice Resources (-1)") OR generic
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
@@ -157,7 +163,7 @@ function optionToCalls(opt, selection) {
   // Explicit meter delta options (e.g. "+1 momentum", "-1 health").
   const meterCalls = [];
   for (const [field, delta] of Object.entries(opt)) {
-    if (["label", "requires", "noop", "route", "complication", "scope", "suffer", "amount", "chain", "kind", "count", "rank", "mark"].includes(field)) continue;
+    if (["label", "requires", "noop", "route", "complication", "scope", "suffer", "amount", "chain", "kind", "count", "rank", "mark", "clearImpact"].includes(field)) continue;
     if (typeof delta !== "number") continue;
     meterCalls.push({ kind: "meter", meterKey: field, delta });
   }
@@ -207,6 +213,11 @@ export async function runSufferResolution(calls, actor, opts = {}) {
       case "mark": {
         await setDebility(actor, call.debility, true);
         results.push({ kind: "mark", debility: call.debility });
+        break;
+      }
+      case "clear-impact": {
+        await setDebility(actor, call.debility, false);
+        results.push({ kind: "clear-impact", debility: call.debility });
         break;
       }
       case "noop":
@@ -323,9 +334,13 @@ export function isOptionAvailable(opt, ctx = {}) {
   const actor = ctx.actor;
   const debility = actor?.system?.debility ?? {};
 
-  if (req === "!wounded")  return !debility.wounded;
-  if (req === "!shaken")   return !debility.shaken;
-  if (req === "!battered") return !debility.battered;
+  if (req === "!wounded")    return !debility.wounded;
+  if (req === "!shaken")     return !debility.shaken;
+  if (req === "!battered")   return !debility.battered;
+  if (req === "!unprepared") return !debility.unprepared;
+  if (req === "wounded")     return !!debility.wounded;
+  if (req === "shaken")      return !!debility.shaken;
+  if (req === "unprepared")  return !!debility.unprepared;
 
   if (req === "companionHealth>0") {
     return (ctx.companionHealth ?? 0) > 0;

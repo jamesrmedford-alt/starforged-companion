@@ -150,6 +150,21 @@ describe("resolveSufferSelection — B2 enumerated prompts", () => {
     expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "next-bonus", amount: 1 }]);
   });
 
+  it("clearImpact option emits clear-impact call", () => {
+    const prompt = { kind: "enumerated", options: [{ label: "Clear wounded", clearImpact: "wounded" }] };
+    expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "clear-impact", debility: "wounded" }]);
+  });
+
+  it("chain with clearImpact + meter emits both calls in order (heal pattern)", () => {
+    const prompt = { kind: "enumerated", options: [{
+      label: "Clear wounded + +2 health",
+      chain: [{ clearImpact: "wounded" }, { health: 2 }],
+    }]};
+    const r = resolveSufferSelection(prompt, { optionIndices: [0] });
+    expect(r[0]).toEqual({ kind: "clear-impact", debility: "wounded" });
+    expect(r[1]).toEqual({ kind: "meter", meterKey: "health", delta: 2 });
+  });
+
   it("multi: handles multiple selected indices — combat-progress + momentum", () => {
     const prompt = { kind: "enumerated", multi: 2, options: [
       { label: "Mark progress",   combatProgress: 1 },
@@ -221,6 +236,19 @@ describe("isOptionAvailable", () => {
 
   it("fail-opens on unknown requires (returns true rather than dropping the option)", () => {
     expect(isOptionAvailable({ requires: "barbarian-language" }, { actor: actor() })).toBe(true);
+  });
+
+  it("respects positive 'wounded' / 'shaken' / 'unprepared' requires", () => {
+    const clean   = actor({});
+    const wounded = actor({ wounded: true });
+    const shaken  = actor({ shaken: true });
+    const unprepared = actor({ unprepared: true });
+    expect(isOptionAvailable({ requires: "wounded" },    { actor: clean })).toBe(false);
+    expect(isOptionAvailable({ requires: "wounded" },    { actor: wounded })).toBe(true);
+    expect(isOptionAvailable({ requires: "shaken" },     { actor: shaken })).toBe(true);
+    expect(isOptionAvailable({ requires: "unprepared" }, { actor: unprepared })).toBe(true);
+    expect(isOptionAvailable({ requires: "!unprepared" }, { actor: unprepared })).toBe(false);
+    expect(isOptionAvailable({ requires: "!unprepared" }, { actor: clean })).toBe(true);
   });
 });
 

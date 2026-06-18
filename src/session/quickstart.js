@@ -113,7 +113,7 @@ export async function runPlaytestQuickstart(opts = {}) {
       `<p>Create a fresh random playtest setup in this world?</p>` +
       `<ul><li>Roll and store all 14 <strong>World Truths</strong></li>` +
       `<li>Generate a random <strong>sector</strong> (full pipeline — art/stubs/portraits per your settings)</li>` +
-      `<li>Create a <strong>PC</strong> with the 3/2/2/1/1 stat array and two random Path assets</li>` +
+      `<li>Create <strong>two PCs</strong>, each with the 3/2/2/1/1 stat array and two random Path assets</li>` +
       `<li>Create a command-vehicle <strong>starship</strong> with two flavour-matched Modules</li></ul>` +
       `<p>Each run adds new content — run on a fresh world for a clean slate.</p>`,
   }).catch(() => false);
@@ -148,18 +148,19 @@ export async function runPlaytestQuickstart(opts = {}) {
     report("Sector", false, err?.message ?? "failed");
   }
 
-  // 3 — Player character
-  let pc = null;
-  try {
-    pc = await createQuickstartPc();
-    const paths = (pc.items?.contents ?? [])
-      .filter(i => i.type === "asset")
-      .map(i => i.name)
-      .join(" + ");
-    report("Character", true, `${pc.name} (paths: ${paths || "none found in pack"})`);
-  } catch (err) {
-    console.error(`${MODULE_ID} | quickstart: PC failed:`, err);
-    report("Character", false, err?.message ?? "failed");
+  // 3 — Player characters (two PCs; first is registered as the active character)
+  for (const [label, setActive] of [["Character 1", true], ["Character 2", false]]) {
+    try {
+      const pc = await createQuickstartPc({ setActive });
+      const paths = (pc.items?.contents ?? [])
+        .filter(i => i.type === "asset")
+        .map(i => i.name)
+        .join(" + ");
+      report(label, true, `${pc.name} (paths: ${paths || "none found in pack"})`);
+    } catch (err) {
+      console.error(`${MODULE_ID} | quickstart: ${label} failed:`, err);
+      report(label, false, err?.message ?? "failed");
+    }
   }
 
   // 4 — Starship
@@ -199,7 +200,7 @@ export async function runPlaytestQuickstart(opts = {}) {
  * Create the PC: character Actor in PCs/, 3/2/2/1/1 stats, two random
  * Path assets from the canonical pack, registered as the active character.
  */
-async function createQuickstartPc() {
+async function createQuickstartPc({ setActive = false } = {}) {
   const folder = await getOrCreateActorFolder("PCs").catch(() => null);
   // Pin the Starforged sheet — the system defaults `character` actors to the
   // classic Ironsworn sheet, and quickstart bypasses the create-dialog that
@@ -237,8 +238,10 @@ async function createQuickstartPc() {
     console.warn(`${MODULE_ID} | quickstart: no Path assets found in the canonical pack`);
   }
 
-  await game.settings.set(MODULE_ID, "activeCharacterId", actor.id).catch(err =>
-    console.warn(`${MODULE_ID} | quickstart: activeCharacterId set failed:`, err));
+  if (setActive) {
+    await game.settings.set(MODULE_ID, "activeCharacterId", actor.id).catch(err =>
+      console.warn(`${MODULE_ID} | quickstart: activeCharacterId set failed:`, err));
+  }
   return actor;
 }
 
