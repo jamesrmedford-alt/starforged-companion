@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildPrompt, buildRegenerationPrompt } from "../../src/art/promptBuilder.js";
+import { buildPrompt, buildRegenerationPrompt, buildNeutralPortraitPrompt } from "../../src/art/promptBuilder.js";
 
 describe("buildPrompt — connection gender reinforcement (finding I)", () => {
   it("includes 'a woman' for she/her pronouns", () => {
@@ -52,5 +52,50 @@ describe("buildPrompt — connection gender reinforcement (finding I)", () => {
   it("does not inject a gender term for non-connection entity types", () => {
     const { prompt } = buildPrompt("settlement", "domed colony", { pronouns: "she/her", population: "Few" });
     expect(prompt).not.toContain("a woman");
+  });
+});
+
+describe("sanitiseForPolicy — captivity / raider / violence vocabulary (finding #3)", () => {
+  const trigger =
+    "a captive woman, recently kidnapped by raiders, blood on her face, shackled and beaten";
+
+  it("strips the moderation-triggering words from the built prompt", () => {
+    const { prompt } = buildPrompt("connection", trigger, { pronouns: "she/her" });
+    for (const word of ["captive", "kidnapped", "raiders", "blood", "shackled", "beaten"]) {
+      expect(prompt.toLowerCase()).not.toContain(word);
+    }
+    // still produces a usable portrait prompt with the established gender
+    expect(prompt).toContain("a woman");
+    expect(prompt).toContain("character portrait");
+  });
+
+  it("redirects raider/pirate language to neutral framing", () => {
+    const { prompt } = buildPrompt("connection", "a hardened pirate marauder", {});
+    expect(prompt.toLowerCase()).not.toContain("pirate");
+    expect(prompt.toLowerCase()).not.toContain("marauder");
+    expect(prompt).toContain("rough-edged spacer");
+  });
+});
+
+describe("buildNeutralPortraitPrompt — moderation-retry fallback (finding #3)", () => {
+  it("drops the scene description entirely, keeping only style + card fields", () => {
+    const sceneProse = "kidnapped and bleeding in a raider hold";
+    const { prompt } = buildNeutralPortraitPrompt("connection", {
+      pronouns: "she/her", role: "diplomat",
+    });
+    expect(prompt).not.toContain("raider");
+    expect(prompt).not.toContain("bleeding");
+    expect(prompt).not.toContain("hold");
+    // card-derived detail survives
+    expect(prompt).toContain("a woman");
+    expect(prompt).toContain("role: diplomat");
+    expect(prompt).toContain("character portrait");
+    // sanity: the scene prose genuinely isn't in there
+    expect(prompt).not.toContain(sceneProse);
+  });
+
+  it("uses landscape size for ships and planets, square otherwise", () => {
+    expect(buildNeutralPortraitPrompt("ship", {}).size).toBe("1792x1024");
+    expect(buildNeutralPortraitPrompt("connection", {}).size).toBe("1024x1024");
   });
 });

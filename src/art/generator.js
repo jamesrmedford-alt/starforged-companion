@@ -30,7 +30,7 @@
  * All errors are non-blocking. A missing portrait is preferable to a broken scene.
  */
 
-import { buildPrompt, buildRegenerationPrompt } from "./promptBuilder.js";
+import { buildPrompt, buildRegenerationPrompt, buildNeutralPortraitPrompt } from "./promptBuilder.js";
 import { storeArtAsset, loadArtAsset }           from "./storage.js";
 import { generateOpenRouterImage }                from "./openRouterImage.js";
 import {
@@ -80,7 +80,8 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   }
 
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callOpenRouter(prompt, size, entity._id, entityType);
+  const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
 
   if (!asset) return null;
 
@@ -129,7 +130,8 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
   }
 
   const { prompt, size } = buildRegenerationPrompt(entityType, entity.portraitSourceDescription, entity);
-  const asset = await callOpenRouter(prompt, size, entity._id, entityType);
+  const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
 
   if (!asset) return null;
 
@@ -151,47 +153,71 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 // OpenRouter call
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function callOpenRouter(prompt, size, entityId, entityType) {
+async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt = null) {
   const apiKey = readOpenRouterKey();
   if (!apiKey) {
     notifyMissingOpenRouterKey();
     return null;
   }
 
+  const model = readOpenRouterModel();
+  let usedPrompt = prompt;
+  let b64;
+
   try {
-    const b64 = await generateOpenRouterImage({
-      apiKey,
-      prompt,
-      model: readOpenRouterModel(),
+    b64 = await generateOpenRouterImage({
+      apiKey, prompt, model,
       title: "Starforged Companion - entity portrait",
     });
-
-    if (!b64) {
-      console.warn(`${MODULE_ID} | Art: OpenRouter returned no image data.`);
-      return null;
-    }
-
-    return {
-      _id:              generateId(),
-      entityId,
-      entityType,
-      prompt,
-      revisedPrompt:    prompt,
-      b64,
-      size,
-      generatedAt:      new Date().toISOString(),
-      regenerationUsed: false,
-      locked:           false,
-      superseded:       false,
-    };
   } catch (err) {
     if (err.message?.includes("401") || err.message?.includes("403")) {
       notifyAuthError(err.message);
-    } else {
-      console.error(`${MODULE_ID} | Art: OpenRouter call failed:`, err.message);
+      return null;
     }
+
+    // Content-moderation refusal — the image provider flagged the prompt
+    // (e.g. Black Forest Labs returns status "Content Moderated" in the 400
+    // body). The narrator scene description is the usual trigger; retry once
+    // with a neutral, card-only prompt that drops it. (Playtest finding #3.)
+    const moderated = /content moderated|moderation/i.test(err.message ?? "");
+    if (moderated && fallbackPrompt && fallbackPrompt !== prompt) {
+      console.warn(`${MODULE_ID} | Art: prompt was content-moderated; retrying with a neutral portrait prompt.`);
+      try {
+        b64 = await generateOpenRouterImage({
+          apiKey, prompt: fallbackPrompt, model,
+          title: "Starforged Companion - entity portrait",
+        });
+        usedPrompt = fallbackPrompt;
+      } catch (err2) {
+        console.error(`${MODULE_ID} | Art: neutral-prompt retry failed:`, err2.message);
+        if (/content moderated|moderation/i.test(err2.message ?? "")) notifyModeration(entityType);
+        return null;
+      }
+    } else {
+      if (moderated) notifyModeration(entityType);
+      else console.error(`${MODULE_ID} | Art: OpenRouter call failed:`, err.message);
+      return null;
+    }
+  }
+
+  if (!b64) {
+    console.warn(`${MODULE_ID} | Art: OpenRouter returned no image data.`);
     return null;
   }
+
+  return {
+    _id:              generateId(),
+    entityId,
+    entityType,
+    prompt:           usedPrompt,
+    revisedPrompt:    usedPrompt,
+    b64,
+    size,
+    generatedAt:      new Date().toISOString(),
+    regenerationUsed: false,
+    locked:           false,
+    superseded:       false,
+  };
 }
 
 
@@ -374,6 +400,17 @@ function notifyAuthError(code) {
       `Starforged Companion: OpenRouter API error (${code}). ` +
       "Check your API key and account balance in module settings.",
       { permanent: true }
+    );
+  }
+}
+
+function notifyModeration(entityType) {
+  console.warn(`${MODULE_ID} | Art: portrait blocked by image-provider content moderation (${entityType ?? "entity"}).`);
+  if (typeof ui !== "undefined") {
+    ui.notifications?.warn(
+      "Starforged Companion: The portrait was blocked by the image provider's content filter, " +
+      "even after softening the prompt. The entity is fine — only its art was skipped. " +
+      "You can retry from the Entities panel once the surrounding fiction is less graphic."
     );
   }
 }
