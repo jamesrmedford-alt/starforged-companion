@@ -97,6 +97,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
 import { finishVow } from "./moves/vow.js";
+import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
 import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
 import {
@@ -689,6 +690,16 @@ export function registerChatHook() {
     // !repair — vehicle repair point-spend dialog (play kit p. 7)
     if (isRepairCommand(message)) {
       await handleRepairCommand(message);
+      return;
+    }
+
+    // !stations — post the Battle Stations! shipboard-combat play aid (the 11
+    // crew roles). Any player may invoke; it's a static reference card.
+    if (isBattleStationsCommand(message)) {
+      await ChatMessage.create({
+        content: renderBattleStationsCardHtml(),
+        flags:   { [MODULE_ID]: { battleStationsCard: true } },
+      }).catch(err => console.warn(`${MODULE_ID} | !stations card failed:`, err?.message ?? err));
       return;
     }
 

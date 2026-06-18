@@ -132,6 +132,33 @@ let _lastRecapInjectedSessionId = null;
  * @param {Object|null} [opts.oracleSeeds]— oracle seeds (move path only)
  * @returns {Promise<Object>} the extras packet for buildNarratorSystemPrompt
  */
+/**
+ * Build the shipboard-combat guidance block when a fight is active aboard the
+ * command vehicle. Detects an open combat track + a command vehicle, then
+ * delegates the inject/skip decision and the text to the pure battleStations
+ * module. Fail-open: any failure returns '' so narration is never blocked.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<string>}
+ */
+async function buildShipboardGuidanceBlock(campaignState) {
+  try {
+    const [{ getActiveCombatTrack }, { getCommandVehicleActor }, bs] = await Promise.all([
+      import('../ui/progressTracks.js'),
+      import('../moves/abilityScanner.js'),
+      import('../moves/battleStations.js'),
+    ]);
+    const track    = await getActiveCombatTrack();
+    const ship     = getCommandVehicleActor(campaignState);
+    const shipName = ship?.name ?? null;
+    if (!bs.shouldInjectShipboardGuidance(track, shipName)) return '';
+    return bs.buildShipboardCombatGuidance({ shipName });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: shipboard guidance build failed:`, err?.message ?? err);
+    return '';
+  }
+}
+
 export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const {
     playerNarration = '',
@@ -161,6 +188,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   extras.rollingSummary = (mode === 'campaign_recap')
     ? ''
     : await getRollingSessionSummary(campaignState);
+
+  // Shipboard combat (Battle Stations!) — when a fight is active aboard the
+  // crew's command vehicle, hand the narrator the canonical shipboard-combat
+  // framing (11 crew roles, per-character position, Aid Your Ally hands off
+  // control). Additive guidance; does not affect the entity-permission class.
+  // Fail-open, and skipped for campaign_recap (a summary, not a live scene).
+  extras.shipboardGuidance = (mode === 'campaign_recap')
+    ? ''
+    : await buildShipboardGuidanceBlock(campaignState);
 
   if (mode === 'move_resolution') {
     // The move pipeline resolves relevance itself (clarification dialog +

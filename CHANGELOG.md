@@ -17,6 +17,7 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Companion Takes a Hit strong hit auto-applies the +1 companion health.** No more reading the text and ticking the box manually.
 - Added: **Fulfill Your Vow closes the vow track and marks your quests legacy.** A strong hit marks the full reward; a weak hit marks one rank lower. The track is completed automatically, matched by the vow name you spoke.
 - Added: **Forge a Bond marks your bonds legacy and sets the connection as bonded.** The legacy reward is applied per the connection's rank, and a card prompts the Bolster/Expand Influence choice.
+- Added: **Shipboard combat (Battle Stations!) is now supported.** Battle Stations! is the rulebook's framework for running starship fights as a crew — not a separate move. When a fight is underway aboard your command vehicle, the narrator is automatically given the shipboard-combat framing: the 11 example crew stations (Gunnery, Piloting, Damage Control, …), that position is tracked per character, and that Aid Your Ally hands off control between crew. The new `!stations` command posts the role list as an at-the-table play aid. A ship-map "battle stations" mini-game is planned for a future release. (This also corrects an earlier build that wrongly treated Battle Stations! as a phantom that didn't exist.)
 
 ## [1.7.14] — 2026-06-16
 

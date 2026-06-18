@@ -1194,12 +1194,25 @@ none exists, since Battle is typically used *instead* of a move-by-move track).
 Weak hit and miss set `routePayThePrice: true` (visible PtP card + suffer
 dispatch, same as Face Defeat); strong hit keeps +2 momentum.
 
-**"Battle Stations!" is not a Starforged move.** The official combat set is eight
-moves (Enter the Fray, Gain Ground, React Under Fire, Strike, Clash, Take Decisive
-Action, Face Defeat, Battle). `schemas.js` has no `battle_stations` entry and the
-play kit lists no such move. It was a stray line in `rulebook-summary.md` (now
-corrected) that propagated into the coverage audit as phantom row 3.23 (now
-struck). "Open the fight / set position" is **Enter the Fray** (3.24).
+**"Battle Stations!" is a real rulebook section, but not a move (corrected
+2026-06-18).** An earlier pass struck it as a "phantom" — that was wrong, and the
+strike is reversed. Battle Stations! is a named section of Chapter 3 "Gameplay in
+Depth" (rulebook pp. 184–187): a framework for running shipboard/starship combat
+with a crew. It is *not* a move — no roll, no stat, no strong/weak/miss outcome —
+so it correctly has no `schemas.js` entry. Mechanically it resolves through the
+existing combat moves (Gain Ground, Strike, React Under Fire, Clash, Aid Your
+Ally) plus suffer/recover moves, with **position tracked per character** and **Aid
+Your Ally transferring control** between crew (see the p. 187 worked example:
+pilot + gunner each hold their own position). The rulebook is explicit that "there
+are no strict shipboard combat roles," but offers 11 example crew tasks: Command,
+Countermeasures, Damage Control, Engineering, Escort, Gunnery, Infantry, Medical,
+Piloting, Sensors, Systems. The original `rulebook-summary.md` bullet ("open the
+fight, set position") *was* a mis-extraction — but the fix is to describe Battle
+Stations! correctly, not delete it. The module now surfaces the 11 roles to the
+narrator (a conditional shipboard-combat guidance block, gated on an active combat
+track + a command vehicle) and to players (`!stations` command + a help page). A
+richer ship-map "battle stations" mini-game is planned —
+see `docs/combat/shipboard-combat-minigame.md`.
 
 **Audit reconciliation.** `rulebook-coverage-audit.md` was written 2026-05-29 and
 overtaken within hours (P1–P20 closed the same night by `03070a4` + `943265e`),
