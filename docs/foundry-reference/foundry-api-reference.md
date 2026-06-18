@@ -1226,6 +1226,149 @@ npx @foundryvtt/foundryvtt-cli package workerExtract --type Module   --id starfo
 
 ---
 
+## Combat and Combatant (v13)
+
+Foundry's combat system uses two nested document types: `Combat` (top-level
+document, one per encounter) and `Combatant` (embedded document, one per
+participant). There is no separate initiative queue in the document model —
+initiative is just a number field on each Combatant, which Foundry uses to
+sort the tracker sidebar. For Starforged (position-based, no initiative) set
+initiative to `null` on all combatants and suppress it via CSS.
+
+### Collections
+
+```js
+game.combats        // CombatCollection — all Combat documents in the world
+game.combat         // the currently viewed Combat document, or null
+```
+
+### Combat.create(data)
+
+Creates a new Combat document in the database.
+
+```js
+// Theatre-of-mind play (no scene)
+const combat = await Combat.create({});
+
+// Scene-mapped combat
+const combat = await Combat.create({ scene: canvas.scene.id });
+```
+
+Returns `Promise<Combat>`. The document is immediately saved to the database
+and appears in `game.combats` before the promise resolves.
+
+### Combat properties and methods
+
+```js
+combat.id              // string ID
+combat.combatants      // EmbeddedCollection<Combatant> — all combatants
+combat.scene           // linked Scene document, or null
+
+// Module flags
+combat.getFlag(moduleId, key)               // read
+await combat.setFlag(moduleId, key, value)  // write
+
+// Add combatants
+await combat.createEmbeddedDocuments('Combatant', [
+  { actorId: actor.id, tokenId: token?.id ?? null, name: actor.name },
+]);
+
+// Delete the combat
+await combat.delete();
+```
+
+### Combatant
+
+Embedded document within a `Combat`. Each combatant represents one participant.
+
+```js
+combatant.id          // string
+combatant.actorId     // linked Actor ID (may be null for token-only combatants)
+combatant.actor       // linked Actor document (null if actor not in game.actors)
+combatant.tokenId     // linked Token ID (null for theatre-of-mind)
+combatant.name        // display name
+combatant.initiative  // number | null — null = unsorted (appears at bottom)
+combatant.defeated    // boolean
+
+// Module flags
+combatant.getFlag(moduleId, key)
+await combatant.setFlag(moduleId, key, value)
+
+// Update fields
+await combatant.update({ initiative: null, defeated: false });
+
+// Delete from combat
+await combatant.delete();
+```
+
+### renderCombatTracker hook
+
+Fires after the CombatTracker sidebar panel renders. Use this to inject
+custom UI — position badges, range toggles, etc. The `html` argument is an
+HTMLElement in v13 (never jQuery).
+
+```js
+Hooks.on('renderCombatTracker', (app, html) => {
+  const root = html instanceof HTMLElement ? html : html[0];
+  if (!root) return;
+
+  // Each combatant row selector
+  for (const combatant of (game.combat?.combatants ?? [])) {
+    const row = root.querySelector(`[data-combatant-id="${combatant.id}"]`);
+    if (!row) continue;
+
+    // Remove previously injected elements before re-injecting (prevents
+    // duplicate listeners on re-renders — same pattern as renderSceneControls)
+    row.querySelectorAll('.my-custom-badge').forEach(el => el.remove());
+
+    const badge = document.createElement('span');
+    badge.className = 'my-custom-badge';
+    badge.textContent = combatant.getFlag('my-module', 'myFlag') ?? '';
+
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      combatant.setFlag('my-module', 'myFlag', 'new-value');
+    });
+
+    const controls = row.querySelector('.combatant-controls') ?? row;
+    controls.after(badge);
+  }
+});
+```
+
+Key DOM selectors in v13's CombatTracker:
+- `[data-combatant-id="${id}"]` — each combatant row (`<li>`)
+- `.combatant-controls` — the button group at the right of each row
+- `.initiative` — the initiative number display / input in each row
+- `.combat-controls` — the header bar with Begin Combat / Next Turn buttons
+
+### Suppressing native combat UI via CSS
+
+For systems that don't use initiative order (like Starforged), add a class to
+the tracker root and hide the irrelevant elements:
+
+```css
+/* Hide initiative and round/turn controls for Starforged combats */
+.sf-starforged-combat .initiative { display: none; }
+.sf-starforged-combat .combat-controls { display: none; }
+```
+
+### Notes — v13 specifics
+
+- `Combatant.create(data, {parent: combat})` also works but
+  `combat.createEmbeddedDocuments('Combatant', [...])` is the idiomatic pattern.
+- `game.combats` is a `CombatCollection`; iterate with `for...of` or `.find()`.
+- There is no `Combat` class property to check — use
+  `combat instanceof Combat` to type-narrow if needed.
+- `game.combat` points to the combat currently displayed in the sidebar (the
+  "viewed" combat). In multi-combat worlds this may differ from the combat
+  you just created. Always look up your combat via flags rather than relying
+  on `game.combat`.
+- `combat.startCombat()` resets the turn order and advances to round 1 — do
+  NOT call this for Starforged, which has no rounds or initiative.
+
+---
+
 ## CSS Layers (v13)
 
 Version 13 fully implemented CSS Layers. All system and module defined styles are automatically opted in. This means module CSS may need to use `@layer` to properly override Foundry core styles.

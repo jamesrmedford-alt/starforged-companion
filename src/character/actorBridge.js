@@ -351,6 +351,22 @@ export async function setDebility(actor, debilityKey, value) {
 }
 
 /**
+ * Write the character's combat position to actor.system.combatPosition.
+ * Accepts the vendor schema values: 'inControl' | 'inABadSpot' | 'none' | ''.
+ * Silently ignores invalid values rather than writing garbage to the actor.
+ * @param {Actor} actor
+ * @param {string} position
+ * @returns {Promise<void>}
+ */
+export async function setCombatPosition(actor, position) {
+  if (!actor) return;
+  const VALID = ['inControl', 'inABadSpot', 'none', ''];
+  const value = VALID.includes(position) ? position : 'none';
+  await actor.update({ 'system.combatPosition': value });
+  invalidateActorCache(actor.id);
+}
+
+/**
  * Award XP to the Actor, clamped to xp.max.
  * @param {Actor} actor
  * @param {number} amount

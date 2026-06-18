@@ -439,6 +439,8 @@ global.makeTestActor = (overrides = {}) => {
       biography: sys.biography ?? '',
       callsign:  sys.callsign  ?? '',
       pronouns:  sys.pronouns  ?? '',
+      // Combat position (foundry-ironsworn schema: inControl | inABadSpot | none | '').
+      combatPosition: sys.combatPosition ?? '',
       // Vendor system computed getters — tests may override these to simulate
       // foundry-ironsworn's #impactCount-driven momentumMax / momentumReset.
       ...(sys.momentumMax   !== undefined ? { momentumMax:   sys.momentumMax   } : {}),

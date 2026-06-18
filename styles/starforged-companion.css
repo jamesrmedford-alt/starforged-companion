@@ -2445,3 +2445,67 @@
 .sf-incite-prompt {
   color: var(--color-text-dark-secondary, #555);
 }
+
+
+/* ============================================================================
+   STARFORGED COMBAT TRACKER
+   Injected when .sf-starforged-combat is added to the CombatTracker root.
+   Suppresses the native initiative / round UI and adds position + range badges.
+   ============================================================================ */
+
+/* Hide initiative numbers and round/turn controls — Starforged has no initiative */
+.sf-starforged-combat .initiative { display: none !important; }
+.sf-starforged-combat .combat-controls { display: none !important; }
+
+/* Badge container — sits below each combatant row */
+.sf-combat-badges {
+  display:         flex;
+  gap:             4px;
+  padding:         2px 4px 4px 34px; /* left-indent matches token image width */
+  flex-wrap:       wrap;
+}
+
+/* Base badge style — clickable pill buttons */
+.sf-combat-badge {
+  display:         inline-flex;
+  align-items:     center;
+  padding:         1px 7px;
+  border-radius:   10px;
+  border:          1px solid transparent;
+  font-size:       0.75em;
+  line-height:     1.6;
+  cursor:          pointer;
+  white-space:     nowrap;
+  transition:      opacity 0.15s;
+}
+.sf-combat-badge:hover { opacity: 0.85; }
+
+/* Position badges */
+.sf-pos-badge.sf-pos-inControl {
+  background:  #1a5c2e;
+  border-color: #2d8f49;
+  color:       #8effa8;
+}
+.sf-pos-badge.sf-pos-inABadSpot {
+  background:  #5c1a1a;
+  border-color: #8f2d2d;
+  color:       #ffb3b3;
+}
+.sf-pos-badge.sf-pos-none,
+.sf-pos-badge.sf-pos- {
+  background:  rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color:       var(--color-text-light-7, #aaa);
+}
+
+/* Range badges */
+.sf-range-badge.sf-range-close {
+  background:  #1a2e5c;
+  border-color: #2d4f8f;
+  color:       #b3ccff;
+}
+.sf-range-badge.sf-range-far {
+  background:  #3c1a5c;
+  border-color: #6a2d8f;
+  color:       #d9b3ff;
+}
