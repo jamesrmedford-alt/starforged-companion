@@ -41,7 +41,7 @@ export async function generateShipMapBackground(ship, shipActor) {
     return null;
   }
 
-  const { prompt } = buildShipMapBackgroundPrompt(ship ?? {});
+  const { prompt } = buildShipMapBackgroundPrompt(ship ?? {}, moduleNamesForActor(shipActor));
 
   let b64;
   try {
@@ -84,12 +84,20 @@ export async function generateShipMapBackground(ship, shipActor) {
  * has a clear subject. Pure.
  *
  * @param {{ type?:string, firstLook?:string, name?:string }} ship
+ * @param {string[]} [moduleNames] — installed module names, drawn as compartments
  * @returns {{ prompt: string, size: string }}
  */
-export function buildShipMapBackgroundPrompt(ship = {}) {
+export function buildShipMapBackgroundPrompt(ship = {}, moduleNames = []) {
   const seedBits = [ship.type, ship.firstLook].map(s => String(s ?? "").trim()).filter(Boolean);
   const seed = seedBits.length
     ? `The vessel is: ${seedBits.join("; ")}. `
+    : "";
+
+  const mods = (Array.isArray(moduleNames) ? moduleNames : [])
+    .map(m => String(m ?? "").trim())
+    .filter(Boolean);
+  const moduleClause = mods.length
+    ? `Also include distinct compartments for the ship's installed modules: ${mods.join(", ")}. `
     : "";
 
   const prompt =
@@ -99,10 +107,11 @@ export function buildShipMapBackgroundPrompt(ship = {}) {
     `the engine/drive section to the right, filling the frame on a dark background. ` +
     `Clearly readable internal compartments and corridors: a cockpit and bridge at ` +
     `the front, a sensor and electronic-warfare bay, a weapon turret, a central ` +
-    `computer core, a boarding airlock amidships, a medical bay, a damage-control / ` +
-    `engineering section, and a drive section at the rear. Clean schematic line work, ` +
-    `subtle blue-and-amber technical glow, grid and panel detailing, the silhouette ` +
-    `of a starship hull enclosing every compartment. ` +
+    `computer core, a boarding airlock amidships, a crew galley and mess, a medical ` +
+    `bay, a damage-control / engineering section, and a drive section at the rear. ` +
+    moduleClause +
+    `Clean schematic line work, subtle blue-and-amber technical glow, grid and panel ` +
+    `detailing, the silhouette of a starship hull enclosing every compartment. ` +
     `Orthographic top-down view, no perspective, no characters, no text, no labels, ` +
     `no callouts, no borders. 1792x1024 landscape orientation.`;
 
@@ -113,6 +122,16 @@ export function buildShipMapBackgroundPrompt(ship = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNALS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Installed Module asset names on a starship Actor (for the art prompt). Pure read. */
+function moduleNamesForActor(shipActor) {
+  const raw = shipActor?.items?.contents ?? shipActor?.items ?? [];
+  const items = Array.isArray(raw) ? raw : [];
+  return items
+    .filter(it => it?.type === "asset" && /module/i.test(String(it?.system?.category ?? "")))
+    .map(it => it.name)
+    .filter(Boolean);
+}
 
 function readOpenRouterKey() {
   try {

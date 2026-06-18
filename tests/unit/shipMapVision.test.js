@@ -133,4 +133,27 @@ describe("resolveStationCoordsFromImage()", () => {
     apiPost.mockRejectedValue(new Error("network"));
     expect(await resolveStationCoordsFromImage("BYTES", { apiKey: "k" })).toBeNull();
   });
+
+  it("includes optional galley/module coords when valid, but does not require them", async () => {
+    const coords = goodCoords();
+    coords["galley"] = { x: 0.5, y: 0.8 };
+    coords["module:medbay"] = { x: 0.7, y: 0.2 };
+    apiPost.mockResolvedValue({ content: [{ type: "text", text: JSON.stringify(coords) }] });
+
+    const features = [
+      ...STATION_LAYOUT.map(s => ({ id: s.id, kind: "station", label: s.id, description: "" })),
+      { id: "galley", kind: "amenity", label: "Galley", description: "" },
+      { id: "module:medbay", kind: "module", label: "Medbay", description: "" },
+    ];
+    const result = await resolveStationCoordsFromImage("BYTES", { apiKey: "k", features });
+    expect(result["galley"]).toEqual({ x: 0.5, y: 0.8 });
+    expect(result["module:medbay"]).toEqual({ x: 0.7, y: 0.2 });
+
+    // A missing optional id is fine — stations still gate the result.
+    const coords2 = goodCoords();   // no galley/module entries
+    apiPost.mockResolvedValue({ content: [{ type: "text", text: JSON.stringify(coords2) }] });
+    const result2 = await resolveStationCoordsFromImage("BYTES", { apiKey: "k", features });
+    expect(result2).not.toBeNull();
+    expect(result2["galley"]).toBeUndefined();
+  });
 });

@@ -4,26 +4,32 @@
  *
  * Phase A of the shipboard-combat mini-game (docs/combat/shipboard-combat-
  * minigame.md). On command-vehicle creation — or on demand via `!shipmap` —
- * generate a Foundry Scene that is a deck plan of the crew's ship, with the 11
- * shipboard-combat stations marked as Note pins (Gunnery at the turret,
- * Piloting at the cockpit, Engineering at the drive, …). The map is a play-aid
- * and a narrator-grounding device, NOT a tactical grid: Starforged combat is
- * fictional, there is no range/position-on-a-board, and the stations are
- * examples a crew adopts and switches between, not fixed roles.
+ * generate a Foundry Scene that is a deck plan of the crew's ship. The map
+ * pins three kinds of "deck feature":
+ *   - the 11 shipboard-combat STATIONS (rulebook crew tasks, from
+ *     battleStations.js SHIPBOARD_ROLES — Gunnery at the turret, Piloting at
+ *     the cockpit, …),
+ *   - the GALLEY (the crew's mess / common area — every ship has one), and
+ *   - the ship's installed MODULES (the `asset`/Module Items actually on the
+ *     starship Actor — Medbay, Heavy Cannons, Expanded Hold, …), so the map
+ *     reflects the real vessel, not a generic hull.
+ *
+ * The map is a play-aid and a narrator-grounding device, NOT a tactical grid:
+ * Starforged combat is fictional, there is no range/position-on-a-board, and
+ * the stations are examples a crew adopts and switches between, not fixed roles.
  *
  * Design choices (see the scope doc's Open Questions):
- *   - FIXED schematic layout. Station coordinates are deterministic
- *     (STATION_LAYOUT), so pins land in sensible places regardless of whether
- *     the background is AI-generated deck-plan art or the schematic fallback.
- *     This sidesteps the "pinning onto unpredictable AI geometry" risk.
- *   - The canonical station list lives in battleStations.js (SHIPBOARD_ROLES).
- *     STATION_LAYOUT only adds geometry/icons; a unit test asserts the two
- *     stay in lock-step so a new role can't silently lose its pin.
+ *   - FIXED layout is the spine. Every feature has deterministic grid
+ *     coordinates so pins are always placeable; modules without a known deck
+ *     hint go to a fallback "module bay" band.
+ *   - When deck-plan art is generated, a vision pass (shipMapVision.js) returns
+ *     per-feature coordinates and the pins move onto the compartments the art
+ *     drew; the fixed layout backstops any feature the vision misses.
+ *   - The canonical station list lives in battleStations.js; STATION_LAYOUT
+ *     only adds geometry/icons (a unit test asserts they stay in lock-step).
  *
  * The Scene/Note/Drawing pipeline mirrors src/sectors/sceneBuilder.js,
- * including the PLAYTEST-1712 A scene-rectangle inset fix (placeable
- * coordinates are absolute from the padded-canvas top-left, so every pin must
- * be offset by the scene-rect inset or it lands in the black padding void).
+ * including the PLAYTEST-1712 A scene-rectangle inset fix.
  *
  * This module owns the pure builders + the (Foundry-touching) orchestrator.
  * The chat-command IO and hook registration are called from src/index.js.
@@ -77,59 +83,202 @@ export const STATION_LAYOUT = [
   { id: "engineering",     gridX: 14, gridY: 5, icon: "icons/svg/cog.svg",        tint: "#C4A45A", deckLabel: "Drive section (aft)" },
 ];
 
+/**
+ * Fixed non-combat deck locations always present on the map. The galley is the
+ * crew's mess / common area (the same room the Begin-Session galley vignette
+ * pictures) — not a combat station, so deliberately separate from
+ * STATION_LAYOUT / SHIPBOARD_ROLES.
+ */
+export const AMENITY_LAYOUT = [
+  {
+    id: "galley",
+    label: "Galley",
+    description: "The crew's mess and common area — where the ship gathers between the hard moments.",
+    icon: "icons/svg/tankard.svg",
+    tint: "#E0B57E",
+    gridX: 10,
+    gridY: 7,
+  },
+];
+
+/**
+ * Preferred deck cell for each canonical Module slug, placed near the station
+ * it relates to (Medbay by Medical, Heavy Cannons by Gunnery, …) and clear of
+ * every station/galley cell. Modules not listed here — or whose hint cell is
+ * already taken — fall back to the module bay band (MODULE_FALLBACK_CELLS).
+ */
+const MODULE_DECK_HINTS = {
+  sensor_array:    { gridX: 2,  gridY: 2 },
+  research_lab:    { gridX: 2,  gridY: 7 },
+  internal_refit:  { gridX: 6,  gridY: 3 },
+  overseer:        { gridX: 5,  gridY: 5 },
+  expanded_hold:   { gridX: 6,  gridY: 5 },
+  grappler:        { gridX: 5,  gridY: 3 },
+  heavy_cannons:   { gridX: 8,  gridY: 2 },
+  missile_array:   { gridX: 9,  gridY: 3 },
+  stealth_tech:    { gridX: 8,  gridY: 5 },
+  shields:         { gridX: 12, gridY: 5 },
+  reinforced_hull: { gridX: 12, gridY: 7 },
+  medbay:          { gridX: 12, gridY: 3 },
+  workshop:        { gridX: 13, gridY: 5 },
+  engine_upgrade:  { gridX: 15, gridY: 5 },
+  vehicle_bay:     { gridX: 14, gridY: 7 },
+};
+
+// Fallback "module bay" band (ventral strip) for un-hinted / custom modules.
+const MODULE_FALLBACK_CELLS = [
+  { gridX: 4,  gridY: 9 }, { gridX: 6,  gridY: 9 }, { gridX: 8,  gridY: 9 },
+  { gridX: 10, gridY: 9 }, { gridX: 12, gridY: 9 }, { gridX: 14, gridY: 9 },
+  { gridX: 5,  gridY: 9 }, { gridX: 7,  gridY: 9 }, { gridX: 9,  gridY: 9 },
+  { gridX: 11, gridY: 9 }, { gridX: 13, gridY: 9 },
+];
+
 // Fast lookup of the canonical role record (label + description) by id.
 const ROLE_BY_ID = Object.fromEntries(SHIPBOARD_ROLES.map(r => [r.id, r]));
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PURE BUILDERS
+// DECK FEATURES — stations + galley + installed modules
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The 11 combat stations as deck-feature descriptors. */
+function stationFeatures() {
+  return STATION_LAYOUT.map(st => {
+    const role = ROLE_BY_ID[st.id] ?? { label: st.id, description: "" };
+    return {
+      id: st.id,
+      kind: "station",
+      label: role.label,
+      description: `${st.deckLabel} — ${role.description}`,
+      icon: st.icon,
+      tint: st.tint,
+      gridX: st.gridX,
+      gridY: st.gridY,
+    };
+  });
+}
+
+/** Fixed amenities (the galley) as deck-feature descriptors. */
+function amenityFeatures() {
+  return AMENITY_LAYOUT.map(a => ({ ...a, kind: "amenity" }));
+}
+
+/**
+ * The ship's installed Module assets as deck-feature descriptors, with a deck
+ * cell assigned (preferred hint, else the module bay). Pure read over the
+ * Actor's embedded Items.
+ *
+ * @param {Actor} shipActor
+ * @returns {Array<Object>}
+ */
+export function buildModuleFeatures(shipActor) {
+  const raw = shipActor?.items?.contents ?? shipActor?.items ?? [];
+  const items = Array.isArray(raw) ? raw : [];
+  const modules = items.filter(
+    it => it?.type === "asset" && /module/i.test(String(it?.system?.category ?? "")),
+  );
+  if (!modules.length) return [];
+
+  // Reserve every cell the stations and amenities already occupy so a module
+  // never lands on a station pin.
+  const used = new Set(
+    [...STATION_LAYOUT, ...AMENITY_LAYOUT].map(f => `${f.gridX},${f.gridY}`),
+  );
+  const fallback = [...MODULE_FALLBACK_CELLS];
+
+  const features = [];
+  for (const it of modules) {
+    const slug = slugFromModuleName(it.name);
+    let cell = MODULE_DECK_HINTS[slug];
+    if (!cell || used.has(`${cell.gridX},${cell.gridY}`)) {
+      cell = nextFreeCell(fallback, used);
+    }
+    if (!cell) break;   // out of room (an implausibly module-heavy ship) — stop
+    used.add(`${cell.gridX},${cell.gridY}`);
+    const { icon, tint } = moduleIcon(slug);
+    features.push({
+      id: `module:${slug || normalizeId(it.name)}`,
+      kind: "module",
+      label: it.name || "Module",
+      description: moduleDescription(it),
+      icon,
+      tint,
+      gridX: cell.gridX,
+      gridY: cell.gridY,
+    });
+  }
+  return features;
+}
+
+/**
+ * Every deck feature for a ship: the 11 stations, the galley, and the ship's
+ * installed modules. Pure.
+ *
+ * @param {Actor} shipActor
+ * @returns {Array<Object>}
+ */
+export function buildDeckFeatures(shipActor) {
+  return [...stationFeatures(), ...amenityFeatures(), ...buildModuleFeatures(shipActor)];
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PURE BUILDERS — Note + Drawing payloads
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build the Note payloads for the 11 stations, offset into the scene
+ * Build the Note payloads for a list of deck features, offset into the scene
  * rectangle. Pure — no Foundry globals.
  *
- * When `normalizedCoords` is supplied (a validated vision result mapping
- * stationId → {x,y} in 0–1 over the background image), each pin is placed at
- * that fraction of the scene rectangle so it lands on the compartment the art
- * drew. Any station missing from the map falls back to its fixed
- * STATION_LAYOUT grid position — so a partial result never drops a pin.
+ * When `normalizedCoords` is supplied (a vision result mapping featureId →
+ * {x,y} in 0–1 over the background image), each pin is placed at that fraction
+ * of the scene rectangle so it lands on the compartment the art drew. Any
+ * feature missing from the map falls back to its fixed grid position — so a
+ * partial result never drops a pin.
  *
+ * @param {Array<Object>} features — deck-feature descriptors (buildDeckFeatures)
  * @param {string} shipActorId
  * @param {{x:number,y:number,sceneWidth?:number,sceneHeight?:number}} offset — scene-rect inset (PLAYTEST-1712 A)
- * @param {Object|null} [normalizedCoords] — { stationId: {x,y} } in 0–1, or null
+ * @param {Object|null} [normalizedCoords] — { featureId: {x,y} } in 0–1, or null
  * @returns {Array<Object>} NoteDocument creation payloads
  */
-export function buildStationNoteData(shipActorId, offset = { x: 0, y: 0 }, normalizedCoords = null) {
+export function buildDeckFeatureNoteData(features, shipActorId, offset = { x: 0, y: 0 }, normalizedCoords = null) {
   const { gridCellSize, sceneWidth, sceneHeight } = SHIP_MAP_SCENE_CONFIG;
   const rectW = Number(offset.sceneWidth)  || sceneWidth;
   const rectH = Number(offset.sceneHeight) || sceneHeight;
-  return STATION_LAYOUT.map(st => {
-    const role = ROLE_BY_ID[st.id] ?? { label: st.id, description: "" };
-    const frac = normalizedCoords?.[st.id];
+
+  return features.map(f => {
+    const frac = normalizedCoords?.[f.id];
     const usesVision = frac && Number.isFinite(frac.x) && Number.isFinite(frac.y);
     const x = usesVision
       ? Math.round(offset.x + (frac.x * rectW))
-      : offset.x + (st.gridX * gridCellSize);
+      : offset.x + (f.gridX * gridCellSize);
     const y = usesVision
       ? Math.round(offset.y + (frac.y * rectH))
-      : offset.y + (st.gridY * gridCellSize);
+      : offset.y + (f.gridY * gridCellSize);
+
+    const isStation = f.kind === "station";
     return {
       x,
       y,
-      texture:    { src: st.icon, tint: st.tint },
-      iconSize:   40,
-      text:       role.label,
-      fontSize:   22,
+      texture:    { src: f.icon, tint: f.tint },
+      iconSize:   isStation ? 40 : (f.kind === "amenity" ? 36 : 32),
+      text:       f.label,
+      fontSize:   isStation ? 22 : (f.kind === "amenity" ? 20 : 16),
       textColor:  "#FFFFFF",
       textAnchor: 1,    // BOTTOM (CONST.TEXT_ANCHOR_POINTS.BOTTOM)
       global:     true,
       flags: {
         [MODULE_ID]: {
-          shipStationNote: true,
-          stationId:       st.id,
-          shipActorId:     shipActorId ?? null,
-          placedByVision:  !!usesVision,
+          shipDeckNote:           true,          // universal marker (click + hooks)
+          deckFeatureId:          f.id,
+          deckFeatureKind:        f.kind,
+          deckFeatureLabel:       f.label,
+          deckFeatureDescription: f.description ?? "",
+          shipActorId:            shipActorId ?? null,
+          placedByVision:         !!usesVision,
+          // Back-compat marker so station-specific reads/tests still resolve.
+          ...(isStation ? { shipStationNote: true, stationId: f.id } : {}),
         },
       },
     };
@@ -137,8 +286,18 @@ export function buildStationNoteData(shipActorId, offset = { x: 0, y: 0 }, norma
 }
 
 /**
+ * Convenience wrapper: Note payloads for the 11 stations only. Pure.
+ * @param {string} shipActorId
+ * @param {Object} offset
+ * @param {Object|null} [normalizedCoords]
+ */
+export function buildStationNoteData(shipActorId, offset = { x: 0, y: 0 }, normalizedCoords = null) {
+  return buildDeckFeatureNoteData(stationFeatures(), shipActorId, offset, normalizedCoords);
+}
+
+/**
  * Build a schematic hull-outline Drawing — a stretched hexagon silhouette the
- * station pins sit inside. Used as the backdrop when no AI deck-plan art is
+ * deck pins sit inside. Used as the backdrop when no AI deck-plan art is
  * available so the bare Scene still reads as a ship. Pure.
  *
  * Every v13-mandatory Drawing field is set explicitly (mirrors
@@ -150,9 +309,6 @@ export function buildStationNoteData(shipActorId, offset = { x: 0, y: 0 }, norma
  */
 export function buildHullOutlineDrawing(offset = { x: 0, y: 0 }) {
   const s = SHIP_MAP_SCENE_CONFIG.gridCellSize;
-  // Hull vertices in grid cells (origin at the bounding-box top-left of (1,2)),
-  // fore→aft: nose, dorsal-fore, dorsal-aft, tail-top, tail-bottom,
-  // ventral-aft, ventral-fore, back to nose.
   const points = [
     0,    3 * s,   // nose (1,5)
     2 * s, 0,      // dorsal-fore (3,2)
@@ -199,20 +355,22 @@ export function buildHullOutlineDrawing(offset = { x: 0, y: 0 }) {
 
 /**
  * Create the deck-plan Scene for a ship Actor: background (AI art path or
- * schematic), the 11 station Note pins, and — in schematic mode — a hull
- * outline. The Scene is NOT activated (the GM navigates to it manually, same
- * as sector scenes).
+ * schematic), the deck-feature Note pins (stations + galley + modules), and —
+ * in schematic mode — a hull outline. The Scene is NOT activated (the GM
+ * navigates to it manually, same as sector scenes).
  *
  * @param {Actor} shipActor
- * @param {{ backgroundPath?: string|null, stationCoords?: Object|null }} [opts]
- *   stationCoords — validated vision result ({ stationId: {x,y} } in 0–1), or
- *   null to use the fixed STATION_LAYOUT.
+ * @param {{ backgroundPath?: string|null, stationCoords?: Object|null, features?: Array<Object>|null }} [opts]
+ *   stationCoords — validated vision result ({ featureId: {x,y} } in 0–1), or null.
+ *   features — pre-built deck features (so the vision pass and the scene share
+ *   the exact same set); defaults to buildDeckFeatures(shipActor).
  * @returns {Promise<Scene>}
  */
-export async function createShipMapScene(shipActor, { backgroundPath = null, stationCoords = null } = {}) {
+export async function createShipMapScene(shipActor, { backgroundPath = null, stationCoords = null, features = null } = {}) {
   const { sceneWidth, sceneHeight, gridCellSize, padding } = SHIP_MAP_SCENE_CONFIG;
   const shipActorId = shipActor?.id ?? null;
   const shipName    = shipActor?.name || "Ship";
+  const deckFeatures = features ?? buildDeckFeatures(shipActor);
 
   // Initial-view zoom: frame the whole padded scene on load (sceneBuilder
   // finding D). Centre is set post-create once the scene-rect inset is known.
@@ -263,15 +421,16 @@ export async function createShipMapScene(shipActor, { backgroundPath = null, sta
     }
   }
 
-  // Station Note pins — independent try/catch so a schema hiccup never leaves
-  // the Scene empty (sceneBuilder lesson).
+  // Deck-feature Note pins — independent try/catch so a schema hiccup never
+  // leaves the Scene empty (sceneBuilder lesson).
   try {
-    const noteData = buildStationNoteData(shipActorId, offset, stationCoords);
+    const noteData = buildDeckFeatureNoteData(deckFeatures, shipActorId, offset, stationCoords);
     await scene.createEmbeddedDocuments("Note", noteData, { render: false });
     const how = stationCoords ? "vision-placed" : "fixed-layout";
-    console.log(`${MODULE_ID} | createShipMapScene: ${noteData.length} ${how} station pins for ${shipName}`);
+    const modCount = deckFeatures.filter(f => f.kind === "module").length;
+    console.log(`${MODULE_ID} | createShipMapScene: ${noteData.length} ${how} deck pins for ${shipName} (${modCount} modules)`);
   } catch (err) {
-    console.error(`${MODULE_ID} | createShipMapScene: station Note batch failed:`, err);
+    console.error(`${MODULE_ID} | createShipMapScene: deck Note batch failed:`, err);
   }
 
   // Frame the captured initial view on the padded scene-rect centre.
@@ -309,14 +468,15 @@ export function findShipMapScene(shipActorId) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ORCHESTRATION — art + scene + flag link (used by auto path and !shipmap)
+// ORCHESTRATION — art + vision + scene + flag link (auto path and !shipmap)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Generate (or regenerate) the deck-plan Scene for a command-vehicle Actor:
- * resolve the deck-plan background art when enabled, create the Scene, and
- * link it back onto the ship record (`shipMapSceneId`). Never throws — every
- * failure path logs and returns null so it can't break ship creation.
+ * resolve the deck-plan background art when enabled, run the vision pass to
+ * place pins on the art, create the Scene, and link it back onto the ship
+ * record (`shipMapSceneId`). Never throws — every failure path logs and
+ * returns null so it can't break ship creation.
  *
  * @param {Actor} shipActor
  * @param {Object} ship — the ship flag payload (for art seeding)
@@ -333,10 +493,14 @@ export async function generateShipMapForActor(shipActor, ship, campaignState, { 
     if (existing) return existing;
   }
 
+  // Build the deck features once so the vision targets and the placed pins are
+  // the exact same set (stations + galley + the ship's modules).
+  const features = buildDeckFeatures(shipActor);
+
   // Background art (gated). generateShipMapBackground handles its own
   // key/disabled/failure notifications and returns null on any miss; the
   // Scene then falls back to the schematic hull. Returns { path, b64 } so the
-  // vision pass can locate stations on the freshly-generated bytes.
+  // vision pass can locate features on the freshly-generated bytes.
   let backgroundPath = null;
   let backgroundB64  = null;
   if (readShipMapArtEnabled()) {
@@ -350,14 +514,13 @@ export async function generateShipMapForActor(shipActor, ship, campaignState, { 
     }
   }
 
-  // Vision-based station placement (gated). Only meaningful when there is art
-  // to read; a null result falls back to the fixed STATION_LAYOUT inside
-  // createShipMapScene.
+  // Vision-based placement (gated). Only meaningful when there is art to read;
+  // a null result falls back to the fixed layout inside createShipMapScene.
   let stationCoords = null;
   if (backgroundB64 && readShipMapVisionEnabled()) {
     try {
       const { resolveStationCoordsFromImage } = await import("./shipMapVision.js");
-      stationCoords = await resolveStationCoordsFromImage(backgroundB64);
+      stationCoords = await resolveStationCoordsFromImage(backgroundB64, { features });
     } catch (err) {
       console.warn(`${MODULE_ID} | generateShipMapForActor: vision placement failed (using fixed layout):`, err?.message ?? err);
     }
@@ -365,7 +528,7 @@ export async function generateShipMapForActor(shipActor, ship, campaignState, { 
 
   let scene;
   try {
-    scene = await createShipMapScene(shipActor, { backgroundPath, stationCoords });
+    scene = await createShipMapScene(shipActor, { backgroundPath, stationCoords, features });
   } catch (err) {
     console.error(`${MODULE_ID} | generateShipMapForActor: scene creation failed:`, err);
     return null;
@@ -424,30 +587,36 @@ export function isShipMapCommand(message) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATION-PIN CLICK (show the role description)
+// DECK-PIN CLICK (show the station role / amenity / module description)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Click handler for ship-station Note pins. Surfaces the station's canonical
- * role description as a notification. Returns false to suppress Foundry's
- * default journal-open path (these pins have no entryId, like sector pins).
+ * Click handler for ship deck-plan Note pins (stations, galley, modules).
+ * Surfaces the feature's label + description as a notification. Returns false
+ * to suppress Foundry's default journal-open path (these pins have no entryId,
+ * like sector pins).
  *
  * @param {Note} note — the clicked Note placeable
  * @returns {boolean|undefined} false when handled, undefined otherwise
  */
-export function handleShipStationNoteClick(note) {
+export function handleShipDeckNoteClick(note) {
   const flags = note?.document?.flags?.[MODULE_ID];
-  if (!flags?.shipStationNote) return undefined;   // not ours — let core handle
+  if (!flags?.shipDeckNote) return undefined;   // not ours — let core handle
 
-  const role = ROLE_BY_ID[flags.stationId];
-  if (role) {
-    globalThis.ui?.notifications?.info?.(`${role.label} — ${role.description}`);
+  const label = flags.deckFeatureLabel
+    ?? ROLE_BY_ID[flags.stationId]?.label
+    ?? null;
+  const desc  = flags.deckFeatureDescription
+    ?? ROLE_BY_ID[flags.stationId]?.description
+    ?? "";
+  if (label) {
+    globalThis.ui?.notifications?.info?.(`${label}${desc ? ` — ${desc}` : ""}`);
   }
   return false;
 }
 
 /**
- * Register ship-station note-click handling. Mirrors registerSectorSceneHooks:
+ * Register ship deck-pin click handling. Mirrors registerSectorSceneHooks:
  * both candidate hook names plus a prototype wrapper on Note#_onClickLeft2
  * (the v13 hook is not reliably fired on every build). Idempotent; the
  * prototype wrapper chains with the sector one regardless of install order
@@ -457,31 +626,31 @@ export function registerShipMapSceneHooks() {
   if (registerShipMapSceneHooks._installed) return;
   registerShipMapSceneHooks._installed = true;
 
-  globalThis.Hooks?.on?.("clickNote",    handleShipStationNoteClick);
-  globalThis.Hooks?.on?.("activateNote", handleShipStationNoteClick);
+  globalThis.Hooks?.on?.("clickNote",    handleShipDeckNoteClick);
+  globalThis.Hooks?.on?.("activateNote", handleShipDeckNoteClick);
 
-  installStationNoteClickOverride();
+  installDeckNoteClickOverride();
 }
 
-function installStationNoteClickOverride() {
+function installDeckNoteClickOverride() {
   const NoteCtor =
     globalThis.foundry?.canvas?.placeables?.Note   // v13 namespace
     ?? globalThis.Note                              // v12 / v13 alias
     ?? null;
   if (!NoteCtor?.prototype) {
-    console.warn(`${MODULE_ID} | shipMapScene: could not locate Note prototype; station clicks rely on hooks alone.`);
+    console.warn(`${MODULE_ID} | shipMapScene: could not locate Note prototype; deck-pin clicks rely on hooks alone.`);
     return;
   }
   const proto = NoteCtor.prototype;
-  if (proto._sfShipStationClickPatched) return;     // idempotent
-  proto._sfShipStationClickPatched = true;
+  if (proto._sfShipDeckClickPatched) return;     // idempotent
+  proto._sfShipDeckClickPatched = true;
 
   const original = proto._onClickLeft2;
-  proto._onClickLeft2 = function patchedStationOnClickLeft2(event) {
+  proto._onClickLeft2 = function patchedDeckOnClickLeft2(event) {
     try {
-      if (handleShipStationNoteClick(this) === false) return;   // ours — suppress default
+      if (handleShipDeckNoteClick(this) === false) return;   // ours — suppress default
     } catch (err) {
-      console.error(`${MODULE_ID} | ship-station pin click handler threw:`, err);
+      console.error(`${MODULE_ID} | ship deck-pin click handler threw:`, err);
     }
     return original?.call(this, event);
   };
@@ -491,6 +660,52 @@ function installStationNoteClickOverride() {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Normalize a module Item name to its canonical slug ("Heavy Cannons" → "heavy_cannons"). */
+function slugFromModuleName(name) {
+  return String(name ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** A stable id fragment for a non-canonical module name. */
+function normalizeId(name) {
+  return slugFromModuleName(name) || "unknown";
+}
+
+/** Icon + tint for a module pin, by canonical slug (generic fallback otherwise). */
+function moduleIcon(slug) {
+  if (slug === "heavy_cannons" || slug === "missile_array") return { icon: "icons/svg/explosion.svg", tint: "#F77E7E" };
+  if (slug === "shields" || slug === "reinforced_hull")     return { icon: "icons/svg/shield.svg",    tint: "#7EB8F7" };
+  if (slug === "medbay")                                     return { icon: "icons/svg/heal.svg",      tint: "#8FCF7E" };
+  if (slug === "sensor_array" || slug === "research_lab")    return { icon: "icons/svg/radiation.svg", tint: "#7EF7C4" };
+  if (slug === "engine_upgrade")                             return { icon: "icons/svg/cog.svg",       tint: "#C4A45A" };
+  if (slug === "stealth_tech")                               return { icon: "icons/svg/blind.svg",     tint: "#B87EF7" };
+  if (slug === "vehicle_bay")                                return { icon: "icons/svg/wing.svg",      tint: "#C4C4C4" };
+  return { icon: "icons/svg/chest.svg", tint: "#9AD0E0" };   // generic module
+}
+
+/** A short, HTML-free description line for a module pin. */
+function moduleDescription(item) {
+  const raw = item?.system?.description ?? item?.system?.requirement ?? "";
+  const text = String(raw).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return text ? truncate(text, 160) : "Installed ship module.";
+}
+
+function truncate(s, n) {
+  return typeof s === "string" && s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+/** Pop the next unused cell from a fallback list; null when exhausted. */
+function nextFreeCell(cells, used) {
+  while (cells.length) {
+    const c = cells.shift();
+    if (!used.has(`${c.gridX},${c.gridY}`)) return c;
+  }
+  return null;
+}
 
 /**
  * The scene rectangle's top-left inset within the padded canvas — the offset

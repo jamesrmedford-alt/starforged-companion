@@ -30,4 +30,21 @@ describe("buildShipMapBackgroundPrompt()", () => {
     const { prompt } = buildShipMapBackgroundPrompt({});
     expect(prompt).not.toMatch(/The vessel is:/);
   });
+
+  it("always asks for a crew galley/mess compartment", () => {
+    const { prompt } = buildShipMapBackgroundPrompt({});
+    expect(prompt).toMatch(/galley/i);
+  });
+
+  it("names the ship's installed modules as compartments", () => {
+    const { prompt } = buildShipMapBackgroundPrompt({}, ["Medbay", "Heavy Cannons"]);
+    expect(prompt).toMatch(/installed modules/i);
+    expect(prompt).toMatch(/Medbay/);
+    expect(prompt).toMatch(/Heavy Cannons/);
+  });
+
+  it("omits the module clause when the ship has none", () => {
+    const { prompt } = buildShipMapBackgroundPrompt({}, []);
+    expect(prompt).not.toMatch(/installed modules/i);
+  });
 });

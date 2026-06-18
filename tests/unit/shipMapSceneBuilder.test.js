@@ -14,12 +14,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   STATION_LAYOUT,
+  AMENITY_LAYOUT,
   buildStationNoteData,
+  buildModuleFeatures,
+  buildDeckFeatures,
   buildHullOutlineDrawing,
   createShipMapScene,
   findShipMapScene,
   isShipMapCommand,
-  handleShipStationNoteClick,
+  handleShipDeckNoteClick,
 } from "../../src/moves/shipMapScene.js";
 import { SHIPBOARD_ROLES } from "../../src/moves/battleStations.js";
 
@@ -64,8 +67,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function makeShipActor() {
-  return { id: "actor-ship-1", name: "Kestrel" };
+function makeShipActor({ modules = [] } = {}) {
+  const items = modules.map(name => ({
+    type: "asset",
+    name,
+    system: { category: "Module" },
+  }));
+  return { id: "actor-ship-1", name: "Kestrel", items };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +165,7 @@ describe("buildHullOutlineDrawing()", () => {
 // ---------------------------------------------------------------------------
 
 describe("createShipMapScene()", () => {
-  it("creates the scene, places 11 station pins, and flags the scene to the ship", async () => {
+  it("creates the scene with the 11 stations + galley pinned, and flags the scene to the ship", async () => {
     const scene = await createShipMapScene(makeShipActor(), {});
     expect(global.Scene.create).toHaveBeenCalledOnce();
 
@@ -167,8 +175,20 @@ describe("createShipMapScene()", () => {
     expect(createArg.name).toBe("Kestrel — Deck Plan");
 
     expect(createdNotes).not.toBeNull();
-    expect(createdNotes).toHaveLength(11);
+    const stations = createdNotes.filter(n => n.flags[MODULE_ID].deckFeatureKind === "station");
+    const galley   = createdNotes.find(n => n.flags[MODULE_ID].deckFeatureId === "galley");
+    expect(stations).toHaveLength(11);
+    expect(galley).toBeDefined();
+    expect(galley.text).toBe("Galley");
+    expect(createdNotes).toHaveLength(12);   // 11 stations + galley, no modules
     expect(scene).toBe(mockScene);
+  });
+
+  it("pins the ship's installed modules too", async () => {
+    await createShipMapScene(makeShipActor({ modules: ["Medbay", "Heavy Cannons"] }), {});
+    const modules = createdNotes.filter(n => n.flags[MODULE_ID].deckFeatureKind === "module");
+    expect(modules.map(n => n.text).sort()).toEqual(["Heavy Cannons", "Medbay"]);
+    expect(createdNotes).toHaveLength(14);   // 11 stations + galley + 2 modules
   });
 
   it("draws the schematic hull when there is no background art", async () => {
@@ -244,19 +264,67 @@ describe("isShipMapCommand()", () => {
 // handleShipStationNoteClick
 // ---------------------------------------------------------------------------
 
-describe("handleShipStationNoteClick()", () => {
-  it("surfaces the role description and suppresses the default for ship-station pins", () => {
+describe("handleShipDeckNoteClick()", () => {
+  it("surfaces the feature description and suppresses the default for deck pins", () => {
     const info = vi.fn();
     global.ui = { notifications: { info } };
-    const note = { document: { flags: { [MODULE_ID]: { shipStationNote: true, stationId: "gunnery" } } } };
+    const note = { document: { flags: { [MODULE_ID]: {
+      shipDeckNote: true, deckFeatureId: "gunnery", deckFeatureLabel: "Gunnery",
+      deckFeatureDescription: "Fire weapons", stationId: "gunnery",
+    } } } };
 
-    expect(handleShipStationNoteClick(note)).toBe(false);
+    expect(handleShipDeckNoteClick(note)).toBe(false);
     expect(info).toHaveBeenCalledOnce();
     expect(info.mock.calls[0][0]).toMatch(/Gunnery/);
   });
 
-  it("ignores notes that are not ship-station pins", () => {
+  it("works for a galley / module pin (no station role)", () => {
+    const info = vi.fn();
+    global.ui = { notifications: { info } };
+    const note = { document: { flags: { [MODULE_ID]: {
+      shipDeckNote: true, deckFeatureId: "galley", deckFeatureLabel: "Galley",
+      deckFeatureDescription: "The crew's mess and common area.",
+    } } } };
+
+    expect(handleShipDeckNoteClick(note)).toBe(false);
+    expect(info.mock.calls[0][0]).toMatch(/Galley/);
+  });
+
+  it("ignores notes that are not ship deck pins", () => {
     const note = { document: { flags: { [MODULE_ID]: { sectorNote: true } } } };
-    expect(handleShipStationNoteClick(note)).toBeUndefined();
+    expect(handleShipDeckNoteClick(note)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildModuleFeatures + buildDeckFeatures
+// ---------------------------------------------------------------------------
+
+describe("buildModuleFeatures()", () => {
+  it("returns one feature per installed Module asset, with deck cells assigned", () => {
+    const actor = makeShipActor({ modules: ["Medbay", "Heavy Cannons", "Expanded Hold"] });
+    const features = buildModuleFeatures(actor);
+    expect(features).toHaveLength(3);
+    expect(features.every(f => f.kind === "module")).toBe(true);
+    expect(features.map(f => f.label).sort()).toEqual(["Expanded Hold", "Heavy Cannons", "Medbay"]);
+    // Canonical slugs land on their hint cells (clear of every station cell).
+    const stationCells = new Set([...STATION_LAYOUT, ...AMENITY_LAYOUT].map(s => `${s.gridX},${s.gridY}`));
+    for (const f of features) {
+      expect(stationCells.has(`${f.gridX},${f.gridY}`)).toBe(false);
+    }
+  });
+
+  it("ignores non-Module items and returns [] for a ship with none", () => {
+    const actor = { id: "x", name: "Y", items: [{ type: "asset", name: "Some Path", system: { category: "Path" } }] };
+    expect(buildModuleFeatures(actor)).toEqual([]);
+  });
+});
+
+describe("buildDeckFeatures()", () => {
+  it("combines the 11 stations, the galley, and the modules", () => {
+    const features = buildDeckFeatures(makeShipActor({ modules: ["Shields"] }));
+    expect(features.filter(f => f.kind === "station")).toHaveLength(11);
+    expect(features.filter(f => f.kind === "amenity")).toHaveLength(1);
+    expect(features.filter(f => f.kind === "module")).toHaveLength(1);
   });
 });

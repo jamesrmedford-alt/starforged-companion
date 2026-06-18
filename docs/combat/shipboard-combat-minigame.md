@@ -70,6 +70,14 @@ play-aid and a narrator-grounding device, not a wargame board.
   mirroring `src/sectors/sceneBuilder.js` incl. the PLAYTEST-1712 A scene-rect
   inset). `STATION_LAYOUT` gives fixed deterministic coordinates; a unit test
   asserts layout↔`SHIPBOARD_ROLES` parity.
+- ✅ Also pins the **galley** (crew mess, `AMENITY_LAYOUT`) and the ship's
+  **installed modules** (the `asset`/Module Items on the starship Actor —
+  Medbay, Heavy Cannons, …, via `buildModuleFeatures`), so the map reflects the
+  real vessel. Modules sit at a per-slug deck hint near their related station,
+  with a fallback module-bay band. Galley and modules are deck features, not
+  combat stations (kept out of `SHIPBOARD_ROLES`). The art prompt names the
+  galley + installed modules so the generated deck plan tends to include them,
+  and the vision pass locates them too (optional — fixed fallback per feature).
 - ✅ **Vision placement (added on the maintainer's request):** when deck-plan
   art is generated, `src/moves/shipMapVision.js` asks a Claude vision model
   (via `api-proxy.js`) for normalized per-station coordinates so the pins land

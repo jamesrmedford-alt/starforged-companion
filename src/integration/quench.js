@@ -8741,15 +8741,20 @@ function registerShipMapSceneTests(quench) {
         if (!game.user.isGM) { this.skip(); return; }
       });
 
-      describe("createShipMapScene — live Scene + station pins", function () {
-        it("creates a deck-plan Scene with 11 station pins, the shipMapScene flag, and no auto-activation", async function () {
+      describe("createShipMapScene — live Scene + deck pins", function () {
+        it("creates a deck-plan Scene with the stations + galley + modules pinned, the shipMapScene flag, and no auto-activation", async function () {
           this.timeout(15000);
 
           const { createShipMapScene, STATION_LAYOUT } = await import(
             `${MODULE_PATH}/moves/shipMapScene.js`
           );
 
-          const shipActor = { id: `quench-ship-${Date.now()}`, name: `QUENCH SHIP ${Date.now()}` };
+          // A bare actor-like object with one Module item so the module path runs.
+          const shipActor = {
+            id:   `quench-ship-${Date.now()}`,
+            name: `QUENCH SHIP ${Date.now()}`,
+            items: [{ type: "asset", name: "Medbay", system: { category: "Module" } }],
+          };
           const scene = await createShipMapScene(shipActor, { backgroundPath: null });
 
           try {
@@ -8761,16 +8766,18 @@ function registerShipMapSceneTests(quench) {
             assert.equal(scene.active, false,
               "deck-plan Scene should not auto-activate on creation");
 
-            const notes = scene.notes?.contents ?? scene.notes ?? [];
-            const stationNotes = Array.from(notes).filter(
-              n => n.flags?.[MODULE]?.shipStationNote,
-            );
+            const notes = Array.from(scene.notes?.contents ?? scene.notes ?? []);
+            const stationNotes = notes.filter(n => n.flags?.[MODULE]?.deckFeatureKind === "station");
+            const galleyNote   = notes.find(n => n.flags?.[MODULE]?.deckFeatureId === "galley");
+            const moduleNotes  = notes.filter(n => n.flags?.[MODULE]?.deckFeatureKind === "module");
             assert.equal(stationNotes.length, STATION_LAYOUT.length,
               `expected ${STATION_LAYOUT.length} station Note pins`);
+            assert.isOk(galleyNote, "expected a galley pin");
+            assert.equal(moduleNotes.length, 1, "expected the one installed module pinned");
 
             // Schematic mode (no art) draws the hull-outline backdrop.
-            const drawings = scene.drawings?.contents ?? scene.drawings ?? [];
-            const hull = Array.from(drawings).filter(d => d.flags?.[MODULE]?.shipMapHull);
+            const drawings = Array.from(scene.drawings?.contents ?? scene.drawings ?? []);
+            const hull = drawings.filter(d => d.flags?.[MODULE]?.shipMapHull);
             assert.equal(hull.length, 1, "schematic mode should draw one hull outline");
           } finally {
             if (scene?.delete) await scene.delete().catch(() => {});
