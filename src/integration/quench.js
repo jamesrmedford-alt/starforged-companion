@@ -169,6 +169,10 @@ Hooks.on("quenchReady", (quench) => {
   // landed-in-game.messages).
   registerTokenDragSetACourseTests(quench);
   registerCombatCardButtonTests(quench);
+  // Ship-map deck plan (Battle Stations! mini-game Phase A) — createShipMapScene
+  // against live Foundry: scene + shipMapScene flag + 11 station Note pins +
+  // no auto-activation. Unit tests cover the pure builders + vision fallback.
+  registerShipMapSceneTests(quench);
   // Sector enhanced — background art upload path + Scene grid config +
   // sectorScene flag round-trip. Priority 8 of the behaviour-coverage
   // audit (Lens 2 PARTIAL findings on Sector Creator Enhanced).
@@ -8714,6 +8718,67 @@ function registerCombatCardButtonTests(quench) {
       });
     },
     { displayName: "STARFORGED: Combat Card Buttons", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIP-MAP DECK PLAN — Battle Stations! mini-game Phase A. createShipMapScene
+// against live Foundry: the Scene + shipMapScene flag + the 11 station Note
+// pins + no auto-activation + the schematic-hull-vs-art branch. The pure
+// builders, vision parsing/validation, and the !shipmap matcher are covered by
+// the unit suite; this batch pins the live createEmbeddedDocuments round-trip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerShipMapSceneTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.shipMapScene",
+    (context) => {
+      const { describe, it, assert, before } = context;
+      const MODULE = "starforged-companion";
+
+      before(function () {
+        if (!game.user.isGM) { this.skip(); return; }
+      });
+
+      describe("createShipMapScene — live Scene + station pins", function () {
+        it("creates a deck-plan Scene with 11 station pins, the shipMapScene flag, and no auto-activation", async function () {
+          this.timeout(15000);
+
+          const { createShipMapScene, STATION_LAYOUT } = await import(
+            `${MODULE_PATH}/moves/shipMapScene.js`
+          );
+
+          const shipActor = { id: `quench-ship-${Date.now()}`, name: `QUENCH SHIP ${Date.now()}` };
+          const scene = await createShipMapScene(shipActor, { backgroundPath: null });
+
+          try {
+            assert.isOk(scene, "createShipMapScene should return a Scene document");
+            assert.equal(scene.flags?.[MODULE]?.shipMapScene, true,
+              "Scene should carry flags[MODULE].shipMapScene === true");
+            assert.equal(scene.flags?.[MODULE]?.shipActorId, shipActor.id,
+              "Scene should reference the ship actor id");
+            assert.equal(scene.active, false,
+              "deck-plan Scene should not auto-activate on creation");
+
+            const notes = scene.notes?.contents ?? scene.notes ?? [];
+            const stationNotes = Array.from(notes).filter(
+              n => n.flags?.[MODULE]?.shipStationNote,
+            );
+            assert.equal(stationNotes.length, STATION_LAYOUT.length,
+              `expected ${STATION_LAYOUT.length} station Note pins`);
+
+            // Schematic mode (no art) draws the hull-outline backdrop.
+            const drawings = scene.drawings?.contents ?? scene.drawings ?? [];
+            const hull = Array.from(drawings).filter(d => d.flags?.[MODULE]?.shipMapHull);
+            assert.equal(hull.length, 1, "schematic mode should draw one hull outline");
+          } finally {
+            if (scene?.delete) await scene.delete().catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Ship Map Scene", timeout: 60000 },
   );
 }
 

@@ -98,6 +98,12 @@ import {
 import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
 import { finishVow } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
+import {
+  isShipMapCommand,
+  generateShipMapForActor,
+  findShipMapScene,
+  registerShipMapSceneHooks,
+} from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
 import {
   trackPosToActorPos,
@@ -281,6 +287,33 @@ function registerCoreSettings() {
   game.settings.register(MODULE_ID, "sectorArtEnabled", {
     name:    "Generate Sector Background Art",
     hint:    "Generate a background image (via OpenRouter, FLUX.2 Pro by default) for each new sector. Requires the OpenRouter API key.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "shipMapEnabled", {
+    name:    "Generate Ship Deck-Plan Maps (Battle Stations!)",
+    hint:    "Build a deck-plan Scene with the 11 shipboard-combat stations pinned when a command vehicle is created or finalised. Off by default; the shipboard-combat mini-game is still maturing. You can also build one on demand with the !shipmap chat command.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: false,
+  });
+
+  game.settings.register(MODULE_ID, "shipMapArtEnabled", {
+    name:    "Generate Ship Deck-Plan Art",
+    hint:    "When ship deck-plan maps are enabled, generate a top-down deck-plan background image (via OpenRouter) for each ship map. Requires the OpenRouter API key; falls back to a schematic hull outline when off or unavailable.",
+    scope:   "world",
+    config:  true,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "shipMapVisionEnabled", {
+    name:    "Place Stations on Deck-Plan Art (Vision)",
+    hint:    "When deck-plan art is generated, ask a vision-capable Claude model to locate each station on the image so the pins land on the compartments the art drew. Requires the Claude API key. Falls back to the fixed schematic layout when off, without a key, or when the result is unreliable.",
     scope:   "world",
     config:  true,
     type:    Boolean,
@@ -711,6 +744,14 @@ export function registerChatHook() {
         content: renderBattleStationsCardHtml(),
         flags:   { [MODULE_ID]: { battleStationsCard: true } },
       }).catch(err => console.warn(`${MODULE_ID} | !stations card failed:`, err?.message ?? err));
+      return;
+    }
+
+    // !shipmap — build (or rebuild) the command vehicle's deck-plan Scene with
+    // the shipboard-combat stations pinned. GM-only (Scene creation is a world
+    // write).
+    if (isShipMapCommand(message)) {
+      await handleShipMapCommand(message);
       return;
     }
 
@@ -3166,6 +3207,75 @@ async function handleSectorCommand(message) {
 }
 
 /**
+ * Handle the !shipmap command — build (or rebuild) the command vehicle's
+ * deck-plan Scene with the 11 shipboard-combat stations pinned (Battle
+ * Stations! mini-game Phase A). GM-only: Scene creation is a world write.
+ *
+ *   !shipmap          — create the deck plan (reports if one already exists)
+ *   !shipmap rebuild  — delete the existing deck plan and generate a fresh one
+ */
+async function handleShipMapCommand(message) {
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Starforged Companion: !shipmap is available to GMs only.");
+    return;
+  }
+
+  const text    = message.content?.trim() ?? "";
+  const sub     = text.replace(/^!(shipmap|ship-map|deckplan)\s*/i, "").trim().toLowerCase();
+  const rebuild = ["rebuild", "new", "regen", "regenerate"].includes(sub);
+
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const actor = getCommandVehicleActor(campaignState);
+  if (!actor) {
+    await ChatMessage.create({
+      content: "<p>No command vehicle is registered yet. Create your starship first, then run <code>!shipmap</code>.</p>",
+      flags:   { [MODULE_ID]: { shipMapCard: true } },
+    });
+    return;
+  }
+
+  const ship     = actor.flags?.[MODULE_ID]?.ship ?? {};
+  const existing = findShipMapScene(actor.id);
+
+  if (existing && !rebuild) {
+    await ChatMessage.create({
+      content: `<p><strong>${escapeHtml(actor.name)}</strong> already has a deck plan: @UUID[${existing.uuid}]{${escapeHtml(existing.name)}}. ` +
+        `Run <code>!shipmap rebuild</code> to generate a fresh one.</p>`,
+      flags:   { [MODULE_ID]: { shipMapCard: true } },
+    });
+    return;
+  }
+
+  ui.notifications?.info("Starforged Companion: building the ship deck plan…");
+
+  // Rebuild: drop the previous Scene first so repeated runs don't pile up
+  // duplicate deck plans.
+  if (existing && rebuild) {
+    await existing.delete?.().catch(err =>
+      console.warn(`${MODULE_ID} | !shipmap: deleting old scene failed:`, err?.message ?? err));
+  }
+
+  const scene = await generateShipMapForActor(actor, ship, campaignState, { force: true });
+  if (!scene) {
+    await ChatMessage.create({
+      content: "<p>Ship deck-plan generation failed — see the browser console for details.</p>",
+      flags:   { [MODULE_ID]: { shipMapCard: true } },
+    });
+    return;
+  }
+
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-card--ship-map">` +
+      `<div class="sf-card-header">⚙ Deck Plan Ready</div>` +
+      `<div class="sf-card-body">` +
+      `<p>Battle stations! @UUID[${scene.uuid}]{${escapeHtml(scene.name)}} is ready — the 11 shipboard-combat stations are pinned on the deck plan.</p>` +
+      `<p class="sf-card-hint">Click a station pin to see what that crew role does. Position is tracked per character; Aid Your Ally hands control between crew.</p>` +
+      `</div></div>`,
+    flags: { [MODULE_ID]: { shipMapCard: true } },
+  });
+}
+
+/**
  * Post the resolved move result to chat.
  * Returns the created ChatMessage so the caller can attach Loremaster context.
  */
@@ -3548,6 +3658,7 @@ Hooks.once("ready", () => {
   registerDraftCardHooks();
   registerSectorOverviewSync();
   registerSectorSceneHooks();
+  registerShipMapSceneHooks();
   // Audio narration — socket relay for cache writes from non-GM clients.
   import("./audio/index.js").then(({ registerAudioSocket }) => {
     registerAudioSocket();

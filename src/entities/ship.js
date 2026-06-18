@@ -62,6 +62,11 @@ export const ShipSchema = {
   portraitId:                null,
   portraitSourceDescription: "",
 
+  // Battle Stations! ship-map deck-plan Scene (shipboard-combat mini-game
+  // Phase A). The id of the generated deck-plan Scene, or null when none has
+  // been built. Command vehicle only.
+  shipMapSceneId: null,
+
   // Crew / ownership
   ownerCharacterId: "",    // Primary owner (null for command vehicle — shared)
 
@@ -586,6 +591,17 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | seedStarshipActor: portrait generation failed:`, err);
     }
+  }
+
+  // Battle Stations! deck-plan Scene (mini-game Phase A). Gated inside
+  // maybeCreateShipMapScene: command vehicle only, `shipMapEnabled` on, and
+  // idempotent. Default-off setting keeps the fast quickstart loop unslowed.
+  // Never fatal to the seed.
+  try {
+    const { maybeCreateShipMapScene } = await import("../moves/shipMapScene.js");
+    await maybeCreateShipMapScene(actor, ship, campaignState ?? {});
+  } catch (err) {
+    console.warn(`${MODULE_ID} | seedStarshipActor: ship-map scene generation failed:`, err?.message ?? err);
   }
 
   return ship;

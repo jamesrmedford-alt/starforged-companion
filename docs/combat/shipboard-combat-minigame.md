@@ -1,6 +1,6 @@
-# Shipboard Combat — Battle Stations Mini-Game (PLANNED)
+# Shipboard Combat — Battle Stations Mini-Game (IN PROGRESS)
 
-**Status:** 📋 PLANNED — design captured, not yet started.
+**Status:** 🔄 IN PROGRESS — Phase A shipped (v1.7.17); Phases B–D planned.
 **Theme:** Combat / Shipboard.
 **Depends on:** Entity → Actor Migration (starship actors), Sector Creator
 Enhanced (Scene + Note-pin + Drawing pipeline), Progress Tracks (combat
@@ -57,19 +57,34 @@ play-aid and a narrator-grounding device, not a wargame board.
 
 ## Proposed phases
 
-### Phase A — Ship-map scene on ship creation
-- On command-vehicle creation (`src/entities/ship.js` /
-  `src/session/quickstart.js`), generate a deck-plan Scene for the ship.
-- Background art: reuse the OpenRouter image pipeline
-  (`src/art/openRouterImage.js`) with a deck-plan prompt seeded from the ship's
-  `type` / `firstLook`; fall back to a generic deck-plan background or a plain
-  schematic when art is disabled (mirror the sector-map gates:
-  `sectorArtEnabled` style setting → `shipMapArtEnabled`).
-- Place the 11 stations as Note pins via the existing Scene/Note pipeline used
-  by the Sector Creator (`src/sectors/sceneBuilder.js` is the reference). Stations
-  the ship can't man (no support vehicle → Escort) may be omitted or greyed.
-- Gate behind a setting (`shipMapEnabled`, default off until the mini-game is
-  mature) so it never slows the fast quickstart reset loop.
+### Phase A — Ship-map scene on ship creation ✅ SHIPPED (v1.7.17)
+- ✅ On command-vehicle creation, generate a deck-plan Scene for the ship.
+  Hooked inside `seedStarshipActor` (`src/entities/ship.js`) — the single
+  convergence point for quickstart, ✦ Finalise, and sidebar auto-seed —
+  gated to the command vehicle and idempotent.
+- ✅ Background art: reuses the OpenRouter image pipeline
+  (`src/moves/shipMapArt.js` → `src/art/openRouterImage.js`) with a top-down
+  deck-plan prompt seeded from `type` / `firstLook`; falls back to a schematic
+  hull-outline Drawing when art is disabled/unavailable.
+- ✅ Places the 11 stations as Note pins (`src/moves/shipMapScene.js`,
+  mirroring `src/sectors/sceneBuilder.js` incl. the PLAYTEST-1712 A scene-rect
+  inset). `STATION_LAYOUT` gives fixed deterministic coordinates; a unit test
+  asserts layout↔`SHIPBOARD_ROLES` parity.
+- ✅ **Vision placement (added on the maintainer's request):** when deck-plan
+  art is generated, `src/moves/shipMapVision.js` asks a Claude vision model
+  (via `api-proxy.js`) for normalized per-station coordinates so the pins land
+  on the compartments the art drew. Validated (all 11, in range, not collapsed)
+  with a per-station fallback to the fixed layout. This is the "read the image"
+  answer to the Phase A "Map authoring" open question below — vision is layered
+  over the guaranteed fixed baseline, not a replacement.
+- ✅ Gated behind `shipMapEnabled` (default off; the fast quickstart loop is
+  never slowed), plus `shipMapArtEnabled` (art vs schematic) and
+  `shipMapVisionEnabled` (vision vs fixed). Manual `!shipmap` (`!shipmap
+  rebuild`) works regardless of the master gate.
+- Station-pin clicks surface the role description; the Scene is never
+  auto-activated (GM navigates manually). NB: stations the ship can't man
+  (no support vehicle → Escort) are still pinned for now — greying/omission is
+  deferred to Phase B when crew can be placed.
 
 ### Phase B — Man the stations (token placement)
 - During an open **combat track** with the command vehicle present, expose an
@@ -109,11 +124,14 @@ play-aid and a narrator-grounding device, not a wargame board.
   to extend the combat track with a `crewPositions: { actorId → state }` map or
   to store it on each actor. (Leans: a map on the track, so it clears when the
   fight ends.)
-- **Map authoring.** Generated deck-plan art is unpredictable; Note-pin
-  placement needs sensible default coordinates that don't depend on the art.
-  A fixed schematic layout (stations at known coordinates, art as backdrop) is
-  more robust than trying to pin onto AI-generated geometry — mirror the
-  sector-map padding lessons (v1.7.12 finding A).
+- **Map authoring.** ✅ RESOLVED (Phase A). Both halves are implemented: a fixed
+  schematic layout (`STATION_LAYOUT`, stations at known coordinates) is the
+  guaranteed baseline, AND a vision pass (`shipMapVision.js`) places pins onto
+  the AI-drawn compartments when art is present, validated with a fallback to
+  the fixed layout. The scene-rect inset mirrors the sector-map padding lesson
+  (PLAYTEST-1712 A). Caveat: vision coordinates are approximate and
+  non-deterministic — acceptable for a play-aid, and the fixed layout always
+  backstops a bad result.
 - **Solo play.** One PC jumps between stations; the mini-game must not imply a
   full crew. Single-token, multi-station movement is the solo path.
 - **Scope creep vs. the rules.** Keep it a play-aid. Resist grid/range/turn
