@@ -22,6 +22,19 @@ import { getCanonicalMove } from "../system/ironswornPacks.js";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
 
+// Combat moves that are only legal in one position. When the interpreter
+// proposes a move for the wrong position, it is remapped to the same-intent
+// move for the actual position: attack ↔ attack (Strike/Clash) and
+// maneuver ↔ maneuver (Gain Ground/React Under Fire). Stat options are
+// identical within each pair (schemas.js), so the model's chosen stat stays
+// valid through the remap.
+//   In control   → Strike, Gain Ground, Take Decisive Action
+//   In a bad spot → Clash, React Under Fire, Take Decisive Action, Face Defeat
+const POSITION_MOVE_REMAP = {
+  in_control: { clash: "strike", react_under_fire: "gain_ground" },
+  bad_spot:   { strike: "clash", gain_ground: "react_under_fire" },
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SYSTEM PROMPT
@@ -128,6 +141,7 @@ Given player narration, return a JSON object identifying:
 3. Session/legacy/fate moves (begin_a_session, earn_experience, ask_the_oracle, pay_the_price) are only chosen when the narration is explicitly about those activities.
 4. If the narration describes a reaction to danger, prefer face_danger or react_under_fire over gather_information.
 5. Suffer moves are only chosen when the player is explicitly describing taking damage/stress, not when they're trying to avoid it.
+6. COMBAT POSITION: when the user message includes a COMBAT POSITION directive, you MUST pick a combat move that is available for that position. Strike and Gain Ground are available only when IN CONTROL; Clash and React Under Fire are available only when IN A BAD SPOT. Take Decisive Action (seize the objective) and Face Defeat (give up) are available in either position. Non-combat moves remain available when the narration clearly calls for one.
 
 ## RESPONSE FORMAT
 Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation outside the JSON.
@@ -188,6 +202,60 @@ function buildContextSummary(campaignState) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// COMBAT POSITION CONSTRAINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the variable per-call directive that tells the interpreter the
+ * character's current combat position and which combat moves are available.
+ * This goes in the USER message — the system prompt is cached and must stay
+ * position-agnostic. Returns "" when there is no single active combat
+ * (combatPosition is null), so out-of-combat interpretation is unchanged.
+ *
+ * @param {'in_control'|'bad_spot'|null} combatPosition
+ * @returns {string}
+ */
+export function buildCombatPositionDirective(combatPosition) {
+  if (combatPosition === "in_control") {
+    return [
+      "COMBAT POSITION: The character is currently IN CONTROL.",
+      "Available combat moves: strike (attack a foe), gain_ground (press an advantage / maneuver), take_decisive_action (seize the objective).",
+      "Do NOT choose clash or react_under_fire — those are available only in a bad spot.",
+      "If the narration is an attack, choose strike; if it presses an advantage or maneuvers, choose gain_ground.",
+    ].join(" ");
+  }
+  if (combatPosition === "bad_spot") {
+    return [
+      "COMBAT POSITION: The character is currently IN A BAD SPOT.",
+      "Available combat moves: clash (fight back against a dominating foe), react_under_fire (respond to an imminent threat), take_decisive_action (seize the objective), face_defeat (give up the objective).",
+      "Do NOT choose strike or gain_ground — those are available only when in control.",
+      "If the narration is an attack, choose clash; if it reacts to or evades danger, choose react_under_fire.",
+    ].join(" ");
+  }
+  return "";
+}
+
+/**
+ * Force a combat move to be one that is legal for the current combat position.
+ * The system prompt + combat directive already steer the model; this is the
+ * deterministic guarantee. A wrong-position attack/maneuver move is remapped to
+ * its same-position counterpart (stat options are identical within each pair).
+ * Position-agnostic combat moves (enter_the_fray, take_decisive_action,
+ * face_defeat, battle) and all non-combat moves pass through unchanged — as do
+ * all moves when combatPosition is null (out of combat, or ambiguous
+ * multi-combat where getActiveCombatPosition() cannot pick a single track).
+ *
+ * @param {string} moveId
+ * @param {'in_control'|'bad_spot'|null} combatPosition
+ * @returns {string} the position-legal move id
+ */
+export function constrainMoveToPosition(moveId, combatPosition) {
+  if (combatPosition !== "in_control" && combatPosition !== "bad_spot") return moveId;
+  return POSITION_MOVE_REMAP[combatPosition]?.[moveId] ?? moveId;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN INTERPRET FUNCTION
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -236,10 +304,14 @@ export async function buildCanonicalMoveBlock(slug) {
  *   re-interpretation pass after the player overrode the move in the
  *   confirmation dialog), the canonical move text from foundry-ironsworn
  *   is injected as a `<canonical_move>` block to ground the response.
+ * @param {('in_control'|'bad_spot'|null)} [options.combatPosition] — The active
+ *   combat track's position (from getActiveCombatPosition()). When set, the
+ *   interpreter is steered to a position-appropriate combat move and the result
+ *   is forced legal via constrainMoveToPosition(). null = no constraint.
  * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
  */
 export async function interpretMove(narration, {
-  campaignState, mischiefLevel, apiKey, expectedMoveSlug,
+  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null,
 }) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
@@ -247,15 +319,19 @@ export async function interpretMove(narration, {
   const systemPrompt = buildSystemPrompt();
   const mischiefFraming = buildMischiefFraming(mischiefLevel, narration);
   const contextSummary  = buildContextSummary(campaignState);
+  const combatDirective = buildCombatPositionDirective(combatPosition);
   const canonicalBlock  = expectedMoveSlug
     ? await buildCanonicalMoveBlock(expectedMoveSlug)
     : "";
 
-  // User message: context + mischief framing + canonical block + narration
-  // Mischief framing is invisible to the player — it shapes how the model reads the input
+  // User message: context + mischief framing + combat-position directive +
+  // canonical block + narration. Mischief framing is invisible to the player —
+  // it shapes how the model reads the input. The combat directive (empty out of
+  // combat) restricts the candidate combat moves to the current position.
   const userMessage = [
     contextSummary,
     mischiefFraming,
+    combatDirective,
     canonicalBlock,
     `Player narration: "${narration}"`,
   ].filter(Boolean).join("\n\n");
@@ -269,7 +345,7 @@ export async function interpretMove(narration, {
     promptCachingEnabled: campaignState.api?.promptCachingEnabled ?? true,
   });
 
-  const parsed = parseInterpretation(response, narration, mischiefLevel);
+  const parsed = parseInterpretation(response, narration, mischiefLevel, combatPosition);
   return parsed;
 }
 
@@ -328,7 +404,7 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
  * Falls back gracefully if the response is malformed — returns face_danger +wits
  * with a note so the confirmation UI can catch it.
  */
-function parseInterpretation(rawText, originalNarration, mischiefLevel) {
+function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPosition = null) {
   let parsed;
 
   try {
@@ -347,6 +423,14 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
     return fallbackInterpretation(originalNarration, mischiefLevel);
   }
 
+  // Force the move to be legal for the current combat position. The prompt
+  // already steers the model; this guarantees a wrong-position attack/maneuver
+  // is remapped to its same-position counterpart (see constrainMoveToPosition).
+  const requestedMoveId  = parsed.moveId;
+  parsed.moveId          = constrainMoveToPosition(parsed.moveId, combatPosition);
+  const positionRemapped = parsed.moveId !== requestedMoveId;
+  const finalMoveData    = MOVES[parsed.moveId] ?? moveData;
+
   // Validate stat (null is valid for progress/narrative moves)
   const statValid = parsed.statUsed === null
     || STATS.includes(parsed.statUsed)
@@ -354,8 +438,13 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
 
   if (!statValid) {
     console.warn(`Starforged Companion | Unknown stat in response: ${parsed.statUsed}`);
-    parsed.statUsed = moveData.stat?.[0] ?? "wits";
+    parsed.statUsed = finalMoveData.stat?.[0] ?? "wits";
   }
+
+  const baseRationale = parsed.rationale ?? parsed.interpretationRationale ?? "";
+  const rationale = positionRemapped
+    ? `${baseRationale}${baseRationale ? " " : ""}(Adjusted to ${toDisplayName(parsed.moveId)} — you are ${combatPosition === "bad_spot" ? "in a bad spot" : "in control"}.)`
+    : baseRationale;
 
   return {
     playerNarration:        originalNarration,
@@ -366,14 +455,15 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel) {
     statUsed:               parsed.statUsed,
     statValue:              parsed.statValue ?? 0,       // Filled in by enrichInterpretationStatValue (see src/moves/statEnrichment.js); model is instructed to leave it 0
     adds:                   parsed.adds ?? 0,
-    isProgressMove:         moveData.progressMove === true,
+    isProgressMove:         finalMoveData.progressMove === true,
     progressTicks:          parsed.progressTicks ?? 0,
     moveTarget:              typeof parsed.moveTarget === "string" && parsed.moveTarget.trim() ? parsed.moveTarget.trim() : null,
     expeditionRank:          typeof parsed.expeditionRank === "string" && parsed.expeditionRank.trim() ? parsed.expeditionRank.trim().toLowerCase() : null,
     combatRank:              typeof parsed.combatRank === "string" && parsed.combatRank.trim() ? parsed.combatRank.trim().toLowerCase() : null,
-    rationale:               parsed.rationale ?? parsed.interpretationRationale ?? "",
+    rationale,
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",
+    positionConstraintApplied: positionRemapped,         // true when a wrong-position move was remapped
     playerConfirmed:        false,                       // Set to true after confirmation UI
   };
 }
