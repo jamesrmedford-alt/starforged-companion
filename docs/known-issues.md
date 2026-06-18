@@ -16,7 +16,7 @@ _Last audited against the code at v1.6.0 (2026-05)._
 except **E** (config/discoverability — setting hint clarified; not a code bug)
 and **H** (diagnostics added; root cause needs the Tier-3 audio smoke to confirm
 live). **K** was resolved by the M/N move-lock fix. Finding **A**'s camera fix
-should be eyeballed in a live session (geometry can't be unit-verified). See the
+was **confirmed fine in a live session (2026-06-18) — closed.** See the
 cluster notes and individual entries. Two-player session (GM + one non-GM
 player); PCs Kylar Nazari and Mave Takara in the Igneous Maze sector.
 
@@ -148,10 +148,11 @@ the initial-view centre **explicitly** to `(sceneX + sceneWidth/2, sceneY +
 sceneHeight/2)` from the same offset (not relying on Foundry's default centring,
 which is unverifiable here). Content and camera now derive from one offset and
 cannot drift apart. Tests: `tests/unit/sectorSceneBuilder.test.js` (offset +
-centred-camera + dimensions-fallback). Camera geometry still can't be
-unit-verified — confirm the load view is centred and the pins sit on the
-background in a live session. See `decisions.md` → "Sector scene padding: never
-zero" → the 2026-06-15 placeable-offset refinement.
+centred-camera + dimensions-fallback). Camera geometry can't be
+unit-verified, but the load view was **confirmed centred with the pins on the
+background in a live session (2026-06-18) — finding A closed.** See
+`decisions.md` → "Sector scene padding: never zero" → the 2026-06-15
+placeable-offset refinement.
 
 **Files:** `src/sectors/sceneBuilder.js` (`sceneRectOffset`, note/drawing/token
 placement, `initial` centre).

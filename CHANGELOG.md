@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+## [1.7.16] — 2026-06-18
+
 - Changed: **During a fight, your actions are rolled, not narrated.** Once combat is active (an open combat track), any action you describe — shooting, maneuvering, taking cover, or threatening under fire — is treated as a suggested outcome that triggers a move and a roll, in any category. You can no longer end a fight by simply asserting that you cut down the enemy; the dice decide. Pure observation ("the bay fills with smoke") still reads as narration.
 - Fixed: **You can find your combat track.** When a fight starts, the "Enter the Fray" card now carries an "Open Progress Tracks" button that jumps straight to where the fight's progress, rank, and in-control / bad-spot position live. The narrator also actually sees your active tracks now: the context section that lists vows, expeditions, and combat tracks was reading the wrong storage location and came up empty in play, so the narrator could mention a combat track you couldn't locate — fixed.
 - Fixed: **NPC portraits no longer fail when the fiction is violent.** A character introduced through a kidnapping, raid, or bloody scene could fail portrait generation outright ("Content Moderated"). The portrait prompt now neutralises captivity/raider/violence wording, and if the image provider still refuses, it automatically retries with a clean, card-only portrait prompt (gender, role, style) that drops the scene description. Only if both fail is the portrait skipped — with a clear message.
