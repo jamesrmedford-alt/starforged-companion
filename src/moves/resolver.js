@@ -243,6 +243,13 @@ function emptyConsequences() {
     // true → pipeline resolves the target connection and marks connection progress
     // (un-bonded) or bonds legacy (bonded, §3.3.5). See developRelationship.js.
     developRelationship:   false,
+    // { ranksDown } — pipeline closes the target vow track and marks the quests legacy
+    // reward (Fulfill Your Vow). One rank lower on weak hit. null = not a fulfillment.
+    fulfillVow:            null,
+    // true → pipeline calls forgeBond on the target connection, marks bonds legacy.
+    forgeABond:            false,
+    // Pipeline applies this delta to companion health (Companion Takes a Hit strong hit).
+    companionHealthChange: 0,
     otherEffect:         "",
   };
 }
@@ -303,6 +310,7 @@ const CONSEQUENCE_MAP = {
       };
       case "miss": return {
         ...emptyConsequences(),
+        routePayThePrice: true,
         otherEffect: "Fail or momentary success undermined. Pay the Price.",
       };
     }
@@ -329,6 +337,7 @@ const CONSEQUENCE_MAP = {
       };
       case "miss": return {
         ...emptyConsequences(),
+        routePayThePrice: true,
         otherEffect: "Fail or assumptions betray you. Pay the Price.",
       };
     }
@@ -340,7 +349,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Path or action to make progress is clear. Take +2 momentum." };
       case "weak_hit":   return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "New insight but also complicates quest. Take +1 momentum." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Dire threat or unwelcome truth uncovered. Pay the Price." };
     }
   },
@@ -351,7 +360,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "They do what you want. Take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Agreement comes with a demand or complication. Envision their counteroffer." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "They refuse or make a demand that costs you greatly. Pay the Price." };
     }
   },
@@ -374,7 +383,7 @@ const CONSEQUENCE_MAP = {
         ]},
         otherEffect: "You have it, but choose one: Sacrifice Resources (-1) OR Lose Momentum (-2)."
       };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "You don't have it and situation grows more perilous. Pay the Price." };
     }
   },
@@ -402,10 +411,10 @@ const CONSEQUENCE_MAP = {
   fulfill_your_vow: (outcome, _isMatch) => {
     // Progress move — legacy reward ticks depend on vow rank, applied by caller
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Vow fulfilled. Mark legacy reward on quests track per vow rank." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Fulfilled, but more remains or truth revealed. Mark legacy reward (or vow at full reward if you Swear an Iron Vow to set it right)." };
+      case "strong_hit": return { ...emptyConsequences(), fulfillVow: { ranksDown: 0 },
+        otherEffect: "Vow fulfilled. Legacy reward marked on quests track per vow rank." };
+      case "weak_hit": return { ...emptyConsequences(), fulfillVow: { ranksDown: 1 },
+        otherEffect: "Fulfilled, but more remains or truth revealed. Legacy reward marked one rank lower (none for troublesome). Swear an Iron Vow (formidable+) to claim full reward instead." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Vow undone by complication. Choose: Forsake Your Vow OR recommit (clear progress per challenge dice, raise rank by one)." };
     }
@@ -435,7 +444,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Connection made. Give them a role and rank." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Connection made, but with a complication or cost. Envision what they reveal or demand." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "No connection made and situation worsens. Pay the Price." };
     }
   },
@@ -471,8 +480,8 @@ const CONSEQUENCE_MAP = {
   forge_a_bond: (outcome, _isMatch) => {
     // Progress move
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Bond forged. Mark legacy reward on bonds track per connection rank. Choose: Bolster Influence (add +2) OR Expand Influence (second role, add +1)." };
+      case "strong_hit": return { ...emptyConsequences(), forgeABond: true,
+        otherEffect: "Bond forged. Legacy reward marked on bonds track. Choose: Bolster Influence (+2) OR Expand Influence (second role, +1)." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Bond forged, but they ask something more first. Envision the request and do it (or Swear an Iron Vow)." };
       case "miss": return { ...emptyConsequences(),
@@ -497,7 +506,7 @@ const CONSEQUENCE_MAP = {
         ]},
         otherEffect: "Reach waypoint but at cost. Mark progress per rank. Choose: suffer move (-2) or two suffer moves (-1), OR face a peril at the waypoint."
       };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Waylaid by crisis or immediate hardship at waypoint. No progress. Pay the Price." };
     }
   },
@@ -552,7 +561,7 @@ const CONSEQUENCE_MAP = {
         ]},
         otherEffect: "Arrived but with cost or complication. Choose: suffer move (-2) or two suffer moves (-1), OR face complication at destination."
       };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Waylaid by significant threat. Pay the Price. If overcome, may push on safely." };
     }
   },
@@ -617,7 +626,7 @@ const CONSEQUENCE_MAP = {
         ]},
         otherEffect: "In control. Weak hit: choose one — mark progress / +2 momentum / +1 on next move."
       };
-      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot", routePayThePrice: true,
         otherEffect: "Foe gains upper hand. You are in a bad spot. Pay the Price." };
     }
   },
@@ -628,7 +637,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Mark progress twice. Dominate foe, stay in control." };
       case "weak_hit": return { ...emptyConsequences(), combatProgress: 2, combatPosition: "bad_spot",
         otherEffect: "Mark progress twice, but expose yourself to danger. You are in a bad spot." };
-      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot", routePayThePrice: true,
         otherEffect: "Fight turns against you. You are in a bad spot. Pay the Price." };
     }
   },
@@ -637,9 +646,9 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), combatProgress: 2, combatPosition: "in_control",
         otherEffect: "Mark progress twice. Overwhelm foe, you are in control." };
-      case "weak_hit": return { ...emptyConsequences(), combatProgress: 1, combatPosition: "bad_spot",
+      case "weak_hit": return { ...emptyConsequences(), combatProgress: 1, combatPosition: "bad_spot", routePayThePrice: true,
         otherEffect: "Mark progress, but dealt a counterblow. Stay in a bad spot. Pay the Price." };
-      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot", routePayThePrice: true,
         otherEffect: "Foe dominates. Stay in a bad spot. Pay the Price." };
     }
   },
@@ -656,7 +665,7 @@ const CONSEQUENCE_MAP = {
         combatPosition: "bad_spot",
         otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot."
       };
-      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot",
+      case "miss": return { ...emptyConsequences(), combatPosition: "bad_spot", routePayThePrice: true,
         otherEffect: "Situation worsens. Stay in a bad spot. Pay the Price." };
     }
   },
@@ -672,7 +681,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Prevail. Take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(), endCombat: true, rollDecisiveActionCost: true,
         otherEffect: "Objective achieved but at cost. Roll on the weak hit table." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Defeated or objective lost. Pay the Price." };
     }
   },
@@ -806,7 +815,7 @@ const CONSEQUENCE_MAP = {
 
   companion_takes_a_hit: (outcome, isMatch) => {
     switch (outcome) {
-      case "strong_hit": return { ...emptyConsequences(),
+      case "strong_hit": return { ...emptyConsequences(), companionHealthChange: 1,
         otherEffect: "Companion rallies. Give them +1 health." };
       case "weak_hit": return {
         ...emptyConsequences(),
@@ -861,6 +870,10 @@ const CONSEQUENCE_MAP = {
   heal: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Clear wounded + take/give +2 health", chain: [{ clearImpact: "wounded" }, { health: 2 }], requires: "wounded" },
+          { label: "Take/give +3 health",                 health: 3, requires: "!wounded" },
+        ]},
         otherEffect: "If wounded, clear impact and take/give +2 health. Otherwise take/give +3 health." };
       case "weak_hit": return {
         ...emptyConsequences(),
@@ -870,7 +883,7 @@ const CONSEQUENCE_MAP = {
         ]},
         otherEffect: "Recovery costs extra time or resources. Choose: Lose Momentum (-2) OR Sacrifice Resources (-2)."
       };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Aid ineffective and situation worsens. Pay the Price." };
     }
   },
@@ -878,10 +891,14 @@ const CONSEQUENCE_MAP = {
   hearten: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Clear shaken + take +1 spirit", chain: [{ clearImpact: "shaken" }, { spirit: 1 }], requires: "shaken" },
+          { label: "Take +2 spirit",                spirit: 2, requires: "!shaken" },
+        ]},
         otherEffect: "If shaken, clear impact and take +1 spirit. Otherwise take +2 spirit. (+1 more if via Sojourn)." };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: -1,
         otherEffect: "As strong hit but fleeting — envision interruption or complication. Lose Momentum (-1)." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "No comfort and situation worsens. Pay the Price." };
     }
   },
@@ -889,10 +906,19 @@ const CONSEQUENCE_MAP = {
   resupply: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
-        otherEffect: "Choose: if unprepared clear impact and +1 supply, otherwise +2 supply; OR acquire specific item and +1 momentum." };
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Clear unprepared + take/give +2 supply", chain: [{ clearImpact: "unprepared" }, { supply: 2 }], requires: "unprepared" },
+          { label: "Take/give +2 supply",                    supply: 2 },
+          { label: "Acquire specific item + +1 momentum",    momentum: 1 },
+        ]},
+        otherEffect: "Clear unprepared (if applicable) and take/give +2 supply, or acquire a specific item and take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "As strong hit but deal with cost/complication/demand first. Envision the obstacle." };
-      case "miss": return { ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: [
+          { label: "Clear unprepared + +1 supply (pay cost first)", chain: [{ clearImpact: "unprepared" }, { supply: 1 }], requires: "unprepared" },
+          { label: "+2 supply (clear another impact manually)",      supply: 2 },
+        ]},
+        otherEffect: "At cost. Clear unprepared and take +1 supply, or clear another impact and take +2 supply." };
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Unexpected peril. Pay the Price." };
     }
   },
@@ -903,7 +929,7 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Gain repair points: facility 5, field 3, under fire 2. Spend: clear battered (2), fix module (2), +1 integrity (1), +1 companion health (1), repair device (3)." };
       case "weak_hit": return { ...emptyConsequences(),
         otherEffect: "Gain repair points: facility 3, field 1, under fire 0. Same spend options." };
-      case "miss": return { ...emptyConsequences(),
+      case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Repairs not made and situation worsens. Pay the Price." };
     }
   },

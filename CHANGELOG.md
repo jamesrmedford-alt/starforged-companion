@@ -11,6 +11,12 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Take Decisive Action and Face Defeat see the fight through.** On a Take Decisive Action weak hit, the six-entry cost table is rolled and shown as a card (the "make a suffer move" entry opens the suffer picker so you choose which meter takes the hit). Face Defeat rolls Pay the Price and applies any routable consequence automatically.
 - Fixed: **Test Your Relationship now follows through to Develop Your Relationship on a hit.** A strong or weak hit automatically triggers the Develop Your Relationship pipeline (marking connection progress or bonds legacy), matching what the move text says to do and rounding out the connection move chain.
 - Added: **Quickstart creates two ready-to-play characters.** The Playtest Quickstart macro now creates two separate PCs (each with a random name, the 3/2/2/1/1 stat array, and two random Path assets) rather than one, ready for co-op sessions out of the box.
+- Added: **Every "Pay the Price" miss now rolls the oracle automatically.** Across all adventure, quest, exploration, combat, and recover moves, a miss outcome that says "Pay the Price" now behaves like Face Defeat — rolling the d100 oracle and applying any routable suffer consequence for you. Previously the text said what to do but nothing happened.
+- Added: **Heal and Hearten now clear your impact on a strong hit.** If you are wounded when you Heal (or shaken when you Hearten), the dialog presents the conditional option — clearing the impact and applying the reduced health or spirit gain. No wounded? You get the full +3 health (or +2 spirit) directly.
+- Added: **Resupply presents its choices as a live dialog.** The strong-hit dialog offers to clear unprepared plus +2 supply (if you carry that impact), plain +2 supply, or an item acquisition for +1 momentum. The weak-hit dialog covers the "at cost" variants.
+- Added: **Companion Takes a Hit strong hit auto-applies the +1 companion health.** No more reading the text and ticking the box manually.
+- Added: **Fulfill Your Vow closes the vow track and marks your quests legacy.** A strong hit marks the full reward; a weak hit marks one rank lower. The track is completed automatically, matched by the vow name you spoke.
+- Added: **Forge a Bond marks your bonds legacy and sets the connection as bonded.** The legacy reward is applied per the connection's rank, and a card prompts the Bolster/Expand Influence choice.
 
 ## [1.7.14] — 2026-06-16
 

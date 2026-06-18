@@ -455,6 +455,7 @@ const REQUIRED_KEYS = [
   "progressTrackId", "otherEffect",
   "enterCombat", "combatProgress", "endCombat",
   "rollDecisiveActionCost", "routePayThePrice",
+  "developRelationship", "fulfillVow", "forgeABond", "companionHealthChange",
 ];
 
 const HANDLER_CASES = [
@@ -479,8 +480,8 @@ const HANDLER_CASES = [
   // Quest
   ["swear_an_iron_vow", "miss",       false, { match: /obstacle/i }],
   ["reach_a_milestone", "strong_hit", false, { match: /progress/i }],
-  ["fulfill_your_vow",  "strong_hit", false, { match: /fulfilled|legacy/i }],
-  ["fulfill_your_vow",  "weak_hit",   false, { match: /more remains|legacy/i }],
+  ["fulfill_your_vow",  "strong_hit", false, { fulfillVow: { ranksDown: 0 }, match: /legacy|quests/i }],
+  ["fulfill_your_vow",  "weak_hit",   false, { fulfillVow: { ranksDown: 1 }, match: /lower|legacy/i }],
   ["fulfill_your_vow",  "miss",       false, { match: /Forsake|undone/i }],
   ["forsake_your_vow",  "strong_hit", false, { match: /cleared|costs/i }],
 
@@ -492,7 +493,7 @@ const HANDLER_CASES = [
   ["test_your_relationship",    "strong_hit", false, { developRelationship: true, match: /Develop/i }],
   ["test_your_relationship",    "weak_hit",   false, { developRelationship: true, match: /Develop/i }],
   ["test_your_relationship",    "miss",       false, { match: /lose|loyalty/i }],
-  ["forge_a_bond",              "strong_hit", false, { match: /Bond forged/i }],
+  ["forge_a_bond",              "strong_hit", false, { forgeABond: true, match: /Bond forged/i }],
   ["forge_a_bond",              "weak_hit",   false, { match: /Bond forged|something more/i }],
   ["forge_a_bond",              "miss",       false, { match: /Conflicting|Recommit/i }],
 
@@ -532,7 +533,7 @@ const HANDLER_CASES = [
   ["battle",               "strong_hit", false, { momentumChange: 2 }],
   ["battle",               "weak_hit",   false, { match: /Pay the Price/i }],
   ["battle",               "miss",       false, { match: /Pay the Price|Defeated/i }],
-  ["companion_takes_a_hit","strong_hit", false, { match: /rallies|health/i }],
+  ["companion_takes_a_hit","strong_hit", false, { companionHealthChange: 1, match: /rallies|health/i }],
   ["companion_takes_a_hit","weak_hit",   false, { match: /Lose Momentum|press on/i }],
 
   // Suffer
@@ -552,14 +553,14 @@ const HANDLER_CASES = [
   ["sojourn",  "strong_hit", false, { match: /Safe refuge|recover/i }],
   ["sojourn",  "weak_hit",   false, { match: /Time short|recover/i }],
   ["sojourn",  "miss",       false, { match: /community|Pay the Price/i }],
-  ["heal",     "strong_hit", false, { match: /wounded|health/i }],
+  ["heal",     "strong_hit", false, { match: /wounded|health/i, sufferPrompt: { kind: "enumerated" } }],
   ["heal",     "weak_hit",   false, { match: /Lose Momentum|Sacrifice/i }],
   ["heal",     "miss",       false, { match: /Pay the Price/i }],
-  ["hearten",  "strong_hit", false, { match: /shaken|spirit/i }],
+  ["hearten",  "strong_hit", false, { match: /shaken|spirit/i, sufferPrompt: { kind: "enumerated" } }],
   ["hearten",  "weak_hit",   false, { momentumChange: -1 }],
   ["hearten",  "miss",       false, { match: /Pay the Price/i }],
-  ["resupply", "strong_hit", false, { match: /unprepared|supply|item/i }],
-  ["resupply", "weak_hit",   false, { match: /cost|complication/i }],
+  ["resupply", "strong_hit", false, { match: /unprepared|supply|item/i, sufferPrompt: { kind: "enumerated" } }],
+  ["resupply", "weak_hit",   false, { match: /cost|supply/i, sufferPrompt: { kind: "enumerated" } }],
   ["resupply", "miss",       false, { match: /Pay the Price|peril/i }],
   ["repair",   "strong_hit", false, { match: /repair points|integrity/i }],
   ["repair",   "weak_hit",   false, { match: /repair points/i }],
@@ -601,6 +602,24 @@ describe("mapConsequences — full handler coverage", () => {
       }
       if (expectations.match) {
         expect(c.otherEffect).toMatch(expectations.match);
+      }
+      if (expectations.sufferPrompt !== undefined) {
+        expect(c.sufferPrompt).not.toBeNull();
+        if (expectations.sufferPrompt?.kind) {
+          expect(c.sufferPrompt.kind).toBe(expectations.sufferPrompt.kind);
+        }
+      }
+      if (expectations.fulfillVow !== undefined) {
+        expect(c.fulfillVow).toMatchObject(expectations.fulfillVow);
+      }
+      if (expectations.forgeABond !== undefined) {
+        expect(c.forgeABond).toBe(expectations.forgeABond);
+      }
+      if (expectations.companionHealthChange !== undefined) {
+        expect(c.companionHealthChange).toBe(expectations.companionHealthChange);
+      }
+      if (expectations.developRelationship !== undefined) {
+        expect(c.developRelationship).toBe(expectations.developRelationship);
       }
     });
   });
@@ -1287,6 +1306,112 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(mapConsequences("face_danger", "strong_hit", false).sufferPrompt).toBeNull();
     expect(mapConsequences("face_danger", "miss", false).sufferPrompt).toBeNull();
     expect(mapConsequences("gather_information", "strong_hit", false).sufferPrompt).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Category 1: routePayThePrice on miss/weak outcomes
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("routePayThePrice on miss/weak outcomes", () => {
+  const PTP_CASES = [
+    ["face_danger",             "miss"],
+    ["secure_an_advantage",     "miss"],
+    ["gather_information",      "miss"],
+    ["compel",                  "miss"],
+    ["check_your_gear",         "miss"],
+    ["undertake_an_expedition", "miss"],
+    ["set_a_course",            "miss"],
+    ["make_a_connection",       "miss"],
+    ["gain_ground",             "miss"],
+    ["strike",                  "miss"],
+    ["clash",                   "weak_hit"],
+    ["clash",                   "miss"],
+    ["react_under_fire",        "miss"],
+    ["take_decisive_action",    "miss"],
+    ["heal",                    "miss"],
+    ["hearten",                 "miss"],
+    ["resupply",                "miss"],
+    ["repair",                  "miss"],
+  ];
+  PTP_CASES.forEach(([moveId, outcome]) => {
+    it(`${moveId}:${outcome} sets routePayThePrice:true`, () => {
+      expect(mapConsequences(moveId, outcome, false).routePayThePrice).toBe(true);
+    });
+  });
+
+  it("face_danger:strong_hit does NOT set routePayThePrice", () => {
+    expect(mapConsequences("face_danger", "strong_hit", false).routePayThePrice).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Category 2: recover-move suffer prompts
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("recover-move dialog prompts", () => {
+  it("heal:strong_hit emits clearImpact:'wounded' conditional options", () => {
+    const c = mapConsequences("heal", "strong_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    const woundedOpt = c.sufferPrompt.options.find(o => o.requires === "wounded");
+    expect(woundedOpt).toBeDefined();
+    expect(woundedOpt.chain).toContainEqual(expect.objectContaining({ clearImpact: "wounded" }));
+    const healthyOpt = c.sufferPrompt.options.find(o => o.requires === "!wounded");
+    expect(healthyOpt?.health).toBe(3);
+  });
+
+  it("hearten:strong_hit emits clearImpact:'shaken' conditional options", () => {
+    const c = mapConsequences("hearten", "strong_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    const shakenOpt = c.sufferPrompt.options.find(o => o.requires === "shaken");
+    expect(shakenOpt?.chain).toContainEqual(expect.objectContaining({ clearImpact: "shaken" }));
+    const notShakenOpt = c.sufferPrompt.options.find(o => o.requires === "!shaken");
+    expect(notShakenOpt?.spirit).toBe(2);
+  });
+
+  it("resupply:strong_hit emits clearImpact:'unprepared' option and direct supply option", () => {
+    const c = mapConsequences("resupply", "strong_hit", false);
+    expect(c.sufferPrompt.kind).toBe("enumerated");
+    const unpreparedOpt = c.sufferPrompt.options.find(o => o.requires === "unprepared");
+    expect(unpreparedOpt?.chain).toContainEqual(expect.objectContaining({ clearImpact: "unprepared" }));
+    const directOpt = c.sufferPrompt.options.find(o => o.supply === 2 && !o.requires);
+    expect(directOpt).toBeDefined();
+  });
+
+  it("companion_takes_a_hit:strong_hit sets companionHealthChange:1", () => {
+    const c = mapConsequences("companion_takes_a_hit", "strong_hit", false);
+    expect(c.companionHealthChange).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Category 3: quest/connection auto-marking
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("fulfill_your_vow and forge_a_bond auto-marking", () => {
+  it("fulfill_your_vow:strong_hit sets fulfillVow:{ranksDown:0}", () => {
+    const c = mapConsequences("fulfill_your_vow", "strong_hit", false);
+    expect(c.fulfillVow).toEqual({ ranksDown: 0 });
+  });
+
+  it("fulfill_your_vow:weak_hit sets fulfillVow:{ranksDown:1}", () => {
+    const c = mapConsequences("fulfill_your_vow", "weak_hit", false);
+    expect(c.fulfillVow).toEqual({ ranksDown: 1 });
+  });
+
+  it("fulfill_your_vow:miss leaves fulfillVow:null", () => {
+    const c = mapConsequences("fulfill_your_vow", "miss", false);
+    expect(c.fulfillVow).toBeNull();
+  });
+
+  it("forge_a_bond:strong_hit sets forgeABond:true", () => {
+    const c = mapConsequences("forge_a_bond", "strong_hit", false);
+    expect(c.forgeABond).toBe(true);
+  });
+
+  it("forge_a_bond weak and miss leave forgeABond:false", () => {
+    expect(mapConsequences("forge_a_bond", "weak_hit", false).forgeABond).toBe(false);
+    expect(mapConsequences("forge_a_bond", "miss", false).forgeABond).toBe(false);
   });
 });
 
