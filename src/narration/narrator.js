@@ -1247,6 +1247,65 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
 }
 
 /**
+ * Generate a brief (2-3 sentence) narrative vignette for a clock segment
+ * filling — a story beat describing what it feels like as that faction plot
+ * tightens, a reactor gauge drops another notch, or a deadline finally
+ * arrives. Returns null when narration is off / no key / the call fails
+ * (the caller falls back silently).
+ *
+ * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object }} args
+ * @returns {Promise<string|null>}
+ */
+export async function narrateClockAdvancement({ clock, campaignState }) {
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+  if (campaignState?.xCardActive)  return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const character = getActiveCharacter(campaignState);
+  const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, settings, character, '', extras,
+  );
+
+  const typeFlair = clock.type === "campaign"
+    ? "a long-running campaign threat or faction project"
+    : "an immediate scene danger or countdown";
+  const userMessage = clock.triggered
+    ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
+    : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
+
+  try {
+    const raw = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(200),
+    });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    return (text && text.trim()) ? text : null;
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try {
+        await delay(RETRY_DELAY_MS);
+        const raw = await callNarratorAPI({
+          apiKey, systemPrompt, userMessage,
+          model:     settings.narrationModel,
+          maxTokens: maxTokensWithSidecar(200),
+        });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+        return (text && text.trim()) ? text : null;
+      } catch (retryErr) {
+        console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
+      }
+    }
+    console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
+    return null;
+  }
+}
+
+/**
  * Compose the campaign's inciting incident — the dramatic opening event that
  * launches the campaign and sets up the first vow (rulebook "Begin your
  * adventure", step 1). Grounded in the established World Truths, starting

@@ -276,6 +276,51 @@ export async function advanceTensionClocksForPayThePrice() {
   return advanced;
 }
 
+/**
+ * Roll Ask the Oracle for every active, non-triggered campaign clock.
+ * Called at Begin a Session (play kit: campaign clocks advance at session
+ * start by rolling the clock's configured odds). Clocks that roll YES fill
+ * one segment; the rest are unchanged. Returns a result entry for every
+ * clock checked — including those that did not advance — so the caller can
+ * post a full session-start summary card.
+ *
+ * @returns {Promise<Array<{name, type, filled, segments, triggered, advanced, odds, roll}>>}
+ */
+export async function advanceCampaignClocksForBeginSession() {
+  const state = readState();
+  const eligible = (state.clocks ?? []).filter(
+    c => c.active !== false && c.type === "campaign" && (c.filled ?? 0) < c.segments,
+  );
+  if (!eligible.length) return [];
+
+  const now = new Date().toISOString();
+  const results = [];
+  let dirty = false;
+
+  for (const c of eligible) {
+    const r = rollYesNo(c.advanceOdds);
+    const advanced = r.answer === "yes";
+    if (advanced) {
+      c.filled    = Math.min((c.filled ?? 0) + 1, c.segments);
+      c.updatedAt = now;
+      dirty = true;
+    }
+    results.push({
+      name:      c.name,
+      type:      "campaign",
+      filled:    c.filled,
+      segments:  c.segments,
+      triggered: c.filled >= c.segments,
+      advanced,
+      odds:      c.advanceOdds,
+      roll:      r.roll,
+    });
+  }
+
+  if (dirty) await writeState(state);
+  return results;
+}
+
 export async function handleClockCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!clock".length).trim().split(/\s+/);
@@ -350,9 +395,11 @@ async function cmdAdvance(parts) {
     if (r.answer === "yes") {
       await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
       const updated = readState().clocks.find(c => c._id === clock._id);
-      return postCard(
+      await postCard(
         `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
       );
+      fireClockVignette({ name: clock.name, type: clock.type, filled: updated.filled, segments: updated.segments, triggered: updated.filled >= updated.segments });
+      return;
     }
     return postCard(
       `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
@@ -364,6 +411,7 @@ async function cmdAdvance(parts) {
   await postCard(
     `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
   );
+  fireClockVignette({ name: clock.name, type: clock.type, filled: updated.filled, segments: updated.segments, triggered: updated.filled >= updated.segments });
 }
 
 async function cmdFill(parts) {
@@ -480,6 +528,21 @@ function renderClock(c) {
   const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
   const triggered = c.filled >= c.segments ? " <em>(TRIGGERED)</em>" : "";
   return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}`;
+}
+
+function fireClockVignette(clockData) {
+  setTimeout(async () => {
+    try {
+      const { narrateClockAdvancement } = await import("../narration/narrator.js");
+      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs });
+      if (text) {
+        await postCard(`<em>${escapeHtml(text)}</em>`);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | clock vignette failed:`, err?.message ?? err);
+    }
+  }, 0);
 }
 
 async function postCard(html) {

@@ -6,6 +6,11 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Campaign clocks now auto-roll Ask the Oracle at Begin a Session; advanced clocks get a narrator vignette.**
+- Added: **Narrator generates a 2-3 sentence vignette when a clock segment fills** (session start, Pay the Price trigger, manual advance).
+
+## [1.7.17] — 2026-06-19
+
 - Docs: **Progress Tracks help page now explains the combat mini-game** — the two-track race (progress climbing vs. meters eroding), position (in control / bad spot) as the tempo lever, range (close quarters +iron / distance +edge for Strike and Clash), and the timing decision for Take Decisive Action including the bad-spot downgrade rule.
 - Docs: **Progress Tracks help page now covers all four mini-games** — exploration (expeditions), connections (relationships → bonds), and campaigns (vows/quests) join combat, framed by a shared "every track is the same mini-game" explanation (fill the track via hits, then cash it in with a progress roll).
 - Feature: **Foundry combat tracker opens automatically when a fight starts.** When Enter the Fray fires, the Companion creates a Combat Tracker entry and adds your PC(s) as combatants. Instead of initiative numbers, each row shows two clickable badges — **position** (In control / In a bad spot, colour-coded green/red) and **range** (Close +iron / Far +edge). Both badges update the actor's position field when clicked. The tracker is removed when the fight ends (Take Decisive Action or Face Defeat). Can be disabled via the new **Combat Tracker Integration** world setting.

@@ -2732,7 +2732,7 @@ async function advanceClocksOnPayThePrice() {
   try {
     const { advanceTensionClocksForPayThePrice } = await import("./clocks/clocks.js");
     for (const c of await advanceTensionClocksForPayThePrice()) {
-      advanced.push({ name: c.name, filled: c.filled, segments: c.segments, triggered: c.triggered });
+      advanced.push({ name: c.name, type: "tension", filled: c.filled, segments: c.segments, triggered: c.triggered });
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: tension clocks failed:`, err?.message ?? err);
@@ -2742,7 +2742,7 @@ async function advanceClocksOnPayThePrice() {
     const { getPlayerActors, advanceVowClocks } = await import("./character/actorBridge.js");
     for (const actor of getPlayerActors()) {
       for (const v of await advanceVowClocks(actor)) {
-        advanced.push({ name: v.name, filled: v.ticks, segments: v.max, triggered: v.triggered });
+        advanced.push({ name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
       }
     }
   } catch (err) {
@@ -2760,6 +2760,29 @@ async function advanceClocksOnPayThePrice() {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: card post failed:`, err?.message ?? err);
+  }
+
+  // Fire-and-forget vignette for any clock that just triggered — the
+  // narrative beat for when a deadline arrives or a threat materialises.
+  const justTriggered = advanced.filter(a => a.triggered);
+  if (justTriggered.length) {
+    setTimeout(async () => {
+      try {
+        const { narrateClockAdvancement } = await import("./narration/narrator.js");
+        const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        for (const cd of justTriggered) {
+          const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
+          if (text) {
+            await ChatMessage.create({
+              content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(text)}</em></div>`,
+              flags:   { [MODULE_ID]: { clockCard: true, clockVignetteCard: true } },
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: trigger vignette failed:`, err?.message ?? err);
+      }
+    }, 0);
   }
 }
 
