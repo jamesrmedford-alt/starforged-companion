@@ -6,6 +6,38 @@ rejected.
 
 ---
 
+## `.claude/` and local tooling dirs are never added to `.gitignore` or test config
+
+**Decision:** The `.claude/` directory — and any other directory created by the
+Claude Code harness or its worktree isolation — is left untracked by convention
+and is **not** listed in `.gitignore`, the `vitest.config.js` `exclude`, or any
+other repo/build config. More generally, repo/build/tooling config (`.gitignore`,
+`vitest.config.js`, ESLint config, `package.json` scripts, CI workflows) is
+edited only when that edit is itself the requested task, never bundled into an
+unrelated feature commit. See the matching bullets under "Never do without
+explicit instruction" and the pre-commit scope check in `CLAUDE.md`.
+
+**Reason:** A clocks/vignettes feature commit silently carried two unprompted
+changes — a `chore: ignore .claude/ worktree directory` commit adding `.claude/`
+to `.gitignore`, and a `vitest.config.js` hunk adding `.claude/**` to the test
+`exclude`. Both had to be reverted (rebase-drop the chore commit, strip the
+config hunk, force-push). Git already leaves untracked dirs out of a feature
+diff, so the ignore entries bought nothing and only added unreviewed config
+drift. Keeping harness/worktree dirs out of committed config means the repo never
+has to care how any one contributor's tooling lays out its working directory.
+
+**Rejected:**
+- *Add `.claude/` to `.gitignore` so it never shows up in `git status`* —
+  rejected; it is harness/worktree-managed and ephemeral, contributors' layouts
+  differ, and committing one contributor's ignore preference is config drift the
+  repo shouldn't carry. A personal, local-only ignore belongs in
+  `.git/info/exclude`.
+- *Let incidental config tidy-ups ride along inside feature commits* — rejected;
+  it buries reviewable config changes inside an unrelated diff. Config changes
+  get their own approval and their own commit.
+
+---
+
 ## The Roll button reflects the narrator's prose, not the classifier's nomination
 
 **Decision:** On a paced-narrative card, the move wired to the Roll button (its
