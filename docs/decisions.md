@@ -1296,6 +1296,47 @@ track + a command vehicle) and to players (`!stations` command + a help page). A
 richer ship-map "battle stations" mini-game is planned —
 see `docs/combat/shipboard-combat-minigame.md`.
 
+**Ship-map deck-plan Scene (Battle Stations! mini-game Phase A, 2026-06-18).**
+The first slice of the mini-game ships: a Foundry Scene that is a deck plan of the
+command vehicle, pinned with three kinds of "deck feature" — the 11 combat
+**stations**, the **galley** (crew mess/common area), and the ship's installed
+**modules** (the `asset`/Module Items actually on the starship Actor — Medbay,
+Heavy Cannons, …) so the map reflects the real vessel.
+`src/moves/shipMapScene.js` mirrors `src/sectors/sceneBuilder.js` (same scene
+dimensions, the PLAYTEST-1712 A scene-rect inset, independent Note/Drawing
+try/catch, no auto-activation). Decisions:
+- **Galley + modules are deck features, not stations.** The galley and modules
+  are NOT in `SHIPBOARD_ROLES` (which must stay the rulebook's 11 combat tasks).
+  A unified deck-feature model (`buildDeckFeatures`: stations + amenities +
+  modules) shares the same placement/vision logic; each pin carries
+  `deckFeatureKind` (`station|amenity|module`) and stations additionally keep
+  the back-compat `shipStationNote`/`stationId` flags. Modules are placed at a
+  per-slug deck hint near their related station (Medbay by Medical, etc.), with
+  a fallback "module bay" band for custom/over-many modules. Module slug is
+  derived from the Item name (`"Heavy Cannons"` → `heavy_cannons`).
+- **Fixed layout is the spine; vision placement is layered on top.** `STATION_LAYOUT`
+  gives every station deterministic grid coordinates so pins are always placeable.
+  When deck-plan art is generated, a vision pass (`src/moves/shipMapVision.js`,
+  Claude vision via `api-proxy.js`) returns normalized per-station coordinates and
+  the pins move onto the compartments the art drew. The vision result must pass
+  `validateVisionCoords` (all 11 present, in range, not collapsed); on any miss —
+  no key, bad JSON, degenerate layout, call failure — placement falls back to the
+  fixed layout per station. The fixed layout is never discarded. This resolves the
+  scope doc's "pinning onto AI geometry" open question by treating vision as an
+  enhancement over a guaranteed baseline, not a replacement.
+- **Art + schematic fallback.** Deck-plan art (`src/moves/shipMapArt.js`, OpenRouter)
+  is the backdrop when `shipMapArtEnabled` + a key; otherwise `createShipMapScene`
+  draws a schematic hull-outline Drawing so the bare Scene still reads as a ship.
+- **Three gated settings.** `shipMapEnabled` (master, default OFF so the fast
+  quickstart loop is never slowed), `shipMapArtEnabled` (art vs schematic, default
+  on), `shipMapVisionEnabled` (vision placement vs fixed, default on). The manual
+  `!shipmap` command works regardless of the master gate — it is the explicit opt-in.
+- **Auto-generation hooks `seedStarshipActor`**, the single convergence point for
+  command-vehicle creation (quickstart, ✦ Finalise, sidebar auto-seed). Gated to
+  the command vehicle, idempotent (skips when a deck-plan Scene already exists).
+- Phases B–D (man-the-stations token placement, station-aware move suggestions,
+  lifecycle integration) remain planned — see the scope doc.
+
 **Audit reconciliation.** `rulebook-coverage-audit.md` was written 2026-05-29 and
 overtaken within hours (P1–P20 closed the same night by `03070a4` + `943265e`),
 then further by weeks of feature work, without the matrix being updated. The
