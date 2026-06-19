@@ -13,7 +13,7 @@ Two clock types:
 
 | Type | Purpose | Advances |
 |------|---------|----------|
-| `campaign` | Slow-burn faction/world projects | At Begin a Session, via Ask the Oracle on the clock's `advanceOdds` (default *likely*) |
+| `campaign` | Slow-burn faction/world projects | Auto-rolled at Begin a Session via Ask the Oracle on the clock's `advanceOdds` (default *likely*); also via `!clock advance` |
 | `tension` | Scene-bound danger or deadline | When you Pay the Price or roll a complication |
 
 Clocks are stored as an array on `campaignState.clocks`. Each clock carries
@@ -47,6 +47,25 @@ An ApplicationV2 singleton (`ClocksPanelApp`) renders each clock as a segmented
 ring with add / advance / fill / reset / remove actions. Triggered clocks
 (`filled >= segments`) are flagged in the prepared context.
 
+## Narrative vignettes
+
+When a clock segment fills, the companion generates a 2-3 sentence narrator
+prose beat via `narrateClockAdvancement` in `src/narration/narrator.js`.
+The vignette fires fire-and-forget (inside `setTimeout(…, 0)`) in three
+situations:
+
+1. **Begin a Session** — for every campaign clock that rolled YES, after the
+   summary card is posted (`src/safety/sessionLifecycleDialogs.js`).
+2. **Pay the Price** — for any tension or vow clock that just triggered
+   (`advanceClocksOnPayThePrice` in `src/index.js`).
+3. **`!clock advance`** — for a campaign clock that advances on its oracle
+   roll, or any tension clock filled via the command
+   (`cmdAdvance` in `src/clocks/clocks.js`).
+
+Vignettes are silent no-ops when narration is disabled, the API key is
+absent, or the X-Card is active.
+
 ## Dependencies
 
 `rollYesNo` from `src/oracles/roller.js` drives campaign-clock auto-advance.
+`narrateClockAdvancement` from `src/narration/narrator.js` generates the vignette prose.

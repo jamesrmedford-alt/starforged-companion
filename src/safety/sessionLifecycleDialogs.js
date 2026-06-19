@@ -108,6 +108,51 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
     }
   }
 
+  // Campaign clocks — roll Ask the Oracle for each at session start (play
+  // kit: campaign clocks advance at Begin a Session via the clock's
+  // advanceOdds).
+  if (game.user?.isGM) {
+    try {
+      const { advanceCampaignClocksForBeginSession } = await import("../clocks/clocks.js");
+      const clockResults = await advanceCampaignClocksForBeginSession();
+      if (clockResults.length) {
+        const rows = clockResults.map(r => {
+          const bar    = "█".repeat(r.filled) + "░".repeat(Math.max(0, r.segments - r.filled));
+          const status = r.advanced
+            ? `YES (d100=${r.roll}) — <strong>${r.filled}/${r.segments}</strong>${r.triggered ? " <strong>(TRIGGERED)</strong>" : ""}`
+            : `NO (d100=${r.roll})`;
+          return `<li>${escapeHtml(r.name)} [${bar}] — Ask the Oracle (${r.odds}): ${status}</li>`;
+        }).join("");
+        await ChatMessage.create({
+          content: `<div class="sf-clock-card"><strong>⏳ Campaign clocks — Begin a Session</strong><ul>${rows}</ul></div>`,
+          flags:   { [MODULE_ID]: { clockCard: true, beginSessionAdvance: true } },
+        });
+        const advanced = clockResults.filter(r => r.advanced);
+        if (advanced.length) {
+          setTimeout(async () => {
+            try {
+              const { narrateClockAdvancement } = await import("../narration/narrator.js");
+              const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+              for (const cd of advanced) {
+                const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
+                if (text) {
+                  await ChatMessage.create({
+                    content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(text)}</em></div>`,
+                    flags:   { [MODULE_ID]: { clockCard: true, clockVignetteCard: true } },
+                  });
+                }
+              }
+            } catch (err) {
+              console.warn(`${MODULE_ID} | session-start clock vignette generation failed:`, err?.message ?? err);
+            }
+          }, 0);
+        }
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | campaign clock session-start roll failed:`, err?.message ?? err);
+    }
+  }
+
   // Fire-and-forget galley vignette — narrator-generated 4-6 sentence
   // opening scene describing the active PCs in the ship's galley
   // bantering about the absent ones. Silent skip when the Claude key

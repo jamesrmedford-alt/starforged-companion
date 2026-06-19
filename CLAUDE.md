@@ -86,6 +86,14 @@ npm run lint       # errors must be zero; warnings are acceptable
 
 Never commit with failing tests. Never commit with lint errors.
 
+**Scope check.** Before staging, run `git diff --stat` (and `git diff --cached
+--stat` once staged) and confirm every changed file serves the task you were
+asked to do. Drop anything that crept in — `.gitignore` / `vitest.config.js`
+edits, other config tidy-ups, reformatting, stray debug logging. "While I'm
+here" config changes need their own explicit go-ahead and never ride along
+inside a feature commit (a `.claude/`-ignore edit bundled into the
+clocks/vignettes commit had to be unwound exactly this way).
+
 Commit message format:
 ```
 type: short description
@@ -212,7 +220,15 @@ into another round of help-Changelog drift.
 - Delete any file not explicitly listed in the current task
 - Change `module.json` compatibility range (`minimum`, `verified`)
 - Modify `tests/fixtures/` files without discussing the impact first
-- Change coverage thresholds in `vitest.config.js`
+- Change `vitest.config.js` — coverage thresholds, `include`/`exclude` globs, or
+  any other setting (an unprompted `exclude` edit to hide `.claude/` had to be
+  reverted; config changes get their own approval, never a ride-along in a
+  feature commit)
+- Edit repo/build/tooling config that isn't itself the requested task —
+  `.gitignore`, ESLint/Prettier config, `package.json` scripts, CI workflows.
+  Above all, **never add `.claude/` (or any other harness/worktree-managed
+  directory) to `.gitignore` or a test-runner exclude** — the harness manages
+  those, not the repo. For a personal, local-only ignore use `.git/info/exclude`.
 - Add new npm dependencies without discussing the choice first
 - Rename exported functions (breaks callers across the codebase)
 - Update `vendor/foundry-ironsworn` without explicit instruction
