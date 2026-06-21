@@ -706,7 +706,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(600),
+      maxTokens: maxTokensWithSidecar(16000),
     });
 
     if (text?.trim() && game.user?.isGM) {
@@ -1015,7 +1015,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       systemPrompt,
       userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(200),
+      maxTokens: maxTokensWithSidecar(16000),
     });
     const response = applyNarratorSidecar(raw, campaignState, {
       moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds,
@@ -1036,7 +1036,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(200),
+          maxTokens: maxTokensWithSidecar(16000),
         });
         const response = applyNarratorSidecar(raw, campaignState, {
           moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds,
@@ -1112,7 +1112,7 @@ export async function narrateOracleFollowup({
     const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(220),
+      maxTokens: maxTokensWithSidecar(16000),
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
 
@@ -1127,7 +1127,7 @@ export async function narrateOracleFollowup({
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(220),
+          maxTokens: maxTokensWithSidecar(16000),
         });
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
         if (text?.trim()) {
@@ -1222,7 +1222,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
     const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(380),  // 4-6 sentences, comfortable headroom
+      maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
     return (text && text.trim()) ? text : null;
@@ -1233,7 +1233,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(380),
+          maxTokens: maxTokensWithSidecar(16000),
         });
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
         return (text && text.trim()) ? text : null;
@@ -1281,7 +1281,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
     const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(200),
+      maxTokens: maxTokensWithSidecar(16000),
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
     return (text && text.trim()) ? text : null;
@@ -1292,7 +1292,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
         const raw = await callNarratorAPI({
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(200),
+          maxTokens: maxTokensWithSidecar(16000),
         });
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
         return (text && text.trim()) ? text : null;
@@ -1335,7 +1335,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
     const raw = await callNarratorAPI({
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(480),  // 4-6 sentences + the suggested-vow line
+      maxTokens: maxTokensWithSidecar(16000),
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
     return (text && text.trim()) ? text : null;
@@ -1906,7 +1906,6 @@ export function formatActiveSector(campaignState) {
   try {
     npcLines = listConnections(campaignState)
       .filter(c => c && (!c.sectorId || c.sectorId === id))
-      .slice(0, 12)
       .map(c => `- ${formatSectorNpcProfile(c)}`);
   } catch (err) {
     console.debug?.(`${MODULE_ID} | formatActiveSector: connection read failed:`, err?.message ?? err);
@@ -2177,7 +2176,7 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens }) {
   const body = {
     model,
-    max_tokens: maxTokens ?? 300,
+    max_tokens: maxTokens ?? 16000,
     system: [
       { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
     ],
@@ -2285,16 +2284,16 @@ async function resolvePathRelevance(playerText, campaignState) {
 /**
  * Narrator-memory A3 — how many recent narrator cards feed the paced /
  * oracle-followup user message. World setting `narratorContextCards`,
- * default 3, clamped 1–10. Scene interrogation keeps its own
+ * default 20, clamped 1–50. Scene interrogation keeps its own
  * `sceneContextCards` setting.
  */
 function getNarratorContextCards() {
   try {
     const v = Number(game.settings.get(MODULE_ID, 'narratorContextCards'));
-    if (!Number.isFinite(v)) return 3;
-    return Math.max(1, Math.min(10, Math.round(v)));
+    if (!Number.isFinite(v)) return 20;
+    return Math.max(1, Math.min(50, Math.round(v)));
   } catch {
-    return 3;
+    return 20;
   }
 }
 

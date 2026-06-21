@@ -100,6 +100,8 @@ const SETTING = {
   FC_SHIP_AUTO_MOVE:           'factContinuity.shipAutoMoveOnCourse',
   FC_SHIP_TOKEN_ENABLED:       'factContinuity.shipTokenEnabled',
   FC_SHIP_TOKEN_SNAP_RADIUS:   'factContinuity.shipTokenSnapRadius',
+  // ── Diagnostics ──────────────────────────────────────────────────────────
+  API_TX_LOG:                  'apiTransactionLog.enabled',
 };
 
 const PACING_DEFAULTS = {
@@ -247,20 +249,20 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_MAX_TOKENS, {
     name:    'Narration Max Tokens',
-    hint:    'Maximum tokens for each narration response. Default 300 (~3 sentences).',
+    hint:    'Maximum tokens for each narration response. Default 16000 (full model output ceiling).',
     scope:   'world',
     config:  false,
     type:    Number,
-    default: 300,
+    default: 16000,
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, {
     name:    'Narrator Context Cards',
-    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context. Higher values give the narrator a longer memory horizon at a small token cost per call. Range 1–10, default 3. Scene questions use their own Scene Context Cards setting.',
+    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context. Higher values give the narrator a longer memory horizon. Range 1–50, default 20. Scene questions use their own Scene Context Cards setting.',
     scope:   'world',
     config:  false,
     type:    Number,
-    default: 3,
+    default: 20,
   });
 
   // ── Character management settings ─────────────────────────────────────────
@@ -622,6 +624,15 @@ export function registerSettings() {
     type:    Number,
     default: 1,
   });
+
+  game.settings.register(MODULE_ID, SETTING.API_TX_LOG, {
+    name:    'API Transaction Log',
+    hint:    'Record each Anthropic API call (model, input tokens, output tokens) to the "Starforged Companion — API Log" journal entry. GM only.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -643,11 +654,11 @@ function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTIN
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
 function getNarrationInstructions() { return game.settings.get(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS) ?? ''; }
-function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 300; }
+function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 16000; }
 export function getNarratorContextCards() {
   const v = Number(game.settings.get(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS));
-  if (!Number.isFinite(v)) return 3;
-  return Math.max(1, Math.min(10, Math.round(v)));
+  if (!Number.isFinite(v)) return 20;
+  return Math.max(1, Math.min(50, Math.round(v)));
 }
 
 function getNarratorSessionSummary() {
@@ -1219,8 +1230,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         <div class="narrator-field">
           <label class="narrator-field-label">Context cards (memory horizon)</label>
           <input class="settings-input narrator-number-input" name="narratorContextCards"
-                 type="number" min="1" max="10" value="${ctx.narratorContextCards}" ${dis}>
-          <span class="narrator-field-hint">How many recent narrator cards each narration sees as fiction context. Raise if the narrator forgets recent events; small token cost per call. Default 3.</span>
+                 type="number" min="1" max="50" value="${ctx.narratorContextCards}" ${dis}>
+          <span class="narrator-field-hint">How many recent narrator cards each narration sees as fiction context. Default 20 (full session memory). Range 1–50.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -1627,7 +1638,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
       const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
       const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
-      const contextCards = Math.max(1, Math.min(10, Number(contextRaw) || 3));
+      const contextCards = Math.max(1, Math.min(50, Number(contextRaw) || 20));
       const sessionSummary = el.querySelector('[name="narratorSessionSummary"]')?.checked ?? true;
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 

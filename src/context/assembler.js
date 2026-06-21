@@ -24,7 +24,7 @@
  *  12. Session notes              — dropped first under budget pressure
  *  13. Move outcome               — exempt, always last
  *
- * Token budget default: 1200 tokens (~4800 characters).
+ * Token budget default: 8000 tokens (~32000 characters).
  * Sections 0, 1, 2, 13 are exempt and do not count against the budget.
  *
  * Implementation-extras retained in this codebase (not in the spec numbering):
@@ -87,7 +87,7 @@ export async function assembleContextPacket(resolution, campaignState, options =
   const {
     sessionState        = null,
     currentUserId       = null,
-    tokenBudget         = 1200,
+    tokenBudget         = 8000,
     narratorClass       = null,
     matchedEntityIds    = [],
     matchedEntityTypes  = [],

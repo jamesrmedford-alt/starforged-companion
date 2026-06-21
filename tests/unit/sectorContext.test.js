@@ -122,15 +122,16 @@ describe("formatActiveSector — sector cast & attributes (PLAYTEST-1712 T)", ()
     expect(block).not.toContain("Offworld Stranger");
   });
 
-  it("caps the NPC roster so a large campaign can't bloat the prompt", () => {
+  it("includes all sector NPCs with no roster cap", () => {
     const many = Array.from({ length: 20 }, (_, i) => ({
       name: `NPC-${i}`, sectorId: "sec-1", role: "extra",
     }));
     vi.mocked(listConnections).mockReturnValue(many);
     const block = formatActiveSector(state());
     expect(block).toContain("NPC-0 — extra");
-    expect(block).toContain("NPC-11 — extra");   // 12th (index 11) included
-    expect(block).not.toContain("NPC-12 — extra"); // 13th capped out
+    expect(block).toContain("NPC-11 — extra");
+    expect(block).toContain("NPC-12 — extra"); // no cap: all 20 included
+    expect(block).toContain("NPC-19 — extra");
   });
 
   it("falls back to map-data settlement names when no Actor records resolve", () => {

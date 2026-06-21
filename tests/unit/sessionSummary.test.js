@@ -127,6 +127,11 @@ describe('getRollingSummaryText (pure read)', () => {
 // ---------------------------------------------------------------------------
 
 describe('getRollingSessionSummary — gating', () => {
+  // Pin context cards to 3 (K=5) so every test in this block uses a
+  // predictable debounce threshold regardless of the system default.
+  beforeEach(() => {
+    game.settings._store.set(`${MODULE_ID}.narratorContextCards`, 3);
+  });
   it('returns "" when disabled (no API call)', async () => {
     game.settings._store.set(`${MODULE_ID}.narratorSessionSummary`, false);
     const calls = stubFetch();
@@ -146,7 +151,7 @@ describe('getRollingSessionSummary — gating', () => {
   it('does NOT regenerate below the debounce threshold', async () => {
     const calls = stubFetch();
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
-    setCards(4);   // K is 5 at the default ring depth of 3
+    setCards(4);   // K is 5 at ring depth 3 (pinned in beforeEach)
     const state = makeState();
     expect(await getRollingSessionSummary(state)).toBe('');
     expect(calls).toHaveLength(0);
