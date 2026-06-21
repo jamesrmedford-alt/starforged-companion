@@ -9,6 +9,126 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
+### PLAYTEST-1717 — v1.7.17 playtest findings
+
+**Status:** Open — playthrough in progress (2026-06-21). Findings logged as
+they arrive; none fixed yet.
+
+---
+
+#### Finding A — `<npc>` tags leak into the inciting incident card
+
+**Symptom:** Literal `<npc>…</npc>` markup appears in the inciting incident
+chat card text when the audio-narration setting is on. The tags are visible to
+the player.
+
+**Root cause:** `renderIncitingIncidentCard` in
+`src/session/incitingIncident.js` (line 190) runs `escapeHtml(p)` on each
+prose paragraph but never calls `stripMarkup()` first. The narrator prompt
+inserts `<npc>` tags around NPC dialogue for the TTS voice-splitting pipeline
+(`src/audio/segments.js`). The narrator card's `ready` hook in
+`src/audio/index.js` strips these tags from `.sf-narration-prose` elements,
+but the inciting incident card renders plain `<p>` tags without that class, so
+the hook never fires.
+
+The correct pattern is used in both vignette renderers:
+- `src/session/galleyVignette.js:170` — `escapeHtml(stripMarkup(text))`
+- `src/session/endSessionVignette.js:177` — same
+
+**Files to fix:**
+- `src/session/incitingIncident.js:190` — add `stripMarkup` before `escapeHtml`
+  (also import `stripMarkup` from `../audio/segments.js` at the top of the file)
+- `tests/unit/incitingIncident.test.js` — add a test for `<npc>`-free output
+
+---
+
+#### Finding B — The inciting incident captures nothing durable (no faction, lore, threat, or entity)
+
+**Symptom:** *Nothing* the inciting-incident fiction invents is captured. The
+faction(s) named in the opening prose (e.g. "Shroud Company", "The Ascendancy")
+are the most visible loss, but it is broader than factions.
+
+Confirmed by screenshots (2026-06-21):
+- "World Journal — Factions" journal is **empty**.
+- World Journal panel: "PENDING LORE: No entries awaiting review".
+- The **only** Active Threat is "Energy storms are rampant" — and that is a
+  **Sector Trouble** rolled at sector-generation time (`src/sectors/sectorGenerator.js`
+  Step 10, `recordThreat`), **not** from the inciting incident. So it is *not*
+  evidence the inciting detection worked; it predates the inciting incident.
+
+Net: the inciting-incident detection pass produced **zero** durable
+captures — no lore, no threat, no faction, no entity record, no pending review.
+
+**Root cause (candidates — needs the browser console to pin):** The inciting
+path runs `runIncitingIncident` → `runPacedDetection`
+(`src/narration/narrator.js:1527`) inside a `try/catch` that only
+`console.warn`s on failure (`incitingIncident.js:321-328`). `runPacedDetection`
+itself also swallows errors to `console.error` (`narrator.js:1541`). So a total
+no-capture is consistent with several causes, none yet eliminated:
+
+1. **Silent detection failure** — the Haiku `runCombinedDetectionPass` call
+   threw (API error, unparseable JSON) and was swallowed to the console. Most
+   likely given *everything* is missing at once.
+2. **Empty `prose`** — `splitIncitingMeta(text).prose` came back empty/whitespace
+   (e.g. all content parsed into the vow/clock/target meta blocks), so detection
+   ran on nothing.
+3. **Empty detection result** — the model returned all-empty arrays for this
+   prose.
+4. **Salience reroute** (partial) — lore/threats rated below the salience
+   threshold are sent to the session log, not the WJ
+   (`routeWorldJournalResults`, `entityExtractor.js:616-637`). This would hide
+   lore/threats but **not** factions (the `factionUpdates` loop has no salience
+   gate), so it can't be the whole story.
+
+For factions specifically, even when detection works there are two fragile
+routes — `worldJournal.factionUpdates[]` → `recordFactionIntelligence` (durable
+WJ write, `worldJournal.js:265`) and `entities[]` type `faction` → a transient
+chat draft card (`routeEntityDrafts`/`postDraftEntityCard`,
+`entityExtractor.js:427`) that is lost if the GM never confirms it.
+
+**Diagnostic next step:** reproduce and capture the browser console during the
+inciting incident — look for `runIncitingIncident: entity detection failed` and
+`runPacedDetection failed`. That distinguishes cause 1 from 2–4. The
+swallow-to-console handlers are themselves worth hardening so this isn't
+invisible to playtesters.
+
+**Files to check:**
+- `src/session/incitingIncident.js` — `runIncitingIncident` detection call
+  (lines 321-328), `splitIncitingMeta` (does prose survive meta-splitting?)
+- `src/narration/narrator.js` — `runPacedDetection` (line 1527) and its
+  error swallow (line 1541)
+- `src/entities/entityExtractor.js` — `runCombinedDetectionPass`,
+  `routeWorldJournalResults` (salience reroute 616-637; factionUpdates 639),
+  `routeEntityDrafts` (faction-as-draft path)
+- `src/world/worldJournal.js` — `recordFactionIntelligence` (line 265)
+- `src/sectors/sectorGenerator.js` — Step 10 `recordThreat` (source of the one
+  threat that *is* present; rules out a dead `recordThreat`)
+
+---
+
+#### Finding C — Connection seed contradicts inciting fiction
+
+**Symptom:** The connection actor created from an inciting incident (e.g.
+Doran Sterling) receives generic oracle rolls for Role and Goal (e.g.
+"Prophet / Spread faith") that contradict the character invented in the
+inciting fiction (researcher, met in a hab, saved your life). The rich
+backstory from the inciting prose is never written to the connection record's
+narrator-added details or initial-reveal text.
+
+**Root cause:** `seedConnectionActor` (called from `runIncitingIncident`) rolls
+the generic Character Role and Character Goal oracles unconditionally, without
+access to the inciting narrative context. There is no mechanism to pass the
+inciting fiction into the seed function, so every connection starts from a
+blank oracle draw rather than from the narrative already established.
+
+**Files to check:**
+- `src/session/incitingIncident.js` — `runIncitingIncident` and the
+  connection-seeding call site
+- Connection seeding logic (wherever `seedConnectionActor` is defined) — oracle
+  roll path and narrator-details write path
+
+---
+
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
 **Status:** Largely resolved — playthrough complete (2026-06-14). 19 findings
