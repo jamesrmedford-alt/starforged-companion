@@ -14,8 +14,9 @@ _Last audited against the code at v1.6.0 (2026-05)._
 **Status:** In progress (2026-06-21). **A fixed** (`<npc>` strip). **B
 hardened** — detection failures now surface to the GM + retry; the underlying
 live API-throw cause still needs one console line to name (the model/prompt are
-confirmed working — see the Haiku replay below). **C diagnosed** (precise root
-cause recorded); the fix is a larger design change, not yet done.
+confirmed working — see the Haiku replay below). **C fixed** — the inciting
+narrator now receives the sector NPC's full recorded identity and is bound to
+stay consistent with it (consistency approach).
 
 ---
 
@@ -151,7 +152,7 @@ but it converts a silent failure into an actionable one and self-heals blips.
 
 ---
 
-#### Finding C — Inciting fiction contradicts (and never updates) the canonical sector NPC (diagnosed, not fixed)
+#### Finding C — Inciting fiction contradicts the canonical sector NPC ✓ FIXED
 
 **Symptom:** The sector NPC (e.g. Doran Sterling) carries oracle-rolled
 Role/Goal (e.g. "Prophet / Spread faith"), but the inciting incident invents a
@@ -194,23 +195,36 @@ so `seedConnectionActor`'s oracle fallback never runs for this NPC.
    The lock exists so narrator entity-discovery can't overwrite sector NPCs; it
    also freezes them against the inciting fiction.
 
-**Fix direction (larger change; pick one or combine):**
-- Surface `goal` (not just role/motivation) in `formatConnection`, and have the
-  inciting-incident narrator mode treat an established connection's role/goal as
-  *binding* ("characterise Doran consistent with: Prophet / Spread faith") so
-  the fiction can't contradict it.
-- OR treat the inciting fiction as authoritative for the NPC it spotlights:
-  write its invented role/goal/backstory back onto the connection record — and
-  either defer the canonical-lock until after the inciting incident, or let the
-  inciting pass update a still-soft record.
+**✅ FIXED (next release) — consistency approach.** The narrator now receives
+the NPC's full recorded identity and is bound to honor it:
 
-**Files to check:**
-- `src/sectors/sectorGenerator.js` — `generateConnection` (195-200),
-  `createConnection` + canonical-lock (288-315)
-- `src/context/assembler.js` — `formatConnection` (1039; role rendered, goal not)
-- `src/session/incitingIncident.js` — `buildIncitingIncidentUserMessage` (44)
-  and the `inciting_incident` narrator system-prompt mode
-- `src/entities/connection.js` — connection record shape (`goal` vs `motivation`)
+1. The active-sector roster (`formatActiveSector`, `narrator.js`) — the cast
+   source for the inciting incident (which uses a spark-only user message, so
+   the assembler's `formatConnection` packet never reaches it) — previously
+   rendered only `Name — Role`. It now renders the **full profile** via the new
+   `formatSectorNpcProfile`: role, goal, motivation, pronouns, disposition,
+   first look, rank, description (present fields only). The roster header is now
+   a consistency directive: "when you feature one, keep them consistent with
+   their recorded profile … do not reassign their role or goal, change their
+   pronouns or disposition, or invent a history that contradicts it."
+2. The `inciting_incident` prompt's `Vow target` line (`narratorPrompt.js`) now
+   instructs that for an already-established NPC the description must be
+   "consistent with their recorded role, goal, and pronouns, never reassigning
+   or contradicting them."
+
+This is the consistency route, not the write-back route — the established
+oracle identity is now authoritative and *surfaced in full* to the narrator,
+so the opening fiction builds on Doran-the-Prophet instead of recasting him.
+Tests: `sectorContext.test.js` (full profile + directive present),
+`narratorPrompt.test.js` (the inciting binding caveat). **Not changed:** the
+sector generator still canonical-locks the oracle draw; we did not move to
+fiction-authoritative write-back (a larger change), since surfacing + binding
+resolves the contradiction the playtest hit.
+
+**Files changed:**
+- `src/narration/narrator.js` — `formatSectorNpcProfile` (new) +
+  `formatActiveSector` roster enrichment & consistency directive
+- `src/narration/narratorPrompt.js` — `inciting_incident` `Vow target` caveat
 
 ---
 

@@ -74,6 +74,28 @@ describe("formatActiveSector — sector cast & attributes (PLAYTEST-1712 T)", ()
     expect(block.toLowerCase()).toContain("established npcs");
   });
 
+  it("surfaces the full recorded NPC profile and a consistency directive (PLAYTEST-1717 C)", () => {
+    vi.mocked(listConnections).mockReturnValue([
+      {
+        name: "Doran Sterling", sectorId: "sec-1",
+        role: "Prophet", goal: "Spread faith", pronouns: "he/him",
+        disposition: "wary", firstLook: ["weathered flight jacket"],
+      },
+    ]);
+    const block = formatActiveSector(state());
+    // The whole recorded identity must reach the narrator — not just the role —
+    // so the opening fiction can stay consistent instead of recasting it.
+    expect(block).toContain("Doran Sterling — Prophet");
+    expect(block).toContain("Goal: Spread faith");
+    expect(block).toContain("Pronouns: he/him");
+    expect(block).toContain("Disposition: wary");
+    expect(block).toContain("First look: weathered flight jacket");
+    // And the directive that binds the fiction to that identity.
+    expect(block.toLowerCase()).toContain("keep them");
+    expect(block.toLowerCase()).toContain("consistent");
+    expect(block.toLowerCase()).toContain("do not reassign their role");
+  });
+
   it("filters out settlements and NPCs that belong to other sectors", () => {
     vi.mocked(listSettlements).mockReturnValue([
       { name: "Hypatia",   sectorId: "sec-1", authority: "guilded" },

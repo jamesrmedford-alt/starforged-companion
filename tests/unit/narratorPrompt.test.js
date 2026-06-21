@@ -1056,6 +1056,13 @@ describe('inciting_incident role description — structured proposal block (Clus
     expect(prompt).toMatch(/ONLY when the incident carries explicit time pressure/);
     expect(prompt).toMatch(/4, 6, 8,\s*10, 12/);
   });
+
+  it('binds an established target NPC to its recorded role/goal/pronouns (PLAYTEST-1717 C)', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(prompt).toMatch(/consistent with their recorded/i);
+    expect(prompt).toMatch(/never reassigning or contradicting/i);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

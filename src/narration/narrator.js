@@ -1818,6 +1818,34 @@ function formatCurrentLocation(campaignState) {
  * pushed to *reuse* the established settlement names rather than inventing
  * alternatives. Returns empty string when no active sector is set.
  */
+/**
+ * Render an established NPC's recorded profile for the active-sector roster.
+ * Leads with `Name — Role` (kept as the stable head so reuse directives and
+ * tests still match) and appends every other recorded attribute — goal,
+ * motivation, pronouns, disposition, first look, rank, description — so the
+ * narrator can keep the NPC consistent with who they already are instead of
+ * inventing a contradictory identity (PLAYTEST-1717 C). Only present fields
+ * are listed.
+ *
+ * @param {Object} c — a connection record from listConnections()
+ * @returns {string}
+ */
+export function formatSectorNpcProfile(c) {
+  const lead = `${c.name}${c.role ? ` — ${c.role}` : ''}`;
+  const bits = [];
+  if (c.goal)        bits.push(`Goal: ${c.goal}`);
+  if (c.motivation)  bits.push(`Motivation: ${c.motivation}`);
+  if (c.pronouns)    bits.push(`Pronouns: ${c.pronouns}`);
+  if (c.disposition) bits.push(`Disposition: ${c.disposition}`);
+  const firstLook = Array.isArray(c.firstLook)
+    ? c.firstLook.filter(Boolean).join(', ')
+    : c.firstLook;
+  if (firstLook)     bits.push(`First look: ${firstLook}`);
+  if (c.rank)        bits.push(`Rank: ${c.rank}`);
+  if (c.description) bits.push(c.description);
+  return bits.length ? `${lead} (${bits.join('; ')})` : lead;
+}
+
 export function formatActiveSector(campaignState) {
   const id     = campaignState?.activeSectorId;
   if (!id) return '';
@@ -1867,22 +1895,29 @@ export function formatActiveSector(campaignState) {
   }
 
   // Established NPCs in this sector (PLAYTEST-1712 T). Listing the existing cast
-  // with their roles pushes the narrator to build on them — especially when
-  // envisioning an inciting incident — rather than always cold-inventing a new
-  // NPC. Capped so a large campaign can't bloat the prompt.
+  // pushes the narrator to build on them — especially when envisioning an
+  // inciting incident — rather than cold-inventing a new NPC. Each NPC carries
+  // its full recorded profile (role, goal, pronouns, disposition, first look, …)
+  // so the fiction can be kept consistent with who they already are rather than
+  // contradicting an oracle-rolled identity (PLAYTEST-1717 C: an inciting
+  // incident recast a "Prophet" sector NPC as a researcher). Capped so a large
+  // campaign can't bloat the prompt.
   let npcLines = [];
   try {
     npcLines = listConnections(campaignState)
       .filter(c => c && (!c.sectorId || c.sectorId === id))
       .slice(0, 12)
-      .map(c => `- ${c.name}${c.role ? ` — ${c.role}` : ''}`);
+      .map(c => `- ${formatSectorNpcProfile(c)}`);
   } catch (err) {
     console.debug?.(`${MODULE_ID} | formatActiveSector: connection read failed:`, err?.message ?? err);
   }
   if (npcLines.length) {
     lines.push(
       '',
-      'Established NPCs in this sector:',
+      'Established NPCs in this sector — when you feature one, keep them ' +
+      'consistent with their recorded profile below: do not reassign their role ' +
+      'or goal, change their pronouns or disposition, or invent a history that ' +
+      'contradicts it. Build the fiction around who they already are:',
       ...npcLines,
     );
   }
