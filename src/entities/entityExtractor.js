@@ -129,17 +129,44 @@ export function normalizeEntityName(name) {
  *   Override for tests. Default posts to Anthropic via apiPost.
  * @returns {Promise<Object>} — { entities, worldJournal }
  */
+// Detection API resilience (PLAYTEST-1717 B). The Haiku call can fail
+// transiently (rate limit, network blip); a bounded retry recovers those. A
+// *persistent* failure must not be silent — it means the narration's new
+// entities / lore / factions are dropped, which is exactly how an inciting
+// incident captured nothing while the only signal was a swallowed console line.
+// On final failure we raise to console.error AND surface a GM-only toast.
+const DETECTION_API_RETRIES      = 1;    // total attempts = retries + 1
+const DETECTION_RETRY_BACKOFF_MS = 500;  // multiplied by the attempt number
+
 export async function runCombinedDetectionPass(
   narrationText, moveId, outcome, campaignState, options = {},
 ) {
   const prompt   = buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState);
   const callAPI  = options.callDetectionAPI ?? defaultCallDetectionAPI;
+  const retries  = Number.isInteger(options.detectionRetries) ? options.detectionRetries : DETECTION_API_RETRIES;
+  const backoff  = Number.isInteger(options.retryBackoffMs)   ? options.retryBackoffMs   : DETECTION_RETRY_BACKOFF_MS;
 
   let raw;
-  try {
-    raw = await callAPI(prompt);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | entityExtractor: detection API failed:`, err);
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      raw = await callAPI(prompt);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries && backoff > 0) {
+        await new Promise(resolve => setTimeout(resolve, backoff * (attempt + 1)));
+      }
+    }
+  }
+
+  if (lastErr) {
+    console.error(
+      `${MODULE_ID} | entityExtractor: detection API failed after ${retries + 1} attempt(s):`,
+      lastErr,
+    );
+    notifyDetectionFailure();
     return emptyDetection();
   }
 
@@ -1455,6 +1482,26 @@ function emptyDetection() {
       locationUpdates: [], stateTransitions: [],
     },
   };
+}
+
+/**
+ * Surface a detection-pipeline API failure to the GM (PLAYTEST-1717 B). Silent
+ * loss of detected entities was the failure mode; a one-line toast tells the GM
+ * the narration's entities were not captured and to check the console. GM-gated
+ * (detection runs GM-side) and never throws — surfacing must not break the
+ * pipeline it is reporting on.
+ */
+function notifyDetectionFailure() {
+  try {
+    if (!globalThis.game?.user?.isGM) return;
+    globalThis.ui?.notifications?.warn?.(
+      "Starforged Companion: entity detection failed — new entities from this narration " +
+      "were not captured. See the console for details.",
+    );
+  } catch (err) {
+    // Surfacing must never throw — a failed toast is itself a non-event.
+    console.debug?.(`${MODULE_ID} | notifyDetectionFailure: notify failed:`, err?.message ?? err);
+  }
 }
 
 function collectEstablishedEntityNames(campaignState) {

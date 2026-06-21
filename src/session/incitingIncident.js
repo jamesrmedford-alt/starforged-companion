@@ -16,6 +16,7 @@
  */
 
 import { rollOracle } from "../oracles/roller.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -187,7 +188,7 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
       .split(/\n{2,}/)
       .map(p => p.trim())
       .filter(Boolean)
-      .map(p => `<p>${escapeHtml(p).replace(/\n+/g, " ")}</p>`)
+      .map(p => `<p>${escapeHtml(stripMarkup(p)).replace(/\n+/g, " ")}</p>`)
       .join("");
     const vowHtml = vow
       ? `<p class="sf-incite-vow"><strong>Suggested vow:</strong> ${escapeHtml(vow.statement)}` +

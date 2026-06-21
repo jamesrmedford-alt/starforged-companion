@@ -8,6 +8,10 @@ All notable changes to Starforged Companion are documented here.
 
 - Added: **Campaign clocks now auto-roll Ask the Oracle at Begin a Session; advanced clocks get a narrator vignette.**
 - Added: **Narrator generates a 2-3 sentence vignette when a clock segment fills** (session start, Pay the Price trigger, manual advance).
+- Changed: **Ship deck-plan maps are now on by default.** Creating or finalising a command vehicle now builds the Battle Stations! deck-plan Scene (with AI art) automatically. Disable via the **Generate Ship Deck-Plan Maps** setting for the leaner quickstart loop.
+- Fixed: **NPC voice tags no longer leak into the inciting incident card.** When audio narration is on, the `<npc>` markers used to split dialogue for text-to-speech are now stripped from the inciting incident's displayed prose, as they already are elsewhere.
+- Fixed: **Entity detection failures are no longer silent.** If the background pass that captures new characters, factions, and lore from narration fails, the Companion now retries once and, if it still fails, shows the GM a warning instead of quietly dropping everything it found.
+- Fixed: **The inciting incident no longer contradicts your sector's NPC.** The opening fiction now sees an established NPC's full recorded profile — role, goal, pronouns, disposition, first look — and is told to stay consistent with it, instead of recasting (for example) a "Prophet" as a researcher.
 
 ## [1.7.17] — 2026-06-19
 

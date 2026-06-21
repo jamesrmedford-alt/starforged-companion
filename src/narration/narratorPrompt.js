@@ -841,8 +841,10 @@ const ROLE_DESCRIPTIONS = {
     `these exact forms:\n\n` +
     `Suggested vow: <a short first-person vow statement> (<rank>)\n` +
     `Suggested clock: <a short clock label> (<segments> segments)\n` +
-    `Vow target: <Name> — <2-3 sentences on one line: who they are, their history with ` +
-    `the character, and their current situation and condition>\n\n` +
+    `Vow target: <Name> — <2-3 sentences on one line: who they are — for an ` +
+    `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
+    `role, goal, and pronouns, never reassigning or contradicting them — their ` +
+    `history with the character, and their current situation and condition>\n\n` +
     `Rules for the block: <rank> is exactly one of: troublesome, dangerous, formidable, ` +
     `extreme, epic. The "Suggested vow" line is always present. The "Suggested clock" ` +
     `line appears ONLY when the incident carries explicit time pressure (something fails, ` +

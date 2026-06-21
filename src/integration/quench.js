@@ -4752,6 +4752,55 @@ function registerPacingTests(quench) {
         });
       });
 
+      describe("runPacedDetection — World Journal wiring", function () {
+        it("routes a detected faction into the Factions World Journal", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+
+          const { runPacedDetection } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const factionName = `QUENCH WIRING — Faction ${Date.now()}`;
+
+          // Factions have no salience gate: a detected faction must land in the
+          // Factions World Journal unconditionally (PLAYTEST-1717 B wiring).
+          const detectionPayload = {
+            entities: [],
+            worldJournal: {
+              lore: [], threats: [],
+              factionUpdates: [{
+                name: factionName, attitude: "hostile",
+                summary: "Invented by the opening fiction.", isNew: true,
+              }],
+              locationUpdates: [], stateTransitions: [],
+            },
+          };
+
+          let page = null;
+          try {
+            await withTempSetting("claudeApiKey", "sk-stub-wiring", async () => {
+              await withStubbedFetch([
+                ["api.anthropic.com", () => ({
+                  content: [{ type: "text", text: JSON.stringify(detectionPayload) }],
+                })],
+              ], async () => {
+                await withSilencedNotifications(async () => {
+                  const state = game.settings.get(MODULE, "campaignState") ?? {};
+                  await runPacedDetection("The opening fiction names a new power.", state);
+                });
+              });
+            });
+
+            const journal = game.journal?.getName?.(wj.JOURNAL_NAMES.factions);
+            assert.isOk(journal, "the Factions World Journal should exist");
+            page = journal.pages?.contents?.find(p => p.name === factionName);
+            assert.isOk(page,
+              "a detected faction should land as a page in the Factions World Journal");
+          } finally {
+            if (page?.delete) await page.delete().catch(() => {});
+          }
+        });
+      });
+
       describe("buildCombinedDetectionPrompt — paced sentinel framing", function () {
         it("renders the no-move framing line and omits the Outcome line", async function () {
           if (skipNotGM(this)) return;

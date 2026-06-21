@@ -9,6 +9,225 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
+### PLAYTEST-1717 — v1.7.17 playtest findings
+
+**Status:** In progress (2026-06-21). **A fixed** (`<npc>` strip). **B
+hardened** — detection failures now surface to the GM + retry; the underlying
+live API-throw cause still needs one console line to name (the model/prompt are
+confirmed working — see the Haiku replay below). **C fixed** — the inciting
+narrator now receives the sector NPC's full recorded identity and is bound to
+stay consistent with it (consistency approach).
+
+---
+
+#### Finding A — `<npc>` tags leak into the inciting incident card ✓ FIXED
+
+**Status:** Fixed (next release). `renderIncitingIncidentCard` now runs
+`escapeHtml(stripMarkup(p))`; unit test added asserting the rendered card
+carries no raw or escaped `<npc>` markup and preserves the inner dialogue.
+
+**Symptom:** Literal `<npc>…</npc>` markup appears in the inciting incident
+chat card text when the audio-narration setting is on. The tags are visible to
+the player.
+
+**Root cause:** `renderIncitingIncidentCard` in
+`src/session/incitingIncident.js` (line 190) runs `escapeHtml(p)` on each
+prose paragraph but never calls `stripMarkup()` first. The narrator prompt
+inserts `<npc>` tags around NPC dialogue for the TTS voice-splitting pipeline
+(`src/audio/segments.js`). The narrator card's `ready` hook in
+`src/audio/index.js` strips these tags from `.sf-narration-prose` elements,
+but the inciting incident card renders plain `<p>` tags without that class, so
+the hook never fires.
+
+The correct pattern is used in both vignette renderers:
+- `src/session/galleyVignette.js:170` — `escapeHtml(stripMarkup(text))`
+- `src/session/endSessionVignette.js:177` — same
+
+**Files to fix:**
+- `src/session/incitingIncident.js:190` — add `stripMarkup` before `escapeHtml`
+  (also import `stripMarkup` from `../audio/segments.js` at the top of the file)
+- `tests/unit/incitingIncident.test.js` — add a test for `<npc>`-free output
+
+---
+
+#### Finding B — The inciting incident captures nothing durable (no faction, lore, threat, or entity)
+
+**Symptom:** *Nothing* the inciting-incident fiction invents is captured. The
+faction(s) named in the opening prose (e.g. "Shroud Company", "The Ascendancy")
+are the most visible loss, but it is broader than factions.
+
+Confirmed by screenshots (2026-06-21):
+- "World Journal — Factions" journal is **empty**.
+- "World Journal — Session Log" journal is **empty** (no pages / no beats).
+- World Journal panel: "PENDING LORE: No entries awaiting review".
+- The **only** Active Threat is "Energy storms are rampant" — and that is a
+  **Sector Trouble** rolled at sector-generation time (`src/sectors/sectorGenerator.js`
+  Step 10, `recordThreat`), **not** from the inciting incident. So it is *not*
+  evidence the inciting detection worked; it predates the inciting incident.
+
+Net: the inciting-incident detection pass produced **zero** durable
+captures — no lore, no threat, no faction, no entity record, no pending review,
+**and no session-log beat**.
+
+**Root cause (narrowed to two console-distinguishable causes).** The inciting
+path runs `runIncitingIncident` → `runPacedDetection`
+(`src/narration/narrator.js:1527`) → `runCombinedDetectionPass`. There are
+**three** nested try/catch layers, all swallowing to console, so a total
+failure is invisible in-game:
+- `incitingIncident.js:321-328` → `console.warn("runIncitingIncident: entity detection failed")`
+- `narrator.js:1541` → `console.error("runPacedDetection failed")`
+- `entityExtractor.js:142-143` → `console.warn("entityExtractor: detection API failed")`, then returns `emptyDetection()`
+
+The empty Session Log is the decisive new evidence. Below-`significant`
+lore/threats reroute to the session log (`appendSessionLogBeat`,
+`worldJournal.js:634`), so if detection had returned *anything* in the
+lore/threat channels it would show there. Empty session log **+** empty
+Factions WJ (which has **no** salience gate — `factionUpdates` writes
+unconditionally) means the pass produced zero output across *every* channel,
+not output that was filtered. This **eliminates** two earlier candidates:
+
+- ~~Salience reroute~~ — ruled out: nothing reached the session log.
+- ~~Empty `prose`~~ — ruled out: the inciting card *rendered visible prose*
+  (that is how Finding A's `<npc>` tags were visible), and the card and the
+  detector consume the same `splitIncitingMeta(text).prose`.
+
+Two causes remain, distinguishable only by the browser console:
+
+1. **API call threw** (`runCombinedDetectionPass` → `defaultCallDetectionAPI`)
+   — console line `entityExtractor: detection API failed:`. **Most likely**: a
+   single failure zeroes every channel at once, which matches exactly what is
+   observed.
+2. **Model returned / parsed to empty** — *no* error line, clean run, all-empty
+   arrays. Possible but requires the model to independently return empty for all
+   five channels.
+
+Note the inciting detection runs **unconditionally** — `runIncitingIncident`
+calls `runPacedDetection` directly with no "Auto-Detect Entries" setting gate,
+so a disabled setting is not a factor.
+
+For factions specifically, even when detection works there are two fragile
+routes — `worldJournal.factionUpdates[]` → `recordFactionIntelligence` (durable
+WJ write, `worldJournal.js:265`) and `entities[]` type `faction` → a transient
+chat draft card (`routeEntityDrafts`/`postDraftEntityCard`,
+`entityExtractor.js:427`) that is lost if the GM never confirms it.
+
+**Haiku replay (2026-06-21) — rules out cause 2.** The exact
+`buildCombinedDetectionPrompt` text (fresh-quickstart context) was replayed
+against a Haiku model with representative entity-rich inciting prose (a
+connection + two factions + two locations, `<npc>` tags intact). Haiku returned
+a full, well-formed result: 5 entities, **2 `factionUpdates`** (the two
+factions, `isNew: true`), 2 significant lore items, 1 threat, 1 location
+update, 1 state transition. The `<npc>` tags did **not** confuse it. So the
+prompt + model are capable; the empty live result is **not** the model
+returning nothing. That leaves **cause 1 (the API call is throwing in the live
+environment)** as the overwhelming likelihood. (Caveat: representative prose
+via an agent wrapper, not a raw API call — but Haiku 4.5 underlies both.)
+
+**Diagnostic next step:** one more repro with the browser console open —
+search for `detection API failed`. Present → confirms cause 1 (API throw) and
+tells us *why* (auth / rate-limit / model-id / proxy). Absent but still no
+captures → re-open cause 2.
+
+**Hardening shipped (next release).** `runCombinedDetectionPass` now (a) retries
+the detection API call once with backoff (recovers transient failures) and
+(b) on persistent failure raises to `console.error` **and surfaces a GM-only
+`ui.notifications.warn`** so the silent loss of the opening fiction's entities
+is no longer invisible. Unit tests cover the surface, the retry, retry-recovery,
+and GM-gating; a Quench test (`runPacedDetection — World Journal wiring`)
+locks the detected-faction → Factions WJ end-to-end write. This does **not**
+fix the underlying live API throw — that still needs the console line above —
+but it converts a silent failure into an actionable one and self-heals blips.
+
+**Files to check:**
+- `src/session/incitingIncident.js` — `runIncitingIncident` detection call
+  (lines 321-328), `splitIncitingMeta` (does prose survive meta-splitting?)
+- `src/narration/narrator.js` — `runPacedDetection` (line 1527) and its
+  error swallow (line 1541)
+- `src/entities/entityExtractor.js` — `runCombinedDetectionPass`,
+  `routeWorldJournalResults` (salience reroute 616-637; factionUpdates 639),
+  `routeEntityDrafts` (faction-as-draft path)
+- `src/world/worldJournal.js` — `recordFactionIntelligence` (line 265)
+- `src/sectors/sectorGenerator.js` — Step 10 `recordThreat` (source of the one
+  threat that *is* present; rules out a dead `recordThreat`)
+
+---
+
+#### Finding C — Inciting fiction contradicts the canonical sector NPC ✓ FIXED
+
+**Symptom:** The sector NPC (e.g. Doran Sterling) carries oracle-rolled
+Role/Goal (e.g. "Prophet / Spread faith"), but the inciting incident invents a
+contradicting characterisation for that same NPC (researcher, met in a hab,
+saved your life). The invented detail is never written back to the connection
+record, so the record keeps the contradicting oracle values and the richer
+fiction is lost.
+
+**Correction to the first-pass entry.** The connection is **not** a vow target
+created via `swearVow` / `seedConnectionActor` — that earlier root cause was
+wrong. It is the **sector NPC generated during quickstart** (user-confirmed,
+2026-06-21). `generateConnection` (`sectorGenerator.js:195-200`) rolls
+name / role / goal / disposition / first-look from the Character oracle tables;
+`sectorGenerator.js:288` then creates it via
+`createConnection({ name, role, goal, … })` and **canonical-locks** it
+(`canonicalLocked: true`, lines 300-315). Role/goal are therefore already set,
+so `seedConnectionActor`'s oracle fallback never runs for this NPC.
+
+**Root cause — two gaps plus the deeper design tension:**
+
+1. *The prompt actively instructs the invention.* The `inciting_incident`
+   system prompt (`narratorPrompt.js:827-854`) binds only the **name**
+   (`"use their established name"`, 851-852) and then explicitly asks the model
+   to author the rest — the `Vow target` line is
+   `"<Name> — <2-3 sentences … who they are, their history with the character,
+   and their current situation>"` (844-845). It is never told to honor the
+   connection's established role/goal. So even though the narrator's context
+   surfaces the role (`formatConnection`, `assembler.js:1041`, renders
+   `Role: <role>`), the prompt gives it no binding force and the model invents
+   "researcher" to suit the opening. (Secondary gap: `formatConnection` renders
+   `c.motivation` (1046), **not** `c.goal`, so a sector NPC's oracle *goal* —
+   "Spread faith" — is never even surfaced to the narrator.)
+2. *No write-back.* Nothing reconciles the inciting fiction with the connection
+   record. Whatever the narrator invents about a referenced NPC stays in the
+   prose; the canonical record is untouched and keeps the oracle role/goal.
+3. *Design tension (the deeper cause).* The sector generator
+   **canonical-locks** an oracle-rolled NPC *before* the inciting incident gives
+   them narrative purpose — so a random Role/Goal draw is treated as
+   authoritative over the more meaningful opening fiction, exactly backwards.
+   The lock exists so narrator entity-discovery can't overwrite sector NPCs; it
+   also freezes them against the inciting fiction.
+
+**✅ FIXED (next release) — consistency approach.** The narrator now receives
+the NPC's full recorded identity and is bound to honor it:
+
+1. The active-sector roster (`formatActiveSector`, `narrator.js`) — the cast
+   source for the inciting incident (which uses a spark-only user message, so
+   the assembler's `formatConnection` packet never reaches it) — previously
+   rendered only `Name — Role`. It now renders the **full profile** via the new
+   `formatSectorNpcProfile`: role, goal, motivation, pronouns, disposition,
+   first look, rank, description (present fields only). The roster header is now
+   a consistency directive: "when you feature one, keep them consistent with
+   their recorded profile … do not reassign their role or goal, change their
+   pronouns or disposition, or invent a history that contradicts it."
+2. The `inciting_incident` prompt's `Vow target` line (`narratorPrompt.js`) now
+   instructs that for an already-established NPC the description must be
+   "consistent with their recorded role, goal, and pronouns, never reassigning
+   or contradicting them."
+
+This is the consistency route, not the write-back route — the established
+oracle identity is now authoritative and *surfaced in full* to the narrator,
+so the opening fiction builds on Doran-the-Prophet instead of recasting him.
+Tests: `sectorContext.test.js` (full profile + directive present),
+`narratorPrompt.test.js` (the inciting binding caveat). **Not changed:** the
+sector generator still canonical-locks the oracle draw; we did not move to
+fiction-authoritative write-back (a larger change), since surfacing + binding
+resolves the contradiction the playtest hit.
+
+**Files changed:**
+- `src/narration/narrator.js` — `formatSectorNpcProfile` (new) +
+  `formatActiveSector` roster enrichment & consistency directive
+- `src/narration/narratorPrompt.js` — `inciting_incident` `Vow target` caveat
+
+---
+
 ### PLAYTEST-1712 — v1.7.12 playtest findings
 
 **Status:** Largely resolved — playthrough complete (2026-06-14). 19 findings
