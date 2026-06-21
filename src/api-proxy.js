@@ -21,6 +21,8 @@
  * Output path: modules/starforged-companion/src/api-proxy.js
  */
 
+import { logApiTransaction } from "./logging/apiTransactionLog.js";
+
 const MODULE_ID = "starforged-companion";
 
 /**
@@ -76,5 +78,18 @@ export async function apiPost(url, headers, body) {
     throw new Error(`Anthropic API error ${res.status}: ${errText}`);
   }
 
-  return res.json();
+  const data = await res.json();
+
+  // Log the transaction (fire-and-forget — never blocks the response path).
+  if (data?.usage) {
+    logApiTransaction({
+      model:            body?.model            ?? "unknown",
+      inputTokens:      data.usage.input_tokens                  ?? 0,
+      cacheWriteTokens: data.usage.cache_creation_input_tokens   ?? 0,
+      cacheReadTokens:  data.usage.cache_read_input_tokens       ?? 0,
+      outputTokens:     data.usage.output_tokens                 ?? 0,
+    });
+  }
+
+  return data;
 }

@@ -150,6 +150,7 @@ import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
 } from "./logging/errorLog.js";
+import { flushApiTransactionLogBuffer } from "./logging/apiTransactionLog.js";
 
 import {
   openWorldJournalPanel,
@@ -3515,6 +3516,7 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   flushErrorLogBuffer();
+  flushApiTransactionLogBuffer();
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls

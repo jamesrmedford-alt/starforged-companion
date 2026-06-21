@@ -6,6 +6,12 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **API transaction log journal.** Every Anthropic API call is now recorded to a Foundry journal entry ("Starforged Companion — API Log") with timestamp, model, input tokens, cache tokens, and output tokens. Enabled by default; can be disabled in world settings.
+- Changed: **Narrator output ceiling raised to 16 K tokens.** All narrator paths (move resolution, scene query, oracle follow-up, vignette, clock, inciting incident, campaign recap, paced narrative) now allow full model-output length instead of the old per-path hard caps (200–600 tokens). The sidecar-truncation failure that caused `factContinuity: sidecar parse failed` errors is resolved.
+- Changed: **Context caps relaxed.** The sector NPC roster now sends all established NPCs to the narrator rather than stopping at 12. The narrator context-card window (how many recent cards feed each narration) defaults to 20 and can be set up to 50. The context-packet token budget raised from 1,200 to 8,000 tokens so more history, entity cards, and world lore reach the model.
+
+## [1.7.19] — 2026-06-21
+
 - Added: **Persistent error log journal.** Module warnings and errors are now written to a Foundry journal entry ("Starforged Companion — Error Log") so they survive the session without console access. Useful when playtesting on mobile or without dev tools open.
 
 ## [1.7.18] — 2026-06-21

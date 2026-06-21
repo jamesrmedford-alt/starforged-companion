@@ -200,7 +200,7 @@ describe("CampaignStateSchema entity-discovery additions", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ContextPacketSchema.tokenBudget", () => {
-  it("is 1200", () => {
-    expect(ContextPacketSchema.tokenBudget).toBe(1200);
+  it("is 8000", () => {
+    expect(ContextPacketSchema.tokenBudget).toBe(8000);
   });
 });

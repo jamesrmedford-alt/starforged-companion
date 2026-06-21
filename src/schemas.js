@@ -925,7 +925,7 @@ export const ContextPacketSchema = {
   },
 
   totalTokenEstimate: 0,
-  tokenBudget: 1200,            // Target token ceiling for the context packet
+  tokenBudget: 8000,            // Target token ceiling for the context packet
   budgetExceeded: false,
   omittedSections: [],          // Sections dropped to fit budget. Never includes "safety".
 
