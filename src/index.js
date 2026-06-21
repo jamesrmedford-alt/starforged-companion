@@ -146,6 +146,10 @@ import {
   parseJournalCommand,
   executeJournalCommand,
 } from "./world/worldJournal.js";
+import {
+  installConsoleInterceptor,
+  flushErrorLogBuffer,
+} from "./logging/errorLog.js";
 
 import {
   openWorldJournalPanel,
@@ -3500,6 +3504,7 @@ function injectPushToTalkButton(html) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 Hooks.once("init", () => {
+  installConsoleInterceptor();
   console.log(`${MODULE_ID} | Initialising`);
   registerCoreSettings();
   registerCombatTrackerSettings();
@@ -3509,6 +3514,7 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  flushErrorLogBuffer();
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls

@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Persistent error log journal.** Module warnings and errors are now written to a Foundry journal entry ("Starforged Companion — Error Log") so they survive the session without console access. Useful when playtesting on mobile or without dev tools open.
+
+## [1.7.18] — 2026-06-21
+
 - Added: **Campaign clocks now auto-roll Ask the Oracle at Begin a Session; advanced clocks get a narrator vignette.**
 - Added: **Narrator generates a 2-3 sentence vignette when a clock segment fills** (session start, Pay the Price trigger, manual advance).
 - Changed: **Ship deck-plan maps are now on by default.** Creating or finalising a command vehicle now builds the Battle Stations! deck-plan Scene (with AI art) automatically. Disable via the **Generate Ship Deck-Plan Maps** setting for the leaner quickstart loop.
