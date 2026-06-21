@@ -653,17 +653,76 @@ describe("runCombinedDetectionPass", () => {
     fixture.restore();
   });
 
-  it("returns the empty detection shape on API failure", async () => {
+  it("returns the empty detection shape and surfaces a GM toast on API failure", async () => {
     const fixture = buildFullCampaignState();
     const callDetectionAPI = vi.fn().mockRejectedValue(new Error("network"));
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errSpy  = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(globalThis.ui.notifications, "warn").mockImplementation(() => {});
     const result = await runCombinedDetectionPass(
       "narration", "gather_information", "strong_hit", fixture.campaignState,
-      { callDetectionAPI },
+      { callDetectionAPI, detectionRetries: 0 },
     );
     expect(result.entities).toEqual([]);
     expect(result.worldJournal.lore).toEqual([]);
+    // PLAYTEST-1717 B: the failure must not be silent.
+    expect(errSpy).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
     warnSpy.mockRestore();
+    fixture.restore();
+  });
+
+  it("retries the detection API before giving up", async () => {
+    const fixture = buildFullCampaignState();
+    const callDetectionAPI = vi.fn().mockRejectedValue(new Error("rate limited"));
+    const errSpy  = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(globalThis.ui.notifications, "warn").mockImplementation(() => {});
+    await runCombinedDetectionPass(
+      "narration", "gather_information", "strong_hit", fixture.campaignState,
+      { callDetectionAPI, detectionRetries: 1, retryBackoffMs: 0 },
+    );
+    // One retry → two total attempts.
+    expect(callDetectionAPI).toHaveBeenCalledTimes(2);
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+    fixture.restore();
+  });
+
+  it("recovers when a retry succeeds (no GM toast)", async () => {
+    const fixture = buildFullCampaignState();
+    const ok = JSON.stringify({
+      entities: [{ type: "faction", name: "Kestrel Pact", confidence: "high" }],
+      worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
+    });
+    const callDetectionAPI = vi.fn()
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce(ok);
+    const warnSpy = vi.spyOn(globalThis.ui.notifications, "warn").mockImplementation(() => {});
+    const result = await runCombinedDetectionPass(
+      "narration", "gather_information", "strong_hit", fixture.campaignState,
+      { callDetectionAPI, detectionRetries: 1, retryBackoffMs: 0 },
+    );
+    expect(callDetectionAPI).toHaveBeenCalledTimes(2);
+    expect(result.entities[0].name).toBe("Kestrel Pact");
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+    fixture.restore();
+  });
+
+  it("does not surface a player toast (GM-gated)", async () => {
+    const fixture = buildFullCampaignState();
+    const restoreUser = globalThis.asPlayer();
+    const callDetectionAPI = vi.fn().mockRejectedValue(new Error("network"));
+    const errSpy  = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(globalThis.ui.notifications, "warn").mockImplementation(() => {});
+    await runCombinedDetectionPass(
+      "narration", "gather_information", "strong_hit", fixture.campaignState,
+      { callDetectionAPI, detectionRetries: 0 },
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+    restoreUser();
     fixture.restore();
   });
 });

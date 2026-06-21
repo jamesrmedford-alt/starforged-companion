@@ -11,12 +11,19 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ### PLAYTEST-1717 — v1.7.17 playtest findings
 
-**Status:** Open — playthrough in progress (2026-06-21). Findings logged as
-they arrive; none fixed yet.
+**Status:** In progress (2026-06-21). **A fixed** (`<npc>` strip). **B
+hardened** — detection failures now surface to the GM + retry; the underlying
+live API-throw cause still needs one console line to name (the model/prompt are
+confirmed working — see the Haiku replay below). **C diagnosed** (precise root
+cause recorded); the fix is a larger design change, not yet done.
 
 ---
 
-#### Finding A — `<npc>` tags leak into the inciting incident card
+#### Finding A — `<npc>` tags leak into the inciting incident card ✓ FIXED
+
+**Status:** Fixed (next release). `renderIncitingIncidentCard` now runs
+`escapeHtml(stripMarkup(p))`; unit test added asserting the rendered card
+carries no raw or escaped `<npc>` markup and preserves the inner dialogue.
 
 **Symptom:** Literal `<npc>…</npc>` markup appears in the inciting incident
 chat card text when the audio-narration setting is on. The tags are visible to
@@ -103,12 +110,32 @@ WJ write, `worldJournal.js:265`) and `entities[]` type `faction` → a transient
 chat draft card (`routeEntityDrafts`/`postDraftEntityCard`,
 `entityExtractor.js:427`) that is lost if the GM never confirms it.
 
+**Haiku replay (2026-06-21) — rules out cause 2.** The exact
+`buildCombinedDetectionPrompt` text (fresh-quickstart context) was replayed
+against a Haiku model with representative entity-rich inciting prose (a
+connection + two factions + two locations, `<npc>` tags intact). Haiku returned
+a full, well-formed result: 5 entities, **2 `factionUpdates`** (the two
+factions, `isNew: true`), 2 significant lore items, 1 threat, 1 location
+update, 1 state transition. The `<npc>` tags did **not** confuse it. So the
+prompt + model are capable; the empty live result is **not** the model
+returning nothing. That leaves **cause 1 (the API call is throwing in the live
+environment)** as the overwhelming likelihood. (Caveat: representative prose
+via an agent wrapper, not a raw API call — but Haiku 4.5 underlies both.)
+
 **Diagnostic next step:** one more repro with the browser console open —
-search for `detection API failed`. Present → cause 1 (API throw); absent but
-still no captures → cause 2 (empty/parsed-away result). **Either way, the fix
-must surface inciting-incident detection failures** (a GM-only toast or a
-retry): the three swallow-to-console layers make this silent loss of the
-opening fiction's entities invisible to playtesters.
+search for `detection API failed`. Present → confirms cause 1 (API throw) and
+tells us *why* (auth / rate-limit / model-id / proxy). Absent but still no
+captures → re-open cause 2.
+
+**Hardening shipped (next release).** `runCombinedDetectionPass` now (a) retries
+the detection API call once with backoff (recovers transient failures) and
+(b) on persistent failure raises to `console.error` **and surfaces a GM-only
+`ui.notifications.warn`** so the silent loss of the opening fiction's entities
+is no longer invisible. Unit tests cover the surface, the retry, retry-recovery,
+and GM-gating; a Quench test (`runPacedDetection — World Journal wiring`)
+locks the detected-faction → Factions WJ end-to-end write. This does **not**
+fix the underlying live API throw — that still needs the console line above —
+but it converts a silent failure into an actionable one and self-heals blips.
 
 **Files to check:**
 - `src/session/incitingIncident.js` — `runIncitingIncident` detection call
@@ -124,26 +151,66 @@ opening fiction's entities invisible to playtesters.
 
 ---
 
-#### Finding C — Connection seed contradicts inciting fiction
+#### Finding C — Inciting fiction contradicts (and never updates) the canonical sector NPC (diagnosed, not fixed)
 
-**Symptom:** The connection actor created from an inciting incident (e.g.
-Doran Sterling) receives generic oracle rolls for Role and Goal (e.g.
-"Prophet / Spread faith") that contradict the character invented in the
-inciting fiction (researcher, met in a hab, saved your life). The rich
-backstory from the inciting prose is never written to the connection record's
-narrator-added details or initial-reveal text.
+**Symptom:** The sector NPC (e.g. Doran Sterling) carries oracle-rolled
+Role/Goal (e.g. "Prophet / Spread faith"), but the inciting incident invents a
+contradicting characterisation for that same NPC (researcher, met in a hab,
+saved your life). The invented detail is never written back to the connection
+record, so the record keeps the contradicting oracle values and the richer
+fiction is lost.
 
-**Root cause:** `seedConnectionActor` (called from `runIncitingIncident`) rolls
-the generic Character Role and Character Goal oracles unconditionally, without
-access to the inciting narrative context. There is no mechanism to pass the
-inciting fiction into the seed function, so every connection starts from a
-blank oracle draw rather than from the narrative already established.
+**Correction to the first-pass entry.** The connection is **not** a vow target
+created via `swearVow` / `seedConnectionActor` — that earlier root cause was
+wrong. It is the **sector NPC generated during quickstart** (user-confirmed,
+2026-06-21). `generateConnection` (`sectorGenerator.js:195-200`) rolls
+name / role / goal / disposition / first-look from the Character oracle tables;
+`sectorGenerator.js:288` then creates it via
+`createConnection({ name, role, goal, … })` and **canonical-locks** it
+(`canonicalLocked: true`, lines 300-315). Role/goal are therefore already set,
+so `seedConnectionActor`'s oracle fallback never runs for this NPC.
+
+**Root cause — two gaps plus the deeper design tension:**
+
+1. *The prompt actively instructs the invention.* The `inciting_incident`
+   system prompt (`narratorPrompt.js:827-854`) binds only the **name**
+   (`"use their established name"`, 851-852) and then explicitly asks the model
+   to author the rest — the `Vow target` line is
+   `"<Name> — <2-3 sentences … who they are, their history with the character,
+   and their current situation>"` (844-845). It is never told to honor the
+   connection's established role/goal. So even though the narrator's context
+   surfaces the role (`formatConnection`, `assembler.js:1041`, renders
+   `Role: <role>`), the prompt gives it no binding force and the model invents
+   "researcher" to suit the opening. (Secondary gap: `formatConnection` renders
+   `c.motivation` (1046), **not** `c.goal`, so a sector NPC's oracle *goal* —
+   "Spread faith" — is never even surfaced to the narrator.)
+2. *No write-back.* Nothing reconciles the inciting fiction with the connection
+   record. Whatever the narrator invents about a referenced NPC stays in the
+   prose; the canonical record is untouched and keeps the oracle role/goal.
+3. *Design tension (the deeper cause).* The sector generator
+   **canonical-locks** an oracle-rolled NPC *before* the inciting incident gives
+   them narrative purpose — so a random Role/Goal draw is treated as
+   authoritative over the more meaningful opening fiction, exactly backwards.
+   The lock exists so narrator entity-discovery can't overwrite sector NPCs; it
+   also freezes them against the inciting fiction.
+
+**Fix direction (larger change; pick one or combine):**
+- Surface `goal` (not just role/motivation) in `formatConnection`, and have the
+  inciting-incident narrator mode treat an established connection's role/goal as
+  *binding* ("characterise Doran consistent with: Prophet / Spread faith") so
+  the fiction can't contradict it.
+- OR treat the inciting fiction as authoritative for the NPC it spotlights:
+  write its invented role/goal/backstory back onto the connection record — and
+  either defer the canonical-lock until after the inciting incident, or let the
+  inciting pass update a still-soft record.
 
 **Files to check:**
-- `src/session/incitingIncident.js` — `runIncitingIncident` and the
-  connection-seeding call site
-- Connection seeding logic (wherever `seedConnectionActor` is defined) — oracle
-  roll path and narrator-details write path
+- `src/sectors/sectorGenerator.js` — `generateConnection` (195-200),
+  `createConnection` + canonical-lock (288-315)
+- `src/context/assembler.js` — `formatConnection` (1039; role rendered, goal not)
+- `src/session/incitingIncident.js` — `buildIncitingIncidentUserMessage` (44)
+  and the `inciting_incident` narrator system-prompt mode
+- `src/entities/connection.js` — connection record shape (`goal` vs `motivation`)
 
 ---
 

@@ -104,6 +104,15 @@ describe("renderIncitingIncidentCard", () => {
     expect(html).toContain("&amp;x");
     expect(html).toContain("Danger &lt;script&gt;");
   });
+
+  it("strips <npc> voice tags from the prose for display (PLAYTEST-1717 A)", () => {
+    const text = 'The hangar reeks of ozone. <npc>"You came back,"</npc> she breathes.';
+    const html = renderIncitingIncidentCard({ spark, text });
+    expect(html).not.toContain("<npc>");          // not raw
+    expect(html).not.toContain("</npc>");
+    expect(html).not.toContain("&lt;npc&gt;");     // and not the escaped form
+    expect(html).toContain("You came back,");      // inner dialogue preserved
+  });
 });
 
 describe("postIncitingIncidentCard — narrator-prose feed flags (A1)", () => {
