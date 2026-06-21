@@ -12,6 +12,7 @@
  */
 
 import { registerOracleTable, unregisterOracleTable, rollOracle, ORACLE_TABLES } from "./roller.js";
+import { showD100 } from "../dice/diceAnimation.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -279,6 +280,7 @@ function getPanelClass() {
       const id = target.dataset.oracleId;
       try {
         const r = rollOracle(id);
+        void showD100(r.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
         await ChatMessage.create({
           content: `<div class="sf-oracle-card"><strong>${escapeHtml(r.tableName)}</strong><p>d100 = <strong>${r.roll}</strong> → ${escapeHtml(r.result)}</p></div>`,
           flags:   { [MODULE_ID]: { customOracleCard: true } },
