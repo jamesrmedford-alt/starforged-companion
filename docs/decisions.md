@@ -1359,10 +1359,19 @@ try/catch, no auto-activation). Decisions:
 - **Art + schematic fallback.** Deck-plan art (`src/moves/shipMapArt.js`, OpenRouter)
   is the backdrop when `shipMapArtEnabled` + a key; otherwise `createShipMapScene`
   draws a schematic hull-outline Drawing so the bare Scene still reads as a ship.
-- **Three gated settings.** `shipMapEnabled` (master, default OFF so the fast
-  quickstart loop is never slowed), `shipMapArtEnabled` (art vs schematic, default
-  on), `shipMapVisionEnabled` (vision placement vs fixed, default on). The manual
-  `!shipmap` command works regardless of the master gate — it is the explicit opt-in.
+- **Three gated settings.** `shipMapEnabled` (master), `shipMapArtEnabled` (art
+  vs schematic, default on), `shipMapVisionEnabled` (vision placement vs fixed,
+  default on). The manual `!shipmap` command works regardless of the master gate
+  — it is the explicit opt-in.
+  - **`shipMapEnabled` default flipped OFF → ON (2026-06-21).** It originally
+    shipped OFF so the fast quickstart loop was never slowed, but a v1.7.17
+    playtester ran the quickstart and was surprised there was no ship-map Scene
+    — the feature was invisible to anyone who didn't go hunting in settings. The
+    deck-plan is now part of the default new-command-vehicle experience (with AI
+    art on via `shipMapArtEnabled`'s existing default). Players who want the
+    leaner loop can still turn it off. The generation is idempotent and runs off
+    the `seedStarshipActor` convergence point, so the cost is one Scene build at
+    ship creation, not on every session.
 - **Auto-generation hooks `seedStarshipActor`**, the single convergence point for
   command-vehicle creation (quickstart, ✦ Finalise, sidebar auto-seed). Gated to
   the command vehicle, idempotent (skips when a deck-plan Scene already exists).

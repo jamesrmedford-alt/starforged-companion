@@ -295,11 +295,11 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "shipMapEnabled", {
     name:    "Generate Ship Deck-Plan Maps (Battle Stations!)",
-    hint:    "Build a deck-plan Scene with the 11 shipboard-combat stations pinned when a command vehicle is created or finalised. Off by default; the shipboard-combat mini-game is still maturing. You can also build one on demand with the !shipmap chat command.",
+    hint:    "Build a deck-plan Scene with the 11 shipboard-combat stations pinned when a command vehicle is created or finalised. You can also build one on demand with the !shipmap chat command.",
     scope:   "world",
     config:  true,
     type:    Boolean,
-    default: false,
+    default: true,
   });
 
   game.settings.register(MODULE_ID, "shipMapArtEnabled", {
