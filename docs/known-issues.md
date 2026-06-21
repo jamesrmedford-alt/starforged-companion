@@ -50,6 +50,7 @@ are the most visible loss, but it is broader than factions.
 
 Confirmed by screenshots (2026-06-21):
 - "World Journal — Factions" journal is **empty**.
+- "World Journal — Session Log" journal is **empty** (no pages / no beats).
 - World Journal panel: "PENDING LORE: No entries awaiting review".
 - The **only** Active Threat is "Energy storms are rampant" — and that is a
   **Sector Trouble** rolled at sector-generation time (`src/sectors/sectorGenerator.js`
@@ -57,28 +58,44 @@ Confirmed by screenshots (2026-06-21):
   evidence the inciting detection worked; it predates the inciting incident.
 
 Net: the inciting-incident detection pass produced **zero** durable
-captures — no lore, no threat, no faction, no entity record, no pending review.
+captures — no lore, no threat, no faction, no entity record, no pending review,
+**and no session-log beat**.
 
-**Root cause (candidates — needs the browser console to pin):** The inciting
+**Root cause (narrowed to two console-distinguishable causes).** The inciting
 path runs `runIncitingIncident` → `runPacedDetection`
-(`src/narration/narrator.js:1527`) inside a `try/catch` that only
-`console.warn`s on failure (`incitingIncident.js:321-328`). `runPacedDetection`
-itself also swallows errors to `console.error` (`narrator.js:1541`). So a total
-no-capture is consistent with several causes, none yet eliminated:
+(`src/narration/narrator.js:1527`) → `runCombinedDetectionPass`. There are
+**three** nested try/catch layers, all swallowing to console, so a total
+failure is invisible in-game:
+- `incitingIncident.js:321-328` → `console.warn("runIncitingIncident: entity detection failed")`
+- `narrator.js:1541` → `console.error("runPacedDetection failed")`
+- `entityExtractor.js:142-143` → `console.warn("entityExtractor: detection API failed")`, then returns `emptyDetection()`
 
-1. **Silent detection failure** — the Haiku `runCombinedDetectionPass` call
-   threw (API error, unparseable JSON) and was swallowed to the console. Most
-   likely given *everything* is missing at once.
-2. **Empty `prose`** — `splitIncitingMeta(text).prose` came back empty/whitespace
-   (e.g. all content parsed into the vow/clock/target meta blocks), so detection
-   ran on nothing.
-3. **Empty detection result** — the model returned all-empty arrays for this
-   prose.
-4. **Salience reroute** (partial) — lore/threats rated below the salience
-   threshold are sent to the session log, not the WJ
-   (`routeWorldJournalResults`, `entityExtractor.js:616-637`). This would hide
-   lore/threats but **not** factions (the `factionUpdates` loop has no salience
-   gate), so it can't be the whole story.
+The empty Session Log is the decisive new evidence. Below-`significant`
+lore/threats reroute to the session log (`appendSessionLogBeat`,
+`worldJournal.js:634`), so if detection had returned *anything* in the
+lore/threat channels it would show there. Empty session log **+** empty
+Factions WJ (which has **no** salience gate — `factionUpdates` writes
+unconditionally) means the pass produced zero output across *every* channel,
+not output that was filtered. This **eliminates** two earlier candidates:
+
+- ~~Salience reroute~~ — ruled out: nothing reached the session log.
+- ~~Empty `prose`~~ — ruled out: the inciting card *rendered visible prose*
+  (that is how Finding A's `<npc>` tags were visible), and the card and the
+  detector consume the same `splitIncitingMeta(text).prose`.
+
+Two causes remain, distinguishable only by the browser console:
+
+1. **API call threw** (`runCombinedDetectionPass` → `defaultCallDetectionAPI`)
+   — console line `entityExtractor: detection API failed:`. **Most likely**: a
+   single failure zeroes every channel at once, which matches exactly what is
+   observed.
+2. **Model returned / parsed to empty** — *no* error line, clean run, all-empty
+   arrays. Possible but requires the model to independently return empty for all
+   five channels.
+
+Note the inciting detection runs **unconditionally** — `runIncitingIncident`
+calls `runPacedDetection` directly with no "Auto-Detect Entries" setting gate,
+so a disabled setting is not a factor.
 
 For factions specifically, even when detection works there are two fragile
 routes — `worldJournal.factionUpdates[]` → `recordFactionIntelligence` (durable
@@ -86,11 +103,12 @@ WJ write, `worldJournal.js:265`) and `entities[]` type `faction` → a transient
 chat draft card (`routeEntityDrafts`/`postDraftEntityCard`,
 `entityExtractor.js:427`) that is lost if the GM never confirms it.
 
-**Diagnostic next step:** reproduce and capture the browser console during the
-inciting incident — look for `runIncitingIncident: entity detection failed` and
-`runPacedDetection failed`. That distinguishes cause 1 from 2–4. The
-swallow-to-console handlers are themselves worth hardening so this isn't
-invisible to playtesters.
+**Diagnostic next step:** one more repro with the browser console open —
+search for `detection API failed`. Present → cause 1 (API throw); absent but
+still no captures → cause 2 (empty/parsed-away result). **Either way, the fix
+must surface inciting-incident detection failures** (a GM-only toast or a
+retry): the three swallow-to-console layers make this silent loss of the
+opening fiction's entities invisible to playtesters.
 
 **Files to check:**
 - `src/session/incitingIncident.js` — `runIncitingIncident` detection call
