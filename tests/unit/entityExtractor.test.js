@@ -472,7 +472,7 @@ describe("routeEntityDrafts — cross-type dedup", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("routeWorldJournalResults", () => {
-  it("routes lore to recordLoreDiscovery regardless of entity records", async () => {
+  it("routes world-level lore to recordLoreDiscovery auto-confirmed (Task C)", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({
       lore: [{ title: "Iron panel route", text: "x", narratorAsserted: true, confirmed: false }],
@@ -480,7 +480,37 @@ describe("routeWorldJournalResults", () => {
     expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
     expect(spies.recordLoreDiscovery).toHaveBeenCalledWith(
       "Iron panel route",
-      expect.objectContaining({ narratorAsserted: true }),
+      expect.objectContaining({ narratorAsserted: true, confirmed: true }),
+      fixture.campaignState,
+    );
+    fixture.restore();
+  });
+
+  it("routes entity-specific lore to entity tier, not WJ lore (Task D)", async () => {
+    const fixture = buildFullCampaignState();
+    // "Sable" is a known connection in the fixture.
+    await routeWorldJournalResults({
+      lore: [{ title: "Sable: speaks in clipped tones", text: "Sable speaks in clipped tones.", entityName: "Sable", salience: "significant" }],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).not.toHaveBeenCalled();
+    // Verify the entity's generative tier was appended.
+    const actor = game.actors.get(fixture.refs.sable.journalId);
+    const connection = actor?.getFlag("starforged-companion", "connection");
+    expect(Array.isArray(connection?.generativeTier)).toBe(true);
+    expect(connection.generativeTier).toHaveLength(1);
+    expect(connection.generativeTier[0]).toMatchObject({ source: "wj_lore_entity_route" });
+    fixture.restore();
+  });
+
+  it("falls back to WJ lore when entityName is set but entity is not known", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [{ title: "Unknown: speaks in riddles", text: "Speaks in riddles.", entityName: "UnknownFigure", salience: "significant" }],
+    }, fixture.campaignState);
+    expect(spies.recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(spies.recordLoreDiscovery).toHaveBeenCalledWith(
+      "Unknown: speaks in riddles",
+      expect.objectContaining({ confirmed: true }),
       fixture.campaignState,
     );
     fixture.restore();
@@ -890,6 +920,13 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toContain('"worldJournal"');
     expect(prompt).toContain("stateTransitions");
     expect(prompt).toContain('"renames"');
+    expect(prompt).toContain('"entityName"');
+  });
+
+  it("includes entityName routing instruction in the prompt", () => {
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", {});
+    expect(prompt).toContain("entityName rules");
+    expect(prompt).toContain("entity record, not in the World");
   });
 
   it("lists placeholder connections so the model can rename instead of duplicate", () => {

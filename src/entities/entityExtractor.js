@@ -300,7 +300,8 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `    "lore": [`,
     `      { "title": string, "category": string, "text": string,`,
     `        "salience": "trivial"|"scene"|"notable"|"significant"|"defining",`,
-    `        "narratorAsserted": true, "confirmed": false }`,
+    `        "narratorAsserted": true, "confirmed": false,`,
+    `        "entityName": string|null }`,
     `    ],`,
     `    "threats": [`,
     `      { "name": string, "type": string, "severity": string, "summary": string,`,
@@ -334,6 +335,11 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `Be sparing: most moment-to-moment narration is "scene" or "trivial". Reserve`,
     `"significant" and "defining" for facts worth remembering next session.`,
     ``,
+    `entityName rules: set to the entity's exact name when a lore item is a`,
+    `fact specific to one ESTABLISHED ENTITY (NPC, ship, faction, location,`,
+    `creature). Those facts belong on the entity record, not in the World`,
+    `Journal lore. If the lore is a world-level fact (not about one specific`,
+    `known entity), leave entityName null or omit it.`,
     `Lore rules: only extract concrete narrative facts, not atmosphere.`,
     `Threat rules: only named or distinctly typed dangers with narrative weight.`,
     `Entity rules: only return entities clearly named or distinctly typed.`,
@@ -761,9 +767,36 @@ function hasOpenRouterKey() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Locate a known entity record by name across all entity types.
+ * Returns { journalId, type } for the first match, or null if no entity record
+ * exists with this name. Used by routeWorldJournalResults to divert entity-
+ * specific lore to the entity's generative tier instead of the WJ lore journal.
+ *
+ * @param {string} entityName
+ * @param {Object} campaignState
+ * @returns {{ journalId: string, type: string }|null}
+ */
+function findEntityForLoreRouting(entityName, campaignState) {
+  const target = normalizeEntityName(entityName);
+  if (!target) return null;
+  for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
+    const getter = ENTITY_GETTERS[type];
+    if (!getter) continue;
+    const ids = campaignState?.[idsField] ?? [];
+    for (const journalId of ids) {
+      let rec = null;
+      try { rec = getter(journalId); } catch { continue; }
+      if (rec?.name && normalizeEntityName(rec.name) === target) return { journalId, type };
+    }
+  }
+  return null;
+}
+
+/**
  * Route the World Journal section of the detection response to the
  * worldJournal.js write functions. Per WJ scope §4 the routing rule is:
- *   - Lore:    always → recordLoreDiscovery
+ *   - Lore (world-level): always → recordLoreDiscovery, auto-confirmed
+ *   - Lore (entity-specific, entityName set): → entity generative tier only
  *   - Threat:  always → recordThreat
  *   - Faction: only when no entity record exists → recordFactionIntelligence
  *   - Location: only when no entity record exists → recordLocation
@@ -787,10 +820,34 @@ export async function routeWorldJournalResults(wj, campaignState) {
       await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
       continue;
     }
+    // Entity-specific lore (Task D): if the detector flagged this as a fact
+    // about a specific known entity, migrate it to that entity's generative
+    // tier instead of the WJ lore journal. Keeps per-entity detail on the
+    // entity record where the narrator can use it, not as world-level canon.
+    if (lore.entityName) {
+      const entityRef = findEntityForLoreRouting(lore.entityName, campaignState);
+      if (entityRef) {
+        await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
+          sessionId:  campaignState?.currentSessionId ?? "",
+          sessionNum: campaignState?.sessionNumber ?? null,
+          detail:     lore.text ?? lore.title,
+          source:     "wj_lore_entity_route",
+          pinned:     false,
+          promoted:   false,
+          promotedAt: null,
+        }).catch(err =>
+          console.warn(`${MODULE_ID} | routeWorldJournalResults: entity-lore migration failed:`, err),
+        );
+        continue;
+      }
+      // Entity not found (no record yet) — fall through to WJ lore as usual.
+    }
+    // Auto-confirm (Task C): narrator-detected lore goes straight to confirmed
+    // state; promotedAt is set by recordLoreDiscovery when confirmed === true.
     await recordLoreDiscovery(lore.title, {
       ...lore,
       narratorAsserted: true,
-      confirmed:        lore.confirmed === true,
+      confirmed:        true,
     }, campaignState);
   }
 

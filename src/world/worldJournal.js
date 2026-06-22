@@ -194,7 +194,7 @@ export async function archiveSceneTruth(truth, campaignState) {
     fact,
     sceneId:          truth.sceneId ?? null,
     narratorAsserted: true,
-    confirmed:        false,
+    confirmed:        true,
     sessionId:        truth.sessionId ?? null,
     sessionNumber:    truth.sessionNum ?? null,
     moveId:           truth.moveId    ?? null,

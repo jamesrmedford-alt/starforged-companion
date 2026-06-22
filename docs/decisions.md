@@ -1612,3 +1612,42 @@ handler.
   Take Decisive Action pattern) — rejected; Reach a Milestone is a no-roll
   move, so re-entry would roll spurious dice and open a confirm dialog. The
   button marks directly via the shared `planReachMilestone` logic instead.
+
+## World lore auto-confirms; entity-specific lore routes to entity tier (2026-06-22)
+
+**Decision (C): Narrator-detected lore is auto-confirmed** — `routeWorldJournalResults` now
+writes `confirmed: true` for every lore entry that clears the salience gate, and
+`archiveSceneTruth` (scene-end migration) does the same. Lore no longer sits in the
+"Pending Lore" queue waiting for GM approval; it immediately joins `getConfirmedLore()`
+and feeds the narrator context on the next call. The audit trail remains: each entry
+carries `narratorAsserted: true`, `promotedAt: <timestamp>`, and the `sessionId` of
+when it was confirmed, so the history is reconstructable from the journal flags.
+
+**Decision (D): Entity-specific lore bypasses the WJ lore journal** — when the
+detector sets `entityName` to a known entity's name, `routeWorldJournalResults` routes
+the lore to that entity's generative tier (`appendMigratedTruthToTier`) instead of
+`recordLoreDiscovery`. If the named entity doesn't have a record yet, the lore falls
+back to the WJ journal. This keeps per-character detail (posture, speech habits, scars)
+on the entity card rather than polluting the world-level canon list.
+
+The detection prompt now includes `"entityName": string|null` in the lore schema and
+an `entityName rules` block explaining when to set it.
+
+**Reason:** The pending-lore queue was a friction point: lore the narrator stated
+plainly sat unconfirmed until the GM actively clicked "Confirm" in the WJ panel —
+often never, because there was no in-session reminder. Since narrator-detected lore
+clears the salience gate (≥ significant), it has already been reviewed by the salience
+model and is worth keeping; GM review of routine campaign facts was pure overhead.
+
+Entity-specific lore in the WJ lore list confused the world-canon record with
+per-character notes. "Maren speaks in clipped tones" is not a world truth — it belongs
+on Maren's entity card, where the narrator can find it in her generative tier.
+
+**Rejected:**
+- *Keep the confirm gate but add an auto-confirm setting* — adds a settings surface for
+  a problem whose solution (auto-confirm) is clearly better than the default (never
+  confirmed). Simpler to just do it.
+- *Route all lore to entity tier when an entity name appears anywhere in the title/text*
+  — title-scanning is fragile (a faction name can appear in a world-lore fact without
+  the fact being about that faction). The explicit `entityName` field from the detector
+  is the reliable signal.
