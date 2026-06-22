@@ -151,6 +151,7 @@ import {
   flushErrorLogBuffer,
 } from "./logging/errorLog.js";
 import { flushApiTransactionLogBuffer } from "./logging/apiTransactionLog.js";
+import { showMoveRoll, showActionRoll, showD100 } from "./dice/diceAnimation.js";
 
 import {
   openWorldJournalPanel,
@@ -2390,6 +2391,7 @@ async function handleOracleCommand(message) {
   }
 
   const result = rollYesNo(oddsKey, { question });
+  void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const oddsLabel = oddsKey === "50_50" ? "50/50" : oddsKey.replace(/_/g, " ");
   const matchBadge = result.isMatch
     ? ` <em>· MATCH — envision an extreme result or twist</em>`
@@ -2445,6 +2447,8 @@ async function handlePayThePriceCommand(message) {
     });
     return;
   }
+
+  void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
 
   const qBlock = question
     ? `<p><em>${escapeChatHtml(question)}</em></p>`
@@ -2665,6 +2669,7 @@ async function postDecisiveActionCostCard() {
     console.warn(`${MODULE_ID} | decisive_action_cost roll failed:`, err);
     return;
   }
+  void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const routeFooter = result.sufferRoute
     ? `<p><em>Triggers: choose a suffer move (-${result.sufferRoute.amount}).</em></p>`
     : "";
@@ -2692,6 +2697,7 @@ async function postFaceDefeatPayThePriceCard() {
     console.warn(`${MODULE_ID} | face defeat pay_the_price roll failed:`, err);
     return;
   }
+  void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const routeFooter = result.sufferRoute
     ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
     : "";
@@ -2935,6 +2941,9 @@ async function handleBondCommand(message) {
   const challengeDice = rollChallengeDice();
   const actionScore   = calcActionScore(actionDie, 0, adds);
   const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
+
+  // 3D dice for the bond roll (fire-and-forget, fail-open).
+  void showActionRoll(actionDie, challengeDice);
 
   const matchBadge = isMatch ? " ✦ MATCH" : "";
   let body, momentumChange = 0, ticksOnBonds = 0;
@@ -3380,6 +3389,10 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null) {
+  // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
+  // resolver already rolled so the animation matches the card. Fire-and-forget
+  // and fail-open — never blocks or breaks the result post.
+  void showMoveRoll(resolution);
   return ChatMessage.create({
     content: formatMoveResult(resolution, aside, burnState, improveState),
     flags: {

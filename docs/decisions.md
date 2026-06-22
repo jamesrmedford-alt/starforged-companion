@@ -1431,3 +1431,41 @@ context section was still always empty: it read page-level flags while
 lockstep. This is why the narrator could mention a combat track it had no
 context for. The combat-track chat card also now carries an "Open Progress
 Tracks" button so the fight's progress is one click away.
+
+---
+
+## Dice So Nice integration is display-only; the resolver stays pure
+
+**Decision:** 3D dice animations are produced by a thin Foundry-only bridge,
+`src/dice/diceAnimation.js`, that builds an *already-evaluated* Foundry `Roll`
+carrying the values the resolver/roller already produced, then hands it to
+`game.dice3d.showForRoll`. The pure dice logic in `src/moves/resolver.js`
+(`rollDie`/`rollActionDie`/`rollChallengeDice`) and `src/oracles/roller.js`
+(`rollOracle`/`rollYesNo`, `rollD100`) is left untouched — it still rolls with
+`Math.random()` and creates no Foundry objects. The bridge is wired at the
+display seams (move-result card, `!bond`, Ask the Oracle, Pay the Price, the
+decisive-action cost card, custom-oracle rolls) as fire-and-forget (`void`), and
+fails open: when Dice So Nice is absent or the Foundry dice classes aren't where
+expected, every entry point returns false without throwing.
+
+**Reason:** Players reported that none of the module's rolls triggered Dice So
+Nice. The cause: Dice So Nice only animates dice that pass through Foundry's dice
+pipeline (a `Roll` shown via `game.dice3d`, or a `ChatMessage` carrying `rolls`),
+and the module created neither — every die came from `Math.random()`. The
+resolver and roller are deliberately pure, synchronous, Foundry-free, and the
+foundation of ~2500 unit tests (their file headers state this). Threading real
+`await new Roll().evaluate()` calls through them would make them async and
+Foundry-coupled, breaking that contract for a purely cosmetic feature. Feeding
+the predetermined results into a synthetic evaluated `Roll` keeps the logic pure
+**and** guarantees the animated dice match the numbers printed on the card.
+
+**Rejected:**
+- *Replace `Math.random()` with real Foundry `Roll`s in the resolver/roller* —
+  rejected; makes the pure logic async + Foundry-dependent, breaks the
+  unit-test contract, and is a large invasive refactor for a cosmetic gain.
+- *Let Dice So Nice roll its own (fresh, random) dice for the animation* —
+  rejected; the tumbling dice would land on different numbers than the result
+  card, which is worse than no animation.
+- *Gate behind a Companion setting* — rejected (for now); Dice So Nice is itself
+  opt-in, so "animate when it's installed, no-op when it isn't" matches how game
+  systems integrate it and needs no setting to discover.

@@ -13,9 +13,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // the module-wide mock is safe for the pure-helper tests above.
 vi.mock("../../src/narration/narrator.js", () => ({
   narrateIncitingIncident: vi.fn(),
+  runPacedDetection:       vi.fn(),
+  runNarrationTierUpdate:  vi.fn(),
 }));
 
-import { narrateIncitingIncident } from "../../src/narration/narrator.js";
+import {
+  narrateIncitingIncident,
+  runPacedDetection,
+  runNarrationTierUpdate,
+} from "../../src/narration/narrator.js";
 import {
   rollIncitingSpark,
   buildIncitingIncidentUserMessage,
@@ -307,6 +313,8 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
 
   beforeEach(() => {
     vi.mocked(narrateIncitingIncident).mockReset();
+    vi.mocked(runPacedDetection).mockReset();
+    vi.mocked(runNarrationTierUpdate).mockReset();
     game.settings._store.clear();
     game.user.isGM = true;
   });
@@ -336,6 +344,32 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
     // Persisted to world settings (the same superset object).
     const persisted = game.settings._store.get(`${MODULE_ID}.campaignState`);
     expect(persisted.incitingIncident.prose).toBe(ii.prose);
+  });
+
+  it("runs BOTH entity detection and the tier update on the opening prose (GM)", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);
+    const campaignState = { currentSessionId: "ssn-7" };
+
+    await runIncitingIncident(campaignState);
+
+    // Detection (new entities) AND the tier update (developments to existing
+    // ones, e.g. an NPC the opening kills) both fire, against the cleaned
+    // prose — not the suggested-vow/clock/target meta lines.
+    const cleanProse = "Councilor Vex was murdered three cycles ago aboard Paradox Station.";
+    expect(runPacedDetection).toHaveBeenCalledWith(cleanProse, campaignState);
+    expect(runNarrationTierUpdate).toHaveBeenCalledWith(cleanProse, campaignState);
+  });
+
+  it("does not run detection or the tier update from a non-GM client", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);
+    const restore = asPlayer();
+    try {
+      await runIncitingIncident({ currentSessionId: "ssn-7" });
+    } finally {
+      restore();
+    }
+    expect(runPacedDetection).not.toHaveBeenCalled();
+    expect(runNarrationTierUpdate).not.toHaveBeenCalled();
   });
 
   it("does not write a premise on the oracle-only fallback (no narrator text)", async () => {

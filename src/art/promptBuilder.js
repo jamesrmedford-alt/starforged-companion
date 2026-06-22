@@ -118,13 +118,22 @@ export function buildRegenerationPrompt(entityType, sourceDescription, entity = 
 
 /**
  * Build a neutral prompt from the entity's card fields alone — style anchor,
- * type style, and structured context (gender / role / type) — dropping the
- * narrator scene description entirely.
+ * type style, and structured context — dropping the narrator scene description
+ * entirely.
  *
  * Used as the moderation-retry fallback: the scene prose (a kidnapping,
  * raiders, blood) is the usual content-filter trigger, and a portrait rarely
  * needs it. The narration remains the authoritative description; this just
  * lets the image succeed instead of failing outright.
+ *
+ * For connections the context is the four stable identity fields only —
+ * pronouns (as a gender descriptor), role, first look, and name — each run
+ * through the policy sanitiser. This is deliberately the smallest field set
+ * that still yields a recognisable character portrait: goal, disposition, and
+ * bonded status are dropped, and an oracle-rolled "first look" or role that
+ * carries a flagged word (e.g. "scarred", "bloodied") is sanitised rather than
+ * sent raw. (Playtest v1.7.20: even the previous gender+role neutral prompt was
+ * refused with moderation reason "Violence", so this tightens it further.)
  *
  * @param {string} entityType
  * @param {Object} [entity]
@@ -132,10 +141,13 @@ export function buildRegenerationPrompt(entityType, sourceDescription, entity = 
  */
 export function buildNeutralPortraitPrompt(entityType, entity = {}) {
   const typeStyle = TYPE_STYLE[entityType] ?? TYPE_STYLE.connection;
+  const context = entityType === "connection"
+    ? buildNeutralConnectionContext(entity)
+    : buildEntityContext(entityType, entity);
   const prompt = [
     STYLE_ANCHOR,
     typeStyle,
-    buildEntityContext(entityType, entity),
+    context,
   ].filter(Boolean).join(". ");
 
   const size = entityType === "ship" || entityType === "planet"
@@ -143,6 +155,25 @@ export function buildNeutralPortraitPrompt(entityType, entity = {}) {
     : "1024x1024";
 
   return { prompt, size };
+}
+
+/**
+ * Minimal, policy-sanitised portrait context for a connection's
+ * moderation-retry fallback: only pronouns (as a gender descriptor), role,
+ * first look, and name. See buildNeutralPortraitPrompt for the rationale.
+ *
+ * @param {Object} [entity]
+ * @returns {string}
+ */
+function buildNeutralConnectionContext(entity = {}) {
+  const firstLook = Array.isArray(entity.firstLook) ? entity.firstLook[0] : entity.firstLook;
+  const gender = entity.pronouns ? pronounsToPortraitDescriptor(entity.pronouns) : "";
+  const parts = [];
+  if (gender)      parts.push(gender);
+  if (entity.role) parts.push(`role: ${entity.role}`);
+  if (firstLook)   parts.push(`first look: ${firstLook}`);
+  if (entity.name) parts.push(`named ${entity.name}`);
+  return parts.length ? sanitiseForPolicy(parts.join(", "), "connection") : "";
 }
 
 

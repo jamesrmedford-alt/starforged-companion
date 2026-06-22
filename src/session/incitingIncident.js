@@ -319,11 +319,20 @@ export async function runIncitingIncident(campaignState) {
   // paced-narrative path uses. GM-gated; fail-open. (Playtest: the "Velvet
   // Knife" faction was invented in the inciting prose but never recorded until
   // it happened to recur in a later move.)
+  //
+  // Then run the tier update too — detection only captures NEW entities, while
+  // the tier update records developments to EXISTING ones. The opening fiction
+  // routinely builds on the established sector connection (it may even kill
+  // them), and without this that development never reached the connection's
+  // "Narrator-added details" (playtest v1.7.20 — Karthik Freeman was killed in
+  // the inciting incident but her card recorded nothing). The move/paced paths
+  // always run both passes; the inciting path now matches.
   if (text && globalThis.game?.user?.isGM) {
     try {
-      const { runPacedDetection } = await import("../narration/narrator.js");
+      const narrator = await import("../narration/narrator.js");
       const { prose } = splitIncitingMeta(text);
-      await runPacedDetection(prose, campaignState ?? {});
+      await narrator.runPacedDetection(prose, campaignState ?? {});
+      await narrator.runNarrationTierUpdate(prose, campaignState ?? {});
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: entity detection failed:`, err?.message ?? err);
     }
