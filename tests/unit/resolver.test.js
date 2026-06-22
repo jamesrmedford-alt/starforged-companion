@@ -456,6 +456,7 @@ const REQUIRED_KEYS = [
   "enterCombat", "combatProgress", "endCombat",
   "rollDecisiveActionCost", "routePayThePrice",
   "developRelationship", "fulfillVow", "forgeABond", "companionHealthChange",
+  "reachMilestone",
 ];
 
 const HANDLER_CASES = [
@@ -479,7 +480,7 @@ const HANDLER_CASES = [
 
   // Quest
   ["swear_an_iron_vow", "miss",       false, { match: /obstacle/i }],
-  ["reach_a_milestone", "strong_hit", false, { match: /progress/i }],
+  ["reach_a_milestone", "strong_hit", false, { reachMilestone: true, match: /progress/i }],
   ["fulfill_your_vow",  "strong_hit", false, { fulfillVow: { ranksDown: 0 }, match: /legacy|quests/i }],
   ["fulfill_your_vow",  "weak_hit",   false, { fulfillVow: { ranksDown: 1 }, match: /lower|legacy/i }],
   ["fulfill_your_vow",  "miss",       false, { match: /Forsake|undone/i }],
@@ -620,6 +621,9 @@ describe("mapConsequences — full handler coverage", () => {
       }
       if (expectations.developRelationship !== undefined) {
         expect(c.developRelationship).toBe(expectations.developRelationship);
+      }
+      if (expectations.reachMilestone !== undefined) {
+        expect(c.reachMilestone).toBe(expectations.reachMilestone);
       }
     });
   });
@@ -1280,6 +1284,13 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
       expect(c.developRelationship).toBe(true);
       expect(c.progressMarked).toBe(0);
     }
+  });
+
+  it("reach_a_milestone flags reachMilestone and no longer uses the dead progressMarked path", () => {
+    const c = mapConsequences("reach_a_milestone", "strong_hit", false);
+    expect(c.reachMilestone).toBe(true);
+    expect(c.progressMarked).toBe(0);
+    expect(c.progressTrackId).toBeNull();
   });
 
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {

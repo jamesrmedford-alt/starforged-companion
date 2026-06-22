@@ -21,6 +21,7 @@ import {
   createCharacterBondItem,
   createCharacterVowItem,
   advanceVowClocks,
+  revertVowClocksForBurn,
 } from '../../src/character/actorBridge.js';
 
 
@@ -762,7 +763,8 @@ describe('advanceVowClocks', () => {
       clockVow({ id: 'v1', name: 'Save Dani', ticks: 2, max: 6 }),
     ] } });
     const advanced = await advanceVowClocks(actor);
-    expect(advanced).toEqual([{ name: 'Save Dani', ticks: 3, max: 6, triggered: false }]);
+    expect(advanced).toHaveLength(1);
+    expect(advanced[0]).toMatchObject({ name: 'Save Dani', ticks: 3, max: 6, triggered: false, itemId: 'v1' });
     expect(actor.items.contents[0].system.clockTicks).toBe(3);
   });
 
@@ -794,5 +796,56 @@ describe('advanceVowClocks', () => {
     ] } });
     const advanced = await advanceVowClocks(actor, { by: 2 });
     expect(advanced[0].ticks).toBe(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// revertVowClocksForBurn — burn momentum unwinds a vow clock tick
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('revertVowClocksForBurn', () => {
+  function clockVow({ id, name = 'V', ticks = 0, max = 6 }) {
+    const item = {
+      id, type: 'progress', name,
+      system: { subtype: 'vow', hasClock: true, clockTicks: ticks, clockMax: max },
+      async update(changes) {
+        for (const [path, val] of Object.entries(changes)) {
+          const parts = path.split('.');
+          let t = item;
+          for (let i = 0; i < parts.length - 1; i++) t = (t[parts[i]] ??= {});
+          t[parts[parts.length - 1]] = val;
+        }
+      },
+    };
+    return item;
+  }
+
+  it('decrements the vow clock by one tick', async () => {
+    const vow   = clockVow({ id: 'v1', name: 'Save Dani', ticks: 3, max: 6 });
+    const actor = freshActor({ items: { contents: [vow] } });
+    game.actors._set(actor.id, actor);
+
+    await revertVowClocksForBurn([{ actorId: actor.id, itemId: 'v1' }]);
+
+    expect(vow.system.clockTicks).toBe(2);
+  });
+
+  it('does not go below zero', async () => {
+    const vow   = clockVow({ id: 'v1', ticks: 0, max: 6 });
+    const actor = freshActor({ items: { contents: [vow] } });
+    game.actors._set(actor.id, actor);
+
+    await revertVowClocksForBurn([{ actorId: actor.id, itemId: 'v1' }]);
+
+    expect(vow.system.clockTicks).toBe(0);
+  });
+
+  it('silently skips unknown actor or item', async () => {
+    await revertVowClocksForBurn([{ actorId: 'no-such-actor', itemId: 'no-item' }]);
+    // no error thrown
+  });
+
+  it('is a no-op for empty input', async () => {
+    await revertVowClocksForBurn([]);
   });
 });

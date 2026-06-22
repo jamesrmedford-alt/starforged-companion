@@ -106,6 +106,26 @@ describe('buildBurnState', () => {
     const burn  = buildBurnState(makeResolution(), actor);
     expect(burn.markedImpactCount).toBe(2);
   });
+
+  it('stores ptpReversals when provided', () => {
+    const actor = actorWithMomentum(7);
+    const ptpReversals = {
+      clocksAdvanced: [{ _id: 't1', name: 'Dani', type: 'tension' }],
+      sufferMeterDelta: { move: 'endure_harm', amount: 1, meterKey: 'health' },
+    };
+    const burn = buildBurnState(
+      makeResolution({ outcome: 'miss', challengeDice: [2, 5], consequences: { momentumChange: 0 } }),
+      actorWithMomentum(8),
+      ptpReversals,
+    );
+    expect(burn?.ptpReversals).toEqual(ptpReversals);
+  });
+
+  it('stores null ptpReversals when not provided', () => {
+    const actor = actorWithMomentum(7);
+    const burn = buildBurnState(makeResolution(), actor);
+    expect(burn?.ptpReversals).toBeNull();
+  });
 });
 
 

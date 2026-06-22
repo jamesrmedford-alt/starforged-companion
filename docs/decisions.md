@@ -1557,3 +1557,97 @@ lock-up the blocking approach caused.
 The `SufferChoiceDialog` code (`promptSufferChoice` in `sufferDialog.js`)
 remains exported and unit-tested but is no longer used by the move pipeline or
 the Pay-the-Price routes.
+
+## Burn Momentum reverses Pay-the-Price side effects (2026-06-22)
+
+**Decision:** Clicking 🔥 Burn Momentum on a move that resolved as a miss now
+reverses the Pay-the-Price side effects the miss triggered — not just the meter
+fields on the move card. Specifically: clocks advanced by
+`advanceClocksOnPayThePrice` (tension clocks + vow countdown clocks) are
+decremented by one segment, and a simple PC-meter loss from the PtP table's
+suffer route (Endure Harm / Endure Stress / Sacrifice Resources / Lose
+Momentum) is refunded. `postFaceDefeatPayThePriceCard` returns
+`{ clocksAdvanced, sufferMeterDelta }`; `buildBurnState` stashes it as
+`burn.ptpReversals`; `handleBurnClick` calls `revertPtpEffects` after the
+meter-delta reapply. New helpers: `revertTensionClocksForBurn` (clocks.js),
+`revertVowClocksForBurn` (actorBridge.js).
+
+**Reason:** Playtest: "burning momentum did not wind back the clock that ticked
+on the miss, nor did it refund the meter lost." A burn upgrades the outcome to a
+hit, so the price was never actually paid — leaving the clock advanced and the
+meter docked double-charges the player for an outcome that didn't happen.
+
+**Rejected:** Reversing `withstand_damage` / `companion_takes_a_hit` routes —
+those touch vehicle/companion stats and at-zero escalations (vehicle-damage
+d100, companion destruction) that are not cleanly invertible. Consistent with
+the pre-existing policy of not rolling back auto-debility flips on burn; if a
+playtest shows it matters we extend.
+
+## Reach a Milestone marks the vow; result cards suggest it (2026-06-22)
+
+**Decision:** Reach a Milestone (a no-roll quest move) now actually marks
+progress on the target vow per its rank. The resolver sets
+`consequences.reachMilestone: true` (replacing the dead `progressMarked: 1`,
+which never fired because persistence only marks when `progressTrackId` is set
+and no resolver populates that for embedded vow Items). A GM-gated pipeline
+handler runs `planReachMilestone` (`src/moves/milestone.js`): the sole open vow
+is auto-marked; when several are open and none is named, a picker card is
+posted. Additionally, successful quest-advancing moves (adventure / exploration
+categories, on a strong or weak hit, when the PC has an open vow) carry a
+one-click "⚑ Reach a Milestone" suggestion button on the result card — clicking
+marks vow progress without retyping the move, via the same path.
+
+**Reason:** Playtest: "successes are not granting progress on this Vow, even
+though misses are advancing the clock." The vow-progress half of the loop was a
+no-op. Mirrors the `develop_your_relationship` fix (audit 3.14), which removed
+the same dead `progressMarked` path in favour of a typed flag + GM-gated
+handler.
+
+**Rejected:**
+- *Showing the suggestion on every hit* — too noisy; gated to adventure /
+  exploration categories (the moves you make in pursuit of a quest) and
+  excludes combat / suffer / connection / fate / session / recovery. The player
+  is the fictional judge — the button is optional, never auto-applied.
+- *Re-entering the pipeline via `forcedMoveId` for the suggestion button* (the
+  Take Decisive Action pattern) — rejected; Reach a Milestone is a no-roll
+  move, so re-entry would roll spurious dice and open a confirm dialog. The
+  button marks directly via the shared `planReachMilestone` logic instead.
+
+## World lore auto-confirms; entity-specific lore routes to entity tier (2026-06-22)
+
+**Decision (C): Narrator-detected lore is auto-confirmed** — `routeWorldJournalResults` now
+writes `confirmed: true` for every lore entry that clears the salience gate, and
+`archiveSceneTruth` (scene-end migration) does the same. Lore no longer sits in the
+"Pending Lore" queue waiting for GM approval; it immediately joins `getConfirmedLore()`
+and feeds the narrator context on the next call. The audit trail remains: each entry
+carries `narratorAsserted: true`, `promotedAt: <timestamp>`, and the `sessionId` of
+when it was confirmed, so the history is reconstructable from the journal flags.
+
+**Decision (D): Entity-specific lore bypasses the WJ lore journal** — when the
+detector sets `entityName` to a known entity's name, `routeWorldJournalResults` routes
+the lore to that entity's generative tier (`appendMigratedTruthToTier`) instead of
+`recordLoreDiscovery`. If the named entity doesn't have a record yet, the lore falls
+back to the WJ journal. This keeps per-character detail (posture, speech habits, scars)
+on the entity card rather than polluting the world-level canon list.
+
+The detection prompt now includes `"entityName": string|null` in the lore schema and
+an `entityName rules` block explaining when to set it.
+
+**Reason:** The pending-lore queue was a friction point: lore the narrator stated
+plainly sat unconfirmed until the GM actively clicked "Confirm" in the WJ panel —
+often never, because there was no in-session reminder. Since narrator-detected lore
+clears the salience gate (≥ significant), it has already been reviewed by the salience
+model and is worth keeping; GM review of routine campaign facts was pure overhead.
+
+Entity-specific lore in the WJ lore list confused the world-canon record with
+per-character notes. "Maren speaks in clipped tones" is not a world truth — it belongs
+on Maren's entity card, where the narrator can find it in her generative tier.
+
+**Rejected:**
+- *Keep the confirm gate but add an auto-confirm setting* — adds a settings surface for
+  a problem whose solution (auto-confirm) is clearly better than the default (never
+  confirmed). Simpler to just do it.
+- *Route all lore to entity tier when an entity name appears anywhere in the title/text*
+  — title-scanning is fragile (a faction name can appear in a world-lore fact without
+  the fact being about that faction). The explicit `entityName` field from the detector
+  is the reliable signal.

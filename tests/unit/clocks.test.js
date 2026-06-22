@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { advanceTensionClocksForPayThePrice } from '../../src/clocks/clocks.js';
+import { advanceTensionClocksForPayThePrice, revertTensionClocksForBurn } from '../../src/clocks/clocks.js';
 
 const KEY = 'starforged-companion.campaignState';
 
@@ -34,7 +34,7 @@ describe('advanceTensionClocksForPayThePrice', () => {
     const advanced = await advanceTensionClocksForPayThePrice();
 
     expect(advanced).toHaveLength(2);
-    expect(advanced[0]).toMatchObject({ name: "Dani's captivity", filled: 3, segments: 6, triggered: false });
+    expect(advanced[0]).toMatchObject({ _id: 't1', name: "Dani's captivity", filled: 3, segments: 6, triggered: false });
     expect(storedClocks().find(c => c._id === 't1').filled).toBe(3);
     expect(storedClocks().find(c => c._id === 't2').filled).toBe(1);
   });
@@ -65,5 +65,43 @@ describe('advanceTensionClocksForPayThePrice', () => {
   it('returns an empty array when there are no clocks at all', async () => {
     setClocks([]);
     expect(await advanceTensionClocksForPayThePrice()).toEqual([]);
+  });
+});
+
+// ── revertTensionClocksForBurn ────────────────────────────────────────────────
+
+describe('revertTensionClocksForBurn', () => {
+  beforeEach(() => {
+    game.settings._store.clear();
+  });
+
+  it('decrements the specified tension clocks by one segment', async () => {
+    setClocks([
+      { _id: 't1', name: 'Dani', type: 'tension', segments: 6, filled: 3, active: true },
+      { _id: 't2', name: 'Doom', type: 'tension', segments: 4, filled: 2, active: true },
+    ]);
+
+    await revertTensionClocksForBurn(['t1']);
+
+    expect(storedClocks().find(c => c._id === 't1').filled).toBe(2);
+    expect(storedClocks().find(c => c._id === 't2').filled).toBe(2); // untouched
+  });
+
+  it('does not go below zero', async () => {
+    setClocks([{ _id: 't1', name: 'X', type: 'tension', segments: 4, filled: 0, active: true }]);
+    await revertTensionClocksForBurn(['t1']);
+    expect(storedClocks()[0].filled).toBe(0);
+  });
+
+  it('silently skips unknown ids', async () => {
+    setClocks([{ _id: 't1', name: 'X', type: 'tension', segments: 4, filled: 2, active: true }]);
+    await revertTensionClocksForBurn(['unknown']);
+    expect(storedClocks()[0].filled).toBe(2); // unchanged
+  });
+
+  it('is a no-op for empty input', async () => {
+    setClocks([{ _id: 't1', name: 'X', type: 'tension', segments: 4, filled: 3, active: true }]);
+    await revertTensionClocksForBurn([]);
+    expect(storedClocks()[0].filled).toBe(3); // unchanged
   });
 });

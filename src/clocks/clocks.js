@@ -270,10 +270,32 @@ export async function advanceTensionClocksForPayThePrice() {
   for (const c of eligible) {
     c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
     c.updatedAt = now;
-    advanced.push({ name: c.name, filled: c.filled, segments: c.segments, triggered: c.filled >= c.segments });
+    advanced.push({ _id: c._id, name: c.name, filled: c.filled, segments: c.segments, triggered: c.filled >= c.segments });
   }
   await writeState(state);
   return advanced;
+}
+
+/**
+ * Revert tension-clock segments advanced by a Pay the Price that was
+ * subsequently undone by burning momentum. Idempotent — clocks already at
+ * zero or not found are silently skipped. GM-gated at the call site.
+ *
+ * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
+ */
+export async function revertTensionClocksForBurn(ids) {
+  if (!ids?.length) return;
+  const state = readState();
+  let dirty = false;
+  const now = new Date().toISOString();
+  for (const id of ids) {
+    const c = (state.clocks ?? []).find(x => x._id === id);
+    if (!c || (c.filled ?? 0) <= 0) continue;
+    c.filled = Math.max(0, (c.filled ?? 0) - 1);
+    c.updatedAt = now;
+    dirty = true;
+  }
+  if (dirty) await writeState(state);
 }
 
 /**

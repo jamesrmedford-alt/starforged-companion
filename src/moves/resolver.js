@@ -248,6 +248,11 @@ function emptyConsequences() {
     fulfillVow:            null,
     // true → pipeline calls forgeBond on the target connection, marks bonds legacy.
     forgeABond:            false,
+    // true → pipeline resolves the active vow and marks progress on it per its
+    // rank (Reach a Milestone — a no-roll move). See moves/milestone.js. The old
+    // `progressMarked: 1` was a dead no-op: persistResolution only marks when
+    // progressTrackId is set, which no resolver populates for vows.
+    reachMilestone:        false,
     // Pipeline applies this delta to companion health (Companion Takes a Hit strong hit).
     companionHealthChange: 0,
     otherEffect:         "",
@@ -404,7 +409,11 @@ const CONSEQUENCE_MAP = {
 
   reach_a_milestone: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
-    progressMarked: 1,   // One mark; persistence layer multiplies by track's ticksPerMark
+    // Pipeline (GM-gated) resolves the target vow and marks progress per its
+    // rank (moves/milestone.js). The old `progressMarked: 1` was a dead no-op —
+    // persistence only marks when progressTrackId is set, which no resolver
+    // populates for embedded vow Items.
+    reachMilestone: true,
     otherEffect: "Mark progress on your vow per its rank.",
   }),
 
