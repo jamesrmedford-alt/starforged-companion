@@ -77,7 +77,7 @@ import {
   postSessionRecap,
   postCampaignRecap,
 } from "./narration/narrator.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -116,6 +116,7 @@ import {
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
 import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
+import { planReachMilestone, buildMilestoneSuggestion } from "./moves/milestone.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1136,6 +1137,16 @@ export function registerChatHook() {
         }
       }
 
+      // Reach a Milestone (no-roll quest move) — mark progress on the target vow
+      // per its rank. The old resolver returned progressMarked:1 with a null
+      // progressTrackId, so the persist gate never marked anything (playtest:
+      // "successes are not granting progress on this Vow"). Now GM-gated and
+      // driven by planReachMilestone (sole open vow → auto-mark; several → picker).
+      if (resolution.consequences?.reachMilestone && game.user.isGM) {
+        await applyReachMilestone(getPlayerActors()[0] ?? null, interpretation.moveTarget ?? null)
+          .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
+      }
+
       // Forge a Bond strong hit — mark connection as bonded and pay bonds legacy.
       // The Bolster/Expand Influence choice is surfaced in the card text; it affects
       // connection influence (currently tracked manually in the character sheet).
@@ -1371,11 +1382,18 @@ export function registerChatHook() {
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
       const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor);
+      // "Reach a Milestone" suggestion (playtest: surface vow progress on a
+      // success). Eligible on a quest-advancing hit when the PC has an open vow;
+      // clicking marks progress without retyping the move. See moves/milestone.js.
+      const milestoneState = buildMilestoneSuggestion(
+        resolution, readVows(burnActor), MOVES[resolution.moveId]?.category ?? null,
+      );
       const moveResultMessage = await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null,
         burnState,
         improveState,
+        milestoneState,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -2654,6 +2672,71 @@ async function postDevelopRelationshipCard(plan) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Reach a Milestone — mark progress on the target vow per its rank.
+// Shared by the pipeline handler (the reach_a_milestone move) and the
+// result-card suggestion button. GM-gated writes inherited via markVowProgress.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve and mark a Reach a Milestone for the given actor. `target` is the
+ * optional named vow (interpretation.moveTarget); null lets planReachMilestone
+ * auto-select the sole open vow or, when several are open, post a picker card.
+ *
+ * @param {Actor|null} actor
+ * @param {string|null} target
+ */
+async function applyReachMilestone(actor, target) {
+  // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
+  // must not claim progress on a client that can't write. In solo-GM play the
+  // player is the GM, so this is the normal path.
+  if (!actor || !game.user?.isGM) return;
+  const plan = planReachMilestone(readVows(actor), target);
+  if (plan.action === "mark") {
+    await markVowProgress(actor, plan.vow.id, plan.ticks);
+    await postReachMilestoneCard(plan.vow, plan.ticks);
+  } else if (plan.action === "pick") {
+    await postMilestonePickerCard(plan.vows, actor.id);
+  }
+  // action "none" → no open vow to mark; the move card's otherEffect already
+  // tells the player Reach a Milestone marks vow progress.
+}
+
+async function postReachMilestoneCard(vow, ticks) {
+  const name = escapeChatHtml(vow?.name || "your vow");
+  const rank = escapeChatHtml(vow?.rank ?? "");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
+        `<p>Marked progress on <strong>${name}</strong> — +${ticks} tick${ticks === 1 ? "" : "s"}${rank ? ` (${rank} rank)` : ""}.</p></div>`,
+      flags:   { [MODULE_ID]: { reachMilestoneCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postReachMilestoneCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Post a picker when several vows are open and none was named. Each button
+ * marks one vow; the handler in wireMilestonePickerButtons applies it.
+ */
+async function postMilestonePickerCard(vows, actorId) {
+  const rows = (vows ?? []).map(v =>
+    `<button type="button" class="sf-followup-btn" data-action="sf-milestone-pick" ` +
+    `data-vow-id="${escapeChatHtml(v.id ?? "")}" data-actor-id="${escapeChatHtml(actorId ?? "")}">` +
+    `${escapeChatHtml(v.name || "vow")} <em>(${escapeChatHtml(v.rank ?? "")})</em></button>`,
+  ).join("");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
+        `<p>Which vow advances?</p><div class="sf-milestone-picker">${rows}</div></div>`,
+      flags:   { [MODULE_ID]: { milestonePicker: true, resolved: false } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postMilestonePickerCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
 async function postCombatFinishCard({ track }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   try {
@@ -3412,13 +3495,13 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 // excluded.
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
   // and fail-open — never blocks or breaks the result post.
   void showMoveRoll(resolution);
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState, improveState),
+    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
@@ -3426,6 +3509,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         ...(TDA_OFFER_MOVES.has(resolution.moveId) ? { combatMoveCard: true } : {}),
         ...(burnState ? { burn: burnState } : {}),
         ...(improveState ? { improve: improveState } : {}),
+        ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
       },
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
@@ -3436,7 +3520,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null, improveState = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -3465,11 +3549,25 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
+      ${renderMilestoneSuggestionHtml(milestoneState)}
       ${TDA_OFFER_MOVES.has(resolution.moveId)
         ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Take Decisive Action</button></div>`
         : ""}
     </div>
   `.trim();
+}
+
+/**
+ * Render the "Reach a Milestone" suggestion button for a move-result card.
+ * Returns "" when not eligible. Clicking marks vow progress without retyping
+ * the move (wireMilestoneSuggestionButton).
+ */
+function renderMilestoneSuggestionHtml(milestoneState) {
+  if (!milestoneState?.eligible) return "";
+  return `<div class="sf-milestone-suggest-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-reach-milestone" ` +
+    `title="Mark progress on your vow per its rank (Reach a Milestone)">⚑ Reach a Milestone</button>` +
+    `</div>`;
 }
 
 /**
@@ -3964,6 +4062,93 @@ export function wireTakeDecisiveActionButton(message, root) {
   });
 }
 onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
+
+/**
+ * Wire the "⚑ Reach a Milestone" suggestion button on a move-result card.
+ * Clicking marks vow progress (sole open vow → auto-mark; several → picker)
+ * via the same applyReachMilestone path the move uses. Disabled after one use
+ * (flag `milestoneMarked`) so a card can't double-mark on re-render. GM-gated
+ * writes are inherited from markVowProgress.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireMilestoneSuggestionButton(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.milestoneSuggestion?.eligible) return;
+  const btn = root?.querySelector?.('[data-action="sf-reach-milestone"]');
+  if (!btn) return;
+
+  if (f.milestoneMarked) {
+    btn.disabled = true;
+    btn.textContent = "⚑ Milestone marked";
+    return;
+  }
+
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    try {
+      await applyReachMilestone(getPlayerActors()[0] ?? null, null);
+      if (game.user?.isGM) {
+        await message.update({ [`flags.${MODULE_ID}.milestoneMarked`]: true })
+          .catch(err => console.warn(`${MODULE_ID} | milestone mark flag update failed:`, err?.message ?? err));
+      }
+    } catch (err) {
+      console.error(`${MODULE_ID} | Reach a Milestone suggestion failed:`, err);
+      fresh.disabled = false;
+    }
+  });
+}
+onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, root));
+
+/**
+ * Wire the per-vow buttons on a Reach a Milestone picker card (posted when
+ * several vows are open and none was named). Clicking one marks that vow and
+ * resolves the card so it can't fire twice.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireMilestonePickerButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.milestonePicker) return;
+  const btns = root?.querySelectorAll?.('[data-action="sf-milestone-pick"]') ?? [];
+  if (f.resolved) {
+    for (const b of btns) b.disabled = true;
+    return;
+  }
+  for (const btn of btns) {
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      for (const b of root.querySelectorAll('[data-action="sf-milestone-pick"]')) b.disabled = true;
+      // GM-only: vow Item writes are GM-gated (PERSIST-001). In solo-GM play the
+      // player is the GM, so this is the normal path.
+      if (!game.user?.isGM) return;
+      try {
+        const actorId = fresh.dataset.actorId || null;
+        const vowId   = fresh.dataset.vowId || null;
+        const actor   = (actorId && game.actors?.get?.(actorId)) || getPlayerActors()[0] || null;
+        const vow     = readVows(actor).find(v => v.id === vowId);
+        if (actor && vow) {
+          const { milestoneTicks } = await import("./moves/milestone.js");
+          const ticks = milestoneTicks(vow.rank);
+          await markVowProgress(actor, vow.id, ticks);
+          await postReachMilestoneCard(vow, ticks);
+        }
+        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
+          .catch(err => console.warn(`${MODULE_ID} | milestone picker resolve update failed:`, err?.message ?? err));
+      } catch (err) {
+        console.error(`${MODULE_ID} | Milestone picker click failed:`, err);
+      }
+    });
+  }
+}
+onChatMessageRender((message, root) => wireMilestonePickerButtons(message, root));
 
 /**
  * Wire the "Roll <move>" button on NWMA cards.
