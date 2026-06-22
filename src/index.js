@@ -1305,9 +1305,14 @@ export function registerChatHook() {
 
       // Face Defeat — roll pay_the_price d100, post a visible card, and dispatch
       // any routable suffer entry (same behaviour as typing !pay-the-price).
+      // Capture the PtP reversals (clocks advanced + suffer meter applied) so the
+      // burn button can undo them when the player burns momentum to upgrade the outcome.
+      let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        await postFaceDefeatPayThePriceCard().catch(err =>
-          console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err));
+        ptpReversals = await postFaceDefeatPayThePriceCard().catch(err => {
+          console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err);
+          return null;
+        });
       }
 
       // Step 7: relevance resolver — picks the narrator-permission block
@@ -1361,7 +1366,7 @@ export function registerChatHook() {
       // active character so the card can carry a 🔥 Burn Momentum button when
       // the dice would actually improve under burn.
       const burnActor   = getPlayerActors()[0] ?? null;
-      const burnState   = buildBurnState(resolution, burnActor);
+      const burnState   = buildBurnState(resolution, burnActor, ptpReversals);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
@@ -2696,7 +2701,7 @@ async function postFaceDefeatPayThePriceCard() {
     result = rollOracle("pay_the_price");
   } catch (err) {
     console.warn(`${MODULE_ID} | face defeat pay_the_price roll failed:`, err);
-    return;
+    return null;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const routeFooter = result.sufferRoute
@@ -2709,20 +2714,38 @@ async function postFaceDefeatPayThePriceCard() {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFaceDefeatPayThePriceCard: chat post failed:`, err?.message ?? err);
-    return;
+    return null;
   }
+
+  // Dispatch suffer executor first (before clock advance) so meter changes land
+  // before the burn button is visible. Track which route fired so the burn
+  // reversal can undo only what was actually applied.
+  let sufferMeterDelta = null;
   if (result.sufferRoute) {
     await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
       console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
+    // Only track simple PC-meter routes; withstand_damage / companion_takes_a_hit
+    // affect vehicle/companion stats and are excluded from auto-reversal.
+    const { move, amount } = result.sufferRoute;
+    const REVERSIBLE = { endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply", lose_momentum: "momentum" };
+    if (REVERSIBLE[move]) {
+      sufferMeterDelta = { move, amount: amount ?? 1, meterKey: REVERSIBLE[move] };
+    }
   }
-  await advanceClocksOnPayThePrice().catch(err =>
-    console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err));
+
+  const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
+    console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err);
+    return [];
+  });
+
   scheduleOracleNarration({
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
     question:   "Face Defeat",
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
   });
+
+  return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDelta };
 }
 
 /**
@@ -2738,13 +2761,13 @@ async function postFaceDefeatPayThePriceCard() {
  * world/actor writes are GM-only, so on a player client this is a silent no-op.
  */
 async function advanceClocksOnPayThePrice() {
-  if (!game.user?.isGM) return;
+  if (!game.user?.isGM) return [];
   const advanced = [];
 
   try {
     const { advanceTensionClocksForPayThePrice } = await import("./clocks/clocks.js");
     for (const c of await advanceTensionClocksForPayThePrice()) {
-      advanced.push({ name: c.name, type: "tension", filled: c.filled, segments: c.segments, triggered: c.triggered });
+      advanced.push({ _id: c._id, name: c.name, type: "tension", filled: c.filled, segments: c.segments, triggered: c.triggered });
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: tension clocks failed:`, err?.message ?? err);
@@ -2754,14 +2777,14 @@ async function advanceClocksOnPayThePrice() {
     const { getPlayerActors, advanceVowClocks } = await import("./character/actorBridge.js");
     for (const actor of getPlayerActors()) {
       for (const v of await advanceVowClocks(actor)) {
-        advanced.push({ name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
+        advanced.push({ actorId: v.actorId, itemId: v.itemId, name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
       }
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: vow clocks failed:`, err?.message ?? err);
   }
 
-  if (!advanced.length) return;
+  if (!advanced.length) return advanced;
   const lines = advanced.map(a =>
     `<li>${escapeChatHtml(a.name)} — ${a.filled}/${a.segments}${a.triggered ? " <strong>(TRIGGERED)</strong>" : ""}</li>`,
   ).join("");
@@ -2796,6 +2819,8 @@ async function advanceClocksOnPayThePrice() {
       }
     }, 0);
   }
+
+  return advanced;
 }
 
 async function postFulfillVowCard({ track, legacyTicks }) {

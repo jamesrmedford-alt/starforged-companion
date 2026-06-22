@@ -571,13 +571,38 @@ export async function advanceVowClocks(actor, { by = 1 } = {}) {
     const next = Math.min(cur + by, max);
     try {
       await v.update({ "system.clockTicks": next }, { suppressLog: true });
-      advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max });
+      advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id });
     } catch (err) {
       console.error(`actorBridge | advanceVowClocks failed for ${v.name ?? "vow"}:`, err);
     }
   }
   if (advanced.length) invalidateActorCache(actor.id);
   return advanced;
+}
+
+/**
+ * Revert vow-clock ticks advanced by a Pay the Price that was subsequently
+ * undone by burning momentum. Each entry specifies `{ actorId, itemId }`.
+ * Silently skips entries where the actor or item cannot be found, or the
+ * clock is already at zero. GM-gated at the call site.
+ *
+ * @param {Array<{actorId:string, itemId:string}>} entries
+ */
+export async function revertVowClocksForBurn(entries) {
+  if (!entries?.length) return;
+  for (const { actorId, itemId } of entries) {
+    const actor = globalThis.game?.actors?.get?.(actorId);
+    const item  = actor?.items?.find?.(i => i.id === itemId);
+    if (!item) continue;
+    const cur = Number(item.system?.clockTicks ?? 0);
+    if (cur <= 0) continue;
+    try {
+      await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
+      invalidateActorCache(actorId);
+    } catch (err) {
+      console.error(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err);
+    }
+  }
 }
 
 

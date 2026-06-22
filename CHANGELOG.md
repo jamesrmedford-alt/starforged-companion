@@ -13,6 +13,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Suffer choices can no longer freeze the game.** Choosing a cost after a weak hit or miss (e.g. Face Danger's "make a suffer move") is now a tap-to-resolve chat card instead of a pop-up dialog. The old dialog was awaited mid-move, so if it failed to appear the whole move pipeline jammed and every later action showed "a move is already being resolved." Your choices and their effects are unchanged — they just can't lock you up anymore.
 - Fixed: **Oracle narration no longer silently fails.** A bug stopped Ask the Oracle / Pay the Price from generating their narrator follow-up; fixed.
 - Fixed: **Burning momentum no longer leaves stale narration in the narrator's memory.** The struck-through pre-burn prose is now excluded from the recent-narration context, so the narrator builds on the upgraded outcome, not the one that didn't happen.
+- Fixed: **Burning momentum now fully reverses the original miss.** Clicking 🔥 Burn Momentum now also rewinds any clocks that ticked from the Pay the Price trigger and refunds any meter loss (health/spirit/supply) the suffer executor applied — not just the meter fields carried on the move card itself.
 
 ## [1.7.20] — 2026-06-21
 
