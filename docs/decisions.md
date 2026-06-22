@@ -1469,3 +1469,46 @@ the predetermined results into a synthetic evaluated `Roll` keeps the logic pure
 - *Gate behind a Companion setting* — rejected (for now); Dice So Nice is itself
   opt-in, so "animate when it's installed, no-op when it isn't" matches how game
   systems integrate it and needs no setting to discover.
+
+---
+
+## Placeholder figures are renamed in place; genuinely-named entities are never auto-merged
+
+**Decision:** When the entity detector sees a narration that reveals a proper
+name for a figure already recorded under a placeholder name ("Unknown Suited
+Figure" → "Vex"), it emits a `renames: [{ from, to }]` entry instead of a new
+entity, and `applyEntityRenames` (in `src/entities/entityExtractor.js`) renames
+the existing connection in place. The detection prompt is given a "PLACEHOLDER
+FIGURES" list (`collectPlaceholderConnectionNames`) so the model knows which
+established entities may be named later. The rename is **bounded to placeholder
+connections** — `isPlaceholderName` must be true for the `from` record, the
+target name must not already belong to another entity, and the whole path is
+GM-gated. A renamed figure is also defensively stripped from the `entities`
+array in `parseDetectionResponse` so it can never be both renamed and recreated.
+A GM-visible "Identity revealed" card records the link.
+
+**Reason:** Detection dedups by name only (the prompt's ESTABLISHED ENTITIES
+list + `entityExistsAnyType`). A newly-revealed name matches nothing on those
+lists, so an introduced-then-named figure produced a *second* connection card —
+the playtest "Vex" duplicate, where the suited figure the crew met became a
+separate "Vex" connection with a re-rolled role and a different portrait. Only
+the detection model, which sees the dialogue, can connect "Vex" to "the suited
+figure", so the reconciliation has to be model-driven via a dedicated `renames`
+output rather than a code-side string heuristic.
+
+**Rejected:**
+- *Auto-merge any detected rename, including of properly-named entities* —
+  rejected; a model hiccup would silently collapse two distinct characters,
+  which is hard to undo. The placeholder bound keeps the blast radius to
+  figures that were never properly named in the first place; a missed rename
+  just falls back to the old "treat as new" behaviour, which the GM can dismiss.
+- *Surface every potential rename as a GM confirm dialog* — rejected for the
+  placeholder case; it reintroduces the confirm-ceremony the maintainer called
+  out as friction (see the lore-confirmation discussion). The placeholder bound
+  makes auto-apply safe enough, and the "Identity revealed" card keeps it
+  visible. (Renames of genuinely-named entities are simply not attempted — if
+  that case ever needs handling, a confirm affordance is the place to add it.)
+- *Stop auto-creating a connection for an unnamed figure in the first place* —
+  rejected as the fix here; unnamed figures still deserve a card so they can be
+  referenced and developed. Renaming in place preserves that card (and its
+  accumulated notes/portrait) across the naming.

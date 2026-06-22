@@ -22,6 +22,7 @@ import {
   routeEntityDrafts,
   routeWorldJournalResults,
   appendGenerativeTierUpdates,
+  applyEntityRenames,
   PACED_NARRATIVE_MOVE_ID,
   PACED_NARRATIVE_OUTCOME,
 } from '../entities/entityExtractor.js';
@@ -479,6 +480,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       campaignState,
     );
     await routeWorldJournalResults(detection.worldJournal, campaignState);
+    // Renames before drafts: a placeholder figure revealed to have a proper
+    // name is renamed in place, not duplicated into a new connection card.
+    await applyEntityRenames(detection.renames, campaignState);
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
@@ -1533,6 +1537,9 @@ export async function runPacedDetection(narrationText, campaignState) {
       campaignState,
     );
     await routeWorldJournalResults(detection.worldJournal, campaignState);
+    // Renames before drafts: a placeholder figure revealed to have a proper
+    // name is renamed in place, not duplicated into a new connection card.
+    await applyEntityRenames(detection.renames, campaignState);
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
       sessionId:            campaignState?.currentSessionId ?? '',

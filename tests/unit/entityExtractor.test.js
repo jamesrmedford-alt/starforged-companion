@@ -38,6 +38,8 @@ import {
   normalizeEntityName,
   buildConnectionSeedData,
   buildShipSeedData,
+  isPlaceholderName,
+  applyEntityRenames,
 } from "../../src/entities/entityExtractor.js";
 import * as wj from "../../src/world/worldJournal.js";
 import {
@@ -140,6 +142,136 @@ describe("parseDetectionResponse — entity section", () => {
     const result = parseDetectionResponse("not json at all", {});
     expect(result.entities).toEqual([]);
     expect(result.worldJournal.lore).toEqual([]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// isPlaceholderName + rename detection (Vex / "Unknown Suited Figure" dup)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isPlaceholderName", () => {
+  it("flags auto-generated placeholder names", () => {
+    expect(isPlaceholderName("Unknown Suited Figure")).toBe(true);
+    expect(isPlaceholderName("Unknown Connection")).toBe(true);
+    expect(isPlaceholderName("The Stranger")).toBe(true);
+    expect(isPlaceholderName("a mysterious figure")).toBe(true);
+    expect(isPlaceholderName("Unidentified operative")).toBe(true);
+  });
+
+  it("does not flag proper names", () => {
+    expect(isPlaceholderName("Vex")).toBe(false);
+    expect(isPlaceholderName("Karthik Freeman")).toBe(false);
+    expect(isPlaceholderName("ISV Buhari-Adler")).toBe(false);
+    expect(isPlaceholderName("")).toBe(false);
+    expect(isPlaceholderName(null)).toBe(false);
+  });
+});
+
+describe("parseDetectionResponse — renames", () => {
+  it("extracts valid { from, to } rename pairs", () => {
+    const raw = JSON.stringify({
+      entities: [],
+      renames: [{ from: "Unknown Suited Figure", to: "Vex" }],
+    });
+    const result = parseDetectionResponse(raw, {});
+    expect(result.renames).toEqual([{ from: "Unknown Suited Figure", to: "Vex" }]);
+  });
+
+  it("drops an entity that is also listed as a rename target (no dup-and-rename)", () => {
+    const raw = JSON.stringify({
+      entities: [{ type: "connection", name: "Vex", confidence: "high" }],
+      renames:  [{ from: "Unknown Suited Figure", to: "Vex" }],
+    });
+    const result = parseDetectionResponse(raw, {});
+    expect(result.entities).toEqual([]);            // Vex not created as new
+    expect(result.renames).toHaveLength(1);
+  });
+
+  it("ignores malformed or no-op renames", () => {
+    const raw = JSON.stringify({
+      entities: [],
+      renames: [
+        { from: "", to: "Vex" },                     // missing from
+        { from: "Figure", to: "" },                  // missing to
+        { from: "Same", to: "Same" },                // no-op
+        { from: "Unknown Figure", to: "Rell" },      // valid
+      ],
+    });
+    const result = parseDetectionResponse(raw, {});
+    expect(result.renames).toEqual([{ from: "Unknown Figure", to: "Rell" }]);
+  });
+
+  it("defaults renames to [] when absent", () => {
+    const result = parseDetectionResponse(JSON.stringify({ entities: [] }), {});
+    expect(result.renames).toEqual([]);
+  });
+});
+
+describe("applyEntityRenames", () => {
+  const placeholderState = { connectionIds: ["c1"] };
+  const getConn = (id) => (id === "c1" ? { name: "Unknown Suited Figure" } : null);
+
+  it("renames a placeholder connection in place (GM)", async () => {
+    const updates = [];
+    const notices = [];
+    const applied = await applyEntityRenames(
+      [{ from: "Unknown Suited Figure", to: "Vex" }],
+      placeholderState,
+      {
+        isGM: true,
+        getConn,
+        updateConn:   (id, u) => { updates.push({ id, u }); return Promise.resolve(); },
+        entityExists: () => false,
+        postNotice:   (a) => { notices.push(a); return Promise.resolve(); },
+      },
+    );
+    expect(updates).toEqual([{ id: "c1", u: { name: "Vex" } }]);
+    expect(applied).toEqual([{ from: "Unknown Suited Figure", to: "Vex", id: "c1" }]);
+    expect(notices).toHaveLength(1);
+  });
+
+  it("refuses to rename a genuinely-named connection (no auto-merge)", async () => {
+    const updates = [];
+    const applied = await applyEntityRenames(
+      [{ from: "Karthik Freeman", to: "Vex" }],
+      { connectionIds: ["c1"] },
+      {
+        isGM: true,
+        getConn:      () => ({ name: "Karthik Freeman" }),
+        updateConn:   (id, u) => { updates.push({ id, u }); return Promise.resolve(); },
+        entityExists: () => false,
+      },
+    );
+    expect(updates).toEqual([]);
+    expect(applied).toEqual([]);
+  });
+
+  it("refuses when the target name already belongs to another entity", async () => {
+    const updates = [];
+    const applied = await applyEntityRenames(
+      [{ from: "Unknown Suited Figure", to: "Vex" }],
+      placeholderState,
+      {
+        isGM: true,
+        getConn,
+        updateConn:   (id, u) => { updates.push({ id, u }); return Promise.resolve(); },
+        entityExists: () => true,   // "Vex" already exists
+      },
+    );
+    expect(updates).toEqual([]);
+    expect(applied).toEqual([]);
+  });
+
+  it("is a no-op for non-GM clients", async () => {
+    const updates = [];
+    const applied = await applyEntityRenames(
+      [{ from: "Unknown Suited Figure", to: "Vex" }],
+      placeholderState,
+      { isGM: false, getConn, updateConn: (id, u) => { updates.push({ id, u }); return Promise.resolve(); } },
+    );
+    expect(updates).toEqual([]);
+    expect(applied).toEqual([]);
   });
 });
 
@@ -757,6 +889,18 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toContain('"entities"');
     expect(prompt).toContain('"worldJournal"');
     expect(prompt).toContain("stateTransitions");
+    expect(prompt).toContain('"renames"');
+  });
+
+  it("lists placeholder connections so the model can rename instead of duplicate", () => {
+    const fixture = buildFullCampaignState();
+    const { journalId } = addConnectionEntity(null, { name: "Unknown Suited Figure" });
+    fixture.campaignState.connectionIds.push(journalId);
+
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", fixture.campaignState);
+    expect(prompt).toContain("PLACEHOLDER FIGURES");
+    expect(prompt).toContain("Unknown Suited Figure");
+    fixture.restore();
   });
 
   it("documents the salience field and its conservative rubric", () => {

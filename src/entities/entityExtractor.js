@@ -33,7 +33,7 @@
 import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
-import { getConnection, createConnection } from "./connection.js";
+import { getConnection, createConnection, updateConnection } from "./connection.js";
 import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
@@ -108,6 +108,29 @@ export function normalizeEntityName(name) {
   const m = n.match(/^([a-z]+)\.?\s+(.+)$/);
   if (m && HONORIFIC_PREFIXES.has(m[1])) n = m[2];
   return n.trim();
+}
+
+/**
+ * Heuristic: does this look like an auto-generated placeholder name for an
+ * as-yet-unnamed figure ("Unknown Suited Figure", "Unknown Connection", "The
+ * Stranger") rather than a proper name? Used to bound the rename/identity-merge
+ * path (a placeholder figure later named in the fiction is renamed in place;
+ * genuinely-named entities are never auto-merged). Deliberately conservative —
+ * a false negative just falls back to the old "treat as new" behaviour, which
+ * the GM can dismiss, whereas a false positive would wrongly collapse two
+ * distinct characters.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isPlaceholderName(name) {
+  const n = String(name ?? "").trim();
+  if (!n) return false;
+  // Leading generic qualifier: "Unknown …", "Unnamed …", "Mysterious …", "The …"
+  if (/^(unknown|unnamed|unidentified|mysterious|the)\b/i.test(n)) return true;
+  // Generic noun standing in for a person, anywhere in the name.
+  if (/\b(figure|stranger|newcomer|silhouette|individual|operative)\b/i.test(n)) return true;
+  return false;
 }
 
 
@@ -209,9 +232,10 @@ export const PACED_NARRATIVE_OUTCOME = "n/a";
  * confusing the model with a fake move id (suggestion-loop remediation §C).
  */
 export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState) {
-  const established = collectEstablishedEntityNames(campaignState);
-  const dismissed   = (campaignState?.dismissedEntities ?? []).filter(Boolean);
-  const pending     = collectPendingDraftNames();
+  const established  = collectEstablishedEntityNames(campaignState);
+  const placeholders = collectPlaceholderConnectionNames(campaignState);
+  const dismissed    = (campaignState?.dismissedEntities ?? []).filter(Boolean);
+  const pending      = collectPendingDraftNames();
 
   const wjState = describeWorldJournalState(campaignState);
 
@@ -247,6 +271,13 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `do not return these again, the GM has them under review):`,
     pending.length ? pending.join(", ") : "(none)",
     ``,
+    `UNNAMED / PLACEHOLDER FIGURES (established entities introduced without a`,
+    `proper name). If THIS narration reveals a real name for one of them — e.g.`,
+    `the figure recorded as "Unknown Suited Figure" gives the name "Vex" — do`,
+    `NOT return a new connection; instead record it under "renames" below, with`,
+    `"from" set to the exact placeholder name and "to" the revealed name:`,
+    placeholders.length ? placeholders.join(", ") : "(none)",
+    ``,
     `DISMISSED NAMES (do not return these — the GM has already rejected them):`,
     dismissed.length ? dismissed.join(", ") : "(none)",
     ``,
@@ -261,6 +292,9 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `  "entities": [`,
     `    { "type": string, "name": string, "description": string,`,
     `      "confidence": "high"|"medium"|"low" }`,
+    `  ],`,
+    `  "renames": [`,
+    `    { "from": string, "to": string }`,
     `  ],`,
     `  "worldJournal": {`,
     `    "lore": [`,
@@ -304,6 +338,10 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `Threat rules: only named or distinctly typed dangers with narrative weight.`,
     `Entity rules: only return entities clearly named or distinctly typed.`,
     `Do NOT return generic references ("a guard", "the station", "some raiders").`,
+    `Rename rules: only emit a rename when the narration gives a proper name to`,
+    `one of the PLACEHOLDER FIGURES above. "from" must be exactly one of those`,
+    `placeholder names; never rename an already-properly-named entity. A renamed`,
+    `figure must NOT also appear in "entities".`,
     `State transitions: compare narration against the CURRENT WORLD JOURNAL STATE`,
     `above. Threat resolved/escalated, lore contradicted, faction attitude shift.`,
     `Return empty arrays for any section with nothing to report.`,
@@ -362,15 +400,30 @@ export function parseDetectionResponse(text, campaignState) {
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
 
+  // Renames: a placeholder figure (e.g. "Unknown Suited Figure") revealed to
+  // have a proper name (e.g. "Vex"). Validate to { from, to } string pairs.
+  const renames = (Array.isArray(parsed?.renames) ? parsed.renames : [])
+    .map(r => ({
+      from: typeof r?.from === "string" ? r.from.trim() : "",
+      to:   typeof r?.to   === "string" ? r.to.trim()   : "",
+    }))
+    .filter(r => r.from && r.to && normalizeEntityName(r.from) !== normalizeEntityName(r.to));
+
+  // A name being renamed TO must never also be created as a brand-new entity —
+  // belt-and-braces in case the model lists it in both places.
+  const renameTargets = new Set(renames.map(r => normalizeEntityName(r.to)).filter(Boolean));
+
   const filteredEntities = entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
     .filter(e => (e.confidence ?? "high") !== "low")
     .filter(e => !dismissed.has(normalizeEntityName(e.name)))
     .filter(e => !established.has(normalizeEntityName(e.name)))
-    .filter(e => !pending.has(normalizeEntityName(e.name)));
+    .filter(e => !pending.has(normalizeEntityName(e.name)))
+    .filter(e => !renameTargets.has(normalizeEntityName(e.name)));
 
   return {
     entities: filteredEntities,
+    renames,
     worldJournal: {
       lore:             Array.isArray(wj.lore)             ? wj.lore             : [],
       threats:          Array.isArray(wj.threats)          ? wj.threats          : [],
@@ -456,6 +509,94 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   return { created, queued };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTING — renames (placeholder figure revealed to have a proper name)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Apply detected entity renames: a placeholder figure ("Unknown Suited Figure")
+ * revealed to have a proper name ("Vex") is renamed in place rather than
+ * duplicated into a second connection card. GM-gated (writes the actor /
+ * record). Bounded to placeholder connections — a "rename" whose `from` is a
+ * genuinely-named entity is ignored, so two distinct characters are never
+ * auto-merged on a model hiccup. Fail-open per rename; never throws.
+ *
+ * @param {Array<{from:string,to:string}>} renames
+ * @param {Object} campaignState
+ * @param {Object} [deps]                  — injection seam for tests
+ * @param {boolean}  [deps.isGM]
+ * @param {Function} [deps.getConn]        (id) => record
+ * @param {Function} [deps.updateConn]     (id, updates) => Promise
+ * @param {Function} [deps.entityExists]   (name, state) => boolean
+ * @param {Function} [deps.postNotice]     (applied) => Promise
+ * @returns {Promise<Array<{from:string,to:string,id:string}>>} applied renames
+ */
+export async function applyEntityRenames(renames, campaignState, deps = {}) {
+  const isGM = deps.isGM ?? globalThis.game?.user?.isGM ?? false;
+  if (!isGM) return [];
+  if (!Array.isArray(renames) || !renames.length) return [];
+
+  const getConn      = deps.getConn      ?? getConnection;
+  const updateConn   = deps.updateConn   ?? updateConnection;
+  const entityExists = deps.entityExists ?? entityExistsAnyType;
+  const ids          = campaignState?.connectionIds ?? [];
+  const applied      = [];
+
+  for (const { from, to } of renames) {
+    const fromNorm = normalizeEntityName(from);
+    const toNorm   = normalizeEntityName(to);
+    if (!fromNorm || !toNorm || fromNorm === toNorm) continue;
+    // Never rename onto a name that already belongs to another entity.
+    if (entityExists(to, campaignState)) continue;
+
+    // Find the placeholder connection this rename targets.
+    let targetId = null, targetRec = null;
+    for (const id of ids) {
+      let rec = null;
+      try { rec = getConn(id); } catch { continue; }
+      if (rec?.name && normalizeEntityName(rec.name) === fromNorm) {
+        targetId = id; targetRec = rec; break;
+      }
+    }
+    if (!targetId || !targetRec) continue;
+    // Safety bound: only collapse placeholder figures, never properly-named ones.
+    if (!isPlaceholderName(targetRec.name)) continue;
+
+    try {
+      await updateConn(targetId, { name: to });
+      applied.push({ from: targetRec.name, to, id: targetId });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
+    }
+  }
+
+  if (applied.length) {
+    const postNotice = deps.postNotice ?? postRenameNoticeCard;
+    try {
+      await postNotice(applied);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | applyEntityRenames: rename notice failed:`, err?.message ?? err);
+    }
+  }
+  return applied;
+}
+
+/**
+ * GM-visible notice that an introduced figure was identified by name, so the
+ * continuity (the existing card was renamed, not duplicated) is visible rather
+ * than silent — the gap the playtest flagged.
+ */
+async function postRenameNoticeCard(applied) {
+  const lines = applied
+    .map(a => `<li><strong>${escapeHtml(a.from)}</strong> is now known as <strong>${escapeHtml(a.to)}</strong></li>`)
+    .join("");
+  await globalThis.ChatMessage?.create?.({
+    content: `<div class="sf-card sf-card--rename"><div class="sf-card-header">◈ Identity revealed</div><ul>${lines}</ul></div>`,
+    flags:   { [MODULE_ID]: { entityRenameCard: true } },
+  });
 }
 
 
@@ -1477,6 +1618,7 @@ function readApiKey() {
 function emptyDetection() {
   return {
     entities: [],
+    renames: [],
     worldJournal: {
       lore: [], threats: [], factionUpdates: [],
       locationUpdates: [], stateTransitions: [],
@@ -1530,6 +1672,27 @@ function collectEstablishedEntityNames(campaignState) {
     }
   }
   return [...names];
+}
+
+/**
+ * Names of established CONNECTIONS whose recorded name still reads as a
+ * placeholder (isPlaceholderName). Fed to the detection prompt so the model can
+ * map a freshly-revealed proper name onto the existing unnamed figure and emit
+ * a rename instead of a duplicate. Connections only — a ship or settlement is
+ * not "named later in dialogue" the way an introduced person is.
+ *
+ * @param {Object} campaignState
+ * @returns {string[]}
+ */
+function collectPlaceholderConnectionNames(campaignState) {
+  if (!campaignState) return [];
+  const out = [];
+  for (const id of campaignState.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConnection(id); } catch { continue; }
+    if (rec?.name && isPlaceholderName(rec.name)) out.push(rec.name.trim());
+  }
+  return out;
 }
 
 /**
