@@ -3746,6 +3746,16 @@ Hooks.once("ready", () => {
       console.warn(`${MODULE_ID} | Quickstart macro setup failed:`, err?.message ?? err)
     );
 
+    // ✦ Campaign Start — full campaign-launch sequence (quickstart → envision
+    // ship → finalize connections → begin session → inciting incident).
+    import("./session/campaignStart.js").then(({ runCampaignStart, ensureCampaignStartMacro }) => {
+      const mod = game.modules.get(MODULE_ID);
+      if (mod) mod.api = { ...(mod.api ?? {}), runCampaignStart };
+      return ensureCampaignStartMacro();
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | Campaign Start macro setup failed:`, err?.message ?? err)
+    );
+
     // World Journal — create the folder + four category journals if missing.
     // Phase 3 only writes; the combined detection pass that auto-populates is
     // Phase 4. Errors are logged and do not block the rest of the ready hook.
