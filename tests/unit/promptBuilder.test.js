@@ -98,4 +98,34 @@ describe("buildNeutralPortraitPrompt — moderation-retry fallback (finding #3)"
     expect(buildNeutralPortraitPrompt("ship", {}).size).toBe("1792x1024");
     expect(buildNeutralPortraitPrompt("connection", {}).size).toBe("1024x1024");
   });
+
+  it("builds a connection from pronouns, role, first look, and name only", () => {
+    const { prompt } = buildNeutralPortraitPrompt("connection", {
+      pronouns: "she/her",
+      role:     "Criminal",
+      firstLook: ["Scruffy"],
+      name:     "Karthik Freeman",
+      // dropped fields — must NOT leak into the minimal fallback prompt
+      goal:        "Collect a debt",
+      disposition: "Suspicious",
+    });
+    expect(prompt).toContain("a woman");
+    expect(prompt).toContain("role: Criminal");
+    expect(prompt).toContain("first look: Scruffy");
+    expect(prompt).toContain("named Karthik Freeman");
+    expect(prompt).not.toContain("Collect a debt");
+    expect(prompt).not.toContain("Suspicious");
+  });
+
+  it("sanitises a flagged first look in the neutral fallback", () => {
+    const { prompt } = buildNeutralPortraitPrompt("connection", {
+      pronouns: "he/him",
+      role:     "Mercenary",
+      firstLook: ["wounded and bleeding"],
+      name:     "Dane",
+    });
+    expect(prompt).not.toContain("wounded");
+    expect(prompt).not.toContain("bleeding");
+    expect(prompt).toContain("bearing the marks of hardship");
+  });
 });

@@ -1543,6 +1543,41 @@ export async function runPacedDetection(narrationText, campaignState) {
   }
 }
 
+/**
+ * Resolve which ESTABLISHED entities a block of narration mentions and append
+ * any narrator-added developments to their generative tier. For narration
+ * paths that produce prose but have no player-typed text to scope relevance
+ * from — notably the inciting incident, whose opening fiction can develop (or
+ * kill) an established sector connection. Lexical match against the prose
+ * itself (moveId null → no Haiku classifier in resolveRelevance). The caller
+ * GM-gates; fail-open so it never blocks the surrounding flow.
+ *
+ * The move and paced paths always run BOTH detection (new entities) and the
+ * tier update (existing entities). The inciting path previously ran only
+ * detection, so an NPC the opening fiction developed or killed kept an empty
+ * "Narrator-added details" section (playtest v1.7.20 — the inciting incident
+ * killed Karthik Freeman but her connection card recorded nothing).
+ *
+ * @param {string} narrationText
+ * @param {Object} campaignState
+ * @returns {Promise<Array>} applied tier updates ({ journalId, detail })
+ */
+export async function runNarrationTierUpdate(narrationText, campaignState) {
+  try {
+    if (!narrationText?.trim()) return [];
+    const { entityIds, entityTypes } = await resolvePathRelevance(narrationText, campaignState);
+    if (!entityIds.length) return [];
+    const refs = entityIds.map((id, i) => ({ journalId: id, type: entityTypes?.[i] }));
+    return await appendGenerativeTierUpdates(
+      narrationText, refs,
+      campaignState?.currentSessionId, campaignState?.sessionNumber,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | runNarrationTierUpdate failed:`, err?.message ?? err);
+    return [];
+  }
+}
+
 async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove

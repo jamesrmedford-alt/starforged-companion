@@ -7,6 +7,8 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Added: **3D dice animations (Dice So Nice).** When the Dice So Nice module is installed, the Companion's own rolls now tumble in 3D: move resolutions (action die + challenge dice), `!bond`, Ask the Oracle, Pay the Price, the decisive-action cost roll, and custom-oracle table rolls. The animated dice always match the numbers on the result card. No setup required — it activates automatically when Dice So Nice is present and is silently skipped when it isn't.
+- Fixed: **NPCs developed in the inciting incident now get their notes.** When the opening fiction builds on — or kills off — an established connection, that development is now recorded under the character's "Narrator-added details", as it already was for moves and paced narration. (Previously the inciting incident only captured brand-new entities, so an NPC's death in the opening left their card blank.)
+- Fixed: **Character portraits are more resilient to content moderation.** When the image provider refuses a portrait, the Companion now retries with a minimal prompt built only from the character's pronouns, role, first look, and name (sanitised), instead of one that could still trip the filter.
 
 ## [1.7.20] — 2026-06-21
 
