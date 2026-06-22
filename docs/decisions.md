@@ -1512,3 +1512,48 @@ output rather than a code-side string heuristic.
   rejected as the fix here; unnamed figures still deserve a card so they can be
   referenced and developed. Renaming in place preserves that card (and its
   accumulated notes/portrait) across the naming.
+
+---
+
+## Suffer choices are a non-blocking chat card, not a blocking dialog
+
+**Decision:** A move outcome that requires the player to choose a cost (a
+`sufferPrompt` — "make a suffer move (-1)", "lose −1 health OR lose momentum
+−2", etc.) is surfaced as a **non-blocking chat card with buttons**
+(`src/moves/sufferCard.js`), not the modal `SufferChoiceDialog`. The move
+pipeline posts the card and continues; the move-concurrency lock
+(`pendingMove`) is released normally. The player taps a button to apply the
+choice, which runs the same `resolveSufferSelection` + `runSufferResolution`
+path and the same `requires`-filtering the dialog used — so meters stay exactly
+as correct; nothing is auto-applied or guessed.
+
+**Reason:** The dialog was `await`ed *inside* the move lock (in
+`persistResolution`). The v1.7.16 settle-on-close fix only helps if the dialog
+actually renders — in a playtest it failed to render amid other errors, the
+`await` never settled, and `pendingMove` stayed `true`, so every later move
+reported "a move is already being resolved." Taking the interactive step out of
+the locked section removes the entire failure class: a chat card always renders
+(it's just chat HTML) and, even if a player ignores it, nothing can hang the
+pipeline. This reverses the F16 scope decision ("Q1: blocking … No auto-timeout
+default") — that decision optimised for "never apply a silent default," which
+this design also satisfies (the player still chooses), while fixing the
+lock-up the blocking approach caused.
+
+**Rejected:**
+- *Auto-apply a default and drop the choice entirely* — rejected; tracing every
+  `sufferPrompt` showed blind auto-pick would double-apply meters (Secure an
+  Advantage weak hit bakes +2 momentum *and* lists it as option 0 → +4),
+  ignore `requires` gates ("+1 health if not wounded" applied while wounded),
+  and default Face Death to "noble sacrifice (PC dies)". A wrong silent meter
+  change is worse than a tap.
+- *Keep the dialog but release the lock before opening it* — rejected; the
+  pipeline writes `campaignState` *after* the suffer step, so releasing earlier
+  reintroduces the write race the lock exists to prevent. Moving the choice
+  out of the critical path entirely (the card) is cleaner.
+- *Keep the dialog, just open it non-blocking* — rejected; a modal that fails to
+  render still leaves the player with no way to resolve the cost. A chat card is
+  strictly more robust.
+
+The `SufferChoiceDialog` code (`promptSufferChoice` in `sufferDialog.js`)
+remains exported and unit-tested but is no longer used by the move pipeline or
+the Pay-the-Price routes.

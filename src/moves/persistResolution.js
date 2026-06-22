@@ -26,7 +26,7 @@ import {
   awardXP,
   markVowProgress,
 } from '../character/actorBridge.js';
-import { promptSufferChoice, runSufferResolution } from './sufferDialog.js';
+import { postSufferChoiceCard } from './sufferCard.js';
 import { RANK_TICKS } from '../schemas.js';
 
 const MODULE_ID  = 'starforged-companion';
@@ -179,22 +179,18 @@ async function resolveSufferPrompt(resolution, actor) {
   const isMissWithMatch = isMiss && !!resolution.isMatch;
   const executorOpts = { isMiss, isMissWithMatch };
 
-  const choice = await promptSufferChoice(prompt, actor, executorOpts);
-
-  if (choice.cancelled) {
-    if (choice.reason === 'no-app-v2') return; // test env — silently skip
-    try {
-      await globalThis.ChatMessage?.create?.({
-        content: `<div class="sf-card sf-card--suffer-cancel"><div class="sf-card-header">Resolution cancelled</div><div class="sf-card-body">No meter changes applied. Re-trigger the move when ready.</div></div>`,
-        flags: { [MODULE_ID]: { sufferCancel: true, moveId: resolution.moveId } },
-      });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | resolveSufferPrompt: cancel-card post failed:`, err?.message ?? err);
-    }
-    return;
-  }
-
-  await runSufferResolution(choice.calls, actor, executorOpts);
+  // Non-blocking: post a choice card the player taps, instead of awaiting a
+  // modal dialog INSIDE the move-concurrency lock. A dialog that failed to
+  // render or never settled wedged `pendingMove` and locked out every later
+  // move (playtest lock-up). The card applies its choice on click via the same
+  // resolveSufferSelection + runSufferResolution path the dialog used — meters
+  // stay correct and nothing is auto-applied.
+  await postSufferChoiceCard({
+    sufferPrompt: prompt,
+    actor,
+    executorOpts,
+    moveId: resolution.moveId,
+  });
 }
 
 
