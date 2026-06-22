@@ -582,6 +582,11 @@ function sessionNarratorCards(sessionId) {
     if (f.worldJournalCard) return false;
     if (f.recapCard) return false;
     if (f.draftEntityCard) return false;
+    // Burn Momentum superseded this prose — the pre-burn outcome it describes
+    // no longer happened, so it must not feed the ring or rolling summary (the
+    // upgraded re-narration card carries the live prose). Playtest: the struck
+    // pre-burn narration kept reaching the narrator.
+    if (f.burnSuperseded) return false;
     if (Array.isArray(m.whisper) && m.whisper.length) return false;
     return true;
   });
@@ -1150,8 +1155,12 @@ export async function narrateOracleFollowup({
 function buildOracleUserMessage({
   oracleName, question, rolledLine, recentContext, sentenceTarget,
 }) {
-  const recent = (recentContext && recentContext.length > 0)
-    ? `\n\nRECENT NARRATION (most recent last):\n${recentContext.join('\n\n---\n\n')}`
+  // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
+  // the scene/paced builders. Use it directly — calling .join here threw
+  // "recentContext.join is not a function" and silently killed every oracle
+  // narration follow-up (bug since the oracle-narration feature landed).
+  const recent = (typeof recentContext === 'string' && recentContext.length > 0)
+    ? `\n\nRECENT NARRATION (most recent last):\n${recentContext}`
     : '';
   const q = question?.trim() ? `Question or context: ${question.trim()}\n` : '';
   return (

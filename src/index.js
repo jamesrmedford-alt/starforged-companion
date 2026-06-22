@@ -38,6 +38,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
+import { registerSufferCardHook } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
@@ -2842,17 +2843,15 @@ async function dispatchPayThePriceSufferRoute(route) {
     return;
   }
 
-  // "any" means "player chooses which suffer move" — open the B1 generic picker.
+  // "any" means "player chooses which suffer move" — post the non-blocking B1
+  // picker card (never a blocking dialog; see sufferCard.js).
   if (route.move === "any") {
-    const { promptSufferChoice, runSufferResolution } = await import("./moves/sufferDialog.js");
-    const result = await promptSufferChoice(
-      { kind: "any", amount: route.amount ?? 2, count: 1 },
+    const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
+    await postSufferChoiceCard({
+      sufferPrompt: { kind: "any", amount: route.amount ?? 2, count: 1 },
       actor,
-    );
-    if (!result.cancelled) {
-      await runSufferResolution(result.calls, actor, { isMiss: true }).catch(err =>
-        console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute any-route failed:`, err?.message ?? err));
-    }
+      executorOpts: { isMiss: true },
+    });
     return;
   }
 
@@ -3718,6 +3717,9 @@ Hooks.once("ready", () => {
     persist:  persistResolution,
     assemble: assembleContextPacket,
   });
+  // Suffer choices are a non-blocking chat card (never a modal dialog inside the
+  // move lock — see sufferCard.js); wire its buttons.
+  registerSufferCardHook();
 
   // Pacing recent-density buffer is in-memory; clear it on world load so a
   // returning session doesn't inherit the previous run's MOVE count.
