@@ -1036,6 +1036,13 @@ export async function interrogateScene(question, campaignState, options = {}) {
     }
 
     await postSceneCard(question, response, sessionId);
+    // Mine the ANSWER for entities, factions, and lore — the same passes the
+    // paced-narrative path runs. A direct question ("who is the Triumvirate?")
+    // routinely surfaces the richest world detail of the session; without this
+    // the narrator's answer reached the chat log and the recent-narration ring
+    // but never the World Journal or entity records (playtest v1.7.22).
+    schedulePacedDetection(response, campaignState);
+    schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     return response;
 
   } catch (err) {
@@ -1052,6 +1059,8 @@ export async function interrogateScene(question, campaignState, options = {}) {
         });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId);
+          schedulePacedDetection(response, campaignState);
+          schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           return response;
         }
       } catch (retryErr) {
@@ -1537,7 +1546,7 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  * @param {Object} campaignState
  * @returns {Promise<void>}
  */
-export async function runPacedDetection(narrationText, campaignState) {
+export async function runPacedDetection(narrationText, campaignState, options = {}) {
   try {
     const detection = await runCombinedDetectionPass(
       narrationText,
@@ -1545,7 +1554,14 @@ export async function runPacedDetection(narrationText, campaignState) {
       PACED_NARRATIVE_OUTCOME,
       campaignState,
     );
-    await routeWorldJournalResults(detection.worldJournal, campaignState);
+    // The inciting incident records its own cohesive lore entry (the "Situation"
+    // line), so it asks us to skip the per-item lore spray that would otherwise
+    // scatter the opening fiction across several loosely-worded WJ-Lore pages.
+    // Factions, threats, locations, and state transitions still route normally.
+    const worldJournal = options.skipLore
+      ? { ...detection.worldJournal, lore: [] }
+      : detection.worldJournal;
+    await routeWorldJournalResults(worldJournal, campaignState);
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
     await applyEntityRenames(detection.renames, campaignState);

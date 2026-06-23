@@ -844,9 +844,15 @@ const ROLE_DESCRIPTIONS = {
     `Vow target: <Name> — <2-3 sentences on one line: who they are — for an ` +
     `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
     `role, goal, and pronouns, never reassigning or contradicting them — their ` +
-    `history with the character, and their current situation and condition>\n\n` +
+    `history with the character, and their current situation and condition>\n` +
+    `Situation: <one or two sentences on one line, third person, summarising the ` +
+    `DURABLE facts of this incident for the campaign journal — who is involved, what ` +
+    `is at stake, any named factions, and any deadline. This is the single cohesive ` +
+    `World Journal entry for the opening, so name the key players and stakes plainly ` +
+    `rather than restating the prose.>\n\n` +
     `Rules for the block: <rank> is exactly one of: troublesome, dangerous, formidable, ` +
-    `extreme, epic. The "Suggested vow" line is always present. The "Suggested clock" ` +
+    `extreme, epic. The "Suggested vow" line is always present, as is the "Situation" ` +
+    `line. The "Suggested clock" ` +
     `line appears ONLY when the incident carries explicit time pressure (something fails, ` +
     `expires, or arrives if the character is too slow) — <segments> is one of 4, 6, 8, ` +
     `10, 12 (fewer segments = tighter deadline); omit the line entirely for vows without ` +

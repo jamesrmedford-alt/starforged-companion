@@ -343,9 +343,16 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `Lore rules: only extract concrete narrative facts, not atmosphere.`,
     `Threat rules: only named or distinctly typed dangers with narrative weight.`,
     `Faction update rules: include every named faction that appears in this narration`,
-    `in "factionUpdates" — even on its first mention. Set isNew: true for factions not`,
-    `in ESTABLISHED ENTITIES; set isNew: false for factions already listed there.`,
-    `Do NOT wait for a second scene to report a faction for the first time.`,
+    `in "factionUpdates" — even on its first mention, and even when it is named only`,
+    `in passing or in possessive/adjectival form. "classified Triumvirate intelligence",`,
+    `"the Compact's enemies", and "a Devoted shrine" all name a faction — emit`,
+    `"Triumvirate", "the Compact", "the Devoted". Treat named orders, churches, cults,`,
+    `guilds, dominions, syndicates, clans, fleets, crews, and intelligence networks as`,
+    `factions. When the prose names several at once ("three religious orders — the`,
+    `Lattice, the Devoted, and the Circle of Iron"), emit ONE factionUpdates entry per`,
+    `named order. Set isNew: true for factions not in ESTABLISHED ENTITIES; set isNew:`,
+    `false for ones already listed. Never downgrade a named faction to a lore item —`,
+    `a fact ABOUT a faction may be lore, but the faction itself belongs in factionUpdates.`,
     `Location update rules: include every named specific site (vault, derelict, station,`,
     `structure) in "locationUpdates" — even on first mention. Set isNew: true for`,
     `locations not in ESTABLISHED ENTITIES.`,
@@ -514,6 +521,24 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
       }
       continue;
     }
+
+    // Factions are soft world-canon, like lore — surface them to the World
+    // Journal the moment they're named, instead of leaving them invisible in a
+    // GM-only draft card. Lore auto-confirms to WJ (the "world lore is now
+    // auto-confirmed" decision); factions did not, so a faction the narrator
+    // introduced ("the Triumvirate", "the Lattice/Devoted/Circle of Iron")
+    // never appeared anywhere until the GM happened to confirm its draft. We
+    // still queue the draft below so the GM can build a full faction entity
+    // record; the WJ entry gives the table an immediate, durable home for it.
+    if (entity.type === "faction" && !entityExistsForName(entity.name, "faction", campaignState)) {
+      await recordFactionIntelligence(
+        entity.name,
+        { summary: entity.description ?? "", isNew: true },
+        campaignState,
+      ).catch(err =>
+        console.warn(`${MODULE_ID} | routeEntityDrafts: faction WJ surface failed:`, err?.message ?? err));
+    }
+
     queued.push(entity);
   }
 
