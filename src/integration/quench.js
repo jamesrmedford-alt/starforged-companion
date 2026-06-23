@@ -1322,7 +1322,11 @@ function registerSectorCreatorTests(quench) {
 
         it("scene has the correct number of notes — one per settlement plus planet/stellar markers", async function () {
           if (!testScene || !testSector) { this.skip(); return; }
-          const notes = testScene.notes?.size ?? testScene.notes?.contents?.length ?? 0;
+          // Count only settlement/planet/stellar pins — precursor-vault / derelict
+          // site pins (flag.siteNote) are a separate concern covered by the
+          // precursorSites batch, so exclude them here.
+          const noteDocs = Array.from(testScene.notes?.contents ?? testScene.notes ?? []);
+          const notes = noteDocs.filter(n => !n.getFlag("starforged-companion", "siteNote")).length;
           // sceneBuilder creates one note per settlement, plus one extra per planet
           // and per stellar object on each settlement (see FIX 3 / FIX 4 in sceneBuilder.js).
           // Planet assignment is random, so compute the expected count from the sector data.
@@ -1336,7 +1340,10 @@ function registerSectorCreatorTests(quench) {
 
         it("scene has the correct number of drawings — one per passage", async function () {
           if (!testScene || !testSector) { this.skip(); return; }
-          const drawings = testScene.drawings?.size ?? testScene.drawings?.contents?.length ?? 0;
+          // Exclude undiscovered-passage drawings to sites (flag.sitePassage) —
+          // those are covered by the precursorSites batch.
+          const drawingDocs = Array.from(testScene.drawings?.contents ?? testScene.drawings ?? []);
+          const drawings = drawingDocs.filter(d => !d.getFlag("starforged-companion", "sitePassage")).length;
           // sceneBuilder renders both between-settlement passages and toEdge passages.
           // generateSector("expanse") always produces cfg.passages = 2.
           const expected = (testSector.mapData?.passages ?? []).length;
