@@ -422,11 +422,16 @@ export async function markVowProgress(actor, vowItemId, ticks) {
     return;
   }
 
-  const current  = item.system?.progress ?? 0;
+  // foundry-ironsworn's ProgressModel is a strict TypeDataModel whose progress
+  // field is `system.current` (a ProgressTicksField, 0–40) — there is NO
+  // `system.progress`, so writing it is silently dropped by schema validation
+  // and the vow never advances on the live sheet. Read `current` (with a legacy
+  // `progress` fallback for any pre-DataModel data) and write `current`.
+  const current  = Number(item.system?.current ?? item.system?.progress ?? 0);
   const next     = Math.min(current + ticks, 40);
 
   if (next !== current) {
-    await item.update({ 'system.progress': next });
+    await item.update({ 'system.current': next });
     invalidateActorCache(actor.id);
   }
 }

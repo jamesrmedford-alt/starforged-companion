@@ -264,6 +264,33 @@ Hooks.on("quenchReady", (quench) => {
   // exercises the same wrappers against the real game.i18n so a vendor
   // key rename surfaces here.
   registerI18nResolutionTests(quench);
+  // Move-lock lifecycle — the v1.7.12 session-bricking regression (known-issues
+  // PLAYTEST-1712 M/N/P): a consequence-rider dialog awaited inside the
+  // pendingMove lock left it set, blocking every later move. Pins the exported
+  // releasePendingMoveLock against a live world-setting round-trip and the
+  // rider-dialog-settles contract, reconstructing the resolve → rider → next-move
+  // sequence with the real primitives. No isolated-stage test could catch this.
+  registerMoveLockLifecycleTests(quench);
+  // Move mechanical effects (live) — the actual writes land on real Foundry
+  // documents, not permissive mocks: Reach a Milestone advances a vow's
+  // system.current per rank (the v1.7.21 fix wrote system.progress, which the
+  // strict ProgressModel drops); Develop Your Relationship marks a connection's
+  // relationshipTicks; a vow countdown clock advances and reverts (the burn
+  // path); and a meter refund applies. Guards the mock-divergence class that let
+  // the milestone no-op ship green.
+  registerMoveMechanicalEffectsTests(quench);
+  // Combat mechanics (live) — the combat progress-track lifecycle against the
+  // real "Starforged Progress Tracks" journal flag: Strike (in_control) vs Clash
+  // (bad_spot) position outcomes via mapConsequences, the combat-position
+  // round-trip (setCombatTrackPosition → getActiveCombatPosition, the signal the
+  // Take Decisive Action bad-spot downgrade reads), rank-aware progress marking,
+  // and track completion. Live analogues of the pure combat.js / resolver logic.
+  registerCombatMechanicsTests(quench);
+  // Inciting detection wiring — runIncitingIncident with narration ON (stubbed
+  // router) routes a faction the opening fiction names into the Factions World
+  // Journal. The existing inciting batch runs narration OFF, so the detection
+  // pass (PLAYTEST-1717 B) was never exercised end-to-end from the inciting path.
+  registerIncitingDetectionWiringTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10903,5 +10930,444 @@ function registerSessionPanelTests(quench) {
       });
     },
     { displayName: "STARFORGED: Session Panel" },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOVE LOCK LIFECYCLE — PLAYTEST-1712 M/N/P (the v1.7.12 session-bricking lockup)
+//
+// The move pipeline claims campaignState.pendingMove at entry. The regression
+// awaited the interactive consequence-rider dialog while that lock was still
+// held, so an unanswered dialog left pendingMove=true and every later input hit
+// the "a move is already being resolved" guard. The fix releases the lock BEFORE
+// the rider prompt. No isolated-stage test catches a state-lifecycle bug; this
+// drives the real exported primitives.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerMoveLockLifecycleTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.moveLockLifecycle",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(game.settings.get(MODULE, "campaignState") ?? {}));
+      });
+      after(async function () {
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      async function setLock(value) {
+        const s = game.settings.get(MODULE, "campaignState") ?? {};
+        s.pendingMove = value;
+        await game.settings.set(MODULE, "campaignState", s);
+      }
+      function lockHeld() {
+        return game.settings.get(MODULE, "campaignState")?.pendingMove === true;
+      }
+
+      describe("releasePendingMoveLock — live world-setting round-trip", function () {
+        it("clears a held lock and is an idempotent no-op once clear", async function () {
+          this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { releasePendingMoveLock } = await import(`${MODULE_PATH}/index.js`);
+
+          await setLock(true);
+          assert.isTrue(lockHeld(), "precondition: the move lock is held");
+
+          await releasePendingMoveLock();
+          assert.isFalse(lockHeld(), "the lock is released after releasePendingMoveLock()");
+
+          await releasePendingMoveLock();
+          assert.isFalse(lockHeld(), "a second release is a safe no-op");
+        });
+      });
+
+      describe("consequence-rider prompt does not re-wedge the lock", function () {
+        it("after release-before-prompt, the rider dialog settles and the lock stays free for the next move", async function () {
+          this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { releasePendingMoveLock } = await import(`${MODULE_PATH}/index.js`);
+          const { promptRiders }           = await import(`${MODULE_PATH}/moves/riderDialog.js`);
+
+          // 1. A move claims the lock at pipeline entry.
+          await setLock(true);
+
+          // 2. The pipeline releases the lock BEFORE the interactive rider prompt
+          //    (the v1.7.13 fix). The regression awaited the prompt while the lock
+          //    was still held.
+          await releasePendingMoveLock();
+          assert.isFalse(lockHeld(), "lock released before the rider prompt");
+
+          // 3. The rider prompt runs. Auto-dismiss its DialogV2 so the awaited call
+          //    settles — the "blocking dialog must settle on close" contract (an
+          //    unsettled awaited dialog is what wedged both v1.7.16 lock-ups).
+          const D = foundry.applications.api.DialogV2;
+          const realWait = D.wait;
+          D.wait = async () => ({ apply: [], progress: [] });
+          let riderResult;
+          try {
+            riderResult = await promptRiders(
+              [{ resource: "momentum", amount: 1, label: "+1 momentum", optional: true }],
+              [],
+            );
+          } finally {
+            D.wait = realWait;
+          }
+          assert.isOk(riderResult, "the rider prompt settles to a result (does not hang)");
+
+          // 4. The lock is free → the next move can proceed (not blocked by the
+          //    'a move is already being resolved' guard).
+          assert.isFalse(lockHeld(),
+            "the lock remains free after the rider step, so the next move is not blocked");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Move Lock Lifecycle" },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOVE MECHANICAL EFFECTS (live) — the actual writes land on REAL Foundry
+// documents, not permissive mocks. This is the mock-divergence class that let the
+// Reach a Milestone no-op ship green: markVowProgress wrote system.progress (a
+// field the strict ProgressModel drops) and a string-keyed tick lookup ignored
+// the numeric ChallengeRank. Also covers the sibling mechanics the user asked be
+// "similarly covered": Develop Your Relationship connection ticks, vow countdown
+// clock advance/revert (the burn path), and a meter refund.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerMoveMechanicalEffectsTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.moveMechanicalEffects",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      const createdActorIds = [];
+      let stateAtStart = null;
+
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(game.settings.get(MODULE, "campaignState") ?? {}));
+      });
+      after(async function () {
+        for (const id of createdActorIds.splice(0)) {
+          await game.actors?.get(id)?.delete().catch(() => {});
+        }
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      async function makePc(name, system = {}) {
+        const pc = await Actor.create({ name, type: "character", system });
+        if (pc?.id) createdActorIds.push(pc.id);
+        return pc;
+      }
+
+      describe("Reach a Milestone — marks the vow's system.current per rank", function () {
+        it("advances a dangerous vow by 8 ticks on the live progress Item", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { createCharacterVowItem, readVows, markVowProgress } =
+            await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const { planReachMilestone } = await import(`${MODULE_PATH}/moves/milestone.js`);
+
+          const pc = await makePc(`Quench Milestone PC ${Date.now()}`);
+          await createCharacterVowItem(pc, { name: "Reach the drifting shuttle", rank: "dangerous" });
+
+          // Live schema contract: ironsworn's ProgressModel stores ticks in
+          // system.current (NOT system.progress) and casts rank to a NUMBER.
+          const vow = (pc.items?.contents ?? []).find(
+            i => i.type === "progress" && i.system?.subtype === "vow");
+          assert.isOk(vow, "a vow progress Item was created");
+          assert.strictEqual(Number(vow.system.current), 0, "vow starts at 0 ticks (system.current)");
+
+          const plan = planReachMilestone(readVows(pc), null);
+          assert.strictEqual(plan.action, "mark", "the sole open vow auto-selects for marking");
+          assert.strictEqual(plan.ticks, 8,
+            "dangerous marks 8 ticks (rank read as the numeric ChallengeRank)");
+
+          await markVowProgress(pc, plan.vow.id, plan.ticks);
+
+          const marked = (pc.items?.contents ?? []).find(i => i.id === vow.id);
+          assert.strictEqual(Number(marked.system.current), 8,
+            "Reach a Milestone advanced the live vow track to 8 ticks (system.current)");
+        });
+      });
+
+      describe("Develop Your Relationship — marks connection progress", function () {
+        it("advances a connection's relationshipTicks per rank on the live record", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const conn = await import(`${MODULE_PATH}/entities/connection.js`);
+          const { selectConnection, planDevelopRelationship } =
+            await import(`${MODULE_PATH}/moves/developRelationship.js`);
+
+          const state    = game.settings.get(MODULE, "campaignState") ?? {};
+          const beforeIds = new Set(state.connectionIds ?? []);
+          const name     = `Quench DYR ${Date.now()}`;
+          await conn.createConnection({ name, role: "fixer", rank: "dangerous" }, state);
+
+          const after  = game.settings.get(MODULE, "campaignState") ?? {};
+          const hostId = (after.connectionIds ?? []).find(id => !beforeIds.has(id));
+          assert.isOk(hostId, "the new connection registered a host actor id");
+          if (hostId) createdActorIds.push(hostId);
+
+          const connections = (after.connectionIds ?? [])
+            .map(id => { const c = conn.getConnection(id); return c ? { ...c, __hostId: id } : null; })
+            .filter(Boolean);
+          const plan = planDevelopRelationship(selectConnection(connections, name), "strong_hit", false);
+          assert.strictEqual(plan.action, "connection-progress",
+            "an un-bonded connection marks its relationship track");
+
+          const res = await conn.markRelationshipProgress(hostId, plan.marks);
+          assert.strictEqual(res.ticksAdded, 8, "dangerous connection marks 8 ticks");
+          assert.strictEqual(conn.getConnection(hostId).relationshipTicks, 8,
+            "the live connection record persisted the new relationshipTicks");
+        });
+      });
+
+      describe("Vow countdown clock — advance on Pay the Price, revert on burn", function () {
+        it("advances and reverts clockTicks on the live vow Item", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { createCharacterVowItem, advanceVowClocks, revertVowClocksForBurn } =
+            await import(`${MODULE_PATH}/character/actorBridge.js`);
+
+          const pc = await makePc(`Quench Clock PC ${Date.now()}`);
+          await createCharacterVowItem(pc, {
+            name: "Failing life support", rank: "dangerous", clock: { max: 6 },
+          });
+          const vow = (pc.items?.contents ?? []).find(
+            i => i.type === "progress" && i.system?.subtype === "vow" && i.system?.hasClock);
+          assert.isOk(vow, "a vow with a countdown clock was created");
+          assert.strictEqual(Number(vow.system.clockTicks), 0, "clock starts empty");
+
+          const advanced = await advanceVowClocks(pc);
+          assert.strictEqual(advanced.length, 1, "one vow clock advanced on a Pay the Price");
+          assert.strictEqual(
+            Number((pc.items?.contents ?? []).find(i => i.id === vow.id).system.clockTicks), 1,
+            "clockTicks advanced to 1");
+
+          // Burning momentum reverts that advance (the playtest gap: a burn left
+          // the PtP clock tick standing).
+          await revertVowClocksForBurn([{ actorId: pc.id, itemId: vow.id }]);
+          assert.strictEqual(
+            Number((pc.items?.contents ?? []).find(i => i.id === vow.id).system.clockTicks), 0,
+            "clockTicks reverted to 0 after the burn");
+        });
+      });
+
+      describe("Burn reversal — meter refund", function () {
+        it("refunds a supply loss via applyMeterChanges on the live actor", async function () {
+          this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { applyMeterChanges } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+
+          const pc = await makePc(`Quench Refund PC ${Date.now()}`, { supply: { value: 2 } });
+          assert.strictEqual(Number(pc.system.supply.value), 2, "supply starts at 2");
+
+          // The Price took -1 supply on the original miss; the burn refunds it.
+          await applyMeterChanges(pc, { supply: +1 });
+          assert.strictEqual(Number(pc.system.supply.value), 3,
+            "supply refunded to 3 on the live actor");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Move Mechanical Effects", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMBAT MECHANICS (live) — the combat progress-track lifecycle against the real
+// "Starforged Progress Tracks" journal flag. Covers Strike (in_control) vs Clash
+// (bad_spot) position outcomes, the position round-trip the Take Decisive Action
+// bad-spot downgrade reads, rank-aware progress marking, and completion. Tracks
+// live in a journal flag (not separate documents), so the flag is snapshotted and
+// restored rather than relying on the document reaper.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerCombatMechanicsTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.combatMechanics",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+      const TRACKS_JOURNAL = "Starforged Progress Tracks";
+      const TRACKS_FLAG = "tracks";
+
+      let tracksAtStart = null;
+      const tracksJournal = () => game.journal?.find?.(j => j.name === TRACKS_JOURNAL) ?? null;
+
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        const j = tracksJournal();
+        tracksAtStart = j ? JSON.parse(JSON.stringify(j.getFlag(MODULE, TRACKS_FLAG) ?? [])) : null;
+        // Remove pre-existing active combat tracks so getActiveCombatPosition
+        // (which requires a unique active combat track) is deterministic.
+        // Restored wholesale in after().
+        if (j && tracksAtStart.some(t => t.type === "combat" && !t.completed)) {
+          await j.setFlag(MODULE, TRACKS_FLAG,
+            tracksAtStart.filter(t => !(t.type === "combat" && !t.completed)));
+        }
+      });
+      after(async function () {
+        if (!game.user?.isGM) return;
+        const j = tracksJournal();
+        if (j) await j.setFlag(MODULE, TRACKS_FLAG, tracksAtStart ?? []).catch(() => {});
+      });
+
+      describe("Strike vs Clash — combat position outcomes (mapConsequences)", function () {
+        it("Strike strong hit is in_control + 2 progress; Clash weak hit drops to bad_spot", async function () {
+          if (skipNotGM(this)) return;
+          const { mapConsequences } = await import(`${MODULE_PATH}/moves/resolver.js`);
+
+          const strike = mapConsequences("strike", "strong_hit", false);
+          assert.strictEqual(strike.combatPosition, "in_control",
+            "Strike strong hit keeps you in control (the ranged/initiative footing)");
+          assert.strictEqual(strike.combatProgress, 2, "Strike strong hit marks progress twice");
+
+          const clash = mapConsequences("clash", "weak_hit", false);
+          assert.strictEqual(clash.combatPosition, "bad_spot",
+            "Clash weak hit leaves you in a bad spot (the toe-to-toe counterblow)");
+          assert.strictEqual(clash.combatProgress, 1, "Clash weak hit marks progress once");
+        });
+      });
+
+      describe("Combat progress-track lifecycle (live journal flag)", function () {
+        it("create → mark (rank-aware) → set position → complete round-trips on the real track", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const {
+            addProgressTrack, markProgressById, setCombatTrackPosition,
+            getActiveCombatPosition, getActiveCombatTrack, completeProgressTrack,
+            listProgressTracks,
+          } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+
+          const track = await addProgressTrack({
+            label: `Quench Foe ${Date.now()}`, type: "combat", rank: "dangerous",
+          });
+          assert.isOk(track?.id, "a combat track was created");
+          assert.strictEqual(track.type, "combat", "track is combat-typed");
+          assert.strictEqual(track.ticks, 0, "track starts at 0 ticks");
+
+          // Rank-aware progress: dangerous = 8 ticks per mark.
+          const marked = await markProgressById(track.id);
+          assert.strictEqual(marked.ticks, 8, "a dangerous combat mark adds 8 ticks");
+
+          // Strike strong hit → in_control.
+          await setCombatTrackPosition(track.id, "in_control");
+          assert.strictEqual(await getActiveCombatPosition(), "in_control",
+            "combat position reads back as in_control (Strike footing)");
+
+          // Clash counterblow → bad_spot (the signal the TDA bad-spot downgrade reads).
+          await setCombatTrackPosition(track.id, "bad_spot");
+          assert.strictEqual(await getActiveCombatPosition(), "bad_spot",
+            "combat position reads back as bad_spot (Clash footing)");
+
+          const active = await getActiveCombatTrack();
+          assert.strictEqual(active?.id, track.id, "the active combat track resolves to ours");
+
+          // Take Decisive Action / Face Defeat closes the track.
+          const done = await completeProgressTrack(track.id);
+          assert.isTrue(done.completed, "the combat track is marked completed");
+          assert.isNull(await getActiveCombatPosition(),
+            "a completed track no longer reports an active combat position");
+
+          const listed = (await listProgressTracks()).find(t => t.id === track.id);
+          assert.isTrue(listed.completed, "the completed track persists in the journal flag");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Combat Mechanics", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INCITING DETECTION WIRING — PLAYTEST-1717 B. The existing inciting batch runs
+// narration OFF, so the inciting incident's entity-detection pass was never
+// exercised end-to-end. This drives runIncitingIncident with narration ON (the
+// Anthropic API content-routed: the detection prompt carries the "factionUpdates"
+// schema marker; everything else gets prose) and asserts a faction the opening
+// fiction names is routed into the Factions World Journal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerIncitingDetectionWiringTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.incitingDetectionWiring",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(game.settings.get(MODULE, "campaignState") ?? {}));
+      });
+      after(async function () {
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      describe("runIncitingIncident — narration ON routes a faction to the Factions WJ", function () {
+        it("the opening fiction's faction lands as a Factions World Journal page", async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { runIncitingIncident } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const factionName = `QUENCH INCITE — Faction ${Date.now()}`;
+
+          const detectionPayload = {
+            entities: [],
+            worldJournal: {
+              lore: [], threats: [],
+              factionUpdates: [{
+                name: factionName, attitude: "hostile",
+                summary: "Named in the opening fiction.", isNew: true,
+              }],
+              locationUpdates: [], stateTransitions: [],
+            },
+          };
+          const narratorProse =
+            `A ${factionName} cutter breaks orbit as your distress call goes out.\n\n` +
+            `Suggested vow: I will break the blockade (dangerous)`;
+
+          // Content-route the stubbed Anthropic API: the combined-detection prompt
+          // carries the "factionUpdates" schema marker; the narrator (and the
+          // relevance call) get prose and fail open.
+          const router = ["api.anthropic.com", (_url, init) => {
+            const body = typeof init?.body === "string" ? init.body : "";
+            if (body.includes("factionUpdates")) {
+              return { content: [{ type: "text", text: JSON.stringify(detectionPayload) }] };
+            }
+            return { content: [{ type: "text", text: narratorProse }] };
+          }];
+
+          let page = null;
+          try {
+            await withTempSetting("narrationEnabled", true, async () => {
+              await withTempSetting("claudeApiKey", "sk-stub-incite", async () => {
+                await withStubbedFetch([router], async () => {
+                  await withSilencedNotifications(async () => {
+                    await runIncitingIncident(game.settings.get(MODULE, "campaignState") ?? {});
+                  });
+                });
+              });
+            });
+
+            const journal = game.journal?.getName?.(wj.JOURNAL_NAMES.factions);
+            assert.isOk(journal, "the Factions World Journal should exist");
+            page = journal.pages?.contents?.find(p => p.name === factionName);
+            assert.isOk(page,
+              "the inciting incident's faction should land in the Factions World Journal");
+          } finally {
+            if (page?.delete) await page.delete().catch(() => {});
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Inciting Detection Wiring", timeout: 60000 },
   );
 }

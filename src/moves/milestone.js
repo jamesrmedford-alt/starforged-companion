@@ -15,7 +15,7 @@
  *         Milestone — "no roll, mark progress on your vow per its rank").
  */
 
-import { RANK_TICKS } from "../schemas.js";
+import { rankTicks } from "../schemas.js";
 
 /**
  * Categories whose successful moves are plausibly a step toward a quest, used
@@ -35,14 +35,15 @@ const MILESTONE_EXCLUDE_MOVES = new Set([
 ]);
 
 /**
- * ticks for one mark at the vow's rank (RANK_TICKS), defaulting to formidable
- * (4) when the rank is unknown — the same default persistResolution uses.
+ * ticks for one mark at the vow's rank, defaulting to formidable (4) when the
+ * rank is unknown. Delegates to schemas.rankTicks so a numeric ChallengeRank
+ * (the form the live ironsworn schema stores) resolves the same as a string.
  *
- * @param {string} rank
+ * @param {string|number} rank
  * @returns {number}
  */
 export function milestoneTicks(rank) {
-  return RANK_TICKS[rank] ?? 4;
+  return rankTicks(rank);
 }
 
 /**
