@@ -286,6 +286,75 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     }
   }
 
+  // Precursor vaults & derelicts (mapData.discoveries) — unexplored sites in
+  // the map periphery, each behind a dim "undiscovered passage" from its anchor
+  // settlement. The pin shows a generic unknown marker + "Unexplored Site"
+  // label until discovered (siteDiscovery.revealSectorSite flips both the Note
+  // and its passage); the site's location Actor is linked via flag.actorId so
+  // the GM can open its sheet. Own try/catch per batch, like the settlement
+  // pins above, so a v13 schema tweak never empties the rest of the scene.
+  const discoveries = sector.mapData?.discoveries ?? [];
+  if (discoveries.length) {
+    const siteNotes    = [];
+    const sitePassages = [];
+    for (const site of discoveries) {
+      const sx = offset.x + (site.gridX * gridCellSize);
+      const sy = offset.y + (site.gridY * gridCellSize);
+      const discovered = !!site.discovered;
+      siteNotes.push({
+        x:          sx,
+        y:          sy,
+        texture:    { src: iconPathForSite(site.type, discovered), tint: tintForSite(site.type, discovered) },
+        iconSize:   40,
+        text:       discovered ? site.name : "Unexplored Site",
+        fontSize:   20,
+        textColor:  discovered ? "#FFFFFF" : "#9A9AB0",
+        textAnchor: 1,    // BOTTOM
+        global:     true,
+        flags: {
+          [MODULE_ID]: {
+            sectorNote: true,
+            siteNote:   true,
+            siteId:     site.id,
+            actorId:    site.actorId ?? null,
+            siteType:   site.type,
+            discovered,
+          },
+        },
+      });
+
+      const from = mapSettlements.find(s => s.id === site.nearestSettlementId)
+        ?? mapSettlements[0] ?? null;
+      if (from) {
+        const fromX = from.gridX * gridCellSize;
+        const fromY = from.gridY * gridCellSize;
+        const toX   = site.gridX * gridCellSize;
+        const toY   = site.gridY * gridCellSize;
+        sitePassages.push(makeDrawingData({
+          x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY,
+          strokeAlpha: discovered ? 0.8 : 0.3,
+          strokeColor: discovered ? "#7EB8F7" : "#9B7ECF",
+          flags: { sitePassage: true, discovered, siteId: site.id, fromId: from.id },
+        }));
+      }
+    }
+
+    try {
+      await scene.createEmbeddedDocuments("Note", siteNotes, { render: false });
+      console.log(`${MODULE_ID} | createSectorScene: ${siteNotes.length} site Notes placed`);
+    } catch (err) {
+      console.error(`${MODULE_ID} | createSectorScene: site Note batch failed:`, err);
+    }
+    if (sitePassages.length) {
+      try {
+        await scene.createEmbeddedDocuments("Drawing", sitePassages, { render: false });
+        console.log(`${MODULE_ID} | createSectorScene: ${sitePassages.length} site passage Drawings placed`);
+      } catch (err) {
+        console.error(`${MODULE_ID} | createSectorScene: site passage batch failed:`, err);
+      }
+    }
+  }
+
   // Fact-continuity scope §20.4b — place a Token for the command vehicle
   // if one is registered. Subsequent drags onto a settlement Note pin
   // trigger a Set a Course pipeline. Failure here never breaks the sector
@@ -422,6 +491,58 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
 }
 
 
+/**
+ * Re-style a site's Note pin and undiscovered passage to their DISCOVERED
+ * appearance: real name + type icon on the pin, solid blue passage line.
+ * Matches by the `siteId` flag; idempotent. Used by the reveal flow
+ * (src/sectors/siteDiscovery.js). No-op when the scene or site isn't found.
+ *
+ * @param {Scene} scene
+ * @param {{id:string,type:string,name:string}} site — discovery record
+ * @returns {Promise<boolean>} true when the site's Note pin was updated
+ */
+export async function restyleSiteOnScene(scene, site) {
+  if (!scene || !site?.id) return false;
+
+  const notes   = scene.notes?.contents ?? scene.notes ?? [];
+  const note    = (Array.isArray(notes) ? notes : []).find(
+    n => n?.flags?.[MODULE_ID]?.siteNote && n.flags[MODULE_ID].siteId === site.id,
+  );
+  let updated = false;
+  if (note) {
+    try {
+      await note.update({
+        text:      site.name,
+        texture:   { src: iconPathForSite(site.type, true), tint: tintForSite(site.type, true) },
+        textColor: "#FFFFFF",
+        [`flags.${MODULE_ID}.discovered`]: true,
+      });
+      updated = true;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | restyleSiteOnScene: Note update failed:`, err?.message ?? err);
+    }
+  }
+
+  const drawings = scene.drawings?.contents ?? scene.drawings ?? [];
+  const passage  = (Array.isArray(drawings) ? drawings : []).find(
+    d => d?.flags?.[MODULE_ID]?.sitePassage && d.flags[MODULE_ID].siteId === site.id,
+  );
+  if (passage) {
+    try {
+      await passage.update({
+        strokeColor: "#7EB8F7",
+        strokeAlpha: 0.8,
+        [`flags.${MODULE_ID}.discovered`]: true,
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | restyleSiteOnScene: Drawing update failed:`, err?.message ?? err);
+    }
+  }
+
+  return updated;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -481,7 +602,7 @@ function sceneRectOffset(scene, { sceneWidth, sceneHeight, gridCellSize, padding
  * required field rather than relying on Foundry's defaults — defaults have
  * changed twice between v11 → v12 → v13.
  */
-function makeDrawingData({ x, y, dx, dy, strokeAlpha = 0.8, flags }) {
+function makeDrawingData({ x, y, dx, dy, strokeAlpha = 0.8, strokeColor = "#7EB8F7", flags }) {
   return {
     x,
     y,
@@ -492,7 +613,7 @@ function makeDrawingData({ x, y, dx, dy, strokeAlpha = 0.8, flags }) {
       points: [0, 0, dx, dy],
     },
     strokeWidth: 2,
-    strokeColor: "#7EB8F7",
+    strokeColor: strokeColor,
     strokeAlpha: strokeAlpha,
     fillType:    0,                         // no fill
     fillColor:   "#000000",                 // v13: required even when fillType is 0
@@ -525,6 +646,21 @@ function tintForLocationType(locationType) {
     case "planetside": return "#8FCF7E";   // warm green — habitable world
     default:           return "#C4A45A";   // amber — isolated outpost
   }
+}
+
+/**
+ * Pin icon for a precursor-vault / derelict site. An UNDISCOVERED site shows a
+ * generic "unknown" hazard marker — the type and name stay hidden until the
+ * site is discovered, when the real vault/derelict icon takes over.
+ */
+function iconPathForSite(type, discovered) {
+  if (!discovered) return "icons/svg/hazard.svg";
+  return type === "vault" ? "icons/svg/temple.svg" : "icons/svg/ruins.svg";
+}
+
+function tintForSite(type, discovered) {
+  if (!discovered) return "#9B7ECF";                       // dim violet — unknown signal
+  return type === "vault" ? "#C9A0FF" : "#D98A6A";         // vault violet · derelict rust
 }
 
 // Planet and stellar icon lookups are sourced from the central system-asset

@@ -20,7 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createSectorScene } from '../../src/sectors/sceneBuilder.js';
+import { createSectorScene, restyleSiteOnScene } from '../../src/sectors/sceneBuilder.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -165,6 +165,107 @@ describe('createSectorScene — Phase 3 entryId regression', () => {
       if (f.stellarNote) continue;            // stellar omits the field entirely
       expect(f.actorId).toBeNull();
     }
+  });
+});
+
+describe('createSectorScene — precursor sites & derelicts', () => {
+  // An accumulating scene mock so site Notes/Drawings (a second batch after the
+  // settlement batch) are all visible, not just the last call.
+  function makeAccumulatingScene() {
+    const notes = [];
+    const drawings = [];
+    const scene = {
+      id: 'scene-1',
+      dimensions: { sceneX: SCENE_X, sceneY: SCENE_Y, sceneWidth: SCENE_W, sceneHeight: SCENE_H },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data) => {
+        if (type === 'Note')    notes.push(...data);
+        if (type === 'Drawing') drawings.push(...data);
+        return data;
+      }),
+      _notes: notes,
+      _drawings: drawings,
+    };
+    return scene;
+  }
+
+  function sectorWithSites() {
+    const s = makeSector();
+    s.mapData.discoveries = [
+      { id: 'site-a', type: 'vault',    name: 'Precursor Vault — Monument', discovered: false, gridX: 14, gridY: 1, nearestSettlementId: 'gen-A', actorId: 'loc-a' },
+      { id: 'site-b', type: 'derelict', name: 'Derelict Starship',          discovered: false, gridX: 15, gridY: 4, nearestSettlementId: 'gen-B', actorId: 'loc-b' },
+    ];
+    return s;
+  }
+
+  beforeEach(() => {
+    mockScene = makeAccumulatingScene();
+    global.Scene = { create: vi.fn(async () => mockScene) };
+  });
+
+  it('places an unexplored site pin per discovery, linked to its location Actor', async () => {
+    await createSectorScene(sectorWithSites(), null, makeEntityActors());
+
+    const siteNotes = mockScene._notes.filter(n => n.flags[MODULE_ID]?.siteNote);
+    expect(siteNotes).toHaveLength(2);
+    for (const n of siteNotes) {
+      expect(n.flags[MODULE_ID].discovered).toBe(false);
+      expect(n.text).toBe('Unexplored Site');             // type/name hidden until discovered
+      expect(n.flags[MODULE_ID].actorId).toBeTruthy();    // click → location sheet
+    }
+  });
+
+  it('draws an undiscovered passage (dim) from the anchor settlement to each site', async () => {
+    await createSectorScene(sectorWithSites(), null, makeEntityActors());
+
+    const sitePassages = mockScene._drawings.filter(d => d.flags[MODULE_ID]?.sitePassage);
+    expect(sitePassages).toHaveLength(2);
+    for (const d of sitePassages) {
+      expect(d.flags[MODULE_ID].discovered).toBe(false);
+      expect(d.strokeAlpha).toBeLessThan(0.5);            // dim — undiscovered
+    }
+  });
+
+  it('places no site documents when the sector has no discoveries', async () => {
+    await createSectorScene(makeSector(), null, makeEntityActors());
+    expect(mockScene._notes.filter(n => n.flags[MODULE_ID]?.siteNote)).toHaveLength(0);
+  });
+});
+
+describe('restyleSiteOnScene', () => {
+  function sceneWithSite() {
+    const note = {
+      flags: { [MODULE_ID]: { siteNote: true, siteId: 'site-a', discovered: false } },
+      update: vi.fn(async function (patch) { Object.assign(this, patch); }),
+    };
+    const passage = {
+      flags: { [MODULE_ID]: { sitePassage: true, siteId: 'site-a', discovered: false } },
+      update: vi.fn(async function (patch) { Object.assign(this, patch); }),
+    };
+    return { notes: { contents: [note] }, drawings: { contents: [passage] }, _note: note, _passage: passage };
+  }
+
+  it('updates the matching Note pin and passage to the discovered style', async () => {
+    const scene = sceneWithSite();
+    const ok = await restyleSiteOnScene(scene, { id: 'site-a', type: 'vault', name: 'Precursor Vault — Monument' });
+
+    expect(ok).toBe(true);
+    expect(scene._note.update).toHaveBeenCalledTimes(1);
+    const notePatch = scene._note.update.mock.calls[0][0];
+    expect(notePatch.text).toBe('Precursor Vault — Monument');
+    expect(notePatch[`flags.${MODULE_ID}.discovered`]).toBe(true);
+
+    expect(scene._passage.update).toHaveBeenCalledTimes(1);
+    const passagePatch = scene._passage.update.mock.calls[0][0];
+    expect(passagePatch.strokeAlpha).toBe(0.8);
+    expect(passagePatch[`flags.${MODULE_ID}.discovered`]).toBe(true);
+  });
+
+  it('no-ops gracefully when the site is not on the scene', async () => {
+    const scene = sceneWithSite();
+    const ok = await restyleSiteOnScene(scene, { id: 'missing', type: 'vault', name: 'X' });
+    expect(ok).toBe(false);
+    expect(scene._note.update).not.toHaveBeenCalled();
   });
 });
 

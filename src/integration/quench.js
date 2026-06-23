@@ -177,6 +177,11 @@ Hooks.on("quenchReady", (quench) => {
   // sectorScene flag round-trip. Priority 8 of the behaviour-coverage
   // audit (Lens 2 PARTIAL findings on Sector Creator Enhanced).
   registerSectorEnhancedTests(quench);
+  // Precursor vaults & derelicts — live location-Actor minting (vault/derelict
+  // subtype), scene site-pin + undiscovered-passage placement (v13 Note/Drawing
+  // validation), and the reveal round-trip (discovery flip + pin/passage
+  // re-style + Actor status).
+  registerPrecursorSiteTests(quench);
   // API key privacy — the API key fields' `config: false` registration
   // and the About tab's password-typed input rendering. Priority 9 of
   // the behaviour-coverage audit (Lens 2 PARTIAL findings on API Key
@@ -11369,5 +11374,115 @@ function registerIncitingDetectionWiringTests(quench) {
       });
     },
     { displayName: "STARFORGED: Inciting Detection Wiring", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRECURSOR VAULTS & DERELICTS
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Live coverage for the site lifecycle the unit suite can only mock: minting
+// real location-type Actors with the vault/derelict subtype, placing site Notes
+// + undiscovered-passage Drawings through v13's tightened validation, and the
+// reveal round-trip (discovery flip → Actor status → pin/passage re-style).
+
+function registerPrecursorSiteTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.precursorSites",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      let stateAtStart = null;
+      before(async function () {
+        if (!game.user.isGM) { this.skip(); return; }
+        stateAtStart = JSON.parse(JSON.stringify(game.settings.get(MODULE, "campaignState") ?? {}));
+      });
+      after(async function () {
+        // Documents (location Actors, the Scene, folders) are reaped by the
+        // auto-cleanup snapshot/diff; restore the campaignState setting here.
+        if (stateAtStart) await game.settings.set(MODULE, "campaignState", stateAtStart);
+      });
+
+      describe("precursor vault / derelict site lifecycle", function () {
+        let sector = null;
+        let scene  = null;
+
+        it("mints a canonical-locked location Actor per site with the vault/derelict subtype", async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { generateSector, createEntityJournals } = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+
+          sector = generateSector("expanse");
+          assert.isAtLeast(sector.sites.length, 1, "an expanse sector should generate at least one site");
+
+          const entityData  = await createEntityJournals(sector, state);
+          const siteActorIds = Object.values(entityData.sites).filter(Boolean).map(a => a.id);
+          assert.equal(siteActorIds.length, sector.sites.length, "one location Actor per site");
+
+          for (const id of siteActorIds) {
+            const actor = game.actors.get(id);
+            assert.isOk(actor, `site Actor ${id} should exist`);
+            assert.equal(actor.type, "location", "site is a location-type Actor");
+            assert.include(["vault", "derelict"], actor.system?.subtype, "subtype is vault or derelict");
+            const flag = actor.getFlag(MODULE, "location");
+            assert.isTrue(flag?.canonicalLocked, "site is canonical-locked");
+            assert.equal(flag?.status, "unexplored", "site starts unexplored");
+          }
+        });
+
+        it("places an unexplored pin and a dim undiscovered passage per site on the scene", async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          if (!sector) { this.skip(); return; }
+          const { createSectorScene } = await import(`${MODULE_PATH}/sectors/sceneBuilder.js`);
+
+          scene = await createSectorScene(sector, null, {});
+          assert.isOk(scene, "scene created");
+
+          const siteNotes = scene.notes.contents.filter(n => n.getFlag(MODULE, "siteNote"));
+          assert.equal(siteNotes.length, sector.sites.length, "one site pin per site");
+          for (const n of siteNotes) {
+            assert.isFalse(!!n.getFlag(MODULE, "discovered"), "pin starts undiscovered");
+            assert.equal(n.text, "Unexplored Site", "type/name stay hidden until discovered");
+          }
+          const sitePassages = scene.drawings.contents.filter(d => d.getFlag(MODULE, "sitePassage"));
+          assert.equal(sitePassages.length, sector.sites.length, "one undiscovered passage per site");
+        });
+
+        it("reveals a site: flips discovery, marks the Actor visited, re-styles pin + passage", async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          if (!sector || !scene) { this.skip(); return; }
+          const { storeSector }       = await import(`${MODULE_PATH}/sectors/sectorGenerator.js`);
+          const { revealSectorSite }  = await import(`${MODULE_PATH}/sectors/siteDiscovery.js`);
+          const state = game.settings.get(MODULE, "campaignState");
+
+          // Persist the sector (sceneId + discoveries) so reveal can find it.
+          await storeSector(sector, { sceneId: scene.id }, state);
+
+          const target = sector.sites[0];
+          const result = await revealSectorSite(target.name, { source: "manual" });
+          assert.isOk(result, "reveal should match a site");
+
+          const after        = game.settings.get(MODULE, "campaignState");
+          const storedSector = after.sectors.find(s => s.id === sector.id);
+          const disc         = storedSector.mapData.discoveries.find(d => d.name === target.name);
+          assert.isTrue(disc.discovered, "discovery flag flipped in campaignState");
+
+          const actor = game.actors.get(disc.actorId);
+          assert.equal(actor.getFlag(MODULE, "location")?.status, "visited", "Actor marked visited");
+
+          const note = scene.notes.contents.find(n => n.getFlag(MODULE, "siteId") === disc.id);
+          assert.isTrue(!!note.getFlag(MODULE, "discovered"), "pin re-styled to discovered");
+          assert.equal(note.text, target.name, "pin now shows the real name");
+          const passage = scene.drawings.contents.find(d => d.getFlag(MODULE, "siteId") === disc.id);
+          assert.isTrue(!!passage.getFlag(MODULE, "discovered"), "passage re-styled to discovered");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Precursor Sites", timeout: 60000 },
   );
 }

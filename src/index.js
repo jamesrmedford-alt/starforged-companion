@@ -732,6 +732,7 @@ export function registerChatHook() {
     if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
     if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
     if (isIncitingIncidentCommand(message)) { await handleIncitingIncidentCommand(message); return; }
+    if (isRevealSiteCommand(message))   { await handleRevealSiteCommand(message); return; }
 
     // !clock command — create / advance / list campaign and tension clocks
     if (isClockCommand(message)) {
@@ -1188,6 +1189,23 @@ export function registerChatHook() {
             if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "discoveries", fin.legacyTicks);
             await postExpeditionFinishCard(fin).catch(err =>
               console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
+
+            // Reaching the end of an expedition discovers any unexplored sector
+            // site it led to (precursor vault / derelict). Mutate the in-memory
+            // campaignState so the discovered flag rides along with the pending
+            // persistResolution write below (setState is a no-op here); the
+            // scene pin + passage and the location Actor update apply at once.
+            try {
+              const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
+              const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
+                source:   "expedition",
+                getState: () => campaignState,
+                setState: () => {},
+              });
+              if (revealed) await postSiteDiscoveryCard(revealed);
+            } catch (err) {
+              console.warn(`${MODULE_ID} | site reveal on finish-expedition failed:`, err?.message ?? err);
+            }
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
@@ -1989,6 +2007,43 @@ async function handleIncitingIncidentCommand(message) {
     await runIncitingIncident(campaignState);
   } catch (err) {
     console.warn(`${MODULE_ID} | inciting incident command failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * !reveal-site <name> — manually discover an unexplored sector site (precursor
+ * vault / derelict), charting it on the sector map. GM-only. Ignores our own
+ * discovery card so it never self-triggers.
+ */
+export function isRevealSiteCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.siteDiscovered) return false;
+  return /^!reveal-site(\s|$)/i.test(text);
+}
+
+/**
+ * Reveal the named (or sole undiscovered) site and announce it. GM-gated —
+ * world-setting writes require GM. Runs only on the authoring client since it
+ * creates a shared chat document.
+ */
+async function handleRevealSiteCommand(message) {
+  if (message?.author?.id && message.author.id !== game.user?.id) return;
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Revealing a site is available to GMs only.");
+    return;
+  }
+  const text  = message.content?.trim() ?? "";
+  const label = text.replace(/^!reveal-site\s*/i, "").trim();
+  try {
+    const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
+    const revealed = await revealSectorSite(label || null, { source: "manual" });
+    if (revealed) {
+      await postSiteDiscoveryCard(revealed);
+    } else {
+      ui.notifications?.info("No matching unexplored site to reveal.");
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | reveal-site command failed:`, err?.message ?? err);
   }
 }
 

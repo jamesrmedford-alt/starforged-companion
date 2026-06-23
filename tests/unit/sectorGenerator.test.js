@@ -357,6 +357,80 @@ describe("generateSector — throws on unknown region", () => {
   });
 });
 
+describe("generateSector — precursor sites & derelicts", () => {
+  it("attaches site descriptors and a matching mapData.discoveries entry per site", () => {
+    const sector = generateSector("expanse");
+    expect(Array.isArray(sector.sites)).toBe(true);
+    expect(sector.sites.length).toBeGreaterThanOrEqual(1);
+    // One discovery per site, ids aligned.
+    expect(sector.mapData.discoveries).toHaveLength(sector.sites.length);
+    const siteIds = new Set(sector.sites.map(s => s.id));
+    for (const d of sector.mapData.discoveries) {
+      expect(siteIds.has(d.id)).toBe(true);
+    }
+  });
+
+  it("places each site unexplored in the periphery, anchored to a settlement", () => {
+    const sector = generateSector("expanse");
+    for (const d of sector.mapData.discoveries) {
+      expect(d.discovered).toBe(false);
+      expect(d.gridX).toBeGreaterThanOrEqual(13);   // right-edge slots
+      expect(typeof d.gridY).toBe("number");
+      expect(["vault", "derelict"]).toContain(d.type);
+      expect(d.nearestSettlementId).toBeTruthy();    // anchored to a real settlement
+    }
+  });
+
+  it("generates more sites for the Expanse than the settled Terminus", () => {
+    // Region base is deterministic (theme boost only adds on top), so the
+    // Expanse floor strictly exceeds the Terminus floor.
+    expect(generateSector("expanse").sites.length)
+      .toBeGreaterThan(generateSector("terminus").sites.length - 1);
+  });
+});
+
+describe("createEntityJournals — site location Actors", () => {
+  beforeEach(() => {
+    if (global.game?.folders?._reset) global.game.folders._reset();
+    if (global.game?.actors?._reset)  global.game.actors._reset();
+    _resetFolderCache();
+  });
+
+  it("creates a location Actor per site and backfills the discovery actorId", async () => {
+    const sector = {
+      id:   "sector-sites-1",
+      name: "Vault Reach",
+      regionLabel: "Expanse",
+      settlements: [],
+      connection: { id: "c-s", name: "Rook", role: "Scav", goal: "Survive", aspect: "Wary", firstLook: ["Grimy"], homeSettlement: "the sector" },
+      sites: [
+        { id: "site-a", type: "vault",    name: "Precursor Vault — Monument", status: "unexplored", firstLook: "x", description: "d" },
+        { id: "site-b", type: "derelict", name: "Derelict Starship",          status: "unexplored", firstLook: "y", description: "e" },
+      ],
+      mapData: {
+        sectorId: "sector-sites-1", gridWidth: 10, gridHeight: 8, settlements: [], passages: [],
+        discoveries: [
+          { id: "site-a", type: "vault",    name: "Precursor Vault — Monument", discovered: false, gridX: 14, gridY: 1, nearestSettlementId: null, actorId: null },
+          { id: "site-b", type: "derelict", name: "Derelict Starship",          discovered: false, gridX: 15, gridY: 4, nearestSettlementId: null, actorId: null },
+        ],
+      },
+    };
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [], locationIds: [] };
+
+    const result = await createEntityJournals(sector, campaignState);
+
+    // Two location Actors registered, returned in the sites map, and backfilled
+    // onto the discovery records so the scene builder / reveal flow can link them.
+    expect(campaignState.locationIds).toHaveLength(2);
+    expect(Object.keys(result.sites)).toEqual(["site-a", "site-b"]);
+    expect(result.sites["site-a"]).toBeTruthy();
+    for (const d of sector.mapData.discoveries) {
+      expect(d.actorId).toBeTruthy();
+      expect(campaignState.locationIds).toContain(d.actorId);
+    }
+  });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // buildSectorBackgroundPrompt
