@@ -464,6 +464,35 @@ describe("routeEntityDrafts — cross-type dedup", () => {
     expect(result.queued).toHaveLength(1);
     fixture.restore();
   });
+
+  // Faction auto-surface (playtest v1.7.22): a faction named in narration must
+  // land in WJ — Factions immediately, like lore, instead of waiting invisibly
+  // in a GM draft card.
+  it("surfaces a detected faction to the World Journal AND queues the draft", async () => {
+    const fixture = buildFullCampaignState();
+    const result = await routeEntityDrafts(
+      [{ type: "faction", name: "The Triumvirate", description: "classified intelligence handlers" }],
+      fixture.campaignState,
+    );
+    expect(spies.recordFactionIntelligence).toHaveBeenCalledTimes(1);
+    expect(spies.recordFactionIntelligence).toHaveBeenCalledWith(
+      "The Triumvirate",
+      expect.objectContaining({ summary: "classified intelligence handlers", isNew: true }),
+      fixture.campaignState,
+    );
+    expect(result.queued).toHaveLength(1);   // draft card still offered
+    fixture.restore();
+  });
+
+  it("does not surface a non-faction entity to the Factions journal", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts(
+      [{ type: "settlement", name: "Iron Anvil Outpost", description: "stub" }],
+      fixture.campaignState,
+    );
+    expect(spies.recordFactionIntelligence).not.toHaveBeenCalled();
+    fixture.restore();
+  });
 });
 
 
@@ -960,6 +989,17 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toMatch(/Faction update rules/i);
     expect(prompt).toMatch(/first mention/i);
     expect(prompt).toMatch(/isNew.*true/i);
+  });
+
+  // v1.7.22 playtest: "the Triumvirate" was named only adjectivally and the
+  // narrator's "three religious orders" answer named several at once — neither
+  // surfaced. The prompt must teach the model to catch both shapes.
+  it("instructs the model to catch possessive/adjectival and multi-named faction mentions", () => {
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", {});
+    expect(prompt).toMatch(/possessive\/adjectival/i);
+    expect(prompt).toMatch(/orders|guilds|syndicates|networks/i);
+    expect(prompt).toMatch(/ONE factionUpdates entry per/i);
+    expect(prompt).toMatch(/Never downgrade a named faction to a lore item/i);
   });
 
   it("instructs the model to include new locations in locationUpdates on first mention", () => {

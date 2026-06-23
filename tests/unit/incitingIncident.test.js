@@ -17,17 +17,26 @@ vi.mock("../../src/narration/narrator.js", () => ({
   runNarrationTierUpdate:  vi.fn(),
 }));
 
+// runIncitingIncident dynamically imports recordLoreDiscovery for its cohesive
+// "Inciting Incident" World Journal entry; mock it so the write path is
+// observable without a live journal.
+vi.mock("../../src/world/worldJournal.js", () => ({
+  recordLoreDiscovery: vi.fn(),
+}));
+
 import {
   narrateIncitingIncident,
   runPacedDetection,
   runNarrationTierUpdate,
 } from "../../src/narration/narrator.js";
+import { recordLoreDiscovery } from "../../src/world/worldJournal.js";
 import {
   rollIncitingSpark,
   buildIncitingIncidentUserMessage,
   splitSuggestedVow,
   splitSuggestedClock,
   splitVowTarget,
+  splitSituationSummary,
   splitIncitingMeta,
   renderIncitingIncidentCard,
   runIncitingIncident,
@@ -265,6 +274,33 @@ describe("splitIncitingMeta", () => {
     expect(meta.target).toBeNull();
     expect(meta.prose).toBe("Only prose here.");
   });
+
+  it("extracts the Situation summary and strips it from the prose", () => {
+    const meta = splitIncitingMeta([
+      "The distress beacon cuts through the methane haze.",
+      "Suggested vow: I will reach Vance (dangerous)",
+      "Situation: Vance is wounded aboard his shuttle; the Triumvirate wants the cargo he carries.",
+    ].join("\n"));
+    expect(meta.situation).toBe(
+      "Vance is wounded aboard his shuttle; the Triumvirate wants the cargo he carries.",
+    );
+    expect(meta.prose).toBe("The distress beacon cuts through the methane haze.");
+    expect(meta.prose).not.toMatch(/Situation:/);
+  });
+});
+
+describe("splitSituationSummary", () => {
+  it("splits a trailing Situation line", () => {
+    const { prose, situation } = splitSituationSummary("Prose.\nSituation: The stakes in one line.");
+    expect(prose).toBe("Prose.");
+    expect(situation).toBe("The stakes in one line.");
+  });
+
+  it("returns null situation when absent", () => {
+    const { prose, situation } = splitSituationSummary("Just prose.");
+    expect(prose).toBe("Just prose.");
+    expect(situation).toBeNull();
+  });
 });
 
 describe("renderIncitingIncidentCard — swear-vow affordance (Cluster B)", () => {
@@ -315,6 +351,7 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
     vi.mocked(narrateIncitingIncident).mockReset();
     vi.mocked(runPacedDetection).mockReset();
     vi.mocked(runNarrationTierUpdate).mockReset();
+    vi.mocked(recordLoreDiscovery).mockReset();
     game.settings._store.clear();
     game.user.isGM = true;
   });
@@ -356,8 +393,37 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
     // ones, e.g. an NPC the opening kills) both fire, against the cleaned
     // prose — not the suggested-vow/clock/target meta lines.
     const cleanProse = "Councilor Vex was murdered three cycles ago aboard Paradox Station.";
-    expect(runPacedDetection).toHaveBeenCalledWith(cleanProse, campaignState);
+    // skipLore: the inciting path records its own cohesive "Situation" entry
+    // instead of the per-item lore spray.
+    expect(runPacedDetection).toHaveBeenCalledWith(cleanProse, campaignState, { skipLore: true });
     expect(runNarrationTierUpdate).toHaveBeenCalledWith(cleanProse, campaignState);
+  });
+
+  it("records ONE cohesive 'Inciting Incident' lore entry from the Situation line", async () => {
+    const withSituation = [
+      "Councilor Vex was murdered three cycles ago aboard Paradox Station.",
+      "Suggested vow: Expose who killed Vex (dangerous)",
+      "Situation: Vex's killer walks free while the Triumvirate buries the inquiry; the courier Aiden holds the proof.",
+    ].join("\n");
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(withSituation);
+
+    await runIncitingIncident({ currentSessionId: "ssn-7" });
+
+    expect(recordLoreDiscovery).toHaveBeenCalledTimes(1);
+    expect(recordLoreDiscovery).toHaveBeenCalledWith(
+      "Inciting Incident",
+      expect.objectContaining({
+        text: "Vex's killer walks free while the Triumvirate buries the inquiry; the courier Aiden holds the proof.",
+        confirmed: true,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("writes no cohesive lore entry when the narrator omits the Situation line", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);   // no Situation line
+    await runIncitingIncident({ currentSessionId: "ssn-7" });
+    expect(recordLoreDiscovery).not.toHaveBeenCalled();
   });
 
   it("does not run detection or the tier update from a non-GM client", async () => {

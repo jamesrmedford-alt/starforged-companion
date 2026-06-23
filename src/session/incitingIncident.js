@@ -136,22 +136,42 @@ export function splitVowTarget(text) {
 }
 
 /**
- * Run all three trailing-line parsers (target, clock, vow — order-agnostic
+ * Split a trailing `Situation: <one-line summary>` off the narrator prose.
+ * This is the narrator's own cohesive synthesis of the opening — the single
+ * durable entry the campaign journal records, instead of the per-beat lore
+ * fragments the generic detector would otherwise scatter. Pure — unit-tested.
+ *
+ * @param {string} text
+ * @returns {{ prose: string, situation: string | null }}
+ */
+export function splitSituationSummary(text) {
+  const full = String(text ?? "");
+  const m = full.match(/^[ \t>*_-]*Situation:\s*(.+?)\s*$/im);
+  if (!m) return { prose: full.trim(), situation: null };
+  const situation = m[1].trim();
+  const prose     = full.replace(m[0], "").trim();
+  return { prose, situation: situation || null };
+}
+
+/**
+ * Run all trailing-line parsers (situation, target, clock, vow — order-agnostic
  * since each is line-anchored) and return the cleaned prose plus the full
  * structured proposal. This is what the card renderer and the swear-vow
  * click handler consume.
  *
  * @param {string} text
  * @returns {{ prose: string,
- *             vow:    { statement, rank, raw } | null,
- *             clock:  { label, segments }      | null,
- *             target: { name, description }    | null }}
+ *             vow:       { statement, rank, raw } | null,
+ *             clock:     { label, segments }      | null,
+ *             target:    { name, description }    | null,
+ *             situation: string                   | null }}
  */
 export function splitIncitingMeta(text) {
-  const t = splitVowTarget(text);
+  const s = splitSituationSummary(text);
+  const t = splitVowTarget(s.prose);
   const c = splitSuggestedClock(t.prose);
   const v = splitSuggestedVow(c.prose);
-  return { prose: v.prose, vow: v.vow, clock: c.clock, target: t.target };
+  return { prose: v.prose, vow: v.vow, clock: c.clock, target: t.target, situation: s.situation };
 }
 
 function escapeHtml(s) {
@@ -330,9 +350,24 @@ export async function runIncitingIncident(campaignState) {
   if (text && globalThis.game?.user?.isGM) {
     try {
       const narrator = await import("../narration/narrator.js");
-      const { prose } = splitIncitingMeta(text);
-      await narrator.runPacedDetection(prose, campaignState ?? {});
+      const { prose, situation } = splitIncitingMeta(text);
+      // Run detection for factions/threats/entities, but skip the per-item lore
+      // spray — the opening fiction otherwise scattered into several loose,
+      // incoherent WJ-Lore pages (playtest v1.7.22). Instead record ONE cohesive
+      // entry from the narrator's own Situation summary.
+      await narrator.runPacedDetection(prose, campaignState ?? {}, { skipLore: true });
       await narrator.runNarrationTierUpdate(prose, campaignState ?? {});
+      if (situation) {
+        const { recordLoreDiscovery } = await import("../world/worldJournal.js");
+        await recordLoreDiscovery("Inciting Incident", {
+          text:             situation,
+          category:         "other",
+          salience:         "significant",
+          narratorAsserted: true,
+          confirmed:        true,
+        }, campaignState ?? {}).catch(err =>
+          console.warn(`${MODULE_ID} | runIncitingIncident: cohesive lore write failed:`, err?.message ?? err));
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: entity detection failed:`, err?.message ?? err);
     }
