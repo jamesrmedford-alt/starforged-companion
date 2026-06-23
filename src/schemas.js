@@ -46,6 +46,31 @@ export const RANK_TICKS = {
 };
 
 /**
+ * foundry-ironsworn's ProgressModel stores challenge rank as a NUMBER
+ * (ChallengeRank field: Troublesome=1 … Epic=5), so a live vow/track read
+ * back from the Actor carries `system.rank` as an integer, not the string
+ * keys RANK_TICKS uses. This maps the numeric form back to the string key.
+ */
+const RANK_KEY_BY_NUMBER = { 1: "troublesome", 2: "dangerous", 3: "formidable", 4: "extreme", 5: "epic" };
+
+/**
+ * Ticks for one "mark progress" at the given rank, accepting either a string
+ * rank ("dangerous") or the numeric ChallengeRank the live ironsworn schema
+ * stores (2). Defaults to formidable (4) for unknown ranks — the same default
+ * the progress panel uses. Centralised so milestone / develop-relationship /
+ * persistence all resolve rank ticks identically (a string-keyed lookup
+ * against a numeric rank silently defaulted every vow to 4 ticks).
+ *
+ * @param {string|number} rank
+ * @returns {number}
+ */
+export function rankTicks(rank) {
+  const n = Number(rank);
+  const key = Number.isInteger(n) && RANK_KEY_BY_NUMBER[n] ? RANK_KEY_BY_NUMBER[n] : rank;
+  return RANK_TICKS[key] ?? 4;
+}
+
+/**
  * All 11 move categories.
  * Source: Reference Guide p.5 (A-Z index)
  */

@@ -27,7 +27,7 @@ import {
   markVowProgress,
 } from '../character/actorBridge.js';
 import { postSufferChoiceCard } from './sufferCard.js';
-import { RANK_TICKS } from '../schemas.js';
+import { rankTicks } from '../schemas.js';
 
 const MODULE_ID  = 'starforged-companion';
 const TRACK_FLAG = 'progressTrack';
@@ -38,7 +38,7 @@ const TRACK_FLAG = 'progressTrack';
  * unknown — same default the progress panel uses.
  */
 function marksToTicks(marks, rank) {
-  return marks * (RANK_TICKS[rank] ?? 4);
+  return marks * rankTicks(rank);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

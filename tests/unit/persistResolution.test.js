@@ -144,8 +144,13 @@ describe('persistResolution — active character fallback', () => {
           contents: [{
             id: 'vow-1',
             type: 'progress',
-            system: { subtype: 'vow', rank: 'dangerous', progress: 0 },
-            update: async function (changes) { Object.assign(this.system, { progress: changes['system.progress'] }); },
+            // Production shape (foundry-ironsworn ProgressModel): rank is a
+            // NUMBER (ChallengeRank dangerous=2) and ticks live in
+            // system.current — there is no system.progress (strict DataModel
+            // drops it). The old mock used { rank: 'dangerous', progress: 0 },
+            // which concealed both bugs.
+            system: { subtype: 'vow', rank: 2, current: 0 },
+            update: async function (changes) { Object.assign(this.system, { current: changes['system.current'] }); },
           }],
         },
       });
@@ -161,9 +166,10 @@ describe('persistResolution — active character fallback', () => {
       });
       await persistResolution(resolution, baseCampaignState({ activeCharacterId: 'pc-strike' }));
 
-      // dangerous rank = 8 ticks per mark; 2 marks → 16 ticks
+      // dangerous rank (numeric 2) = 8 ticks per mark; 2 marks → 16 ticks,
+      // written to system.current.
       const vow = actor.items.contents.find(i => i.id === 'vow-1');
-      expect(vow.system.progress).toBe(16);
+      expect(vow.system.current).toBe(16);
     });
 
     it('treats legacy-track progressMarked as raw ticks (play-kit reward values)', async () => {

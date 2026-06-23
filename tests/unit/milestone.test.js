@@ -30,9 +30,21 @@ describe("milestoneTicks", () => {
     expect(milestoneTicks("epic")).toBe(1);
   });
 
+  it("maps the numeric ChallengeRank the live ironsworn schema stores", () => {
+    // foundry-ironsworn persists rank as a number (Troublesome=1 … Epic=5);
+    // a live readVows() returns that number, so the lookup must handle it.
+    expect(milestoneTicks(1)).toBe(12);
+    expect(milestoneTicks(2)).toBe(8);
+    expect(milestoneTicks(3)).toBe(4);
+    expect(milestoneTicks(4)).toBe(2);
+    expect(milestoneTicks(5)).toBe(1);
+  });
+
   it("defaults unknown ranks to formidable (4)", () => {
     expect(milestoneTicks("???")).toBe(4);
     expect(milestoneTicks(undefined)).toBe(4);
+    expect(milestoneTicks(0)).toBe(4);
+    expect(milestoneTicks(9)).toBe(4);
   });
 });
 
