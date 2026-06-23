@@ -949,6 +949,25 @@ describe("buildCombinedDetectionPrompt", () => {
     expect(prompt).toMatch(/Be sparing/i);
   });
 
+  // Faction / location update rules — the Soulbinders regression.
+  // Pre-fix the prompt had no explicit rule for factionUpdates, so the model
+  // put new factions only in entities[] (→ draft card) and never in
+  // factionUpdates[] (→ WJ entry). A new faction like "the Soulbinders"
+  // introduced in the inciting incident would produce no WJ entry until
+  // the GM confirmed the draft AND a second encounter triggered factionUpdates.
+  it("instructs the model to include new factions in factionUpdates on first mention", () => {
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", {});
+    expect(prompt).toMatch(/Faction update rules/i);
+    expect(prompt).toMatch(/first mention/i);
+    expect(prompt).toMatch(/isNew.*true/i);
+  });
+
+  it("instructs the model to include new locations in locationUpdates on first mention", () => {
+    const prompt = buildCombinedDetectionPrompt("n", "face_danger", "miss", {});
+    expect(prompt).toMatch(/Location update rules/i);
+    expect(prompt).toContain("locationUpdates");
+  });
+
   // Suggestion-loop remediation §C — paced sentinel framing.
   describe("paced-narrative sentinel (suggestion-loop §C)", () => {
     it("exports the sentinel constants", () => {
