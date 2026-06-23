@@ -12,6 +12,8 @@
 // rollOracle is imported for potential future use by panel overrides
 import { createSettlement, updateSettlement } from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
+import { createLocation }      from "../entities/location.js";
+import { generateSectorSites, buildSiteLocationData } from "./precursorSites.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { finalizeEntityArtOnly } from "../entities/finalize.js";
 import { buildSettlementsListHtml } from "./sectorOverview.js";
@@ -102,6 +104,23 @@ export function generateSector(region, _overrides = {}) {
 
   const id = generateId();
 
+  const mapSettlements = settlements.map((s, idx) => ({
+    id:      s.id,
+    name:    s.name,
+    type:    locationTypeToMarker(s.locationType),
+    gridX:   autoLayoutX(idx, cfg.settlements),
+    gridY:   autoLayoutY(idx, cfg.settlements),
+    visited: false,
+  }));
+
+  // Precursor vaults & derelicts — region-scaled, trouble-boosted sites placed
+  // in the map periphery as unexplored discoveries behind an undiscovered
+  // passage (see precursorSites.js). The full descriptors ride on `sites` so
+  // createEntityJournals can mint location Actors; the light map descriptors go
+  // on mapData.discoveries (the array the original sector scope reserved).
+  const sites       = generateSectorSites(region, trouble);
+  const discoveries = layoutSites(sites, mapSettlements);
+
   return {
     id,
     name:        sectorName.full,
@@ -114,23 +133,53 @@ export function generateSector(region, _overrides = {}) {
     settlements,
     connection,
     passages,
+    sites,
     mapData: {
       sectorId:    id,
       gridWidth:   10,
       gridHeight:  8,
-      settlements: settlements.map((s, idx) => ({
-        id:      s.id,
-        name:    s.name,
-        type:    locationTypeToMarker(s.locationType),
-        gridX:   autoLayoutX(idx, cfg.settlements),
-        gridY:   autoLayoutY(idx, cfg.settlements),
-        visited: false,
-      })),
+      settlements: mapSettlements,
       passages,
-      discoveries: [],
+      discoveries,
     },
     createdAt: new Date().toISOString(),
   };
+}
+
+// Right-edge slots for site pins — clear of the settlement cluster (gridX ~1–9)
+// so the "undiscovered passage" reads as a route out to the frontier.
+const SITE_SLOTS = [
+  { gridX: 14, gridY: 1 },
+  { gridX: 15, gridY: 4 },
+  { gridX: 14, gridY: 7 },
+  { gridX: 16, gridY: 2 },
+  { gridX: 16, gridY: 6 },
+  { gridX: 13, gridY: 8 },
+];
+
+/**
+ * Position generated sites in the map periphery and anchor each one's
+ * undiscovered passage to the rightmost (frontier-facing) settlement.
+ *
+ * @param {Array} sites          — generateSectorSites() descriptors
+ * @param {Array} mapSettlements — mapData.settlements (with gridX/gridY)
+ * @returns {Array} mapData.discoveries entries
+ */
+function layoutSites(sites, mapSettlements) {
+  const jumpOff = [...(mapSettlements ?? [])].sort((a, b) => b.gridX - a.gridX)[0] ?? null;
+  return (sites ?? []).map((s, i) => {
+    const slot = SITE_SLOTS[i % SITE_SLOTS.length];
+    return {
+      id:                  s.id,
+      type:                s.type,
+      name:                s.name,
+      discovered:          false,
+      gridX:               slot.gridX,
+      gridY:               slot.gridY,
+      nearestSettlementId: jumpOff?.id ?? null,
+      actorId:             null,   // backfilled by createEntityJournals
+    };
+  });
 }
 
 /**
@@ -332,7 +381,27 @@ export async function createEntityJournals(sector, campaignState) {
     }
   }
 
-  return { settlements, connectionJournalId };
+  // Precursor vaults & derelicts — mint a `location`-type Actor per site (same
+  // persist:false batching as settlements). buildSiteLocationData marks each
+  // canonicalLocked, so narrator entity-discovery never clobbers them. Backfill
+  // the new Actor id onto the matching mapData.discoveries entry so the scene
+  // builder can link the pin and the reveal flow can update its status.
+  const sites = {};
+  for (const site of sector.sites ?? []) {
+    const beforeLen = campaignState.locationIds?.length ?? 0;
+    try {
+      await createLocation(buildSiteLocationData(site, sector), campaignState, { persist: false });
+    } catch (err) {
+      console.error(`${MODULE_ID} | sectorGenerator: failed to create site ${site.name}:`, err);
+      continue;
+    }
+    const actorId = campaignState.locationIds?.[beforeLen] ?? null;
+    sites[site.id] = actorId ? (game.actors?.get(actorId) ?? null) : null;
+    const disc = (sector.mapData?.discoveries ?? []).find(d => d.id === site.id);
+    if (disc) disc.actorId = actorId;
+  }
+
+  return { settlements, connectionJournalId, sites };
 }
 
 /**
@@ -347,6 +416,7 @@ export async function storeSector(sector, extras, campaignState) {
   const {
     settlements      = {},
     connectionJournalId = null,
+    sites            = {},
     backgroundPath   = null,
     sceneId          = null,
     sectorJournalId  = null,
@@ -369,6 +439,7 @@ export async function storeSector(sector, extras, campaignState) {
     createdAt:          sector.createdAt,
     mapData:            sector.mapData,
     settlementIds:      Object.values(settlements).map(j => j?.id ?? null).filter(Boolean),
+    siteActorIds:       Object.values(sites).map(a => a?.id ?? null).filter(Boolean),
     connectionId:       connectionJournalId,
     // Enhanced fields
     backgroundPath,

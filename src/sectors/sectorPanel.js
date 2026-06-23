@@ -304,6 +304,7 @@ export async function runSectorCreationPipeline(sector) {
   const stored = await storeSector(sector, {
     settlements:         entityData.settlements,
     connectionJournalId: entityData.connectionJournalId,
+    sites:               entityData.sites,
     backgroundPath,
     sceneId:             scene?.id     ?? null,
     sectorJournalId:     sectorJournal?.id ?? null,

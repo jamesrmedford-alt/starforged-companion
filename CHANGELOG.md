@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Precursor vaults & derelicts are now generated and placed on the sector map.** Creating a sector now rolls the canonical Starforged vault/derelict oracles and drops those sites onto the sector map as real `location` Actors — region-scaled (the Expanse gets more than the settled Terminus), with an extra site when the sector's trouble points at one (e.g. "Precursor sites emit strange signals" → a vault; "Ships regularly go missing" → a derelict). Sites start **unexplored**: a dim "Unexplored Site" pin behind a faint *undiscovered passage* from the nearest settlement. You discover one by **finishing an expedition** toward it (or with the GM `!reveal-site <name>` command) — discovery charts it on the map (real name, type icon, solid passage) and marks its location record visited, ready to Explore a Waypoint through its zones.
+
+## [1.7.22] — 2026-06-23
+
 - Fixed: **Newly introduced factions and locations now get World Journal entries on first mention.** When the opening fiction introduces a faction like "the Soulbinders" for the first time, a Factions World Journal entry is now created immediately — without requiring the GM to confirm an entity draft first. The detection prompt now explicitly instructs the model to include all named factions and sites in the `factionUpdates` / `locationUpdates` arrays even on their first appearance, so both a draft card (for entity creation) and a WJ entry are produced together.
 
 ## [1.7.21] — 2026-06-23
