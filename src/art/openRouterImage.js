@@ -14,6 +14,8 @@
  * for any host other than openrouter.ai itself.
  */
 
+import { fetchWithTimeout } from "../net/fetchWithTimeout.js";
+
 const MODULE_ID         = "starforged-companion";
 const OPENROUTER_URL    = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL     = "black-forest-labs/flux.2-pro";
@@ -61,11 +63,14 @@ export async function generateOpenRouterImage({ apiKey, prompt, model, title } =
 
   let res;
   try {
-    res = await fetch(OPENROUTER_URL, {
+    // Bounded fetch — image generation can be slow, but an unbounded request
+    // that stalls would hang the caller's await forever (the v1.7.23 sector
+    // hang). A timeout makes it a normal rejection the caller degrades from.
+    res = await fetchWithTimeout(OPENROUTER_URL, {
       method:  "POST",
       headers,
       body:    JSON.stringify(body),
-    });
+    }, { label: "OpenRouter image request" });
   } catch (err) {
     throw new Error(`OpenRouter network error: ${err?.message ?? err}`);
   }
@@ -181,7 +186,7 @@ function coerceToPayload(value) {
  * Throws on network failure or non-2xx response.
  */
 async function fetchUrlAsBase64(url) {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, { label: "OpenRouter image download" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = await res.arrayBuffer();
   return arrayBufferToBase64(buf);

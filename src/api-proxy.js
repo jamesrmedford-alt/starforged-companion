@@ -22,6 +22,7 @@
  */
 
 import { logApiTransaction } from "./logging/apiTransactionLog.js";
+import { fetchWithTimeout } from "./net/fetchWithTimeout.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -52,7 +53,10 @@ export async function apiPost(url, headers, body) {
     normalisedHeaders["x-api-key"] = normalisedHeaders["x-api-key"].trim();
   }
 
-  const res = await fetch(url, {
+  // Bounded fetch — an unbounded request that stalls (connection opens, no
+  // response) would hang every caller's await forever without throwing. A
+  // timeout turns that into a normal rejection the callers already handle.
+  const res = await fetchWithTimeout(url, {
     method:  "POST",
     headers: {
       "Content-Type":                              "application/json",
@@ -60,7 +64,7 @@ export async function apiPost(url, headers, body) {
       ...normalisedHeaders,
     },
     body: JSON.stringify(body),
-  });
+  }, { label: "Anthropic request" });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => `HTTP ${res.status}`);
