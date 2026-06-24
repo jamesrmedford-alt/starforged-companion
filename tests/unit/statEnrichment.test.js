@@ -243,6 +243,18 @@ describe('enrichInterpretationStatValue', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  // Aid Your Ally is a rolled action move (Secure an Advantage / Gain Ground);
+  // now that it carries a stat set, the interpreter supplies a real statUsed
+  // and enrichment resolves it without the "no statUsed" warning that used to
+  // leave the assist roll at action-die-only.
+  it('resolves aid_your_ally with a supplied stat and does not warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const interp = { moveId: 'aid_your_ally', statUsed: 'iron', statValue: 0, isProgressMove: false };
+    enrichInterpretationStatValue(makeActor({ iron: 3 }), interp, {});
+    expect(interp.statValue).toBe(3);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   // ── Play-kit "whichever is higher" rule (Endure Harm / Stress) ──────────
   describe('higher-of-two-stat for Endure Harm / Stress', () => {
     it('picks +iron over +health for Endure Harm when iron is higher', () => {

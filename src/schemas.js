@@ -116,7 +116,7 @@ export const MOVES = {
   secure_an_advantage:       { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "hybrid"         },
   gather_information:        { category: "adventure",   stat: ["wits"],                                              narratorClass: "discovery"      },
   compel:                    { category: "adventure",   stat: ["heart","iron","shadow"],                             narratorClass: "interaction"    },
-  aid_your_ally:             { category: "adventure",   stat: null,                                                  narratorClass: "embellishment" },   // delegates to secure_an_advantage or gain_ground
+  aid_your_ally:             { category: "adventure",   stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "embellishment" },   // resolves as Secure an Advantage / Gain Ground; on a hit the ally takes the benefits
   check_your_gear:           { category: "adventure",   stat: ["supply"],                                            narratorClass: "embellishment" },
 
   // QUEST
