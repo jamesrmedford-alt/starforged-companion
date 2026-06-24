@@ -2609,9 +2609,12 @@ async function postExpeditionProgressCard({ track, created }) {
   const body  = created
     ? `<p>New expedition <strong>${label}</strong> (${rank}) begun — progress marked (${boxes}/10 boxes). If the rank looks off, adjust it in the Progress Tracks panel.</p>`
     : `<p>Progress marked on <strong>${label}</strong> (${rank}) — ${boxes}/10 boxes.</p>`;
+  const finishBtn = `<div class="sf-milestone-suggest-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-finish-expedition" ` +
+    `title="Roll to finish the expedition (progress roll)">🗺 Finish the Expedition</button></div>`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}</div>`,
+      content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
       flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true } },
     });
   } catch (err) {
@@ -3606,7 +3609,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${renderImproveButtonHtml(improveState)}
       ${renderMilestoneSuggestionHtml(milestoneState)}
       ${TDA_OFFER_MOVES.has(resolution.moveId)
-        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Take Decisive Action</button></div>`
+        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight</button></div>`
         : ""}
     </div>
   `.trim();
@@ -3621,7 +3624,9 @@ function renderMilestoneSuggestionHtml(milestoneState) {
   if (!milestoneState?.eligible) return "";
   return `<div class="sf-milestone-suggest-row">` +
     `<button type="button" class="sf-followup-btn" data-action="sf-reach-milestone" ` +
-    `title="Mark progress on your vow per its rank (Reach a Milestone)">⚑ Reach a Milestone</button>` +
+    `title="Mark progress on your vow per its rank">⚑ Mark Progress on Vow</button>` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-attempt-fulfill-vow" ` +
+    `title="Roll to fulfill your vow (progress roll)">🏁 Attempt to Fulfill Vow</button>` +
     `</div>`;
 }
 
@@ -4214,6 +4219,70 @@ export function wireMilestonePickerButtons(message, root) {
   }
 }
 onChatMessageRender((message, root) => wireMilestonePickerButtons(message, root));
+
+/**
+ * Wire the "🏁 Attempt to Fulfill Vow" button on move-result cards.
+ * Appears alongside "Mark Progress on Vow" when a vow milestone is eligible.
+ * Clicking posts a forced fulfill_your_vow move so the interpreter, narrator,
+ * and pipeline handle the progress roll, narration, track closure, and quests
+ * legacy reward automatically.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireAttemptFulfillVowButton(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.milestoneSuggestion?.eligible) return;
+  const btn = root?.querySelector?.('[data-action="sf-attempt-fulfill-vow"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    try {
+      await ChatMessage.create({
+        content: "Attempt to fulfill your vow.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow" } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | Attempt to Fulfill Vow button failed:`, err);
+      fresh.disabled = false;
+    }
+  });
+}
+onChatMessageRender((message, root) => wireAttemptFulfillVowButton(message, root));
+
+/**
+ * Wire the "🗺 Finish the Expedition" button on expedition progress cards.
+ * Clicking posts a forced finish_an_expedition move so the interpreter,
+ * narrator, and pipeline handle the progress roll, narration, track closure,
+ * and discoveries legacy reward automatically.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireFinishExpeditionButton(message, root) {
+  if (!message?.flags?.[MODULE_ID]?.expeditionProgressCard) return;
+  const btn = root?.querySelector?.('[data-action="sf-finish-expedition"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    try {
+      await ChatMessage.create({
+        content: "Finish the expedition.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "finish_an_expedition" } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | Finish the Expedition button failed:`, err);
+      fresh.disabled = false;
+    }
+  });
+}
+onChatMessageRender((message, root) => wireFinishExpeditionButton(message, root));
 
 /**
  * Wire the "Roll <move>" button on NWMA cards.
