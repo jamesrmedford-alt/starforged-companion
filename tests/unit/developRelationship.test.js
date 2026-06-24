@@ -10,6 +10,8 @@ import { describe, it, expect } from "vitest";
 import {
   selectConnection,
   planDevelopRelationship,
+  buildConnectionSuggestion,
+  CONNECTION_SUGGEST_CATEGORIES,
   nextRank,
   BOND_LEGACY_TICKS,
   CONNECTION_RANKS,
@@ -134,6 +136,71 @@ describe("planDevelopRelationship", () => {
   it("bonded without a match → no rank raise", () => {
     const c = conn({ bonded: true, rank: "dangerous" });
     expect(planDevelopRelationship(c, "strong_hit", false).raiseRank).toBe(false);
+  });
+});
+
+// ─── buildConnectionSuggestion ───────────────────────────────────────────────
+
+const res = (over = {}) => ({
+  moveId: "make_a_connection",
+  outcome: "strong_hit",
+  isProgressMove: false,
+  ...over,
+});
+
+describe("buildConnectionSuggestion", () => {
+  it("is eligible on a connection-category hit with an unbonded connection", () => {
+    expect(buildConnectionSuggestion(res(), [conn()], "connection"))
+      .toEqual({ eligible: true, count: 1 });
+  });
+
+  it("counts only unbonded connections", () => {
+    const list = [conn(), conn({ bonded: true }), conn()];
+    expect(buildConnectionSuggestion(res(), list, "connection"))
+      .toEqual({ eligible: true, count: 2 });
+  });
+
+  it("is null on a miss", () => {
+    expect(buildConnectionSuggestion(res({ outcome: "miss" }), [conn()], "connection")).toBeNull();
+  });
+
+  it("is null when no connections provided", () => {
+    expect(buildConnectionSuggestion(res(), [], "connection")).toBeNull();
+    expect(buildConnectionSuggestion(res(), null, "connection")).toBeNull();
+  });
+
+  it("is null when all connections are bonded", () => {
+    expect(buildConnectionSuggestion(res(), [conn({ bonded: true })], "connection")).toBeNull();
+  });
+
+  it("is null for non-connection categories", () => {
+    expect(buildConnectionSuggestion(res(), [conn()], "adventure")).toBeNull();
+    expect(buildConnectionSuggestion(res(), [conn()], "combat")).toBeNull();
+    expect(buildConnectionSuggestion(res(), [conn()], null)).toBeNull();
+  });
+
+  it("is null on develop_your_relationship (avoid double-mark)", () => {
+    expect(buildConnectionSuggestion(
+      res({ moveId: "develop_your_relationship" }), [conn()], "connection",
+    )).toBeNull();
+  });
+
+  it("is null on forge_a_bond (is the forge move itself)", () => {
+    expect(buildConnectionSuggestion(
+      res({ moveId: "forge_a_bond" }), [conn()], "connection",
+    )).toBeNull();
+  });
+
+  it("is eligible on make_a_connection and test_your_relationship hits", () => {
+    for (const moveId of ["make_a_connection", "test_your_relationship"]) {
+      expect(buildConnectionSuggestion(res({ moveId }), [conn()], "connection")?.eligible).toBe(true);
+    }
+  });
+
+  it("exposes CONNECTION_SUGGEST_CATEGORIES", () => {
+    expect(CONNECTION_SUGGEST_CATEGORIES.has("connection")).toBe(true);
+    expect(CONNECTION_SUGGEST_CATEGORIES.has("adventure")).toBe(false);
+    expect(CONNECTION_SUGGEST_CATEGORIES.has("combat")).toBe(false);
   });
 });
 

@@ -115,7 +115,7 @@ import {
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
-import { selectConnection, planDevelopRelationship } from "./moves/developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./moves/developRelationship.js";
 import { planReachMilestone, buildMilestoneSuggestion } from "./moves/milestone.js";
 import {
   extractRiders,
@@ -1406,12 +1406,20 @@ export function registerChatHook() {
       const milestoneState = buildMilestoneSuggestion(
         resolution, readVows(burnActor), MOVES[resolution.moveId]?.category ?? null,
       );
+      const { getConnection: _getConn } = await import("./entities/connection.js");
+      const _activeConns = (campaignState.connectionIds ?? [])
+        .map(hostId => { const c = _getConn(hostId); return c ? { ...c, __hostId: hostId } : null; })
+        .filter(Boolean);
+      const connectionState = buildConnectionSuggestion(
+        resolution, _activeConns, MOVES[resolution.moveId]?.category ?? null,
+      );
       const moveResultMessage = await postMoveResult(
         resolution,
         interpretation._mischiefAside ?? null,
         burnState,
         improveState,
         milestoneState,
+        connectionState,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -2795,6 +2803,35 @@ async function postMilestonePickerCard(vows, actorId) {
   }
 }
 
+/**
+ * Post a picker card listing active connections so the player can choose which
+ * one to develop or attempt to bond with. action is "develop" | "forge".
+ * Forge shows only unbonded connections; develop shows all active ones.
+ */
+async function postConnectionPickerCard(connections, action) {
+  const eligible = action === "forge"
+    ? connections.filter(c => !c.bonded)
+    : connections;
+  if (!eligible.length) return;
+  const label = action === "develop" ? "🤝 Develop Relationship" : "🔗 Forge a Bond";
+  const rows = eligible.map(c =>
+    `<button type="button" class="sf-followup-btn" data-action="sf-connection-pick" ` +
+    `data-host-id="${escapeChatHtml(c.__hostId ?? "")}" ` +
+    `data-pick-action="${escapeChatHtml(action)}" ` +
+    `data-connection-name="${escapeChatHtml(c.name ?? "")}">` +
+    `${escapeChatHtml(c.name || "connection")} <em>(${escapeChatHtml(c.rank ?? "")})</em></button>`,
+  ).join("");
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>${label}</strong>` +
+        `<p>Which connection?</p><div class="sf-milestone-picker">${rows}</div></div>`,
+      flags: { [MODULE_ID]: { connectionPicker: true, pickAction: action, resolved: false } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postConnectionPickerCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
 async function postCombatFinishCard({ track }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   try {
@@ -3553,13 +3590,13 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 // excluded.
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
   // and fail-open — never blocks or breaks the result post.
   void showMoveRoll(resolution);
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState),
+    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
@@ -3568,6 +3605,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         ...(burnState ? { burn: burnState } : {}),
         ...(improveState ? { improve: improveState } : {}),
         ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
+        ...(connectionState ? { connectionSuggestion: connectionState } : {}),
       },
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
@@ -3578,7 +3616,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -3608,6 +3646,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
       ${renderMilestoneSuggestionHtml(milestoneState)}
+      ${renderConnectionSuggestionHtml(connectionState)}
       ${TDA_OFFER_MOVES.has(resolution.moveId)
         ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight</button></div>`
         : ""}
@@ -3627,6 +3666,21 @@ function renderMilestoneSuggestionHtml(milestoneState) {
     `title="Mark progress on your vow per its rank">⚑ Mark Progress on Vow</button>` +
     `<button type="button" class="sf-followup-btn" data-action="sf-attempt-fulfill-vow" ` +
     `title="Roll to fulfill your vow (progress roll)">🏁 Attempt to Fulfill Vow</button>` +
+    `</div>`;
+}
+
+/**
+ * Render the "Develop Relationship / Forge a Bond" suggestion buttons for a
+ * move-result card. Returns "" when not eligible. Clicking opens a connection
+ * picker (wireConnectionSuggestionButtons / wireConnectionPickerButtons).
+ */
+function renderConnectionSuggestionHtml(connectionState) {
+  if (!connectionState?.eligible) return "";
+  return `<div class="sf-milestone-suggest-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-develop-relationship" ` +
+    `title="Mark progress on a connection's relationship track">🤝 Develop Relationship</button>` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-forge-bond" ` +
+    `title="Attempt to forge a bond with a connection (progress roll)">🔗 Forge a Bond</button>` +
     `</div>`;
 }
 
@@ -4283,6 +4337,88 @@ export function wireFinishExpeditionButton(message, root) {
   });
 }
 onChatMessageRender((message, root) => wireFinishExpeditionButton(message, root));
+
+/**
+ * Wire the "🤝 Develop Relationship" and "🔗 Forge a Bond" buttons on
+ * connection-category move result cards. Clicking opens a connection picker
+ * card so the player can choose which connection to act on.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireConnectionSuggestionButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.connectionSuggestion?.eligible) return;
+  for (const [dataAction, pickAction] of [
+    ["sf-develop-relationship", "develop"],
+    ["sf-forge-bond", "forge"],
+  ]) {
+    const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
+    if (!btn) continue;
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fresh.disabled = true;
+      try {
+        const { getConnection: gc } = await import("./entities/connection.js");
+        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        const connections = (state.connectionIds ?? [])
+          .map(hostId => { const c = gc(hostId); return c ? { ...c, __hostId: hostId } : null; })
+          .filter(c => c && c.active !== false);
+        await postConnectionPickerCard(connections, pickAction);
+      } catch (err) {
+        console.error(`${MODULE_ID} | Connection suggestion button failed:`, err);
+        fresh.disabled = false;
+      }
+    });
+  }
+}
+onChatMessageRender((message, root) => wireConnectionSuggestionButtons(message, root));
+
+/**
+ * Wire the per-connection buttons on a connection picker card. Clicking one
+ * posts a forced move message (develop_your_relationship or forge_a_bond) with
+ * the connection name embedded so the interpreter can resolve the target.
+ *
+ * Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireConnectionPickerButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.connectionPicker) return;
+  const btns = root?.querySelectorAll?.('[data-action="sf-connection-pick"]') ?? [];
+  if (f.resolved) {
+    for (const b of btns) b.disabled = true;
+    return;
+  }
+  for (const btn of btns) {
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      for (const b of root.querySelectorAll('[data-action="sf-connection-pick"]')) b.disabled = true;
+      if (!game.user?.isGM) return;
+      try {
+        const pickAction = fresh.dataset.pickAction;
+        const name = fresh.dataset.connectionName || "connection";
+        const moveId = pickAction === "develop" ? "develop_your_relationship" : "forge_a_bond";
+        const content = pickAction === "develop"
+          ? `Develop my relationship with ${name}.`
+          : `Forge a bond with ${name}.`;
+        await ChatMessage.create({
+          content,
+          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId } },
+        });
+        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
+          .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
+      } catch (err) {
+        console.error(`${MODULE_ID} | Connection picker click failed:`, err);
+      }
+    });
+  }
+}
+onChatMessageRender((message, root) => wireConnectionPickerButtons(message, root));
 
 /**
  * Wire the "Roll <move>" button on NWMA cards.
