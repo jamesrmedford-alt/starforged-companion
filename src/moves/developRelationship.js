@@ -19,6 +19,30 @@
 
 export const CONNECTION_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
 
+// Move categories where a "Develop Relationship / Forge a Bond" suggestion is shown
+// on the move result card when there are active unbonded connections.
+export const CONNECTION_SUGGEST_CATEGORIES = new Set(["connection"]);
+// Lifecycle moves that should never re-trigger the suggestion on their own result cards.
+const CONNECTION_SUGGEST_EXCLUDE = new Set(["develop_your_relationship", "forge_a_bond"]);
+
+/**
+ * Determine whether to show the connection-development suggestion buttons on a
+ * move result card. Returns { eligible, count } when eligible, null otherwise.
+ *
+ * @param {{ moveId: string, outcome: string }} resolution
+ * @param {Array<{ bonded?: boolean }>} activeConnections
+ * @param {string|null} moveCategory
+ * @returns {{ eligible: true, count: number }|null}
+ */
+export function buildConnectionSuggestion(resolution, activeConnections, moveCategory) {
+  if (!activeConnections?.length) return null;
+  if (!CONNECTION_SUGGEST_CATEGORIES.has(moveCategory)) return null;
+  if (CONNECTION_SUGGEST_EXCLUDE.has(resolution.moveId)) return null;
+  if (resolution.outcome === "miss") return null;
+  const unbonded = activeConnections.filter(c => !c.bonded);
+  if (!unbonded.length) return null;
+  return { eligible: true, count: unbonded.length };
+}
 // Bonds legacy ticks marked when developing a BONDED connection, by outcome.
 // Strong = 2 (the play-kit value); weak = 1 (diminished-but-present, see
 // decisions.md); miss = 0. A match on a hit additionally raises rank.
