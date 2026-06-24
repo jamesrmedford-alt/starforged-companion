@@ -10,7 +10,7 @@
  *   - index.js (audioEnabledForThisClient, segmentation orchestration)
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vitest';
 
 import {
   splitSegments,
@@ -391,6 +391,44 @@ describe('fetchSubscription', () => {
     });
     const result = await fetchSubscription('k');
     expect(result.resetUnix).toBeNull();
+  });
+});
+
+describe('ElevenLabs timeout behaviour', () => {
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
+  it('synthesise() rejects after 120s stall', async () => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    }));
+    const p = synthesise({ apiKey: 'k', voiceId: 'v', modelId: 'm', text: 'hi' });
+    const expectation = expect(p).rejects.toThrow(/ElevenLabs TTS request timed out/);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await expectation;
+    vi.useRealTimers();
+  });
+
+  it('fetchSubscription() rejects after 120s stall', async () => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    }));
+    const p = fetchSubscription('k');
+    const expectation = expect(p).rejects.toThrow(/ElevenLabs subscription request timed out/);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await expectation;
+    vi.useRealTimers();
   });
 });
 

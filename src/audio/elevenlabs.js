@@ -20,6 +20,8 @@
  * Output path: modules/starforged-companion/src/audio/elevenlabs.js
  */
 
+import { fetchWithTimeout } from "../net/fetchWithTimeout.js";
+
 const MODULE_ID = "starforged-companion";
 const ENDPOINT  = "https://api.elevenlabs.io/v1";
 
@@ -102,7 +104,7 @@ export async function synthesise({ apiKey, voiceId, modelId, text, speed = 1.0, 
     },
   };
 
-  const res = await fetch(path, {
+  const res = await fetchWithTimeout(path, {
     method: "POST",
     headers: {
       "xi-api-key":   key,
@@ -110,7 +112,7 @@ export async function synthesise({ apiKey, voiceId, modelId, text, speed = 1.0, 
       "Accept":       "audio/mpeg",
     },
     body: JSON.stringify(body),
-  });
+  }, { label: "ElevenLabs TTS request" });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => `HTTP ${res.status}`);
@@ -141,10 +143,10 @@ export async function fetchSubscription(apiKey) {
   const key = trimKey(apiKey);
   if (!key) throw new Error("ElevenLabs API key missing");
 
-  const res = await fetch(`${ENDPOINT}/user/subscription`, {
+  const res = await fetchWithTimeout(`${ENDPOINT}/user/subscription`, {
     method:  "GET",
     headers: { "xi-api-key": key },
-  });
+  }, { label: "ElevenLabs subscription request" });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => `HTTP ${res.status}`);
