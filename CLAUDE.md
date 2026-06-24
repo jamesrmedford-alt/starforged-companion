@@ -29,15 +29,33 @@ you to address a specific one in the current session conversation.
   commit. Three of the four v1.7.6 playtest bugs came from one unaudited
   type-meaning change (NPCs becoming `character` actors).
 - **Settled decisions: search, don't re-derive.** If the user says a decision
-  was already made, find it (`decisions.md`, scope docs,
-  `docs/testing/*playtest-findings*`) before re-opening it. If a doc
-  contradicts the user, the doc is stale — correct it **and** record the
-  decision in `decisions.md` in the same commit. Decisions that live only in
-  scope docs get lost between sessions; `decisions.md` is the durable home
-  (the FOLDER-002 "no native NPC actor type" loop is the cautionary example).
+  was already made, find it (`decisions.md`, the scope **issue** on GitHub,
+  `docs/testing/*playtest-findings*`) before re-opening it. If a doc or issue
+  contradicts the user, it is stale — correct it **and** record the decision in
+  `decisions.md` in the same commit. Decisions that live only in a scope issue
+  get lost between sessions; `decisions.md` is the durable home (the FOLDER-002
+  "no native NPC actor type" loop is the cautionary example).
 
 When in doubt about whether something is in scope for the current session,
 ask rather than proceed.
+
+---
+
+## Scope documents are GitHub issues
+
+Feature scopes live as **GitHub issues**, not files in `docs/`. The historical
+`docs/**/*-scope.md` documents were migrated verbatim into issues #203–#228 and
+removed on 2026-06-24 (see `decisions.md` → "Scope documents live as GitHub
+issues").
+
+- **Finding a scope:** `docs/scope-index.md` maps every scope to its issue.
+  Open the issue for the full scope text and its implementing-commit table.
+- **Writing a new scope:** open a GitHub issue — do **not** add a `*-scope.md`
+  file — and add a row to `scope-index.md` pointing at it. The autonomy
+  boundary above still applies: opening a scope issue when asked to spec a
+  feature is fine; implementing it still needs explicit direction.
+- **Status from issue state:** open = planned / in progress; closed-completed =
+  shipped; closed-not-planned = superseded or dropped.
 
 ---
 
@@ -45,16 +63,19 @@ ask rather than proceed.
 
 Before doing any work, read these files in order:
 
-1. `docs/scope-index.md` — single-glance status of all features; what is done,
-   in progress, and planned. Start here every session to orient quickly.
+1. `docs/scope-index.md` — single-glance status of all features and the map
+   from each scope to its **GitHub issue** (scopes live as issues, not files).
+   Start here every session to orient quickly; open the linked issue for a
+   feature's full scope text.
 2. `docs/decisions.md` — why things are the way they are; prevents re-introducing
    resolved issues or reversing deliberate choices
 3. `docs/known-issues.md` — open bugs and their status; don't duplicate work
    or re-open closed issues
 4. `docs/file-structure.md` — what each file exports and does
-5. The relevant scope document for the current task — find it via scope-index.md:
-   - Character/actor work: always read `docs/character/ironsworn-api-scope.md` first,
-     then `rules/foundry-ironsworn.md` for the full schema-rules contract
+5. The relevant scope for the current task — now a **GitHub issue**, found via
+   `scope-index.md` (scope → issue map):
+   - Character/actor work: always read the Ironsworn API scope (issue #212)
+     first, then `rules/foundry-ironsworn.md` for the full schema-rules contract
      before fetching live source and writing any code
 6. When the task touches narrator behaviour, move interpretation, pacing
    classification, scene mechanics, oracles, or any new game-side feature —

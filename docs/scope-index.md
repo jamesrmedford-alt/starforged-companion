@@ -1,7 +1,17 @@
 # Starforged Companion — Scope Index
 
-Single-glance status of all features. Start here every session to orient quickly.
-For detail on any scope, open the linked document. Latest release tag: **v1.7.11**.
+Single-glance status of all features, and the map from each scope to its
+**GitHub issue**. Start here every session to orient quickly.
+
+> **Scope documents now live as GitHub issues, not files.** The per-feature
+> `*-scope.md` documents were migrated verbatim into issues #203–#228 and
+> removed from `docs/` on 2026-06-24. Each row below links to the issue that
+> holds the full scope text and its implementing-commit table. When you start a
+> new feature, **open a GitHub issue for its scope** — do not add a
+> `*-scope.md` file. See `decisions.md` → "Scope documents live as GitHub
+> issues".
+
+Latest release tag: **v1.7.23**.
 
 ---
 
@@ -18,46 +28,53 @@ For detail on any scope, open the linked document. Latest release tag: **v1.7.11
 
 ## All scopes
 
-| Scope | Status | Description | Depends on | Blocks |
-|-------|--------|-------------|------------|--------|
-| [Narrator](narrator/narrator-scope.md) | ✅ COMPLETE | Direct Claude narration replacing Loremaster; configurable tone, perspective, model | — | Foundations, Scene Interrogation, Previously On |
-| [Ironsworn API](character/ironsworn-api-scope.md) | ✅ COMPLETE | Corrected `actorBridge.js` field paths for foundry-ironsworn v1.27.0 | — | Character Management |
-| [Character Management](character/character-management-scope.md) | ✅ COMPLETE | Actor bridge, character chronicle, and chronicle UI panel | Narrator, Ironsworn API | Previously On, World Journal |
-| [Foundations](foundations/foundations-scope.md) | ✅ COMPLETE | Session ID management, narrator card metadata, README, help compendium, CHANGELOG | Narrator | Scene Interrogation, Previously On, Character Management, World Journal |
-| [Scene Interrogation](narrator/scene-interrogation-scope.md) | ✅ COMPLETE | `@scene` prefix routes free-form questions to the narrator without triggering a move | Foundations | Previously On |
-| [Previously On](narrator/previously-on-scope.md) | ✅ COMPLETE | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start | Foundations, Character Management | World Journal |
-| [Narrator Entity Discovery](entities/narrator-entity-discovery-scope-v3.md) | ✅ COMPLETE | Per-move narrator permissions (discovery / interaction / embellishment / hybrid); relevance resolver with hybrid clarification dialog; combined detection pass (one Haiku call serves both entity extraction and World Journal); entity-panel generative-tier UI; current-location card; oracle seeds for the five seeded moves | Character Management | World Journal |
-| [World Journal](entities/world-journal-scope-v2.md) | ✅ COMPLETE | Folder + four category journals (lore, threats, factions, locations) + session log; manual `!journal` chat commands; combined detection pass populates entries with routing rule (factions/locations only when no entity record exists); WJ panel with Confirm + severity dropdown + history accordion + entity-record links; assembler injects confirmed lore (never dropped), immediate threats (never dropped), faction landscape, and recent discoveries | Character Management, Previously On, Narrator Entity Discovery | — |
-| [World Truths](foundations/world-truths-scope.md) | ✅ COMPLETE | Full oracle tables for all 14 Starforged truth categories with sub-table resolution (`src/truths/`); rolled and stored at session zero, injected into the narrator context; `!truths` opens the foundry-ironsworn truths dialog, `!lore` posts a narrator-generated truths recap card | — | Narrator |
-| [Session Lifecycle](session/session-scope.md) | ✅ COMPLETE | Session Panel (▶ toolbar) covering all five session moves; `campaignState.sessionActive` gate — before Begin Session, plain narration does not trigger the pipeline (chat commands + card affordances still work); Begin opens a galley vignette of the active PCs, End closes with a mundane currently-important-NPC vignette; chat aliases `!begin-session` / `!end-session` / `!flag` / `!fate` / `!break` | Narrator, Foundations | — |
-| Inciting Incident | ✅ COMPLETE | Envision an Inciting Incident (rulebook "Begin your adventure" §1) — rolls an Action+Theme spark and has the narrator compose the campaign's opening event grounded in truths/sector/connection/character, proposing a starting vow; Session-panel **✦ Envision Inciting Incident** button + `!incite` command; oracle-spark-only fallback with no key (`src/session/incitingIncident.js`, narrator `inciting_incident` mode) | Narrator, Session Lifecycle | — |
-| [Clocks](clocks/clocks-scope.md) | ✅ COMPLETE | Campaign and tension clocks via `!clock new\|advance\|fill\|reset\|remove\|list` and an ApplicationV2 panel; tension clocks can advance against Ask-the-Oracle odds | — | — |
-| [Quench Integration Tests](testing/quench-integration-scope.md) | ✅ COMPLETE | Live Foundry integration tests via Quench covering safety, character, world journal, sector, narration, audio, pacing, portrait/connection pipelines, and chat-command surfaces (see `src/integration/quench.js` for the current batch list) | Foundations, Character Management | — |
-| [API Key Privacy](character/api-key-privacy-scope.md) | ✅ COMPLETE | Hide API keys from player view; GM-only input in Companion Settings About tab | — | — |
-| [Sector Creator](sectors/sector-creator-scope.md) | ✅ COMPLETE | 11-step guided sector generation following Starforged rulebook (pp. 114–127); SECTOR_TROUBLE table, settlement/planet/connection/map generation | — | Sector Creator Enhanced |
-| [Sector Creator Enhanced](sectors/sector-creator-enhanced-scope.md) | ✅ COMPLETE | Background art per region (OpenRouter), Foundry Scene creation with Note pins and Drawing passages, narrator journal stubs | Sector Creator | — |
-| [System Asset Integration](foundations/system-asset-integration-scope.md) | ✅ COMPLETE | Reuse foundry-ironsworn art (starships, locations, asset/oracle/stat icons), compendium content (canonical moves, oracles, encounters, truths), and localisation strings; all nine phases shipped: centralised asset paths (`src/system/ironswornAssets.js`), i18n wrapper, canonical pack lookup, icon resolvers, move-interpreter canonical grounding, `!sfc encounter <name>` chat command, campaign-truths digest in narrator system prompt | Ironsworn API | — |
-| [Pacing](pacing/pacing-scope.md) | ✅ COMPLETE | Haiku pre-classifier between chat input and move interpreter; routes to `MOVE`, `NARRATIVE`, or `NARRATIVE_WITH_MOVE_AVAILABLE`; per-category dials (combat/investigation/exploration/social/downtime); `!pace hot\|quiet\|clear\|status` scene override; `!roll` false-negative recovery; connection-awareness via classifier context; recent move-density signal (in-memory ring buffer); telemetry journal under the Starforged Companion folder for dial tuning | Narrator, Move interpreter, Settings | — |
-| [Fact Continuity](fact-continuity/fact-continuity-scope.md) | ✅ COMPLETE | Per-scene memory layer — narrator emits a fenced JSON sidecar (`newTruths` + `stateChanges`) parsed off-screen into two active-scene ledgers (`sceneTruths`, `sceneState.bySubject`); ledger surfaces in the narrator system prompt filtered to current location, matched entities, and player-mentioned subjects; scene lifecycle (`@scene` / `!scene start\|end` / session close) migrates entity-scoped truths to entity generative tiers and archives free-text/scene truths to World Journal Lore; per-card "Correct a fact" DialogV2 + `!truth` / `!state` chat commands with GM-vs-player permission asymmetry; optional Haiku consistency-check audit; nine world settings gate the feature (including the §20 ship-positioning sub-feature) | Narrator, World Journal, Pacing | — |
-| [Audio Narration](audio/audio-narration-scope.md) | ✅ COMPLETE | ElevenLabs text-to-speech narration overlaid on narrator cards — text remains canonical, audio is enhancement; opt-in per player (client setting) with GM-level voice/model/speed (world setting); inline `<npc>…</npc>` markup splits prose into narrator-vs-NPC voices; content-addressed cache at `worlds/${world.id}/audio/...` with GM-gated FilePicker uploads; streaming with full-generation fallback; click-to-play default with optional primed auto-play; graceful degradation on key/CORS/rate failures; BYOK `xi-api-key` stored client-scoped in the About tab | Narrator, Fact Continuity (sidecar parser), Companion Settings panel | — |
-| [Private Channel](narrator/private-channel-scope.md) | ✅ COMPLETE | Shipped in v1.7.0. Button-driven floating ApplicationV2 window for a side conversation between one player and the narrator; per-player JournalEntry transcript with GM-Observer permissions; opt-in selective publish to main chat; Haiku narrator with cacheable prefix; button on the floating Companion toolbar | Narrator, Companion Settings panel, Actor bridge | — |
-| [Suffer-move Pipeline](moves/suffer-pipeline-scope.md) | ✅ COMPLETE | Shipping in v1.7.2 (PR pending). Resolves F16 from the v1.7.0 playtest: suffer moves never fired mechanically. Six-phase pipeline: per-move audit (`docs/moves/suffer-routing-audit.md`) → resolver emits `sufferPrompt` payload → six executors in `src/moves/sufferExecutor.js` apply meter writes + at-0 escalations (mortal-wound / desolation / vehicle-damage d100, debility marks) → blocking `SufferChoiceDialog` (`src/moves/sufferDialog.js`) presents the rulebook choice with GM-override + cancel → Pay the Price routes its d100 entries into the executors via `sufferRoute` annotations → Set a Course feedback card (folds in F15). 65 new unit tests | Narrator, Move resolver, Actor bridge | — |
-| [Consequence Riders](moves/consequence-riders-scope.md) | ✅ COMPLETE | Auto-applies asset resource effects from a move's outcome (momentum/health/spirit/supply/integrity/progress) so the player doesn't adjust meters by hand. Haiku extraction from free-text ability descriptions → condition-matched to the outcome → automatic vs optional/choice/progress prompt. Conservative + validated; never applies a guess; GM-gated; `riders.autoApply` setting. Builds on the post-roll improve affordance. (v1.7.12) | Move resolver, Ability scanner, Actor bridge, Progress tracks | — |
-| Exploration lifecycle (expedition + waypoint) | ✅ COMPLETE | Closes audit 3.18–3.21. Undertake an Expedition / Explore a Waypoint mark progress on a shared expedition track (resolve-or-create at an interpreter-inferred, panel-re-rankable rank); Make a Discovery / Confront Chaos mark the discoveries legacy track; Finish an Expedition completes the track + pays its rank's legacy reward (weak = one lower). `src/moves/expedition.js` over the live `progressTracks.js` store; GM-gated pipeline handlers + feedback cards. Deferred: in-dialog momentum-vs-progress toggle (shares the dormant combat `progress` option), one-click chain buttons, `currentWaypoint`. (v1.7.14) | Move resolver, Interpreter, Progress tracks | decisions.md → "Exploration lifecycle" |
-| [Shipboard Combat (Battle Stations!)](combat/shipboard-combat-minigame.md) | 🔄 IN PROGRESS | Battle Stations! (rulebook Ch. 3, pp. 184–187) is the shipboard-combat framework — not a move; the standard combat/suffer/recover moves resolve it, with per-character position and Aid Your Ally handing off control. **Shipped:** narrator-awareness guidance block (11 crew roles, injected when a combat track is open + a command vehicle exists) and the `!stations` player play-aid card (`src/moves/battleStations.js`); **Phase A (v1.7.17)** — a deck-plan ship-map Scene pinned with the 11 stations, the galley, and the ship's installed modules (`src/moves/shipMapScene.js`), OpenRouter deck-plan art with a schematic hull fallback (`shipMapArt.js`), Claude-vision deck-feature placement onto the drawn compartments with a fixed-layout fallback (`shipMapVision.js`), auto-generated on command-vehicle creation (gated, default off) or via `!shipmap`. **Planned (Phases B–D):** "man the stations" token placement, station-aware move suggestions, and integration into the combat lifecycle (see linked doc). Corrects an earlier pass that wrongly struck Battle Stations! as a phantom. | Move resolver, Progress tracks, Narrator, Entity → Actor Migration, Sector Creator Enhanced | decisions.md → "Battle Stations!" |
-| [Entity → Actor Migration](entities/entity-actor-migration-scope.md) | ✅ COMPLETE | Migrated ship → starship and planet/settlement/location → location Actors (with `system.subtype` discriminator); hierarchical Actor folders; settlement-data duplication collapsed; sector-record overview as UUID document links; one-time GM-triggered `!migrate-entities` with 7-day deferred cleanup. Shipped incrementally (Phases 1–3.5); scope doc reconciled 2026-05-31 | Ironsworn API, Narrator Entity Discovery, Sector Creator | — |
-| [Narrator Entity Discovery v2](entities/narrator-entity-discovery-scope-v2.md) | 🔧 SUPERSEDED | Earlier draft of entity discovery — replaced by v3 (combined detection pass, hybrid permissions, current-location card). Kept on disk for design history | — | — |
-| [World Journal v1](entities/world-journal-scope.md) | 🔧 SUPERSEDED | Earlier draft of World Journal — replaced by v2 (folder + four category journals, manual `!journal` commands, combined detection-pass routing rule, WJ panel). Kept on disk for design history | — | — |
+| Scope | Issue | Status | Description |
+|-------|-------|--------|-------------|
+| Narrator | [#204](https://github.com/jamesrmedford-alt/starforged-companion/issues/204) | ✅ COMPLETE | Direct Claude narration replacing Loremaster; configurable tone, perspective, model |
+| Ironsworn API | [#212](https://github.com/jamesrmedford-alt/starforged-companion/issues/212) | ✅ COMPLETE | Corrected `actorBridge.js` field paths for foundry-ironsworn |
+| Character Management | [#208](https://github.com/jamesrmedford-alt/starforged-companion/issues/208) | ✅ COMPLETE | Actor bridge, character chronicle, and chronicle UI panel |
+| Foundations | [#215](https://github.com/jamesrmedford-alt/starforged-companion/issues/215) | ✅ COMPLETE | Session ID management, narrator card metadata, README, help, CHANGELOG |
+| Scene Interrogation | [#205](https://github.com/jamesrmedford-alt/starforged-companion/issues/205) | ✅ COMPLETE | `@scene` prefix routes free-form questions to the narrator without a move |
+| Previously On | [#207](https://github.com/jamesrmedford-alt/starforged-companion/issues/207) | ✅ COMPLETE | Session recap (no API call) and campaign recap (Claude, cached); auto-posts at session start |
+| Narrator Entity Discovery (v3) | [#219](https://github.com/jamesrmedford-alt/starforged-companion/issues/219) | ✅ COMPLETE | Per-move narrator permissions; relevance resolver with hybrid clarification; combined detection pass; entity-panel generative tiers; current-location card |
+| World Journal (v2) | [#222](https://github.com/jamesrmedford-alt/starforged-companion/issues/222) | ✅ COMPLETE | Folder + four category journals + session log; `!journal` commands; combined detection-pass routing; WJ panel; assembler injection |
+| World Truths | [#206](https://github.com/jamesrmedford-alt/starforged-companion/issues/206) | ✅ COMPLETE | Full oracle tables for all 14 truth categories; `!truths` dialog and `!lore` recap |
+| Session Lifecycle | [#213](https://github.com/jamesrmedford-alt/starforged-companion/issues/213) | ✅ COMPLETE | Session Panel covering all five session moves; `sessionActive` gate; Begin/End vignettes; chat aliases. Includes Envision an Inciting Incident (`!incite`) |
+| Clocks | [#203](https://github.com/jamesrmedford-alt/starforged-companion/issues/203) | ✅ COMPLETE | Campaign and tension clocks via `!clock` and an ApplicationV2 panel; narrator vignettes on fill |
+| Quench Integration Tests | [#224](https://github.com/jamesrmedford-alt/starforged-companion/issues/224) | ✅ COMPLETE | Live Foundry integration tests via Quench across the major subsystems |
+| API Key Privacy | [#209](https://github.com/jamesrmedford-alt/starforged-companion/issues/209) | ✅ COMPLETE | Hide API keys from player view; GM-only input in Companion Settings About tab |
+| Sector Creator | [#218](https://github.com/jamesrmedford-alt/starforged-companion/issues/218) | ✅ COMPLETE | 11-step guided sector generation; SECTOR_TROUBLE table; settlement/planet/connection/map generation |
+| Sector Creator Enhanced | [#210](https://github.com/jamesrmedford-alt/starforged-companion/issues/210) | ✅ COMPLETE | Background art per region (OpenRouter), Foundry Scene with Note pins and Drawing passages, narrator journal stubs |
+| System Asset Integration | [#211](https://github.com/jamesrmedford-alt/starforged-companion/issues/211) | ✅ COMPLETE | Reuse foundry-ironsworn art, compendium content, and localisation; all nine phases |
+| Pacing | [#220](https://github.com/jamesrmedford-alt/starforged-companion/issues/220) | ✅ COMPLETE | Haiku pre-classifier routing to `MOVE` / `NARRATIVE` / `NARRATIVE_WITH_MOVE_AVAILABLE`; per-category dials; `!pace` / `!roll`; telemetry |
+| Fact Continuity | [#227](https://github.com/jamesrmedford-alt/starforged-companion/issues/227) | ✅ COMPLETE | Per-scene memory ledgers from a narrator sidecar; scene lifecycle; per-card corrections; consistency check; §20 ship positioning |
+| Audio Narration | [#221](https://github.com/jamesrmedford-alt/starforged-companion/issues/221) | ✅ COMPLETE | ElevenLabs TTS overlaid on narrator cards; `<npc>` voice split; content-addressed cache; graceful degradation; BYOK |
+| Private Channel | [#226](https://github.com/jamesrmedford-alt/starforged-companion/issues/226) | ✅ COMPLETE | Floating ApplicationV2 window for a side conversation between one player and the narrator; per-player transcript; opt-in publish |
+| Suffer-move Pipeline | [#214](https://github.com/jamesrmedford-alt/starforged-companion/issues/214) | ✅ COMPLETE | Six-phase pipeline: per-move audit → resolver `sufferPrompt` → executors → blocking dialog → Pay the Price routing → Set a Course feedback |
+| Consequence Riders | [#217](https://github.com/jamesrmedford-alt/starforged-companion/issues/217) | ✅ COMPLETE | Auto-applies asset resource effects from a move's outcome; Haiku extraction, condition-matched, GM-gated |
+| Shipboard Combat (Battle Stations!) | [#216](https://github.com/jamesrmedford-alt/starforged-companion/issues/216) | 🔄 IN PROGRESS | Phase A shipped (deck-plan ship-map Scene, 11 stations, art + vision placement, `!stations` / `!shipmap`). Phases B–D planned |
+| Entity → Actor Migration | [#228](https://github.com/jamesrmedford-alt/starforged-companion/issues/228) | ✅ COMPLETE | Migrated ship → starship and planet/settlement/location → location Actors; hierarchical folders; `!migrate-entities` |
+| Narrator Entity Discovery v2 | [#223](https://github.com/jamesrmedford-alt/starforged-companion/issues/223) | 🔧 SUPERSEDED | Earlier draft of entity discovery — replaced by v3 (#219). Closed as not planned; kept for design history |
+| World Journal v1 | [#225](https://github.com/jamesrmedford-alt/starforged-companion/issues/225) | 🔧 SUPERSEDED | Earlier draft of World Journal — replaced by v2 (#222). Closed as not planned; kept for design history |
 
-### Supporting infrastructure (no dedicated scope doc — see [`file-structure.md`](file-structure.md))
+### Scopes without a dedicated issue
+
+Some shipped work is tracked in `decisions.md` rather than a standalone scope issue:
+
+| Area | Status | Where |
+|------|--------|-------|
+| Exploration lifecycle (expedition + waypoint) | ✅ COMPLETE | `decisions.md` → "Exploration lifecycle" (v1.7.14) |
+| Progress track finishers (combat / vow / expedition / connection chat-card buttons) | ✅ COMPLETE | PRs #201, #202 |
+
+### Supporting infrastructure (no scope issue — see [`file-structure.md`](file-structure.md))
 
 | Area | Status | Description |
 |------|--------|-------------|
-| Multiplayer coordination | ✅ COMPLETE | `src/multiplayer/gmGate.js` (`isCanonicalGM()` single-emitter gate, prevents duplicate move resolution across clients) and `speaker.js` (resolves which PC a chat message belongs to — token selection via `message.speaker` first, then bound character, ownership, fallback; non-PC speakers excluded). Note: meter **persistence** is still GM-gated — see PERSIST-001 in known-issues. |
-| Narrator memory ([architecture](narrator/narrator-memory-architecture.md)) | ✅ COMPLETE | Cluster A from the v1.7.8 playtest (F7/F8 drift): unified narrator-prose feed flags (inciting + @scene → ring + recaps), deterministic sidecar emission (NPC location/condition + stakes), scene frame (per-scene snapshot, never dropped), lexical relevance + entity cards on paced/@scene, `narratorContextCards` ring-depth setting. **Surface 5 (2026-06-15): rolling session summary** — a debounced (≈1.5×N) Haiku "story so far" maintained from source the whole session, rendered as system-prompt §[4c] and archived to the Session Log at End Session (`narratorSessionSummary`, default on; §8.6). Invariants: `rules/narrator-memory.md`; tuning guide + refinement backlog in the architecture doc. |
-| Playtest Quickstart | ✅ COMPLETE | `src/session/quickstart.js` — one-click fresh-world setup (truths + sector + 2-path PC + 2-module command vehicle) via an auto-created hotbar Macro and `module.api.runPlaytestQuickstart()`; shares the wizard's `runSectorCreationPipeline`. |
-| Speech input | ✅ COMPLETE | `src/input/speechInput.js` — push-to-talk dictation via the Web Speech API (Chromium). Gated by the `speechInputEnabled` client setting. |
-| Ship Envision / History | ✅ COMPLETE | `src/entities/shipEnvision.js` — on-demand surfaces beyond the boot-up auto-seed. Envision rolls supplementary oracles (captain Role+Goal+First-look+Name, Action+Theme for crew + agenda, Initial Contact) and asks the narrator for a 2-3 sentence paragraph weaving them in; History rolls Action+Theme backstory beats + a Story Clue and asks for a 2-3 paragraph backstory. Chat commands `!ship envision [name] [facet]` and `!ship history [name] [beats]`; Entity Panel ✦ Envision and 📜 History buttons. Both append a dated `<h4>` section to `system.notes` so subsequent narrator calls pick up the new detail. |
+| Multiplayer coordination | ✅ COMPLETE | `src/multiplayer/gmGate.js` (`isCanonicalGM()`) and `speaker.js` (resolves which PC a chat message belongs to). Meter persistence is GM-gated — see PERSIST-001 in known-issues. |
+| Narrator memory ([architecture](narrator/narrator-memory-architecture.md)) | ✅ COMPLETE | Unified narrator-prose feed flags, deterministic sidecar emission, scene frame, lexical relevance + entity cards, rolling session summary. Invariants in `rules/narrator-memory.md`. |
+| Playtest Quickstart | ✅ COMPLETE | `src/session/quickstart.js` — one-click fresh-world setup via a hotbar Macro and `module.api.runPlaytestQuickstart()`. |
+| Speech input | ✅ COMPLETE | `src/input/speechInput.js` — push-to-talk dictation via the Web Speech API (Chromium). |
+| Ship Envision / History | ✅ COMPLETE | `src/entities/shipEnvision.js` — on-demand oracle-driven ship detail beyond the boot-up auto-seed; `!ship envision` / `!ship history`. |
 
 ---
 
@@ -77,28 +94,27 @@ Narrator (✅) ◄────┘
   │     ├─► Session Lifecycle (✅ — galley/end vignettes + pipeline gate)
   │     ├─► Fact Continuity (✅)
   │     │     └─► Audio Narration (✅)
-  │     └─► Private Channel (🔄 — audio carries through transparently once built)
+  │     └─► Private Channel (✅)
   └─► Quench Integration Tests (✅)
 
 Standalone: Clocks (✅) · Sector Creator (✅) → Sector Creator Enhanced (✅)
             System Asset Integration (✅) · Pacing (✅) · API Key Privacy (✅)
             Multiplayer coordination (✅) · Speech input (✅)
+            Shipboard Combat (🔄 — Phase A shipped)
 ```
 
 ---
 
 ## What to work on next
 
-- **Progress track finishers** — three related improvements to the progress-track UI and move-result cards: (1) rename the "⚑ Reach a Milestone" button on move-result cards to "⚑ Mark Progress on Vow" (`src/index.js` `renderMilestoneSuggestionHtml`, `src/system/i18n.js:69`); (2) add "Attempt to Finish the Fight" and "Attempt to Fulfill Vow" buttons to combat and vow progress-track cards — each triggers a `rollProgress` dice roll, calls the narrator for a result narration, closes the track on a hit, and credits legacy ticks to the appropriate track (Quests for vows); (3) add a "Finish the Expedition" button to expedition cards with the same roll → narrate → close → Discoveries-legacy-ticks pipeline. Architecture: `progressTracks.js` fires `Hooks.callAll('starforged:progressRollNarrate', { track, outcome, moveId })` and `index.js` registers the handler to avoid circular imports. Vow UI placement is TBD (panel card vs. milestone chat-card button).
-
 - **Visual UI polish** — wire the `statIcon` / `assetIcon` / `oracleIcon` resolvers (shipped in System Asset Integration Phase 9) into the entity panel and chat-card templates; the helpers exist but the templates were never updated.
-- **Fact Continuity panel surfaces** — the Entity Panel "Active truths" collapsible and the WJ Panel scene-truth filter row were deferred from the Phase D slice. The correction loop ships without them; they slot naturally into panel-polish work.
+- **Fact Continuity panel surfaces** — the Entity Panel "Active truths" collapsible and the WJ Panel scene-truth filter row were deferred from the Phase D slice; they slot naturally into panel-polish work.
 - **Ability scanner — stat substitution** — `src/moves/abilityScanner.js` extracts numeric `+N` adds but surfaces stat-substitution abilities (e.g. Empath's *"roll +heart"*) as text only; extend the scanner/dialog to parse and apply stat substitution automatically.
+- **Shipboard Combat Phases B–D** ([#216](https://github.com/jamesrmedford-alt/starforged-companion/issues/216)) — "man the stations" token placement, station-aware move suggestions, and combat-lifecycle integration.
 
 Other possible directions:
 
-- **Private Channel (🔄 in progress)** — button-driven floating window for solo player reflection with the narrator; being built on `claude/private-channel`. See `narrator/private-channel-scope.md`.
 - **Speech input polish** — push-to-talk reliability, dictation accuracy.
 - **Sector Creator iteration** — richer narrator stubs, additional region templates, post-generation editing.
-- **WJ polish** — surface contradiction notifications inside the WJ panel (not only the chat card); undo for accidental confirmations.
+- **WJ polish** — surface contradiction notifications inside the WJ panel; undo for accidental confirmations.
 - **Generative-tier learning** — feed pinned/promoted entries back into the entity-discovery prompt as positive exemplars.
