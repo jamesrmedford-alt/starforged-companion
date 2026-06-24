@@ -65,6 +65,22 @@ describe("MOVES narratorClass", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MOVES — stat
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("MOVES stat", () => {
+  // Aid Your Ally resolves as Secure an Advantage / Gain Ground — a rolled
+  // action move. It must carry a stat set (not null), otherwise the
+  // interpreter returns statUsed:null and statEnrichment leaves statValue at
+  // 0, producing an action-die-only roll with no stat applied.
+  it("aid_your_ally carries the Secure an Advantage stat set (not null)", () => {
+    expect(MOVES.aid_your_ally.stat).toEqual(MOVES.secure_an_advantage.stat);
+    expect(MOVES.aid_your_ally.stat).toEqual(["edge", "heart", "iron", "shadow", "wits"]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entity schema extensions — canonicalLocked + generativeTier
 // ─────────────────────────────────────────────────────────────────────────────
 

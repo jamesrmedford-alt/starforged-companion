@@ -8,6 +8,7 @@ All notable changes to Starforged Companion are documented here.
 
 - Fixed: **AI requests can no longer hang the app silently.** Every call to the narration and image-generation services is now bounded by a 120-second timeout. Previously, if a request stalled — for example after an API key was dropped from the session — it would wait forever with nothing logged; most visibly, the Sector Creator would build its settlements, vaults, and derelicts but then never finish the map, with no error to explain why. A stalled request now fails after two minutes with a clear message, and the feature recovers gracefully (the sector map is still created, just without its background art) instead of locking up.
 - Fixed: **Audio Play button no longer sticks on "Loading…" forever.** ElevenLabs voice-synthesis and subscription calls are now also bounded by the same 120-second timeout. A stalled audio request now fails cleanly and shows the "Unavailable" state instead of spinning indefinitely.
+- Fixed: **Aid Your Ally now rolls with your stat.** When you act to support an ally (e.g. patching up a downed crewmate), the move resolves as Secure an Advantage with the stat that fits your approach, instead of rolling with no stat at all (which quietly weakened the roll to your action die alone).
 
 ## [1.7.23] — 2026-06-23
 

@@ -66,7 +66,7 @@ Given player narration, return a JSON object identifying:
 - **secure_an_advantage** — When you assess a situation, make preparations, or bolster your position. Same stat options as face_danger.
 - **gather_information** — When you search, investigate, or study. Roll +wits.
 - **compel** — When you try to persuade, convince, or threaten someone. Roll +heart (charm/appeal), +iron (force/intimidation), or +shadow (deception/manipulation).
-- **aid_your_ally** — When you directly assist an ally. Triggers Secure an Advantage or Gain Ground for them.
+- **aid_your_ally** — When you act in direct support of an ally. You resolve this as Secure an Advantage (or Gain Ground in combat) and, on a hit, the ally takes the benefits. This IS a rolled action move: pick the stat that fits your approach — edge, heart, iron, shadow, or wits. Never leave statUsed null for this move.
 - **check_your_gear** — When you check if you have a specific item. Roll +supply.
 
 ### QUEST MOVES
