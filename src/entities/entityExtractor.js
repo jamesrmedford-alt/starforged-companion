@@ -1273,7 +1273,7 @@ async function persistGenerativeTier(entityRef, tier) {
 
 /**
  * Append a fact-continuity scene-end migration entry to an entity's
- * generative tier. See docs/fact-continuity/fact-continuity-scope.md §9.2 step 1.
+ * generative tier. See issue #227 (Fact Continuity) §9.2 step 1.
  *
  * Lower-level than `appendDetailToTier` — does not dedupe against existing
  * entries (migration entries are tagged source: "scene_truth_migration"

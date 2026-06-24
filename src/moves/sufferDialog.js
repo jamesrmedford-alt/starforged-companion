@@ -22,7 +22,7 @@
  * separately (`resolveSufferSelection`) so unit tests can pin it
  * without spinning up a real ApplicationV2.
  *
- * Source: docs/moves/suffer-pipeline-scope.md §5.3.
+ * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
 import { executeSuffer } from "./sufferExecutor.js";

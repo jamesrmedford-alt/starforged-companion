@@ -10,7 +10,7 @@
  * `type` (derelict / vault / station / anomaly / ruin / other) maps to
  * `system.subtype`. Everything else lives in flags.
  *
- * Field placement (per docs/entities/entity-actor-migration-scope.md §3.2):
+ * Field placement (per issue #228 (Entity → Actor Migration) §3.2):
  *   actor.system.subtype  = location.type
  *   actor.system.klass    = null
  *   actor.system.description ← location.description

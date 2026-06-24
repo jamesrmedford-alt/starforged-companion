@@ -2,7 +2,7 @@
  * STARFORGED COMPANION
  * src/private-channel/app.js — PrivateChannelApp (floating ApplicationV2 window)
  *
- * A side conversation between one player and the narrator (private-channel-scope.md
+ * A side conversation between one player and the narrator (issue #226 (Private Channel)
  * §2/§3). Built with a `mode` config from day one so !thread / !character new can
  * reuse the primitive later; v1 ships PRIVATE only. ApplicationV2 is accessed via
  * the global namespace (matches every other panel — no ES import).

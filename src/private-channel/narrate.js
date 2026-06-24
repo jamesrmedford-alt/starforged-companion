@@ -3,7 +3,7 @@
  * src/private-channel/narrate.js — the private-channel narrator call
  *
  * Wraps buildPrivateContext + the Anthropic call so the send flow is testable
- * apart from the window DOM. Always Haiku (private-channel-scope.md §4: short,
+ * apart from the window DOM. Always Haiku (issue #226 (Private Channel) §4: short,
  * frequent exchanges — throughput/cost over peak quality), with the cacheable
  * system prefix marked for prompt caching. All Anthropic traffic goes through
  * src/api-proxy.js per the CLAUDE.md architecture constraint.

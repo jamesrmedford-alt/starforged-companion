@@ -1149,7 +1149,7 @@ export function buildNarratorSystemPrompt(
   // [10] Audio NPC-dialogue markup instruction — appended only when audio
   // narration is enabled. Tells the narrator to wrap NPC speech with
   // <npc>…</npc> so the audio pipeline can dispatch a distinct voice. See
-  // docs/audio/audio-narration-scope.md §6. Skipped for meta modes (a recap
+  // issue #221 (Audio Narration) §6. Skipped for meta modes (a recap
   // carries no live NPC dialogue to voice).
   const audioMarkupEnabled = extras?.audioMarkupEnabled === true;
   if (audioMarkupEnabled && !isMetaMode) {

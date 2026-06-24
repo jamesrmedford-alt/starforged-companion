@@ -4,7 +4,7 @@
  *
  * One-time GM-triggered migration from the legacy JournalEntry-backed entity
  * storage to native foundry-ironsworn Actor documents. See
- * docs/entities/entity-actor-migration-scope.md §5 for the full design.
+ * issue #228 (Entity → Actor Migration) §5 for the full design.
  *
  * Phase 2 — handles only `ship` migration. Each found legacy ship journal:
  *   1. Reads the page-flag payload

@@ -292,7 +292,7 @@ to find each move's resolver branch.
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Sector creation (name, region, settlements, passages) | ✅ | `src/sectors/sectorGenerator.js`, `sectorPanel.js`, `sectorOverview.js`; 11-step wizard (scope: `docs/sector-creator-scope.md`) |
+| Sector creation (name, region, settlements, passages) | ✅ | `src/sectors/sectorGenerator.js`, `sectorPanel.js`, `sectorOverview.js`; 11-step wizard (scope: `issue #218 (Sector Creator)`) |
 | Sector faction / control field | 🔄 | `src/sectors/sectorGenerator.js:103` initialises `faction: null` and displays it; no oracle generates faction control |
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |
@@ -308,7 +308,7 @@ to find each move's resolver branch.
 | Set a Flag — UI / chat command | ❌ | move recognised at `src/schemas.js:84`; no flag-setting dialog or surface |
 | Change Your Fate — 5-option chooser | ❌ | move recognised at `src/schemas.js:85`; no UI for Reframe / Refocus / Replace / Redirect / Reshape |
 | Take a Break — Move on / Stop for now | ❌ | move recognised at `src/schemas.js:86`; no prompt |
-| Begin a Session — flag review, recap, spotlight vignette | 🔄 | recap auto-runs (`previously-on-scope.md`); no flag-review prompt; no vignette table |
+| Begin a Session — flag review, recap, spotlight vignette | 🔄 | recap auto-runs (`issue #207 (Previously On)`); no flag-review prompt; no vignette table |
 | End a Session — milestone reminder, focus capture, +1 momentum | 🔄 | move returns `momentumChange: 1` text; no UI to set `questFocus` / `connectionFocus` (fields exist at `src/schemas.js:562-563`) |
 | Scene start / end (Fact Continuity scene markers) | ✅ | `!scene start|end` at `src/index.js:1011-1066`, `src/factContinuity/sceneLifecycle.js` |
 
@@ -372,7 +372,7 @@ of the offending or missing code.
 momentumReset: condCount === 0 ? 0 : Math.max(-2, -condCount),
 ```
 
-Per the play kit (p. 1) and `docs/ironsworn-api-scope.md:191-193` (RESET_MIN
+Per the play kit (p. 1) and `issue #212 (Ironsworn API):191-193` (RESET_MIN
 = 0; reset = `momentum.resetValue − impactCount` clamped to floor 0), the
 correct values are 0 impacts → +2, 1 → +1, 2+ → 0. Current code returns 0 →
 0, 1 → −1, 2+ → −2. This corrupts momentum clamping at line 206 and the
@@ -394,7 +394,7 @@ const CONDITION_DEBILITIES = ['wounded', 'shaken', 'unprepared', 'encumbered'];
 ```
 
 Per the play kit (p. 1, "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH
-IMPACT") and confirmed in `docs/ironsworn-api-scope.md:212` ("ALL impacts
+IMPACT") and confirmed in `issue #212 (Ironsworn API):212` ("ALL impacts
 reduce momentumMax and momentumReset — the `#impactCount` getter counts all
 true values in `system.debility`. Do not filter by category"). Battered,
 cursed, doomed, tormented, indebted, permanently_harmed, and traumatized

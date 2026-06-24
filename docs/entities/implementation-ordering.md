@@ -2,7 +2,7 @@
 ## Narrator Entity Discovery + World Journal
 ## Including unit test evolution for cross-dependencies
 
-**Covers:** narrator-entity-discovery-scope-v2.md + world-journal-scope-v2.md  
+**Covers:** issue #223 (Narrator Entity Discovery v2) + issue #222 (World Journal v2)  
 **These two scopes share:** the combined detection pass, the assembler section order, and token budget  
 **Total estimated Claude Code sessions:** 5  
 

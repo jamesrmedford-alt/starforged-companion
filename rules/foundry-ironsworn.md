@@ -9,7 +9,7 @@ have changed between versions and cost significant debugging time when
 wrong.
 
 **Repository:** https://github.com/ben/foundry-ironsworn  
-**Confirmed schema doc:** `docs/character/ironsworn-api-scope.md` — read this first,
+**Confirmed schema doc:** `issue #212 (Ironsworn API)` — read this first,
 then verify against live source if the version may have changed.
 
 **Submodule mechanics.** If the vendor folder is empty (submodule not
@@ -56,7 +56,7 @@ vendor/foundry-ironsworn/src/module/model/item/
 
 **Rules for ironsworn actor work — non-negotiable:**
 
-1. Read `docs/character/ironsworn-api-scope.md` before touching `actorBridge.js`
+1. Read `issue #212 (Ironsworn API)` before touching `actorBridge.js`
 2. If the system version may have changed, fetch the source files above
 3. Never assume field paths from memory or documentation — verify from source
 4. Use computed getters on the system model when available:

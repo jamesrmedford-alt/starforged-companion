@@ -249,7 +249,7 @@ export async function createClock(input) {
 
 /**
  * Advance every active tension clock by one segment. The module's clock
- * contract (file header above; docs/clocks/clocks-scope.md) is that tension
+ * contract (file header above; issue #203 (Clocks)) is that tension
  * clocks advance when you Pay the Price or a complication is rolled — this is
  * the programmatic hook the move pipeline calls on a Pay the Price (playtest
  * finding #10: the wiring was documented but never built). Campaign clocks are

@@ -28,7 +28,7 @@
  *       Hooks updateActor with a per-sector debounced re-render. Fires
  *       only when the diff touches a field the overview renders.
  *
- * Design rationale: see docs/entities/entity-actor-migration-scope.md §3.6.
+ * Design rationale: see issue #228 (Entity → Actor Migration) §3.6.
  */
 
 const MODULE_ID = "starforged-companion";
@@ -185,7 +185,7 @@ function scheduleRewrite(sectorId) {
 
 /**
  * Diff guard — only fields the overview displays should trigger a rewrite.
- * Mirrors the RENDERED_KEYS set from docs/entities/entity-actor-migration-scope.md §3.6.
+ * Mirrors the RENDERED_KEYS set from issue #228 (Entity → Actor Migration) §3.6.
  */
 function diffTouchesOverview(changes) {
   if (!changes) return false;

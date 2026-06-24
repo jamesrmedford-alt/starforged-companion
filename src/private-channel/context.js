@@ -3,7 +3,7 @@
  * src/private-channel/context.js — context packet for a private-channel turn
  *
  * Mirrors the main narrator's prompt assembly, but for a private, no-move
- * conversation (private-channel-scope.md §4). The cacheable prefix
+ * conversation (issue #226 (Private Channel) §4). The cacheable prefix
  * (SAFETY + ROLE + WORLD TRUTHS + CHARACTER) is stable within a session; the
  * volatile tail (scene context + transcript + player message) changes every
  * turn. Returns { system, user, cacheBreakpoint } — `system` is the cacheable

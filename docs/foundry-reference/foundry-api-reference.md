@@ -322,7 +322,7 @@ const val = actor.getFlag("starforged-companion", "myKey");
 await actor.unsetFlag("starforged-companion", "myKey");
 ```
 
-**See `docs/ironsworn-api-scope.md` for confirmed field paths in the
+**See `issue #212 (Ironsworn API)` for confirmed field paths in the
 foundry-ironsworn system Actor schema.**
 
 ### JournalEntry
