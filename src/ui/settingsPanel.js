@@ -914,11 +914,15 @@ export class SettingsPanelApp extends ApplicationV2 {
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
       lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
-      apiKeys: game.user.isGM ? {
+      // Populated for every client — all three keys are client-scoped
+      // (per-browser BYOK), so a player can manage their own. The render only
+      // shows players the keys they use (Claude for the Private Channel,
+      // ElevenLabs for audio); OpenRouter image generation stays GM-only.
+      apiKeys: {
         claudeKeySet:     !!game.settings.get(MODULE_ID, 'claudeApiKey'),
         openRouterKeySet: !!game.settings.get(MODULE_ID, 'openRouterApiKey'),
         elevenLabsKeySet: !!game.settings.get(MODULE_ID, 'elevenLabsApiKey'),
-      } : null,
+      },
       audio: {
         enabled:         (() => { try { return game.settings.get(MODULE_ID, 'audio.enabled') === true; } catch { return false; } })(),
         narratorVoiceId: (() => { try { return game.settings.get(MODULE_ID, 'audio.narratorVoiceId') ?? ''; } catch { return ''; } })(),
@@ -1455,25 +1459,30 @@ export class SettingsPanelApp extends ApplicationV2 {
             <dd>v12 minimum · v13 verified</dd>
           </div>
         </dl>
-        ${ctx.isGM ? `
-          <div class="about-api-keys">
-            <h3 class="about-section-title">API Keys</h3>
-            <p class="about-api-note">
-              These keys are stored in your browser only and are never sent to
-              Foundry's server or visible to other players.
-            </p>
-            <div class="api-key-field">
-              <label class="api-key-label" for="sf-claude-key">
-                Claude API Key
-                ${ctx.apiKeys.claudeKeySet
-                  ? '<span class="api-key-status api-key-set">● Set</span>'
-                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
-              </label>
-              <input class="settings-input api-key-input" type="password"
-                     id="sf-claude-key" name="claudeApiKey"
-                     placeholder="sk-ant-..."
-                     autocomplete="off" spellcheck="false">
-            </div>
+        <div class="about-api-keys">
+          <h3 class="about-section-title">API Keys</h3>
+          <p class="about-api-note">
+            ${ctx.isGM
+              ? `These keys are stored in your browser only and are never sent to
+                 Foundry's server or visible to other players.`
+              : `Your personal keys — stored in this browser only, never sent to
+                 Foundry's server or shared with the GM or other players. The
+                 Claude key powers your Private Channel; the ElevenLabs key
+                 enables narrator audio on your client.`}
+          </p>
+          <div class="api-key-field">
+            <label class="api-key-label" for="sf-claude-key">
+              Claude API Key
+              ${ctx.apiKeys.claudeKeySet
+                ? '<span class="api-key-status api-key-set">● Set</span>'
+                : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+            </label>
+            <input class="settings-input api-key-input" type="password"
+                   id="sf-claude-key" name="claudeApiKey"
+                   placeholder="sk-ant-..."
+                   autocomplete="off" spellcheck="false">
+          </div>
+          ${ctx.isGM ? `
             <div class="api-key-field">
               <label class="api-key-label" for="sf-openrouter-key">
                 OpenRouter API Key (image generation)
@@ -1486,28 +1495,28 @@ export class SettingsPanelApp extends ApplicationV2 {
                      placeholder="sk-or-v1-..."
                      autocomplete="off" spellcheck="false">
             </div>
-            <div class="api-key-field">
-              <label class="api-key-label" for="sf-elevenlabs-key">
-                ElevenLabs API Key (audio narration)
-                ${ctx.apiKeys.elevenLabsKeySet
-                  ? '<span class="api-key-status api-key-set">● Set</span>'
-                  : '<span class="api-key-status api-key-unset">○ Not set</span>'}
-              </label>
-              <input class="settings-input api-key-input" type="password"
-                     id="sf-elevenlabs-key" name="elevenLabsApiKey"
-                     placeholder="sk_..."
-                     autocomplete="off" spellcheck="false">
-            </div>
-            <div class="api-key-actions">
-              <button class="settings-btn btn-save-keys" data-action="saveApiKeys">
-                Save Keys
-              </button>
-              <span class="api-key-save-note">
-                Leave a field blank to keep the existing value.
-              </span>
-            </div>
+          ` : ''}
+          <div class="api-key-field">
+            <label class="api-key-label" for="sf-elevenlabs-key">
+              ElevenLabs API Key (audio narration)
+              ${ctx.apiKeys.elevenLabsKeySet
+                ? '<span class="api-key-status api-key-set">● Set</span>'
+                : '<span class="api-key-status api-key-unset">○ Not set</span>'}
+            </label>
+            <input class="settings-input api-key-input" type="password"
+                   id="sf-elevenlabs-key" name="elevenLabsApiKey"
+                   placeholder="sk_..."
+                   autocomplete="off" spellcheck="false">
           </div>
-        ` : ''}
+          <div class="api-key-actions">
+            <button class="settings-btn btn-save-keys" data-action="saveApiKeys">
+              Save Keys
+            </button>
+            <span class="api-key-save-note">
+              Leave a field blank to keep the existing value.
+            </span>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -1737,8 +1746,9 @@ export class SettingsPanelApp extends ApplicationV2 {
 
   static #onSaveApiKeys(_event, _target) {
     const work = (async () => {
-      if (!game.user.isGM) return;
-
+      // No GM gate — all three keys are client-scoped (per-browser BYOK), so a
+      // player saves their own. Fields not rendered for this client (OpenRouter
+      // is GM-only) resolve to null below and are skipped.
       const panel          = this.element;
       const claudeKey      = panel.querySelector('[name="claudeApiKey"]')?.value?.trim();
       const openRouterKey  = panel.querySelector('[name="openRouterApiKey"]')?.value?.trim();

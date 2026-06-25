@@ -6,6 +6,12 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Players can open Companion Settings.** The **🛡 Companion Settings** button is now available to every player, not just the GM. Each player can enter their own Claude and ElevenLabs API keys, enable narrator audio on their own client, adjust their audio volume, and set their personal private Lines — all without being promoted to GM. GM-only world settings (mischief, narrator, pacing, world audio, voices) remain GM-only.
+- Changed: **Push-to-Talk is now on by default.** The 🎙 microphone button appears in the chat bar automatically for every player on a Chromium browser (it's a per-device setting you can turn off in Settings). Previously it was off by default and easy to miss.
+- Fixed: **Moves and scene questions no longer fail after you promote a player to GM.** The Companion runs all narration and dice resolution on a single GM client — the one holding the Claude API key. Previously, making another player a GM could silently move that work to their browser, which has no key, so every move and `@scene` failed with "Claude API key not configured" even though you had set your key. The Companion now always routes the pipeline to a GM whose client actually holds a key (your key still never leaves your browser).
+
+## [1.7.24] — 2026-06-23
+
 - Fixed: **AI requests can no longer hang the app silently.** Every call to the narration and image-generation services is now bounded by a 120-second timeout. Previously, if a request stalled — for example after an API key was dropped from the session — it would wait forever with nothing logged; most visibly, the Sector Creator would build its settlements, vaults, and derelicts but then never finish the map, with no error to explain why. A stalled request now fails after two minutes with a clear message, and the feature recovers gracefully (the sector map is still created, just without its background art) instead of locking up.
 - Fixed: **Audio Play button no longer sticks on "Loading…" forever.** ElevenLabs voice-synthesis and subscription calls are now also bounded by the same 120-second timeout. A stalled audio request now fails cleanly and shows the "Unavailable" state instead of spinning indefinitely.
 - Fixed: **Aid Your Ally now rolls with your stat.** When you act to support an ally (e.g. patching up a downed crewmate), the move resolves as Secure an Advantage with the stat that fits your approach, instead of rolling with no stat at all (which quietly weakened the roll to your action die alone).

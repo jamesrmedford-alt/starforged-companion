@@ -6,8 +6,8 @@
  * every connected client from running the move pipeline.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { isCanonicalGM } from '../../src/multiplayer/gmGate.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { isCanonicalGM, advertiseClaudeKeyPresence } from '../../src/multiplayer/gmGate.js';
 
 function setUsers(users, currentUserId) {
   // game.users must be iterable (Foundry Collection); array works for Array.from.
@@ -19,6 +19,7 @@ beforeEach(() => {
   // Restore between tests
   global.game.users = [];
   global.game.user  = null;
+  global.game.settings._store.clear();   // empty keyed-GM registry by default
 });
 
 describe('isCanonicalGM', () => {
@@ -78,5 +79,112 @@ describe('isCanonicalGM', () => {
     global.game.users = undefined;
     global.game.user  = { isGM: true };
     expect(isCanonicalGM()).toBe(false);
+  });
+});
+
+describe('isCanonicalGM — keyed-GM routing', () => {
+  const M = 'starforged-companion';
+  const setKeyed = (ids) => global.game.settings._store.set(`${M}.keyedGmUserIds`, ids);
+
+  it('prefers a keyed GM over a lower-id keyless GM (the promoted-player regression)', () => {
+    // 'a-gm' sorts lowest but has no key; 'b-gm' holds the key. The keyed GM
+    // must be the emitter — otherwise every move fails "API key not configured".
+    const users = [
+      { id: 'a-gm', isGM: true,  active: true },  // no key
+      { id: 'b-gm', isGM: true,  active: true },  // has key
+      { id: 'p1',   isGM: false, active: true },
+    ];
+    setKeyed(['b-gm']);
+
+    setUsers(users, 'b-gm');
+    expect(isCanonicalGM()).toBe(true);
+
+    setUsers(users, 'a-gm');
+    expect(isCanonicalGM()).toBe(false);
+  });
+
+  it('picks the lowest-id GM among multiple keyed GMs', () => {
+    const users = [
+      { id: 'a-gm', isGM: true, active: true },
+      { id: 'b-gm', isGM: true, active: true },
+    ];
+    setKeyed(['a-gm', 'b-gm']);
+
+    setUsers(users, 'a-gm');
+    expect(isCanonicalGM()).toBe(true);
+    setUsers(users, 'b-gm');
+    expect(isCanonicalGM()).toBe(false);
+  });
+
+  it('falls back to the lowest active GM when no active GM is keyed', () => {
+    // Registry names an offline GM only → no keyed GM online → old behaviour.
+    const users = [
+      { id: 'a-gm', isGM: true, active: true },
+      { id: 'b-gm', isGM: true, active: true },
+    ];
+    setKeyed(['offline-gm']);
+    setUsers(users, 'a-gm');
+    expect(isCanonicalGM()).toBe(true);
+  });
+
+  it('falls back to the lowest active GM when the registry is empty', () => {
+    const users = [
+      { id: 'a-gm', isGM: true, active: true },
+      { id: 'b-gm', isGM: true, active: true },
+    ];
+    setUsers(users, 'a-gm');
+    expect(isCanonicalGM()).toBe(true);
+  });
+
+  it('ignores a keyed GM that is offline', () => {
+    // 'a-gm' is keyed but offline; active keyed 'b-gm' wins over keyless 'c-gm'.
+    const users = [
+      { id: 'a-gm', isGM: true, active: false },  // keyed but offline
+      { id: 'b-gm', isGM: true, active: true  },  // keyed, online
+      { id: 'c-gm', isGM: true, active: true  },  // keyless
+    ];
+    setKeyed(['a-gm', 'b-gm']);
+
+    setUsers(users, 'b-gm');
+    expect(isCanonicalGM()).toBe(true);
+    setUsers(users, 'c-gm');
+    expect(isCanonicalGM()).toBe(false);
+  });
+});
+
+describe('advertiseClaudeKeyPresence', () => {
+  const M = 'starforged-companion';
+  const getKeyed = () => global.game.settings._store.get(`${M}.keyedGmUserIds`);
+
+  it('adds this GM to the registry when it holds a key', async () => {
+    global.game.user = { isGM: true, id: 'gm1' };
+    global.game.settings._store.set(`${M}.claudeApiKey`, 'sk-ant-xxx');
+    await advertiseClaudeKeyPresence();
+    expect(getKeyed()).toEqual(['gm1']);
+  });
+
+  it('removes this GM from the registry when it has no key', async () => {
+    global.game.user = { isGM: true, id: 'gm1' };
+    global.game.settings._store.set(`${M}.keyedGmUserIds`, ['gm1', 'gm2']);
+    global.game.settings._store.set(`${M}.claudeApiKey`, '');
+    await advertiseClaudeKeyPresence();
+    expect(getKeyed()).toEqual(['gm2']);
+  });
+
+  it('does not write when membership is already correct (no redundant world write)', async () => {
+    global.game.user = { isGM: true, id: 'gm1' };
+    global.game.settings._store.set(`${M}.keyedGmUserIds`, ['gm1']);
+    global.game.settings._store.set(`${M}.claudeApiKey`, 'sk-ant-xxx');
+    const spy = vi.spyOn(global.game.settings, 'set');
+    await advertiseClaudeKeyPresence();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('is a no-op for a non-GM client (never writes world state)', async () => {
+    global.game.user = { isGM: false, id: 'p1' };
+    global.game.settings._store.set(`${M}.claudeApiKey`, 'sk-ant-player');
+    await advertiseClaudeKeyPresence();
+    expect(getKeyed()).toBeUndefined();
   });
 });

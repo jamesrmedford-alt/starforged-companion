@@ -204,7 +204,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM }              from "./multiplayer/gmGate.js";
+import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
 import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
@@ -254,6 +254,24 @@ function registerCoreSettings() {
     config:  false,
     type:    String,
     default: "",
+    // Keep the keyed-GM routing registry in sync the moment a GM enters or
+    // clears their key, so the single-emitter pipeline always runs on a GM
+    // that actually holds a key (see gmGate.js / advertiseClaudeKeyPresence).
+    onChange: () => { advertiseClaudeKeyPresence().catch(() => {}); },
+  });
+
+  // Keyed-GM routing registry — world-scoped list of GM user IDs whose client
+  // currently holds a Claude key. The narration/move pipeline runs on exactly
+  // one GM client (isCanonicalGM); this lets it pick a GM that actually has a
+  // key instead of the bare lowest-userId GM, which silently broke every move
+  // when a keyless player was promoted to GM. User IDs only are stored here —
+  // never the key — so issue #209 (keys never leave the browser) still holds.
+  game.settings.register(MODULE_ID, "keyedGmUserIds", {
+    name:    "Keyed GM registry",
+    scope:   "world",
+    config:  false,
+    type:    Array,
+    default: [],
   });
 
   // OpenRouter API key — the user's BYOK credential for image generation.
@@ -366,11 +384,11 @@ function registerCoreSettings() {
 
   game.settings.register(MODULE_ID, "speechInputEnabled", {
     name:     "Push-to-Talk",
-    hint:     "Enable push-to-talk speech input (adds a 🎙 button to the chat bar). This is a per-player, per-device setting — each player turns it on in their own client; the GM enabling it does not enable it for anyone else. Requires a Chromium-based browser and microphone permission.",
+    hint:     "Push-to-talk speech input (adds a 🎙 button to the chat bar). On by default for every player; this is a per-player, per-device setting — turn it off here if you don't want it. Requires a Chromium-based browser and microphone permission.",
     scope:    "client",
     config:   true,
     type:     Boolean,
-    default:  false,
+    default:  true,
     onChange: (value) => {
       if (value) initSpeechInput();
     },
@@ -3766,6 +3784,10 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();
+  // Advertise this client's Claude-key presence so the single-emitter pipeline
+  // routes to a keyed GM (no-op for non-GMs; writes only when state changes).
+  advertiseClaudeKeyPresence().catch((err) =>
+    console.warn(`${MODULE_ID} | keyed-GM advertise failed:`, err));
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls
