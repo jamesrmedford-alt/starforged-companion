@@ -109,7 +109,7 @@ https://github.com/jamesrmedford-alt/starforged-companion/releases/latest/downlo
 
 ## First-time setup
 
-1. Click the **🛡 Companion Settings** button in the Token Controls toolbar (GM only)
+1. Click the **🛡 Companion Settings** button on the Companion launcher (available to every player — each enters their own keys; GM-only world settings stay GM-only)
 2. Open the **About** tab
 3. Enter your **Claude API Key** (from console.anthropic.com) and click **Save Keys**
 4. (Optional, for art generation) Enter your **OpenRouter API Key** (from openrouter.ai) and click **Save Keys**

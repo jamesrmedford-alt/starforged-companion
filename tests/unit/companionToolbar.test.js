@@ -10,9 +10,13 @@ import { companionToolbarTools } from "../../src/ui/companionToolbarTools.js";
 describe("companionToolbarTools — visibility", () => {
   const keys = (ctx) => companionToolbarTools(ctx).map(t => t.key);
 
-  it("shows the player-safe tools to a non-GM with the private channel off", () => {
+  it("shows the player-safe tools (including Companion Settings) to a non-GM with the private channel off", () => {
     const k = keys({ isGM: false, privateChannelEnabled: false });
-    expect(k).toEqual(["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"]);
+    expect(k).toEqual(["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks", "sfSettings"]);
+  });
+
+  it("exposes Companion Settings to players (their BYOK keys / audio / push-to-talk live there)", () => {
+    expect(keys({ isGM: false, privateChannelEnabled: false })).toContain("sfSettings");
   });
 
   it("adds the Private Channel button only when the feature is enabled", () => {
@@ -22,7 +26,7 @@ describe("companionToolbarTools — visibility", () => {
 
   it("never exposes GM-only tools to a non-GM", () => {
     const k = keys({ isGM: false, privateChannelEnabled: true });
-    for (const gmOnly of ["sfSettings", "sectorCreator", "worldJournal", "worldTruths", "customOracles"]) {
+    for (const gmOnly of ["sectorCreator", "worldJournal", "worldTruths", "customOracles"]) {
       expect(k).not.toContain(gmOnly);
     }
   });
@@ -45,6 +49,6 @@ describe("companionToolbarTools — visibility", () => {
   });
 
   it("defaults to the player-safe set when called with no args", () => {
-    expect(keys()).toEqual(["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"]);
+    expect(keys()).toEqual(["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks", "sfSettings"]);
   });
 });

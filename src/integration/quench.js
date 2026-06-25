@@ -4384,17 +4384,17 @@ function registerToolbarTests(quench) {
           const playerKeys = companionToolbarTools({ isGM: false, privateChannelEnabled: false }).map(t => t.key);
           assert.deepEqual(
             playerKeys,
-            ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks"],
-            "a non-GM with the private channel off sees only the player-safe tools",
+            ["sfSession", "progressTracks", "entityPanel", "chronicle", "clocks", "sfSettings"],
+            "a non-GM sees the player-safe tools, including Companion Settings (their own BYOK keys / audio / push-to-talk live there)",
           );
-          for (const gmOnly of ["sfSettings", "sectorCreator", "worldJournal", "worldTruths", "customOracles"]) {
+          for (const gmOnly of ["sectorCreator", "worldJournal", "worldTruths", "customOracles"]) {
             assert.notInclude(playerKeys, gmOnly, `GM-only tool '${gmOnly}' must not show for players`);
           }
           const withPC = companionToolbarTools({ isGM: false, privateChannelEnabled: true }).map(t => t.key);
           assert.include(withPC, "sfPrivateChannel", "Private Channel appears when the feature is enabled");
 
           const gmKeys = companionToolbarTools({ isGM: true, privateChannelEnabled: true }).map(t => t.key);
-          assert.include(gmKeys, "sfSettings", "a GM sees the GM-only tools");
+          assert.include(gmKeys, "sectorCreator", "a GM sees the GM-only tools");
         });
       });
 

@@ -29,7 +29,7 @@ export function companionToolbarTools({ isGM = false, privateChannelEnabled = fa
     { key: "chronicle",        title: "Character Chronicle", icon: "fas fa-book-open",    visible: true },
     { key: "clocks",           title: "Clocks",              icon: "fas fa-clock",        visible: true },
     { key: "sfPrivateChannel", title: "Private Channel",     icon: "fas fa-comment-dots", visible: !!privateChannelEnabled },
-    { key: "sfSettings",       title: "Companion Settings",  icon: "fas fa-shield-alt",   visible: !!isGM },
+    { key: "sfSettings",       title: "Companion Settings",  icon: "fas fa-shield-alt",   visible: true },
     { key: "sectorCreator",    title: "Sector Creator",      icon: "fas fa-map",          visible: !!isGM },
     { key: "worldJournal",     title: "World Journal",       icon: "fas fa-book",         visible: !!isGM },
     { key: "worldTruths",      title: "World Truths",        icon: "fas fa-scroll",       visible: !!isGM },
