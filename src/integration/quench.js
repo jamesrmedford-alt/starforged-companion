@@ -5510,7 +5510,7 @@ function registerRecapEndToEndTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUDIO NARRATION TESTS (docs/audio/audio-narration-scope.md §15)
+// AUDIO NARRATION TESTS (issue #221 (Audio Narration) §15)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerAudioNarrationTests(quench) {
@@ -7415,7 +7415,7 @@ function registerRecapModesTests(quench) {
 // caller, and the togglePlayback failure path is graceful — button hits
 // the ERROR state with a tooltip but the chat-card prose remains visible
 // (the documented "audio never blocks chat" invariant from
-// docs/audio/audio-narration-scope.md).
+// issue #221 (Audio Narration)).
 //
 // Note on coverage scope: the priority-list audit referenced a
 // "streaming → fullgen fallback" path, but the production code in

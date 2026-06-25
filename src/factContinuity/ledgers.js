@@ -3,7 +3,7 @@
  * src/factContinuity/ledgers.js
  *
  * In-memory truth and state ledgers for active-scene fact continuity.
- * See docs/fact-continuity/fact-continuity-scope.md §4–5, §8.
+ * See issue #227 (Fact Continuity) §4–5, §8.
  *
  * Pure module: every function mutates the campaignState object passed in but
  * performs no I/O. Persistence to game.settings is the caller's responsibility

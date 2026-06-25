@@ -9,7 +9,7 @@
  *   2. Strips the markup for chat display, leaving the inner NPC text
  *      verbatim in the prose (`stripMarkup`).
  *
- * The sidecar JSON block (`docs/fact-continuity/fact-continuity-scope.md` §7) is the
+ * The sidecar JSON block (`issue #227 (Fact Continuity)` §7) is the
  * responsibility of `src/factContinuity/sidecarParser.js` and must
  * already be removed before either helper runs. Defensive matching here
  * does not attempt to handle a sidecar that leaked through.

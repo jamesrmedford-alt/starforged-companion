@@ -133,7 +133,7 @@ developer-only and excluded from the release.
 | `abilityScanner.js` | Detects asset abilities applying to the chosen move; extracts `+N` adds, stat substitution, and (v1.7.11 finding G) post-roll result-improvement (`extractResultImprovement`) + the ability's own clock fields. |
 | `burnMomentum.js` | Burn-momentum chat-card affordance (post-roll outcome upgrade). |
 | `improveResult.js` | Post-roll "improve the result" affordance (v1.7.11 finding G) — e.g. Fugitive's improve-to-strong-hit. `buildImproveState` / `renderImproveButtonHtml` / `registerImproveResultHook`; upgrades the outcome, re-narrates, advances the asset ability's clock as the cost. Modelled on burnMomentum.js. |
-| `consequenceRiders.js` | Auto-apply asset resource effects from a move's outcome (v1.7.12) — momentum/health/spirit/supply/integrity/progress. Haiku extraction (`extractRiders`) → `collectFiringRiders` (condition match) → `partitionRiders` (auto vs prompt) → `applyMeterRiders`. Conservative + validated; never applies a guess. See `docs/moves/consequence-riders-scope.md`. |
+| `consequenceRiders.js` | Auto-apply asset resource effects from a move's outcome (v1.7.12) — momentum/health/spirit/supply/integrity/progress. Haiku extraction (`extractRiders`) → `collectFiringRiders` (condition match) → `partitionRiders` (auto vs prompt) → `applyMeterRiders`. Conservative + validated; never applies a guess. See `issue #217 (Consequence Riders)`. |
 | `riderDialog.js` | Prompt for optional / "choose one" / ambiguous-progress consequence riders (`promptRiders` / `groupPromptedRiders`). |
 | `mischief.js` | Mischief dial framing (`normalizeDial()` bridge). |
 | `persistResolution.js` | Persists outcomes to Actor state + WJ (GM-gated — see PERSIST-001). |
@@ -262,42 +262,31 @@ because they are read every session and linked from `README.md` and `CLAUDE.md`.
 
 | File | Purpose |
 |------|---------|
-| [`scope-index.md`](scope-index.md) | **Start here** — single-table status of every feature scope + dependency graph + next steps. |
+| [`scope-index.md`](scope-index.md) | **Start here** — status of every feature scope and the map from each scope to its **GitHub issue** (scopes live as issues, not files) + dependency graph + next steps. |
 | [`decisions.md`](decisions.md) | Architecture decisions and rationale; read before changing a constrained pattern. |
 | [`known-issues.md`](known-issues.md) | Open bugs, accepted workarounds, and resolved-issue history. |
 | [`file-structure.md`](file-structure.md) | This file. |
 
-### `narrator/` — narration, scene queries, recaps
+> **Feature scopes are GitHub issues, not files.** The per-feature `*-scope.md`
+> documents were migrated verbatim into issues #203–#228 and removed on
+> 2026-06-24. Use `scope-index.md` to find a scope's issue. The folders below
+> hold the remaining design and reference docs.
 
-`narrator-scope.md`, `scene-interrogation-scope.md`, `previously-on-scope.md`,
-`private-channel-scope.md` (📋 planned), `narrator-suggestion-loop-investigation.md`,
+### `narrator/` — narration design notes
+
+`narrator-memory-architecture.md` (full narrator-memory architecture + tuning
+guide; paired with `rules/narrator-memory.md`),
+`narrator-suggestion-loop-investigation.md`,
 `narrator-suggestion-loop-group-c-design-memo.md`.
 
-### `entities/` — entity discovery, World Journal, migration
+### `entities/`
 
-`narrator-entity-discovery-scope-v3.md`, `narrator-entity-discovery-scope-v2.md`
-(🔧 superseded), `world-journal-scope-v2.md`, `world-journal-scope.md`
-(🔧 superseded), `entity-actor-migration-scope.md` (📋 planned),
-`implementation-ordering.md` (NED + WJ phasing).
+`implementation-ordering.md` (entity-discovery + World Journal phasing notes).
 
-### `character/` — Actor integration & keys
+### `moves/`
 
-`character-management-scope.md`, `ironsworn-api-scope.md`, `api-key-privacy-scope.md`.
-
-### `sectors/`
-
-`sector-creator-scope.md`, `sector-creator-enhanced-scope.md`.
-
-### `pacing/`, `fact-continuity/`, `audio/`, `session/`, `clocks/`
-
-`pacing/pacing-scope.md` · `fact-continuity/fact-continuity-scope.md` ·
-`audio/audio-narration-scope.md` · `session/session-scope.md` ·
-`clocks/clocks-scope.md`.
-
-### `foundations/` — core plumbing & system integration
-
-`foundations-scope.md`, `system-asset-integration-scope.md`,
-`world-truths-scope.md`.
+`suffer-routing-audit.md` (per-move suffer-routing audit — the Suffer-move
+Pipeline Phase A deliverable, issue #214).
 
 ### `rules-reference/` — game-rules sources
 
@@ -316,8 +305,8 @@ because they are read every session and linked from `README.md` and `CLAUDE.md`.
 
 ### `testing/` — coverage & audits
 
-`quench-integration-scope.md`, `quench-coverage-audit-plan.md`,
-`behaviour-coverage-audit.md`, `behaviour-coverage-audit-plan.md`.
+`quench-coverage-audit-plan.md`, `behaviour-coverage-audit.md`,
+`behaviour-coverage-audit-plan.md`, and the `vX.Y.Z-playtest-findings.md` logs.
 
 ### `process/`
 

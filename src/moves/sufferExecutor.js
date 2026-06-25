@@ -48,7 +48,7 @@
  * the scope doc's Q4 accepted; the dialog itself works for everyone.
  *
  * Source: docs/rules-reference/playkit-rules-and-coverage.md §1.3
- * (Suffer moves), and docs/moves/suffer-pipeline-scope.md §5.4.
+ * (Suffer moves), and issue #214 (Suffer-move Pipeline) §5.4.
  */
 
 import { applyMeterChanges, setDebility } from "../character/actorBridge.js";

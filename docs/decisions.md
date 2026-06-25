@@ -6,6 +6,38 @@ rejected.
 
 ---
 
+## Scope documents live as GitHub issues, not files
+
+**Decision:** Feature scope documents are **GitHub issues**, not `*-scope.md`
+files in `docs/`. On 2026-06-24 the 26 existing scope docs were migrated
+verbatim into issues #203–#228 — each issue holds the full scope text plus a
+table of its implementing commits — and removed from the repo. `scope-index.md`
+stays as the dashboard, now mapping each scope to its issue. New feature scopes
+are opened as issues; no new `*-scope.md` files are added. See the "Scope
+documents are GitHub issues" section in `CLAUDE.md`.
+
+**Reason:** The checked-in scope docs duplicated, and drifted from, the shipped
+code — six still read "PLANNED" months after the feature shipped (scene
+interrogation, entity-discovery v3, world-journal v2, suffer pipeline, audio,
+private channel). Issue state (open / closed-completed / closed-not-planned)
+tracks status next to the work, and closing an issue when a feature ships is one
+action that can't silently rot the way a prose status line does. Migrating
+verbatim (not summarising) preserved the design history in the closed issues.
+
+**Rejected:**
+- *Keep the docs and just fix the stale status lines* — rejected; the drift
+  recurs every release. Status belongs on the work item, not in prose a
+  contributor must remember to update.
+- *Delete the scope docs without migrating* — rejected; the design rationale
+  (alternatives, phase plans, cost estimates) is worth keeping. The issues hold
+  it verbatim.
+- *Drop `scope-index.md` too in favour of an issue label* — rejected for now;
+  the hand-maintained index gives a single-glance status table and dependency
+  graph the raw issue list doesn't, and it is the durable scope→issue map that
+  keeps older `docs/…-scope.md §N` references resolvable.
+
+---
+
 ## `.claude/` and local tooling dirs are never added to `.gitignore` or test config
 
 **Decision:** The `.claude/` directory — and any other directory created by the
@@ -744,7 +776,7 @@ so there is no reason to keep relationship NPCs as journal pages. The
 `character` card is the richest and matches how PCs are already handled by
 `actorBridge.js`.
 
-**Corrects a stale premise:** `entity-actor-migration-scope.md` §8 previously
+**Corrects a stale premise:** `issue #228 (Entity → Actor Migration)` §8 previously
 deferred connection migration claiming *"No native NPC actor type."* That was
 factually wrong (the system exposes `character`/`npc`/`foe`), and the error is
 why this structure repeatedly got lost between sessions. This decision
@@ -1215,7 +1247,7 @@ hand. The effects are read out of the free-text ability descriptions by a
 single Haiku extraction pass (the Foundry asset model has no structured effect
 data, and the phrasings are too compound/conditional for regex). Optional
 ("you may"), "choose one", and ambiguous-progress riders prompt first;
-everything else applies silently. Full design: `docs/moves/consequence-riders-scope.md`.
+everything else applies silently. Full design: `issue #217 (Consequence Riders)`.
 
 **Reason:** the maintainer's directive — "the user shouldn't have to manipulate
 stats or resources." The module already auto-applied the unambiguous hooks
@@ -1326,7 +1358,7 @@ Stations! correctly, not delete it. The module now surfaces the 11 roles to the
 narrator (a conditional shipboard-combat guidance block, gated on an active combat
 track + a command vehicle) and to players (`!stations` command + a help page). A
 richer ship-map "battle stations" mini-game is planned —
-see `docs/combat/shipboard-combat-minigame.md`.
+see `issue #216 (Shipboard Combat (Battle Stations!))`.
 
 **Ship-map deck-plan Scene (Battle Stations! mini-game Phase A, 2026-06-18).**
 The first slice of the mini-game ships: a Foundry Scene that is a deck plan of the
@@ -1403,7 +1435,7 @@ adversaries are never free narration. Only pure observation / internal monologue
 Detection fails open to "no combat" so a storage hiccup never blocks narration.
 
 **Pay the Price advances countdown clocks (#10).** The clock contract
-(`clocks.js` header; `docs/clocks/clocks-scope.md`) always said tension clocks
+(`clocks.js` header; `issue #203 (Clocks)`) always said tension clocks
 advance when you Pay the Price — but the wiring was never built, and the
 inciting incident's "Dani's captivity" clock lives on the *vow item*
 (`system.hasClock/clockTicks/clockMax`), a second clock model nothing advanced

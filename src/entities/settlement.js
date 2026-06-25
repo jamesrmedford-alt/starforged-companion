@@ -9,7 +9,7 @@
  * `klass` carries our location-class enum (Planetside / Orbital / Deep Space);
  * everything else lives in flags.
  *
- * Field placement (per docs/entities/entity-actor-migration-scope.md §3.2):
+ * Field placement (per issue #228 (Entity → Actor Migration) §3.2):
  *   actor.system.subtype  = "settlement"
  *   actor.system.klass    = settlement.location  (Planetside/Orbital/Deep Space)
  *   actor.system.description ← settlement.description

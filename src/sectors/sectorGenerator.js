@@ -678,7 +678,7 @@ export async function createSectorJournal(sector, stubs = {}, settlementsByGenId
   try {
     const regionLabel = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
 
-    // Per docs/entities/entity-actor-migration-scope.md §3.4: sector-record journals
+    // Per issue #228 (Entity → Actor Migration) §3.4: sector-record journals
     // live under per-sector subfolders, not flat under "Sectors". The campaign
     // state may not have the slim sectors[] entry yet when this is called
     // during storeSector — pass through what we know.

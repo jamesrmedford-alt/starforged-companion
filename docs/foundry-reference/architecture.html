@@ -354,7 +354,7 @@ const NODES = {
     desc:"Central store in Foundry world settings. Holds: session IDs, entity ID arrays, active sector, current location, world truth selections, narrator settings, dismissed entities, safety config, pending clarification state. Persisted via persistCampaignState(). Read by almost every system.",
     files:["src/schemas.js","Foundry world settings"]},
   actorBridge:{label:"Actor bridge",color:"gray",
-    desc:"Reads from and writes to the foundry-ironsworn Actor (v1.27.0 schema confirmed). Stats: edge/heart/iron/shadow/wits. Meters: health.value, spirit.value, momentum.value. system.debility (singular). system.xp (flat). system.burnMomentum() method. Always use dot-notation for updates. Confirmed schema in docs/ironsworn-api-scope.md.",
+    desc:"Reads from and writes to the foundry-ironsworn Actor (v1.27.0 schema confirmed). Stats: edge/heart/iron/shadow/wits. Meters: health.value, spirit.value, momentum.value. system.debility (singular). system.xp (flat). system.burnMomentum() method. Always use dot-notation for updates. Confirmed schema in issue #212 (Ironsworn API).",
     files:["src/integration/actorBridge.js","vendor/foundry-ironsworn/"]},
   progressTracks:{label:"Progress tracks",color:"gray",
     desc:"Vows, expeditions, combat, connection, and legacy tracks. Stored as flags on a dedicated JournalEntry — not on pages. All tracks in one journal named 'Starforged Progress Tracks'. Progress Roll resolution. Rank controls ticks per mark. Injected into assembler as Section 6.",

@@ -133,7 +133,7 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     narratorAsserted: entry?.narratorAsserted === true,
     annotations:      Array.isArray(existing?.annotations) ? existing.annotations : [],
     promotedAt:       existing?.promotedAt ?? (entry?.confirmed === true ? now : null),
-    // Fact-continuity fields (docs/fact-continuity/fact-continuity-scope.md §4.4). Optional;
+    // Fact-continuity fields (issue #227 (Fact Continuity) §4.4). Optional;
     // null for entries that did not originate from a scene-truth migration.
     subject:          entry?.subject ?? existing?.subject ?? null,
     fact:             entry?.fact    ?? existing?.fact    ?? null,
@@ -148,7 +148,7 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
 
 /**
  * Archive a scene-end fact-continuity truth (free-text or scene-scoped) to
- * the WJ Lore journal. See docs/fact-continuity/fact-continuity-scope.md §9.2 step 2.
+ * the WJ Lore journal. See issue #227 (Fact Continuity) §9.2 step 2.
  *
  * Composes a synthetic page title:
  *   - scene subjects → "Scene <sceneId>: <fact>"

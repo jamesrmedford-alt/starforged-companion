@@ -2,7 +2,7 @@
  * STARFORGED COMPANION
  * src/private-channel/publish.js — publish selected private content to main chat
  *
- * Opt-in only — runs when the player explicitly publishes (private-channel-scope.md
+ * Opt-in only — runs when the player explicitly publishes (issue #226 (Private Channel)
  * §7). Posts a styled card attributed to the character (alias resolved via
  * getActiveCharacter), flagged publishedReflection / kind="published-reflection".
  * Everything else in the private channel stays invisible to other players.

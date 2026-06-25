@@ -1166,7 +1166,7 @@ document-getter parent. (commit `13dbcd4`)
 ### FOLDER-002 — PC / Ship / per-sector-NPC folders + NPC card population ✓
 
 **Status:** Resolved in v1.7.6 (unreleased). Design was settled all along
-(`entity-actor-migration-scope.md` §3.4, finding **F8**); the gap was
+(`issue #228 (Entity → Actor Migration)` §3.4, finding **F8**); the gap was
 pre-population. See `decisions.md` → "NPCs and connections: native ironsworn
 `character` Actors".
 

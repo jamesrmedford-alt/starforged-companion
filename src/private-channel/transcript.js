@@ -2,7 +2,7 @@
  * STARFORGED COMPANION
  * src/private-channel/transcript.js — per-player private-channel transcript storage
  *
- * Storage model (private-channel-scope.md §5): one JournalEntry per player,
+ * Storage model (issue #226 (Private Channel) §5): one JournalEntry per player,
  * named "Private Channel — {playerName}", in the existing "Starforged Companion"
  * folder, with per-player ownership ({ default: NONE, [playerId]: OWNER,
  * [gmId]: OBSERVER }). One embedded page per session, matched on a sessionId
@@ -39,7 +39,7 @@ function escapeHtml(s) {
 
 /**
  * Render a list of turns to the speaker-attributed paragraph HTML used on the
- * session page (private-channel-scope.md §5.4).
+ * session page (issue #226 (Private Channel) §5.4).
  * @param {Array<{who:string,name:string,text:string}>} turns
  * @returns {string}
  */

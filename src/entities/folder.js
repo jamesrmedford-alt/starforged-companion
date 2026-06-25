@@ -4,7 +4,7 @@
  *
  * Pre-migration, every entity type lives as a JournalEntry under a single
  * flat "Starforged Entities" folder. The Entity → Actor Migration (Phase 2/3,
- * see docs/entities/entity-actor-migration-scope.md) moves four types onto native
+ * see issue #228 (Entity → Actor Migration)) moves four types onto native
  * foundry-ironsworn Actor documents, organised in a flat per-sector layout:
  *
  *   Actors/

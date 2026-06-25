@@ -42,7 +42,7 @@ Anthropic and OpenRouter (Phase 2 architecture).
 
 **For the narrator implementation:**
 ```
-Read docs/narrator-scope.md and docs/decisions.md. Then implement the narrator 
+Read issue #204 (Narrator) and docs/decisions.md. Then implement the narrator 
 feature starting with step 1 (delete loremaster.js) through step 5 (update index.js). 
 Run npm test after each file change to confirm nothing regresses.
 ```
@@ -70,7 +70,7 @@ Claude Code should always read these before making substantive changes:
 | `docs/decisions.md` | Why things are the way they are |
 | `docs/file-structure.md` | What each file exports and does |
 | `docs/known-issues.md` | Open bugs and their status |
-| `docs/narrator-scope.md` | Narrator feature specification |
+| `issue #204 (Narrator)` | Narrator feature specification |
 
 ---
 

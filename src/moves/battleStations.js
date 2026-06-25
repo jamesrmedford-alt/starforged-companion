@@ -19,7 +19,7 @@
  * functions here so the logic stays unit-testable.
  *
  * A richer ship-map "battle stations" mini-game is planned — see
- * docs/combat/shipboard-combat-minigame.md.
+ * issue #216 (Shipboard Combat (Battle Stations!)).
  */
 
 const MODULE_ID = "starforged-companion";
