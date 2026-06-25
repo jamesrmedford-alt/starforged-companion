@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **Narrator now recognises all PCs in multiplayer, including ones assigned to the GM.** In sessions with three or more players, a player character assigned only to the GM user (rather than to a regular player account) was not included in the narrator's character context. The narrator would then encounter that character in the fiction, fail to recognise them as a known PC, and attempt to create a connection card for them. All character-type actors that aren't Companion NPC cards are now included in the character roster regardless of their user assignment.
+
+## [1.7.25] — 2026-06-25
+
 - Added: **Players can open Companion Settings.** The **🛡 Companion Settings** button is now available to every player, not just the GM. Each player can enter their own Claude and ElevenLabs API keys, enable narrator audio on their own client, adjust their audio volume, and set their personal private Lines — all without being promoted to GM. GM-only world settings (mischief, narrator, pacing, world audio, voices) remain GM-only.
 - Changed: **Push-to-Talk is now on by default.** The 🎙 microphone button appears in the chat bar automatically for every player on a Chromium browser (it's a per-device setting you can turn off in Settings). Previously it was off by default and easy to miss.
 - Fixed: **Moves and scene questions no longer fail after you promote a player to GM.** The Companion runs all narration and dice resolution on a single GM client — the one holding the Claude API key. Previously, making another player a GM could silently move that work to their browser, which has no key, so every move and `@scene` failed with "Claude API key not configured" even though you had set your key. The Companion now always routes the pipeline to a GM whose client actually holds a key (your key still never leaves your browser).

@@ -47,16 +47,17 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('getPlayerActors', () => {
-  it('returns all player-owned character actors', () => {
+  it('returns all character actors including GM-assigned ones', () => {
     const a1 = makeTestActor({ id: 'a1', type: 'character', hasPlayerOwner: true });
     const a2 = makeTestActor({ id: 'a2', type: 'character', hasPlayerOwner: true });
     const gm = makeTestActor({ id: 'gm', type: 'character', hasPlayerOwner: false });
     game.actors._setAll([a1, a2, gm]);
 
     const result = getPlayerActors();
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
     expect(result.map(a => a.id)).toContain('a1');
     expect(result.map(a => a.id)).toContain('a2');
+    expect(result.map(a => a.id)).toContain('gm');
   });
 
   it('excludes non-character actors', () => {
@@ -72,12 +73,10 @@ describe('getPlayerActors', () => {
     expect(getPlayerActors()).toEqual([]);
   });
 
-  // Regression for v1.2.12: in solo-GM play there are no non-GM users, so
-  // every character.hasPlayerOwner is false. Without the fallback the recap
-  // pipeline + assembler CHARACTER STATE both silently no-op'd in solo
-  // play — the user's primary use case. The fallback must NOT include
-  // non-character actors (NPCs / foes / starships) regardless.
-  it('falls back to all character-type actors when none are player-owned (solo GM)', () => {
+  // Solo-GM play: there are no non-GM users, so every character.hasPlayerOwner
+  // is false. All character-type actors must be returned so the recap pipeline
+  // + assembler CHARACTER STATE work in the primary single-player use case.
+  it('returns all character-type actors in solo-GM play (all hasPlayerOwner false)', () => {
     const c1 = makeTestActor({ id: 'c1', type: 'character', hasPlayerOwner: false });
     const c2 = makeTestActor({ id: 'c2', type: 'character', hasPlayerOwner: false });
     game.actors._setAll([c1, c2]);
@@ -87,7 +86,7 @@ describe('getPlayerActors', () => {
     expect(result.map(a => a.id).sort()).toEqual(['c1', 'c2']);
   });
 
-  it('fallback never includes non-character actors', () => {
+  it('never includes non-character actors', () => {
     const c   = makeTestActor({ id: 'c',   type: 'character', hasPlayerOwner: false });
     const npc = makeTestActor({ id: 'npc', type: 'npc',       hasPlayerOwner: false });
     const ship = makeTestActor({ id: 'ship', type: 'starship', hasPlayerOwner: false });
@@ -126,14 +125,18 @@ describe('getPlayerActors', () => {
     expect(result.map(a => a.id)).toEqual(['pc']);
   });
 
-  it('prefers player-owned characters when any exist (multi-user game)', () => {
+  // Regression for v1.7.26: a PC assigned only to the GM (hasPlayerOwner false)
+  // was excluded in multi-user games when any player-owned PCs existed, causing
+  // the narrator to treat the GM's character as an unknown connection.
+  it('includes GM-assigned PCs alongside player-owned PCs in multi-user games', () => {
     const owned   = makeTestActor({ id: 'owned',   type: 'character', hasPlayerOwner: true });
-    const orphan  = makeTestActor({ id: 'orphan',  type: 'character', hasPlayerOwner: false });
-    game.actors._setAll([owned, orphan]);
+    const gmPC    = makeTestActor({ id: 'gm-pc',   type: 'character', hasPlayerOwner: false });
+    game.actors._setAll([owned, gmPC]);
 
     const result = getPlayerActors();
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('owned');
+    expect(result).toHaveLength(2);
+    expect(result.map(a => a.id)).toContain('owned');
+    expect(result.map(a => a.id)).toContain('gm-pc');
   });
 });
 

@@ -35,24 +35,22 @@ const _snapshotCache = new Map();
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get all player-owned character Actors in the world.
+ * Get all player character Actors in the world.
  *
- * In multi-user games this returns only characters with at least one non-GM
- * owner (`hasPlayerOwner === true`). In solo-GM play — the dominant use case
- * for this module — there are no non-GM users, so `hasPlayerOwner` is always
- * false on every character. Falling back to all `character`-type Actors keeps
- * the recap pipeline, paced-narration character context, and the chronicle
- * panel working in solo play. Excludes the Companion's NPC/connection cards,
- * which are ALSO `character`-type Actors under FOLDER-002 (distinguished by a
- * module `entityType` flag) — without this filter an NPC card leaks into
- * PC-only operations (e.g. the Begin-a-Session momentum grant).
+ * Returns every `character`-type Actor that is NOT a Companion NPC/connection
+ * card (distinguished by the module `entityType` flag under FOLDER-002).
+ * Includes characters regardless of whether they are assigned to a player user
+ * or only to the GM — a PC played by the GM is still a PC and must appear in
+ * CHARACTER STATE, the recap pipeline, and momentum grants.
+ *
+ * Previous versions filtered by `hasPlayerOwner === true` in multi-user games,
+ * which excluded GM-assigned PCs and caused the narrator to treat them as
+ * unknown connections in 3-player sessions.
  *
  * @returns {Actor[]}
  */
 export function getPlayerActors() {
-  const characters = game.actors?.filter(isPlayerCharacterActor) ?? [];
-  const playerOwned = characters.filter(a => a.hasPlayerOwner);
-  return playerOwned.length > 0 ? playerOwned : characters;
+  return game.actors?.filter(isPlayerCharacterActor) ?? [];
 }
 
 /**
