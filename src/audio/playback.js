@@ -119,6 +119,42 @@ export function _resetGestureForTests() {
 }
 
 /**
+ * HTMLAudioElement adapter for in-memory blob URLs. Blob URLs must bypass
+ * foundry.audio.Sound — Foundry may apply path-normalisation that corrupts
+ * the blob: scheme into an invalid server-relative path, producing a silent
+ * 404 on playback. The adapter exposes the same surface as foundry.audio.Sound
+ * (load/play/pause/stop/addEventListener) so PlaybackSession doesn't need
+ * special-case logic.
+ */
+function _createBlobAudioAdapter(src) {
+  const el = new globalThis.Audio(src);
+  const _stopListeners = [];
+  return {
+    async load() { /* HTMLAudioElement loads lazily on play(); no-op. */ },
+    async play({ volume = 1 } = {}) {
+      el.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+      return el.play();
+    },
+    async pause() { el.pause(); },
+    async stop() {
+      el.pause();
+      el.currentTime = 0;
+      const cbs = _stopListeners.splice(0);
+      for (const cb of cbs) {
+        try { cb(); } catch (err) {
+          console.warn(`${MODULE_ID} | blob audio stop-listener failed:`, err);
+        }
+      }
+    },
+    addEventListener(event, cb, opts) {
+      if (event === "end")  { el.addEventListener("ended", cb, opts); return; }
+      if (event === "stop") { _stopListeners.push(cb); return; }
+      // "pause", "start", "load" — not needed by PlaybackSession; silently ignored.
+    },
+  };
+}
+
+/**
  * One playback session per chat card. Sequentially plays an array of
  * `{ voice, src, text }` segments where `src` is a path or URL the
  * Foundry Sound class can load.
@@ -130,12 +166,14 @@ export class PlaybackSession {
    * @param {Array<{ voice: string, src: string, text: string }>} args.segments
    * @param {number} [args.volume=0.8]   — 0..1, applied to each segment
    * @param {Function} [args.onStateChange]  — (newState) => void
+   * @param {Function} [args.onError]        — (err) => void, called by _fail
    */
-  constructor({ cardId, segments, volume = 0.8, onStateChange } = {}) {
+  constructor({ cardId, segments, volume = 0.8, onStateChange, onError } = {}) {
     this.cardId       = String(cardId ?? "");
     this.segments     = Array.isArray(segments) ? segments.slice() : [];
     this.volume       = clamp01(volume);
     this._onState     = typeof onStateChange === "function" ? onStateChange : () => {};
+    this._onError     = typeof onError === "function" ? onError : () => {};
     this._state       = PLAYBACK_STATE.IDLE;
     this._currentIdx  = 0;
     this._currentSound = null;
@@ -223,6 +261,14 @@ export class PlaybackSession {
   }
 
   async _createSound(src) {
+    // Blob URLs are in-memory client-side objects. Route them through the
+    // HTMLAudioElement adapter so Foundry's path-normalisation (which may
+    // mangle blob: into a server-relative URL) is bypassed entirely. Falls
+    // back to the Sound class when Audio is unavailable (e.g. test env).
+    if (typeof src === "string" && src.startsWith("blob:") &&
+        typeof globalThis.Audio !== "undefined") {
+      return _createBlobAudioAdapter(src);
+    }
     if (globalThis.foundry?.audio?.Sound) {
       const Sound = globalThis.foundry.audio.Sound;
       const sound = new Sound(src);
@@ -273,9 +319,12 @@ export class PlaybackSession {
   }
 
   _fail(err) {
-    console.warn(`${MODULE_ID} | playback failed:`, err);
+    console.error(`${MODULE_ID} | playback failed:`, err);
     this._setState(PLAYBACK_STATE.ERROR);
     _releaseActivePlayback(this);
+    try { this._onError(err); } catch (cbErr) {
+      console.warn(`${MODULE_ID} | playback onError callback threw:`, cbErr);
+    }
   }
 }
 

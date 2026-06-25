@@ -39,29 +39,53 @@ export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
 const _sessionsByCardId = new WeakMap();
 let _gestureOverlayShown = false;
 
-// Cards we have already auto-played, by message id. A narrator card re-renders
-// on every update (e.g. clicking its "Roll <move>" button updates the message),
-// and onNarratorCardRendered runs each time — without this guard, autoplay
-// would re-fire on every re-render and replay the audio (F14). Click-to-play is
-// unaffected; this only gates the automatic path.
-const _autoplayedCardIds = new Set();
+// Cards we have already auto-played, by message id. Persisted to localStorage
+// so a player reconnecting mid-session doesn't hear every card replayed from
+// the beginning — the in-memory Set was wiped on page reload, making every
+// card look unplayed to onNarratorCardRendered (F14 / autoplay-on-reconnect).
+// Click-to-play is unaffected; this only gates the automatic path.
+let _autoplayedCardIds = null;   // lazy — initialised on first use
 
-/** Test-only — clears the autoplay-once guard between cases. */
-export function _resetAutoplayGuardForTests() { _autoplayedCardIds.clear(); }
+function _loadAutoplayedIds() {
+  try {
+    const worldId = globalThis.game?.world?.id ?? "unknown";
+    const raw = globalThis.localStorage?.getItem(`${MODULE_ID}:${worldId}:autoplayedCards`);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio: failed to load autoplay state from localStorage:`, err?.message ?? err);
+    return new Set();
+  }
+}
+
+function _saveAutoplayedIds(ids) {
+  try {
+    const worldId = globalThis.game?.world?.id ?? "unknown";
+    globalThis.localStorage?.setItem(
+      `${MODULE_ID}:${worldId}:autoplayedCards`,
+      JSON.stringify([...ids]),
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio: failed to persist autoplay state to localStorage:`, err?.message ?? err);
+  }
+}
+
+/** Test-only — resets the autoplay guard so the next call re-reads storage. */
+export function _resetAutoplayGuardForTests() { _autoplayedCardIds = null; }
 
 /**
- * Should this card auto-play right now? True at most once per card id — the
- * first call for a given id claims it and returns true; subsequent calls (card
- * re-renders, e.g. after its "Roll <move>" button updates the message) return
- * false so autoplay never replays the audio (F14). Mutates the guard set.
+ * Should this card auto-play right now? Returns true at most once per card id
+ * across page reloads — the first call claims it and returns true; subsequent
+ * calls (re-renders or reconnects) return false (F14). Persists to localStorage.
  *
  * @param {string} cardId  message.id
  * @returns {boolean}
  */
 export function claimAutoplayOnce(cardId) {
   if (cardId == null) return false;
+  if (_autoplayedCardIds === null) _autoplayedCardIds = _loadAutoplayedIds();
   if (_autoplayedCardIds.has(cardId)) return false;
   _autoplayedCardIds.add(cardId);
+  _saveAutoplayedIds(_autoplayedCardIds);
   return true;
 }
 
@@ -389,11 +413,24 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
       segments,
       volume,
       onStateChange: (s) => setButtonLabel(btn, btnLabelFromState(s)),
+      // Playback errors (Sound.load / Sound.play failures) don't propagate
+      // to togglePlayback's outer catch — they're caught by PlaybackSession
+      // internally. Surface them here with the same console.error + toast.
+      onError: (err) => {
+        const detail = typeof err?.message === "string" && err.message
+          ? err.message
+          : "Audio unavailable";
+        console.error(`${MODULE_ID} | narrator audio playback failed (card ${message?.id}):`, err);
+        if (userInitiated) {
+          notifyAudioFailure(`Narrator audio unavailable: ${detail}`);
+        }
+      },
     });
     _sessionsByCardId.set(message, session);
     await session.play();
   } catch (err) {
-    console.warn(`${MODULE_ID} | audio toggle failed:`, err);
+    // Synthesis / segmentation failures (buildPlayableSegments throws).
+    console.error(`${MODULE_ID} | audio toggle failed:`, err);
     setButtonLabel(btn, "error");
     btn.setAttribute("disabled", "true");
     const detail = typeof err?.message === "string" && err.message ? err.message : "Audio unavailable";

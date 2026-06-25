@@ -541,6 +541,7 @@ describe('PlaybackSession', () => {
   });
 
   it('routes a play() rejection to the ERROR state instead of throwing synchronously', async () => {
+    expectConsoleError();   // _fail logs console.error
     const SoundClass = globalThis.foundry.audio.Sound;
     const origPlay = SoundClass.prototype.play;
     SoundClass.prototype.play = async function() {
@@ -554,6 +555,27 @@ describe('PlaybackSession', () => {
       });
       await session.play();
       expect(session.state).toBe(PLAYBACK_STATE.ERROR);
+    } finally {
+      SoundClass.prototype.play = origPlay;
+    }
+  });
+
+  it('calls onError when playback fails so callers can surface the error', async () => {
+    expectConsoleError();   // _fail logs console.error
+    const SoundClass = globalThis.foundry.audio.Sound;
+    const origPlay = SoundClass.prototype.play;
+    SoundClass.prototype.play = async function() { throw new Error('decode error'); };
+    const received = [];
+    try {
+      const session = new PlaybackSession({
+        cardId: 'onerr-1',
+        segments: [{ voice: 'narrator', src: '/x.mp3', text: 'x' }],
+        onError: (err) => received.push(err),
+      });
+      await session.play();
+      expect(session.state).toBe(PLAYBACK_STATE.ERROR);
+      expect(received).toHaveLength(1);
+      expect(received[0].message).toBe('decode error');
     } finally {
       SoundClass.prototype.play = origPlay;
     }
@@ -620,6 +642,63 @@ describe('PlaybackSession', () => {
 
     // Slot released — a second stop is a no-op again.
     await expect(stopActivePlayback()).resolves.toBe(false);
+  });
+});
+
+// Blob URL adapter — _createSound routes blob: sources through HTMLAudioElement
+// to bypass foundry.audio.Sound path-normalisation (which corrupts blob: URLs).
+describe('_createSound blob URL adapter', () => {
+  let _origAudio;
+  beforeEach(() => { _origAudio = globalThis.Audio; });
+  afterEach(() => { globalThis.Audio = _origAudio; });
+
+  it('uses HTMLAudioElement adapter for blob: URLs when Audio is available', async () => {
+    const mockInstances = [];
+    class MockAudio {
+      constructor(src) {
+        this.src = src;
+        this.volume = 1;
+        this._listeners = {};
+        mockInstances.push(this);
+      }
+      play() { return Promise.resolve(); }
+      pause() {}
+      addEventListener(event, cb, opts) {
+        (this._listeners[event] ??= []).push(cb);
+      }
+    }
+    globalThis.Audio = MockAudio;
+
+    const session = new PlaybackSession({
+      cardId: 'blob-1',
+      segments: [{ voice: 'narrator', src: 'blob:http://localhost/abc', text: 'x' }],
+    });
+    const p = session.play();
+    await new Promise(r => setTimeout(r, 0));
+
+    // HTMLAudioElement should have been instantiated — NOT foundry.audio.Sound.
+    expect(mockInstances).toHaveLength(1);
+    expect(globalThis.foundry.audio.Sound._instances).toHaveLength(0);
+
+    // Fire "ended" on the mock element to complete playback.
+    (mockInstances[0]._listeners.ended ?? []).forEach(cb => cb());
+    await p;
+    expect(session.state).toBe(PLAYBACK_STATE.IDLE);
+  });
+
+  it('falls back to foundry.audio.Sound for blob: URLs when Audio is unavailable', async () => {
+    globalThis.Audio = undefined;
+    const session = new PlaybackSession({
+      cardId: 'blob-2',
+      segments: [{ voice: 'narrator', src: 'blob:http://localhost/def', text: 'x' }],
+    });
+    const p = session.play();
+    await new Promise(r => setTimeout(r, 0));
+    const sound = globalThis.foundry.audio.Sound._instances[0];
+    expect(sound).toBeDefined();
+    sound._fire('end');
+    await p;
+    expect(session.state).toBe(PLAYBACK_STATE.IDLE);
   });
 });
 
