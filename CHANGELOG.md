@@ -7,6 +7,7 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Fixed: **Narrator now recognises all PCs in multiplayer, including ones assigned to the GM.** In sessions with three or more players, a player character assigned only to the GM user (rather than to a regular player account) was not included in the narrator's character context. The narrator would then encounter that character in the fiction, fail to recognise them as a known PC, and attempt to create a connection card for them. All character-type actors that aren't Companion NPC cards are now included in the character roster regardless of their user assignment.
+- Removed: **"Correct a fact" button removed from narrator cards.** The button appeared on every narrator card and opened the fact-correction dialog to retract or replace narrator-stated facts. In practice it confused players during sessions and was rarely used intentionally. The underlying fact-continuity system (`!truth`, `!state`, the Narrative Review Retract button) is unchanged.
 
 ## [1.7.25] — 2026-06-25
 
