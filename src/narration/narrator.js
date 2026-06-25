@@ -516,9 +516,6 @@ export async function postNarrationCard(narrationText, resolution, campaignState
           <button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden>
             <i class="fas fa-stop"></i> Stop
           </button>
-          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
-            <i class="fas fa-list-check"></i> Correct a fact
-          </button>
         </div>
       </div>
     `.trim(),
@@ -1627,9 +1624,6 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
           </button>
           <button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden>
             <i class="fas fa-stop"></i> Stop
-          </button>
-          <button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Correct a fact">
-            <i class="fas fa-list-check"></i> Correct a fact
           </button>
         </div>
       </div>
