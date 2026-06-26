@@ -829,6 +829,13 @@ export const CampaignStateSchema = {
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },
 
+  // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
+  // naming the PC the narrator last drew into an open prompting beat, so the
+  // next beat rotates to another player. Reset on scene start/end.
+  //   lastActorId — actor id addressed on the prior eligible beat (null = fresh)
+  //   sceneId     — the scene the pointer belongs to (guards stale carry-over)
+  spotlight:      { lastActorId: null, sceneId: null },
+
   createdAt: null,
   updatedAt: null,
 };

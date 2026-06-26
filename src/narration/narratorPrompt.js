@@ -990,6 +990,7 @@ export function buildNarratorSystemPrompt(
     party                = null,
     rollingSummary       = '',
     shipboardGuidance    = '',
+    spotlightBlock       = '',
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1133,6 +1134,12 @@ export function buildNarratorSystemPrompt(
   // speaking this turn so narration never conflates the party members.
   const partyBlock = buildPartyBlock(party);
   if (partyBlock) parts.push(partyBlock);
+
+  // [8c] Spotlight rotation nudge (issue #232) — multiplayer turn-implication.
+  // Pre-built in buildNarratorExtras (empty in solo play, non-eligible modes,
+  // or when the toggle is off). Skipped for meta modes (a recap has no live
+  // beat to address).
+  if (spotlightBlock && !isMetaMode) parts.push(spotlightBlock);
 
   // [9] Fact-continuity sidecar instruction — appended last so it is the most
   // recent guidance the model sees before generating. Applies to every mode,
