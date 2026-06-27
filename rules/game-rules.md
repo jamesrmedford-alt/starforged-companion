@@ -23,6 +23,12 @@ without the noise of the full rulebook prose.
 | [`docs/rules-reference/sundered-isles-playkit-rules.md`](../docs/rules-reference/sundered-isles-playkit-rules.md) | Rules reference for the **Sundered Isles** expansion (Tomkin 2024) — every move, clock, embedded table, worksheet, and safety tool, plus a Part 2 delta against Starforged and a Part 3 implementation-status / data-source note. | Only when a task explicitly concerns Sundered Isles. **Sundered Isles is not implemented** in the Companion (Starforged only); this is reference for potential future scoping, and a pointer to the SI data already vendored in `foundry-ironsworn`. |
 | [`docs/rules-reference/sundered-isles-guidebook-summary.md`](../docs/rules-reference/sundered-isles-guidebook-summary.md) | Section-by-section paraphrased summary of the **Sundered Isles** guidebook (Tomkin 2024) — setting, the subsystems that differ from or extend Starforged (ships, crews, two-meter supply, optional wealth, phased naval combat, the 11 seafaring truths), design intent, and an "Implications for module design" section. The expansion analogue of `rulebook-summary.md`. | Before reasoning about Sundered Isles narrator behaviour, seafaring subsystems, or how the module would extend to ships/crews. Same caveat: SI is not implemented in the Companion. |
 
+### Supplement: Ironsworn: Delve (original Ironsworn)
+
+| Doc | What it covers | When to read |
+|-----|---------------|--------------|
+| [`docs/rules-reference/delve-rulebook-summary.md`](../docs/rules-reference/delve-rulebook-summary.md) | Chapter-by-chapter summary of **Ironsworn: Delve** (Tomkin 2020) — the site-delving system (themes, domains, the denizen matrix, risk zones, the Delve-the-Depths loop), its seven moves, the optional Threats/Items subsystems, and design intent. | Rarely. Delve is a supplement for the **original Ironsworn**, *not* a Starforged expansion, and is **not implemented** in the Companion. Read it for design context only — it is the ancestor of Starforged's expedition moves, and a source of reusable location-generation abstractions (themes/domains, denizen matrix, risk zones) should the module ever want richer procedural sites. |
+
 These docs are about **the game**; they are not a substitute for reading
 the foundry-ironsworn source when touching Actor / Item schemas (see
 `rules/foundry-ironsworn.md`), or for fetching Foundry API docs when
