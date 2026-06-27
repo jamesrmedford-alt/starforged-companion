@@ -51,6 +51,7 @@ const SETTING = {
   NARRATION_MODEL:          'narrationModel',
   NARRATION_PERSPECTIVE:    'narrationPerspective',
   NARRATION_TONE:           'narrationTone',
+  NARRATION_LEVITY:         'narrationLevity',
   NARRATION_LENGTH:         'narrationLength',
   NARRATION_INSTRUCTIONS:   'narrationInstructions',
   NARRATION_MAX_TOKENS:     'narrationMaxTokens',
@@ -143,6 +144,15 @@ const NARRATION_TONES = {
   matter_of_fact:   'Matter of fact — mechanical, precise, minimal flourish',
 };
 
+// Optional tonal-weight axis layered ON TOP of the Tone above (issue #236).
+// `default` is a true no-op (no prompt text); Light/Playful permit ordinary
+// life and affection while preserving the chosen Tone's voice.
+const NARRATION_LEVITIES = {
+  default: 'Default — no tonal adjustment (recommended)',
+  light:   'Light — let the fiction breathe: ordinary life, small victories, human texture',
+  playful: 'Playful — humour and affectionate, fond detail rather than grim',
+};
+
 // ---------------------------------------------------------------------------
 // game.settings registration
 // ---------------------------------------------------------------------------
@@ -228,6 +238,16 @@ export function registerSettings() {
     type:    String,
     choices: NARRATION_TONES,
     default: 'wry',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATION_LEVITY, {
+    name:    'Narration Levity',
+    hint:    'Optional tonal-weight adjustment layered on top of the Tone. Light and Playful permit ordinary life, small victories, and affectionate detail while preserving the chosen Tone\'s voice (e.g. "noir, but lighter"). Default applies no adjustment.',
+    scope:   'world',
+    config:  false,
+    type:    String,
+    choices: NARRATION_LEVITIES,
+    default: 'default',
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_LENGTH, {
@@ -662,6 +682,7 @@ function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTIN
 function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20250929'; }
 function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
+function getNarrationLevity()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LEVITY)       ?? 'default'; }
 function getNarrationLength()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LENGTH)       ?? 3; }
 function getNarrationInstructions() { return game.settings.get(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS) ?? ''; }
 function getNarrationMaxTokens()    { return game.settings.get(MODULE_ID, SETTING.NARRATION_MAX_TOKENS)   ?? 16000; }
@@ -902,6 +923,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationModel:        getNarrationModel(),
       narrationPerspective:  getNarrationPerspective(),
       narrationTone:         getNarrationTone(),
+      narrationLevity:       getNarrationLevity(),
       narrationLength:       getNarrationLength(),
       narrationInstructions: getNarrationInstructions(),
       narrationMaxTokens:    getNarrationMaxTokens(),
@@ -911,6 +933,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
+      narrationLevities:     NARRATION_LEVITIES,
       autoRecapEnabled:      getAutoRecapEnabled(),
       sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
@@ -1240,6 +1263,11 @@ export class SettingsPanelApp extends ApplicationV2 {
         <div class="narrator-field">
           <label class="narrator-field-label">Tone</label>
           ${renderSelect('narrationTone', ctx.narrationTone, ctx.narrationTones, gmOnly)}
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Levity</label>
+          ${renderSelect('narrationLevity', ctx.narrationLevity, ctx.narrationLevities, gmOnly)}
+          <span class="narrator-field-hint">Layers on top of Tone. Light/Playful permit ordinary life, small victories, and affectionate detail while keeping the chosen Tone's voice (e.g. "noir, but lighter"). Default makes no change. No effect on recaps.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Length (sentences)</label>
@@ -1666,6 +1694,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
       const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
       const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
+      const levity       = el.querySelector('[name="narrationLevity"]')?.value          ?? 'default';
       const lengthRaw    = el.querySelector('[name="narrationLength"]')?.value;
       const length       = Math.max(1, Math.min(6, Number(lengthRaw) || 3));
       const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
@@ -1684,6 +1713,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
         game.settings.set(MODULE_ID, SETTING.NARRATION_PERSPECTIVE,  perspective),
         game.settings.set(MODULE_ID, SETTING.NARRATION_TONE,         tone),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_LEVITY,       levity),
         game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, contextCards),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),

@@ -40,6 +40,7 @@ function makeCampaignState(overrides = {}) {
 function makeNarratorSettings(overrides = {}) {
   return {
     narrationTone:         'wry',
+    narrationLevity:       'default',
     narrationPerspective:  'auto',
     narrationLength:       3,
     narrationInstructions: '',
@@ -164,6 +165,67 @@ describe('buildNarratorSystemPrompt()', () => {
       null,
     );
     expect(prompt).toContain('Avoid purple prose');
+  });
+
+  // ── Levity axis (issue #236) — composes on top of Tone; default is a no-op ──
+  describe('levity axis', () => {
+    it('default levity emits no LEVITY section (no-op)', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'default' }), null,
+      );
+      expect(prompt).not.toContain('### LEVITY');
+    });
+
+    it('omitting levity entirely is byte-identical to default (true no-op)', () => {
+      const withDefault = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'default' }), null,
+      );
+      const withoutField = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings(), null,
+      );
+      expect(withoutField).toBe(withDefault);
+    });
+
+    it('light levity injects the LEVITY section with its guidance', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'light' }), null,
+      );
+      expect(prompt).toContain('### LEVITY');
+      expect(prompt).toContain('Permit ordinary life');
+    });
+
+    it('playful levity injects affectionate guidance', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'playful' }), null,
+      );
+      expect(prompt).toContain('### LEVITY');
+      expect(prompt).toContain('affectionate detail');
+    });
+
+    it('composes with a non-wry tone — noir voice survives AND levity is layered', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(),
+        makeNarratorSettings({ narrationTone: 'noir', narrationLevity: 'light' }),
+        null,
+      );
+      expect(prompt).toContain('Noir — world-weary');       // tone preserved
+      expect(prompt).toContain('Permit ordinary life');      // levity layered on
+    });
+
+    it('unknown levity value is a no-op', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'not_real' }), null,
+      );
+      expect(prompt).not.toContain('### LEVITY');
+    });
+
+    it('skips the LEVITY section in meta modes (campaign_recap)', () => {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState(), makeNarratorSettings({ narrationLevity: 'light' }), null, '',
+        { mode: 'campaign_recap' },
+      );
+      expect(prompt).not.toContain('### LEVITY');
+    });
   });
 
   it('does not call fetch (pure string building — no async needed)', () => {

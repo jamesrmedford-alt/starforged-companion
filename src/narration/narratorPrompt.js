@@ -892,6 +892,24 @@ const TONE_DESCRIPTIONS = {
   matter_of_fact: "Matter of fact — mechanical, precise, minimal flourish. Just what happened.",
 };
 
+// Optional tonal-weight axis layered ON TOP of the tone above (issue #236).
+// Each string opens by preserving the chosen tone's voice — the composition
+// guarantee, so e.g. "noir + light" reads as noir that permits warmth, not a
+// tone override. `default` is intentionally absent: it resolves to '' and emits
+// no prompt text, leaving default-campaign prompts byte-for-byte unchanged.
+const LEVITY_DESCRIPTIONS = {
+  light:
+    "Levity — keep the chosen tone's voice, but let the fiction breathe. " +
+    "Permit ordinary life, small victories, and moments of rest alongside the danger. " +
+    "When the stakes are present, show the human texture around them — not just the dread. " +
+    "Warmth and relief are allowed to land.",
+  playful:
+    "Levity — keep the chosen tone's voice, but lighten its weight. " +
+    "Allow humour, affectionate detail, and the small odd specifics of crew life. " +
+    "Be fond and observed rather than grim or sneering; a beat may be almost tender. " +
+    "Even under pressure, find the wry, human moment.",
+};
+
 const PERSPECTIVE_DESCRIPTIONS = {
   second_person: 'Address the player character directly as "you". e.g. "You feel the deck shudder..."',
   third_person:  'Refer to characters by name. e.g. "Kira feels the deck shudder..."',
@@ -967,6 +985,7 @@ export function buildNarratorSystemPrompt(
 ) {
   const {
     narrationTone                 = 'wry',
+    narrationLevity               = 'default',
     narrationPerspective          = 'auto',
     narrationLength               = 3,
     narrationInstructions         = '',
@@ -1000,6 +1019,10 @@ export function buildNarratorSystemPrompt(
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective);
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
   const perspectiveDesc = PERSPECTIVE_DESCRIPTIONS[resolvedPerspective] ?? PERSPECTIVE_DESCRIPTIONS.second_person;
+  // Levity (issue #236) — optional tonal-weight modulation composed on top of
+  // the tone. Empty for `default`/unknown values (no-op) and suppressed for
+  // meta modes (a recap is an out-of-fiction summary, not live scene prose).
+  const levityDesc      = LEVITY_DESCRIPTIONS[narrationLevity] ?? '';
 
   const parts = [];
 
@@ -1015,6 +1038,10 @@ export function buildNarratorSystemPrompt(
     styleLines.push(`Custom instructions: ${narrationInstructions.trim()}`);
   }
 
+  const levitySection = (levityDesc && !isMetaMode)
+    ? `### LEVITY\n\n${levityDesc}\n\n`
+    : '';
+
   parts.push(
     `## NARRATOR ROLE AND VOICE\n\n` +
     `${roleDescription}\n\n` +
@@ -1022,6 +1049,7 @@ export function buildNarratorSystemPrompt(
     `${ANTI_SUGGESTION_CLAUSE}\n\n` +
     `### STYLE\n\n` +
     styleLines.join('\n') + `\n\n` +
+    levitySection +
     `### DIALOGUE\n\n` +
     `When a character speaks, write their words in the first person — a speaking ` +
     `character refers to themselves as "I"/"me", never in the third person. A ` +
