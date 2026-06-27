@@ -1683,3 +1683,42 @@ on Maren's entity card, where the narrator can find it in her generative tier.
   — title-scanning is fragile (a faction name can appear in a world-lore fact without
   the fact being about that faction). The explicit `entityName` field from the detector
   is the reliable signal.
+
+## Multiplayer spotlight is implied by narration, not mechanically enforced (2026-06-26)
+
+**Decision:** Fair spotlight distribution in multiplayer GM-less play is handled by a
+**narrator-driven rotating spotlight** ([#232](https://github.com/jamesrmedford-alt/starforged-companion/issues/232)),
+not by any mechanical turn-order, input lock, or submit gate. When an eligible beat
+(`move_resolution`, `paced_narrative`) ends by inviting action, the narrator addresses
+its prompting question to a specific PC, and a per-scene round-robin pointer
+(`campaignState.spotlight = { lastActorId, sceneId }`) rotates which PC that is from
+beat to beat. The rotation is computed deterministically in code
+(`src/narration/spotlight.js`, pure) and advanced inside the `buildNarratorExtras`
+funnel; the GM client persists the pointer (mirroring the rolling-summary write).
+
+The nudge is a **suggestion only**, enforced nowhere:
+- Any player may act or speak at any time, prompted or not — no lock, no queue, no gate.
+- If the fiction clearly centres a different character, the narrator follows the fiction.
+- Rotation candidates are the PCs the scene frame (`sceneFrame.present`) says are present;
+  absent PCs are skipped. Rotation applies only when ≥2 PCs are in the scene.
+- The GM is a full player in the rotation — `isGM` is not a reason to skip a PC
+  (consistent with the multiplayer-coordination stance).
+- The pointer resets on every scene change (cleared in `startScene`/`endScene`, and the
+  read is guarded by `sceneId` so a stale pointer never carries across scenes).
+
+**Reason:** In a 3-player playtest, unstructured input led to players talking over each
+other to the narrator while the `pendingMove` lock serialised them invisibly. Full
+initiative-style enforcement would kill the conversational flow that makes GM-less
+Ironsworn work, and Starforged is explicitly not round-based outside combat. A social
+nudge implied entirely through narration keeps the spotlight moving toward quieter
+players without taking agency away from anyone.
+
+**Rejected:**
+- *Hard turn enforcement / initiative order / submit gating / "raise hand" queues* —
+  out of scope by design; they impose structure the system deliberately avoids.
+- *Let the narrator track the rotation itself from prose* — non-deterministic and
+  unauditable; a code-owned pointer round-robins correctly and survives a mid-scene
+  rename (it keys on actor id, not name).
+- *No setting* — a GM whose table dislikes being called on by name needs an off switch;
+  added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
+  settings.

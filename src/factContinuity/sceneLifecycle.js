@@ -48,6 +48,7 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.sceneState.sceneId = id;
   ensureSceneTruthsShape(campaignState);
   campaignState.sceneFrame = null;   // A4 — frame is scene-scoped; new scene starts frameless
+  campaignState.spotlight = { lastActorId: null, sceneId: id }; // #232 — rotation restarts per scene
 
   await persistCampaignState(campaignState, `startScene (${reason})`);
   return id;
@@ -114,6 +115,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.sceneTruths = [];
   campaignState.sceneFrame  = null;
   campaignState.currentSceneId = null;
+  campaignState.spotlight = { lastActorId: null, sceneId: null }; // #232 — clear rotation with the scene
 
   await persistCampaignState(campaignState, `endScene (${reason})`);
 

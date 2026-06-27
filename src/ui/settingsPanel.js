@@ -56,6 +56,7 @@ const SETTING = {
   NARRATION_MAX_TOKENS:     'narrationMaxTokens',
   NARRATOR_CONTEXT_CARDS:   'narratorContextCards',
   NARRATOR_SESSION_SUMMARY: 'narratorSessionSummary',
+  NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   // ── Character management ─────────────────────────────────────────────────
   ACTIVE_CHARACTER_ID:      'activeCharacterId',
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
@@ -288,6 +289,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, {
     name:    'Rolling Session Summary',
     hint:    'Maintain a compressed "story so far" of the current session so the narrator keeps the narrative arc of beats that have scrolled past the context-card horizon. Regenerated from the session\'s narration on a small debounce (≈1.5× the context-card depth) and written to the World Journal Session Log at End Session. Adds an occasional low-cost summarisation call.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT, {
+    name:    'Rotating Spotlight',
+    hint:    'In multiplayer scenes, when a beat ends by inviting action the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. No effect in solo play.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -665,6 +675,10 @@ function getNarratorSessionSummary() {
   return game.settings.get(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY) ?? true;
 }
 
+function getNarratorSpotlight() {
+  return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? true;
+}
+
 // ── Previously On / recap ────────────────────────────────────────────────
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
 function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
@@ -893,6 +907,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationMaxTokens:    getNarrationMaxTokens(),
       narratorContextCards:  getNarratorContextCards(),
       narratorSessionSummary: getNarratorSessionSummary(),
+      narratorSpotlight:     getNarratorSpotlight(),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1243,6 +1258,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             Rolling session summary
           </label>
           <span class="narrator-field-hint">Keep a compressed "story so far" of the session so the narrator remembers the arc of beats older than the context-card horizon. Regenerated on a small debounce and saved to the Session Log at End Session.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narratorSpotlightRotation" ${ctx.narratorSpotlight ? 'checked' : ''} ${dis}>
+            Rotating spotlight (multiplayer)
+          </label>
+          <span class="narrator-field-hint">When a beat invites action, the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. No effect in solo play.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -1649,6 +1671,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
       const contextCards = Math.max(1, Math.min(50, Number(contextRaw) || 20));
       const sessionSummary = el.querySelector('[name="narratorSessionSummary"]')?.checked ?? true;
+      const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? true;
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
       const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
@@ -1664,6 +1687,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATION_LENGTH,       length),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, contextCards),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),
+        game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),

@@ -12,6 +12,7 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities } from '../context/relevanceResolver.js';
+import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
@@ -180,6 +181,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     }),
     party:              buildPartyContext(character?.name ?? null),
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
+    // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
+    // Advances the per-scene pointer as a side effect; '' when not applicable.
+    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState),
   };
 
   // Rolling session summary (architecture §8.6) — maintain it (debounced regen
@@ -2272,6 +2276,80 @@ function audioMarkupEnabledFromSettings() {
     return game.settings.get(MODULE_ID, 'audio.enabled') === true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Read the narrator.spotlightRotation world toggle (issue #232). Defaults to
+ * enabled when the setting is unregistered (early init, unit tests).
+ */
+function spotlightRotationEnabledFromSettings() {
+  try {
+    return game.settings.get(MODULE_ID, 'narratorSpotlightRotation') !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Spotlight rotation (issue #232) — compute the multiplayer turn-implication
+ * nudge for this beat and advance the per-scene rotation pointer.
+ *
+ * Returns the `## SPOTLIGHT` system-prompt block, or '' when the nudge does
+ * not apply (setting off, non-eligible mode, fewer than two PCs in scene).
+ * The pointer (`campaignState.spotlight`) is advanced in memory for every
+ * client and persisted by the GM only — the same pattern getRollingSessionSummary
+ * uses for its world-scoped write. Tying the pointer to `currentSceneId` makes
+ * the rotation restart automatically on a new scene even before sceneLifecycle
+ * clears it.
+ *
+ * Never throws: any failure yields '' so narration proceeds without the nudge.
+ *
+ * @param {string} mode
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+function maybeAdvanceSpotlight(mode, campaignState) {
+  try {
+    if (!spotlightRotationEnabledFromSettings()) return '';
+    if (!SPOTLIGHT_MODES.has(mode)) return '';
+
+    const roster = (getPlayerActors() ?? [])
+      .map(a => ({ id: a?.id, name: a?.name }))
+      .filter(r => r.id && typeof r.name === 'string' && r.name.trim());
+
+    const presentNames = Array.isArray(campaignState?.sceneFrame?.present)
+      ? campaignState.sceneFrame.present
+      : [];
+
+    // The stored pointer only applies within the scene it was set in; a scene
+    // change (new currentSceneId, or null when fact continuity is off) resets
+    // the rotation to the start of the roster.
+    const sceneId = campaignState?.currentSceneId ?? null;
+    const lastActorId = (campaignState?.spotlight?.sceneId === sceneId)
+      ? (campaignState?.spotlight?.lastActorId ?? null)
+      : null;
+
+    const selection = selectSpotlight({ roster, presentNames, lastActorId });
+    if (!selection) return '';
+
+    const record = { lastActorId: selection.nextActorId, sceneId };
+    campaignState.spotlight = record;
+    if (globalThis.game?.user?.isGM) {
+      try {
+        const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
+        stored.spotlight = record;
+        game.settings.set(MODULE_ID, 'campaignState', stored).catch(err =>
+          console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
+      } catch (err) {
+        console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err);
+      }
+    }
+
+    return buildSpotlightBlock(selection);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: spotlight build failed:`, err?.message ?? err);
+    return '';
   }
 }
 
