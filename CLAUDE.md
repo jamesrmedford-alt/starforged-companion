@@ -141,6 +141,17 @@ area — the original framing without having to hunt through chat history.
 Skipping this section is treated the same as skipping the test/lint gate:
 do not open the PR until it is included.
 
+**Closing keywords.** When a PR fully resolves a GitHub issue you were
+explicitly asked to address, add a `Closes #N` line to the description (or
+`Fixes #N` / `Resolves #N`) — one per issue resolved — so merging the PR
+auto-closes the issue. Use a bare `#N` reference (no keyword) when the PR only
+partially addresses an issue or merely relates to one. This is the *only*
+sanctioned way to close an issue: the close happens on merge, via a PR you were
+authorised to open. Never close or edit issues directly without instruction
+(see the GitHub Issues autonomy boundary above and the "Never do" list). When a
+PR carries more than one change, `Closes #N` is still correct as long as
+merging it delivers that issue in full.
+
 ---
 
 ## Help file and changelog maintenance
