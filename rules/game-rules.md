@@ -16,6 +16,12 @@ relevant section of these docs before writing code. They are short,
 indexed, and answer "what does the game say should happen here?"
 without the noise of the full rulebook prose.
 
+### Expansion: Sundered Isles
+
+| Doc | What it covers | When to read |
+|-----|---------------|--------------|
+| [`docs/rules-reference/sundered-isles-playkit-rules.md`](../docs/rules-reference/sundered-isles-playkit-rules.md) | Rules reference for the **Sundered Isles** expansion (Tomkin 2024) — every move, clock, embedded table, worksheet, and safety tool, plus a Part 2 delta against Starforged and a Part 3 implementation-status / data-source note. | Only when a task explicitly concerns Sundered Isles. **Sundered Isles is not implemented** in the Companion (Starforged only); this is reference for potential future scoping, and a pointer to the SI data already vendored in `foundry-ironsworn`. |
+
 These docs are about **the game**; they are not a substitute for reading
 the foundry-ironsworn source when touching Actor / Item schemas (see
 `rules/foundry-ironsworn.md`), or for fetching Foundry API docs when
