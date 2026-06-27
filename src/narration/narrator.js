@@ -12,6 +12,7 @@ import {
   formatEntityCard,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities } from '../context/relevanceResolver.js';
+import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
@@ -421,6 +422,17 @@ export function runPostNarrationPasses(
   narrationText, resolution, relevance, campaignState,
 ) {
   if (!resolution || !relevance) return Promise.resolve();
+
+  // Hardening (multiplayer): the detection passes below perform world-scoped
+  // writes — World Journal pages (JournalEntryPage), entity generative tiers,
+  // and entity Actor creation. Players (and non-canonical GMs) lack permission
+  // for those, so an un-gated run on their client floods the server log with
+  // "lacks permission to create JournalEntryPage" errors (the v1.7.24-era
+  // multiplayer playtest bug). In production the pipeline entry is already
+  // isCanonicalGM-gated (src/index.js); this is belt-and-suspenders so a future
+  // un-gated caller cannot reproduce it. Single-emitter by design.
+  if (!isCanonicalGM()) return Promise.resolve();
+
   const cls = relevance.resolvedClass;
 
   if (cls === 'embellishment') return Promise.resolve();
@@ -2132,7 +2144,7 @@ async function ensureSceneStarted(campaignState, reason) {
   await startScene(campaignState, { reason });
 }
 
-function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
+export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // Master gate — when fact-continuity is disabled, return the raw text
   // unchanged. The sidecar instruction is also suppressed at the prompt
   // layer so well-behaved narrators won't emit a fence in this state, but
@@ -2152,7 +2164,14 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);
   }
 
-  if (sidecar && campaignState) {
+  // Hardening (multiplayer): applying the sidecar persists campaignState (a
+  // world-scoped Setting) and may update the ship Actor. Players lack
+  // permission for world writes, so gate the whole apply-and-persist block on
+  // the canonical GM. The clean prose is extracted above and still returned
+  // below, so a non-GM caller (should one ever reach here) gets correct text
+  // with no failed server write. In production only the canonical GM runs the
+  // narration pipeline, so this never changes behaviour there.
+  if (sidecar && campaignState && isCanonicalGM()) {
     // Fact-continuity §20 — the "ship" subject is special-cased. A
     // stateChange with subject === "ship" and attribute === "position"
     // is routed to the command vehicle's persistent position field,
@@ -2224,8 +2243,10 @@ function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
 
   // Phase E — optional Haiku audit of the prose against the active-scene
   // ledger. Gated inside runConsistencyCheck on the
-  // factContinuity.consistencyCheck setting; fire-and-forget.
-  if (campaignState && prose?.trim()) {
+  // factContinuity.consistencyCheck setting; fire-and-forget. Also gated on
+  // the canonical GM here: the audit makes an API call and posts a GM-only
+  // review card, so it must be single-emitter like the writes above.
+  if (campaignState && prose?.trim() && isCanonicalGM()) {
     runConsistencyCheck(prose, campaignState, {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
