@@ -13,6 +13,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
@@ -524,7 +525,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${narrationText}</div>
+        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -1200,7 +1201,7 @@ function buildOracleUserMessage({
 async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
   const header = oracleName || (kind === 'pay_the_price' ? 'Pay the Price' : 'Oracle');
   await ChatMessage.create({
-    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(text)}</p></div>`,
+    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleNarrationCard: true,
@@ -1632,7 +1633,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${narrationText}</div>
+        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -2029,7 +2030,7 @@ async function postSceneCard(question, responseText, sessionId) {
       <div class="sf-scene-card">
         <div class="sf-scene-label">◈ Scene</div>
         <div class="sf-scene-question">${question}</div>
-        <div class="sf-scene-prose">${responseText}</div>
+        <div class="sf-scene-prose">${stripMarkup(responseText)}</div>
       </div>
     `.trim(),
     flags: {

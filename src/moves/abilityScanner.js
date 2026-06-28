@@ -229,10 +229,17 @@ function buildHaikuPrompt(abilities, moveId, moveName, narration) {
   ].join("\n");
 }
 
-function parseHaikuResponse(raw) {
+export function parseHaikuResponse(raw) {
   if (!raw) return [];
   try {
-    const cleaned = String(raw).replace(/```(?:json)?|```/g, "").trim();
+    const stripped = String(raw).replace(/```(?:json)?|```/g, "").trim();
+    // Haiku occasionally appends a trailing sentence after the JSON object
+    // (despite "JSON only" in the prompt), which made JSON.parse throw
+    // "Unexpected non-whitespace character after JSON". Slice to the
+    // outermost {...} so trailing prose can't break the parse.
+    const first = stripped.indexOf("{");
+    const last  = stripped.lastIndexOf("}");
+    const cleaned = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
     const parsed = JSON.parse(cleaned);
     const arr = Array.isArray(parsed?.matches) ? parsed.matches : [];
     return arr
