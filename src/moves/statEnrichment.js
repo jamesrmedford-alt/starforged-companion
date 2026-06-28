@@ -42,6 +42,15 @@ const MODULE_ID = "starforged-companion";
 const ACTION_STATS = new Set(["edge", "heart", "iron", "shadow", "wits"]);
 const PLAYER_METERS = new Set(["health", "spirit", "supply", "momentum"]);
 
+// Moves that legitimately roll no stat (Fate moves / progress moves resolve
+// without an action-die stat). A missing statUsed for these is expected, so it
+// is logged at debug rather than warn — only a stat-bearing move missing its
+// stat is worth a warning.
+const NO_STAT_MOVES = new Set([
+  "ask_the_oracle", "pay_the_price", "fulfill_your_vow", "forge_a_bond",
+  "finish_an_expedition", "take_decisive_action", "reach_a_milestone",
+]);
+
 // Moves whose play-kit rule is "roll +X or +Y, whichever is higher".
 // statEnrichment resolves both options and overrides interpretation.statUsed
 // with the higher one so the move card reflects the actual roll.
@@ -82,8 +91,11 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 
   const statUsed = interpretation?.statUsed ?? null;
   if (!statUsed) {
-    console.warn(
-      `${MODULE_ID} | statEnrichment: interpretation has no statUsed (move: ${interpretation?.moveId}); leaving statValue at 0.`,
+    const moveId = interpretation?.moveId;
+    const expected = NO_STAT_MOVES.has(moveId);
+    const log = expected ? console.debug : console.warn;
+    log?.(
+      `${MODULE_ID} | statEnrichment: interpretation has no statUsed (move: ${moveId}); leaving statValue at 0.`,
     );
     interpretation.statValue = 0;
     return 0;

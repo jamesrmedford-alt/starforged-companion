@@ -19,6 +19,25 @@
 
 const MODULE_ID = "starforged-companion";
 
+// In-memory positive-lookup memo (hash → resolved path). Repeated plays and
+// chat re-renders of the same clip otherwise re-hit FilePicker.browse, which is
+// an assets/browse API call on The Forge. Positives only; cleared on an
+// eviction sweep so a deleted file can't linger. Lifetime = page load.
+const _lookupMemo = new Map();
+
+// Eviction throttle. evictIfOverflow() browses the entire cache tree, so firing
+// it after every synthesized clip floods the Forge assets/browse endpoint (the
+// "called continuously for 5 minutes" rate warning). The cap is soft, so a
+// periodic sweep is enough.
+let _lastEvictionAt = 0;
+const EVICTION_MIN_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+/** Test-only — reset the in-memory lookup memo and eviction throttle. */
+export function _resetAudioCacheStateForTests() {
+  _lookupMemo.clear();
+  _lastEvictionAt = 0;
+}
+
 /**
  * Compute the cache key for a single audio segment.
  *
@@ -70,6 +89,9 @@ async function ensureDir(dir) {
  */
 export async function lookup(hash) {
   if (typeof hash !== "string" || hash.length !== 64) return null;
+  // Skip the browse for a clip we already resolved this session.
+  const memoed = _lookupMemo.get(hash);
+  if (memoed) return memoed;
   const { dir, filename } = pathFor(hash);
   try {
     const browse = await foundry.applications.apps.FilePicker.implementation.browse("data", dir);
@@ -78,8 +100,9 @@ export async function lookup(hash) {
     // local relative path; on The Forge it's the absolute assets.forge-vtt.com
     // URL where the file actually lives. Either way, the string here is the
     // one foundry.audio.Sound can load.
-    const hit = files.find(f => typeof f === "string" && f.endsWith(`/${filename}`));
-    return hit ?? null;
+    const hit = files.find(f => typeof f === "string" && f.endsWith(`/${filename}`)) ?? null;
+    if (hit) _lookupMemo.set(hash, hit);   // memoise positives only
+    return hit;
   } catch {
     // Directory doesn't exist yet, or permissions error — both are misses.
     return null;
@@ -137,8 +160,15 @@ export async function write(hash, bytes) {
  * @param {number} maxBytes
  * @returns {Promise<number>}
  */
-export async function evictIfOverflow(maxBytes) {
+export async function evictIfOverflow(maxBytes, { force = false } = {}) {
   if (!Number.isFinite(maxBytes) || maxBytes <= 0) return 0;
+  // Throttle: this sweep browses the whole cache tree (one assets/browse per
+  // subdir). Running it after every clip hammered the Forge API; the cap is
+  // soft, so sweep at most once per interval. `force` bypasses it for tests.
+  if (!force && (Date.now() - _lastEvictionAt) < EVICTION_MIN_INTERVAL_MS) return 0;
+  _lastEvictionAt = Date.now();
+  // A sweep may delete files, so drop memoised paths that could now be stale.
+  _lookupMemo.clear();
   const worldId = globalThis.game?.world?.id;
   if (!worldId) return 0;
   const rootDir = `worlds/${worldId}/audio`;

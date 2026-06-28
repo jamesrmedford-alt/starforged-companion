@@ -354,7 +354,11 @@ export async function updateThreatSeverity(name, severity, campaignState) {
 
   const page = findPageByName(journal, name?.trim() ?? "");
   if (!page) {
-    console.warn(`${MODULE_ID} | worldJournal: updateThreatSeverity — no threat named "${name}"`);
+    // Not a warning: the detector may reference a danger that was never
+    // recorded as a threat. The detection prompt now discourages this, but a
+    // stray transition is harmless — we just have nothing to update. Debug so
+    // it stops spamming the error log during play.
+    console.debug?.(`${MODULE_ID} | worldJournal: updateThreatSeverity — no recorded threat named "${name}"; skipping`);
     return null;
   }
 

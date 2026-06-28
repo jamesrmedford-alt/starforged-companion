@@ -77,6 +77,7 @@ import {
   postSessionRecap,
   postCampaignRecap,
 } from "./narration/narrator.js";
+import { parseIronswornProgressRoll, classifyProgressRoll } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
@@ -1605,6 +1606,74 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
 
 function registerEntityRenameSyncHook() {
   Hooks.on("updateActor", syncEntityRecordNameOnUpdate);
+}
+
+/**
+ * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
+ * follow-up). When a player rolls a vow (or connection) progress on the system
+ * character sheet, the system posts only its own roll card and fires no hook,
+ * so the Companion never narrated it. This createChatMessage hook detects that
+ * card, classifies it as a vow or connection resolution, and narrates the
+ * already-determined outcome via narrateResolution — WITHOUT re-rolling.
+ *
+ * Single-emitter (isCanonicalGM) so only the GM narrates. Fail-safe: anything
+ * it can't recognise (action rolls, expedition/combat progress, our own cards,
+ * unparseable shapes) is skipped silently. See nativeProgressRoll.js for the
+ * vendor-coupling note.
+ */
+function registerNativeProgressRollHook() {
+  Hooks.on("createChatMessage", (message) => {
+    try {
+      if (!isCanonicalGM()) return;
+      const parsed = parseIronswornProgressRoll(message?.content ?? "");
+      if (!parsed) return;
+
+      const moveId = classifyProgressRoll(parsed, (source) => {
+        // Fallback discriminator: read the source progress Item's subtype off
+        // the speaker actor (the system serialises only the track name).
+        try {
+          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
+          const src   = String(source ?? "").trim().toLowerCase();
+          if (!actor || !src) return null;
+          const item = actor.items?.find?.(i =>
+            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
+          const subtype = String(item?.system?.subtype ?? "").toLowerCase();
+          if (subtype.includes("vow"))        return "vow";
+          if (subtype.includes("connection")) return "connection";
+          return null;
+        } catch { return null; }
+      });
+      if (!moveId) return;   // not a vow/connection progress roll → leave it alone
+
+      const moveName     = moveId === "fulfill_your_vow" ? "Fulfill Your Vow" : "Forge a Bond";
+      const outcomeLabel = parsed.outcome === "strong_hit" ? "Strong Hit"
+        : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
+
+      import("./narration/narrator.js").then(({ narrateResolution }) => {
+        const campaignState = game.settings.get(MODULE_ID, "campaignState");
+        const resolution = {
+          _id:             `native-${message.id}`,
+          moveId,
+          moveName,
+          outcome:         parsed.outcome,
+          outcomeLabel,
+          isProgressMove:  true,
+          statUsed:        null,
+          statValue:       0,
+          adds:            0,
+          progressScore:   parsed.score,
+          challengeDice:   parsed.challengeDice,
+          playerNarration: parsed.source ? `Resolving: ${parsed.source}` : "",
+        };
+        // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
+        // mechanics, just narrate the outcome.
+        return narrateResolution(resolution, {}, campaignState);
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | native progress-roll hook threw:`, err?.message ?? err);
+    }
+  });
 }
 
 /**
@@ -3964,6 +4033,7 @@ Hooks.once("ready", () => {
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
   registerCommandVehicleHook();
+  registerNativeProgressRollHook();
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();
@@ -4237,11 +4307,14 @@ export function wireMilestoneSuggestionButton(message, root) {
     event.stopPropagation();
     fresh.disabled = true;
     try {
-      await applyReachMilestone(getPlayerActors()[0] ?? null, null);
-      if (game.user?.isGM) {
-        await message.update({ [`flags.${MODULE_ID}.milestoneMarked`]: true })
-          .catch(err => console.warn(`${MODULE_ID} | milestone mark flag update failed:`, err?.message ?? err));
-      }
+      // Multiplayer fix (#236-follow-up): post a forced reach_a_milestone move
+      // so the canonical GM runs the progress mark + narration, exactly like the
+      // Attempt-to-Fulfill-Vow button. The old direct applyReachMilestone() call
+      // was GM-gated and silently no-op'd for players (the click did nothing).
+      await ChatMessage.create({
+        content: "Mark progress on your vow.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone" } },
+      });
     } catch (err) {
       console.error(`${MODULE_ID} | Reach a Milestone suggestion failed:`, err);
       fresh.disabled = false;

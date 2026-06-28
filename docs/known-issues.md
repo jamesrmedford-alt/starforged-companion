@@ -9,6 +9,36 @@ _Last audited against the code at v1.6.0 (2026-05)._
 
 ## Active issues
 
+### VENDOR-BONDSET — non-GM "lacks permission to create Item" on character-actor creation
+
+**Status:** Known / upstream (foundry-ironsworn). Harmless log noise; not fixed
+in-module (the `vendor/foundry-ironsworn` submodule is not patched without
+explicit instruction — see CLAUDE.md "Never do").
+
+**Symptom:** In a multiplayer session, whenever a `character` actor is created
+(a connection/NPC card, or a player character), the Foundry **server** log
+shows, for each connected non-GM player:
+`User <name> lacks permission to create Item [...] in parent Actor [...]`, each
+paired with a Foundry-internal `Cannot read properties of undefined (reading
+'length')`.
+
+**Root cause:** The foundry-ironsworn **system** registers a `createActor` hook
+(`vendor/foundry-ironsworn/src/module/actor/actor.ts:73`) that adds a `bondset`
+Item to every new `character`/`shared` actor with **no GM gate**. The hook fires
+on every connected client: the GM's write succeeds (the actor gets its
+bondset), and each non-GM client's redundant attempt is rejected by the server.
+
+**Impact:** Cosmetic. The bondset *is* created (by the GM), so functionality is
+correct — these are redundant-attempt errors that only spam the server log.
+Distinct from the Companion's own multiplayer write paths, which are GM-gated
+(see the v1.7.27 write-gate hardening).
+
+**Workaround:** None needed for correctness. A real fix belongs in the system's
+hook (GM-gate it); options if the noise matters are (a) a vendor patch to
+GM-gate that hook, or (b) report upstream.
+
+---
+
 ### PLAYTEST-1717 — v1.7.17 playtest findings
 
 **Status:** In progress (2026-06-21). **A fixed** (`<npc>` strip). **B

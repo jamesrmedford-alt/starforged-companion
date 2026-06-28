@@ -378,12 +378,16 @@ describe("updateThreatSeverity", () => {
     expect(data.history.at(-1).severity).toBe("immediate");
   });
 
-  it("warns and returns null when no threat by that name exists", async () => {
-    expectConsoleError?.(/updateThreatSeverity — no threat/);
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("logs at debug (not warn) and returns null when no threat by that name exists", async () => {
+    // #4: an unmatched threat transition is harmless noise — logged at debug,
+    // not warn, so it no longer spams the error log during play.
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const warnSpy  = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = await updateThreatSeverity("Nobody", "active", campaign());
     expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringMatching(/no recorded threat named/));
+    expect(warnSpy).not.toHaveBeenCalled();
+    debugSpy.mockRestore();
     warnSpy.mockRestore();
   });
 });
