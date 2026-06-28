@@ -39,6 +39,17 @@ export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
 const _sessionsByCardId = new WeakMap();
 let _gestureOverlayShown = false;
 
+// Keyless playback: a client without an ElevenLabs key asks the canonical GM to
+// synthesise + cache an uncached clip, then plays the resulting file. Each
+// request is awaited per content-hash (multiple waiters allowed) with a
+// timeout; the GM signals completion over the socket.
+const SYNTH_REQUEST_TIMEOUT_MS = 30_000;
+const _pendingSynth  = new Map();   // hash -> Set<resolve>
+const _synthInFlight = new Set();   // hashes the GM is currently synthesising
+
+/** Test-only — clear the keyless-synthesis wait/in-flight state. */
+export function _resetSynthStateForTests() { _pendingSynth.clear(); _synthInFlight.clear(); }
+
 // Cards we have already auto-played, by message id. Persisted to localStorage
 // so a player reconnecting mid-session doesn't hear every card replayed from
 // the beginning — the in-memory Set was wiped on page reload, making every
@@ -105,6 +116,15 @@ function getSetting(key, fallback) {
 export function audioEnabledForThisClient() {
   if (getSetting("audio.enabled", false) !== true) return false;
   if (getSetting("audio.clientEnabled", false) !== true) return false;
+  // No ElevenLabs key required here: PLAYING audio (a cached MP3) needs no key.
+  // A key is only needed to SYNTHESISE an uncached clip; a keyless client asks
+  // the GM to generate it (see requestGmSynthesis). This lets players hear
+  // narrator audio without ever configuring their own key.
+  return true;
+}
+
+/** True when this client holds an ElevenLabs key (can synthesise locally). */
+function hasElevenLabsKey() {
   const key = getSetting("elevenLabsApiKey", "");
   return typeof key === "string" && key.trim().length > 0;
 }
@@ -199,15 +219,29 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
     });
     let src = await cacheLookup(hash);
     if (!src) {
-      const bytes = await synthesise({
-        apiKey:  getSetting("elevenLabsApiKey", ""),
-        voiceId,
-        modelId: voices.modelId,
-        text:    p.text,
-        speed:   voices.speed,
-        stream:  false,
-      });
-      src = await commitToCache(hash, bytes);
+      if (hasElevenLabsKey()) {
+        const bytes = await synthesise({
+          apiKey:  getSetting("elevenLabsApiKey", ""),
+          voiceId,
+          modelId: voices.modelId,
+          text:    p.text,
+          speed:   voices.speed,
+          stream:  false,
+        });
+        src = await commitToCache(hash, bytes);
+      } else {
+        // No key on this client — ask the GM to synthesise + cache it, then
+        // play the resulting file. Players never need their own key.
+        src = await requestGmSynthesis(hash, {
+          voiceId,
+          modelId: voices.modelId,
+          text:    p.text,
+          speed:   voices.speed,
+        });
+        if (!src) {
+          throw new Error("Narrator audio isn't ready yet — ask the GM to play this card once, then try again.");
+        }
+      }
     }
     out.push({ voice: p.voice, src, text: p.text });
   }
@@ -285,21 +319,93 @@ export function registerAudioSocket() {
   if (!globalThis.game?.socket?.on) return;
   game.socket.on(AUDIO_SOCKET_NAME, async (payload) => {
     if (!payload || typeof payload !== "object") return;
-    if (payload.kind !== "audio.cache.write") return;
-    if (!isCanonicalGM()) return;
-    try {
-      const bytes = base64ToBytes(payload.b64 ?? "");
-      await cacheWrite(payload.hash, bytes);
-      const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-      if (cap > 0) {
-        evictIfOverflow(cap).catch(err =>
-          console.warn(`${MODULE_ID} | audio cache eviction (GM-relay) failed:`, err),
-        );
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | audio cache GM-relay write failed:`, err);
+    switch (payload.kind) {
+      case "audio.cache.write":   return handleCacheWrite(payload);
+      case "audio.synth.request": return handleSynthRequest(payload);
+      case "audio.synth.done":    return resolvePendingSynth(payload.hash);
+      default: return;
     }
   });
+}
+
+// GM-side: a keyed client synthesised a clip and relayed the bytes for caching.
+async function handleCacheWrite(payload) {
+  if (!isCanonicalGM()) return;
+  try {
+    const bytes = base64ToBytes(payload.b64 ?? "");
+    await cacheWrite(payload.hash, bytes);
+    const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
+    if (cap > 0) {
+      evictIfOverflow(cap).catch(err =>
+        console.warn(`${MODULE_ID} | audio cache eviction (GM-relay) failed:`, err),
+      );
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio cache GM-relay write failed:`, err);
+  }
+}
+
+// GM-side: a keyless client asked us to synthesise + cache a clip it can't make
+// itself. Dedupe against the cache and the in-flight set, then signal done so
+// the requester (and any other waiters) can play the cached file.
+async function handleSynthRequest(payload) {
+  if (!isCanonicalGM()) return;
+  const hash = typeof payload.hash === "string" ? payload.hash : "";
+  const spec = payload.spec;
+  if (!hash) return;
+  const signalDone = () => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash });
+  try {
+    if (await cacheLookup(hash)) { signalDone(); return; }   // already cached
+    if (_synthInFlight.has(hash)) return;                     // a prior request is making it; its done covers us
+    _synthInFlight.add(hash);
+    try {
+      const apiKey = getSetting("elevenLabsApiKey", "");
+      if (apiKey && String(apiKey).trim() && spec) {
+        const bytes = await synthesise({
+          apiKey,
+          voiceId: spec.voiceId,
+          modelId: spec.modelId,
+          text:    spec.text,
+          speed:   spec.speed,
+          stream:  false,
+        });
+        await cacheWrite(hash, bytes);
+        const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
+        if (cap > 0) {
+          evictIfOverflow(cap).catch(err =>
+            console.warn(`${MODULE_ID} | audio cache eviction (keyless synth) failed:`, err),
+          );
+        }
+      }
+    } finally {
+      _synthInFlight.delete(hash);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio GM-synthesis (keyless request) failed:`, err);
+  }
+  signalDone();   // success, already-cached, or failure — always unblock waiters
+}
+
+// Requester side: resolve everyone waiting on this hash.
+function resolvePendingSynth(hash) {
+  const set = _pendingSynth.get(hash);
+  if (!set) return;
+  _pendingSynth.delete(hash);
+  for (const resolve of set) resolve();
+}
+
+// Keyless client: ask the canonical GM to synthesise + cache `hash`, wait for
+// the done signal (or time out), then return the now-cached path (or null).
+async function requestGmSynthesis(hash, spec) {
+  const ready = new Promise((resolve) => {
+    let set = _pendingSynth.get(hash);
+    if (!set) { set = new Set(); _pendingSynth.set(hash, set); }
+    set.add(resolve);
+    setTimeout(() => { set.delete(resolve); resolve(); }, SYNTH_REQUEST_TIMEOUT_MS);
+  });
+  game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.request", hash, spec });
+  await ready;
+  return await cacheLookup(hash);
 }
 
 // ---------------------------------------------------------------------------

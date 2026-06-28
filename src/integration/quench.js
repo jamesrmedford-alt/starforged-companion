@@ -5558,15 +5558,17 @@ function registerAudioNarrationTests(quench) {
           assert.isFalse(audioEnabledForThisClient());
         });
 
-        it("returns false when elevenLabsApiKey is empty", async function () {
+        it("returns TRUE when elevenLabsApiKey is empty — keyless playback", async function () {
+          // Players never need their own key: a cached clip plays without one,
+          // and an uncached clip is requested from the GM (requestGmSynthesis).
           await game.settings.set(MODULE_ID, "audio.enabled",       true);
           await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
           await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "");
           const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
-          assert.isFalse(audioEnabledForThisClient());
+          assert.isTrue(audioEnabledForThisClient());
         });
 
-        it("returns true when all three preconditions are met", async function () {
+        it("returns true when world + client audio are on (key present)", async function () {
           await game.settings.set(MODULE_ID, "audio.enabled",       true);
           await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
           await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "sk_test_key");
@@ -5658,7 +5660,8 @@ function registerAudioNarrationTests(quench) {
 // ─────────────────────────────────────────────────────────────────────────────
 // AUDIO CROSS-CLIENT — non-GM player path (PLAYTEST-1712 finding H)
 // ─────────────────────────────────────────────────────────────────────────────
-// Verifies the audio three-gate check and the GM socket relay contract from the
+// Verifies the audio gate (world + client audio; no key required since keyless
+// playback) and the GM socket relay contract from the
 // player's perspective. Quench always runs as GM, so we cannot mutate
 // game.user.isGM (Foundry's BaseUser.isGM is a getter-only property in live
 // Foundry — assignment throws). The tests are valid without it because
@@ -5718,13 +5721,13 @@ function registerAudioCrossClientTests(quench) {
             "clientEnabled=false must block audio (the client toggle is off by default for new players)");
         });
 
-        it("returns false when the ElevenLabs key is absent — player has not configured their key", async function () {
+        it("returns TRUE when the ElevenLabs key is absent — keyless playback (player needs no key)", async function () {
           await game.settings.set(MODULE_ID, "audio.enabled",       true);
           await game.settings.set(MODULE_ID, "audio.clientEnabled", true);
           await game.settings.set(MODULE_ID, "elevenLabsApiKey",    "");
           const { audioEnabledForThisClient } = await import(`${MODULE_PATH}/audio/index.js`);
-          assert.isFalse(audioEnabledForThisClient(),
-            "empty API key must block audio even with client toggle enabled");
+          assert.isTrue(audioEnabledForThisClient(),
+            "a keyless player still gets audio — cached clips play without a key, uncached ones are requested from the GM");
         });
 
         it("returns true when all three gates pass — confirms no isGM gate exists in this function", async function () {
@@ -7407,8 +7410,9 @@ function registerRecapModesTests(quench) {
 // ─────────────────────────────────────────────────────────────────────────────
 // `synthesise` and `fetchSubscription` validation paths and the 401-hint
 // console warn are unit-tested in tests/unit/audio.test.js. The existing
-// `audio` Quench batch covers the audioEnabledForThisClient triple gate
-// and the button hide/unhide flow on a healthy stub key.
+// `audio` Quench batch covers the audioEnabledForThisClient gate (world +
+// client audio; no key required since keyless playback) and the button
+// hide/unhide flow on a healthy stub key.
 //
 // This batch fills the gap on what happens when the live network call
 // fails: non-401 HTTP error statuses surface a readable error to the

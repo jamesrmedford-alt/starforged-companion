@@ -33,6 +33,10 @@ vi.mock('../../src/multiplayer/gmGate.js', () => ({
   isCanonicalGM: vi.fn().mockReturnValue(true),
 }));
 
+vi.mock('../../src/audio/elevenlabs.js', () => ({
+  synthesise: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (resolved after mocks are hoisted).
 // ---------------------------------------------------------------------------
@@ -41,10 +45,12 @@ import {
   audioEnabledForThisClient,
   registerAudioSocket,
   AUDIO_SOCKET_NAME,
+  _resetSynthStateForTests,
 } from '../../src/audio/index.js';
 
-import { write as mockWrite } from '../../src/audio/cache.js';
+import { write as mockWrite, lookup as mockLookup } from '../../src/audio/cache.js';
 import { isCanonicalGM }     from '../../src/multiplayer/gmGate.js';
+import { synthesise as mockSynthesise } from '../../src/audio/elevenlabs.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -73,14 +79,14 @@ describe('audioEnabledForThisClient — non-GM player context', () => {
     expect(audioEnabledForThisClient()).toBe(false);
   });
 
-  it('returns false when the elevenLabsApiKey is absent even with both toggles on', () => {
-    // Player enabled audio on their client but has not configured their
-    // personal ElevenLabs key. This is finding H's root cause: the key
-    // is client-scoped and blank by default.
+  it('returns TRUE without an ElevenLabs key — playback no longer requires one', () => {
+    // Players must never need their own key: playing a GM-cached clip needs no
+    // key, and an uncached clip is requested from the GM. So with world audio +
+    // client audio on, a keyless player still gets the play button and audio.
     game.settings._store.set(`${MODULE_ID}.audio.enabled`,       true);
     game.settings._store.set(`${MODULE_ID}.audio.clientEnabled`, true);
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`,    '');
-    expect(audioEnabledForThisClient()).toBe(false);
+    expect(audioEnabledForThisClient()).toBe(true);
   });
 
   it('returns false when world audio is off, regardless of client settings', () => {
@@ -92,11 +98,10 @@ describe('audioEnabledForThisClient — non-GM player context', () => {
     expect(audioEnabledForThisClient()).toBe(false);
   });
 
-  it('returns true for a non-GM client when all three settings gates pass', () => {
-    // This is the critical assertion: audioEnabledForThisClient() has NO
-    // isGM gate. A properly-configured non-GM client should get audio.
-    // If this test passes but audio still fails in production, the bug is
-    // downstream in synthesis or playback — not in this gate.
+  it('returns true for a non-GM client with world + client audio on (no isGM gate)', () => {
+    // audioEnabledForThisClient() has NO isGM gate and NO key gate. A
+    // properly-configured non-GM client gets audio; if it still fails in
+    // production, the cause is downstream in playback, not this gate.
     game.settings._store.set(`${MODULE_ID}.audio.enabled`,       true);
     game.settings._store.set(`${MODULE_ID}.audio.clientEnabled`, true);
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`,    'sk_test_key');
@@ -174,5 +179,71 @@ describe('registerAudioSocket — GM relay contract', () => {
     await handler('a string');
     await handler(42);
     expect(mockWrite).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keyless synthesis: a player without a key asks the GM to make the clip.
+// The GM-side handler synthesises, caches, and signals done so the player can
+// play the resulting file — players never need their own ElevenLabs key.
+// ---------------------------------------------------------------------------
+
+describe('handleSynthRequest — GM synthesises on a keyless client request', () => {
+  const SPEC = { voiceId: 'v1', modelId: 'm1', text: 'Hello.', speed: 1.0 };
+
+  function getHandler() {
+    registerAudioSocket();
+    return game.socket._handlers.get(AUDIO_SOCKET_NAME).at(-1);
+  }
+  function doneEmits() {
+    return (game.socket._emitted ?? []).filter(
+      e => e.event === AUDIO_SOCKET_NAME && e.payload?.kind === 'audio.synth.done',
+    );
+  }
+
+  beforeEach(() => {
+    _resetSynthStateForTests();
+    vi.clearAllMocks();
+    game.socket._reset();
+    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    vi.mocked(mockLookup).mockResolvedValue(null);       // default: cache miss
+    vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/x.mp3');
+    vi.mocked(mockSynthesise).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_gm_key');
+    game.settings._store.set(`${MODULE_ID}.audio.cacheMaxBytes`, 0);
+  });
+  afterEach(() => { game.socket._reset(); });
+
+  it('synthesises + caches an uncached clip, then signals done', async () => {
+    const handler = getHandler();
+    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    expect(mockSynthesise).toHaveBeenCalledOnce();
+    expect(mockWrite).toHaveBeenCalledWith('abc', expect.any(Uint8Array));
+    expect(doneEmits()).toHaveLength(1);
+    expect(doneEmits()[0].payload).toEqual({ kind: 'audio.synth.done', hash: 'abc' });
+  });
+
+  it('skips synthesis when the clip is already cached, but still signals done', async () => {
+    vi.mocked(mockLookup).mockResolvedValue('/worlds/test/audio/abc.mp3');
+    const handler = getHandler();
+    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    expect(mockSynthesise).not.toHaveBeenCalled();
+    expect(doneEmits()).toHaveLength(1);
+  });
+
+  it('ignores synth requests when not the canonical GM', async () => {
+    vi.mocked(isCanonicalGM).mockReturnValue(false);
+    const handler = getHandler();
+    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    expect(mockSynthesise).not.toHaveBeenCalled();
+    expect(doneEmits()).toHaveLength(0);
+  });
+
+  it('signals done without synthesising when the GM has no key', async () => {
+    game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, '');
+    const handler = getHandler();
+    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    expect(mockSynthesise).not.toHaveBeenCalled();
+    expect(doneEmits()).toHaveLength(1);
   });
 });

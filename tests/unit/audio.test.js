@@ -740,14 +740,17 @@ describe('audioEnabledForThisClient', () => {
     expect(audioEnabledForThisClient()).toBe(false);
   });
 
-  it('returns false when the elevenLabsApiKey is empty', () => {
+  it('returns TRUE when the elevenLabsApiKey is empty — keyless playback', () => {
+    // Players must never need their own key. Playing a cached clip needs no key;
+    // an uncached clip is requested from the GM (requestGmSynthesis). So a
+    // keyless client with world + client audio on still gets audio.
     game.settings._store.set(`${MODULE_ID}.audio.enabled`, true);
     game.settings._store.set(`${MODULE_ID}.audio.clientEnabled`, true);
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, '');
-    expect(audioEnabledForThisClient()).toBe(false);
+    expect(audioEnabledForThisClient()).toBe(true);
   });
 
-  it('returns true when all three preconditions are met', () => {
+  it('returns true when world + client audio are on (key present)', () => {
     game.settings._store.set(`${MODULE_ID}.audio.enabled`, true);
     game.settings._store.set(`${MODULE_ID}.audio.clientEnabled`, true);
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_xyz');
