@@ -8,16 +8,23 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// isCanonicalGM gates the GM-side relay-write handler; control it per test.
+vi.mock("../../src/multiplayer/gmGate.js", () => ({ isCanonicalGM: vi.fn(() => true) }));
+
 import {
   matchesModule,
   formatEntry,
+  attributeHtml,
   installConsoleInterceptor,
   flushErrorLogBuffer,
+  registerErrorLogSocket,
   pending,
   _reset,
   JOURNAL_NAME,
   PAGE_NAME,
 } from "../../src/logging/errorLog.js";
+import { isCanonicalGM } from "../../src/multiplayer/gmGate.js";
 
 // ── matchesModule ─────────────────────────────────────────────────────────────
 
@@ -173,5 +180,103 @@ describe("flushErrorLogBuffer", () => {
     expect(pending.length).toBe(0);
     // At least one journal page write should have been called.
     expect(mockUpdate).toHaveBeenCalled();
+  });
+});
+
+// ── attributeHtml ─────────────────────────────────────────────────────────────
+
+describe("attributeHtml", () => {
+  it("injects the client name after the timestamp", () => {
+    const out = attributeHtml("<p>[6/28] ERROR: boom</p>\n", "Kish");
+    expect(out).toBe("<p>[6/28] (Kish) ERROR: boom</p>\n");
+  });
+  it("returns html unchanged when no user is given", () => {
+    expect(attributeHtml("<p>[6/28] ERROR: boom</p>\n")).toBe("<p>[6/28] ERROR: boom</p>\n");
+  });
+  it("strips angle-bracket characters from the injected name", () => {
+    expect(attributeHtml("<p>[t] WARN: x</p>\n", "<b>")).toBe("<p>[t] (b) WARN: x</p>\n");
+  });
+});
+
+// ── Non-GM relay (all errors reach the log regardless of client) ──────────────
+
+describe("non-GM client relays errors to the GM", () => {
+  let origWarn, origError, emit;
+  beforeEach(() => {
+    origWarn = console.warn; origError = console.error;
+    _reset(origWarn, origError);
+    pending.length = 0;
+    emit = vi.fn();
+  });
+  afterEach(() => { _reset(origWarn, origError); vi.unstubAllGlobals(); });
+
+  it("relays a post-ready error over the socket instead of dropping it", () => {
+    expectConsoleError(/starforged-companion/);
+    vi.stubGlobal("game", {
+      ready: true,
+      user:  { isGM: false, name: "Kish" },
+      socket: { emit },
+    });
+    installConsoleInterceptor();
+    console.error("starforged-companion | audio playback failed:", new Error("nope"));
+    expect(emit).toHaveBeenCalledTimes(1);
+    const [event, payload] = emit.mock.calls[0];
+    expect(event).toBe("module.starforged-companion");
+    expect(payload).toMatchObject({ kind: "errorLog.append", user: "Kish" });
+    expect(payload.html).toContain("audio playback failed");
+  });
+
+  it("relays the pre-ready buffer at flush instead of discarding it", async () => {
+    vi.stubGlobal("game", { ready: true, user: { isGM: false, name: "Kish" }, socket: { emit } });
+    pending.push("<p>[t] ERROR: buffered</p>\n");
+    await flushErrorLogBuffer();
+    expect(pending.length).toBe(0);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0][1]).toMatchObject({ kind: "errorLog.append" });
+  });
+});
+
+// ── GM-side relay handler writes attributed entries ───────────────────────────
+
+describe("registerErrorLogSocket — GM writes relayed entries", () => {
+  let origWarn, origError, handler, mockUpdate;
+  beforeEach(() => {
+    origWarn = console.warn; origError = console.error;
+    _reset(origWarn, origError);
+    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    mockUpdate = vi.fn().mockResolvedValue({});
+    const mockPage = { id: "p1", text: { content: "" }, update: mockUpdate };
+    const mockJournal = { id: "j1", pages: { get: () => mockPage, contents: [mockPage] }, getName: () => null };
+    vi.stubGlobal("game", {
+      ready: true,
+      user: { isGM: true },
+      journal: { get: () => null, getName: () => mockJournal },
+      socket: { on: (_evt, fn) => { handler = fn; } },
+    });
+    vi.stubGlobal("JournalEntry", { create: vi.fn().mockResolvedValue(mockJournal) });
+  });
+  afterEach(() => { _reset(origWarn, origError); vi.unstubAllGlobals(); });
+
+  it("writes a relayed entry (attributed) when canonical GM", async () => {
+    registerErrorLogSocket();
+    await handler({ kind: "errorLog.append", user: "Kish", html: "<p>[t] ERROR: relayed</p>\n" });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockUpdate).toHaveBeenCalled();
+    expect(mockUpdate.mock.calls.at(-1)[0]["text.content"]).toContain("(Kish)");
+  });
+
+  it("ignores relayed entries when not the canonical GM", async () => {
+    vi.mocked(isCanonicalGM).mockReturnValue(false);
+    registerErrorLogSocket();
+    await handler({ kind: "errorLog.append", user: "Kish", html: "<p>[t] ERROR: x</p>\n" });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-errorLog socket payloads", async () => {
+    registerErrorLogSocket();
+    await handler({ kind: "audio.cache.write", hash: "x" });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Smoother performance on The Forge.** The narrator-audio cache no longer rescans its entire folder after every generated clip, and it remembers clips it has already found, so repeated playback doesn't re-scan. This eliminates the "assets/browse called continuously" rate-limit warning during long sessions.
 - Fixed: **Applicable-ability detection is more reliable.** The ability scan no longer fails when the model appends a stray sentence after its JSON response, so stat substitutions and bonuses are detected more consistently.
 - Fixed: **Quieter, cleaner error log.** Threat-severity updates that reference an unrecorded threat, and stat lookups for no-stat moves like Ask the Oracle, are no longer written to the error log as warnings. The narrator is also now less likely to mistake a one-off narrative event for a tracked threat.
+- Changed: **Player errors now reach the GM's Error Log.** The persistent Error Log previously recorded only the GM's own errors, so problems on a player's client (a failed audio playback, a synthesis error) were invisible to the GM. Non-GM clients now relay their module warnings/errors to the GM, who records them in the Error Log tagged with the player's name — so multiplayer issues can be diagnosed from one place. (Players still can't see other players' keys; only the error text is relayed.)
 
 ## [1.7.27] — 2026-06-27
 
