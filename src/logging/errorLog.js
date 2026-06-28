@@ -8,11 +8,19 @@
  *
  * Install once in Hooks.once("init") via installConsoleInterceptor().
  * Flush the pre-ready buffer in Hooks.once("ready") via flushErrorLogBuffer().
+ *
+ * Multi-client: only a GM can write the world-scoped journal, so non-GM
+ * clients relay their entries to the canonical GM over the module socket
+ * (registerErrorLogSocket), and the GM writes them with the player's name
+ * attributed. This is how a player's errors reach the shared log at all.
  */
+
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 export const JOURNAL_NAME = "Starforged Companion — Error Log";
 export const PAGE_NAME    = "Error Log";
 const MODULE_PREFIX       = "starforged-companion";
+const SOCKET              = `module.${MODULE_PREFIX}`;
 const MAX_ENTRIES         = 200;  // rotate oldest when page reaches this count
 
 // Pre-ready buffer: entries captured before game.ready is true.
@@ -22,6 +30,10 @@ let _journalId = null;
 let _pageId    = null;
 let _installed = false;
 let _writing   = false; // reentrancy guard — journal writes must not recurse
+// The ORIGINAL (pre-interception) console.error, captured at install. Used to
+// report internal relay/handler failures WITHOUT going through the wrapped
+// console (which would re-enter capture and risk recursion).
+let _rawConsoleError = null;
 
 // Serialised write queue so concurrent errors don't race on the same page.
 let _writeQueue = Promise.resolve();
@@ -101,6 +113,56 @@ function enqueue(html) {
   _writeQueue = _writeQueue.then(() => doWrite(html)).catch(() => {});
 }
 
+// ── Cross-client relay ────────────────────────────────────────────────────────
+
+/**
+ * Relay a formatted entry to the GM so a non-GM client's errors still reach the
+ * shared log (players cannot write world documents). The canonical GM's
+ * registerErrorLogSocket() handler writes it. Failures are swallowed WITHOUT
+ * logging — a console call here would be re-captured and could recurse.
+ */
+function relayToGm(html) {
+  try {
+    globalThis.game?.socket?.emit?.(SOCKET, {
+      kind: "errorLog.append",
+      user: globalThis.game?.user?.name ?? "player",
+      html,
+    });
+  } catch (err) {
+    // Use the raw console (not the wrapped one) so this never re-enters capture.
+    _rawConsoleError?.("error-log relay emit failed:", err);
+  }
+}
+
+/** Inject the originating client's name after the timestamp on a relayed entry. */
+export function attributeHtml(html, user) {
+  if (!user || typeof html !== "string") return html;
+  const safe = String(user).replace(/[&<>]/g, "");
+  return /^<p>\[[^\]]*\]/.test(html)
+    ? html.replace(/^(<p>\[[^\]]*\])/, `$1 (${safe})`)
+    : html;
+}
+
+/**
+ * GM-side socket handler — writes relayed non-GM client errors to the journal.
+ * Single-writer via isCanonicalGM so a multi-GM world doesn't double-log.
+ * Register once on ready (all clients; non-canonical receivers no-op).
+ */
+export function registerErrorLogSocket() {
+  if (!globalThis.game?.socket?.on) return;
+  globalThis.game.socket.on(SOCKET, (payload) => {
+    try {
+      if (!payload || payload.kind !== "errorLog.append") return;
+      if (typeof payload.html !== "string" || !payload.html) return;
+      if (!isCanonicalGM()) return;
+      enqueue(attributeHtml(payload.html, payload.user));
+    } catch (err) {
+      // Raw console — never re-enter capture from the socket layer.
+      _rawConsoleError?.("error-log relay handler failed:", err);
+    }
+  });
+}
+
 // ── Capture (called from the intercepted console methods) ─────────────────────
 
 function capture(level, args) {
@@ -110,8 +172,14 @@ function capture(level, args) {
     pending.push(html);
     return;
   }
-  if (!globalThis.game?.user?.isGM) return;
-  enqueue(html);
+  // GM writes directly; every other client relays so its errors still land in
+  // the shared log (issue: players had no audio and the failures were invisible
+  // because the log was GM-only).
+  if (globalThis.game?.user?.isGM) {
+    enqueue(html);
+  } else {
+    relayToGm(html);
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -126,6 +194,7 @@ export function installConsoleInterceptor() {
   _installed = true;
   const _warn  = console.warn.bind(console);
   const _error = console.error.bind(console);
+  _rawConsoleError = _error;   // raw handle for recursion-safe internal logging
   console.warn  = (...args) => { _warn(...args);  capture("WARN",  args); };
   console.error = (...args) => { _error(...args); capture("ERROR", args); };
 }
@@ -134,11 +203,13 @@ export function installConsoleInterceptor() {
  * Write pre-ready buffered entries to the journal. Call in Hooks.once("ready").
  */
 export async function flushErrorLogBuffer() {
-  if (!globalThis.game?.user?.isGM) {
-    pending.length = 0;
-    return;
+  const entries = pending.splice(0);
+  if (globalThis.game?.user?.isGM) {
+    for (const html of entries) enqueue(html);
+  } else {
+    // Non-GM: relay the buffered entries to the GM instead of discarding them.
+    for (const html of entries) relayToGm(html);
   }
-  for (const html of pending.splice(0)) enqueue(html);
 }
 
 /**

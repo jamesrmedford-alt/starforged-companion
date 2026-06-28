@@ -152,6 +152,7 @@ import {
 import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
+  registerErrorLogSocket,
 } from "./logging/errorLog.js";
 import { flushApiTransactionLogBuffer } from "./logging/apiTransactionLog.js";
 import { showMoveRoll, showActionRoll, showD100 } from "./dice/diceAnimation.js";
@@ -3851,6 +3852,7 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  registerErrorLogSocket();   // GM listens for relayed non-GM client errors
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();
   // Advertise this client's Claude-key presence so the single-emitter pipeline
