@@ -7,8 +7,13 @@ on:
       - 'src/help/helpJournal.js'
       - 'scripts/build-help-site.mjs'
       - '.github/workflows/pages.yml'
-  release:
-    types: [published]
+  # NOT triggered on `release: published`. The help site renders
+  # CONTENT_VERSION from src/help/helpJournal.js (never module.json), so a
+  # release — which only bumps module.json — changes nothing here; the site is
+  # already current from the merge-to-main deploy above. A release deploy was
+  # also failing: it runs in the tag ref context, which the github-pages
+  # environment's deployment-branch protection rejects. Use workflow_dispatch
+  # to redeploy manually if ever needed.
   workflow_dispatch:
 
 permissions:
