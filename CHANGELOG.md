@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **Players no longer need their own ElevenLabs key to hear narrator audio.** Narrator voice now plays for every player at the table without each one configuring an ElevenLabs key. Playing a clip the GM has already generated needs no key at all; if a clip hasn't been generated yet, the player's client quietly asks the GM to generate it and then plays the result. (Keys stay private as always — a player's request carries only the text to speak, never a key, and only the GM's key is ever used to synthesise.)
+
+## [1.7.28] — 2026-06-28
+
 - Added: **Vow and connection rolls now narrate, however you roll them.** Rolling a vow or connection progress track on the Ironsworn character sheet now triggers a narration of the outcome (previously the system's roll card appeared with no narration). And the **Mark Progress on Vow** button now works for every player, not just the GM — so a player can resolve a vow and get narration without hitting a dead end. The Attempt to Fulfill Vow, Forge a Bond, and Develop Relationship buttons already worked this way.
 - Fixed: **Narrator dialogue tags no longer appear in cards.** The `<npc>` voice markup used by the audio pipeline is now stripped from the visible text of every narrator card — move narration, paced narration, scene answers, and Pay the Price — whether or not audio is enabled on your client. (Previously a player without audio could see the literal tags.)
 - Fixed: **Smoother performance on The Forge.** The narrator-audio cache no longer rescans its entire folder after every generated clip, and it remembers clips it has already found, so repeated playback doesn't re-scan. This eliminates the "assets/browse called continuously" rate-limit warning during long sessions.
