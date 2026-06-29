@@ -14,6 +14,7 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Stakes and rewards stated up front.** Swearing a vow, entering a fight, and forging a bond now show the mechanical payoff — how far each milestone advances the track, and the legacy reward earned on completion — so the goal is clear from the outset.
 - Added: **Choose a concrete reward when you swear a vow.** The narrator now proposes two tangible rewards for a new vow (a custom raygun, a useful contact, a vital secret…) — pick one, or write your own and the narrator works it in. Win the fight that serves the vow and the reward is delivered, scaled by the outcome: a clean win hands it over outright; a weak win delivers it with a string attached; a defeat means it slips away.
 - Added: **Swearing a vow now gets a scene.** When a vow is sworn — at the campaign's opening or via Swear an Iron Vow — the narrator paints a brief scene of the oath being made, grounded in your campaign's **Iron** world truth (how the Ironsworn bind their vows in your setting). Turn it off under Companion Settings → Narrator → *Vow-Swearing Scene* (on by default; honors the global narration toggle).
+- Added: **Shared supply for the crew (multiplayer).** Per the co-op/guided rules, all player characters now share one supply track — whenever any character's supply changes (a move, a suffer outcome, Resupply, or a manual sheet edit), it updates for everyone, so the crew never drifts out of sync. Health, spirit, and momentum stay per-character. Solo play is unaffected.
 
 ## [1.7.28] — 2026-06-28
 
