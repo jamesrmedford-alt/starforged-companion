@@ -1779,3 +1779,41 @@ mechanics.
   way out.
 - *Auto-deepen the connection on a vow's fulfilment* — same reasoning as auto-marking the vow; use a
   one-click "Deepen your bond" prompt so the deepening stays a player choice.
+
+---
+
+## Multiplayer attribution: roll effects credit the roller; the inciting vow is shared (2026-06-29)
+
+**Decision:** Two multiplayer playtest fixes (ship under v1.7.29):
+
+1. **Roll effects go to the rolling player's actor, not a GM-local default.** The move pipeline runs
+   GM-gated on the canonical GM's client, applying meters/progress on behalf of every player.
+   `persistResolution` and the move card's `burnActor` previously fell back to `getPlayerActors()[0]`
+   — the GM's own PC — so a non-GM's momentum / health / spirit / supply / debility / progress landed
+   on the GM. The resolved `speakerActorId` (from `resolveSpeakerActorId`) is now threaded into
+   `persistResolution` and used for the card's burn/improve/milestone actor. The fallbacks
+   (`activeCharacterId`, then `getPlayerActors()[0]`) apply only when no speaker is resolved (solo-GM).
+
+2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
+   **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),
+   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer, vowId-keyed
+   re-entrancy guard) keeps `system.current` / `system.clockTicks` in lockstep across all copies — so
+   marking or fulfilling it (the module's vow flow OR a native sheet edit) advances it for the whole
+   crew. Any player can click it; non-canonical clients relay to the GM over the module socket
+   (`kind: "vow.swearShared"`), who performs the privileged multi-actor writes.
+
+**Reason:** Playtest — the GM "gained the momentum regardless of which player earned it", and the
+inciting vow only landed for the clicker. Both are multiplayer-attribution defects from GM-local
+fallbacks: the pipeline knew the speaker but didn't use it for persistence, and the vow flow targeted a
+single actor. Vows display only on the per-actor character sheet (the Progress Tracks panel excludes
+them), so a *shared* vow needs a copy on every sheet plus a sync mechanism — the `updateItem` hook
+covers every progress path with one writer.
+
+**Rejected:**
+- *Per-PC vow copies with no sync (Option A)* — copies drift; "shared" must mean lockstep, which is
+  what the user asked for.
+- *One world-scoped vow track shown only in the Progress panel* — vows live on the character sheet;
+  players expect the founding vow there, so copies are required for visibility.
+- *Fan out progress only through the module's own vow flows* — would miss a native sheet edit; the
+  `updateItem` hook catches every change regardless of origin.
+- *Let any client write the sync* — multi-writer races + permission failures; gate to the canonical GM.

@@ -492,12 +492,15 @@ export async function createCharacterVowItem(actor, data) {
     flagKey:    "vowId",
     flagValue:  data?.vowId ?? null,
     clock:      data?.clock ?? null,
+    // Shared inciting vows are created on every PC and kept in lockstep; the
+    // sharedVow flag lets the sync hook find sibling copies (see swearVow.js).
+    extraFlags: data?.shared ? { sharedVow: true } : null,
   });
 }
 
 const VALID_CLOCK_MAX = [4, 6, 8, 10, 12];
 
-async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue, clock = null }) {
+async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey, flagValue, clock = null, extraFlags = null }) {
   if (!actor) return null;
   const ItemCls = globalThis.Item;
   if (!ItemCls?.create) {
@@ -524,13 +527,18 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
     system.clockMax   = VALID_CLOCK_MAX.includes(Number(clock.max)) ? Number(clock.max) : 6;
   }
 
+  const moduleFlags = {
+    ...(flagValue ? { [flagKey]: flagValue } : {}),
+    ...(extraFlags ?? {}),
+  };
+
   try {
     const item = await ItemCls.create(
       {
         name,
         type:   "progress",
         system,
-        flags:  flagValue ? { [MODULE_ID]: { [flagKey]: flagValue } } : {},
+        flags:  Object.keys(moduleFlags).length ? { [MODULE_ID]: moduleFlags } : {},
       },
       { parent: actor, suppressLog: true },
     );

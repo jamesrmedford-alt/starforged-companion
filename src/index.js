@@ -194,7 +194,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -4047,6 +4047,10 @@ Hooks.once("ready", () => {
   import("./audio/index.js").then(({ registerAudioSocket }) => {
     registerAudioSocket();
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
+  // Shared inciting-vow — GM-side relay (any player can swear it for the crew)
+  // and the cross-PC progress sync. Both no-op on non-canonical clients.
+  registerSharedVowSocket();
+  registerSharedVowSyncHook();
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,
