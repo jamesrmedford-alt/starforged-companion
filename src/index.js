@@ -119,7 +119,7 @@ import {
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./moves/developRelationship.js";
-import { planReachMilestone, buildMilestoneSuggestion } from "./moves/milestone.js";
+import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1341,6 +1341,17 @@ export function registerChatHook() {
             // Delete the Foundry combat tracker for this track
             await endCombatTracker(result.track.id).catch(err =>
               console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
+            // Won fight that served a vow → surface the milestone (#241). Win =
+            // a hit on Take Decisive Action / Battle (not Face Defeat). Marks
+            // scale by the fight's rank; a weak-hit win is one fewer (min 1).
+            const wonFight = resolution.moveId !== "face_defeat"
+              && (resolution.outcome === "strong_hit" || resolution.outcome === "weak_hit");
+            if (wonFight && result.track.linkedVowName) {
+              const marks = Math.max(1,
+                marksForSourceRank(result.track.rank) - (resolution.outcome === "weak_hit" ? 1 : 0));
+              await postFightVowMilestoneCard(result.track.linkedVowName, marks).catch(err =>
+                console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
+            }
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
@@ -2877,6 +2888,130 @@ function registerCombatThresholdSocket() {
   });
 }
 
+// ── Won-fight vow milestone (#241): surface the vow the fight served ─────────
+
+async function postFightVowMilestoneCard(vowName, marks) {
+  // Look up the linked vow on the roster for its rank + connection link.
+  let connectionName = null, vowRank = null;
+  for (const actor of getPlayerActors()) {
+    const item = (actor.items ?? []).find(i =>
+      i.type === "progress" && i.system?.subtype === "vow"
+      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase()
+      && !i.system?.completed);
+    if (item) {
+      vowRank        = item.system?.rank ?? null;
+      connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+      break;
+    }
+  }
+  const safeVow   = escapeChatHtml(vowName ?? "your vow");
+  const deepenBtn = connectionName
+    ? ` <button type="button" class="entity-btn" data-action="sf-deepen-bond">🤝 Deepen your bond with ${escapeChatHtml(connectionName)}</button>`
+    : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-fight-vow"><div class="sf-card-header">⚔ Victory — a milestone toward your vow</div>`
+        + `<div class="sf-card-body"><p>You won the fight serving &ldquo;${safeVow}&rdquo;.</p>`
+        + `<p><button type="button" class="entity-btn" data-action="sf-mark-milestone">⚑ Mark milestone (×${marks})</button> `
+        + `<button type="button" class="entity-btn" data-action="sf-fulfill-vow">🏁 Attempt to Fulfill</button>${deepenBtn}</p></div></div>`,
+      flags: { [MODULE_ID]: { fightVowCard: true, vowName, marks, connectionName, vowRank } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postFightVowMilestoneCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+// GM-side: mark the linked vow `marks` times (scaled by the fight's rank).
+async function markLinkedVowMilestone(vowName, marks) {
+  await applyReachMilestone(getPlayerActors()[0] ?? null, vowName ?? null, marks).catch(err =>
+    console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err));
+}
+
+// GM-side: deepen the connection a vow served, by `marks` rank-based marks on
+// its relationship track.
+async function deepenLinkedConnection(connectionName, marks) {
+  try {
+    const conn = await import("./entities/connection.js");
+    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const connections = (campaignState.connectionIds ?? [])
+      .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+      .filter(Boolean);
+    const target = selectConnection(connections, connectionName ?? null);
+    if (target?.__hostId) {
+      await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
+      await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
+  }
+}
+
+async function postDeepenBondCard(name, marks) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(name ?? "your connection")}</strong> deepens — +${marks} milestone${marks === 1 ? "" : "s"} of relationship progress.</p></div></div>`,
+      flags:   { [MODULE_ID]: { deepenBondCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postDeepenBondCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+// Wire the won-fight card's buttons. Mark/deepen are GM-gated world writes, so
+// non-canonical clients relay over the socket; Attempt to Fulfill posts the
+// existing fulfill_your_vow bridge (the pipeline handles it).
+function registerFightVowMilestoneHook() {
+  if (registerFightVowMilestoneHook._installed) return;
+  registerFightVowMilestoneHook._installed = true;
+  onChatMessageRender((message, root) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.fightVowCard) return;
+    const wire = (action, fn) => {
+      const btn = root.querySelector(`[data-action="${action}"]`);
+      if (!btn) return;
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      fresh.addEventListener("click", async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        fresh.disabled = true;
+        await fn().catch(err =>
+          console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
+      });
+    };
+    wire("sf-mark-milestone", async () => {
+      if (isCanonicalGM()) return markLinkedVowMilestone(f.vowName, f.marks);
+      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "vow.markMilestone", vowName: f.vowName, marks: f.marks });
+    });
+    wire("sf-fulfill-vow", async () => {
+      await ChatMessage.create({
+        content: "Attempt to fulfill your vow.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null } },
+      });
+    });
+    wire("sf-deepen-bond", async () => {
+      const marks = marksForSourceRank(f.vowRank);
+      if (isCanonicalGM()) return deepenLinkedConnection(f.connectionName, marks);
+      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "connection.deepen", connectionName: f.connectionName, marks });
+    });
+  });
+}
+
+// GM-side socket for the won-fight card's relayed actions.
+function registerFightVowSocket() {
+  if (registerFightVowSocket._installed) return;
+  if (!game?.socket?.on) return;
+  registerFightVowSocket._installed = true;
+  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
+    try {
+      if (!payload || !isCanonicalGM()) return;
+      if (payload.kind === "vow.markMilestone") await markLinkedVowMilestone(payload.vowName, payload.marks);
+      else if (payload.kind === "connection.deepen") await deepenLinkedConnection(payload.connectionName, payload.marks);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | fight-vow socket handler failed:`, err?.message ?? err);
+    }
+  });
+}
+
 async function postCombatTrackCard({ track, created }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
@@ -2964,15 +3099,18 @@ async function postDevelopRelationshipCard(plan) {
  * @param {Actor|null} actor
  * @param {string|null} target
  */
-async function applyReachMilestone(actor, target) {
+async function applyReachMilestone(actor, target, marks = 1) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
-  // player is the GM, so this is the normal path.
+  // player is the GM, so this is the normal path. `marks` > 1 applies a major
+  // milestone (a won fight scaled by its rank — #241); shared-vow copies on the
+  // other PCs are kept in lockstep by the updateItem sync hook.
   if (!actor || !game.user?.isGM) return;
   const plan = planReachMilestone(readVows(actor), target);
   if (plan.action === "mark") {
-    await markVowProgress(actor, plan.vow.id, plan.ticks);
-    await postReachMilestoneCard(plan.vow, plan.ticks);
+    const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
+    await markVowProgress(actor, plan.vow.id, ticks);
+    await postReachMilestoneCard(plan.vow, ticks);
   } else if (plan.action === "pick") {
     await postMilestonePickerCard(plan.vows, actor.id);
   }
@@ -4179,6 +4317,10 @@ Hooks.once("ready", () => {
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
   registerCombatThresholdSocket();
+  // Won-fight vow milestone (#241) — Mark milestone / Fulfill / Deepen bond on a
+  // won linked fight; mark + deepen are GM-gated and relayed for other clients.
+  registerFightVowMilestoneHook();
+  registerFightVowSocket();
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,

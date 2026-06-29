@@ -151,11 +151,12 @@ export async function swearSharedVowForAll(message) {
   const sworn = [];
   for (const actor of actors) {
     const vowItem = await createCharacterVowItem(actor, {
-      name:   plan.vow.name,
-      rank:   plan.vow.rank ?? undefined,
-      vowId:  message.id,
-      clock:  plan.vow.clock,
-      shared: true,
+      name:                 plan.vow.name,
+      rank:                 plan.vow.rank ?? undefined,
+      vowId:                message.id,
+      clock:                plan.vow.clock,
+      shared:               true,
+      linkedConnectionName: meta?.target?.name ?? null,   // vow → connection (#241)
     });
     if (vowItem) sworn.push(actor);
   }

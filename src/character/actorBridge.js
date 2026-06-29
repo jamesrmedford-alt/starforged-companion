@@ -494,7 +494,14 @@ export async function createCharacterVowItem(actor, data) {
     clock:      data?.clock ?? null,
     // Shared inciting vows are created on every PC and kept in lockstep; the
     // sharedVow flag lets the sync hook find sibling copies (see swearVow.js).
-    extraFlags: data?.shared ? { sharedVow: true } : null,
+    // linkedConnectionName records the connection a vow serves (#241) so
+    // fulfilling/advancing it can offer to deepen that bond.
+    extraFlags: (data?.shared || data?.linkedConnectionName)
+      ? {
+          ...(data?.shared ? { sharedVow: true } : {}),
+          ...(data?.linkedConnectionName ? { linkedConnectionName: data.linkedConnectionName } : {}),
+        }
+      : null,
   });
 }
 
