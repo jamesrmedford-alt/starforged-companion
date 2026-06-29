@@ -27,6 +27,7 @@ import { getPlayerActors, createCharacterVowItem } from "../character/actorBridg
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { progressPerMilestoneLine, legacyRewardLine } from "../moves/rewards.js";
 
 const MODULE_ID = "starforged-companion";
 const SOCKET    = `module.${MODULE_ID}`;
@@ -150,11 +151,12 @@ export async function swearSharedVowForAll(message) {
   const sworn = [];
   for (const actor of actors) {
     const vowItem = await createCharacterVowItem(actor, {
-      name:   plan.vow.name,
-      rank:   plan.vow.rank ?? undefined,
-      vowId:  message.id,
-      clock:  plan.vow.clock,
-      shared: true,
+      name:                 plan.vow.name,
+      rank:                 plan.vow.rank ?? undefined,
+      vowId:                message.id,
+      clock:                plan.vow.clock,
+      shared:               true,
+      linkedConnectionName: meta?.target?.name ?? null,   // vow → connection (#241)
     });
     if (vowItem) sworn.push(actor);
   }
@@ -197,10 +199,12 @@ export async function swearSharedVowForAll(message) {
 /** Post the confirmation card describing exactly what was created. */
 async function postSwornConfirmation({ plan, actors, connection }) {
   const names = (actors ?? []).map(a => a?.name).filter(Boolean).map(escapeHtml).join(", ");
+  const vrank = plan.vow.rank ?? "dangerous";
   const lines = [
     `<p><strong>⚔ Vow sworn${names ? ` — ${names}` : ""}</strong> <em>(shared by the crew)</em></p>`,
     `<p>"${escapeHtml(plan.vow.name)}"${plan.vow.rank ? ` <em>(${escapeHtml(plan.vow.rank)})</em>` : ""}` +
       `${plan.vow.clock ? ` · ⏱ ${plan.vow.clock.max}-segment clock attached` : ""}</p>`,
+    `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`,
   ];
   if (connection) {
     lines.push(`<p>✦ <strong>${escapeHtml(connection.name)}</strong> added to Connections` +

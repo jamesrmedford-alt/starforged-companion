@@ -89,7 +89,7 @@ describe("applyCombatProgress", () => {
   it("creates track when none exists, marks once (markCount=1)", async () => {
     const deps = makeDeps();
     const r = await applyCombatProgress({ moveTarget: "Corsair Captain", combatRank: "formidable", markCount: 1 }, deps);
-    expect(deps.createTrack).toHaveBeenCalledWith({ label: "Corsair Captain", type: "combat", rank: "formidable" });
+    expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Corsair Captain", type: "combat", rank: "formidable" }));
     expect(deps.markProgress).toHaveBeenCalledTimes(1);
     expect(r.created).toBe(true);
     expect(r.marksApplied).toBe(1);
@@ -108,7 +108,7 @@ describe("applyCombatProgress", () => {
   it("creates track with default rank when combatRank is null", async () => {
     const deps = makeDeps();
     await applyCombatProgress({ moveTarget: "Unknown Foe", combatRank: null, markCount: 0 }, deps);
-    expect(deps.createTrack).toHaveBeenCalledWith({ label: "Unknown Foe", type: "combat", rank: DEFAULT_COMBAT_RANK });
+    expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Unknown Foe", type: "combat", rank: DEFAULT_COMBAT_RANK }));
   });
 
   it("markCount=0 creates track without marking (Enter the Fray path)", async () => {

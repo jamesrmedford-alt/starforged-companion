@@ -63,7 +63,10 @@ export function selectCombatTrack(allTracks, label) {
  * @param {{ listTracks: Function, createTrack: Function, markProgress: Function }} deps
  * @returns {Promise<{track: object, created: boolean, marksApplied: number}>}
  */
-export async function applyCombatProgress({ moveTarget, combatRank, markCount = 1 }, deps) {
+export async function applyCombatProgress(
+  { moveTarget, combatRank, markCount = 1, objective = null, linkedVowName = null },
+  deps,
+) {
   const { listTracks, createTrack, markProgress } = deps;
 
   const allTracks = await listTracks();
@@ -72,9 +75,11 @@ export async function applyCombatProgress({ moveTarget, combatRank, markCount = 
 
   if (!track) {
     track = await createTrack({
-      label: moveTarget ?? "Combat",
-      type:  'combat',
-      rank:  normalizeCombatRank(combatRank),
+      label:         moveTarget ?? "Combat",
+      type:          'combat',
+      rank:          normalizeCombatRank(combatRank),
+      objective,        // #241 stakes/link, captured at Enter the Fray
+      linkedVowName,
     });
     created = true;
   }

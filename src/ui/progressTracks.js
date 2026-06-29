@@ -69,9 +69,12 @@ const PANEL_TRACK_TYPES = {
  * @param {'vow'|'expedition'|'connection'|'combat'} data.type
  * @param {'troublesome'|'dangerous'|'formidable'|'extreme'|'epic'} data.rank
  * @param {string|null} [data.entityId]  Links to a connection.js entity when type === 'connection'
+ * @param {string|null} [data.objective]  The concrete goal of this track (e.g. a fight's objective)
+ * @param {string|null} [data.linkedVowName]  For a combat track, the vow statement it serves (#241)
+ * @param {object|null} [data.reward]  The promised reward { description, form, proposedBy, status } (#241, Phase 2)
  * @returns {object}
  */
-function createTrack({ label, type, rank, entityId = null }) {
+function createTrack({ label, type, rank, entityId = null, objective = null, linkedVowName = null, reward = null }) {
   return {
     id: foundry.utils.randomID(),
     label,
@@ -80,6 +83,9 @@ function createTrack({ label, type, rank, entityId = null }) {
     ticks: 0,       // 0–40
     completed: false,
     entityId,
+    objective,        // concrete goal stated up front (#241)
+    linkedVowName,    // combat → vow link (#241)
+    reward,           // promised concrete reward (#241, populated in Phase 2)
     createdAt: Date.now(),
   };
 }
@@ -839,15 +845,20 @@ export async function completeProgressTrack(trackId) {
 
 /**
  * Mark progress on a track by ID from outside the panel (e.g. move resolver).
+ * `times` marks the rank's per-mark amount more than once — used for the #241
+ * milestone scaling where a harder won fight is a bigger milestone on its vow.
  * @param {string} trackId
+ * @param {number} [times=1]  Number of rank-based marks to apply (clamped ≥1)
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function markProgressById(trackId) {  const tracks = await loadTracks();
+export async function markProgressById(trackId, times = 1) {
+  const tracks = await loadTracks();
   const track = tracks.find(t => t.id === trackId);
   if (!track) return null;
 
   const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
-  track.ticks = Math.min(track.ticks + ticksPerMark, MAX_TICKS);
+  const marks        = Math.max(1, Math.floor(times) || 1);
+  track.ticks = Math.min(track.ticks + ticksPerMark * marks, MAX_TICKS);
 
   await saveTracks(tracks);
   return track;

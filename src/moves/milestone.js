@@ -15,7 +15,21 @@
  *         Milestone — "no roll, mark progress on your vow per its rank").
  */
 
-import { rankTicks } from "../schemas.js";
+import { rankTicks, rankName } from "../schemas.js";
+
+/**
+ * Number of milestone marks a won challenge contributes to a track it's linked
+ * to, scaled by the SOURCE challenge's rank (#241 "scale by difficulty"). The
+ * per-mark amount is still the TARGET track's rank (milestoneTicks); this is the
+ * count. Callers apply one fewer for a weak-hit win (min 1).
+ *   troublesome 1 · dangerous 1 · formidable 2 · extreme 2 · epic 3
+ *
+ * @param {string|number} rank  source rank (e.g. the fight's, or the vow's)
+ * @returns {number}
+ */
+export function marksForSourceRank(rank) {
+  return { troublesome: 1, dangerous: 1, formidable: 2, extreme: 2, epic: 3 }[rankName(rank)] ?? 1;
+}
 
 /**
  * Categories whose successful moves are plausibly a step toward a quest, used

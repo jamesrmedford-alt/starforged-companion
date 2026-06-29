@@ -791,7 +791,25 @@ async function buildCharacterStateSection(_campaignState) {
 
     if (!blocks.length) return { content: "", characterIds: [] };
 
-    const content = "## CHARACTER STATE\n\n" + blocks.join("\n\n");
+    // Active-fight awareness (#241): surface an open combat track's objective and
+    // the vow it serves, so narration reflects the stakes — and the narrator
+    // knows winning the fight is a milestone on that vow.
+    let fightBlock = "";
+    try {
+      const { listProgressTracks } = await import("../ui/progressTracks.js");
+      const openCombat = (await listProgressTracks()).filter(t => t.type === "combat" && !t.completed);
+      const lines = openCombat.map(t => {
+        const bits = [t.label];
+        if (t.objective)     bits.push(`objective: ${t.objective}`);
+        if (t.linkedVowName) bits.push(`serves the vow "${t.linkedVowName}" — winning it is a milestone on that vow`);
+        return `  - ${bits.join(" — ")}`;
+      });
+      if (lines.length) fightBlock = "\n\n### ACTIVE FIGHT\n" + lines.join("\n");
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | assembler: active-fight read skipped:`, err?.message ?? err);
+    }
+
+    const content = "## CHARACTER STATE\n\n" + blocks.join("\n\n") + fightBlock;
     return { content, characterIds: actors.map(a => a.id) };
   } catch (err) {
     console.error(`${MODULE_ID} | assembler: buildCharacterStateSection failed:`, err);
