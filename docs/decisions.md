@@ -1722,3 +1722,50 @@ players without taking agency away from anyone.
 - *No setting* — a GM whose table dislikes being called on by name needs an off switch;
   added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
   settings.
+
+---
+
+## Vow ↔ combat ↔ bond stakes & rewards: surface the interlock, scale by difficulty (2026-06-29)
+
+**Decision:** Scope [#241](https://github.com/jamesrmedford-alt/starforged-companion/issues/241)
+(PLANNED). A vow that leads into a fight is tied together explicitly, with stakes + concrete rewards
+stated **up front** at the three creation moments (Swear a Vow, Enter the Fray, Forge a Bond) and the
+fight's outcome surfaced against the vow on a win. Specifics:
+- **Combat track ≠ vow track (the rules finding).** In Starforged the two are deliberately separate; a
+  move marks only one. The bridge is the **milestone**: winning a fight that achieves the vow's
+  objective *is* a vow milestone. The **per-mark** amount is fixed by the *vow's* rank (troublesome +3
+  boxes … epic +1 tick); fulfilment still needs a Fulfill Your Vow roll. This is why a playtest fight
+  felt disconnected — nothing surfaced the milestone link. Builds on "Reach a Milestone marks the vow"
+  (above).
+- **"Scale by combat difficulty" = number of marks, not ticks-per-mark.** A won linked fight marks the
+  vow **N times** where N derives from the *combat's* rank (troublesome/dangerous 1, formidable/extreme
+  2, epic 3; weak-hit win N−1, min 1). Net jump scales by both the fight (mark count) and the vow
+  (ticks/mark) — the rules-legal "mark 2–3× for a major milestone" lever. Numbers tunable.
+- **Combat is offered, not forced.** An Enter-the-Fray-vs-way-out threshold card; the narrator suggests
+  the combat rank (adjustable); the fight is explicitly linked to a vow + objective there; the track is
+  created only on Enter the Fray.
+- **On a won linked fight:** a one-click Mark milestone / Attempt to Fulfill the linked vow — no
+  auto-mark, so the milestone judgement and the Fulfill roll stay with the player.
+- **Concrete promised rewards:** the narrator offers two, or the player writes their own and the narrator
+  maps it to a form (asset / gear / supply / momentum / contact / knowledge); granted on success, scaled
+  by outcome (strong = full / weak = with a string / miss = lost). These three (form, how-offered,
+  outcome-scaling) are **defaulted pending revisit** — the planning question tool errored during design.
+
+**Reason:** Playtest — a rescue vow led into combat with "no clear goals or tie-in to the vow"; the fight
+should have wildly advanced or fulfilled the vow. An interplay audit found the mechanics largely already
+exist; the gap is **legibility**, not missing rules. Verified already-implemented and *not* rebuilt by
+this scope: burn-momentum (`burnMomentum.js`/`improveResult.js`), legacy→XP→assets (`persistResolution.js`,
+2 XP/box, 1 after clear), matched dice (`resolver.calcOutcome` `isMatch`), the suffer system
+(Endure Harm/Stress, Face Death/Desolation, Pay the Price, out-of-supply), combat position → Take Decisive
+Action downgrade, and debilities → momentum max/reset. They fire silently, so the scope surfaces the
+vow↔combat seam in-the-moment and adds a help page explaining the whole web, rather than re-implementing
+mechanics.
+
+**Rejected:**
+- *Ticks-per-mark scales with combat rank* — breaks the core "vow rank sets progress" rule and trivialises
+  epic vows; scale the **mark count** instead.
+- *Auto-mark the milestone / auto-fulfil on a win* — removes the milestone judgement and the Fulfill roll;
+  use a one-click prompt.
+- *Auto-detect which vow a fight serves* — ambiguous; the player links it explicitly at Enter the Fray.
+- *Force combat when the fiction presents a fight* — Starforged combat is always a choice; always offer a
+  way out.
