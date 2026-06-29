@@ -13,11 +13,30 @@ import {
   selectMilestoneVow,
   planReachMilestone,
   milestoneTicks,
+  marksForSourceRank,
   buildMilestoneSuggestion,
   MILESTONE_SUGGEST_CATEGORIES,
 } from "../../src/moves/milestone.js";
 
 const vow = (over = {}) => ({ id: "v1", name: "Save Dani", rank: "dangerous", completed: false, ...over });
+
+// ── marksForSourceRank (#241 "scale by difficulty") ──────────────────────────
+
+describe("marksForSourceRank", () => {
+  it("maps a source rank to its milestone mark count", () => {
+    expect(marksForSourceRank("troublesome")).toBe(1);
+    expect(marksForSourceRank("dangerous")).toBe(1);
+    expect(marksForSourceRank("formidable")).toBe(2);
+    expect(marksForSourceRank("extreme")).toBe(2);
+    expect(marksForSourceRank("epic")).toBe(3);
+  });
+
+  it("accepts a numeric ChallengeRank and treats an unknown rank as formidable", () => {
+    expect(marksForSourceRank(5)).toBe(3);       // epic
+    expect(marksForSourceRank(3)).toBe(2);       // formidable
+    expect(marksForSourceRank("nope")).toBe(2);  // unknown → formidable (rankName default)
+  });
+});
 
 // ── milestoneTicks ────────────────────────────────────────────────────────────
 
