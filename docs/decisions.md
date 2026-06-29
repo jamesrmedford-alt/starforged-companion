@@ -1750,6 +1750,14 @@ fight's outcome surfaced against the vow on a win. Specifics:
   maps it to a form (asset / gear / supply / momentum / contact / knowledge); granted on success, scaled
   by outcome (strong = full / weak = with a string / miss = lost). These three (form, how-offered,
   outcome-scaling) are **defaulted pending revisit** — the planning question tool errored during design.
+- **Vow → connection deepening (same logic generalised).** Fulfilling a vow undertaken *for* a connection
+  deepens that connection — a milestone on its relationship track — surfaced as a one-click "Deepen your
+  bond with [Connection]" on the Fulfill Your Vow card (not auto-marked, mirroring the won-fight prompt).
+  The link is auto-populated from the vow's target NPC at swear time (`swearVow.js:143` already creates
+  that connection) and is adjustable. Scaling mirrors combat→vow — the **source** challenge's rank sets the
+  mark count, the **target** track's rank sets ticks/mark: combat→vow = (fight rank → marks, vow rank →
+  ticks); vow→connection = (vow rank → marks, connection rank → ticks). Rounds the scope into a trio:
+  combat→vow, vow→connection, and the existing forge→Bonds-legacy.
 
 **Reason:** Playtest — a rescue vow led into combat with "no clear goals or tie-in to the vow"; the fight
 should have wildly advanced or fulfilled the vow. An interplay audit found the mechanics largely already
@@ -1769,3 +1777,5 @@ mechanics.
 - *Auto-detect which vow a fight serves* — ambiguous; the player links it explicitly at Enter the Fray.
 - *Force combat when the fiction presents a fight* — Starforged combat is always a choice; always offer a
   way out.
+- *Auto-deepen the connection on a vow's fulfilment* — same reasoning as auto-marking the vow; use a
+  one-click "Deepen your bond" prompt so the deepening stays a player choice.
