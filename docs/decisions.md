@@ -1817,3 +1817,35 @@ covers every progress path with one writer.
 - *Fan out progress only through the module's own vow flows* — would miss a native sheet edit; the
   `updateItem` hook catches every change regardless of origin.
 - *Let any client write the sync* — multi-writer races + permission failures; gate to the canonical GM.
+
+---
+
+## Crew-shared supply track in multiplayer (2026-06-29)
+
+**Decision:** In co-op / guided play the whole crew shares ONE supply track (the
+Starforged rule); health, spirit, and momentum stay per-character. Supply is stored
+per-actor (`system.supply.value`), so an `updateActor` hook
+(`src/multiplayer/sharedSupply.js`, `registerSharedSupplyHook`) keeps every player
+character's supply in lockstep: when one changes — from a move, a suffer outcome,
+Resupply, or a manual sheet edit — the canonical GM writes the new value to the
+others. Single-writer via `isCanonicalGM`; a re-entrancy flag stops the
+sibling-writes from cascading. Always on (no setting); solo play is a natural no-op
+(no sibling PCs). Mirrors the shared-vow updateItem sync.
+
+**Reason:** The rulebook specifies a shared supply track for multiplayer; the module
+stored it per-actor, so crews drifted out of sync. A reactive `updateActor` hook
+catches every supply change regardless of source (the move pipeline, suffer
+executors, or a hand-edit on the sheet) and reconciles in one place — the same shape
+as the shared-vow sync. Syncing per-actor values, rather than relocating supply to a
+single `campaignState` field, keeps the character sheets and every existing supply
+read/write working unchanged.
+
+**Rejected:**
+- *Relocate supply to one `campaignState` field* — would rewire every supply
+  read/write and the sheet display; the per-actor sync is far less invasive.
+- *A toggle / opt-in* — the maintainer chose always-on; solo is a no-op anyway, and
+  a table wanting per-PC supply is a non-RAW variant that can be added later if asked.
+- *Sync only the module's own writes* — would miss a manual sheet edit; the
+  `updateActor` hook catches every change.
+- *Let any client write the sync* — multi-writer races + permission failures; gate to
+  the canonical GM.

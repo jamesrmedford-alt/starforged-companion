@@ -210,6 +210,7 @@ import {
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
@@ -4353,6 +4354,7 @@ Hooks.once("ready", () => {
 
   registerChatHook();
   registerActorHook();
+  registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
   registerCommandVehicleHook();
