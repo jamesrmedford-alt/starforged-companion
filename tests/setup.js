@@ -85,7 +85,19 @@ global.Hooks = {
 
 global.foundry = {
   utils: {
-    randomID: () => Math.random().toString(36).slice(2, 10),
+    // Mirror Foundry's real foundry.utils.randomID: a fixed-length (default 16)
+    // base-62 string. The previous `Math.random().toString(36).slice(2, 10)`
+    // produced a VARIABLE-length id (≤8 chars, occasionally fewer when the
+    // base-36 expansion was short), which intermittently broke tests that assume
+    // ids are long and unique — e.g. factContinuity's strikeTruth "6-char prefix
+    // is unique" check flaked in CI. A fixed-length, well-distributed id removes
+    // that flake (6-char prefix collisions are ~1/62^6).
+    randomID: (length = 16) => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let id = "";
+      for (let i = 0; i < length; i += 1) id += chars[Math.floor(Math.random() * chars.length)];
+      return id;
+    },
     hasProperty: (obj, key) => {
       const parts = key.split('.');
       let cur = obj;
