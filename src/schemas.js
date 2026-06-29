@@ -71,6 +71,21 @@ export function rankTicks(rank) {
 }
 
 /**
+ * Normalise a rank — string ("dangerous") or numeric ChallengeRank (2) — to its
+ * string key, defaulting to "formidable" for unknown ranks. Used wherever rank
+ * logic needs the name rather than the tick count (e.g. the #241 milestone
+ * mark-count scale).
+ *
+ * @param {string|number} rank
+ * @returns {"troublesome"|"dangerous"|"formidable"|"extreme"|"epic"}
+ */
+export function rankName(rank) {
+  const n = Number(rank);
+  if (Number.isInteger(n) && RANK_KEY_BY_NUMBER[n]) return RANK_KEY_BY_NUMBER[n];
+  return RANKS.includes(rank) ? rank : "formidable";
+}
+
+/**
  * All 11 move categories.
  * Source: Reference Guide p.5 (A-Z index)
  */

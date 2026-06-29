@@ -28,6 +28,7 @@ import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
+import { progressPerMilestoneLine } from "./moves/rewards.js";
 import {
   buildBurnState,
   renderBurnButtonHtml,
@@ -106,7 +107,8 @@ import {
   findShipMapScene,
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
-import { applyCombatProgress, finishCombat as finishCombatTrack } from "./moves/combat.js";
+import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
+import { buildCombatThresholdHtml, WAY_OUT_PROMPT } from "./moves/combatThreshold.js";
 import {
   trackPosToActorPos,
   findCombatForTrack,
@@ -1259,23 +1261,24 @@ export function registerChatHook() {
       // Face Defeat complete the track. All GM-gated (track journal writes).
       if (resolution.consequences?.enterCombat && game.user.isGM) {
         try {
-          const result = await applyCombatProgress(
-            { moveTarget: interpretation.moveTarget, combatRank: interpretation.combatRank, markCount: 0 },
-            {
-              listTracks:   () => listProgressTracks(),
-              createTrack:  (data) => addProgressTrack(data),
-              markProgress: (id) => markProgressById(id),
-            },
-          );
-          if (result?.track) {
-            await postCombatTrackCard(result).catch(err =>
-              console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
-            // Open a Foundry combat tracker linked to this track
-            await enterCombatTracker(result.track.id, getPlayerActors()).catch(err =>
-              console.warn(`${MODULE_ID} | combat tracker open failed:`, err?.message ?? err));
+          // Combat is offered, not forced (#241): post a threshold decision card —
+          // Enter the Fray (which creates the track, at a suggested-but-adjustable
+          // rank, optionally linked to the vow it serves) vs. a way out. Skip when
+          // already in this fight (a matching open combat track exists); later
+          // combat moves just mark progress on it.
+          const existing = selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
+          if (!existing || existing.completed) {
+            const vowNames = (readVows(speakerActor) ?? [])
+              .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
+            await postCombatThresholdCard({
+              label:         interpretation.moveTarget ?? "the enemy",
+              suggestedRank: interpretation.combatRank,
+              vowNames,
+            }).catch(err =>
+              console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
           }
         } catch (err) {
-          console.warn(`${MODULE_ID} | enter combat failed:`, err?.message ?? err);
+          console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
         }
       }
 
@@ -2761,6 +2764,119 @@ async function postExpeditionFinishCard({ track, legacyTicks }) {
   }
 }
 
+// ── Combat threshold (#241): offer Enter the Fray vs. a way out ──────────────
+
+async function postCombatThresholdCard({ label, suggestedRank, vowNames }) {
+  try {
+    await ChatMessage.create({
+      content: buildCombatThresholdHtml({ label, suggestedRank, vowNames }),
+      flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postCombatThresholdCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+// GM-side: create (or resume) the combat track from a threshold choice, carrying
+// the chosen rank, objective, and the vow it serves. Reuses applyCombatProgress
+// so a double-click resumes the same fight instead of duplicating it.
+async function createCombatTrackFromThreshold({ label, rank, vowName, objective }) {
+  const result = await applyCombatProgress(
+    {
+      moveTarget:    label ?? "the enemy",
+      combatRank:    rank,
+      markCount:     0,
+      objective:     objective || null,
+      linkedVowName: vowName || null,
+    },
+    {
+      listTracks:   () => listProgressTracks(),
+      createTrack:  (data) => addProgressTrack(data),
+      markProgress: (id) => markProgressById(id),
+    },
+  );
+  if (result?.track) {
+    await postCombatTrackCard(result).catch(err =>
+      console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
+    await enterCombatTracker(result.track.id, getPlayerActors()).catch(err =>
+      console.warn(`${MODULE_ID} | combat tracker open failed:`, err?.message ?? err));
+  }
+  return result;
+}
+
+// Wire the threshold card's buttons. Enter the Fray is a privileged world write
+// (creates a track), so non-canonical clients relay to the GM over the module
+// socket; the way out just posts a narration nudge (any client may post chat).
+function registerCombatThresholdHook() {
+  if (registerCombatThresholdHook._installed) return;
+  registerCombatThresholdHook._installed = true;
+  onChatMessageRender((message, root) => {
+    if (!message?.flags?.[MODULE_ID]?.combatThresholdCard) return;
+    const enterBtn = root.querySelector('[data-action="sf-enter-fray"]');
+    const wayBtn   = root.querySelector('[data-action="sf-way-out"]');
+    const readChoice = () => ({
+      label:     message.flags[MODULE_ID].label ?? "the enemy",
+      rank:      root.querySelector('.sf-threshold-rank')?.value
+                 || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
+      vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
+      objective: root.querySelector('.sf-threshold-objective')?.value || "",
+    });
+    const disable = () => { if (enterBtn) enterBtn.disabled = true; if (wayBtn) wayBtn.disabled = true; };
+
+    if (enterBtn) {
+      const fresh = enterBtn.cloneNode(true);
+      enterBtn.replaceWith(fresh);
+      fresh.addEventListener("click", async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        const choice = readChoice();
+        disable();
+        if (isCanonicalGM()) {
+          await createCombatTrackFromThreshold(choice).catch(err =>
+            console.warn(`${MODULE_ID} | enter the fray failed:`, err?.message ?? err));
+        } else {
+          try {
+            game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "combat.enterFray", ...choice });
+          } catch (err) {
+            console.warn(`${MODULE_ID} | enter-fray relay emit failed:`, err?.message ?? err);
+          }
+        }
+      });
+    }
+    if (wayBtn) {
+      const freshWay = wayBtn.cloneNode(true);
+      wayBtn.replaceWith(freshWay);
+      freshWay.addEventListener("click", async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        disable();
+        try {
+          await ChatMessage.create({
+            content: `<div class="sf-card sf-way-out"><div class="sf-card-body"><p>🚪 <em>${escapeChatHtml(WAY_OUT_PROMPT)}</em></p></div></div>`,
+            flags:   { [MODULE_ID]: { wayOutCard: true } },
+          });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | way-out card failed:`, err?.message ?? err);
+        }
+      });
+    }
+  });
+}
+
+// GM-side socket: a non-canonical client chose Enter the Fray; create the track.
+function registerCombatThresholdSocket() {
+  if (registerCombatThresholdSocket._installed) return;
+  if (!game?.socket?.on) return;
+  registerCombatThresholdSocket._installed = true;
+  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
+    try {
+      if (!payload || payload.kind !== "combat.enterFray") return;
+      if (!isCanonicalGM()) return;
+      await createCombatTrackFromThreshold(payload);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | enter-fray socket handler failed:`, err?.message ?? err);
+    }
+  });
+}
+
 async function postCombatTrackCard({ track, created }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
@@ -2777,9 +2893,17 @@ async function postCombatTrackCard({ track, created }) {
   const battleHint = created
     ? `<p class="sf-card-hint">Prefer to settle it in one stroke? <strong>Battle</strong> resolves the whole fight with a single roll instead of marking the track move by move.</p>`
     : "";
+  // Stakes up front (#241): how the fight advances, its objective, and the vow
+  // it serves (winning is a milestone on that vow).
+  const objLine = track?.objective
+    ? `<p class="sf-stakes"><strong>Objective:</strong> ${escapeChatHtml(track.objective)}</p>` : "";
+  const vowLine = track?.linkedVowName
+    ? `<p class="sf-stakes"><em>Winning this fight is a milestone on your vow: &ldquo;${escapeChatHtml(track.linkedVowName)}&rdquo;.</em></p>` : "";
+  const stakesLine = `<p class="sf-stakes"><em>${escapeChatHtml(progressPerMilestoneLine(track?.rank ?? "dangerous"))}</em></p>`;
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Enter the Fray</strong><p>${body}</p>`
+        + objLine + vowLine + stakesLine
         + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button>${battleBtn}</p>`
         + battleHint
         + `</div>`,
@@ -3106,7 +3230,7 @@ async function postForgeABondCard(connection, legacyTicks) {
   const rankLabel = connection.rank ? connection.rank.charAt(0).toUpperCase() + connection.rank.slice(1) : "unknown";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-card--forge-bond"><div class="sf-card-header">⚑ Bond Forged: ${escapeHtml(nameLabel)}</div><div class="sf-card-body"><p>${escapeHtml(nameLabel)} is now bonded. Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).</p><p><em>Choose: <strong>Bolster Influence</strong> (add +2) or <strong>Expand Influence</strong> (second role, add +1).</em></p></div></div>`,
+      content: `<div class="sf-card sf-card--forge-bond"><div class="sf-card-header">⚑ Bond Forged: ${escapeHtml(nameLabel)}</div><div class="sf-card-body"><p>${escapeHtml(nameLabel)} is now bonded. Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).</p><p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(connection.rank ?? "dangerous"))}</em></p><p><em>Choose: <strong>Bolster Influence</strong> (add +2) or <strong>Expand Influence</strong> (second role, add +1).</em></p></div></div>`,
       flags: { [MODULE_ID]: { forgeABondCard: true, connectionName: nameLabel, legacyTicks } },
     });
   } catch (err) {
@@ -4051,6 +4175,10 @@ Hooks.once("ready", () => {
   // and the cross-PC progress sync. Both no-op on non-canonical clients.
   registerSharedVowSocket();
   registerSharedVowSyncHook();
+  // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
+  // GM-side enter-fray relay (track creation is GM-gated).
+  registerCombatThresholdHook();
+  registerCombatThresholdSocket();
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,
