@@ -24,10 +24,18 @@
 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { getPlayerActors, createCharacterVowItem } from "../character/actorBridge.js";
-import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, routeEntityDrafts }
+import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
   from "../entities/entityExtractor.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
+const SOCKET    = `module.${MODULE_ID}`;
+
+// Cross-PC sync of the shared inciting vow: the progress fields kept in lockstep
+// across every player character's copy, and a re-entrancy guard (keyed by vowId)
+// so the GM's sibling-writes don't cascade back through the updateItem hook.
+const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks"];
+const _vowSyncInFlight = new Set();
 
 /**
  * Decide what a swear-vow click should do. Pure — unit-tested.
@@ -73,26 +81,39 @@ export function buildSwearVowPlan(meta, ctx = {}) {
 }
 
 /**
- * Resolve the PC the vow lands on: the user's assigned character when it is
- * a player-character actor, else the first PC. NPC cards are already
- * excluded by getPlayerActors (FOLDER-002).
+ * Execute a swear-vow click. The inciting vow is the crew's SHARED founding
+ * vow: it is created on every player character and its progress is kept in
+ * lockstep across all of them (see registerSharedVowSyncHook). Creating Items
+ * on PCs the clicker doesn't own — and the vow-target connection — are
+ * privileged writes, so anyone who isn't the canonical GM relays the action;
+ * the GM performs it for the whole table and the Items sync down to each sheet.
+ * Never throws — failures surface as notifications + console warnings.
+ *
+ * @param {ChatMessage} message
+ * @returns {Promise<{ actors: Actor[], connection: Object|null }|null>}
  */
-function resolveVowActor() {
-  const actors = getPlayerActors() ?? [];
-  if (!actors.length) return null;
-  const assigned = globalThis.game?.user?.character ?? null;
-  if (assigned && actors.some(a => a.id === assigned.id)) return assigned;
-  return actors[0];
+export async function executeSwearVow(message) {
+  if (isCanonicalGM()) return swearSharedVowForAll(message);
+  try {
+    globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.swearShared", messageId: message?.id });
+    globalThis.ui?.notifications?.info(
+      "Starforged Companion: swearing the crew's vow — your GM is recording it for everyone.");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | swearVow: shared-vow relay emit failed:`, err?.message ?? err);
+  }
+  return null;
 }
 
 /**
- * Execute a swear-vow click on an inciting-incident message. Never throws —
- * failures surface as UI notifications and console warnings.
+ * GM-side: create the shared inciting vow on EVERY player character (idempotent
+ * per actor on the message id) and the vow-target connection, then post a
+ * confirmation. Runs only on the canonical GM — invoked directly on a GM click
+ * or via the swear-shared-vow socket relay from another client.
  *
  * @param {ChatMessage} message
- * @returns {Promise<{ vowItem: Item|null, connection: Object|null }|null>}
+ * @returns {Promise<{ actors: Actor[], connection: Object|null }|null>}
  */
-export async function executeSwearVow(message) {
+export async function swearSharedVowForAll(message) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const meta  = flags.incitingMeta ?? null;
 
@@ -103,10 +124,10 @@ export async function executeSwearVow(message) {
     console.warn(`${MODULE_ID} | swearVow: campaignState read failed:`, err?.message ?? err);
   }
 
-  const actor = resolveVowActor();
-  const plan  = buildSwearVowPlan(meta, {
-    isGM:         game.user?.isGM === true,
-    hasActor:     !!actor,
+  const actors = getPlayerActors() ?? [];
+  const plan   = buildSwearVowPlan(meta, {
+    isGM:         true,
+    hasActor:     actors.length > 0,
     targetExists: meta?.target?.name
       ? entityExistsAnyType(meta.target.name, campaignState ?? {})
       : false,
@@ -123,20 +144,26 @@ export async function executeSwearVow(message) {
     return null;
   }
 
-  // 1. The vow (idempotent on the message id).
-  const vowItem = await createCharacterVowItem(actor, {
-    name:  plan.vow.name,
-    rank:  plan.vow.rank ?? undefined,
-    vowId: message.id,
-    clock: plan.vow.clock,
-  });
-  if (!vowItem) {
+  // 1. The shared vow — created on EVERY player character, all tagged with the
+  //    inciting message id and a sharedVow flag so registerSharedVowSyncHook
+  //    keeps their progress in lockstep. Idempotent per actor.
+  const sworn = [];
+  for (const actor of actors) {
+    const vowItem = await createCharacterVowItem(actor, {
+      name:   plan.vow.name,
+      rank:   plan.vow.rank ?? undefined,
+      vowId:  message.id,
+      clock:  plan.vow.clock,
+      shared: true,
+    });
+    if (vowItem) sworn.push(actor);
+  }
+  if (!sworn.length) {
     ui?.notifications?.error("Starforged Companion: creating the vow failed — see console.");
     return null;
   }
 
-  // 2. The vow-target connection (GM-only; same pipeline as
-  //    make_a_connection auto-create).
+  // 2. The vow-target connection (same pipeline as make_a_connection auto-create).
   let connection = null;
   if (plan.createTarget && campaignState) {
     try {
@@ -160,31 +187,18 @@ export async function executeSwearVow(message) {
     }
   }
 
-  // 2b. Non-GM target: queue a draft so the GM gets a one-click Confirm
-  //     (finding C). createTarget already handled the GM path above.
-  if (plan.queueTargetDraft && meta.target?.name) {
-    try {
-      await routeEntityDrafts(
-        [{ name: meta.target.name, type: "connection", description: meta.target.description ?? "" }],
-        campaignState ?? {},
-        { source: "vow_target", sessionId: campaignState?.currentSessionId ?? null },
-      );
-    } catch (err) {
-      console.warn(`${MODULE_ID} | swearVow: vow-target draft queue failed:`, err?.message ?? err);
-    }
-  }
-
-  await postSwornConfirmation({ plan, actor, connection });
+  await postSwornConfirmation({ plan, actors: sworn, connection });
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
 
-  return { vowItem, connection };
+  return { actors: sworn, connection };
 }
 
 /** Post the confirmation card describing exactly what was created. */
-async function postSwornConfirmation({ plan, actor, connection }) {
+async function postSwornConfirmation({ plan, actors, connection }) {
+  const names = (actors ?? []).map(a => a?.name).filter(Boolean).map(escapeHtml).join(", ");
   const lines = [
-    `<p><strong>⚔ Vow sworn${actor?.name ? ` — ${escapeHtml(actor.name)}` : ""}</strong></p>`,
+    `<p><strong>⚔ Vow sworn${names ? ` — ${names}` : ""}</strong> <em>(shared by the crew)</em></p>`,
     `<p>"${escapeHtml(plan.vow.name)}"${plan.vow.rank ? ` <em>(${escapeHtml(plan.vow.rank)})</em>` : ""}` +
       `${plan.vow.clock ? ` · ⏱ ${plan.vow.clock.max}-segment clock attached` : ""}</p>`,
   ];
@@ -253,4 +267,100 @@ export function registerSwearVowHandler() {
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared inciting-vow: cross-PC progress sync + GM relay
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pure: given a just-updated shared-vow Item and the full PC roster, return the
+ * sibling vow Items (same vowId on the other PCs) whose synced progress fields
+ * differ, paired with the update that brings them into lockstep. Returns []
+ * when `source` is not a shared vow or nothing needs changing. The source item
+ * itself is always skipped. Exported for unit tests.
+ *
+ * @param {Item} source
+ * @param {Actor[]} allActors
+ * @returns {Array<{ item: Item, update: object }>}
+ */
+export function computeSharedVowSyncUpdates(source, allActors) {
+  const sf = source?.flags?.[MODULE_ID];
+  if (!sf?.sharedVow || !sf.vowId) return [];
+
+  const update = {};
+  for (const field of SHARED_VOW_SYNC_FIELDS) {
+    const v = source.system?.[field];
+    if (v !== undefined && v !== null) update[`system.${field}`] = v;
+  }
+  if (!Object.keys(update).length) return [];
+
+  const out = [];
+  for (const actor of allActors ?? []) {
+    for (const item of (actor.items ?? [])) {
+      if (item.id === source.id) continue;
+      const f = item.flags?.[MODULE_ID];
+      if (!f?.sharedVow || f.vowId !== sf.vowId) continue;
+      const differs = SHARED_VOW_SYNC_FIELDS.some(
+        field => update[`system.${field}`] !== undefined
+              && item.system?.[field] !== source.system?.[field],
+      );
+      if (differs) out.push({ item, update: { ...update } });
+    }
+  }
+  return out;
+}
+
+/**
+ * GM-side socket handler: a non-canonical client relays a swear-shared-vow click
+ * here, and the canonical GM creates the vow on every PC. Register once on
+ * ready (all clients; non-canonical receivers no-op).
+ */
+export function registerSharedVowSocket() {
+  if (registerSharedVowSocket._installed) return;
+  if (!globalThis.game?.socket?.on) return;
+  registerSharedVowSocket._installed = true;
+  game.socket.on(SOCKET, async (payload) => {
+    try {
+      if (!payload || payload.kind !== "vow.swearShared") return;
+      if (!isCanonicalGM()) return;
+      const message = globalThis.game?.messages?.get?.(payload.messageId);
+      if (message) await swearSharedVowForAll(message);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: shared-vow socket handler failed:`, err?.message ?? err);
+    }
+  });
+}
+
+/**
+ * Keep every PC's copy of a shared inciting vow in lockstep: when one copy's
+ * progress changes — via the module's vow flow OR a native sheet edit — the
+ * canonical GM writes the same value to the others. Single-writer via
+ * isCanonicalGM; a vowId-keyed re-entrancy guard stops the sibling writes from
+ * cascading back through this same hook. Register once on ready.
+ */
+export function registerSharedVowSyncHook() {
+  if (registerSharedVowSyncHook._installed) return;
+  registerSharedVowSyncHook._installed = true;
+  Hooks.on("updateItem", async (item, change) => {
+    try {
+      if (!isCanonicalGM()) return;
+      if (item?.type !== "progress") return;
+      const f = item.flags?.[MODULE_ID];
+      if (!f?.sharedVow || !f.vowId) return;
+      const sys = change?.system ?? {};
+      if (!SHARED_VOW_SYNC_FIELDS.some(field => field in sys)) return;  // only progress changes
+      if (_vowSyncInFlight.has(f.vowId)) return;                        // sibling-write cascade guard
+      _vowSyncInFlight.add(f.vowId);
+      try {
+        for (const u of computeSharedVowSyncUpdates(item, getPlayerActors())) {
+          await u.item.update(u.update);
+        }
+      } finally {
+        _vowSyncInFlight.delete(f.vowId);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: shared-vow sync failed:`, err?.message ?? err);
+    }
+  });
 }

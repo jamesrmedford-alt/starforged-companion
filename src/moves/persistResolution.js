@@ -52,28 +52,27 @@ function marksToTicks(marks, rank) {
  * @param {Object} campaignState — CampaignStateSchema from game.settings
  * @returns {Promise<{ actor: Actor|null, campaignState: Object }>}
  */
-export async function persistResolution(resolution, campaignState) {
+export async function persistResolution(resolution, campaignState, speakerActorId = null) {
   const updated = foundry.utils.deepClone(campaignState);
   updated.updatedAt = new Date().toISOString();
 
   // 1. Append to session move log
   appendToSessionLog(resolution, updated);
 
-  // 2–5: Apply mechanical consequences to the active Actor.
+  // 2–5: Apply mechanical consequences to the rolling player's Actor.
   //
-  // `campaignState.activeCharacterId` is set by no path in the current
-  // codebase (the named world setting is registered but never written), so
-  // in solo-GM play this would always fall through to game.user.character,
-  // which is null when no token is assigned — and the entire meter-apply /
-  // debility / progress-mark block would silently no-op. Same shape of
-  // defect as RECAP-003 (v1.2.12): the dominant solo-GM path was reading
-  // a field that's never populated. Fall back to the first player-owned
-  // character (or the first character-typed Actor in solo-GM mode where
-  // hasPlayerOwner is uniformly false).
-  let actor = getActor(updated.activeCharacterId ?? null);
-  if (!actor) {
-    actor = getPlayerActors()[0] ?? null;
-  }
+  // Prefer `speakerActorId` — the actor whose roll this was, resolved upstream
+  // by resolveSpeakerActorId and threaded in from the pipeline. The GM's client
+  // runs this gated persistence on behalf of EVERY player, so attributing by a
+  // GM-local default mis-credits momentum/meters/progress to the GM's own PC in
+  // multiplayer (the "GM gains everyone's momentum" playtest bug). Fall back to
+  // `activeCharacterId` (registered but never written — see RECAP-003) and then
+  // to the first player-owned character only when no speaker was resolved
+  // (e.g. solo-GM play, where getPlayerActors()[0] is the sole PC).
+  let actor = (speakerActorId ? getActor(speakerActorId) : null)
+    ?? getActor(updated.activeCharacterId ?? null)
+    ?? getPlayerActors()[0]
+    ?? null;
 
   if (actor) {
     // 2. Meter changes

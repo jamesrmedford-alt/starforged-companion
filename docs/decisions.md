@@ -1722,3 +1722,98 @@ players without taking agency away from anyone.
 - *No setting* — a GM whose table dislikes being called on by name needs an off switch;
   added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
   settings.
+
+---
+
+## Vow ↔ combat ↔ bond stakes & rewards: surface the interlock, scale by difficulty (2026-06-29)
+
+**Decision:** Scope [#241](https://github.com/jamesrmedford-alt/starforged-companion/issues/241)
+(PLANNED). A vow that leads into a fight is tied together explicitly, with stakes + concrete rewards
+stated **up front** at the three creation moments (Swear a Vow, Enter the Fray, Forge a Bond) and the
+fight's outcome surfaced against the vow on a win. Specifics:
+- **Combat track ≠ vow track (the rules finding).** In Starforged the two are deliberately separate; a
+  move marks only one. The bridge is the **milestone**: winning a fight that achieves the vow's
+  objective *is* a vow milestone. The **per-mark** amount is fixed by the *vow's* rank (troublesome +3
+  boxes … epic +1 tick); fulfilment still needs a Fulfill Your Vow roll. This is why a playtest fight
+  felt disconnected — nothing surfaced the milestone link. Builds on "Reach a Milestone marks the vow"
+  (above).
+- **"Scale by combat difficulty" = number of marks, not ticks-per-mark.** A won linked fight marks the
+  vow **N times** where N derives from the *combat's* rank (troublesome/dangerous 1, formidable/extreme
+  2, epic 3; weak-hit win N−1, min 1). Net jump scales by both the fight (mark count) and the vow
+  (ticks/mark) — the rules-legal "mark 2–3× for a major milestone" lever. Numbers tunable.
+- **Combat is offered, not forced.** An Enter-the-Fray-vs-way-out threshold card; the narrator suggests
+  the combat rank (adjustable); the fight is explicitly linked to a vow + objective there; the track is
+  created only on Enter the Fray.
+- **On a won linked fight:** a one-click Mark milestone / Attempt to Fulfill the linked vow — no
+  auto-mark, so the milestone judgement and the Fulfill roll stay with the player.
+- **Concrete promised rewards:** the narrator offers two, or the player writes their own and the narrator
+  maps it to a form (asset / gear / supply / momentum / contact / knowledge); granted on success, scaled
+  by outcome (strong = full / weak = with a string / miss = lost). These three (form, how-offered,
+  outcome-scaling) are **defaulted pending revisit** — the planning question tool errored during design.
+- **Vow → connection deepening (same logic generalised).** Fulfilling a vow undertaken *for* a connection
+  deepens that connection — a milestone on its relationship track — surfaced as a one-click "Deepen your
+  bond with [Connection]" on the Fulfill Your Vow card (not auto-marked, mirroring the won-fight prompt).
+  The link is auto-populated from the vow's target NPC at swear time (`swearVow.js:143` already creates
+  that connection) and is adjustable. Scaling mirrors combat→vow — the **source** challenge's rank sets the
+  mark count, the **target** track's rank sets ticks/mark: combat→vow = (fight rank → marks, vow rank →
+  ticks); vow→connection = (vow rank → marks, connection rank → ticks). Rounds the scope into a trio:
+  combat→vow, vow→connection, and the existing forge→Bonds-legacy.
+
+**Reason:** Playtest — a rescue vow led into combat with "no clear goals or tie-in to the vow"; the fight
+should have wildly advanced or fulfilled the vow. An interplay audit found the mechanics largely already
+exist; the gap is **legibility**, not missing rules. Verified already-implemented and *not* rebuilt by
+this scope: burn-momentum (`burnMomentum.js`/`improveResult.js`), legacy→XP→assets (`persistResolution.js`,
+2 XP/box, 1 after clear), matched dice (`resolver.calcOutcome` `isMatch`), the suffer system
+(Endure Harm/Stress, Face Death/Desolation, Pay the Price, out-of-supply), combat position → Take Decisive
+Action downgrade, and debilities → momentum max/reset. They fire silently, so the scope surfaces the
+vow↔combat seam in-the-moment and adds a help page explaining the whole web, rather than re-implementing
+mechanics.
+
+**Rejected:**
+- *Ticks-per-mark scales with combat rank* — breaks the core "vow rank sets progress" rule and trivialises
+  epic vows; scale the **mark count** instead.
+- *Auto-mark the milestone / auto-fulfil on a win* — removes the milestone judgement and the Fulfill roll;
+  use a one-click prompt.
+- *Auto-detect which vow a fight serves* — ambiguous; the player links it explicitly at Enter the Fray.
+- *Force combat when the fiction presents a fight* — Starforged combat is always a choice; always offer a
+  way out.
+- *Auto-deepen the connection on a vow's fulfilment* — same reasoning as auto-marking the vow; use a
+  one-click "Deepen your bond" prompt so the deepening stays a player choice.
+
+---
+
+## Multiplayer attribution: roll effects credit the roller; the inciting vow is shared (2026-06-29)
+
+**Decision:** Two multiplayer playtest fixes (ship under v1.7.29):
+
+1. **Roll effects go to the rolling player's actor, not a GM-local default.** The move pipeline runs
+   GM-gated on the canonical GM's client, applying meters/progress on behalf of every player.
+   `persistResolution` and the move card's `burnActor` previously fell back to `getPlayerActors()[0]`
+   — the GM's own PC — so a non-GM's momentum / health / spirit / supply / debility / progress landed
+   on the GM. The resolved `speakerActorId` (from `resolveSpeakerActorId`) is now threaded into
+   `persistResolution` and used for the card's burn/improve/milestone actor. The fallbacks
+   (`activeCharacterId`, then `getPlayerActors()[0]`) apply only when no speaker is resolved (solo-GM).
+
+2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
+   **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),
+   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer, vowId-keyed
+   re-entrancy guard) keeps `system.current` / `system.clockTicks` in lockstep across all copies — so
+   marking or fulfilling it (the module's vow flow OR a native sheet edit) advances it for the whole
+   crew. Any player can click it; non-canonical clients relay to the GM over the module socket
+   (`kind: "vow.swearShared"`), who performs the privileged multi-actor writes.
+
+**Reason:** Playtest — the GM "gained the momentum regardless of which player earned it", and the
+inciting vow only landed for the clicker. Both are multiplayer-attribution defects from GM-local
+fallbacks: the pipeline knew the speaker but didn't use it for persistence, and the vow flow targeted a
+single actor. Vows display only on the per-actor character sheet (the Progress Tracks panel excludes
+them), so a *shared* vow needs a copy on every sheet plus a sync mechanism — the `updateItem` hook
+covers every progress path with one writer.
+
+**Rejected:**
+- *Per-PC vow copies with no sync (Option A)* — copies drift; "shared" must mean lockstep, which is
+  what the user asked for.
+- *One world-scoped vow track shown only in the Progress panel* — vows live on the character sheet;
+  players expect the founding vow there, so copies are required for visibility.
+- *Fan out progress only through the module's own vow flows* — would miss a native sheet edit; the
+  `updateItem` hook catches every change regardless of origin.
+- *Let any client write the sync* — multi-writer races + permission failures; gate to the canonical GM.

@@ -7,6 +7,8 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Added: **Players no longer need their own ElevenLabs key to hear narrator audio.** Narrator voice now plays for every player at the table without each one configuring an ElevenLabs key. Playing a clip the GM has already generated needs no key at all; if a clip hasn't been generated yet, the player's client quietly asks the GM to generate it and then plays the result. (Keys stay private as always — a player's request carries only the text to speak, never a key, and only the GM's key is ever used to synthesise.)
+- Fixed: **Momentum and other roll effects now go to the player who rolled, not the GM.** In multiplayer, when a player made a move that granted momentum — or changed health, spirit, or supply, or marked progress — the change was credited to the GM's character instead of the rolling player's. Every roll's effects now land on the character who actually rolled.
+- Changed: **The opening vow is now the whole crew's shared vow.** The inciting incident's "⚔ Swear this vow" now records the founding vow on **every** player character at once — not just whoever clicked it — and keeps its progress in lockstep across the crew, so marking or fulfilling it advances it for everyone. Anyone at the table can click it; the GM records it for the party.
 
 ## [1.7.28] — 2026-06-28
 
