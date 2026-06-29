@@ -156,3 +156,31 @@ export function planRewardGrant(reward, outcome) {
   }
   return { ...base, withString: !full };               // gear/asset/contact/knowledge land; weak = a complication
 }
+
+function escReward(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Build the reward-choice card: the two narrator-proposed options as buttons,
+ * plus a write-your-own field (#241 Phase 2). Pure. The chosen reward's details
+ * live in the card's flags (`rewardOptions`, `vowId`), read by the click hook.
+ *
+ * @param {Array<{description, form}>} options
+ * @returns {string}
+ */
+export function buildRewardChoiceHtml(options = []) {
+  const opts = (options ?? []).slice(0, 2).map((o, i) =>
+    `<button type="button" class="entity-btn" data-action="sf-reward-pick" data-idx="${i}">${escReward(o.description)}</button>`
+  ).join(" ");
+  const offered = opts
+    ? `<p>Succeed and you'll earn one of these &mdash; or name your own and the narrator will work it in:</p><p>${opts}</p>`
+    : `<p>Name the reward you're after and the narrator will work it in:</p>`;
+  return `<div class="sf-card sf-reward-choice">`
+    + `<div class="sf-card-header">🎁 Choose your reward</div>`
+    + `<div class="sf-card-body">${offered}`
+    + `<p><input type="text" class="sf-reward-own" maxlength="120" placeholder="…or describe your own reward" /> `
+    + `<button type="button" class="entity-btn" data-action="sf-reward-own">Propose my own</button></p>`
+    + `</div></div>`;
+}

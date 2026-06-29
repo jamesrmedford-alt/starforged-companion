@@ -13,6 +13,7 @@ import {
   parseRewardProposals,
   planRewardGrant,
   proposeRewards,
+  buildRewardChoiceHtml,
   REWARD_FORMS,
 } from '../../src/moves/rewards.js';
 
@@ -122,5 +123,32 @@ describe('proposeRewards', () => {
   it('exposes the known reward forms', () => {
     expect(REWARD_FORMS).toContain('asset');
     expect(REWARD_FORMS).toContain('knowledge');
+  });
+});
+
+describe('buildRewardChoiceHtml', () => {
+  it('renders the two options as pick buttons plus write-your-own', () => {
+    const html = buildRewardChoiceHtml([
+      { description: 'A custom raygun', form: 'gear' },
+      { description: 'A useful contact', form: 'contact' },
+    ]);
+    expect(html).toContain('data-action="sf-reward-pick"');
+    expect(html).toContain('data-idx="0"');
+    expect(html).toContain('data-idx="1"');
+    expect(html).toContain('A custom raygun');
+    expect(html).toContain('data-action="sf-reward-own"');
+    expect(html).toContain('sf-reward-own');
+  });
+
+  it('still offers write-your-own when there are no proposed options', () => {
+    const html = buildRewardChoiceHtml([]);
+    expect(html).not.toContain('data-action="sf-reward-pick"');
+    expect(html).toContain('data-action="sf-reward-own"');
+  });
+
+  it('escapes HTML in option descriptions', () => {
+    const html = buildRewardChoiceHtml([{ description: '<b>x</b>', form: 'gear' }]);
+    expect(html).not.toContain('<b>x</b>');
+    expect(html).toContain('&lt;b&gt;');
   });
 });
