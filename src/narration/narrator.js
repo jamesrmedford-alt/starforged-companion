@@ -37,6 +37,7 @@ import { getPlanet }      from '../entities/planet.js';
 import { getLocation }    from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
+import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
@@ -1339,6 +1340,106 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
     console.error(`${MODULE_ID} | narrateClockAdvancement failed:`, err);
     return null;
   }
+}
+
+/**
+ * Build the user message for a vow-swearing scene: the Iron truth (how the
+ * Ironsworn bind their oaths in this world) + the vow being sworn. Pure;
+ * exported for tests.
+ *
+ * @param {{ name?: string, rank?: string|null }} vow
+ * @param {{ title?: string, description?: string }|null} ironTruth
+ * @returns {string}
+ */
+export function buildVowSwearingUserMessage(vow, ironTruth) {
+  const subject   = vow?.name ? `"${vow.name}"` : "a vow";
+  const rank      = vow?.rank ? ` (${vow.rank})` : "";
+  const truthLine = ironTruth?.description
+    ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title ? `${ironTruth.title}: ` : ""}${ironTruth.description}`
+    : `In this world, vows are sworn upon iron.`;
+  return [
+    `A character is swearing ${subject}${rank}.`,
+    ``,
+    truthLine,
+    ``,
+    `Write 2-3 sentences depicting the act of swearing this vow, grounded in how the`,
+    `Ironsworn swear their oaths above. Pure sensory fiction; do not restate the vow's`,
+    `text or mention game mechanics.`,
+  ].join("\n");
+}
+
+/**
+ * Narrate the moment a vow is sworn (#241 follow-up): a brief scene grounded in
+ * the campaign's Iron truth. Mirrors narrateClockAdvancement — GM-gated via the
+ * caller; returns null (silently) when narration or the vow-scene toggle is off,
+ * no API key, X-Card active, or the call fails. Never blocks vow creation.
+ *
+ * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object }} args
+ * @returns {Promise<string|null>}
+ */
+export async function narrateVowSwearing({ vow, campaignState }) {
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return null;
+  let vowSceneOn = true;
+  try { vowSceneOn = game.settings.get(MODULE_ID, 'vowSwearingNarration') !== false; }
+  catch (err) { console.debug?.(`${MODULE_ID} | vowSwearingNarration read failed:`, err?.message ?? err); }
+  if (!vowSceneOn) return null;
+  if (campaignState?.xCardActive) return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const character    = getActiveCharacter(campaignState);
+  const ironTruth    = getTruth(campaignState, 'iron');
+  const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character });
+  const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
+  const userMessage  = buildVowSwearingUserMessage(vow, ironTruth);
+
+  const call = async () => {
+    const raw  = await callNarratorAPI({
+      apiKey, systemPrompt, userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(16000),
+    });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    return (text && text.trim()) ? text : null;
+  };
+
+  try {
+    return await call();
+  } catch (err) {
+    if (isRateLimit(err)) {
+      try { await delay(RETRY_DELAY_MS); return await call(); }
+      catch (retryErr) { console.error(`${MODULE_ID} | narrateVowSwearing retry failed:`, retryErr); }
+    }
+    console.error(`${MODULE_ID} | narrateVowSwearing failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Narrate a vow-swearing scene and, if one was produced, post it as a chat card.
+ * The single entry point both vow-swearing hooks call (inciting-vow swear and
+ * the Swear an Iron Vow move). Safe to call from any client — narrateVowSwearing
+ * only produces text on the canonical GM path with a key; callers are GM-gated.
+ *
+ * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object }} args
+ * @returns {Promise<string|null>}
+ */
+export async function narrateAndPostVowSwearing({ vow, campaignState }) {
+  const text = await narrateVowSwearing({ vow, campaignState });
+  if (!text) return null;
+  const clean = stripMarkup(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-vow-scene"><div class="sf-card-body"><p>⚔ <em>${clean}</em></p></div></div>`,
+      flags:   { [MODULE_ID]: { vowSceneCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrateAndPostVowSwearing: card post failed:`, err?.message ?? err);
+  }
+  return text;
 }
 
 /**

@@ -765,6 +765,7 @@ const NARRATOR_MODES = new Set([
   'oracle_followup',
   'session_vignette',   // Begin Session opening vignette — see src/session/galleyVignette.js
   'inciting_incident',  // Campaign-launch inciting incident — see src/session/incitingIncident.js
+  'vow_swearing',       // The moment a vow is sworn, grounded in the Iron truth — see narrateVowSwearing
   'campaign_recap',     // Between-sessions recap generation — see getCampaignRecap (narrator.js)
 ]);
 
@@ -795,6 +796,15 @@ const ROLE_DESCRIPTIONS = {
     `answer the player's question about the current scene as vivid, atmospheric prose ` +
     `that serves the story.\n\n` +
     `Describe only what is already established — answer the question, do not invent.`,
+
+  vow_swearing:
+    `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
+    `the moment a character swears a vow — the binding ritual itself — as a brief, ` +
+    `evocative scene.\n\n` +
+    `Ground it in how the Ironsworn swear their oaths in THIS world (the Iron truth given ` +
+    `in the user message): the iron they touch, the words, the weight of commitment. ` +
+    `Write 2-3 sentences of pure sensory fiction — no game mechanics, no summary of the ` +
+    `vow's text, no "you vow to…" restatement. Just the act of swearing made vivid.`,
 
   oracle_followup:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
