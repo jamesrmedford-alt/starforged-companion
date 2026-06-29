@@ -435,6 +435,48 @@ export async function markVowProgress(actor, vowItemId, ticks) {
 }
 
 
+/**
+ * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
+ * found by its vowId flag across all player characters. GM-only (Item flag
+ * writes). No-op when the vow or reward is missing.
+ *
+ * @param {string} vowId
+ * @param {{ description: string, form: string, status?: string }} reward
+ * @returns {Promise<void>}
+ */
+export async function setSharedVowReward(vowId, reward) {
+  if (!vowId || !reward?.description) return;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+        await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err =>
+          console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err));
+      }
+    }
+  }
+}
+
+/**
+ * Record a granted concrete reward on the actor (#241 Phase 2) for the non-meter
+ * forms (gear / asset / contact / knowledge) — appends to a module flag list so
+ * the grant is tracked on the sheet. Meter forms (supply / momentum) use
+ * applyMeterChanges instead. GM-only.
+ *
+ * @param {Actor} actor
+ * @param {{ description: string, form?: string }} reward
+ * @returns {Promise<void>}
+ */
+export async function recordGrantedReward(actor, reward) {
+  if (!actor?.setFlag || !reward?.description) return;
+  const list = actor.flags?.[MODULE_ID]?.grantedRewards ?? [];
+  await actor.setFlag(MODULE_ID, "grantedRewards", [
+    ...list,
+    { description: reward.description, form: reward.form ?? "gear" },
+  ]).catch(err => console.warn(`${MODULE_ID} | recordGrantedReward failed:`, err?.message ?? err));
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CHARACTER ITEM REGISTRATION (Connections + Vows)
 // ─────────────────────────────────────────────────────────────────────────────

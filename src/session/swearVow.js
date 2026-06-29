@@ -23,11 +23,12 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
-import { progressPerMilestoneLine, legacyRewardLine } from "../moves/rewards.js";
+import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
+  from "../moves/rewards.js";
 
 const MODULE_ID = "starforged-companion";
 const SOCKET    = `module.${MODULE_ID}`;
@@ -193,7 +194,30 @@ export async function swearSharedVowForAll(message) {
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
 
+  // Concrete reward (#241 Phase 2): propose two options the crew can pick from
+  // (or write their own), to be granted when the vow is fulfilled. Best-effort —
+  // a missing/failed proposal still posts a write-your-own card.
+  try {
+    const apiKey  = globalThis.game?.settings?.get?.(MODULE_ID, "claudeApiKey") ?? "";
+    const options = await proposeRewards({ kind: "vow", target: plan.vow.name, apiKey });
+    await postRewardChoiceCard(message.id, options);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | swearVow: reward proposal failed:`, err?.message ?? err);
+  }
+
   return { actors: sworn, connection };
+}
+
+/** Post the reward-choice card for a sworn vow (two options + write-your-own). */
+async function postRewardChoiceCard(vowId, options) {
+  try {
+    await ChatMessage.create({
+      content: buildRewardChoiceHtml(options),
+      flags:   { [MODULE_ID]: { rewardChoiceCard: true, vowId, rewardOptions: options ?? [] } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | swearVow: reward-choice card failed:`, err?.message ?? err);
+  }
 }
 
 /** Post the confirmation card describing exactly what was created. */
@@ -326,12 +350,67 @@ export function registerSharedVowSocket() {
   registerSharedVowSocket._installed = true;
   game.socket.on(SOCKET, async (payload) => {
     try {
-      if (!payload || payload.kind !== "vow.swearShared") return;
-      if (!isCanonicalGM()) return;
-      const message = globalThis.game?.messages?.get?.(payload.messageId);
-      if (message) await swearSharedVowForAll(message);
+      if (!payload || !isCanonicalGM()) return;
+      if (payload.kind === "vow.swearShared") {
+        const message = globalThis.game?.messages?.get?.(payload.messageId);
+        if (message) await swearSharedVowForAll(message);
+      } else if (payload.kind === "vow.setReward") {
+        await setSharedVowReward(payload.vowId, payload.reward);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | swearVow: shared-vow socket handler failed:`, err?.message ?? err);
+    }
+  });
+}
+
+/**
+ * Wire the reward-choice card (#241 Phase 2): picking one of the two proposed
+ * rewards, or writing your own, stamps it on the vow (promised) — GM-gated, so
+ * non-canonical clients relay over the module socket.
+ */
+export function registerRewardChoiceHook() {
+  if (registerRewardChoiceHook._installed) return;
+  registerRewardChoiceHook._installed = true;
+  onChatMessageRender((message, root) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.rewardChoiceCard) return;
+    const vowId = f.vowId;
+    const opts  = Array.isArray(f.rewardOptions) ? f.rewardOptions : [];
+    const store = async (reward) => {
+      const full = { status: "promised", description: reward.description, form: reward.form ?? "gear" };
+      if (isCanonicalGM()) await setSharedVowReward(vowId, full);
+      else globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.setReward", vowId, reward: full });
+      try {
+        await ChatMessage.create({
+          content: `<p class="sf-incite-sworn">🎁 Reward set: <em>${escapeHtml(reward.description)}</em></p>`,
+          flags:   { [MODULE_ID]: { rewardSetCard: true } },
+        });
+      } catch (err) {
+        console.warn(`${MODULE_ID} | swearVow: reward-set card failed:`, err?.message ?? err);
+      }
+    };
+    root.querySelectorAll('[data-action="sf-reward-pick"]').forEach((btn) => {
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      fresh.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const opt = opts[Number(fresh.dataset.idx)];
+        if (!opt) return;
+        root.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        await store({ description: opt.description, form: opt.form });
+      });
+    });
+    const ownBtn = root.querySelector('[data-action="sf-reward-own"]');
+    if (ownBtn) {
+      const fresh = ownBtn.cloneNode(true);
+      ownBtn.replaceWith(fresh);
+      fresh.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const text = root.querySelector(".sf-reward-own")?.value?.trim();
+        if (!text) return;
+        root.querySelectorAll("button").forEach(b => { b.disabled = true; });
+        await store({ description: text.slice(0, 120), form: "gear" });
+      });
     }
   });
 }

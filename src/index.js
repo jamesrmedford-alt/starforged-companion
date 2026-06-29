@@ -28,7 +28,7 @@ import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
-import { progressPerMilestoneLine } from "./moves/rewards.js";
+import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   buildBurnState,
   renderBurnButtonHtml,
@@ -79,7 +79,7 @@ import {
   postCampaignRecap,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -196,7 +196,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -1351,6 +1351,10 @@ export function registerChatHook() {
                 marksForSourceRank(result.track.rank) - (resolution.outcome === "weak_hit" ? 1 : 0));
               await postFightVowMilestoneCard(result.track.linkedVowName, marks).catch(err =>
                 console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
+              // Deliver the vow's promised concrete reward (#241 Phase 2), scaled
+              // by the win; one-time (status flips so a re-win can't re-grant).
+              await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome).catch(err =>
+                console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err));
             }
           }
         } catch (err) {
@@ -2957,6 +2961,50 @@ async function postDeepenBondCard(name, marks) {
   }
 }
 
+// GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
+// the fight is won, scaled by the outcome. One-time — the reward's status flips
+// from "promised" so a re-win can't re-grant it.
+async function grantLinkedVowReward(vowName, outcome) {
+  let reward = null, vowId = null;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    const item  = items.find(i =>
+      i.type === "progress" && i.system?.subtype === "vow"
+      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
+    const r = item?.flags?.[MODULE_ID]?.reward;
+    if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; break; }
+  }
+  if (!reward) return;
+
+  const plan = planRewardGrant(reward, outcome);
+  const pc   = getPlayerActors()[0] ?? null;
+  if (plan.status === "granted" && pc) {
+    if (plan.form === "supply" || plan.form === "momentum") {
+      await applyMeterChanges(pc, { [plan.form]: plan.amount ?? 1 }).catch(err =>
+        console.warn(`${MODULE_ID} | grant reward meter failed:`, err?.message ?? err));
+    } else {
+      await recordGrantedReward(pc, reward).catch(err =>
+        console.warn(`${MODULE_ID} | grant reward record failed:`, err?.message ?? err));
+    }
+  }
+  if (vowId) await setSharedVowReward(vowId, { ...reward, status: plan.status }).catch(() => {});
+  await postRewardGrantCard(reward, plan).catch(err =>
+    console.warn(`${MODULE_ID} | reward grant card failed:`, err?.message ?? err));
+}
+
+async function postRewardGrantCard(reward, plan) {
+  const note = plan.withString
+    ? ' <em>(with a string — the narrator will introduce a complication)</em>'
+    : plan.amount ? ` <em>(+${plan.amount} ${plan.form})</em>` : "";
+  const body = plan.status === "granted"
+    ? `🎁 Reward earned: <strong>${escapeChatHtml(reward.description)}</strong>${note}`
+    : `Reward lost: <strong>${escapeChatHtml(reward.description)}</strong> slipped away.`;
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-reward-grant"><div class="sf-card-body"><p>${body}</p></div></div>`,
+    flags:   { [MODULE_ID]: { rewardGrantCard: true } },
+  });
+}
+
 // Wire the won-fight card's buttons. Mark/deepen are GM-gated world writes, so
 // non-canonical clients relay over the socket; Attempt to Fulfill posts the
 // existing fulfill_your_vow bridge (the pipeline handles it).
@@ -4313,6 +4361,8 @@ Hooks.once("ready", () => {
   // and the cross-PC progress sync. Both no-op on non-canonical clients.
   registerSharedVowSocket();
   registerSharedVowSyncHook();
+  // Reward-choice card (#241 Phase 2) — pick a proposed reward or write your own.
+  registerRewardChoiceHook();
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
