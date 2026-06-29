@@ -58,6 +58,7 @@ const SETTING = {
   NARRATOR_CONTEXT_CARDS:   'narratorContextCards',
   NARRATOR_SESSION_SUMMARY: 'narratorSessionSummary',
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
+  VOW_SWEARING_SCENE:       'vowSwearingNarration',
   // ── Character management ─────────────────────────────────────────────────
   ACTIVE_CHARACTER_ID:      'activeCharacterId',
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
@@ -318,6 +319,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT, {
     name:    'Rotating Spotlight',
     hint:    'In multiplayer scenes, when a beat ends by inviting action the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. No effect in solo play.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.VOW_SWEARING_SCENE, {
+    name:    'Vow-Swearing Scene',
+    hint:    "When a vow is sworn, generate a brief atmospheric scene of the oath being made, grounded in your campaign's Iron truth (how the Ironsworn bind their vows). Honors the global narration toggle.",
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -700,6 +710,10 @@ function getNarratorSpotlight() {
   return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? true;
 }
 
+function getVowSwearingScene() {
+  return game.settings.get(MODULE_ID, SETTING.VOW_SWEARING_SCENE) ?? true;
+}
+
 // ── Previously On / recap ────────────────────────────────────────────────
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
 function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
@@ -930,6 +944,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narratorContextCards:  getNarratorContextCards(),
       narratorSessionSummary: getNarratorSessionSummary(),
       narratorSpotlight:     getNarratorSpotlight(),
+      vowSwearingScene:      getVowSwearingScene(),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1293,6 +1308,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             Rotating spotlight (multiplayer)
           </label>
           <span class="narrator-field-hint">When a beat invites action, the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. No effect in solo play.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="vowSwearingNarration" ${ctx.vowSwearingScene ? 'checked' : ''} ${dis}>
+            Vow-swearing scene
+          </label>
+          <span class="narrator-field-hint">When a vow is sworn, the narrator paints a brief scene of the oath being made, grounded in your campaign's Iron truth (how the Ironsworn bind their vows).</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -1701,6 +1723,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const contextCards = Math.max(1, Math.min(50, Number(contextRaw) || 20));
       const sessionSummary = el.querySelector('[name="narratorSessionSummary"]')?.checked ?? true;
       const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? true;
+      const vowScene     = el.querySelector('[name="vowSwearingNarration"]')?.checked ?? true;
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
       const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
@@ -1718,6 +1741,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, contextCards),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
+        game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),

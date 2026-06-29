@@ -77,6 +77,7 @@ import {
   interrogateScene,
   postSessionRecap,
   postCampaignRecap,
+  narrateAndPostVowSwearing,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
@@ -1168,6 +1169,16 @@ export function registerChatHook() {
       if (resolution.consequences?.reachMilestone && game.user.isGM) {
         await applyReachMilestone(getPlayerActors()[0] ?? null, interpretation.moveTarget ?? null)
           .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
+      }
+
+      // Swear an Iron Vow — paint a brief Iron-truth-grounded scene of the oath
+      // (#241 follow-up). Fires on the move regardless of outcome (the vow is
+      // sworn either way); GM-gated; no-op when the vow-scene toggle is off.
+      if (resolution.moveId === "swear_an_iron_vow" && game.user.isGM) {
+        await narrateAndPostVowSwearing({
+          vow: { name: interpretation.moveTarget ?? null, rank: null },
+          campaignState,
+        }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
       }
 
       // Forge a Bond strong hit — mark connection as bonded and pay bonds legacy.

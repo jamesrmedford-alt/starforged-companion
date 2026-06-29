@@ -194,6 +194,15 @@ export async function swearSharedVowForAll(message) {
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
 
+  // Vow-swearing scene (#241 follow-up): a brief Iron-truth-grounded scene of the
+  // oath being made. Dynamic import avoids a static narrator.js dependency cycle.
+  try {
+    const { narrateAndPostVowSwearing } = await import("../narration/narrator.js");
+    await narrateAndPostVowSwearing({ vow: plan.vow, campaignState });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | swearVow: vow-swearing scene failed:`, err?.message ?? err);
+  }
+
   // Concrete reward (#241 Phase 2): propose two options the crew can pick from
   // (or write their own), to be granted when the vow is fulfilled. Best-effort —
   // a missing/failed proposal still posts a write-your-own card.
