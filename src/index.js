@@ -1414,7 +1414,7 @@ export function registerChatHook() {
       // Step 9: post move result card. Determine burn eligibility against the
       // active character so the card can carry a 🔥 Burn Momentum button when
       // the dice would actually improve under burn.
-      const burnActor   = getPlayerActors()[0] ?? null;
+      const burnActor   = speakerActor ?? getPlayerActors()[0] ?? null;
       const burnState   = buildBurnState(resolution, burnActor, ptpReversals);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
@@ -1448,7 +1448,7 @@ export function registerChatHook() {
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
-        await persistResolution(resolution, campaignState);
+        await persistResolution(resolution, campaignState, speakerActorId);
         // Mark the move card so the Burn handler knows the original
         // consequences have been written to the actor. Without this flag,
         // a burn click after persistence would double-reverse the meter

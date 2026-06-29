@@ -120,6 +120,32 @@ describe('persistResolution — active character fallback', () => {
     expect(a2._updateHistory.length).toBeGreaterThan(0);
   });
 
+  it('attributes meters to the speaker actor, not the first player actor (multiplayer bug)', async () => {
+    // The GM's client runs persistResolution on behalf of every player. Without
+    // the speaker, the +1 momentum would land on getPlayerActors()[0] — the
+    // GM's own PC — instead of the rolling player's character. Threading
+    // speakerActorId through fixes the "GM gains everyone's momentum" bug.
+    const gmPc = makeTestActor({
+      id: 'gm-pc', type: 'character', hasPlayerOwner: true,
+      system: { momentum: { value: 2, max: 10, min: -6, resetValue: 2 } },
+    });
+    const playerPc = makeTestActor({
+      id: 'player-pc', type: 'character', hasPlayerOwner: true,
+      system: { momentum: { value: 2, max: 10, min: -6, resetValue: 2 } },
+    });
+    game.actors._set('gm-pc', gmPc);          // first → the buggy getPlayerActors()[0] fallback
+    game.actors._set('player-pc', playerPc);
+
+    await persistResolution(baseResolution(), baseCampaignState(), 'player-pc');
+
+    // The rolling player's PC gets the +1 momentum; the GM's PC is untouched.
+    expect(gmPc._updateHistory.length).toBe(0);
+    const momentumWrites = playerPc._updateHistory
+      .map(h => h['system.momentum.value'])
+      .filter(v => v !== undefined);
+    expect(momentumWrites.at(-1)).toBe(3);
+  });
+
   it('no-ops cleanly when no character exists at all', async () => {
     await expect(
       persistResolution(baseResolution(), baseCampaignState()),
