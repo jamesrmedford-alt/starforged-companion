@@ -35,6 +35,42 @@ function htmlUnescape(s) {
 }
 
 /**
+ * Low-level: pull the serialised roll object out of a card's HTML. Distinguishes
+ * "no roll here" from "a roll card we couldn't parse", so a caller can surface
+ * the latter as a genuine failure (decisions.md → "No silent failures").
+ *
+ * @param {string} content
+ * @returns {{ kind: 'roll', roll: object } | { kind: 'no-marker' } | { kind: 'unparseable' }}
+ */
+function extractIronswornRoll(content) {
+  if (typeof content !== "string" || !content.includes("data-ironswornroll")) return { kind: "no-marker" };
+  const m = content.match(ROLL_ATTR);
+  if (!m) return { kind: "no-marker" };
+  try { return { kind: "roll", roll: JSON.parse(htmlUnescape(m[1])) }; }
+  catch { return { kind: "unparseable" }; }
+}
+
+/**
+ * Classify what KIND of ironsworn roll a card carries — for the skip/log policy
+ * (decisions.md → "No silent failures"). Separates a normal action roll (not
+ * ours; stay quiet) from a malformed progress card (a vendor card-shape change
+ * worth a warning) so the hook logs each at the right level.
+ *
+ * @param {string} content
+ * @returns {'progress'|'action'|'not-a-roll'|'unparseable'}
+ */
+export function ironswornRollKind(content) {
+  const ex = extractIronswornRoll(content);
+  if (ex.kind === "no-marker")   return "not-a-roll";
+  if (ex.kind === "unparseable") return "unparseable";
+  const pre = ex.roll?.preRollOptions;
+  if (!pre) return "unparseable";
+  if (pre.progress != null) return "progress";
+  if (pre.stat != null)     return "action";
+  return "unparseable";
+}
+
+/**
  * Parse a foundry-ironsworn PROGRESS roll out of a chat message's content HTML.
  *
  * @param {string} content — ChatMessage.content (raw stored HTML)
@@ -42,16 +78,13 @@ function htmlUnescape(s) {
  *             outcome: 'strong_hit'|'weak_hit'|'miss', source: string,
  *             moveDsId: string } | null}
  *   null when the content is not a foundry-ironsworn progress roll (action
- *   rolls, non-roll cards, our own cards, or any unrecognised shape).
+ *   rolls, non-roll cards, our own cards, or any unrecognised shape). Use
+ *   ironswornRollKind() to tell those cases apart for logging.
  */
 export function parseIronswornProgressRoll(content) {
-  if (typeof content !== "string" || !content.includes("data-ironswornroll")) return null;
-  const m = content.match(ROLL_ATTR);
-  if (!m) return null;
-
-  let roll;
-  try { roll = JSON.parse(htmlUnescape(m[1])); }
-  catch { return null; }
+  const ex = extractIronswornRoll(content);
+  if (ex.kind !== "roll") return null;
+  const roll = ex.roll;
 
   const pre = roll?.preRollOptions;
   // A progress roll carries `progress`; an action roll carries `stat` instead.
@@ -101,4 +134,28 @@ export function classifyProgressRoll(parsed, subtypeLookup) {
   if (sub === "vow")        return "fulfill_your_vow";
   if (sub === "connection") return "forge_a_bond";
   return null;
+}
+
+/**
+ * Decide what the native-progress-roll hook should do once the Foundry-coupled
+ * facts are known, and — when it declines — *why* and at what log level, so the
+ * caller never skips without a trace (decisions.md → "No silent failures").
+ * Pure: the caller resolves "is this my roll?", the roll kind, the parsed roll,
+ * and the classified move (all need Foundry/regex), then hands them here.
+ *
+ * @param {{ isRoller: boolean, rollKind: string, parsed: object|null,
+ *           moveId: string|null }} facts
+ * @returns {{ act: boolean, reason: string, log: 'none'|'debug'|'warn' }}
+ *   act:true → narrate. act:false → `reason` names the skip and `log` is the
+ *   level to surface it ('none' = a correct, uninteresting stand-down).
+ */
+export function planNativeRollNarration({ isRoller, rollKind, parsed, moveId } = {}) {
+  if (!isRoller) return { act: false, reason: "not-this-clients-roll", log: "none" };
+  if (!parsed) {
+    if (rollKind === "unparseable") return { act: false, reason: "unparseable-roll-card", log: "warn" };
+    if (rollKind === "action")      return { act: false, reason: "action-roll", log: "none" };
+    return { act: false, reason: "not-an-ironsworn-roll", log: "none" };
+  }
+  if (!moveId) return { act: false, reason: "not-vow-or-connection", log: "debug" };
+  return { act: true, reason: "narrate", log: "debug" };
 }

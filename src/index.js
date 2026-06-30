@@ -79,7 +79,7 @@ import {
   postCampaignRecap,
   narrateAndPostVowSwearing,
 } from "./narration/narrator.js";
-import { parseIronswornProgressRoll, classifyProgressRoll } from "./narration/nativeProgressRoll.js";
+import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
@@ -1647,19 +1647,31 @@ function registerEntityRenameSyncHook() {
  * card, classifies it as a vow or connection resolution, and narrates the
  * already-determined outcome via narrateResolution — WITHOUT re-rolling.
  *
- * Single-emitter (isCanonicalGM) so only the GM narrates. Fail-safe: anything
- * it can't recognise (action rolls, expedition/combat progress, our own cards,
- * unparseable shapes) is skipped silently. See nativeProgressRoll.js for the
- * vendor-coupling note.
+ * Single-emitter on the ROLLER's own client (the message author): exactly one
+ * client narrates — the one that made the roll and holds the Claude key —
+ * matching the pipeline's no-GM-dependency narration (#248 Theme D). The old
+ * isCanonicalGM gate produced nothing when the Claude key lived on a player's
+ * client, not the GM's. Anything it can't act on (action rolls, expedition/
+ * combat progress, our own cards, unparseable shapes) is skipped with a debug
+ * breadcrumb on the deciding client (decisions.md → "No silent failures"). See
+ * nativeProgressRoll.js for the vendor-coupling note.
  */
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
-      if (!isCanonicalGM()) return;
-      const parsed = parseIronswornProgressRoll(message?.content ?? "");
-      if (!parsed) return;
+      // Narration runs on the ROLLER's own client — the one that made the roll
+      // and (per #209) holds the Claude key — mirroring the move pipeline's
+      // "no GM dependency" narration (Step 10 above). Gating this to the
+      // canonical GM (the old behaviour) silently produced nothing on tables
+      // where the Claude key lives on a player's client, not the GM's
+      // (#248 Theme D; decisions.md → "No silent failures"). Other clients
+      // correctly stand down here — not a failure, so no log.
+      const authorId = message?.author?.id ?? message?.author ?? message?.user?.id ?? message?.user ?? null;
+      const isRoller = authorId != null && authorId === game?.user?.id;
 
-      const moveId = classifyProgressRoll(parsed, (source) => {
+      const content = String(message?.content ?? "");
+      const parsed  = isRoller ? parseIronswornProgressRoll(content) : null;
+      const moveId  = (isRoller && parsed) ? classifyProgressRoll(parsed, (source) => {
         // Fallback discriminator: read the source progress Item's subtype off
         // the speaker actor (the system serialises only the track name).
         try {
@@ -1672,9 +1684,25 @@ function registerNativeProgressRollHook() {
           if (subtype.includes("vow"))        return "vow";
           if (subtype.includes("connection")) return "connection";
           return null;
-        } catch { return null; }
-      });
-      if (!moveId) return;   // not a vow/connection progress roll → leave it alone
+        } catch (err) {
+          console.warn(`${MODULE_ID} | native-roll: subtype lookup for "${source}" threw:`, err?.message ?? err);
+          return null;
+        }
+      }) : null;
+
+      // No silent failures (decisions.md): map the facts to act/skip + reason +
+      // level, then always log the decision on this (the deciding) client.
+      const rollKind = (isRoller && !parsed) ? ironswornRollKind(content) : "progress";
+      const plan = planNativeRollNarration({ isRoller, rollKind, parsed, moveId });
+      if (plan.log === "warn") {
+        console.warn(`${MODULE_ID} | native-roll: ${plan.reason} — skipping (a vendor card-shape change?)`);
+      } else if (plan.log === "debug") {
+        const tag = parsed ? ` "${parsed.source || "?"}"` : "";
+        console.debug(plan.act
+          ? `${MODULE_ID} | native-roll: narrating ${moveId} (${parsed.outcome}) for${tag}`
+          : `${MODULE_ID} | native-roll: ${plan.reason}${tag} — skipping`);
+      }
+      if (!plan.act) return;
 
       const moveName     = moveId === "fulfill_your_vow" ? "Fulfill Your Vow" : "Forge a Bond";
       const outcomeLabel = parsed.outcome === "strong_hit" ? "Strong Hit"
