@@ -2361,6 +2361,24 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   return prose ?? rawText;
 }
 
+/**
+ * Whether to disable extended thinking for a narration call on `model`. The
+ * 5-tier and Opus 4.7/4.8 models run ADAPTIVE THINKING BY DEFAULT when the
+ * `thinking` param is omitted — for short narration that only adds latency and
+ * lets thinking consume the max_tokens cap, truncating the prose + memory
+ * sidecar. So we disable it for those. The older offered models (Sonnet 4.5,
+ * Haiku 4.5) already default to thinking-off, so we leave their request
+ * untouched. (Fable-tier rejects "disabled" outright and isn't offered as a
+ * narration model.) Pure — exported for tests.
+ *
+ * @param {string} model
+ * @returns {boolean}
+ */
+export function narrationDisablesThinking(model) {
+  const m = String(model ?? '');
+  return ['claude-sonnet-5', 'claude-opus-4-7', 'claude-opus-4-8'].some(id => m.startsWith(id));
+}
+
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens }) {
   const body = {
     model,
@@ -2370,6 +2388,12 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     ],
     messages: [{ role: 'user', content: userMessage }],
   };
+  // Keep narration fast and un-truncated on thinking-by-default models (Sonnet 5,
+  // Opus 4.7/4.8): no extended thinking eating the max_tokens cap. No-op for the
+  // older offered models, which already default to thinking-off (#latency).
+  if (narrationDisablesThinking(model)) {
+    body.thinking = { type: 'disabled' };
+  }
 
   const headers = {
     'Content-Type':      'application/json',
