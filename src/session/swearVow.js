@@ -23,7 +23,7 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
@@ -410,6 +410,8 @@ export function registerSharedVowSocket() {
         if (message) await swearSharedVowForAll(message);
       } else if (payload.kind === "vow.setReward") {
         await setSharedVowReward(payload.vowId, payload.reward);
+      } else if (payload.kind === "vow.linkConnection") {
+        await setVowLinkedConnection(payload.vowId, payload.connectionName);
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | swearVow: shared-vow socket handler failed:`, err?.message ?? err);
@@ -532,14 +534,23 @@ export function shouldOfferVowSetup(item) {
  * @param {{ name: string, rank: string|null }} vow
  * @returns {string}
  */
-export function buildPlayerVowSetupHtml({ name, rank } = {}) {
+export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
   const vrank = rank ?? "dangerous";
+  // Connection picker (#248 B-link): link this vow to a connection so fulfilling
+  // it deepens that bond. Rendered only when connections exist.
+  const linkHtml = (Array.isArray(connections) && connections.length)
+    ? `<p class="sf-vow-link">🤝 For a connection? `
+      + `<select class="sf-vow-connection"><option value="">— none —</option>`
+      + connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")
+      + `</select> <button type="button" class="entity-btn" data-action="sf-player-vow-link">Link</button></p>`
+    : "";
   return `<div class="sf-card sf-player-vow"><div class="sf-card-header">🆕 New vow recorded</div>`
     + `<div class="sf-card-body">`
     + `<p>"${escapeHtml(name ?? "Unnamed Vow")}"${rank ? ` <em>(${escapeHtml(rank)})</em>` : ""}</p>`
     + `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`
     + `<p><button type="button" class="entity-btn" data-action="sf-player-vow-swear">⚔ Swear it (roll)</button></p>`
-    + `<p class="sf-incite-hint">Pick a reward for it below.</p>`
+    + linkHtml
+    + `<p class="sf-incite-hint">Pick a reward for it below${linkHtml ? "; linking a connection makes fulfilling this vow deepen that bond" : ""}.</p>`
     + `</div></div>`;
 }
 
@@ -588,9 +599,20 @@ export function registerPlayerVowHook() {
 
       const name = item.name ?? "Unnamed Vow";
       const rank = item.system?.rank ?? null;
+      // Enumerate existing connections for the link picker (#248 B-link).
+      let connections = [];
+      try {
+        const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+        const { getConnection } = await import("../entities/connection.js");
+        connections = (cs.connectionIds ?? [])
+          .map(hostId => getConnection(hostId)?.name)
+          .filter(Boolean);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: connection enumeration failed:`, err?.message ?? err);
+      }
       await ChatMessage.create({
-        content: buildPlayerVowSetupHtml({ name, rank }),
-        flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name } },
+        content: buildPlayerVowSetupHtml({ name, rank, connections }),
+        flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name, vowId: item.id } },
       }).catch(err => console.warn(`${MODULE_ID} | playerVow: setup card failed:`, err?.message ?? err));
 
       // Same reward flow as swearing the inciting vow — propose two (or
@@ -632,6 +654,43 @@ export function registerPlayerVowSwearHook() {
         await globalThis.ChatMessage?.create?.(post);
       } catch (err) {
         console.warn(`${MODULE_ID} | playerVow: swear post failed:`, err?.message ?? err);
+        fresh.disabled = false;
+      }
+    });
+  });
+}
+
+/**
+ * Wire the 🤝 Link button on the player-vow setup card: links the vow to the
+ * selected connection (#248 B-link), so fulfilling it deepens that bond. The
+ * flag write is GM-only — non-canonical clients relay over the module socket.
+ * Register once.
+ */
+export function registerPlayerVowLinkHook() {
+  if (registerPlayerVowLinkHook._installed) return;
+  registerPlayerVowLinkHook._installed = true;
+  onChatMessageRender((message, root) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.playerVowCard) return;
+    const btn = root.querySelector('[data-action="sf-player-vow-link"]');
+    if (!btn) return;
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const connectionName = root.querySelector(".sf-vow-connection")?.value?.trim();
+      if (!connectionName) return;                 // nothing selected — leave the button live
+      fresh.disabled = true;
+      const vowId = f.vowId;
+      try {
+        if (isCanonicalGM()) await setVowLinkedConnection(vowId, connectionName);
+        else globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.linkConnection", vowId, connectionName });
+        await ChatMessage.create({
+          content: `<p class="sf-incite-sworn">🤝 Linked to <strong>${escapeHtml(connectionName)}</strong> — fulfilling this vow will deepen that bond.</p>`,
+          flags:   { [MODULE_ID]: { vowLinkedCard: true } },
+        }).catch(() => {});
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: link failed:`, err?.message ?? err);
         fresh.disabled = false;
       }
     });
