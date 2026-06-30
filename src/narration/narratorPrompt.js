@@ -163,8 +163,10 @@ export function appendSidecarInstruction(options = {}) {
       'Its premise must survive into',
       'later sessions, so your sidecar MUST capture the load-bearing facts:',
       '- newTruths for: who the central NPC is and their history with the',
-      '  character; why they are where they are; what is at stake and what',
-      '  fails if the character is too late (the deadline).',
+      '  character; why they are where they are; and what is at stake. Only if',
+      '  the situation is genuinely time-gated, also what worsens if the',
+      '  character is too slow — many openings have no deadline, so do not',
+      '  invent one.',
       '- stateChanges for: the central NPC\'s current location (vessel or',
       '  structure included) and physical condition.',
       '- REQUIRED: the player\'s STARTING position. Your opening scene places',
@@ -851,6 +853,7 @@ const ROLE_DESCRIPTIONS = {
     `these exact forms:\n\n` +
     `Suggested vow: <a short first-person vow statement> (<rank>)\n` +
     `Suggested clock: <a short clock label> (<segments> segments)\n` +
+    `Immediate crisis: <a short danger label> (<segments> segments)\n` +
     `Vow target: <Name> — <2-3 sentences on one line: who they are — for an ` +
     `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
     `role, goal, and pronouns, never reassigning or contradicting them — their ` +
@@ -862,11 +865,20 @@ const ROLE_DESCRIPTIONS = {
     `rather than restating the prose.>\n\n` +
     `Rules for the block: <rank> is exactly one of: troublesome, dangerous, formidable, ` +
     `extreme, epic. The "Suggested vow" line is always present, as is the "Situation" ` +
-    `line. The "Suggested clock" ` +
-    `line appears ONLY when the incident carries explicit time pressure (something fails, ` +
-    `expires, or arrives if the character is too slow) — <segments> is one of 4, 6, 8, ` +
-    `10, 12 (fewer segments = tighter deadline); omit the line entirely for vows without ` +
-    `a deadline. The "Vow target" line appears when the vow concerns a specific person, ` +
+    `line. The "Suggested clock" line is a DEADLINE ON THE VOW ITSELF and is RARE — ` +
+    `include it ONLY when the vow is genuinely time-gated, i.e. failing to fulfil it in ` +
+    `time makes it harder or impossible (the threat the vow addresses crosses a point of ` +
+    `no return), and it must measure THAT deadline, not the opening scene's drama. Most ` +
+    `opening vows are open-ended quests with no deadline — OMIT it for those. A dramatic, ` +
+    `urgent opening scene is NOT by itself a reason for a vow clock. <segments> is one of ` +
+    `4, 6, 8, 10, 12 (fewer = tighter). The "Immediate crisis" line is a SEPARATE, ` +
+    `proximal danger unfolding RIGHT NOW in the opening scene that is NOT the long vow's ` +
+    `deadline — a short, self-contained first scene to tackle immediately (e.g. a runaway ` +
+    `transport about to crash, while the vow is the long investigation into the sickness ` +
+    `behind it). Include it only when such an urgent, tickable danger is actually present; ` +
+    `it becomes its own countdown, distinct from the vow. Do NOT restate the vow here. ` +
+    `<segments> is one of 4, 6, 8, 10 (fewer = more urgent). The "Vow target" line appears ` +
+    `when the vow concerns a specific person, ` +
     `creature, faction, or vessel — use their established name, keep the whole line ` +
     `single-line. This trailing block is the one place you propose mechanics; keep all ` +
     `of it out of the prose body itself.`,
@@ -1523,6 +1535,10 @@ function buildIncitingIncidentBlock(campaignState) {
   const clock = ii.clock;
   if (clock?.label) {
     lines.push(`Deadline: ${clock.label}${clock.segments ? ` (${clock.segments}-segment clock)` : ''}`);
+  }
+  const crisis = ii.immediateCrisis;
+  if (crisis?.label) {
+    lines.push(`Immediate crisis (separate from the vow, a first scene to tackle now): ${crisis.label}${crisis.segments ? ` (${crisis.segments}-segment tension clock)` : ''}`);
   }
 
   return lines.join('\n');

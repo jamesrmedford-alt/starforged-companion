@@ -108,6 +108,43 @@ export function splitSuggestedClock(text) {
   return { prose, clock: { label, segments } };
 }
 
+/** Segment counts the tension-clock store (createClock) supports. */
+const VALID_TENSION_SEGMENTS = [4, 6, 8, 10];
+
+/**
+ * Split a trailing `Immediate crisis: <label> (<N> segments)` line off the
+ * narrator prose (#248 Theme A). This is a proximal danger unfolding in the
+ * opening scene, SEPARATE from the long vow — a first scene to tackle now that
+ * becomes a standalone tension clock, distinct from the vow's own (rare)
+ * deadline clock. Returns `{ prose, crisis }` where `crisis` is
+ * `{ label, segments }` or null. Segment counts snap to the tension-clock set
+ * (4/6/8/10 — NOT the vow-clock set, which also allows 12); a line without a
+ * parseable count yields null. Pure — unit-tested.
+ *
+ * @param {string} text
+ * @returns {{ prose: string, crisis: { label: string, segments: number } | null }}
+ */
+export function splitImmediateCrisis(text) {
+  const full = String(text ?? "");
+  const m = full.match(/^[ \t>*_-]*Immediate crisis:\s*(.+?)\s*$/im);
+  if (!m) return { prose: full.trim(), crisis: null };
+
+  const prose     = full.replace(m[0], "").trim();
+  const line      = m[1].trim();
+  const segsMatch = line.match(/\((\d+)\s*segments?\)\s*$/i);
+  if (!segsMatch) return { prose, crisis: null };
+
+  const requested = Number(segsMatch[1]);
+  if (!Number.isFinite(requested) || requested <= 0) return { prose, crisis: null };
+  const segments = VALID_TENSION_SEGMENTS.reduce((best, s) =>
+    Math.abs(s - requested) < Math.abs(best - requested) ? s : best,
+  VALID_TENSION_SEGMENTS[0]);
+
+  const label = line.replace(segsMatch[0], "").trim();
+  if (!label) return { prose, crisis: null };
+  return { prose, crisis: { label, segments } };
+}
+
 /**
  * Split a trailing `Vow target: <Name> — <description>` line off the
  * narrator prose (Cluster B / F3). Returns `{ prose, target }` where
@@ -161,17 +198,19 @@ export function splitSituationSummary(text) {
  *
  * @param {string} text
  * @returns {{ prose: string,
- *             vow:       { statement, rank, raw } | null,
- *             clock:     { label, segments }      | null,
- *             target:    { name, description }    | null,
- *             situation: string                   | null }}
+ *             vow:             { statement, rank, raw } | null,
+ *             clock:           { label, segments }      | null,
+ *             immediateCrisis: { label, segments }      | null,
+ *             target:          { name, description }    | null,
+ *             situation:       string                   | null }}
  */
 export function splitIncitingMeta(text) {
-  const s = splitSituationSummary(text);
-  const t = splitVowTarget(s.prose);
-  const c = splitSuggestedClock(t.prose);
-  const v = splitSuggestedVow(c.prose);
-  return { prose: v.prose, vow: v.vow, clock: c.clock, target: t.target, situation: s.situation };
+  const s  = splitSituationSummary(text);
+  const t  = splitVowTarget(s.prose);
+  const ic = splitImmediateCrisis(t.prose);
+  const c  = splitSuggestedClock(ic.prose);
+  const v  = splitSuggestedVow(c.prose);
+  return { prose: v.prose, vow: v.vow, clock: c.clock, immediateCrisis: ic.crisis, target: t.target, situation: s.situation };
 }
 
 function escapeHtml(s) {
@@ -203,7 +242,7 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
       `from this spark — the dramatic event that opens your campaign and sets up your ` +
       `first vow — then Swear an Iron Vow.</em></p>`;
   } else {
-    const { prose, vow, clock, target } = splitIncitingMeta(text);
+    const { prose, vow, clock, immediateCrisis, target } = splitIncitingMeta(text);
     const proseHtml = prose
       .split(/\n{2,}/)
       .map(p => p.trim())
@@ -216,12 +255,19 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
         `${clock ? `<br><span class="sf-incite-clock">⏱ ${escapeHtml(clock.label)} — ` +
           `${clock.segments}-segment clock</span>` : ""}</p>`
       : "";
+    // Proximal crisis (#248 Theme A): a separate, immediate danger rendered
+    // distinct from the long vow — it becomes its own tension clock on swear.
+    const crisisHtml = immediateCrisis
+      ? `<p class="sf-incite-crisis">⏱ <strong>Immediate crisis:</strong> ${escapeHtml(immediateCrisis.label)} ` +
+        `<span class="sf-incite-crisis-clock">(${immediateCrisis.segments}-segment tension clock — a first scene to tackle now, separate from the long vow)</span></p>`
+      : "";
 
     let actionHtml = "";
     if (vow) {
       const creates = [
         "the vow on your character sheet",
         ...(clock  ? [`a ${clock.segments}-segment clock on it`] : []),
+        ...(immediateCrisis ? [`a ${immediateCrisis.segments}-segment tension clock for the immediate crisis`] : []),
         ...(target ? [`<strong>${escapeHtml(target.name)}</strong> as a connection`] : []),
       ].join(" · ");
       actionHtml = sworn
@@ -240,7 +286,7 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
       `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
       `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +
       `</div>`;
-    body = `${sparkLine}${proseHtml}${audioFooter}${vowHtml}${actionHtml}`;
+    body = `${sparkLine}${proseHtml}${audioFooter}${vowHtml}${crisisHtml}${actionHtml}`;
   }
 
   return `<div class="sf-incite-card"><strong>✦ Inciting Incident</strong>${body}</div>`;
@@ -271,7 +317,7 @@ export async function postIncitingIncidentCard(args) {
       sessionId,
       // Structured proposal for the ⚔ Swear this vow click handler — the
       // handler reads flags, never re-parses card HTML (Cluster B).
-      incitingMeta: { vow: meta.vow, clock: meta.clock, target: meta.target },
+      incitingMeta: { vow: meta.vow, clock: meta.clock, immediateCrisis: meta.immediateCrisis, target: meta.target },
     };
   }
   await globalThis.ChatMessage?.create?.({
@@ -312,13 +358,14 @@ export async function runIncitingIncident(campaignState) {
     try {
       const meta = splitIncitingMeta(text);
       campaignState.incitingIncident = {
-        prose:         meta.prose,
+        prose:           meta.prose,
         spark,
-        vow:           meta.vow,
-        clock:         meta.clock,
-        target:        meta.target,
-        sessionId:     campaignState?.currentSessionId ?? null,
-        establishedAt: new Date().toISOString(),
+        vow:             meta.vow,
+        clock:           meta.clock,
+        immediateCrisis: meta.immediateCrisis,
+        target:          meta.target,
+        sessionId:       campaignState?.currentSessionId ?? null,
+        establishedAt:   new Date().toISOString(),
       };
       await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
     } catch (err) {
