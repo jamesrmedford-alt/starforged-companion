@@ -37,12 +37,17 @@ export function isEnabled() {
   }
 }
 
-export function formatTransactionEntry({ model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens }) {
+export function formatTransactionEntry({ model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, durationMs }) {
   const ts    = new Date().toLocaleString();
   const parts = [`in: ${inputTokens}`];
   if (cacheWriteTokens > 0) parts.push(`cache-write: ${cacheWriteTokens}`);
   if (cacheReadTokens  > 0) parts.push(`cache-read: ${cacheReadTokens}`);
   parts.push(`out: ${outputTokens}`);
+  // Per-call round-trip latency: seconds once it's a second or more, ms below
+  // that. Omitted when it wasn't measured (older callers).
+  if (Number.isFinite(durationMs) && durationMs >= 0) {
+    parts.push(durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`);
+  }
   return `<p>[${ts}] ${model} | ${parts.join(' | ')}</p>\n`;
 }
 
@@ -101,7 +106,7 @@ function enqueue(html) {
  * Record one API call. Fire-and-forget — never throws.
  * Called from api-proxy.js after each successful Anthropic response.
  *
- * @param {{ model: string, inputTokens: number, cacheWriteTokens: number, cacheReadTokens: number, outputTokens: number }} entry
+ * @param {{ model: string, inputTokens: number, cacheWriteTokens: number, cacheReadTokens: number, outputTokens: number, durationMs?: number }} entry
  */
 export function logApiTransaction(entry) {
   if (!isEnabled()) return;
@@ -111,6 +116,7 @@ export function logApiTransaction(entry) {
     cacheWriteTokens: entry.cacheWriteTokens ?? 0,
     cacheReadTokens:  entry.cacheReadTokens  ?? 0,
     outputTokens:     entry.outputTokens     ?? 0,
+    durationMs:       entry.durationMs,
   });
 
   if (!globalThis.game?.ready || !globalThis.game?.user?.isGM) {

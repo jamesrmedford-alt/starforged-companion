@@ -57,6 +57,26 @@ describe("formatTransactionEntry", () => {
     expect(noCache).not.toContain("cache-write");
     expect(noCache).not.toContain("cache-read");
   });
+
+  it("appends round-trip latency: seconds at >=1s, ms below, omitted when absent", () => {
+    const slow = formatTransactionEntry({
+      model: "claude-sonnet-4-5", inputTokens: 1000, cacheWriteTokens: 0, cacheReadTokens: 0,
+      outputTokens: 250, durationMs: 4200,
+    });
+    expect(slow).toContain("4.2s");
+
+    const fast = formatTransactionEntry({
+      model: "claude-haiku-4-5", inputTokens: 500, cacheWriteTokens: 0, cacheReadTokens: 0,
+      outputTokens: 100, durationMs: 750,
+    });
+    expect(fast).toContain("750ms");
+
+    const none = formatTransactionEntry({
+      model: "claude-haiku-4-5", inputTokens: 500, cacheWriteTokens: 0, cacheReadTokens: 0,
+      outputTokens: 100,
+    });
+    expect(none).toMatch(/out: 100<\/p>\n$/);   // no latency segment appended
+  });
 });
 
 // ── isEnabled ────────────────────────────────────────────────────────────────

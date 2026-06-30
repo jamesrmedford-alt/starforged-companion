@@ -12,6 +12,7 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Vows you write yourself get the full treatment.** Create a vow directly on your character sheet — instead of using the suggested one — and the Companion now recognises it: it offers a concrete reward to choose (or write your own) and a **⚔ Swear it (roll)** button that rolls Swear an Iron Vow for momentum/complication, exactly like the founding vow. And the **"background vow" label now follows the real founding vow**, so deleting the suggested vow and rolling your own no longer mislabels which one is your background quest.
 - Added: **Fulfilling a vow now pays the connection it served — and its promised reward.** Fulfil a vow that's tied to a connection and that bond deepens (scaled by the vow's rank), and the reward you chose when you took it on is delivered (scaled by your roll). Vows fulfilled directly on the Ironsworn sheet also now credit your Quests legacy. (A vow sworn for a specific person — like the founding vow's target — is linked automatically.)
 - Added: **Link a hand-made vow to a connection.** The "new vow recorded" card now offers a connection picker — choose who the vow is for, and fulfilling it deepens that bond (suggested/inciting vows link automatically).
+- Added: **The API log records per-call latency.** The API Transaction Log journal now shows each Anthropic call's round-trip time next to its token usage, so you can see how long narration (Sonnet) takes versus the quick Haiku helper calls.
 
 ## [1.7.29] — 2026-06-29
 
