@@ -38,6 +38,42 @@ verbatim (not summarising) preserved the design history in the closed issues.
 
 ---
 
+## No silent failures
+
+**Decision:** No code path may swallow a failure without leaving a trace. Every
+`catch` that returns/continues, every guard that declines to act, and every
+"fail-safe" early return logs why:
+- **Genuine failures / unexpected conditions** (a parse that failed, a missing
+  API key where one was expected, an awaited promise that threw, a lookup that
+  found nothing it needed) → `console.warn` / `console.error`.
+- **Deliberate "not applicable" no-ops** (a chat message that isn't ours, a
+  non-canonical client correctly standing down, a setting that's off) →
+  `console.debug`, so they're discoverable when debugging without spamming
+  normal play.
+- The test is: **any path that was *supposed* to act and didn't must log on the
+  client that made that decision.** Pure modules (which take no `console`
+  dependency) surface a reason to their caller, and the caller logs.
+
+**Reason:** A playtester rolled Fulfill Your Vow on the native foundry-ironsworn
+sheet and got no narration and no trace anywhere (#248 Theme D). The
+native-progress-roll bridge could bail at three points — unparseable card,
+unclassifiable roll, or `narrateResolution` with no key — and only the last
+logged, and it logged on the *GM's* console while the player watched their own.
+"It silently did nothing" is indistinguishable from "it worked" and "it
+crashed", which turns every playtest report into a guessing game. A breadcrumb
+on the deciding client turns "nothing happened" into "here's why".
+
+**Rejected:**
+- *Warn on every no-op* — rejected; standing down on the 90% of chat messages
+  that aren't progress rolls would bury real warnings. Not-applicable no-ops use
+  `console.debug` (off by default); genuine failures use `warn` / `error`.
+- *Leave fail-safe returns silent because "it's expected"* — rejected; expected
+  by the author is not the same as visible to the playtester. The whole point is
+  that the unexpected-in-practice case (a vendor card-shape change, a key on the
+  wrong client) reads as expected-and-silent today.
+
+---
+
 ## `.claude/` and local tooling dirs are never added to `.gitignore` or test config
 
 **Decision:** The `.claude/` directory — and any other directory created by the

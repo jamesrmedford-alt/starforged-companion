@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **Resolving a vow on your character sheet now narrates for you.** When you roll a vow's or connection's progress (Fulfill Your Vow / Forge a Bond) directly on the Ironsworn sheet, the narration now plays on **your** client — the one that made the roll and holds your narrator key — instead of only on the GM's. On tables where the narrator key lives with a player rather than the GM, these native-sheet rolls had silently produced no narration at all. The detection now also records *why* it skipped a roll in the console, so a missing narration is never a silent mystery again.
+
+## [1.7.29] — 2026-06-29
+
 - Added: **Players no longer need their own ElevenLabs key to hear narrator audio.** Narrator voice now plays for every player at the table without each one configuring an ElevenLabs key. Playing a clip the GM has already generated needs no key at all; if a clip hasn't been generated yet, the player's client quietly asks the GM to generate it and then plays the result. (Keys stay private as always — a player's request carries only the text to speak, never a key, and only the GM's key is ever used to synthesise.)
 - Fixed: **Momentum and other roll effects now go to the player who rolled, not the GM.** In multiplayer, when a player made a move that granted momentum — or changed health, spirit, or supply, or marked progress — the change was credited to the GM's character instead of the rolling player's. Every roll's effects now land on the character who actually rolled.
 - Changed: **The opening vow is now the whole crew's shared vow.** The inciting incident's "⚔ Swear this vow" now records the founding vow on **every** player character at once — not just whoever clicked it — and keeps its progress in lockstep across the crew, so marking or fulfilling it advances it for everyone. Anyone at the table can click it; the GM records it for the party.
