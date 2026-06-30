@@ -53,6 +53,11 @@ export async function apiPost(url, headers, body) {
     normalisedHeaders["x-api-key"] = normalisedHeaders["x-api-key"].trim();
   }
 
+  // Time the round-trip so the transaction log can surface per-call latency
+  // (the model column distinguishes narration from the Haiku helper calls).
+  // High-res monotonic clock when available; Date.now() is a fine fallback.
+  const startedAt = globalThis.performance?.now?.() ?? Date.now();
+
   // Bounded fetch — an unbounded request that stalls (connection opens, no
   // response) would hang every caller's await forever without throwing. A
   // timeout turns that into a normal rejection the callers already handle.
@@ -83,6 +88,7 @@ export async function apiPost(url, headers, body) {
   }
 
   const data = await res.json();
+  const durationMs = Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt);
 
   // Log the transaction (fire-and-forget — never blocks the response path).
   if (data?.usage) {
@@ -92,6 +98,7 @@ export async function apiPost(url, headers, body) {
       cacheWriteTokens: data.usage.cache_creation_input_tokens   ?? 0,
       cacheReadTokens:  data.usage.cache_read_input_tokens       ?? 0,
       outputTokens:     data.usage.output_tokens                 ?? 0,
+      durationMs,
     });
   }
 
