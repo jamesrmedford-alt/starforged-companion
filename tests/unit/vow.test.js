@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { selectVowTrack, finishVow, VOW_RANKS } from '../../src/moves/vow.js';
+import { selectVowTrack, finishVow, VOW_RANKS, shouldPayFulfilledVow } from '../../src/moves/vow.js';
 
 const OPEN_VOWS = [
   { id: "v1", type: "vow", label: "Rescue the Colonists",  rank: "dangerous",  completed: false },
@@ -114,5 +114,17 @@ describe("finishVow", () => {
 describe("VOW_RANKS", () => {
   it("contains all five rank levels", () => {
     expect(VOW_RANKS).toEqual(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
+  });
+});
+
+describe("shouldPayFulfilledVow (#248 B2)", () => {
+  it("pays on a Fulfill Your Vow hit (strong or weak)", () => {
+    expect(shouldPayFulfilledVow({ moveId: "fulfill_your_vow", outcome: "strong_hit" })).toBe(true);
+    expect(shouldPayFulfilledVow({ moveId: "fulfill_your_vow", outcome: "weak_hit" })).toBe(true);
+  });
+  it("pays nothing on a miss or a non-fulfil move", () => {
+    expect(shouldPayFulfilledVow({ moveId: "fulfill_your_vow", outcome: "miss" })).toBe(false);
+    expect(shouldPayFulfilledVow({ moveId: "forge_a_bond", outcome: "strong_hit" })).toBe(false);
+    expect(shouldPayFulfilledVow()).toBe(false);
   });
 });
