@@ -10739,7 +10739,12 @@ function registerIncitingIncidentTests(quench) {
         it("creates the vow (with clock) on a real PC and the vow-target connection", async function () {
           this.timeout(30000);
           const { postIncitingIncidentCard } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
-          const { executeSwearVow }          = await import(`${MODULE_PATH}/session/swearVow.js`);
+          // Phase 3 (#248 Theme C): the ⚔ button now routes through the Swear an
+          // Iron Vow move (buildSwearMovePost — unit-tested) so it actually rolls;
+          // the GM-side swear branch calls swearSharedVowForAll to create the vow.
+          // Exercise that creation directly here — the pipeline's confirm dialog +
+          // dice roll can't run headless.
+          const { swearSharedVowForAll }     = await import(`${MODULE_PATH}/session/swearVow.js`);
 
           // Seeded PC so getPlayerActors resolves deterministically.
           const pc = await Actor.create({ name: "Quench Vow PC", type: "character" });
@@ -10768,7 +10773,7 @@ function registerIncitingIncidentTests(quench) {
           const connIdsBefore = [...(stateBefore?.connectionIds ?? [])];
 
           try {
-            const result = await executeSwearVow(card);
+            const result = await swearSharedVowForAll(card);
 
             const vow = (pc.items?.contents ?? []).find(
               i => i.type === "progress" && i.system?.subtype === "vow",
@@ -10785,8 +10790,8 @@ function registerIncitingIncidentTests(quench) {
             assert.isOk(target, "the target NPC card actor exists");
             assert.strictEqual(target.name, targetName, "NPC card carries the narrator's name");
 
-            // Idempotency: a second click must not duplicate the vow.
-            await executeSwearVow(card);
+            // Idempotency: a second swear must not duplicate the vow.
+            await swearSharedVowForAll(card);
             const vows = (pc.items?.contents ?? []).filter(
               i => i.type === "progress" && i.system?.subtype === "vow",
             );
