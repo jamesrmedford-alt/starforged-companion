@@ -13,6 +13,7 @@ All notable changes to Starforged Companion are documented here.
 - Added: **Fulfilling a vow now pays the connection it served — and its promised reward.** Fulfil a vow that's tied to a connection and that bond deepens (scaled by the vow's rank), and the reward you chose when you took it on is delivered (scaled by your roll). Vows fulfilled directly on the Ironsworn sheet also now credit your Quests legacy. (A vow sworn for a specific person — like the founding vow's target — is linked automatically.)
 - Added: **Link a hand-made vow to a connection.** The "new vow recorded" card now offers a connection picker — choose who the vow is for, and fulfilling it deepens that bond (suggested/inciting vows link automatically).
 - Added: **The API log records per-call latency.** The API Transaction Log journal now shows each Anthropic call's round-trip time next to its token usage, so you can see how long narration (Sonnet) takes versus the quick Haiku helper calls.
+- Added: **Claude Sonnet 5 is selectable for narration.** Companion Settings → Narrator → Narration Model now offers Sonnet 5 alongside Sonnet 4.5 (still the default) and Haiku 4.5. Sonnet 5 narration runs without extended thinking, so it stays fast and never truncates the scene-memory sidecar.
 
 ## [1.7.29] — 2026-06-29
 

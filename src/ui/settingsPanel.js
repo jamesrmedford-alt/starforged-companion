@@ -129,6 +129,7 @@ const SALIENCE_CHOICES = {
 const NARRATION_MODELS = {
   'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
   'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
+  'claude-sonnet-5':            'Sonnet 5 (latest, most capable)',
 };
 
 const NARRATION_PERSPECTIVES = {
