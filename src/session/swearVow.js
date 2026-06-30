@@ -23,7 +23,7 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem, setSharedVowReward } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
@@ -499,5 +499,141 @@ export function registerSharedVowSyncHook() {
     } catch (err) {
       console.warn(`${MODULE_ID} | swearVow: shared-vow sync failed:`, err?.message ?? err);
     }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Player-authored vows (#248 Theme B1): recognise a vow made on the sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pure: should the module offer setup (reward + swear roll) for a just-created
+ * Item? True only for a hand-made vow — a progress/subtype:"vow" Item with no
+ * module vowId (so not an inciting/shared vow we created) that hasn't already
+ * been offered. The caller checks the parent is a player character.
+ *
+ * @param {Item} item
+ * @returns {boolean}
+ */
+export function shouldOfferVowSetup(item) {
+  if (item?.type !== "progress") return false;
+  if (String(item?.system?.subtype ?? "") !== "vow") return false;
+  const f = item?.flags?.[MODULE_ID] ?? {};
+  if (f.vowId) return false;            // module-created (inciting / shared) vow
+  if (f.vowSetupOffered) return false;  // already offered for this vow
+  return true;
+}
+
+/**
+ * Pure: the "new vow recorded" setup card HTML — states the mechanical stakes
+ * and offers a ⚔ Swear it (roll) button. The reward-choice card is posted
+ * alongside (same flow as swearing the inciting vow). Escapes its inputs.
+ *
+ * @param {{ name: string, rank: string|null }} vow
+ * @returns {string}
+ */
+export function buildPlayerVowSetupHtml({ name, rank } = {}) {
+  const vrank = rank ?? "dangerous";
+  return `<div class="sf-card sf-player-vow"><div class="sf-card-header">🆕 New vow recorded</div>`
+    + `<div class="sf-card-body">`
+    + `<p>"${escapeHtml(name ?? "Unnamed Vow")}"${rank ? ` <em>(${escapeHtml(rank)})</em>` : ""}</p>`
+    + `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`
+    + `<p><button type="button" class="entity-btn" data-action="sf-player-vow-swear">⚔ Swear it (roll)</button></p>`
+    + `<p class="sf-incite-hint">Pick a reward for it below.</p>`
+    + `</div></div>`;
+}
+
+/**
+ * Pure: build a forced Swear an Iron Vow move post for a hand-made vow by name
+ * (no inciting card behind it, so the GM-side swear branch just rolls + scenes —
+ * the vow already exists). Returns null for an empty name.
+ *
+ * @param {string} vowName
+ * @returns {{ content: string, flags: object } | null}
+ */
+export function buildSwearMovePostForName(vowName) {
+  const name = String(vowName ?? "").trim();
+  if (!name) return null;
+  return {
+    content: `Swear an iron vow: ${name}.`,
+    flags: { [MODULE_ID]: {
+      bypassPacing:     true,
+      forcedMoveId:     "swear_an_iron_vow",
+      forcedMoveTarget: name,
+    } },
+  };
+}
+
+/**
+ * Recognise a vow authored directly on the character sheet and offer it the
+ * same setup as a sworn vow: a reward proposal + a ⚔ Swear it (roll) button
+ * (#248 Theme B1). Single-emitter on the canonical GM (it writes Item flags +
+ * proposes rewards). Skipped pre-`ready` (world load / import). Idempotent via
+ * the vowSetupOffered flag. Register once on ready.
+ */
+export function registerPlayerVowHook() {
+  if (registerPlayerVowHook._installed) return;
+  registerPlayerVowHook._installed = true;
+  Hooks.on("createItem", async (item) => {
+    try {
+      if (!globalThis.game?.ready) return;                       // skip world load / import
+      if (!isCanonicalGM()) return;                              // single emitter + can write flags
+      if (!isPlayerCharacterActor(item?.parent ?? null)) return;
+      if (!shouldOfferVowSetup(item)) return;
+
+      // Mark it (so edits/re-renders don't re-offer) and give it a vowId so the
+      // reward-choice flow (setSharedVowReward, keyed by vowId) can find it.
+      await item.setFlag?.(MODULE_ID, "vowSetupOffered", true).catch(() => {});
+      await item.setFlag?.(MODULE_ID, "vowId", item.id).catch(() => {});
+
+      const name = item.name ?? "Unnamed Vow";
+      const rank = item.system?.rank ?? null;
+      await ChatMessage.create({
+        content: buildPlayerVowSetupHtml({ name, rank }),
+        flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name } },
+      }).catch(err => console.warn(`${MODULE_ID} | playerVow: setup card failed:`, err?.message ?? err));
+
+      // Same reward flow as swearing the inciting vow — propose two (or
+      // write-your-own), stored on the vow as promised, delivered on fulfilment.
+      try {
+        const apiKey  = globalThis.game?.settings?.get?.(MODULE_ID, "claudeApiKey") ?? "";
+        const options = await proposeRewards({ kind: "vow", target: name, apiKey });
+        await postRewardChoiceCard(item.id, options);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: reward proposal failed:`, err?.message ?? err);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | playerVow: createItem hook failed:`, err?.message ?? err);
+    }
+  });
+}
+
+/**
+ * Wire the ⚔ Swear it (roll) button on the player-vow setup card: posts a forced
+ * Swear an Iron Vow move for the vow (the pipeline rolls +heart → momentum /
+ * complication, credited to the clicker; the vow already exists). Register once.
+ */
+export function registerPlayerVowSwearHook() {
+  if (registerPlayerVowSwearHook._installed) return;
+  registerPlayerVowSwearHook._installed = true;
+  onChatMessageRender((message, root) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.playerVowCard) return;
+    const btn = root.querySelector('[data-action="sf-player-vow-swear"]');
+    if (!btn) return;
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
+      const post = buildSwearMovePostForName(f.vowName);
+      if (!post) { fresh.disabled = false; return; }
+      try {
+        await globalThis.ChatMessage?.create?.(post);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | playerVow: swear post failed:`, err?.message ?? err);
+        fresh.disabled = false;
+      }
+    });
   });
 }

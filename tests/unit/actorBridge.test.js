@@ -640,6 +640,23 @@ describe('readVows', () => {
     });
   });
 
+  it('tags the SHARED inciting vow as background regardless of creation order (#248 B1)', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          { id: 'own', type: 'progress', name: 'My own vow',
+            system: { subtype: 'vow', rank: 'dangerous', progress: 0 }, flags: {} },
+          { id: 'founding', type: 'progress', name: 'The founding vow',
+            system: { subtype: 'vow', rank: 'formidable', progress: 0 },
+            flags: { 'starforged-companion': { sharedVow: true } } },
+        ],
+      },
+    });
+    const vows = readVows(actor);
+    expect(vows.find(v => v.id === 'founding').isBackground).toBe(true);
+    expect(vows.find(v => v.id === 'own').isBackground).toBe(false);
+  });
+
   it('surfaces the vow countdown clock when present, null otherwise', () => {
     const actor = freshActor({
       items: {
