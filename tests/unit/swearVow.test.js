@@ -206,5 +206,17 @@ describe('player-authored vow recognition (#248 B1)', () => {
       expect(html).not.toContain('<script>x');
       expect(html).toContain('&lt;script&gt;');
     });
+    it('renders the connection picker when connections exist (#248 B-link)', () => {
+      const html = buildPlayerVowSetupHtml({ name: 'V', rank: 'dangerous', connections: ['Lucas Sedano', 'Kira'] });
+      expect(html).toContain('data-action="sf-player-vow-link"');
+      expect(html).toContain('class="sf-vow-connection"');
+      expect(html).toContain('Lucas Sedano');
+      expect(html).toContain('Kira');
+    });
+    it('omits the picker when there are no connections', () => {
+      const html = buildPlayerVowSetupHtml({ name: 'V', rank: 'dangerous', connections: [] });
+      expect(html).not.toContain('data-action="sf-player-vow-link"');
+      expect(html).not.toContain('sf-vow-connection');
+    });
   });
 });

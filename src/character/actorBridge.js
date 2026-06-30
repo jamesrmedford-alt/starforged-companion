@@ -466,6 +466,28 @@ export async function setSharedVowReward(vowId, reward) {
 }
 
 /**
+ * Set the linked connection on a vow Item (found by its vowId flag across all
+ * player characters), so fulfilling/advancing it deepens that bond (#248
+ * B-link). GM-only (Item flag write). No-op when the vow or name is missing.
+ *
+ * @param {string} vowId
+ * @param {string} connectionName
+ * @returns {Promise<void>}
+ */
+export async function setVowLinkedConnection(vowId, connectionName) {
+  if (!vowId || !connectionName) return;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+        await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err =>
+          console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err));
+      }
+    }
+  }
+}
+
+/**
  * Record a granted concrete reward on the actor (#241 Phase 2) for the non-meter
  * forms (gear / asset / contact / knowledge) — appends to a module flag list so
  * the grant is tracked on the sheet. Meter forms (supply / momentum) use

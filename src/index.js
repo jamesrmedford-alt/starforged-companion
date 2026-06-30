@@ -197,7 +197,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll, registerPlayerVowHook, registerPlayerVowSwearHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -4688,6 +4688,8 @@ onChatMessageRender((message, root) => {
 registerSwearVowHandler();
 // Wire the ⚔ Swear it (roll) button on player-authored vow setup cards (#248 B1).
 registerPlayerVowSwearHook();
+// Wire the 🤝 Link button on player-authored vow setup cards (#248 B-link).
+registerPlayerVowLinkHook();
 
 /**
  * Wire the "↻ Refresh" button on campaign recap cards.
