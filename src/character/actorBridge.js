@@ -191,6 +191,14 @@ export function readVows(actor) {
   const list  = Array.isArray(items) ? items : [];
   const vows  = list.filter(i => i?.type === 'progress' && i?.system?.subtype === 'vow');
 
+  // The founding/background vow is the SHARED inciting vow (flags.sharedVow),
+  // not merely the first-created one — sidestepping the suggested vow and
+  // authoring your own (then deleting the suggested) must not silently relabel
+  // which vow is "background" (#248 B1). Fall back to the first vow (the
+  // foundry-ironsworn community convention) only when no shared vow exists.
+  const sharedIdx = vows.findIndex(v => v?.flags?.[MODULE_ID]?.sharedVow === true);
+  const bgIdx     = sharedIdx >= 0 ? sharedIdx : 0;
+
   return vows.map((v, i) => {
     const ticks = Number(v.system?.progress ?? v.system?.current ?? 0);
     const hasClock = v.system?.hasClock === true;
@@ -201,7 +209,7 @@ export function readVows(actor) {
       ticks,
       progress:     Math.floor(ticks / 4),
       completed:    !!v.system?.completed,
-      isBackground: i === 0,
+      isBackground: i === bgIdx,
       // Countdown clock (the deadline/threat running against the hero, e.g.
       // "Dani's captivity"), surfaced so the narrator can reference it and the
       // pipeline can advance it on a Pay the Price. null when the vow has none.

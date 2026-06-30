@@ -197,7 +197,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll, registerPlayerVowHook, registerPlayerVowSwearHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -4419,6 +4419,9 @@ Hooks.once("ready", () => {
   registerSharedVowSyncHook();
   // Reward-choice card (#241 Phase 2) — pick a proposed reward or write your own.
   registerRewardChoiceHook();
+  // Player-authored vows (#248 B1) — a vow made on the sheet gets the same setup
+  // (reward proposal + ⚔ Swear it roll). GM-gated createItem detection.
+  registerPlayerVowHook();
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
@@ -4595,6 +4598,8 @@ onChatMessageRender((message, root) => {
 // Wire the "⚔ Swear this vow" button on inciting-incident cards
 // (Cluster B — src/session/swearVow.js owns the handler + execution).
 registerSwearVowHandler();
+// Wire the ⚔ Swear it (roll) button on player-authored vow setup cards (#248 B1).
+registerPlayerVowSwearHook();
 
 /**
  * Wire the "↻ Refresh" button on campaign recap cards.

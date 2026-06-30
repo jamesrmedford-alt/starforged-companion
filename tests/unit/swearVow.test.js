@@ -8,7 +8,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildSwearVowPlan, computeSharedVowSyncUpdates, buildSwearMovePost } from '../../src/session/swearVow.js';
+import {
+  buildSwearVowPlan, computeSharedVowSyncUpdates, buildSwearMovePost,
+  shouldOfferVowSetup, buildPlayerVowSetupHtml, buildSwearMovePostForName,
+} from '../../src/session/swearVow.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -155,5 +158,53 @@ describe('buildSwearMovePost (#248 Theme C — swearing rolls)', () => {
     expect(buildSwearMovePost(card(null))).toBeNull();
     expect(buildSwearMovePost(card({ vow: null }))).toBeNull();
     expect(buildSwearMovePost(undefined)).toBeNull();
+  });
+});
+
+describe('player-authored vow recognition (#248 B1)', () => {
+  const vow = (flags = {}) => ({ type: 'progress', system: { subtype: 'vow' }, flags: { [MODULE_ID]: flags } });
+
+  describe('shouldOfferVowSetup', () => {
+    it('offers for a hand-made vow with no module flags', () => {
+      expect(shouldOfferVowSetup({ type: 'progress', system: { subtype: 'vow' }, flags: {} })).toBe(true);
+    });
+    it('skips a module-created vow (has vowId)', () => {
+      expect(shouldOfferVowSetup(vow({ vowId: 'm1' }))).toBe(false);
+    });
+    it('skips a vow already offered', () => {
+      expect(shouldOfferVowSetup(vow({ vowSetupOffered: true }))).toBe(false);
+    });
+    it('skips non-vow progress items, non-progress items, and null', () => {
+      expect(shouldOfferVowSetup({ type: 'progress', system: { subtype: 'bond' }, flags: {} })).toBe(false);
+      expect(shouldOfferVowSetup({ type: 'weapon', system: {}, flags: {} })).toBe(false);
+      expect(shouldOfferVowSetup(null)).toBe(false);
+    });
+  });
+
+  describe('buildSwearMovePostForName', () => {
+    it('builds a forced swear move for a named vow (no inciting id)', () => {
+      const post = buildSwearMovePostForName('Stop the crash');
+      expect(post.flags[MODULE_ID].forcedMoveId).toBe('swear_an_iron_vow');
+      expect(post.flags[MODULE_ID].forcedMoveTarget).toBe('Stop the crash');
+      expect(post.flags[MODULE_ID].incitingSwearMessageId).toBeUndefined();
+    });
+    it('returns null for an empty name', () => {
+      expect(buildSwearMovePostForName('   ')).toBeNull();
+      expect(buildSwearMovePostForName(undefined)).toBeNull();
+    });
+  });
+
+  describe('buildPlayerVowSetupHtml', () => {
+    it('renders the swear button, the vow name, and a stakes line', () => {
+      const html = buildPlayerVowSetupHtml({ name: 'Avenge my sister', rank: 'formidable' });
+      expect(html).toContain('data-action="sf-player-vow-swear"');
+      expect(html).toContain('Avenge my sister');
+      expect(html).toContain('formidable');
+    });
+    it('escapes the vow name', () => {
+      const html = buildPlayerVowSetupHtml({ name: '<script>x</script>', rank: 'dangerous' });
+      expect(html).not.toContain('<script>x');
+      expect(html).toContain('&lt;script&gt;');
+    });
   });
 });
