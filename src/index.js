@@ -197,7 +197,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -1172,14 +1172,29 @@ export function registerChatHook() {
           .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
       }
 
-      // Swear an Iron Vow — paint a brief Iron-truth-grounded scene of the oath
-      // (#241 follow-up). Fires on the move regardless of outcome (the vow is
-      // sworn either way); GM-gated; no-op when the vow-scene toggle is off.
+      // Swear an Iron Vow — the vow is sworn regardless of outcome; the resolver
+      // applies the momentum (+2 strong / +1 weak) and complication. GM-gated.
       if (resolution.moveId === "swear_an_iron_vow" && game.user.isGM) {
-        await narrateAndPostVowSwearing({
-          vow: { name: interpretation.moveTarget ?? null, rank: null },
-          campaignState,
-        }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
+        // #248 Theme C: an inciting "⚔ Swear this vow" click routes through this
+        // move so it actually rolls (+heart → momentum/complication, credited to
+        // the clicker). Now that the roll has resolved, create the shared vow from
+        // the original card's incitingMeta — swearSharedVowForAll posts its own
+        // (richer, ranked) vow-swearing scene + connection + crisis clock + reward.
+        // A plain typed swear (no inciting card) just gets the generic scene.
+        const incitingSwearId = message.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null;
+        const incitingMsg = incitingSwearId ? game.messages?.get?.(incitingSwearId) : null;
+        if (incitingSwearId && !incitingMsg) {
+          console.warn(`${MODULE_ID} | inciting swear: original card ${incitingSwearId} not found — no vow created`);
+        }
+        if (incitingMsg) {
+          await swearSharedVowForAll(incitingMsg).catch(err =>
+            console.warn(`${MODULE_ID} | inciting swear creation failed:`, err?.message ?? err));
+        } else {
+          await narrateAndPostVowSwearing({
+            vow: { name: interpretation.moveTarget ?? null, rank: null },
+            campaignState,
+          }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
+        }
       }
 
       // Forge a Bond strong hit — mark connection as bonded and pay bonds legacy.

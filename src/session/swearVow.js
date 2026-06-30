@@ -83,25 +83,52 @@ export function buildSwearVowPlan(meta, ctx = {}) {
 }
 
 /**
- * Execute a swear-vow click. The inciting vow is the crew's SHARED founding
- * vow: it is created on every player character and its progress is kept in
- * lockstep across all of them (see registerSharedVowSyncHook). Creating Items
- * on PCs the clicker doesn't own — and the vow-target connection — are
- * privileged writes, so anyone who isn't the canonical GM relays the action;
- * the GM performs it for the whole table and the Items sync down to each sheet.
+ * Build the forced Swear an Iron Vow move post for an inciting "⚔ Swear this
+ * vow" click (#248 Theme C). Pure — returns the ChatMessage payload, or null
+ * when the card carries no suggested vow.
+ *
+ * @param {ChatMessage} message  the inciting-incident card
+ * @returns {{ content: string, flags: object } | null}
+ */
+export function buildSwearMovePost(message) {
+  const meta = message?.flags?.[MODULE_ID]?.incitingMeta ?? null;
+  if (!meta?.vow?.statement) return null;
+  return {
+    content: `Swear an iron vow: ${meta.vow.statement}.`,
+    flags: { [MODULE_ID]: {
+      bypassPacing:           true,
+      forcedMoveId:           "swear_an_iron_vow",
+      forcedMoveTarget:       meta.vow.statement,
+      incitingSwearMessageId: message?.id ?? null,
+    } },
+  };
+}
+
+/**
+ * Execute a swear-vow click. Swearing rolls (#248 Theme C): the click routes
+ * through the **Swear an Iron Vow** move so it actually rolls (+heart →
+ * momentum on a hit, complication on a weak hit/miss), crediting the clicker.
+ * Posting the forced-move ChatMessage is itself the relay — any client may post
+ * it; the canonical GM runs the move pipeline and, in the GM-side swear branch
+ * (src/index.js), creates the shared vow from this card's incitingMeta (created
+ * on every player character + kept in lockstep, see registerSharedVowSyncHook).
  * Never throws — failures surface as notifications + console warnings.
  *
  * @param {ChatMessage} message
- * @returns {Promise<{ actors: Actor[], connection: Object|null }|null>}
+ * @returns {Promise<null>}
  */
 export async function executeSwearVow(message) {
-  if (isCanonicalGM()) return swearSharedVowForAll(message);
+  const post = buildSwearMovePost(message);
+  if (!post) {
+    globalThis.ui?.notifications?.warn("Starforged Companion: no suggested vow found on this card.");
+    return null;
+  }
   try {
-    globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.swearShared", messageId: message?.id });
-    globalThis.ui?.notifications?.info(
-      "Starforged Companion: swearing the crew's vow — your GM is recording it for everyone.");
+    await globalThis.ChatMessage?.create?.(post);
   } catch (err) {
-    console.warn(`${MODULE_ID} | swearVow: shared-vow relay emit failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | swearVow: forced swear-move post failed:`, err?.message ?? err);
+    globalThis.ui?.notifications?.error(
+      "Starforged Companion: couldn't start the Swear an Iron Vow roll — see console.");
   }
   return null;
 }
@@ -309,10 +336,12 @@ export function registerSwearVowHandler() {
     fresh.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      fresh.disabled = true;
+      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only if the post itself fails
       executeSwearVow(message)
-        .catch(err => console.error(`${MODULE_ID} | swearVow: execute failed:`, err))
-        .finally(() => { fresh.disabled = false; });
+        .catch(err => {
+          console.error(`${MODULE_ID} | swearVow: execute failed:`, err);
+          fresh.disabled = false;
+        });
     });
   });
 }

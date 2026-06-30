@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildSwearVowPlan, computeSharedVowSyncUpdates } from '../../src/session/swearVow.js';
+import { buildSwearVowPlan, computeSharedVowSyncUpdates, buildSwearMovePost } from '../../src/session/swearVow.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -135,5 +135,25 @@ describe('computeSharedVowSyncUpdates', () => {
     const out = computeSharedVowSyncUpdates(src, [{ items: [src, sib] }]);
     expect(out).toHaveLength(1);
     expect(out[0].update).toEqual({ 'system.current': 8, 'system.clockTicks': 3 });
+  });
+});
+
+describe('buildSwearMovePost (#248 Theme C — swearing rolls)', () => {
+  const card = (incitingMeta, id = 'msg-1') => ({ id, flags: { [MODULE_ID]: { incitingMeta } } });
+
+  it('builds a forced Swear an Iron Vow move that carries the inciting card id', () => {
+    const post = buildSwearMovePost(card(META, 'incite-42'));
+    const f = post.flags[MODULE_ID];
+    expect(post.content).toContain('I will reach Vance');
+    expect(f.bypassPacing).toBe(true);
+    expect(f.forcedMoveId).toBe('swear_an_iron_vow');
+    expect(f.forcedMoveTarget).toBe('I will reach Vance before his life support fails');
+    expect(f.incitingSwearMessageId).toBe('incite-42');
+  });
+
+  it('returns null when the card carries no suggested vow', () => {
+    expect(buildSwearMovePost(card(null))).toBeNull();
+    expect(buildSwearMovePost(card({ vow: null }))).toBeNull();
+    expect(buildSwearMovePost(undefined)).toBeNull();
   });
 });
