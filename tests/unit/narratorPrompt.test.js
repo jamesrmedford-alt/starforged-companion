@@ -134,6 +134,7 @@ describe('buildNarratorSystemPrompt()', () => {
           prose:  'Councilor Vex was murdered three cycles ago aboard Paradox Station.',
           vow:    { statement: 'Expose who killed Vex', rank: 'dangerous' },
           clock:  { label: 'The cover-up deepens', segments: 6 },
+          immediateCrisis: { label: 'Lyssa flees the station', segments: 4 },
           target: { name: 'Administrator Lyssa Chen', description: 'station authority' },
         },
       }),
@@ -145,6 +146,7 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Administrator Lyssa Chen');
     expect(prompt).toContain('Expose who killed Vex');
     expect(prompt).toContain('The cover-up deepens');
+    expect(prompt).toContain('Lyssa flees the station');   // #248 immediate crisis in premise
   });
 
   it('omits the CAMPAIGN PREMISE block when no inciting incident is recorded', () => {
@@ -1055,7 +1057,9 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
   it('adds the premise-capture addendum in inciting_incident mode only', () => {
     const inciting = appendSidecarInstruction({ mode: 'inciting_incident' });
     expect(inciting).toMatch(/OPENING SCENE/);
-    expect(inciting).toMatch(/what\s+fails if the character is too late/);
+    // #248 Theme A: the sidecar no longer presumes a deadline always exists.
+    expect(inciting).toMatch(/genuinely time-gated/);
+    expect(inciting).toMatch(/many openings have no deadline/i);
 
     const paced = appendSidecarInstruction({ mode: 'paced_narrative' });
     expect(paced).not.toMatch(/OPENING SCENE/);
@@ -1114,9 +1118,20 @@ describe('inciting_incident role description — structured proposal block (Clus
     const prompt = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
     expect(prompt).toMatch(/Suggested vow: <a short first-person vow statement> \(<rank>\)/);
     expect(prompt).toMatch(/Suggested clock: <a short clock label> \(<segments> segments\)/);
+    expect(prompt).toMatch(/Immediate crisis: <a short danger label> \(<segments> segments\)/);
     expect(prompt).toMatch(/Vow target: <Name> —/);
-    expect(prompt).toMatch(/ONLY when the incident carries explicit time pressure/);
+    // #248 Theme A: the vow clock is re-anchored on the vow's own deadline
+    // (rare + coupled), not the opening scene's drama.
+    expect(prompt).toMatch(/DEADLINE ON THE VOW ITSELF/);
+    expect(prompt).toMatch(/RARE/);
     expect(prompt).toMatch(/4, 6, 8,\s*10, 12/);
+  });
+
+  it('describes the immediate-crisis line as a separate proximal danger (#248 Theme A)', () => {
+    const cs = { sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    const prompt = buildNarratorSystemPrompt(cs, {}, null, '', { mode: 'inciting_incident' });
+    expect(prompt).toMatch(/NOT the long vow's deadline/);
+    expect(prompt).toMatch(/4, 6, 8, 10 \(fewer = more urgent\)/);
   });
 
   it('binds an established target NPC to its recorded role/goal/pronouns (PLAYTEST-1717 C)', () => {

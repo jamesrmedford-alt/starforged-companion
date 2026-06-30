@@ -166,6 +166,19 @@ export async function swearSharedVowForAll(message) {
     return null;
   }
 
+  // 1b. The proximal crisis (#248 Theme A): a standalone tension clock — a first
+  //     scene to tackle now, separate from the long vow (whose own deadline clock
+  //     is now rare). Created once, GM-side, on swear.
+  const crisis = meta?.immediateCrisis ?? null;
+  if (crisis?.label) {
+    try {
+      const { createClock } = await import("../clocks/clocks.js");
+      await createClock({ name: crisis.label, segments: crisis.segments ?? 4, type: "tension" });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: immediate-crisis clock creation failed:`, err?.message ?? err);
+    }
+  }
+
   // 2. The vow-target connection (same pipeline as make_a_connection auto-create).
   let connection = null;
   if (plan.createTarget && campaignState) {
@@ -190,7 +203,7 @@ export async function swearSharedVowForAll(message) {
     }
   }
 
-  await postSwornConfirmation({ plan, actors: sworn, connection });
+  await postSwornConfirmation({ plan, actors: sworn, connection, crisis });
   await markCardSworn(message).catch(err =>
     console.debug?.(`${MODULE_ID} | swearVow: card sworn-state update skipped:`, err?.message ?? err));
 
@@ -230,7 +243,7 @@ async function postRewardChoiceCard(vowId, options) {
 }
 
 /** Post the confirmation card describing exactly what was created. */
-async function postSwornConfirmation({ plan, actors, connection }) {
+async function postSwornConfirmation({ plan, actors, connection, crisis = null }) {
   const names = (actors ?? []).map(a => a?.name).filter(Boolean).map(escapeHtml).join(", ");
   const vrank = plan.vow.rank ?? "dangerous";
   const lines = [
@@ -239,6 +252,9 @@ async function postSwornConfirmation({ plan, actors, connection }) {
       `${plan.vow.clock ? ` · ⏱ ${plan.vow.clock.max}-segment clock attached` : ""}</p>`,
     `<p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(vrank))} ${escapeHtml(legacyRewardLine(vrank, "Quests"))}</em></p>`,
   ];
+  if (crisis?.label) {
+    lines.push(`<p class="sf-incite-crisis">⏱ <strong>Immediate crisis:</strong> ${escapeHtml(crisis.label)} — a ${crisis.segments}-segment tension clock (a first scene to tackle now, separate from the vow).</p>`);
+  }
   if (connection) {
     lines.push(`<p>✦ <strong>${escapeHtml(connection.name)}</strong> added to Connections` +
       ` (find them in the Entities panel; use ✦ Finalise for a portrait).</p>`);

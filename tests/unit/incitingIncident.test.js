@@ -35,6 +35,7 @@ import {
   buildIncitingIncidentUserMessage,
   splitSuggestedVow,
   splitSuggestedClock,
+  splitImmediateCrisis,
   splitVowTarget,
   splitSituationSummary,
   splitIncitingMeta,
@@ -208,6 +209,34 @@ describe("splitSuggestedClock (F4)", () => {
   });
 });
 
+describe("splitImmediateCrisis (#248 Theme A)", () => {
+  it("parses label + segments and strips the line from prose", () => {
+    const { prose, crisis } = splitImmediateCrisis(
+      "Prose body here.\nImmediate crisis: Runaway transport (4 segments)",
+    );
+    expect(crisis).toEqual({ label: "Runaway transport", segments: 4 });
+    expect(prose).toBe("Prose body here.");
+  });
+
+  it("snaps unsupported counts to the tension-clock set (4/6/8/10 — never 12)", () => {
+    expect(splitImmediateCrisis("x\nImmediate crisis: A (5 segments)").crisis.segments).toBe(4);
+    expect(splitImmediateCrisis("x\nImmediate crisis: A (9 segments)").crisis.segments).toBe(8);
+    expect(splitImmediateCrisis("x\nImmediate crisis: A (20 segments)").crisis.segments).toBe(10);
+    expect(splitImmediateCrisis("x\nImmediate crisis: A (1 segment)").crisis.segments).toBe(4);
+  });
+
+  it("returns null when the line has no parseable count or no label", () => {
+    expect(splitImmediateCrisis("x\nImmediate crisis: hurry").crisis).toBeNull();
+    expect(splitImmediateCrisis("x\nImmediate crisis: (6 segments)").crisis).toBeNull();
+  });
+
+  it("returns null when no line is present", () => {
+    const out = splitImmediateCrisis("Just prose.");
+    expect(out.crisis).toBeNull();
+    expect(out.prose).toBe("Just prose.");
+  });
+});
+
 describe("splitVowTarget (F3)", () => {
   it("parses name and description across an em dash", () => {
     const { target, prose } = splitVowTarget(
@@ -287,6 +316,18 @@ describe("splitIncitingMeta", () => {
     expect(meta.prose).toBe("The distress beacon cuts through the methane haze.");
     expect(meta.prose).not.toMatch(/Situation:/);
   });
+
+  it("extracts the immediate crisis as its own field, separate from the vow clock (#248)", () => {
+    const meta = splitIncitingMeta([
+      "The transport spins out of control.",
+      "Suggested vow: I will discover the source of the sickness (formidable)",
+      "Immediate crisis: The transport crashes into the habitat (4 segments)",
+    ].join("\n"));
+    expect(meta.vow.statement).toBe("I will discover the source of the sickness");
+    expect(meta.clock).toBeNull();                                  // no vow deadline
+    expect(meta.immediateCrisis).toEqual({ label: "The transport crashes into the habitat", segments: 4 });
+    expect(meta.prose).toBe("The transport spins out of control.");
+  });
 });
 
 describe("splitSituationSummary", () => {
@@ -335,6 +376,19 @@ describe("renderIncitingIncidentCard — swear-vow affordance (Cluster B)", () =
   it("renders no button when the narrator omitted the vow line", () => {
     const html = renderIncitingIncidentCard({ spark: SPARK, text: "Prose only." });
     expect(html).not.toContain('data-action="sf-swear-vow"');
+  });
+
+  it("renders the immediate crisis as its own line + in the creates hint (#248)", () => {
+    const text = [
+      "The transport spins out.",
+      "Suggested vow: I will discover the source of the sickness (formidable)",
+      "Immediate crisis: Runaway transport (4 segments)",
+    ].join("\n");
+    const html = renderIncitingIncidentCard({ spark: SPARK, text });
+    expect(html).toContain("Immediate crisis:");                 // rendered as a labelled line
+    expect(html).toContain("Runaway transport");
+    expect(html).toContain("4-segment tension clock");
+    expect(html).toContain("a first scene to tackle now");
   });
 });
 
