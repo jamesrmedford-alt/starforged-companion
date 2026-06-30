@@ -51,3 +51,17 @@ export async function finishVow({ moveTarget, ranksDown = 0 }, deps) {
   const completed = await deps.completeTrack(track.id);
   return { track: completed ?? track, legacyTicks: legacyRewardTicks(track.rank, ranksDown) };
 }
+
+/**
+ * Pure: does a Fulfill Your Vow resolution earn its vow's connection payoff +
+ * promised reward (#248 B2)? True only on a hit — the vow is fulfilled, so the
+ * linked bond deepens and the reward is delivered (scaled by outcome). A miss
+ * pays nothing (the vow isn't fulfilled). Used by the native-sheet fulfil hook.
+ *
+ * @param {{ moveId: string, outcome: string }} resolution
+ * @returns {boolean}
+ */
+export function shouldPayFulfilledVow({ moveId, outcome } = {}) {
+  return moveId === "fulfill_your_vow"
+    && (outcome === "strong_hit" || outcome === "weak_hit");
+}

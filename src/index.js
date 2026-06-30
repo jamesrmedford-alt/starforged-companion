@@ -99,8 +99,8 @@ import {
   addProgressTrack,
   completeProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, finishExpedition } from "./moves/expedition.js";
-import { finishVow } from "./moves/vow.js";
+import { applyExpeditionProgress, finishExpedition, legacyRewardTicks } from "./moves/expedition.js";
+import { finishVow, shouldPayFulfilledVow } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
   isShipMapCommand,
@@ -3060,6 +3060,93 @@ async function postRewardGrantCard(reward, plan) {
   });
 }
 
+// #248 B2: a fulfilled vow pays its linked connection (deepen, scaled by the
+// vow's rank) and grants its promised reward (scaled by outcome). Item vows
+// (inciting / hand-made) are fulfilled on the foundry-ironsworn sheet, which
+// bypasses the journal-track fulfill branch AND never touches our legacy tracks,
+// so this also marks the Quests legacy. GM-side (world writes); idempotent per
+// vow via the fulfilPaid flag.
+async function payFulfilledVowNative(vowName, outcome) {
+  let item = null;
+  for (const a of getPlayerActors()) {
+    const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
+    const found = items.find(i =>
+      i.type === "progress" && i.system?.subtype === "vow"
+      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
+    if (found) { item = found; break; }
+  }
+  if (!item) {
+    console.debug(`${MODULE_ID} | native-fulfil: no vow item named "${vowName ?? "?"}" — no payoff`);
+    return;
+  }
+  if (item.flags?.[MODULE_ID]?.fulfilPaid) return;        // pay once per vow
+  await item.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
+
+  const rank      = item.system?.rank ?? null;
+  const ranksDown = outcome === "weak_hit" ? 1 : 0;
+
+  // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
+  try {
+    const ticks = legacyRewardTicks(rank, ranksDown);
+    if (ticks > 0) {
+      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      addLegacyTicks(cs, "quests", ticks);
+      await game.settings.set(MODULE_ID, "campaignState", cs);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | native-fulfil: legacy award failed:`, err?.message ?? err);
+  }
+
+  // Deepen the linked connection (scaled by the vow's rank).
+  const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+  if (connectionName) {
+    await deepenLinkedConnection(connectionName, marksForSourceRank(rank)).catch(err =>
+      console.warn(`${MODULE_ID} | native-fulfil: deepen connection failed:`, err?.message ?? err));
+  }
+
+  // Grant the promised reward (one-time; scaled by outcome).
+  await grantLinkedVowReward(vowName, outcome).catch(err =>
+    console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
+}
+
+// GM-gated companion to registerNativeProgressRollHook: when a vow is fulfilled
+// via the native foundry-ironsworn sheet roll, apply the module payoff (legacy +
+// connection deepen + promised reward). Narration is handled separately, on the
+// roller's keyed client; this runs on the canonical GM (world writes), reading
+// the same broadcast roll card. Fail-safe + logs every skip (decisions.md).
+function registerNativeFulfilConsequenceHook() {
+  if (registerNativeFulfilConsequenceHook._installed) return;
+  registerNativeFulfilConsequenceHook._installed = true;
+  Hooks.on("createChatMessage", (message) => {
+    try {
+      if (!isCanonicalGM()) return;
+      const parsed = parseIronswornProgressRoll(message?.content ?? "");
+      if (!parsed) return;
+      const moveId = classifyProgressRoll(parsed, (source) => {
+        try {
+          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
+          const src   = String(source ?? "").trim().toLowerCase();
+          if (!actor || !src) return null;
+          const it = actor.items?.find?.(i =>
+            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
+          const subtype = String(it?.system?.subtype ?? "").toLowerCase();
+          if (subtype.includes("vow"))        return "vow";
+          if (subtype.includes("connection")) return "connection";
+          return null;
+        } catch (err) {
+          console.warn(`${MODULE_ID} | native-fulfil: subtype lookup threw:`, err?.message ?? err);
+          return null;
+        }
+      });
+      if (!shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) return;
+      payFulfilledVowNative(parsed.source, parsed.outcome).catch(err =>
+        console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | native-fulfil consequence hook threw:`, err?.message ?? err);
+    }
+  });
+}
+
 // Wire the won-fight card's buttons. Mark/deepen are GM-gated world writes, so
 // non-canonical clients relay over the socket; Attempt to Fulfill posts the
 // existing fulfill_your_vow bridge (the pipeline handles it).
@@ -4402,6 +4489,7 @@ Hooks.once("ready", () => {
   registerStarshipSeedHook();
   registerCommandVehicleHook();
   registerNativeProgressRollHook();
+  registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();
