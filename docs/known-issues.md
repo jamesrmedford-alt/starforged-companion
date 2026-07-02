@@ -10,6 +10,26 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Character-detail drift audit findings (2026-07) — OPEN, awaiting direction
+
+Surfaced by the character-detail drift audit (full trace:
+`docs/flows/character-detail-flow.md`). Verified against source; none fixed
+yet. The theme: the pronoun-propagation cluster (v1.7.10/11 findings E/R)
+covered vignettes, entity cards, portraits, and audio — but the core
+CHARACTER pipeline and the NPC-confirmation flow have gaps.
+
+| Code | Class | Defect |
+|---|---|---|
+| CHAR-PC-BLOCK-STARVED | WRONG-DETAIL | `getActiveCharacter` narrows the snapshot to `{name, description(nonexistent field → ''), narratorNotes, meters}` on **all nine** narrator paths — the CHARACTER block never carries the PC's pronouns, callsign, biography, stats, impacts, or assets; `buildCharacterBlock`'s support for them is dead code in production |
+| CHAR-PARTY-NAMES-ONLY | WRONG-DETAIL | The multiplayer PARTY roster carries bare names — third-person narration has pronouns for no PC, and misgenders non-speaking party members |
+| CHAR-PERSPECTIVE-NO-PRONOUN-RULE | INVENT-RISK | The third-person instruction says only "Refer to characters by name" — nothing tells the model recorded pronouns are binding or forbids guessing from names |
+| CHAR-NPC-PRONOUN-ROLL-BLIND | WRONG-DETAIL | The entity-detection draft captures no pronouns, so confirming a narrator-introduced NPC **rolls** pronouns randomly — 2/3 chance the record (which then anchors portrait/card/audio) contradicts the prose that introduced them; applies to the inciting vow target |
+| CHAR-SIDECAR-NO-PRONOUN-ANCHOR | LOSE-PLOT | The sidecar's required identity anchor omits pronouns — an unconfirmed NPC's gender lives only in the ring and can flip once it rolls past |
+
+Design-level exposure recorded alongside (entity cards outside the
+consistency check; recap/chronicle person handling prose-anchored only; PC
+appearance has no data-model home) — see the flow doc §4.
+
 ### Narrator-context audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
 Surfaced by the narrator context/memory audit; every defect and the
