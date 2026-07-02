@@ -1448,8 +1448,16 @@ describe("fulfill_your_vow and forge_a_bond auto-marking", () => {
     expect(c.forgeABond).toBe(true);
   });
 
-  it("forge_a_bond weak and miss leave forgeABond:false", () => {
-    expect(mapConsequences("forge_a_bond", "weak_hit", false).forgeABond).toBe(false);
+  // BOND-WEAK-FORGE regression — a weak hit forges the bond too (they just
+  // ask something more of you first); it used to be text-only, so `bonded`
+  // never flipped and no legacy marked.
+  it("forge_a_bond:weak_hit also sets forgeABond:true (bond forms, with a request)", () => {
+    const c = mapConsequences("forge_a_bond", "weak_hit", false);
+    expect(c.forgeABond).toBe(true);
+    expect(c.otherEffect).toMatch(/something more/i);
+  });
+
+  it("forge_a_bond:miss leaves forgeABond:false", () => {
     expect(mapConsequences("forge_a_bond", "miss", false).forgeABond).toBe(false);
   });
 });
@@ -1473,5 +1481,25 @@ describe("DECISIVE_ACTION_COST — sufferRoute annotation", () => {
     for (const e of upper) {
       expect(e.sufferRoute).toBeUndefined();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// forsake_your_vow — VOW-FORSAKE-COSMETIC regression: the pipeline now clears
+// the vow (forsakeVow consequence); the costs prompt still rides.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("forsake_your_vow consequences", () => {
+  it("sets forsakeVow:true on every outcome (no-roll move) and keeps the costs prompt", () => {
+    for (const outcome of ["strong_hit", "weak_hit", "miss"]) {
+      const c = mapConsequences("forsake_your_vow", outcome, false);
+      expect(c.forsakeVow).toBe(true);
+      expect(c.sufferPrompt?.options?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("no other move sets forsakeVow", () => {
+    expect(mapConsequences("fulfill_your_vow", "strong_hit", false).forsakeVow).toBe(false);
+    expect(mapConsequences("swear_an_iron_vow", "strong_hit", false).forsakeVow).toBe(false);
   });
 });

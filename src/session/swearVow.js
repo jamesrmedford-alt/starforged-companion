@@ -36,7 +36,11 @@ const SOCKET    = `module.${MODULE_ID}`;
 // Cross-PC sync of the shared inciting vow: the progress fields kept in lockstep
 // across every player character's copy, and a re-entrancy guard (keyed by vowId)
 // so the GM's sibling-writes don't cascade back through the updateItem hook.
-const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks"];
+// `completed` included so fulfilling (or forsaking) a shared vow on ONE copy —
+// e.g. the vendor sheet's native fulfil — closes every crewmate's copy too
+// (VOW-FULFIL-SIBLINGS fix: siblings used to stay open and kept showing as an
+// active Background Vow to the narrator).
+const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks", "completed"];
 const _vowSyncInFlight = new Set();
 
 /**

@@ -80,7 +80,7 @@ import {
   narrateAndPostVowSwearing,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -116,7 +116,7 @@ import {
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./moves/developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
 import {
   extractRiders,
@@ -1082,6 +1082,19 @@ export function registerChatHook() {
             : "set_a_course",
         );
 
+        // Keep the campaign's "current location" in step with the arrival —
+        // previously only a manual !at wrote currentLocationId, so travelling
+        // by move left the narrator options / entity-panel highlight pointing
+        // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
+        // destination that isn't a tracked entity leaves the store untouched.
+        const arrivedAt = resolveCurrentLocationName(interpretation.moveTarget ?? "", campaignState);
+        if (arrivedAt) {
+          campaignState.currentLocationId   = arrivedAt.id;
+          campaignState.currentLocationType = arrivedAt.type;
+        } else if (interpretation.moveTarget) {
+          console.debug(`${MODULE_ID} | arrival: "${interpretation.moveTarget}" is not a tracked location — currentLocation unchanged.`);
+        }
+
         // §20.4b — when the move was initiated by a Token drag and we
         // succeeded, also move the Token to the destination Note's
         // coordinates. On a miss the Token never moved (the drag was
@@ -1227,9 +1240,10 @@ export function registerChatHook() {
         }
       }
 
-      // Forge a Bond strong hit — mark connection as bonded and pay bonds legacy.
-      // The Bolster/Expand Influence choice is surfaced in the card text; it affects
-      // connection influence (currently tracked manually in the character sheet).
+      // Forge a Bond hit (strong or weak) — mark connection as bonded and pay
+      // bonds legacy. The Bolster/Expand Influence choice is surfaced in the
+      // card text; it affects connection influence (tracked manually on the
+      // character sheet).
       if (resolution.consequences?.forgeABond && game.user.isGM) {
         try {
           const conn = await import("./entities/connection.js");
@@ -1237,16 +1251,18 @@ export function registerChatHook() {
             .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
             .filter(Boolean);
           const target = selectConnection(connections, interpretation.moveTarget ?? null);
-          if (target?.__hostId) {
+          if (target?.__hostId && !target.bonded) {
             await conn.forgeBond(target.__hostId).catch(err =>
               console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
-            const ticks = (() => {
-              const LEGACY_REWARD = { troublesome: 1, dangerous: 2, formidable: 4, extreme: 8, epic: 12 };
-              return LEGACY_REWARD[target.rank] ?? 2;
-            })();
+            // Same rank ladder as vow/expedition completion rewards.
+            const ticks = legacyRewardTicks(target.rank, 0);
             if (ticks > 0) addLegacyTicks(campaignState, "bonds", ticks);
             await postForgeABondCard(target, ticks).catch(err =>
               console.warn(`${MODULE_ID} | forge bond card failed:`, err?.message ?? err));
+          } else if (target?.bonded) {
+            console.debug(`${MODULE_ID} | forge bond: "${target.name}" is already bonded — payoff already made.`);
+          } else {
+            console.warn(`${MODULE_ID} | forge bond: no connection matched "${interpretation.moveTarget ?? "?"}" — nothing forged.`);
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | forge a bond failed:`, err?.message ?? err);
@@ -1343,6 +1359,49 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | fulfill vow failed:`, err?.message ?? err);
+        }
+      }
+
+      // Forsake Your Vow — actually clear the vow (VOW-FORSAKE-COSMETIC fix:
+      // the costs used to be presented while the vow item/track stayed open).
+      // Every copy is marked completed + flagged forsaken (audit-preserving —
+      // nothing is deleted), the journal twin closes, and a still-promised
+      // reward flips to lost. No legacy pays — the vow was abandoned, not
+      // achieved. The resolver's cost sufferPrompt rides separately.
+      if (resolution.consequences?.forsakeVow && game.user.isGM) {
+        try {
+          const { primary, copies } = resolveVowItemCopies(interpretation.moveTarget ?? null);
+          const fin = await finishVow(
+            { moveTarget: interpretation.moveTarget ?? primary?.item?.name ?? null, ranksDown: 0 },
+            {
+              listTracks:    () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+            },
+          ).catch(() => null); // journal twin close — legacyTicks deliberately unused
+          if (primary) {
+            for (const { actor, item } of copies) {
+              if (item.system?.completed !== true) {
+                await completeVowItem(actor, item.id).catch(err =>
+                  console.warn(`${MODULE_ID} | forsake: complete failed:`, err?.message ?? err));
+              }
+              await item.setFlag?.(MODULE_ID, "forsaken", true).catch(() => {});
+            }
+            const rewardCopy = copies.find(({ item }) =>
+              item.flags?.[MODULE_ID]?.reward?.status === "promised");
+            if (rewardCopy) {
+              const f = rewardCopy.item.flags[MODULE_ID];
+              await setSharedVowReward(f.vowId, { ...f.reward, status: "lost" }).catch(() => {});
+            }
+            await postForsakeVowCard(primary.item.name).catch(err =>
+              console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
+          } else if (fin?.track) {
+            await postForsakeVowCard(fin.track.label).catch(err =>
+              console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
+          } else {
+            console.warn(`${MODULE_ID} | forsake: no vow matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | forsake vow failed:`, err?.message ?? err);
         }
       }
 
@@ -2847,7 +2906,10 @@ async function postExpeditionProgressCard({ track, created }) {
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
-      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true } },
+      // trackLabel: the Finish button forwards it as forcedMoveTarget so the
+      // finish roll resolves THIS expedition even with several open
+      // (EXPEDITION-FINISH-TARGET fix).
+      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionProgressCard: chat post failed:`, err?.message ?? err);
@@ -2858,14 +2920,44 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
 
 /**
  * Add ticks to a legacy track on campaignState (capped at the 40-tick / 10-box
- * maximum), creating the entry if absent. Mutates in place; the caller's
- * persistResolution pass persists it. Mirrors the !bond legacy write.
+ * maximum), creating the entry if absent. Mutates in place; the caller (or its
+ * pipeline) persists campaignState.
+ *
+ * Newly FILLED boxes award XP — 2 per box, 1 once the track has been cleared
+ * (play kit rule 1.12) — to every player character (legacy tracks are shared
+ * crew tracks in this module, like the shared supply), with a chat note. The
+ * award is fire-and-forget so call sites stay synchronous; failures warn.
+ * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
+ * awarding path (persistResolution.markLegacyProgress) required a consequence
+ * field no resolver set.
+ *
+ * @returns {number} newly filled boxes
  */
-function addLegacyTicks(campaignState, key, ticks) {
+export function addLegacyTicks(campaignState, key, ticks) {
   campaignState.legacyTracks ??= {};
   const t = campaignState.legacyTracks[key] ?? { ticks: 0, cleared: false };
+  const boxesBefore = Math.floor((t.ticks ?? 0) / 4);
   t.ticks = Math.min((t.ticks ?? 0) + ticks, 40);
+  const newBoxes = Math.floor(t.ticks / 4) - boxesBefore;
   campaignState.legacyTracks[key] = t;
+  if (newBoxes > 0) {
+    awardLegacyBoxXP(key, newBoxes, newBoxes * (t.cleared ? 1 : 2)).catch(err =>
+      console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
+  }
+  return newBoxes;
+}
+
+/** Award legacy-box XP to every player character and post the earned-XP note. */
+async function awardLegacyBoxXP(key, boxes, xp) {
+  for (const actor of getPlayerActors()) {
+    await awardXP(actor, xp).catch(err =>
+      console.warn(`${MODULE_ID} | awardXP failed for ${actor?.name ?? actor?.id}:`, err?.message ?? err));
+  }
+  const label = LEGACY_LABELS[key] ?? key;
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned (${boxes} box${boxes === 1 ? "" : "es"} filled). Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp } },
+  }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
 }
 
 /** Feedback for a Make a Discovery / Confront Chaos legacy mark. */
@@ -3096,16 +3188,54 @@ async function postDeepenBondCard(name, marks) {
   }
 }
 
+// Resolve the vow a payoff targets and collect every copy of it across PCs.
+// Payoffs used to match by exact lowercased name only, while creation/sync/
+// reward-link key on the vowId flag — so a renamed vow (or a stale
+// linkedVowName snapshot on a combat track / victory card) rolled hits that
+// completed nothing and paid nothing (VOW-RENAME-PAYOFF fix). Resolution
+// ladder mirrors selectMilestoneVow: exact name → substring (either way) →
+// sole open vow; copies then collect by the shared vowId flag when present,
+// else by the resolved item's exact name.
+//
+// @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
+export function resolveVowItemCopies(vowName) {
+  const all = [];
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type === "progress" && item.system?.subtype === "vow") all.push({ actor, item });
+    }
+  }
+  const open = all.filter(e => e.item.system?.completed !== true);
+  const lo   = String(vowName ?? "").trim().toLowerCase();
+  let primary = null;
+  if (lo) {
+    primary = open.find(e => (e.item.name ?? "").toLowerCase() === lo)
+      ?? open.find(e => {
+        const n = (e.item.name ?? "").toLowerCase();
+        return n && (n.includes(lo) || lo.includes(n));
+      })
+      ?? null;
+  }
+  if (!primary && open.length === 1) primary = open[0];
+  if (!primary) return { primary: null, copies: [] };
+
+  const vowId = primary.item.flags?.[MODULE_ID]?.vowId ?? null;
+  const primaryName = (primary.item.name ?? "").toLowerCase();
+  const copies = all.filter(e =>
+    vowId
+      ? e.item.flags?.[MODULE_ID]?.vowId === vowId
+      : (e.item.name ?? "").toLowerCase() === primaryName);
+  return { primary, copies };
+}
+
 // GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
 // the fight is won, scaled by the outcome. One-time — the reward's status flips
 // from "promised" so a re-win can't re-grant it.
 async function grantLinkedVowReward(vowName, outcome) {
+  const { copies } = resolveVowItemCopies(vowName);
   let reward = null, vowId = null;
-  for (const actor of getPlayerActors()) {
-    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
-    const item  = items.find(i =>
-      i.type === "progress" && i.system?.subtype === "vow"
-      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
+  for (const { item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
     if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; break; }
   }
@@ -3147,14 +3277,22 @@ async function postRewardGrantCard(reward, plan) {
 // so this also marks the Quests legacy. GM-side (world writes); idempotent per
 // vow via the fulfilPaid flag.
 async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = {}) {
-  let item = null;
-  for (const a of getPlayerActors()) {
-    const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
-    const found = items.find(i =>
-      i.type === "progress" && i.system?.subtype === "vow"
-      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
-    if (found) { item = found; break; }
+  // vowId-first resolution with a name ladder — a renamed vow or stale
+  // linkedVowName snapshot still resolves (VOW-RENAME-PAYOFF). The completed
+  // filter is bypassed here: the vendor sheet may have already marked the
+  // rolled copy completed before this payoff runs, so fall back to searching
+  // ALL copies when no open one matches.
+  let { primary } = resolveVowItemCopies(vowName);
+  if (!primary) {
+    for (const a of getPlayerActors()) {
+      const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
+      const found = items.find(i =>
+        i.type === "progress" && i.system?.subtype === "vow"
+        && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
+      if (found) { primary = { actor: a, item: found }; break; }
+    }
   }
+  const item = primary?.item ?? null;
   if (!item) {
     console.debug(`${MODULE_ID} | native-fulfil: no vow item named "${vowName ?? "?"}" — no payoff`);
     return;
@@ -3194,29 +3332,24 @@ async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = 
     console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
 }
 
-// GM-side: mark every open item copy of the named vow completed (shared vows
-// exist as one copy per PC). Pipeline Fulfill Your Vow companion to
-// actorBridge.completeVowItem. Returns { name, rank } of the first copy
-// closed, or null when no open item matched.
+// GM-side: mark every copy of the resolved vow completed (shared vows exist
+// as one copy per PC; copies collect by vowId, so a renamed copy still
+// closes — VOW-RENAME-PAYOFF). Pipeline Fulfill Your Vow companion to
+// actorBridge.completeVowItem. Returns { name, rank } of the resolved vow,
+// or null when nothing matched.
 async function completeVowItemByName(vowName) {
-  if (!vowName) return null;
-  const wanted = String(vowName).toLowerCase();
-  let first = null;
-  for (const actor of getPlayerActors()) {
-    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
-    for (const item of items) {
-      if (item.type === "progress" && item.system?.subtype === "vow"
-          && item.system?.completed !== true
-          && (item.name ?? "").toLowerCase() === wanted) {
-        const done = await completeVowItem(actor, item.id).catch(err => {
-          console.warn(`${MODULE_ID} | completeVowItemByName failed:`, err?.message ?? err);
-          return false;
-        });
-        if (done && !first) first = { name: item.name, rank: item.system?.rank ?? null };
-      }
-    }
+  const { primary, copies } = resolveVowItemCopies(vowName);
+  if (!primary) return null;
+  let anyDone = false;
+  for (const { actor, item } of copies) {
+    if (item.system?.completed === true) continue;
+    const done = await completeVowItem(actor, item.id).catch(err => {
+      console.warn(`${MODULE_ID} | completeVowItemByName failed:`, err?.message ?? err);
+      return false;
+    });
+    anyDone = anyDone || done;
   }
-  return first;
+  return anyDone ? { name: primary.item.name, rank: primary.item.system?.rank ?? null } : null;
 }
 
 // GM-gated companion to registerNativeProgressRollHook: when a vow is fulfilled
@@ -3241,20 +3374,59 @@ function registerNativeFulfilConsequenceHook() {
             i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
           const subtype = String(it?.system?.subtype ?? "").toLowerCase();
           if (subtype.includes("vow"))        return "vow";
-          if (subtype.includes("connection")) return "connection";
+          // The module (and vendor Connections tab) store connection progress
+          // items as subtype "bond" — accept both spellings.
+          if (subtype.includes("connection") || subtype.includes("bond")) return "connection";
           return null;
         } catch (err) {
           console.warn(`${MODULE_ID} | native-fulfil: subtype lookup threw:`, err?.message ?? err);
           return null;
         }
       });
-      if (!shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) return;
-      payFulfilledVowNative(parsed.source, parsed.outcome).catch(err =>
-        console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
+      if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
+        payFulfilledVowNative(parsed.source, parsed.outcome).catch(err =>
+          console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
+      } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
+        // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
+        // used to narrate only; the record kept bonded:false and no legacy.
+        payForgedBondNative(parsed.source).catch(err =>
+          console.warn(`${MODULE_ID} | native-forge consequence failed:`, err?.message ?? err));
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | native-fulfil consequence hook threw:`, err?.message ?? err);
     }
   });
+}
+
+// GM-side companion to registerNativeFulfilConsequenceHook for Forge a Bond:
+// flip the record to bonded and pay the rank-scaled bonds legacy, exactly as
+// the pipeline forgeABond branch does. Idempotent — an already-bonded
+// connection pays nothing (the bond can only forge once).
+async function payForgedBondNative(connectionName) {
+  try {
+    const conn = await import("./entities/connection.js");
+    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const connections = (campaignState.connectionIds ?? [])
+      .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+      .filter(Boolean);
+    const target = selectConnection(connections, connectionName ?? null);
+    if (!target?.__hostId) {
+      console.debug(`${MODULE_ID} | native-forge: no connection matched "${connectionName ?? "?"}" — no payoff.`);
+      return;
+    }
+    if (target.bonded) return; // pay once — the bond can only forge once
+
+    await conn.forgeBond(target.__hostId);
+    const ticks = legacyRewardTicks(target.rank, 0);
+    if (ticks > 0) {
+      addLegacyTicks(campaignState, "bonds", ticks);
+      await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    }
+    await postForgeABondCard(target, ticks).catch(err =>
+      console.warn(`${MODULE_ID} | native-forge card failed:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | native-forge payoff failed:`, err?.message ?? err);
+  }
 }
 
 // Wire the won-fight card's buttons. Mark/deepen are GM-gated world writes, so
@@ -3651,6 +3823,17 @@ async function advanceClocksOnPayThePrice() {
   return advanced;
 }
 
+async function postForsakeVowCard(vowName) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-card--vow-forsaken"><div class="sf-card-header">⛓ Vow Forsaken: ${escapeHtml(vowName ?? "vow")}</div><div class="sf-card-body"><p>The vow is struck. Envision the fallout — the iron remembers. Any promised reward is lost; resolve the costs on the choice card.</p></div></div>`,
+      flags: { [MODULE_ID]: { forsakeVowCard: true, vowName: vowName ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postForsakeVowCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
 async function postFulfillVowCard({ track, legacyTicks }) {
   const rankLabel = track.rank ? track.rank.charAt(0).toUpperCase() + track.rank.slice(1) : "unknown";
   try {
@@ -3818,10 +4001,9 @@ async function handleBondCommand(message) {
   if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0)) {
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
     if (ticksOnBonds > 0) {
-      campaignState.legacyTracks ??= {};
-      const t = campaignState.legacyTracks.bonds ?? { ticks: 0, cleared: false };
-      t.ticks = Math.min(t.ticks + ticksOnBonds, 40);
-      campaignState.legacyTracks.bonds = t;
+      // Route through addLegacyTicks so filled boxes award XP like every
+      // other legacy write (this used to be a duplicate inline tick bump).
+      addLegacyTicks(campaignState, "bonds", ticksOnBonds);
     }
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
 
@@ -5021,9 +5203,17 @@ export function wireFinishExpeditionButton(message, root) {
     event.stopPropagation();
     fresh.disabled = true;
     try {
+      // Carry the card's own expedition label as the move target so the
+      // finish roll scores and completes THIS track even when several
+      // expeditions are open (EXPEDITION-FINISH-TARGET fix). Older cards
+      // without the flag fall back to the sole-open-track ladder.
+      const trackLabel = message.flags[MODULE_ID].trackLabel ?? null;
       await ChatMessage.create({
-        content: "Finish the expedition.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "finish_an_expedition" } },
+        content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "finish_an_expedition",
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+        } },
       });
     } catch (err) {
       console.error(`${MODULE_ID} | Finish the Expedition button failed:`, err);

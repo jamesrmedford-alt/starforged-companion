@@ -262,6 +262,20 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
     relationshipTicks: newTicks,
   });
 
+  // Mirror onto each PC's bond Item so the vendor sheet's Connections tab
+  // shows the same progress (BOND-ITEM-MIRROR fix). Best-effort — the entity
+  // record stays the source of truth; a failed mirror only leaves the sheet
+  // display behind. Dynamic import avoids an actorBridge cycle.
+  try {
+    const { setBondItemTicks } = await import("../character/actorBridge.js");
+    await setBondItemTicks(
+      { connectionId: updated?._id ?? connection._id ?? journalEntryId, name: connection.name },
+      newTicks,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond item mirror failed:`, err?.message ?? err);
+  }
+
   return { connection: updated, ticksAdded, newTicks };
 }
 

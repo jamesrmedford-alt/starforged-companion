@@ -567,6 +567,38 @@ export async function createCharacterBondItem(actor, data) {
 }
 
 /**
+ * Mirror a connection's relationship progress onto each PC's bond Item so the
+ * vendor sheet's Connections tab shows the same track (BOND-ITEM-MIRROR fix —
+ * the item was seeded at 0 and never advanced while the entity record moved).
+ * Matches by the connectionId flag first, then case-insensitive name.
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {number} ticks — absolute tick value (0–40) to set
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemTicks({ connectionId = null, name = null } = {}, ticks) {
+  const wanted = String(name ?? "").trim().toLowerCase();
+  const next   = Math.max(0, Math.min(Number(ticks) || 0, 40));
+  let updated  = 0;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || item.system?.subtype !== "bond") continue;
+      const byId   = connectionId != null && item.flags?.[MODULE_ID]?.connectionId === connectionId;
+      const byName = wanted !== "" && String(item.name ?? "").trim().toLowerCase() === wanted;
+      if (!byId && !byName) continue;
+      if (Number(item.system?.current ?? 0) !== next) {
+        await item.update({ "system.current": next }).catch(err =>
+          console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
+        invalidateActorCache(actor.id);
+        updated++;
+      }
+    }
+  }
+  return updated;
+}
+
+/**
  * Create a `progress`-typed Item on the character Actor representing a Vow.
  * The Connections tab filters subtype "vow" out — vows show up in the
  * Progress tab on the character sheet.

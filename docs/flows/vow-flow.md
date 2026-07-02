@@ -14,10 +14,11 @@ Terminology up front, because it drives every gap below:
 - **Journal vow track** — a `type:"vow"` object in the Starforged Progress
   Tracks journal flag. Only `addProgressTrack` creates one, and the panel
   can't (see gaps) — effectively dormant.
-- **Two matching schemes coexist:** creation, shared-sync, reward-set, and
-  connection-link all key on the **`vowId` flag**; fulfilment completion and
-  payoff key on **lowercased name**. That split is the root of the rename
-  defect below.
+- **Matching:** creation, shared-sync, reward-set, and connection-link key
+  on the **`vowId` flag**; fulfilment completion and payoff resolve through
+  `resolveVowItemCopies` — a name ladder (exact → substring → sole-open) that
+  then collects every copy by `vowId`. (The old exact-name-only payoff
+  matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.)
 
 ## 1. Creation
 
@@ -63,9 +64,10 @@ All real progress lands on **item ticks** (`system.current`) via
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
   fight's rank, ticks-per-mark by the vow's rank.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
-  to sibling copies by `vowId` — but only `["current","clockTicks"]`
-  (`SHARED_VOW_SYNC_FIELDS`); `completed` and `rank` are **not** synced (see
-  gaps).
+  to sibling copies by `vowId` — `["current","clockTicks","completed"]`
+  (`SHARED_VOW_SYNC_FIELDS`; `completed` joined in the VOW-FULFIL-SIBLINGS
+  fix, so a native-sheet fulfil closes every crewmate's copy). `rank` is
+  still deliberately unsynced (see gaps).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
   Price ("⏳ The clock turns" card); burn-momentum undo reverts via
   `revertVowClocksForBurn`.
@@ -105,11 +107,18 @@ card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 the `fulfilPaid` flag on the first-matched copy pays once per vow across both
 paths.
 
-**Forsake Your Vow** exists only in the resolver: a suffer prompt of costs
-(Endure Stress −2 / Test Your Relationship / discard an asset / narrative
-cost). Nothing clears the vow item or track — the player deletes it by hand.
+**Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
+the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
+every copy completed + `forsaken` (audit-preserving — nothing is deleted),
+closes the journal twin, flips a still-promised reward to **lost**, and posts
+the "⛓ Vow Forsaken" card. The costs suffer-prompt (Endure Stress −2 / Test
+Your Relationship / discard an asset / narrative cost) rides alongside as
+before. No legacy pays — the vow was abandoned, not achieved.
 
-## Verified defects (open as of this audit — see `known-issues.md`)
+## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
+
+Each entry below describes the pre-fix behaviour the audit verified; the fix
+summary lives in the `known-issues.md` table and the code.
 
 1. **Native-sheet fulfil never completes shared-vow siblings**
    (VOW-FULFIL-SIBLINGS): `SHARED_VOW_SYNC_FIELDS` omits `completed`, and

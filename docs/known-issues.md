@@ -10,100 +10,26 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Flow-audit findings (2026-07) — verified, awaiting direction
+### Flow-audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
-Surfaced by the combat/vow/connection/exploration flow audits (the same audit
-whose combat findings were fixed in PR #257). Each was verified against
-source; none is yet fixed. Full context lives in the matching
-`docs/flows/*-flow.md` "Verified defects" section.
+The combat/vow/connection/exploration flow audits surfaced eleven verified
+defects; every one was fixed in the same cycle (combat pair in PR #257, the
+remaining eleven in the follow-up fix commit). Kept here as a resolved ledger —
+full context and post-fix behaviour live in the matching `docs/flows/*-flow.md`.
 
-#### VOW-FULFIL-SIBLINGS — native-sheet fulfil leaves shared-vow copies open
-
-**Status:** Open. **Symptom:** fulfil a shared vow on the Ironsworn sheet and
-only the rolled copy completes; other PCs keep an open copy that still shows
-as their Background Vow to the narrator. **Root cause:**
-`SHARED_VOW_SYNC_FIELDS` (`src/session/swearVow.js`) syncs only
-`current`/`clockTicks` — never `completed` — and `payFulfilledVowNative` pays
-but doesn't complete items. The pipeline path is fine
-(`completeVowItemByName` loops all PCs).
-
-#### VOW-RENAME-PAYOFF — renaming a vow breaks its fulfilment payoff
-
-**Status:** Open. **Symptom:** a renamed vow can roll a fulfil hit yet
-complete nothing and pay nothing (console warnings only). **Root cause:**
-completion/payoff match by lowercased **name** (`completeVowItemByName`,
-`payFulfilledVowNative`, `grantLinkedVowReward`) while creation/sync/reward
-link by the **`vowId` flag** — the two schemes disagree after a rename.
-
-#### VOW-FORSAKE-COSMETIC — Forsake Your Vow never clears the vow
-
-**Status:** Open. **Symptom:** forsaking presents its costs (suffer prompt)
-but the vow item/track stays open; manual deletion required. **Root cause:**
-`forsake_your_vow` exists only in the resolver — no pipeline branch.
-
-#### BOND-WEAK-FORGE — weak-hit Forge a Bond has no mechanical effect
-
-**Status:** Open. **Symptom:** a weak-hit forge says "Bond forged, but…" and
-changes nothing — `bonded` never flips, no bonds legacy marks. **Root cause:**
-the resolver's weak hit returns text only (no `forgeABond` flag), contradicting
-the schema comment ("true after Forge a Bond (strong or weak hit)") and the
-rules (the bond forms once their request is met).
-
-#### BOND-NATIVE-FORGE — native-sheet Forge a Bond never updates the record
-
-**Status:** Open. **Symptom:** rolling Forge a Bond on the vendor sheet
-narrates but the connection record keeps `bonded:false` and no legacy marks.
-**Root cause:** the native consequence hook gates on `shouldPayFulfilledVow`
-(`fulfill_your_vow` only); no forge equivalent exists.
-
-#### LEGACY-XP-DEAD — legacy ticks never convert to XP (module-wide)
-
-**Status:** Open; systemic. **Symptom:** quests/bonds/discoveries legacy
-ticks accrue (`campaignState.legacyTracks`) but no XP is ever awarded for
-filled boxes. **Root cause:** every live path uses `addLegacyTicks`
-(tick-increment only); the XP-awarding `markLegacyProgress`
-(`src/moves/persistResolution.js`, 2 XP/box) is reachable only via
-`consequences.progressTrackId`, which no resolver sets (the resolver's own
-comments acknowledge this). The Quench "rule 1.12" coverage tests the math in
-isolation, not pipeline reachability.
-
-#### BOND-ITEM-MIRROR — the sheet's bond-Item track never advances
-
-**Status:** Open. **Symptom:** the vendor Connections tab (and CHARACTER
-STATE ticks) stay at 0 while the connection record's `relationshipTicks`
-advance. **Root cause:** develop/deepen/forge write the entity record only;
-the PC's `subtype:"bond"` progress Item is seeded once and never synced.
-
-#### WAYPOINT-PROGRESS-NOOP — waypoint "mark progress" pick can do nothing
-
-**Status:** Open. **Symptom:** picking "Mark expedition progress" on an
-Explore a Waypoint strong hit does nothing when zero (or several) expeditions
-are open. **Root cause:** the suffer executor requires exactly one open
-expedition track and never creates one (unlike `applyExpeditionProgress`).
-
-#### EXPEDITION-FINISH-TARGET — the card's Finish button loses the destination
-
-**Status:** Open. **Symptom:** with more than one open expedition, the
-progress card's "🗺 Finish the Expedition" button warns and rolls score 0;
-nothing completes. **Root cause:** `wireFinishExpeditionButton` posts no
-`forcedMoveTarget`, so the selector can't disambiguate. The panel Roll bridge
-passes the row label and behaves correctly.
-
-#### SHIP-TRANSIT-LINE — Set a Course reports "in transit" after arriving
-
-**Status:** Open. **Symptom:** after a Set a Course hit (which the module
-treats as arrival — resolver text, token snap), the narrator's SHIP POSITION
-line says "in transit to <destination>". **Root cause:**
-`formatShipPositionLine` maps the `set_a_course` source to in-transit
-phrasing while token/`!at`/expedition sources read as docked.
-
-#### LOCATION-DUAL-STORE — arrival never updates `currentLocationId`
-
-**Status:** Open. **Symptom:** travel by move updates the ship position but
-the campaign "current location" (narrator options, entity-panel highlight)
-stays stale until a manual `!at`. **Root cause:** two parallel "where are we"
-stores; only `!at`/the entity panel write `currentLocationId/Type`, and the
-arrival path doesn't.
+| Code | Was | Fix |
+|---|---|---|
+| VOW-FULFIL-SIBLINGS | Native-sheet fulfil left shared-vow copies open on other PCs | `completed` joined `SHARED_VOW_SYNC_FIELDS`; pipeline fulfil already closes all copies |
+| VOW-RENAME-PAYOFF | Renamed vows rolled hits but completed/paid nothing (exact-name matching) | `resolveVowItemCopies`: name ladder (exact → substring → sole-open), copies collected by `vowId`; used by completion + both payoff paths |
+| VOW-FORSAKE-COSMETIC | Forsake presented costs but never cleared the vow | New `forsakeVow` consequence + pipeline branch: all copies completed + `forsaken` flag, journal twin closed, promised reward → lost, forsake card |
+| BOND-WEAK-FORGE | Weak-hit Forge a Bond changed nothing mechanically | Resolver weak hit now sets `forgeABond`; the bond forms (with their request in the fiction) |
+| BOND-NATIVE-FORGE | Sheet-rolled Forge a Bond never updated the record | Native consequence hook gains a forge branch (`shouldForgeBond` → `payForgedBondNative`: bonded + rank legacy + card, idempotent) |
+| LEGACY-XP-DEAD | Legacy ticks never converted to XP anywhere | `addLegacyTicks` awards 2 XP per newly filled box (1 once cleared) to every PC + an earned-XP card; `!bond` rerouted through it |
+| BOND-ITEM-MIRROR | The sheet's Connections-tab track never advanced | `markRelationshipProgress` mirrors `relationshipTicks` onto each PC's bond Item (`setBondItemTicks`, keyed by connectionId → name) |
+| WAYPOINT-PROGRESS-NOOP | Waypoint "mark progress" pick silently skipped with no open expedition | Executor resolve-or-creates a default expedition (0 open); ambiguous (>1) now warns |
+| EXPEDITION-FINISH-TARGET | The card's Finish button lost the destination | The progress card carries `trackLabel`; the button forwards it as `forcedMoveTarget` |
+| SHIP-TRANSIT-LINE | Narrator said "in transit to X" after arriving | `set_a_course` (written only on non-miss = arrival) now reads as docked/in-orbit |
+| LOCATION-DUAL-STORE | Travel-by-move never updated `currentLocationId` | The arrival block resolves the destination with the `!at` resolver and updates `currentLocationId/Type` |
 
 ---
 

@@ -21,6 +21,7 @@ import {
   createCharacterBondItem,
   createCharacterVowItem,
   completeVowItem,
+  setBondItemTicks,
   advanceVowClocks,
   revertVowClocksForBurn,
 } from '../../src/character/actorBridge.js';
@@ -909,5 +910,55 @@ describe('completeVowItem', () => {
   it('is safe on nullish actor / id', async () => {
     expect(await completeVowItem(null, 'v1')).toBe(false);
     expect(await completeVowItem(makeTestActor({ id: 'pc-cvi-4' }), null)).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setBondItemTicks — mirror connection progress onto the sheet's bond Items
+// (BOND-ITEM-MIRROR regression: the item was seeded at 0 and never advanced)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('setBondItemTicks', () => {
+  const bondItem = (over = {}) => {
+    const item = {
+      id: 'b1', type: 'progress', name: 'Ash Barlowe',
+      system: { subtype: 'bond', current: 0 },
+      flags: { 'starforged-companion': { connectionId: 'conn-1' } },
+      update: async (c) => { item.system.current = c['system.current']; item._updated = (item._updated ?? 0) + 1; },
+      ...over,
+    };
+    return item;
+  };
+
+  it('updates matching items by connectionId flag across PCs', async () => {
+    const i1 = bondItem();
+    const i2 = bondItem({ id: 'b2', name: 'Renamed On Sheet' }); // id still matches
+    const a1 = makeTestActor({ id: 'pc-sbt-1', items: { contents: [i1] } });
+    const a2 = makeTestActor({ id: 'pc-sbt-2', items: { contents: [i2] } });
+    game.actors._setAll([a1, a2]);
+
+    const n = await setBondItemTicks({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 16);
+    expect(n).toBe(2);
+    expect(i1.system.current).toBe(16);
+    expect(i2.system.current).toBe(16);
+  });
+
+  it('falls back to case-insensitive name match when the flag is absent', async () => {
+    const i = bondItem({ flags: {} });
+    const a = makeTestActor({ id: 'pc-sbt-3', items: { contents: [i] } });
+    game.actors._setAll([a]);
+    expect(await setBondItemTicks({ connectionId: 'conn-9', name: 'ash barlowe' }, 8)).toBe(1);
+    expect(i.system.current).toBe(8);
+  });
+
+  it('skips non-bond items, clamps to 0..40, and no-ops when already equal', async () => {
+    const vow = bondItem({ id: 'v', system: { subtype: 'vow', current: 0 } });
+    const bond = bondItem({ id: 'b3', system: { subtype: 'bond', current: 40 } });
+    const a = makeTestActor({ id: 'pc-sbt-4', items: { contents: [vow, bond] } });
+    game.actors._setAll([a]);
+    expect(await setBondItemTicks({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 99)).toBe(0); // clamped to 40 == current
+    expect(bond.system.current).toBe(40);
+    expect(vow.system.current).toBe(0);
   });
 });

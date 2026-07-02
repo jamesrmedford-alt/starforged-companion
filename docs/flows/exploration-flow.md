@@ -43,18 +43,24 @@ passage" drawing.
 ## 2. En route
 
 - **`explore_a_waypoint`**: strong hit → a one-pick choice between "mark
-  expedition progress" and "+2 momentum" (executed by the suffer executor);
-  weak hit +1 momentum; miss routes Pay the Price. Strong-hit-with-match
+  expedition progress" and "+2 momentum" (executed by the suffer executor —
+  which resolve-or-creates: with no open expedition it begins a default
+  dangerous one and marks it, WAYPOINT-PROGRESS-NOOP fix; several open →
+  visible warn); weak hit +1 momentum; miss routes Pay the Price. Strong-hit-with-match
   seeds a "notable aspect" + Make-a-Discovery oracle roll into the narrator
   prompt; miss-with-match seeds Confront Chaos — **advisory prose only**, no
   mechanical affordance.
-- **Location tracking**: `!at <name>` is the only path that writes BOTH
-  `campaignState.currentLocationId/Type` and the ship position; bare `!at`
-  clears both.
+- **Location tracking**: `!at <name>` writes BOTH
+  `campaignState.currentLocationId/Type` and the ship position (bare `!at`
+  clears both), and since the LOCATION-DUAL-STORE fix the arrival block does
+  too — a tracked destination reached by move updates `currentLocationId`
+  via the same resolver.
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
-  `SHIP POSITION` lines — phrasing derives from `position.updatedBy`
-  (`set_a_course` → "in transit to"; token/`!at`/expedition → "docked at");
-  with no position it explicitly instructs the narrator not to invent one.
+  `SHIP POSITION` lines — every recorder writes only after arrival, so all
+  known sources read as stationary ("docked at" / "in orbit of";
+  SHIP-TRANSIT-LINE fix — `set_a_course` used to say "in transit to" a place
+  the ship had reached); with no position it explicitly instructs the
+  narrator not to invent one.
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
 
@@ -63,8 +69,10 @@ passage" drawing.
 `finish_an_expedition` is a progress move scored from the expedition track's
 live ticks (`enrichProgressTicks`, see `decisions.md`). Three entry points:
 typed narration, the Progress Tracks panel's Roll button (bridges with
-`forcedMoveTarget = track.label`), and the progress card's Finish button
-(**no target** — see defects). Strong hit → `finishExpedition` completes the
+`forcedMoveTarget = track.label`), and the progress card's Finish button —
+which since the EXPEDITION-FINISH-TARGET fix forwards the card's own
+`trackLabel` as the target, so the right expedition finishes even with
+several open. Strong hit → `finishExpedition` completes the
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
@@ -80,7 +88,10 @@ location Actor `visited`, and restyles the scene — pin renamed to the site's
 real name with the discovered icon, dashed passage → solid brightened route —
 then posts the "◈ Site Discovered" card.
 
-## Verified defects (open as of this audit — see `known-issues.md`)
+## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
+
+Each entry below describes the pre-fix behaviour the audit verified; the fix
+summary lives in the `known-issues.md` table and the code.
 
 1. **`set_a_course` tells the narrator "in transit" after arriving**
    (SHIP-TRANSIT-LINE): the pipeline, resolver text, and token sync all treat
@@ -117,5 +128,5 @@ then posts the "◈ Site Discovered" card.
   loses planet/sector scoping and token sync.
 - Advisory-only branches: waypoint Make-a-Discovery / Confront Chaos seeds,
   and the finish-miss "recommit" instruction — GM adjudicates by hand.
-- The discoveries legacy accrues ticks but never converts to XP — see
-  LEGACY-XP-DEAD in `known-issues.md` (module-wide).
+- ~~The discoveries legacy accrues ticks but never converts to XP~~ — fixed
+  with LEGACY-XP-DEAD (`addLegacyTicks` now awards box XP module-wide).

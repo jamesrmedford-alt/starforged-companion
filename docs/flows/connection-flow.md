@@ -10,11 +10,12 @@ The authoritative record is a `character`-type **Actor** (NPC card) tagged
 `type==='character'`), with the connection record on
 `flags[MODULE].connection` (`relationshipTicks`, `bonded`, `rank`, `active`)
 and the Actor id listed in `campaignState.connectionIds[]`
-(`src/entities/connection.js`). **Two mirrors exist and drift**: the entity
-record (authoritative — scores Forge a Bond, feeds entity cards) and a PC
-`progress` Item with `system.subtype:"bond"` (populates the vendor sheet's
-Connections tab and CHARACTER STATE) — the item's track is seeded at 0 and
-never advanced afterward (see gaps).
+(`src/entities/connection.js`). **Two mirrors exist**: the entity record
+(authoritative — scores Forge a Bond, feeds entity cards) and a PC `progress`
+Item with `system.subtype:"bond"` (the vendor sheet's Connections tab and
+CHARACTER STATE). Since the BOND-ITEM-MIRROR fix, `markRelationshipProgress`
+mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`, keyed by
+connectionId, then name), so the two stay in step.
 
 ## 1. Meet (creation)
 
@@ -62,10 +63,14 @@ Five paths converge on `createConnection()`:
 
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
-**strong hit** the pipeline branch flips the record (`forgeBond`: `bonded`,
-`allyFlag`, optional second role, history entry), marks rank-scaled
-bonds-legacy ticks, and posts the forge card; the Bolster (+2) / Expand
-(second role, +1) influence choice is card text, tracked manually. Once
+**hit — strong or weak** (BOND-WEAK-FORGE fix; the weak hit forges too, with
+their request in the fiction) the pipeline branch flips the record
+(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry),
+marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
+forge card; a sheet-rolled forge pays the same way via the native consequence
+hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
+BOND-NATIVE-FORGE fix). The Bolster (+2) / Expand (second role, +1) influence
+choice is card text, tracked manually. Once
 `bonded`: always context-injected (`allyFlag`), develop switches to the
 bond-legacy branch, `selectConnection` prefers it as the sole-bonded
 fallback, and forge affordances exclude it.
@@ -77,7 +82,9 @@ inciting swear or via the vow card's picker). Fulfilment and won-linked-fight
 paths deepen the bond (`deepenLinkedConnection`) and grant the vow's promised
 reward; the victory card's 🤝 Deepen button relays over socket
 `connection.deepen` for players. Bonds-legacy ticks accrue on
-`campaignState.legacyTracks.bonds` — but see LEGACY-XP-DEAD below.
+`campaignState.legacyTracks.bonds`, and every newly filled box now awards XP
+to each PC with an earned-XP card (LEGACY-XP-DEAD fix — `addLegacyTicks`
+pays 2 XP/box, 1 once the track is cleared; `!bond` routes through it too).
 
 ## 5. Narrator awareness
 
@@ -88,7 +95,10 @@ Live surfaces: **entity cards** ("ENTITIES IN SCENE" — the record via
 finds nothing for actor-hosted connections (kept for backwards
 compatibility); `buildConnectionsSummary` emits only a count.
 
-## Verified defects (open as of this audit — see `known-issues.md`)
+## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
+
+Each entry below describes the pre-fix behaviour the audit verified; the fix
+summary lives in the `known-issues.md` table and the code.
 
 1. **Weak-hit Forge a Bond does nothing mechanical** (BOND-WEAK-FORGE): the
    resolver's weak hit is text-only — no `forgeABond` flag, so `bonded` never
