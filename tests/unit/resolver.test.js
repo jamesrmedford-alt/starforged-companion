@@ -31,6 +31,7 @@ import {
   buildOracleSeeds,
 } from "../../src/moves/resolver.js";
 import { rollOracle, rollPaired } from "../../src/oracles/roller.js";
+import { enrichProgressTicks } from "../../src/moves/statEnrichment.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -737,6 +738,33 @@ describe("resolveMove", () => {
     expect(result.outcome).toBe("strong_hit");
     expect(result.loremasterContext).toContain("Progress score: 8");
     expect(result.sessionId).toBe("");
+  });
+
+  it("REGRESSION: full progress chain — enrichProgressTicks fills statValue from the live track, resolveMove scores it (pipeline progress rolls always missed before)", async () => {
+    fixDiceSequence([0.25, 0.45]); // challenge [3, 5]; no action roll
+
+    const interp = {
+      moveId:          "take_decisive_action",
+      moveName:        "Take Decisive Action",
+      statUsed:        "",
+      statValue:       0, // what the interpreter / buildForcedInterpretation hand over
+      adds:            0,
+      isProgressMove:  true,
+      moveTarget:      null,
+      mischiefApplied: false,
+      mischiefLevel:   "serious",
+      playerNarration: "I finish this fight.",
+    };
+    await enrichProgressTicks(interp, {
+      listTracks: async () => [{
+        id: "t1", label: "The pirate boarders", type: "combat", rank: "dangerous",
+        ticks: 26, completed: false, combatState: null,
+      }],
+    });
+    const result = resolveMove(interp, { currentSessionId: "" });
+
+    expect(result.progressScore).toBe(6);      // floor(26 / 4)
+    expect(result.outcome).toBe("strong_hit"); // 6 beats 3 and 5
   });
 
   it("appends [MATCH] to loremaster context when challenge dice are equal", () => {

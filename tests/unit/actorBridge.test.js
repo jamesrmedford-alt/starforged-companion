@@ -20,6 +20,7 @@ import {
   invalidateActorCache,
   createCharacterBondItem,
   createCharacterVowItem,
+  completeVowItem,
   advanceVowClocks,
   revertVowClocksForBurn,
 } from '../../src/character/actorBridge.js';
@@ -867,5 +868,46 @@ describe('revertVowClocksForBurn', () => {
 
   it('is a no-op for empty input', async () => {
     await revertVowClocksForBurn([]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// completeVowItem — pipeline Fulfill Your Vow closes the live item vow
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('completeVowItem', () => {
+  it('marks the vow item completed and reports true', async () => {
+    const updates = [];
+    const vow = {
+      id: 'v1', type: 'progress', name: 'Rescue the settlers',
+      system: { subtype: 'vow', current: 40, completed: false },
+      update: async (c) => { updates.push(c); vow.system.completed = true; },
+    };
+    const actor = makeTestActor({ id: 'pc-cvi-1', items: { contents: [vow] } });
+    const done = await completeVowItem(actor, 'v1');
+    expect(done).toBe(true);
+    expect(updates).toEqual([{ 'system.completed': true }]);
+  });
+
+  it('is a no-op (false) on an already-completed vow', async () => {
+    const vow = {
+      id: 'v1', type: 'progress',
+      system: { subtype: 'vow', completed: true },
+      update: async () => { throw new Error('must not update a completed vow'); },
+    };
+    const actor = makeTestActor({ id: 'pc-cvi-2', items: { contents: [vow] } });
+    expect(await completeVowItem(actor, 'v1')).toBe(false);
+  });
+
+  it('warns and reports false when the item is missing', async () => {
+    const actor = makeTestActor({ id: 'pc-cvi-3' });
+    expect(await completeVowItem(actor, 'nope')).toBe(false);
+    expect(getCapturedWarns().some(w => w.includes('completeVowItem'))).toBe(true);
+  });
+
+  it('is safe on nullish actor / id', async () => {
+    expect(await completeVowItem(null, 'v1')).toBe(false);
+    expect(await completeVowItem(makeTestActor({ id: 'pc-cvi-4' }), null)).toBe(false);
   });
 });

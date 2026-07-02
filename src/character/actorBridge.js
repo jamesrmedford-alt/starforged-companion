@@ -442,6 +442,31 @@ export async function markVowProgress(actor, vowItemId, ticks) {
   }
 }
 
+/**
+ * Mark an embedded vow Item completed (Fulfill Your Vow hit). The pipeline's
+ * fulfil branch calls this so item-stored vows — the live store for inciting,
+ * shared, and hand-made vows — actually close when fulfilled through the move
+ * pipeline, not only via the native sheet.
+ *
+ * @param {Actor} actor
+ * @param {string} vowItemId
+ * @returns {Promise<boolean>} true when the item was newly marked completed
+ */
+export async function completeVowItem(actor, vowItemId) {
+  if (!actor || !vowItemId) return false;
+
+  const item = actor.items?.find(i => i.id === vowItemId);
+  if (!item) {
+    console.warn(`actorBridge | completeVowItem: vow item ${vowItemId} not found on actor ${actor.id}`);
+    return false;
+  }
+  if (item.system?.completed === true) return false; // already closed
+
+  await item.update({ 'system.completed': true });
+  invalidateActorCache(actor.id);
+  return true;
+}
+
 
 /**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,

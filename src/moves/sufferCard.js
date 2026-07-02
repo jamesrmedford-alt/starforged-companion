@@ -127,6 +127,9 @@ export function summarizeSufferCalls(calls) {
       case "clear-impact":        parts.push(`cleared ${c.debility}`); break;
       case "combat-progress":     parts.push(`combat progress ×${c.count ?? 1}`); break;
       case "expedition-progress": parts.push(`expedition progress ×${c.count ?? 1}`); break;
+      case "combat-position":     parts.push(c.skipped
+        ? "combat position not applied"
+        : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
       case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;

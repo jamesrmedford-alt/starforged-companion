@@ -47,3 +47,21 @@ describe('WAY_OUT_PROMPT', () => {
     expect(WAY_OUT_PROMPT).toMatch(/Enter the Fray/);
   });
 });
+
+describe('buildCombatThresholdHtml — carried opening position', () => {
+  it('renders the in-control line when position is in_control', () => {
+    const html = buildCombatThresholdHtml({ label: 'raiders', position: 'in_control' });
+    expect(html).toContain('in control');
+    expect(html).not.toContain('bad spot');
+  });
+
+  it('renders the bad-spot line when position is bad_spot', () => {
+    const html = buildCombatThresholdHtml({ label: 'raiders', position: 'bad_spot' });
+    expect(html).toContain('in a bad spot');
+  });
+
+  it('renders no position line when position is absent (weak hit / none)', () => {
+    const html = buildCombatThresholdHtml({ label: 'raiders' });
+    expect(html).not.toContain('If you enter this fight');
+  });
+});

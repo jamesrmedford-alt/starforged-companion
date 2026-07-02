@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth } from '../../src/moves/statEnrichment.js';
+import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth, enrichProgressTicks } from '../../src/moves/statEnrichment.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -297,5 +297,149 @@ describe('enrichInterpretationStatValue', () => {
       expect(interp.statUsed).toBe('heart');
       expect(interp.statValue).toBe(1);
     });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// enrichProgressTicks — progress moves score from live module data.
+// Regression for the "pipeline progress rolls always score 0" defect: nothing
+// ever copied a track's ticks into statValue, so Take Decisive Action and the
+// victory card's Attempt to Fulfill could never hit.
+// ---------------------------------------------------------------------------
+
+describe('enrichProgressTicks', () => {
+  const track = (over = {}) => ({
+    id: 't1', label: 'The pirate boarding party', type: 'combat', rank: 'dangerous',
+    ticks: 0, completed: false, combatState: null, ...over,
+  });
+  const interpFor = (moveId, moveTarget = null) =>
+    ({ moveId, moveTarget, isProgressMove: true, statValue: 0, progressTicks: 0 });
+
+  it('take_decisive_action: fills statValue/progressTicks from the open combat track and returns its combatState', async () => {
+    const interp = interpFor('take_decisive_action');
+    const info = await enrichProgressTicks(interp, {
+      listTracks: async () => [track({ ticks: 24, combatState: 'bad_spot' })],
+    });
+    expect(interp.statValue).toBe(24);
+    expect(interp.progressTicks).toBe(24);
+    expect(info).toMatchObject({ source: 'combat', ticks: 24, combatState: 'bad_spot', trackId: 't1' });
+  });
+
+  it('take_decisive_action: a labeled target picks the right row among several open fights', async () => {
+    const interp = interpFor('take_decisive_action', 'The rogue combat drone');
+    await enrichProgressTicks(interp, {
+      listTracks: async () => [
+        track({ id: 'a', ticks: 8 }),
+        track({ id: 'b', label: 'The rogue combat drone', ticks: 16 }),
+      ],
+    });
+    expect(interp.statValue).toBe(16);
+  });
+
+  it('take_decisive_action: two open fights and no target → ambiguous, warn, score stays 0', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const interp = interpFor('take_decisive_action');
+    const info = await enrichProgressTicks(interp, {
+      listTracks: async () => [track({ id: 'a' }), track({ id: 'b', label: 'Other fight' })],
+    });
+    expect(interp.statValue).toBe(0);
+    expect(info.ticks).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no open combat matched'));
+    warn.mockRestore();
+  });
+
+  it('fulfill_your_vow: the live vow ITEM beats a stale journal twin of the same name', async () => {
+    const interp = interpFor('fulfill_your_vow', 'Find the root cause of the sickness');
+    await enrichProgressTicks(interp, {
+      readAllVows: async () => [
+        { id: 'v1', name: 'Find the root cause of the sickness', rank: 'formidable', ticks: 22, completed: false },
+      ],
+      // Journal mirror created at swear time and never tick-synced since.
+      listTracks: async () => [track({ type: 'vow', label: 'Find the root cause of the sickness', ticks: 4 })],
+    });
+    expect(interp.statValue).toBe(22);
+  });
+
+  it('fulfill_your_vow: falls back to the journal vow track when no item matches', async () => {
+    const interp = interpFor('fulfill_your_vow', 'Rescue the settlers');
+    await enrichProgressTicks(interp, {
+      readAllVows: async () => [],
+      listTracks:  async () => [track({ type: 'vow', label: 'Rescue the settlers', ticks: 12 })],
+    });
+    expect(interp.statValue).toBe(12);
+  });
+
+  it('fulfill_your_vow: matches the forcedMoveTarget by substring, case-insensitively', async () => {
+    const interp = interpFor('fulfill_your_vow', 'root cause');
+    await enrichProgressTicks(interp, {
+      readAllVows: async () => [
+        { id: 'v1', name: 'Find the Root Cause of the Sickness', rank: 'formidable', ticks: 30, completed: false },
+      ],
+    });
+    expect(interp.statValue).toBe(30);
+  });
+
+  it('fulfill_your_vow: completed vows are excluded (repeat fulfil warns, scores 0)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const interp = interpFor('fulfill_your_vow', 'Rescue the settlers');
+    await enrichProgressTicks(interp, {
+      readAllVows: async () => [{ id: 'v1', name: 'Rescue the settlers', ticks: 40, completed: true }],
+      listTracks:  async () => [],
+    });
+    expect(interp.statValue).toBe(0);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('forge_a_bond: scores from the connection record\'s relationshipTicks', async () => {
+    const interp = interpFor('forge_a_bond', 'Ash Barlowe');
+    await enrichProgressTicks(interp, {
+      listConnections: async () => [
+        { _id: 'c1', name: 'Ash Barlowe', rank: 'dangerous', relationshipTicks: 16, active: true },
+      ],
+    });
+    expect(interp.statValue).toBe(16);
+  });
+
+  it('forge_a_bond: no target falls back to the sole active connection', async () => {
+    const interp = interpFor('forge_a_bond');
+    await enrichProgressTicks(interp, {
+      listConnections: async () => [
+        { _id: 'c1', name: 'Ash Barlowe', relationshipTicks: 8, active: true },
+      ],
+    });
+    expect(interp.statValue).toBe(8);
+  });
+
+  it('finish_an_expedition: completed expedition tracks are excluded', async () => {
+    const interp = interpFor('finish_an_expedition', 'The Vault');
+    await enrichProgressTicks(interp, {
+      listTracks: async () => [
+        track({ id: 'done', type: 'expedition', label: 'The Vault', ticks: 40, completed: true }),
+        track({ id: 'open', type: 'expedition', label: 'The Vault approach', ticks: 20 }),
+      ],
+    });
+    expect(interp.statValue).toBe(20);
+  });
+
+  it('continue_a_legacy: deliberate no-op — debug, not warn, score untouched', async () => {
+    const warn  = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const interp = interpFor('continue_a_legacy');
+    const info = await enrichProgressTicks(interp, { listTracks: async () => [] });
+    expect(info).toBeNull();
+    expect(interp.statValue).toBe(0);
+    expect(debug).toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+    debug.mockRestore();
+  });
+
+  it('leaves non-progress moves untouched', async () => {
+    const interp = { moveId: 'strike', moveTarget: null, isProgressMove: false, statValue: 3 };
+    const info = await enrichProgressTicks(interp, { listTracks: async () => [track({ ticks: 24 })] });
+    expect(info).toBeNull();
+    expect(interp.statValue).toBe(3);
   });
 });

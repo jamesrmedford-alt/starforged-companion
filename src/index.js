@@ -44,7 +44,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks } from "./moves/statEnrichment.js";
 import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./moves/resolver.js";
 import { rollYesNo }             from "./oracles/roller.js";
 import { ORACLE_ODDS }           from "./schemas.js";
@@ -80,7 +80,7 @@ import {
   narrateAndPostVowSwearing,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, setCombatPosition, readVows, markVowProgress, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -93,7 +93,6 @@ import {
   registerProgressTrackHooks,
   getActiveCombatPosition,
   getActiveCombatTrack,
-  setCombatTrackPosition,
   listProgressTracks,
   markProgressById,
   addProgressTrack,
@@ -111,11 +110,9 @@ import {
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
 import { buildCombatThresholdHtml, WAY_OUT_PROMPT } from "./moves/combatThreshold.js";
 import {
-  trackPosToActorPos,
-  findCombatForTrack,
   enterCombatTracker,
   endCombatTracker,
-  updateCombatantPosition,
+  applyCombatPositionToTrack,
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
@@ -1018,11 +1015,44 @@ export function registerChatHook() {
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
 
+      // Progress moves score from live module data (combat/expedition journal
+      // tracks, actor vow Items, connection records) — the fix for pipeline
+      // progress rolls always resolving at score 0 (nothing ever copied a
+      // track's ticks into statValue, so Take Decisive Action and the victory
+      // card's Attempt to Fulfill could never hit). Also returns the resolved
+      // combat track's own position for the TDA downgrade below. No-op for
+      // action moves.
+      const tickInfo = await enrichProgressTicks(interpretation, {
+        listTracks: () => listProgressTracks(),
+        readAllVows: async () => {
+          const actors = getPlayerActors();
+          // Speaker-first so a name tie resolves to the roller's own vow copy.
+          actors.sort((a, b) =>
+            (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
+          return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+        },
+        listConnections: async () => {
+          const conn = await import("./entities/connection.js");
+          return (campaignState.connectionIds ?? [])
+            .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+            .filter(Boolean);
+        },
+      }).catch(err => {
+        console.warn(`${MODULE_ID} | progress tick enrichment failed:`, err?.message ?? err);
+        return null;
+      });
+
       // Take Decisive Action — the resolver applies the bad-spot downgrade
-      // (play kit p. 5) from combatPosition resolved at the top of this block.
-      // resolveMove gates the downgrade on moveId, so passing the position for
-      // every move is safe (it is a no-op for non-TDA moves).
-      const resolution = resolveMove(interpretation, campaignState, { combatPosition });
+      // (play kit p. 5). Prefer the enriched track's own position (exact even
+      // with several open fights, where getActiveCombatPosition returns null);
+      // fall back to the single-active-track position resolved at the top of
+      // this block. resolveMove gates the downgrade on moveId, so passing a
+      // position for every move is safe (no-op for non-TDA moves).
+      const resolvedPosition =
+        (interpretation.moveId === "take_decisive_action" && tickInfo?.combatState)
+          ? tickInfo.combatState
+          : combatPosition;
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition });
 
       // Fact-continuity §20 — when a travel move with ARRIVAL semantics
       // resolves to a non-miss, the ship arrived at the destination the
@@ -1261,21 +1291,55 @@ export function registerChatHook() {
         }
       }
 
-      // Fulfill Your Vow — close the target vow track and mark the quests legacy
-      // reward. Weak hit pays one rank lower (ranksDown: 1).
+      // Fulfill Your Vow — close the target vow everywhere it lives and pay the
+      // payoff once. Vows are dual-stored: journal `vow` tracks and actor vow
+      // Items (the live store for inciting / shared / hand-made vows —
+      // milestones mark items). A hit must complete BOTH forms: pre-fix this
+      // branch only completed journal tracks, so item-stored vows closed
+      // nothing when fulfilled through the pipeline. Weak hit pays one rank
+      // lower (ranksDown: 1). Legacy ticks always land on the pipeline's own
+      // campaignState object (persisted once, later) — payFulfilledVowNative's
+      // internal legacy write is reserved for the native-sheet hook, where no
+      // pipeline persist could clobber it.
       if (resolution.consequences?.fulfillVow && game.user.isGM) {
         try {
+          const ranksDown = resolution.consequences.fulfillVow.ranksDown ?? 0;
           const fin = await finishVow(
-            { moveTarget: interpretation.moveTarget, ranksDown: resolution.consequences.fulfillVow.ranksDown ?? 0 },
+            { moveTarget: interpretation.moveTarget, ranksDown },
             {
               listTracks:    () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),
             },
           );
+          // The enriched vow name — the exact item the roll scored against —
+          // is the most reliable key; the journal track label and the raw
+          // moveTarget are fallbacks.
+          const vowName =
+            (tickInfo?.source === "vow" ? tickInfo.label : null)
+            ?? fin?.track?.label
+            ?? interpretation.moveTarget
+            ?? null;
+          const itemDone = await completeVowItemByName(vowName);
+
           if (fin?.track) {
             if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
             await postFulfillVowCard(fin).catch(err =>
               console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
+            // Journal path already paid the quests legacy — deliver only the
+            // connection deepen + promised reward. Sets fulfilPaid, so a later
+            // native-sheet roll of the same vow can't double-pay.
+            if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true });
+          } else if (itemDone) {
+            // Item-only vow (no journal twin): legacy on the pipeline's
+            // campaignState, deepen + reward via the shared payoff, then a
+            // fulfil card synthesized from the item.
+            const ticks = legacyRewardTicks(itemDone.rank, ranksDown);
+            if (ticks > 0) addLegacyTicks(campaignState, "quests", ticks);
+            await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true });
+            await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks }).catch(err =>
+              console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
+          } else {
+            console.warn(`${MODULE_ID} | fulfil: hit but no vow track or item matched "${vowName ?? "?"}" — nothing completed.`);
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | fulfill vow failed:`, err?.message ?? err);
@@ -1286,13 +1350,15 @@ export function registerChatHook() {
       // inferred from narration). Strike and Clash mark progress directly (×2 or
       // ×1). Position is written after the track exists. Take Decisive Action and
       // Face Defeat complete the track. All GM-gated (track journal writes).
+      let thresholdPosted = false;
       if (resolution.consequences?.enterCombat && game.user.isGM) {
         try {
           // Combat is offered, not forced (#241): post a threshold decision card —
           // Enter the Fray (which creates the track, at a suggested-but-adjustable
           // rank, optionally linked to the vow it serves) vs. a way out. Skip when
           // already in this fight (a matching open combat track exists); later
-          // combat moves just mark progress on it.
+          // combat moves just mark progress on it. Enter the Fray's own outcome
+          // position rides the card so it lands on the track at creation.
           const existing = selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
           if (!existing || existing.completed) {
             const vowNames = (readVows(speakerActor) ?? [])
@@ -1301,8 +1367,11 @@ export function registerChatHook() {
               label:         interpretation.moveTarget ?? "the enemy",
               suggestedRank: interpretation.combatRank,
               vowNames,
+              position:      resolution.consequences.combatPosition ?? null,
+              actorId:       speakerActor?.id ?? null,
             }).catch(err =>
               console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
+            thresholdPosted = true;
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
@@ -1331,22 +1400,16 @@ export function registerChatHook() {
 
       if (resolution.consequences?.combatPosition && game.user.isGM) {
         try {
+          const pipelinePos = resolution.consequences.combatPosition;
           const track = await getActiveCombatTrack();
           if (track) {
-            const pipelinePos = resolution.consequences.combatPosition;
-            await setCombatTrackPosition(track.id, pipelinePos).catch(err =>
-              console.warn(`${MODULE_ID} | combat position write failed:`, err?.message ?? err));
-            // Also write the actor's combatPosition field and the combatant flag
-            if (speakerActor) {
-              const actorPos = trackPosToActorPos(pipelinePos);
-              await setCombatPosition(speakerActor, actorPos).catch(err =>
-                console.warn(`${MODULE_ID} | combat actor position write failed:`, err?.message ?? err));
-              const combat = findCombatForTrack(track.id);
-              if (combat) {
-                await updateCombatantPosition(combat, speakerActor, actorPos).catch(err =>
-                  console.warn(`${MODULE_ID} | combat combatant position write failed:`, err?.message ?? err));
-              }
-            }
+            await applyCombatPositionToTrack(track.id, pipelinePos, speakerActor);
+          } else if (thresholdPosted) {
+            // Enter the Fray: the track doesn't exist yet — the position rides
+            // the threshold card's flags and lands at track creation.
+            console.debug(`${MODULE_ID} | combat position "${pipelinePos}" rides the threshold card — track not created yet.`);
+          } else {
+            console.warn(`${MODULE_ID} | combat position "${pipelinePos}" had no single active combat track to write to.`);
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
@@ -2836,11 +2899,16 @@ async function postExpeditionFinishCard({ track, legacyTicks }) {
 
 // ── Combat threshold (#241): offer Enter the Fray vs. a way out ──────────────
 
-async function postCombatThresholdCard({ label, suggestedRank, vowNames }) {
+async function postCombatThresholdCard({ label, suggestedRank, vowNames, position = null, actorId = null }) {
   try {
     await ChatMessage.create({
-      content: buildCombatThresholdHtml({ label, suggestedRank, vowNames }),
-      flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null } },
+      content: buildCombatThresholdHtml({ label, suggestedRank, vowNames, position }),
+      // position/actorId: Enter the Fray's own outcome position (in control on
+      // a strong hit, bad spot on a miss) rides here — the combat track doesn't
+      // exist yet when the consequence fires, so createCombatTrackFromThreshold
+      // applies it at creation. The weak-hit choose-one stashes its pick into
+      // the same flag (sufferDialog combat-position executor).
+      flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null, position, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatThresholdCard: chat post failed:`, err?.message ?? err);
@@ -2848,9 +2916,10 @@ async function postCombatThresholdCard({ label, suggestedRank, vowNames }) {
 }
 
 // GM-side: create (or resume) the combat track from a threshold choice, carrying
-// the chosen rank, objective, and the vow it serves. Reuses applyCombatProgress
-// so a double-click resumes the same fight instead of duplicating it.
-async function createCombatTrackFromThreshold({ label, rank, vowName, objective }) {
+// the chosen rank, objective, the vow it serves, and Enter the Fray's carried
+// opening position. Reuses applyCombatProgress so a double-click resumes the
+// same fight instead of duplicating it. Exported so Quench can drive it.
+export async function createCombatTrackFromThreshold({ label, rank, vowName, objective, position = null, actorId = null }) {
   const result = await applyCombatProgress(
     {
       moveTarget:    label ?? "the enemy",
@@ -2870,6 +2939,11 @@ async function createCombatTrackFromThreshold({ label, rank, vowName, objective 
       console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
     await enterCombatTracker(result.track.id, getPlayerActors()).catch(err =>
       console.warn(`${MODULE_ID} | combat tracker open failed:`, err?.message ?? err));
+    if (position === "in_control" || position === "bad_spot") {
+      const actor = (actorId ? game.actors?.get(actorId) : null) ?? getPlayerActors()[0] ?? null;
+      await applyCombatPositionToTrack(result.track.id, position, actor).catch(err =>
+        console.warn(`${MODULE_ID} | threshold position apply failed:`, err?.message ?? err));
+    }
   }
   return result;
 }
@@ -2890,6 +2964,12 @@ function registerCombatThresholdHook() {
                  || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
       vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
       objective: root.querySelector('.sf-threshold-objective')?.value || "",
+      // Enter the Fray's carried opening position + whose sheet mirrors it —
+      // read at click time so a weak-hit choice stashed after the card posted
+      // (sufferDialog combat-position executor) is picked up too. The socket
+      // relay spreads the whole choice, so non-canonical clients carry it.
+      position:  message.flags[MODULE_ID].position ?? null,
+      actorId:   message.flags[MODULE_ID].actorId ?? null,
     });
     const disable = () => { if (enterBtn) enterBtn.disabled = true; if (wayBtn) wayBtn.disabled = true; };
 
@@ -3066,7 +3146,7 @@ async function postRewardGrantCard(reward, plan) {
 // bypasses the journal-track fulfill branch AND never touches our legacy tracks,
 // so this also marks the Quests legacy. GM-side (world writes); idempotent per
 // vow via the fulfilPaid flag.
-async function payFulfilledVowNative(vowName, outcome) {
+async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = {}) {
   let item = null;
   for (const a of getPlayerActors()) {
     const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
@@ -3086,15 +3166,20 @@ async function payFulfilledVowNative(vowName, outcome) {
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
 
   // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
-  try {
-    const ticks = legacyRewardTicks(rank, ranksDown);
-    if (ticks > 0) {
-      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      addLegacyTicks(cs, "quests", ticks);
-      await game.settings.set(MODULE_ID, "campaignState", cs);
+  // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
+  // object (persisted once at pipeline end) and passes true so this fresh
+  // read-modify-write can't race/clobber that persist.
+  if (!skipLegacy) {
+    try {
+      const ticks = legacyRewardTicks(rank, ranksDown);
+      if (ticks > 0) {
+        const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        addLegacyTicks(cs, "quests", ticks);
+        await game.settings.set(MODULE_ID, "campaignState", cs);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | native-fulfil: legacy award failed:`, err?.message ?? err);
     }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | native-fulfil: legacy award failed:`, err?.message ?? err);
   }
 
   // Deepen the linked connection (scaled by the vow's rank).
@@ -3107,6 +3192,31 @@ async function payFulfilledVowNative(vowName, outcome) {
   // Grant the promised reward (one-time; scaled by outcome).
   await grantLinkedVowReward(vowName, outcome).catch(err =>
     console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
+}
+
+// GM-side: mark every open item copy of the named vow completed (shared vows
+// exist as one copy per PC). Pipeline Fulfill Your Vow companion to
+// actorBridge.completeVowItem. Returns { name, rank } of the first copy
+// closed, or null when no open item matched.
+async function completeVowItemByName(vowName) {
+  if (!vowName) return null;
+  const wanted = String(vowName).toLowerCase();
+  let first = null;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item.type === "progress" && item.system?.subtype === "vow"
+          && item.system?.completed !== true
+          && (item.name ?? "").toLowerCase() === wanted) {
+        const done = await completeVowItem(actor, item.id).catch(err => {
+          console.warn(`${MODULE_ID} | completeVowItemByName failed:`, err?.message ?? err);
+          return false;
+        });
+        if (done && !first) first = { name: item.name, rank: item.system?.rank ?? null };
+      }
+    }
+  }
+  return first;
 }
 
 // GM-gated companion to registerNativeProgressRollHook: when a vow is fulfilled
@@ -4166,15 +4276,28 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
   const addsStr  = resolution.adds    ? ` + ${resolution.adds}` : "";
   const matchStr = resolution.isMatch ? " ✦ Match"              : "";
 
+  // Progress moves roll no action die — the score is the track's filled boxes
+  // (statValue carries the ticks; progressScore = floor(ticks / 4)). Rendering
+  // them through the action-move template printed "+ (0)" and "Action: 0 + N
+  // = 0" against a real outcome.
+  const statLine = resolution.isProgressMove
+    ? `progress (${resolution.statValue} ticks)`
+    : `+${resolution.statUsed} (${resolution.statValue})`;
+  const diceLine = resolution.isProgressMove
+    ? `Progress: <strong>${resolution.progressScore}</strong>
+        &nbsp;|&nbsp;
+        Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`
+    : `Action: ${resolution.actionDie} + ${resolution.statValue}${addsStr}
+        = <strong>${resolution.actionScore}</strong>
+        &nbsp;|&nbsp;
+        Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`;
+
   return `
     <div class="sf-move-result ${outcomeClass}">
       <div class="sf-move-name">${resolution.moveName}</div>
-      <div class="sf-move-stat">+${resolution.statUsed} (${resolution.statValue})</div>
+      <div class="sf-move-stat">${statLine}</div>
       <div class="sf-move-dice">
-        Action: ${resolution.actionDie} + ${resolution.statValue}${addsStr}
-        = <strong>${resolution.actionScore}</strong>
-        &nbsp;|&nbsp;
-        Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}
+        ${diceLine}
       </div>
       <div class="sf-move-outcome">${resolution.outcomeLabel}</div>
       ${resolution.consequences.otherEffect

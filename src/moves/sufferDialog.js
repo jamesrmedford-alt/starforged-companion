@@ -139,6 +139,14 @@ function optionToCalls(opt, selection) {
     return [{ kind: "clear-impact", debility: opt.clearImpact }];
   }
 
+  // Combat position pick — enter_the_fray weak hit: "You are in control".
+  // Before this branch existed the option's string value fell through the
+  // numeric meter loop below and produced zero calls (the card reported
+  // "Applied: no change").
+  if (opt.combatPosition === "in_control" || opt.combatPosition === "bad_spot") {
+    return [{ kind: "combat-position", position: opt.combatPosition }];
+  }
+
   // Suffer route via id (e.g. "Sacrifice Resources (-1)") OR generic
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
@@ -163,7 +171,7 @@ function optionToCalls(opt, selection) {
   // Explicit meter delta options (e.g. "+1 momentum", "-1 health").
   const meterCalls = [];
   for (const [field, delta] of Object.entries(opt)) {
-    if (["label", "requires", "noop", "route", "complication", "scope", "suffer", "amount", "chain", "kind", "count", "rank", "mark", "clearImpact"].includes(field)) continue;
+    if (["label", "requires", "noop", "route", "complication", "scope", "suffer", "amount", "chain", "kind", "count", "rank", "mark", "clearImpact", "combatPosition"].includes(field)) continue;
     if (typeof delta !== "number") continue;
     meterCalls.push({ kind: "meter", meterKey: field, delta });
   }
@@ -177,6 +185,31 @@ function optionToCalls(opt, selection) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Async runner — turns a resolved selection into actual writes
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Find the newest combat-threshold card still awaiting its Enter the Fray
+ * click and stash a combat position in its flags, so track creation applies
+ * it (createCombatTrackFromThreshold reads flags.position). Handles the
+ * enter_the_fray weak hit resolved before the player commits to the fight.
+ *
+ * @param {'in_control'|'bad_spot'} position
+ * @returns {Promise<boolean>} true when a card was updated
+ */
+async function stashPositionOnThresholdCard(position) {
+  try {
+    const messages = game.messages?.contents ?? [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.flags?.[MODULE_ID]?.combatThresholdCard) {
+        await m.update({ [`flags.${MODULE_ID}.position`]: position });
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | combat-position stash failed:`, err?.message ?? err);
+  }
+  return false;
+}
 
 /**
  * Execute the calls returned by `resolveSufferSelection`. Calls each
@@ -250,6 +283,32 @@ export async function runSufferResolution(calls, actor, opts = {}) {
           results.push({ kind: "expedition-progress", count: call.count, trackId: open[0].id });
         } else {
           results.push({ kind: "expedition-progress", count: call.count, skipped: true });
+        }
+        break;
+      }
+      case "combat-position": {
+        const { listProgressTracks } = await import("../ui/progressTracks.js");
+        const allTracks = await listProgressTracks();
+        const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
+        if (open.length === 1) {
+          const { applyCombatPositionToTrack } = await import("./combatTracker.js");
+          await applyCombatPositionToTrack(open[0].id, call.position, actor).catch(err =>
+            console.warn(`${MODULE_ID} | combat-position executor:`, err));
+          results.push({ kind: "combat-position", position: call.position, trackId: open[0].id });
+        } else if (open.length === 0) {
+          // Enter the Fray's threshold card may still be waiting for its
+          // Enter-the-Fray click (the suffer choice and the threshold card can
+          // be resolved in either order). Stash the position on the newest
+          // threshold card so createCombatTrackFromThreshold applies it when
+          // the track is created.
+          const stashed = await stashPositionOnThresholdCard(call.position);
+          if (!stashed) {
+            console.warn(`${MODULE_ID} | combat-position executor: no open combat track or pending threshold card to receive "${call.position}".`);
+          }
+          results.push({ kind: "combat-position", position: call.position, stashed, skipped: !stashed });
+        } else {
+          console.warn(`${MODULE_ID} | combat-position executor: ${open.length} open combat tracks — position "${call.position}" not applied.`);
+          results.push({ kind: "combat-position", position: call.position, skipped: true });
         }
         break;
       }

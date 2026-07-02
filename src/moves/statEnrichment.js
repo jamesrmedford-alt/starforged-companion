@@ -27,15 +27,23 @@
  *                                  Companion Takes A Hit roll surfaces
  *                                  exactly what's missing.
  *
- * Progress moves carry their tick count separately and are NOT enriched
- * here — resolveMove reads `progressTicks` directly (see resolver.js
- * line 776 commentary "statValue is repurposed here to carry the
- * progress ticks from interpretation"). Calling this helper on a
- * progress move is a no-op.
+ * Progress moves are scored by the separate enrichProgressTicks() below.
+ * The resolver reads a progress move's score from `interpretation.statValue`
+ * (repurposed as the tick carrier — see resolver.js "statValue is repurposed
+ * here to carry the progress ticks"); enrichProgressTicks fills it from the
+ * live module data (combat/expedition journal tracks, actor vow Items,
+ * connection records). Module data is ground truth — the interpreter is
+ * instructed never to supply tick counts. enrichInterpretationStatValue
+ * itself skips progress moves.
  */
 
 import { readCharacterSnapshot } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
+import { selectCombatTrack } from "./combat.js";
+import { selectExpeditionTrack } from "./expedition.js";
+import { selectVowTrack } from "./vow.js";
+import { selectMilestoneVow } from "./milestone.js";
+import { selectConnection } from "./developRelationship.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -72,8 +80,9 @@ const PICK_HIGHER_OF = {
  *   interpretation.statValue as a convenience).
  */
 export function enrichInterpretationStatValue(actor, interpretation, campaignState) {
-  // Progress moves carry their tick count in `progressTicks` and the
-  // resolver reads that field separately. Leave statValue alone.
+  // Progress moves score from live track/vow/connection data — filled in
+  // by enrichProgressTicks() below, not from an action stat. Leave
+  // statValue alone here.
   if (interpretation?.isProgressMove) return interpretation.statValue ?? 0;
 
   // Play-kit "whichever is higher" rule for Endure Harm / Stress —
@@ -228,4 +237,114 @@ export function resolveCompanionHealth(actor) {
   }
 
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// Progress-move tick enrichment
+// ---------------------------------------------------------------------------
+
+/**
+ * Which module data source scores each progress move. Progress moves absent
+ * from this map (continue_a_legacy, overcome_destruction) roll against the
+ * player's own legacy tracks, which the module doesn't store — those stay a
+ * deliberate no-op.
+ */
+export const PROGRESS_TICK_SOURCES = {
+  take_decisive_action: "combat",
+  fulfill_your_vow:     "vow",
+  forge_a_bond:         "connection",
+  finish_an_expedition: "expedition",
+};
+
+/**
+ * Fill interpretation.statValue (and progressTicks, for card display) with the
+ * live tick count of the track this progress move rolls against. Module data
+ * is ground truth — the interpreter is instructed never to supply tick counts,
+ * and card buttons only name a target via forcedMoveTarget.
+ *
+ * Dependency-injected so it unit-tests without Foundry:
+ *
+ * @param {Object} interpretation — mutated in place (statValue, progressTicks)
+ * @param {{ listTracks?:    () => Promise<Array<{id,label,type,rank,ticks,completed,combatState}>>,
+ *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed}>>,
+ *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active}>> }} deps
+ * @returns {Promise<{ ticks:number, source:string, label:string|null,
+ *                     trackId:string|null,
+ *                     combatState:("in_control"|"bad_spot"|null) }|null>}
+ *   null when the move isn't a progress move or has no module tick source;
+ *   ticks 0 (statValue untouched) when the source resolves nothing.
+ */
+export async function enrichProgressTicks(interpretation, deps = {}) {
+  if (interpretation?.isProgressMove !== true) return null;
+
+  const moveId = interpretation?.moveId ?? null;
+  const source = PROGRESS_TICK_SOURCES[moveId] ?? null;
+  const target = interpretation?.moveTarget ?? null;
+
+  if (!source) {
+    // Deliberate no-op (see PROGRESS_TICK_SOURCES) — debug, not warn.
+    console.debug(
+      `${MODULE_ID} | enrichProgressTicks: no module tick source for progress move "${moveId}" — leaving score at 0.`,
+    );
+    return null;
+  }
+
+  let resolved = null; // { ticks, label, trackId, combatState }
+
+  if (source === "combat" || source === "expedition") {
+    const tracks = (await deps.listTracks?.()) ?? [];
+    const track = source === "combat"
+      ? selectCombatTrack(tracks, target)
+      : selectExpeditionTrack(tracks, target);
+    if (track) {
+      resolved = {
+        ticks:       Number(track.ticks ?? 0),
+        label:       track.label ?? null,
+        trackId:     track.id ?? null,
+        combatState: source === "combat" ? (track.combatState ?? null) : null,
+      };
+    }
+  } else if (source === "vow") {
+    // Item vows are the live store — milestones mark actor vow Items, while
+    // journal `vow` tracks are creation-time mirrors that are never
+    // tick-synced afterwards. Items first; journal fallback only when no
+    // item matches.
+    const vows = (await deps.readAllVows?.()) ?? [];
+    const vow  = selectMilestoneVow(vows, target);
+    if (vow) {
+      resolved = {
+        ticks: Number(vow.ticks ?? 0), label: vow.name ?? null,
+        trackId: vow.id ?? null, combatState: null,
+      };
+    } else {
+      const tracks = (await deps.listTracks?.()) ?? [];
+      const track  = selectVowTrack(tracks, target);
+      if (track) {
+        resolved = {
+          ticks: Number(track.ticks ?? 0), label: track.label ?? null,
+          trackId: track.id ?? null, combatState: null,
+        };
+      }
+    }
+  } else if (source === "connection") {
+    const connections = (await deps.listConnections?.()) ?? [];
+    const conn = selectConnection(connections, target);
+    if (conn) {
+      resolved = {
+        ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,
+        trackId: conn._id ?? conn.id ?? null, combatState: null,
+      };
+    }
+  }
+
+  if (!resolved) {
+    console.warn(
+      `${MODULE_ID} | enrichProgressTicks: no open ${source} matched for ${moveId} (target: ${target ? `"${target}"` : "none"}) — progress score will be 0.`,
+    );
+    return { ticks: 0, source, label: null, trackId: null, combatState: null };
+  }
+
+  interpretation.statValue     = resolved.ticks;
+  interpretation.progressTicks = resolved.ticks;
+  return { source, ...resolved };
 }
