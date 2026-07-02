@@ -133,18 +133,16 @@ summary lives in the `known-issues.md` table and the code.
 3. **Forsake is cosmetic** (VOW-FORSAKE-COSMETIC): costs are presented; the
    vow is never cleared.
 
-## Softer gaps (recorded, not yet bugs-with-consequences)
+## Softer gaps — resolved in the 2026-07 cleanup
 
-- `fulfilPaid`/reward bookkeeping lives on the **first-matched copy**; deleting
-  that copy could allow a re-pay (the independent `reward.status` guard still
-  blocks reward double-grants).
-- **Rank isn't synced** across shared copies — a sheet-side re-rank diverges
-  siblings, and whichever copy fulfil matches sets the legacy/deepen scaling.
-- **Panel can't create vow tracks**: `addProgressTrack(type:"vow")` and its
-  one-shot item mirror are unreachable from the UI and uncalled — dormant
-  branch; journal vow ticks are frozen at creation by design.
-- **Ignored reward card = silent no-reward**: no `reward` flag is ever
-  written, so fulfilment deepens and pays legacy but grants nothing, without
-  notice.
-- Dead socket kind `vow.swearShared` (handler retained, nothing emits it);
-  stale "first vow item" comment in the assembler's background-vow block.
+- ~~`fulfilPaid` lived on the first-matched copy~~ — **addressed**: checked
+  and stamped across every copy (survives a deleted/renamed copy).
+- ~~Rank wasn't synced across shared copies~~ — **addressed**: `rank` joined
+  `SHARED_VOW_SYNC_FIELDS` (a shared vow has one rank for the crew).
+- ~~Dormant vow item-mirror in `addProgressTrack`~~ — **removed**: journal
+  vow tracks no longer mint a second, never-synced item copy.
+- ~~Ignored reward card = silent no-reward~~ — **addressed**: fulfilment now
+  posts an "ℹ no reward was chosen" note (`grantLinkedVowReward
+  noteIfAbsent`) when the reward-choice card was never answered.
+- ~~Dead `vow.swearShared` socket branch / stale assembler comment~~ —
+  **removed / corrected**.

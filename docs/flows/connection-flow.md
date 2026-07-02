@@ -120,14 +120,16 @@ summary lives in the `known-issues.md` table and the code.
    `subtype:"bond"` Item stays at 0 forever, so the vendor Connections tab
    (and CHARACTER STATE ticks) disagree with the record.
 
-## Softer gaps (recorded, not yet bugs-with-consequences)
+## Softer gaps — resolved in the 2026-07 cleanup
 
-- `#syncConnectionEntity` in the progress-tracks panel is doubly stale: fires
-  only for `type:'connection'` tracks (which nothing creates), reads the
-  wrong host (`game.journal`), writes a field nothing reads.
-- `loseConnection` / `setAllyFlag` / `setSceneRelevant` /
-  `clearAllSceneFlags` have no callers — `active` is never set false in play
-  (no severance flow) and the scene-relevant sort is inert.
-- `relationshipTicks` is undeclared in `ConnectionSchema` (written ad-hoc;
-  reads default to 0, functionally safe).
-- `!bond` is disconnected from any specific connection and from rank raises.
+- ~~`#syncConnectionEntity` doubly stale~~ — **removed** (connection progress
+  lives on `relationshipTicks`, mirrored to bond Items).
+- ~~No severance flow / dead flag togglers~~ — **addressed**: new GM
+  **`!sever <name>`** command routes through `loseConnection` (record kept
+  inactive, history entry, table card); the uncalled `setAllyFlag` /
+  `setSceneRelevant` / `clearAllSceneFlags` were removed (superseded by the
+  relevance resolver).
+- ~~`relationshipTicks` undeclared~~ — **declared** in `ConnectionSchema`.
+- ~~`!bond` disconnected~~ — **addressed**: `!bond [rank] [name]` resolves a
+  bonded connection (sole-bonded default), uses its rank, and a hit-with-match
+  now actually raises the connection's rank.

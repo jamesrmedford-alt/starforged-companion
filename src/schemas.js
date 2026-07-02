@@ -421,7 +421,13 @@ export const ConnectionSchema = {
   portraitSourceDescription: "",// The Loremaster narration excerpt that triggered art generation
 
   bonded: false,                // true after Forge a Bond (strong or weak hit)
-  active: true,                 // false if connection lost or permanently severed
+  active: true,                 // false if connection lost or permanently severed (!sever)
+
+  relationshipTicks: 0,         // Relationship progress track (0–40) — written by
+                                // markRelationshipProgress (Develop Your Relationship,
+                                // deepenLinkedConnection) and scored by Forge a Bond
+                                // (enrichProgressTicks). Was written ad-hoc without a
+                                // schema home until the 2026-07 soft-spot cleanup.
 
   progressTrackId: null,        // Associated ProgressTrack _id
 

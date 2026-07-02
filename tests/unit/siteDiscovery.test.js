@@ -86,3 +86,38 @@ describe("revealSectorSite", () => {
     expect(d.setState).toHaveBeenCalledTimes(1);   // still persists the flip
   });
 });
+
+
+describe("revealSectorSite — stored siteId link (expedition→site FK)", () => {
+  it("reveals exactly the linked site, bypassing the name ladder", async () => {
+    const state = { sectors: [{ id: "sec", sceneId: null, mapData: { discoveries: [
+      { id: "d1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false, actorId: null },
+      { id: "d2", name: "Derelict Starship", type: "derelict", discovered: false, actorId: null },
+    ] } }] };
+    const result = await revealSectorSite("totally unrelated label", {
+      siteId: "d2",
+      getState: () => state,
+      setState: () => {},
+      getScene: () => null,
+      updateLoc: async () => {},
+    });
+    expect(result?.site?.id).toBe("d2");
+    expect(state.sectors[0].mapData.discoveries[1].discovered).toBe(true);
+    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
+  });
+
+  it("falls back to the label ladder when the linked site is already discovered", async () => {
+    const state = { sectors: [{ id: "sec", sceneId: null, mapData: { discoveries: [
+      { id: "d1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false, actorId: null },
+      { id: "d2", name: "Derelict Starship", type: "derelict", discovered: true, actorId: null },
+    ] } }] };
+    const result = await revealSectorSite("sunken choir", {
+      siteId: "d2",
+      getState: () => state,
+      setState: () => {},
+      getScene: () => null,
+      updateLoc: async () => {},
+    });
+    expect(result?.site?.id).toBe("d1");
+  });
+});

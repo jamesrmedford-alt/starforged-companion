@@ -110,3 +110,24 @@ describe("resolveVowItemCopies — vowId-first payoff resolution (VOW-RENAME-PAY
     expect(resolveVowItemCopies("Find the cure").primary?.item.id).toBe("e");
   });
 });
+
+describe("waypointOracleFor — Explore a Waypoint match follow-up buttons", () => {
+  it("offers Make a Discovery on a strong hit with a match", async () => {
+    const { waypointOracleFor } = await import("../../src/index.js");
+    expect(waypointOracleFor({ moveId: "explore_a_waypoint", outcome: "strong_hit", isMatch: true }))
+      .toBe("make_a_discovery");
+  });
+
+  it("offers Confront Chaos on a miss with a match", async () => {
+    const { waypointOracleFor } = await import("../../src/index.js");
+    expect(waypointOracleFor({ moveId: "explore_a_waypoint", outcome: "miss", isMatch: true }))
+      .toBe("confront_chaos");
+  });
+
+  it("offers nothing without a match, on weak hits, or for other moves", async () => {
+    const { waypointOracleFor } = await import("../../src/index.js");
+    expect(waypointOracleFor({ moveId: "explore_a_waypoint", outcome: "strong_hit", isMatch: false })).toBeNull();
+    expect(waypointOracleFor({ moveId: "explore_a_waypoint", outcome: "weak_hit", isMatch: true })).toBeNull();
+    expect(waypointOracleFor({ moveId: "face_danger", outcome: "strong_hit", isMatch: true })).toBeNull();
+  });
+});

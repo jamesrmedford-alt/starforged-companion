@@ -97,8 +97,10 @@ import {
   markProgressById,
   addProgressTrack,
   completeProgressTrack,
+  updateTrackFields,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, finishExpedition, legacyRewardTicks } from "./moves/expedition.js";
+import { applyExpeditionProgress, finishExpedition, legacyRewardTicks, selectExpeditionTrack, planRecommit } from "./moves/expedition.js";
+import { selectSiteForReveal } from "./sectors/precursorSites.js";
 import { finishVow, shouldPayFulfilledVow } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -108,7 +110,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
-import { buildCombatThresholdHtml, WAY_OUT_PROMPT } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
   endCombatTracker,
@@ -116,7 +118,7 @@ import {
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond, nextRank } from "./moves/developRelationship.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
 import {
   extractRiders,
@@ -746,6 +748,11 @@ export function registerChatHook() {
       return;
     }
 
+    if (isSeverCommand(message)) {
+      await handleSeverCommand(message);
+      return;
+    }
+
     // Session safety / lifecycle commands — open DialogV2 surfaces.
     if (isFlagCommand(message))         { openSetFlagDialog();         return; }
     if (isFateCommand(message))         { openChangeYourFateDialog();  return; }
@@ -1135,6 +1142,25 @@ export function registerChatHook() {
             },
           );
           if (result?.track) {
+            // Link the new expedition to the undiscovered site its destination
+            // confidently names (exact/substring/type keyword — never the
+            // sole-undiscovered guess). Finishing then reveals THIS site
+            // instead of re-guessing by name — the audit's "expedition→site
+            // linkage is name-fuzzy" gap.
+            if (result.created) {
+              try {
+                for (const sector of campaignState.sectors ?? []) {
+                  const site = selectSiteForReveal(
+                    sector.mapData?.discoveries ?? [], result.track.label, { requireLabelMatch: true });
+                  if (site) {
+                    await updateTrackFields(result.track.id, { siteId: site.id });
+                    break;
+                  }
+                }
+              } catch (err) {
+                console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
+              }
+            }
             await postExpeditionProgressCard(result).catch(err =>
               console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
           }
@@ -1294,6 +1320,7 @@ export function registerChatHook() {
               const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
               const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
                 source:   "expedition",
+                siteId:   fin.track?.siteId ?? null,
                 getState: () => campaignState,
                 setState: () => {},
               });
@@ -1304,6 +1331,24 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
+        }
+      }
+
+      // Finish an Expedition MISS — offer the play kit's recommit as a click
+      // (roll both challenge dice, clear filled boxes equal to the lowest,
+      // raise the rank one step) instead of advisory text the GM applies by
+      // hand. The track stays open either way; the button is optional.
+      if (resolution.moveId === "finish_an_expedition" && resolution.outcome === "miss" && game.user.isGM) {
+        try {
+          const track = selectExpeditionTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
+          if (track) {
+            await postRecommitOfferCard(track).catch(err =>
+              console.warn(`${MODULE_ID} | recommit offer card failed:`, err?.message ?? err));
+          } else {
+            console.debug(`${MODULE_ID} | recommit offer skipped — no open expedition matched "${interpretation.moveTarget ?? "?"}".`);
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | recommit offer failed:`, err?.message ?? err);
         }
       }
 
@@ -2916,6 +2961,87 @@ async function postExpeditionProgressCard({ track, created }) {
   }
 }
 
+// ── Finish an Expedition miss: recommit offer (play kit) ─────────────────────
+
+async function postRecommitOfferCard(track) {
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Expedition — recommit?</strong>`
+      + `<p>The way to <strong>${escapeChatHtml(track.label ?? "your destination")}</strong> is lost to you — for now. `
+      + `You may abandon the expedition (leave the track as it stands), or <em>recommit</em>: `
+      + `roll both challenge dice, clear filled boxes equal to the lowest, and raise the expedition's rank by one.</p>`
+      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-recommit" `
+      + `title="Roll challenge dice, clear the lowest die's boxes, raise the rank">🔁 Recommit to the Expedition</button></div></div>`,
+    flags: { [MODULE_ID]: { recommitOfferCard: true, trackId: track.id, trackLabel: track.label ?? null } },
+  });
+}
+
+// GM-side: execute the recommit mechanics on an open expedition track.
+async function performRecommit(trackId) {
+  try {
+    const track = (await listProgressTracks()).find(t => t.id === trackId);
+    if (!track || track.completed) {
+      console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
+      return;
+    }
+    const dice = rollChallengeDice();
+    const plan = planRecommit(track.ticks, track.rank, dice);
+    await updateTrackFields(trackId, { ticks: plan.newTicks, rank: plan.newRank });
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
+        + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
+        + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
+        + `The journey continues.</p></div>`,
+      flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recommit failed:`, err?.message ?? err);
+  }
+}
+
+// Wire the recommit button — a journal write, so non-canonical clients relay.
+function registerRecommitHook() {
+  if (registerRecommitHook._installed) return;
+  registerRecommitHook._installed = true;
+  onChatMessageRender((message, root) => {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.recommitOfferCard) return;
+    const btn = root.querySelector('[data-action="sf-recommit"]');
+    if (!btn) return;
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      fresh.disabled = true;
+      if (isCanonicalGM()) {
+        await performRecommit(f.trackId);
+      } else {
+        try {
+          game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "expedition.recommit", trackId: f.trackId });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | recommit relay emit failed:`, err?.message ?? err);
+          fresh.disabled = false;
+        }
+      }
+    });
+  });
+}
+
+// GM-side socket receiver for player recommit clicks.
+function registerRecommitSocket() {
+  if (registerRecommitSocket._installed) return;
+  if (!game?.socket?.on) return;
+  registerRecommitSocket._installed = true;
+  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
+    try {
+      if (!payload || payload.kind !== "expedition.recommit") return;
+      if (!isCanonicalGM()) return;
+      await performRecommit(payload.trackId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | recommit socket handler failed:`, err?.message ?? err);
+    }
+  });
+}
+
 const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bonds" };
 
 /**
@@ -3092,11 +3218,45 @@ function registerCombatThresholdHook() {
         disable();
         try {
           await ChatMessage.create({
-            content: `<div class="sf-card sf-way-out"><div class="sf-card-body"><p>🚪 <em>${escapeChatHtml(WAY_OUT_PROMPT)}</em></p></div></div>`,
+            content: buildWayOutHtml(),
             flags:   { [MODULE_ID]: { wayOutCard: true } },
           });
         } catch (err) {
           console.warn(`${MODULE_ID} | way-out card failed:`, err?.message ?? err);
+        }
+      });
+    }
+  });
+}
+
+// Wire the way-out card's off-ramp buttons: each posts the matching forced
+// move (Face Danger / Compel / Secure an Advantage) so choosing an exit rolls
+// it instead of leaving the player to retype the move. Any client may post —
+// the canonical GM's pipeline picks the message up.
+function registerWayOutHook() {
+  if (registerWayOutHook._installed) return;
+  registerWayOutHook._installed = true;
+  onChatMessageRender((message, root) => {
+    if (!message?.flags?.[MODULE_ID]?.wayOutCard) return;
+    for (const btn of root.querySelectorAll('[data-action="sf-way-out-move"]')) {
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      fresh.addEventListener("click", async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        const move = WAY_OUT_MOVES.find(m => m.moveId === fresh.dataset.moveId);
+        if (!move) {
+          console.warn(`${MODULE_ID} | way-out: unknown move id "${fresh.dataset.moveId}"`);
+          return;
+        }
+        root.querySelectorAll('[data-action="sf-way-out-move"]').forEach(b => { b.disabled = true; });
+        try {
+          await ChatMessage.create({
+            content: move.narration,
+            flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId } },
+          });
+        } catch (err) {
+          console.error(`${MODULE_ID} | way-out move post failed:`, err?.message ?? err);
+          root.querySelectorAll('[data-action="sf-way-out-move"]').forEach(b => { b.disabled = false; });
         }
       });
     }
@@ -3231,15 +3391,28 @@ export function resolveVowItemCopies(vowName) {
 
 // GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
 // the fight is won, scaled by the outcome. One-time — the reward's status flips
-// from "promised" so a re-win can't re-grant it.
-async function grantLinkedVowReward(vowName, outcome) {
+// from "promised" so a re-win can't re-grant it. `noteIfAbsent` (the fulfil
+// path sets it) posts a visible note when NO reward was ever chosen — the
+// reward-choice card was ignored at swear time — so a reward-less fulfilment
+// stops being a silent mystery. Win-path calls leave it off (a fight can
+// legitimately precede the reward pick).
+async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false } = {}) {
   const { copies } = resolveVowItemCopies(vowName);
-  let reward = null, vowId = null;
+  let reward = null, vowId = null, anyRewardFlag = false;
   for (const { item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
+    if (r) anyRewardFlag = true;
     if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; break; }
   }
-  if (!reward) return;
+  if (!reward) {
+    if (noteIfAbsent && copies.length && !anyRewardFlag) {
+      await ChatMessage.create({
+        content: `<div class="sf-ptp-card"><p>ℹ No concrete reward was chosen when this vow was sworn (the reward-choice card was never answered), so none is granted with its fulfilment.</p></div>`,
+        flags:   { [MODULE_ID]: { rewardAbsentNote: true, vowName: vowName ?? null } },
+      }).catch(err => console.warn(`${MODULE_ID} | reward-absent note failed:`, err?.message ?? err));
+    }
+    return;
+  }
 
   const plan = planRewardGrant(reward, outcome);
   const pc   = getPlayerActors()[0] ?? null;
@@ -3282,14 +3455,14 @@ async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = 
   // filter is bypassed here: the vendor sheet may have already marked the
   // rolled copy completed before this payoff runs, so fall back to searching
   // ALL copies when no open one matches.
-  let { primary } = resolveVowItemCopies(vowName);
+  let { primary, copies } = resolveVowItemCopies(vowName);
   if (!primary) {
     for (const a of getPlayerActors()) {
       const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
       const found = items.find(i =>
         i.type === "progress" && i.system?.subtype === "vow"
         && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
-      if (found) { primary = { actor: a, item: found }; break; }
+      if (found) { primary = { actor: a, item: found }; copies = [primary]; break; }
     }
   }
   const item = primary?.item ?? null;
@@ -3297,8 +3470,14 @@ async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = 
     console.debug(`${MODULE_ID} | native-fulfil: no vow item named "${vowName ?? "?"}" — no payoff`);
     return;
   }
-  if (item.flags?.[MODULE_ID]?.fulfilPaid) return;        // pay once per vow
-  await item.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
+  // Pay once per vow — checked and stamped across EVERY copy, so the
+  // bookkeeping survives any single copy being deleted or renamed (it used
+  // to live only on the first-matched copy).
+  const allCopies = copies?.length ? copies : [primary];
+  if (allCopies.some(({ item: i }) => i.flags?.[MODULE_ID]?.fulfilPaid)) return;
+  for (const { item: i } of allCopies) {
+    await i.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
+  }
 
   const rank      = item.system?.rank ?? null;
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
@@ -3327,8 +3506,9 @@ async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = 
       console.warn(`${MODULE_ID} | native-fulfil: deepen connection failed:`, err?.message ?? err));
   }
 
-  // Grant the promised reward (one-time; scaled by outcome).
-  await grantLinkedVowReward(vowName, outcome).catch(err =>
+  // Grant the promised reward (one-time; scaled by outcome). The fulfil path
+  // surfaces a note when no reward was ever chosen.
+  await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true }).catch(err =>
     console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
 }
 
@@ -3961,17 +4141,39 @@ const BOND_ROLL_ADDS = {
  */
 async function handleBondCommand(message) {
   const text = message.content?.trim() ?? "";
-  const arg  = text.slice("!bond".length).trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const rest = text.slice("!bond".length).trim();
+  const firstToken = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
+  const rankArg = firstToken in BOND_ROLL_ADDS ? firstToken : null;
+  const nameArg = (rankArg ? rest.slice(firstToken.length) : rest).trim() || null;
 
-  if (!arg || !(arg in BOND_ROLL_ADDS)) {
+  // Resolve which BONDED connection this roll develops: named explicitly, or
+  // the sole bonded one. The resolved connection's own rank drives the adds
+  // (and a hit-with-match raises its rank for real, matching the develop
+  // pipeline); a bare rank arg stays as the untargeted fallback. Before the
+  // 2026-07 soft-spot cleanup this command was disconnected from any specific
+  // connection and its rank-raise was text only.
+  const conn = await import("./entities/connection.js");
+  const campaignStateForBond = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const bondedConnections = (campaignStateForBond.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(c => c && c.active !== false && c.bonded === true);
+  const target = nameArg
+    ? selectConnection(bondedConnections, nameArg)
+    : (bondedConnections.length === 1 ? bondedConnections[0] : null);
+  if (nameArg && !target) {
+    ui.notifications?.warn(`Starforged Companion: no bonded connection matched "${nameArg}".`);
+  }
+
+  const rank = target?.rank ?? rankArg;
+  if (!rank || !(rank in BOND_ROLL_ADDS)) {
     await ChatMessage.create({
-      content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded)</strong> <p>Usage: <code>!bond &lt;rank&gt;</code><br>Rank: <code>troublesome</code> · <code>dangerous</code> · <code>formidable</code> · <code>extreme</code> · <code>epic</code></p></div>`,
+      content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded)</strong> <p>Usage: <code>!bond [rank] [name]</code> — name a bonded connection to use their rank (and raise it on a hit with a match), or give a bare rank for an untargeted roll.<br>Rank: <code>troublesome</code> · <code>dangerous</code> · <code>formidable</code> · <code>extreme</code> · <code>epic</code></p></div>`,
       flags:   { [MODULE_ID]: { bondCommandCard: true } },
     });
     return;
   }
 
-  const adds          = BOND_ROLL_ADDS[arg];
+  const adds          = BOND_ROLL_ADDS[rank];
   const actionDie     = rollActionDie();
   const challengeDice = rollChallengeDice();
   const actionScore   = calcActionScore(actionDie, 0, adds);
@@ -3981,12 +4183,13 @@ async function handleBondCommand(message) {
   void showActionRoll(actionDie, challengeDice);
 
   const matchBadge = isMatch ? " ✦ MATCH" : "";
+  const raiseRank  = !!target && isMatch && outcome !== "miss" && target.rank !== "epic";
   let body, momentumChange = 0, ticksOnBonds = 0;
 
   switch (outcome) {
     case "strong_hit":
       ticksOnBonds = 2;
-      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.${isMatch ? " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic)." : ""}`;
+      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.`;
       break;
     case "weak_hit":
       momentumChange = 2;
@@ -3996,9 +4199,14 @@ async function handleBondCommand(message) {
       body = `<strong>Miss${matchBadge}.</strong> Take no lasting benefit.`;
       break;
   }
+  if (raiseRank) {
+    body += ` The match bolsters your standing — <strong>${escapeChatHtml(target.name)}</strong>'s rank rises to <strong>${nextRank(target.rank)}</strong>.`;
+  } else if (!target && isMatch && outcome !== "miss") {
+    body += " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic).";
+  }
 
   // GM-only state writes — only fire if there's an actual effect.
-  if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0)) {
+  if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0 || raiseRank)) {
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
     if (ticksOnBonds > 0) {
       // Route through addLegacyTicks so filled boxes award XP like every
@@ -4006,6 +4214,11 @@ async function handleBondCommand(message) {
       addLegacyTicks(campaignState, "bonds", ticksOnBonds);
     }
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
+
+    if (raiseRank) {
+      await conn.updateConnection(target.__hostId, { rank: nextRank(target.rank) }).catch(err =>
+        console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
+    }
 
     if (momentumChange > 0) {
       const actor = game.user?.character ?? getPlayerActors()[0];
@@ -4016,9 +4229,47 @@ async function handleBondCommand(message) {
     }
   }
 
+  const title = target
+    ? `Develop Your Relationship (bonded: ${escapeChatHtml(target.name)}, ${escapeChatHtml(rank)})`
+    : `Develop Your Relationship (bonded, ${escapeChatHtml(rank)})`;
   await ChatMessage.create({
-    content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded, ${escapeChatHtml(arg)})</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
+    content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
     flags:   { [MODULE_ID]: { bondCommandCard: true } },
+  });
+}
+
+/** !sever <name> — GM-only: mark a connection lost/severed (kept inactive). */
+export function isSeverCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]?.severCommandCard) return false;
+  return /^!sever(\s|$)/i.test(text);
+}
+
+// The missing severance affordance (2026-07 soft-spot cleanup): `active` was
+// never set false by any flow, so a lost bond stayed narrator-visible forever.
+// Uses connection.js loseConnection (active:false + flags cleared + history
+// entry) — audit-preserving; the record is kept, not deleted.
+async function handleSeverCommand(message) {
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("!sever is GM-only (writes the connection record).");
+    return;
+  }
+  const arg = (message.content?.trim() ?? "").slice("!sever".length).trim();
+  const conn = await import("./entities/connection.js");
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const connections = (campaignState.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(Boolean);
+  const target = selectConnection(connections, arg || null);
+  if (!target?.__hostId) {
+    ui.notifications?.warn(
+      `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);
+    return;
+  }
+  await conn.loseConnection(target.__hostId, "Severed (!sever).");
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-sever-card"><div class="sf-card-header">💔 Connection severed: ${escapeChatHtml(target.name)}</div><div class="sf-card-body"><p>The relationship is lost. The record is kept (inactive) for the campaign history; the narrator stops treating them as an ally. Envision what this costs you.</p></div></div>`,
+    flags:   { [MODULE_ID]: { severCommandCard: true, connectionName: target.name ?? null } },
   });
 }
 
@@ -4434,6 +4685,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         moveResolution: true,
         resolutionId:   resolution._id,
         ...(TDA_OFFER_MOVES.has(resolution.moveId) ? { combatMoveCard: true } : {}),
+        ...(waypointOracleFor(resolution) ? { waypointOracleCard: waypointOracleFor(resolution) } : {}),
         ...(burnState ? { burn: burnState } : {}),
         ...(improveState ? { improve: improveState } : {}),
         ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
@@ -4495,9 +4747,62 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${TDA_OFFER_MOVES.has(resolution.moveId)
         ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight</button></div>`
         : ""}
+      ${waypointOracleFor(resolution) === "make_a_discovery"
+        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-waypoint-oracle" title="The match reveals something wondrous — roll Make a Discovery (marks the discoveries legacy)">🔭 Make a Discovery</button></div>`
+        : ""}
+      ${waypointOracleFor(resolution) === "confront_chaos"
+        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-waypoint-oracle" title="The match exposes something dire — roll Confront Chaos">🌀 Confront Chaos</button></div>`
+        : ""}
     </div>
   `.trim();
 }
+
+/**
+ * Which follow-up oracle move an Explore a Waypoint MATCH offers on its result
+ * card: strong hit + match reveals something wondrous (Make a Discovery), miss
+ * + match exposes something dire (Confront Chaos). These were advisory prose
+ * seeds only until the 2026-07 soft-spot cleanup gave them one-click buttons.
+ *
+ * @param {{ moveId?: string, outcome?: string, isMatch?: boolean }} resolution
+ * @returns {"make_a_discovery"|"confront_chaos"|null}
+ */
+export function waypointOracleFor(resolution) {
+  if (resolution?.moveId !== "explore_a_waypoint" || !resolution?.isMatch) return null;
+  if (resolution.outcome === "strong_hit") return "make_a_discovery";
+  if (resolution.outcome === "miss")       return "confront_chaos";
+  return null;
+}
+
+/**
+ * Wire the waypoint-match oracle button — posts the forced follow-up move
+ * (Make a Discovery / Confront Chaos); the canonical GM's pipeline resolves
+ * it. Exported so Quench can drive it with a synthetic message + root.
+ */
+export function wireWaypointOracleButton(message, root) {
+  const oracleMove = message?.flags?.[MODULE_ID]?.waypointOracleCard;
+  if (!oracleMove) return;
+  const btn = root?.querySelector?.('[data-action="sf-waypoint-oracle"]');
+  if (!btn) return;
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    try {
+      await ChatMessage.create({
+        content: oracleMove === "make_a_discovery"
+          ? "I follow what the waypoint revealed — making a discovery."
+          : "I face the chaos the waypoint exposed.",
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: oracleMove } },
+      });
+    } catch (err) {
+      console.error(`${MODULE_ID} | waypoint oracle button failed:`, err);
+      fresh.disabled = false;
+    }
+  });
+}
+onChatMessageRender((message, root) => wireWaypointOracleButton(message, root));
 
 /**
  * Render the "Reach a Milestone" suggestion button for a move-result card.
@@ -4819,6 +5124,9 @@ Hooks.once("ready", () => {
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
   registerCombatThresholdSocket();
+  registerWayOutHook();
+  registerRecommitHook();
+  registerRecommitSocket();
   // Won-fight vow milestone (#241) — Mark milestone / Fulfill / Deepen bond on a
   // won linked fight; mark + deepen are GM-gated and relayed for other clients.
   registerFightVowMilestoneHook();

@@ -129,3 +129,31 @@ export async function finishExpedition({ moveTarget, ranksDown = 0 }, deps) {
   const completed = await deps.completeTrack(track.id);
   return { track: completed ?? track, legacyTicks: legacyRewardTicks(track.rank, ranksDown) };
 }
+
+/** Raise an expedition rank one step, clamped at epic. Unknown ranks normalise first. */
+export function nextExpeditionRank(rank) {
+  const idx = RANK_ORDER.indexOf(normalizeExpeditionRank(rank));
+  return RANK_ORDER[Math.min(idx + 1, RANK_ORDER.length - 1)];
+}
+
+/**
+ * Plan a Finish an Expedition miss RECOMMIT (play kit): roll both challenge
+ * dice, clear a number of filled boxes equal to the LOWEST die, and raise the
+ * expedition's rank by one. Pure — the dice are injected so the caller rolls.
+ *
+ * @param {number} ticks — the track's current ticks (0–40)
+ * @param {string} rank  — the track's current rank
+ * @param {[number, number]} dice — two challenge dice
+ * @returns {{ lowest:number, clearedBoxes:number, newTicks:number, newRank:string }}
+ */
+export function planRecommit(ticks, rank, dice) {
+  const t = Math.max(0, Number(ticks) || 0);
+  const lowest = Math.min(Number(dice?.[0]) || 0, Number(dice?.[1]) || 0);
+  const newTicks = Math.max(0, t - lowest * 4);
+  return {
+    lowest,
+    clearedBoxes: Math.ceil((t - newTicks) / 4),
+    newTicks,
+    newRank: nextExpeditionRank(rank),
+  };
+}

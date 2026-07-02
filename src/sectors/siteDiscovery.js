@@ -27,6 +27,10 @@ const MODULE_ID = "starforged-companion";
  * @param {string|null} label — expedition destination / command target
  * @param {Object} [opts]
  * @param {string}   [opts.source]    — telemetry tag ("expedition" | "manual")
+ * @param {string}   [opts.siteId]    — a stored expedition→site link: reveal
+ *   exactly this discovery when it exists, bypassing the name-fuzzy ladder
+ *   (2026-07 soft-spot fix — with several undiscovered sites the ladder could
+ *   reveal the "wrong" one).
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise
  * @param {Function} [opts.getScene]  — (sceneId) => Scene|null
@@ -44,7 +48,10 @@ export async function revealSectorSite(label, opts = {}) {
   const state = getState();
   for (const sector of state?.sectors ?? []) {
     const discoveries = sector.mapData?.discoveries ?? [];
-    const match = selectSiteForReveal(discoveries, label);
+    const match = (opts.siteId
+        ? discoveries.find(d => d && d.id === opts.siteId && !d.discovered)
+        : null)
+      ?? selectSiteForReveal(discoveries, label);
     if (!match) continue;
 
     match.discovered = true;

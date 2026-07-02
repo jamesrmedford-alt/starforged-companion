@@ -39,8 +39,10 @@ const SOCKET    = `module.${MODULE_ID}`;
 // `completed` included so fulfilling (or forsaking) a shared vow on ONE copy —
 // e.g. the vendor sheet's native fulfil — closes every crewmate's copy too
 // (VOW-FULFIL-SIBLINGS fix: siblings used to stay open and kept showing as an
-// active Background Vow to the narrator).
-const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks", "completed"];
+// active Background Vow to the narrator). `rank` included so a sheet-side
+// re-rank keeps every copy — and therefore the fulfil payoff scaling — in
+// agreement: a SHARED vow has one rank for the whole crew.
+const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks", "completed", "rank"];
 const _vowSyncInFlight = new Set();
 
 /**
@@ -409,10 +411,9 @@ export function registerSharedVowSocket() {
   game.socket.on(SOCKET, async (payload) => {
     try {
       if (!payload || !isCanonicalGM()) return;
-      if (payload.kind === "vow.swearShared") {
-        const message = globalThis.game?.messages?.get?.(payload.messageId);
-        if (message) await swearSharedVowForAll(message);
-      } else if (payload.kind === "vow.setReward") {
+      // (The old "vow.swearShared" relay is gone — swearing routes through the
+      // forced-move ChatMessage post, which any client may create.)
+      if (payload.kind === "vow.setReward") {
         await setSharedVowReward(payload.vowId, payload.reward);
       } else if (payload.kind === "vow.linkConnection") {
         await setVowLinkedConnection(payload.vowId, payload.connectionName);

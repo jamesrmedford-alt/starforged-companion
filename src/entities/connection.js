@@ -338,44 +338,12 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT INJECTION FLAGS
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Set or clear the allyFlag.
- * Ally-flagged connections are injected into every Loremaster context packet.
- * Bonded connections are automatically ally-flagged.
- *
- * @param {string} journalEntryId
- * @param {boolean} value
- */
-export async function setAllyFlag(journalEntryId, value) {
-  return updateConnection(journalEntryId, { allyFlag: value });
-}
-
-/**
- * Set or clear the sceneRelevant flag.
- * Scene-relevant connections are injected into the current scene's context packet.
- * Intended to be toggled at the start of a scene and cleared after.
- *
- * @param {string} journalEntryId
- * @param {boolean} value
- */
-export async function setSceneRelevant(journalEntryId, value) {
-  return updateConnection(journalEntryId, { sceneRelevant: value });
-}
-
-/**
- * Clear sceneRelevant on all connections.
- * Called at the end of a scene or at the start of a new one.
- *
- * @param {Object} campaignState
- */
-export async function clearAllSceneFlags(campaignState) {
-  const connections = listConnections(campaignState).filter(c => c.sceneRelevant);
-  for (const c of connections) {
-    const hostId = resolveHostId(c._id, campaignState);
-    if (hostId) await setSceneRelevant(hostId, false);
-  }
-}
+// The per-scene flag togglers that used to live here (setAllyFlag,
+// setSceneRelevant, clearAllSceneFlags) were removed in the 2026-07 soft-spot
+// cleanup: nothing ever called them — scene relevance is decided live by the
+// relevance resolver (src/context/relevanceResolver.js), and `allyFlag` is
+// set directly by forgeBond. `loseConnection` above remains the severance
+// entrance (the GM `!sever` command).
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,18 +448,6 @@ export function formatForContext(connection) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the host document id (NPC-card Actor id) for a given connection _id.
- * Scans the registered connection hosts for a matching entityId flag.
- */
-function resolveHostId(connectionId, campaignState) {
-  for (const hostId of campaignState.connectionIds ?? []) {
-    const document = getEntityDocument(FLAG_KEY, hostId);
-    if (document?.flags?.[MODULE_ID]?.entityId === connectionId) return hostId;
-  }
-  return null;
-}
 
 /**
  * Render the Connection's descriptive fields into HTML for the page body so
