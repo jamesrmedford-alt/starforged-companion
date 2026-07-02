@@ -38,12 +38,28 @@ vi.mock("../../src/character/actorBridge.js", () => ({
   }),
 }));
 
+// Mock the track store + position applier so the combat-position / progress
+// executors run without a live Foundry journal.
+const trackState = { tracks: [] };
+vi.mock("../../src/ui/progressTracks.js", () => ({
+  listProgressTracks: vi.fn(async () => trackState.tracks),
+  markProgressById:   vi.fn(async () => null),
+}));
+const positionCalls = [];
+vi.mock("../../src/moves/combatTracker.js", () => ({
+  applyCombatPositionToTrack: vi.fn(async (trackId, position, actor) => {
+    positionCalls.push({ trackId, position, actor });
+  }),
+}));
+
 const chatCalls = [];
 beforeEach(() => {
   executeCalls.length = 0;
   bridgeCalls.applyMeterChanges.length = 0;
   bridgeCalls.setDebility.length = 0;
   chatCalls.length = 0;
+  trackState.tracks = [];
+  positionCalls.length = 0;
   globalThis.ChatMessage = { create: vi.fn(async (d) => { chatCalls.push(d); return d; }) };
 });
 
@@ -143,6 +159,21 @@ describe("resolveSufferSelection — B2 enumerated prompts", () => {
   it("expeditionProgress option emits expedition-progress call", () => {
     const prompt = { kind: "enumerated", options: [{ label: "Mark expedition progress", expeditionProgress: 1 }] };
     expect(resolveSufferSelection(prompt, { optionIndices: [0] })).toEqual([{ kind: "expedition-progress", count: 1 }]);
+  });
+
+  // Regression: enter_the_fray's weak hit ("+2 momentum OR you are in control")
+  // — the position option's string value used to fall through the numeric
+  // meter loop, producing zero calls ("Applied: no change").
+  it("combatPosition option emits combat-position call (enter_the_fray weak hit)", () => {
+    const prompt = { kind: "enumerated", options: [
+      { label: "+2 momentum",        momentum: 2 },
+      { label: "You are in control", combatPosition: "in_control" },
+    ]};
+    expect(resolveSufferSelection(prompt, { optionIndices: [1] }))
+      .toEqual([{ kind: "combat-position", position: "in_control" }]);
+    // The sibling momentum option still maps to a meter write.
+    expect(resolveSufferSelection(prompt, { optionIndices: [0] }))
+      .toEqual([{ kind: "meter", meterKey: "momentum", delta: 2 }]);
   });
 
   it("nextBonus option emits next-bonus call", () => {
@@ -345,5 +376,63 @@ describe("promptSufferChoice", () => {
 
   it("no-op with empty sufferPrompt", async () => {
     expect(await promptSufferChoice(null, {})).toEqual({ cancelled: false, selection: {}, calls: [] });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// runSufferResolution — combat-position executor (enter_the_fray weak hit)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runSufferResolution — combat-position", () => {
+  it("applies the position to the sole open combat track", async () => {
+    trackState.tracks = [{ id: "ct1", type: "combat", completed: false }];
+    const actor = { id: "pc1" };
+    const r = await runSufferResolution([{ kind: "combat-position", position: "in_control" }], actor);
+    expect(positionCalls).toEqual([{ trackId: "ct1", position: "in_control", actor }]);
+    expect(r).toEqual([{ kind: "combat-position", position: "in_control", trackId: "ct1" }]);
+  });
+
+  it("stashes the position on the pending threshold card when no track exists yet", async () => {
+    trackState.tracks = [];
+    const updates = [];
+    const thresholdMsg = {
+      flags:  { "starforged-companion": { combatThresholdCard: true } },
+      update: async (c) => updates.push(c),
+    };
+    const priorMessages = globalThis.game.messages;
+    globalThis.game.messages = { contents: [thresholdMsg] };
+    try {
+      const r = await runSufferResolution([{ kind: "combat-position", position: "in_control" }], { id: "pc1" });
+      expect(updates).toEqual([{ "flags.starforged-companion.position": "in_control" }]);
+      expect(r[0]).toMatchObject({ kind: "combat-position", stashed: true });
+      expect(positionCalls).toEqual([]);
+    } finally {
+      globalThis.game.messages = priorMessages;
+    }
+  });
+
+  it("warns and skips when no track and no threshold card exist", async () => {
+    trackState.tracks = [];
+    const priorMessages = globalThis.game.messages;
+    globalThis.game.messages = { contents: [] };
+    try {
+      const r = await runSufferResolution([{ kind: "combat-position", position: "bad_spot" }], { id: "pc1" });
+      expect(r[0]).toMatchObject({ kind: "combat-position", skipped: true });
+      expect(getCapturedWarns().some(w => w.includes("combat-position"))).toBe(true);
+    } finally {
+      globalThis.game.messages = priorMessages;
+    }
+  });
+
+  it("warns and skips when multiple fights are open (ambiguous)", async () => {
+    trackState.tracks = [
+      { id: "a", type: "combat", completed: false },
+      { id: "b", type: "combat", completed: false },
+    ];
+    const r = await runSufferResolution([{ kind: "combat-position", position: "bad_spot" }], { id: "pc1" });
+    expect(r[0]).toMatchObject({ kind: "combat-position", skipped: true });
+    expect(positionCalls).toEqual([]);
+    expect(getCapturedWarns().some(w => w.includes("combat-position"))).toBe(true);
   });
 });

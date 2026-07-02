@@ -141,6 +141,40 @@ export async function updateCombatantPosition(combat, actor, actorPosition) {
   if (combatant) await combatant.setFlag(MODULE_ID, 'position', actorPosition);
 }
 
+/**
+ * Write a combat position everywhere it lives: the progress track's
+ * combatState, the actor's sheet field (via actorBridge), and the Combatant
+ * badge flag. Shared by the pipeline combatPosition consequence, the
+ * threshold-card position carry, and the weak-hit Enter the Fray choice.
+ *
+ * Dynamic imports avoid circular dependencies (same pattern as the badge
+ * click handler in registerCombatTrackerHooks).
+ *
+ * @param {string} trackId
+ * @param {'in_control'|'bad_spot'} position — track-flavoured position
+ * @param {Actor|null} actor — whose sheet/badge to mirror; track-only when null
+ * @returns {Promise<void>}
+ */
+export async function applyCombatPositionToTrack(trackId, position, actor = null) {
+  if (!trackId || !position) return;
+
+  const { setCombatTrackPosition } = await import('../ui/progressTracks.js');
+  await setCombatTrackPosition(trackId, position).catch(err =>
+    console.warn(`${MODULE_ID} | combat position track write failed:`, err?.message ?? err));
+
+  if (!actor) return;
+  const actorPos = trackPosToActorPos(position);
+  const { setCombatPosition } = await import('../character/actorBridge.js');
+  await setCombatPosition(actor, actorPos).catch(err =>
+    console.warn(`${MODULE_ID} | combat position actor write failed:`, err?.message ?? err));
+
+  const combat = findCombatForTrack(trackId);
+  if (combat) {
+    await updateCombatantPosition(combat, actor, actorPos).catch(err =>
+      console.warn(`${MODULE_ID} | combat position badge write failed:`, err?.message ?? err));
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOOKS
 // ─────────────────────────────────────────────────────────────────────────────

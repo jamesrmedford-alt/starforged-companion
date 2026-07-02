@@ -8808,6 +8808,61 @@ function registerCombatCardButtonTests(quench) {
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
         });
       });
+
+      describe("Panel Progress Roll bridge (rollProgress)", function () {
+        // The session-ACTIVE bridge path (combat/expedition rows → forced-move
+        // message) is pinned by the unit suite (progressRollBridge.test.js) —
+        // driving it live here would hand the message to the real move
+        // pipeline mid-batch. This covers the live fallbacks around the gate.
+        it("pre-session, a combat row keeps the bespoke display roll (bridge would be ignored)", async function () {
+          this.timeout(15000);
+          const { rollProgress } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const cs = game.settings.get(MODULE, "campaignState") ?? {};
+          const priorActive = cs.sessionActive === true;
+          cs.sessionActive = false;
+          await game.settings.set(MODULE, "campaignState", cs);
+          try {
+            const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+            await rollProgress({
+              id: "quench-panel-combat", label: "Quench Panel Foe",
+              type: "combat", rank: "dangerous", ticks: 8, completed: false,
+            });
+            let posted = null;
+            for (let i = 0; i < 60 && !posted; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              posted = (game.messages?.contents ?? []).find(m =>
+                !beforeIds.has(m.id) && m?.flags?.[MODULE]?.type === "progressRoll");
+            }
+            if (posted) track(posted.id);
+            assert.isOk(posted, "a bespoke progressRoll card was posted");
+            assert.notProperty(posted.flags[MODULE], "forcedMoveId",
+              "no forced-move bridge fires while the session gate is closed");
+          } finally {
+            cs.sessionActive = priorActive;
+            await game.settings.set(MODULE, "campaignState", cs);
+          }
+        });
+
+        it("scene challenges never bridge (no move maps to them)", async function () {
+          this.timeout(15000);
+          const { rollProgress, TRACK_TYPE_TO_MOVE } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          assert.notProperty(TRACK_TYPE_TO_MOVE, "scene_challenge",
+            "scene_challenge deliberately has no pipeline move mapping");
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          await rollProgress({
+            id: "quench-panel-scene", label: "Quench Scene Challenge",
+            type: "scene_challenge", rank: "dangerous", ticks: 12, completed: false,
+          });
+          let posted = null;
+          for (let i = 0; i < 60 && !posted; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            posted = (game.messages?.contents ?? []).find(m =>
+              !beforeIds.has(m.id) && m?.flags?.[MODULE]?.type === "progressRoll");
+          }
+          if (posted) track(posted.id);
+          assert.isOk(posted, "the scene challenge posted the bespoke display roll");
+        });
+      });
     },
     { displayName: "STARFORGED: Combat Card Buttons", timeout: 60000 },
   );
@@ -9934,6 +9989,26 @@ function registerProgressMechanicsTests(quench) {
             assert.equal(outcome, expectedOutcome);
             assert.equal(isMatch, expectedMatch);
           });
+        });
+      });
+
+      describe("rule 1.10 — resolveMove scores progress moves from statValue (the enrichProgressTicks carrier)", function () {
+        // Regression seam for the "pipeline progress rolls always scored 0"
+        // defect: resolveMove's progress branch reads statValue, which
+        // enrichProgressTicks fills from live track/vow/connection data.
+        // Challenge dice are random here, so only the deterministic score is
+        // pinned; the tick→score table above covers the bucket math.
+        it("statValue 26 → progressScore 6 on take_decisive_action", async function () {
+          const { resolveMove } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const resolution = resolveMove({
+            moveId: "take_decisive_action", moveName: "Take Decisive Action",
+            statUsed: "", statValue: 26, adds: 0, isProgressMove: true,
+            mischiefApplied: false, mischiefLevel: "serious",
+            playerNarration: "Quench: I finish the fight.",
+          }, {});
+          assert.isTrue(resolution.isProgressMove, "resolves as a progress move");
+          assert.equal(resolution.progressScore, 6, "progressScore = floor(26 / 4)");
+          assert.equal(resolution.actionDie, 0, "progress moves roll no action die");
         });
       });
     },
@@ -11300,6 +11375,62 @@ function registerCombatMechanicsTests(quench) {
 
           const listed = (await listProgressTracks()).find(t => t.id === track.id);
           assert.isTrue(listed.completed, "the completed track persists in the journal flag");
+        });
+      });
+
+      describe("enrichProgressTicks — live journal round-trip (progress rolls score real boxes)", function () {
+        it("a marked combat track's ticks land in statValue/progressTicks for Take Decisive Action", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { addProgressTrack, markProgressById, listProgressTracks, completeProgressTrack } =
+            await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const { enrichProgressTicks } = await import(`${MODULE_PATH}/moves/statEnrichment.js`);
+          const { calcProgressOutcome } = await import(`${MODULE_PATH}/moves/resolver.js`);
+
+          const label = `Quench Tick Foe ${Date.now()}`;
+          const track = await addProgressTrack({ label, type: "combat", rank: "dangerous" });
+          await markProgressById(track.id); // dangerous: +8 ticks
+          await markProgressById(track.id); // 16 total
+
+          const interp = {
+            moveId: "take_decisive_action", moveTarget: label,
+            isProgressMove: true, statValue: 0, progressTicks: 0,
+          };
+          const info = await enrichProgressTicks(interp, { listTracks: () => listProgressTracks() });
+
+          assert.equal(interp.statValue, 16, "statValue carries the live track's ticks");
+          assert.equal(interp.progressTicks, 16, "progressTicks mirrors it for card display");
+          assert.equal(info?.trackId, track.id, "the enrichment resolved our labeled track");
+          assert.equal(calcProgressOutcome(interp.statValue, [1, 1]).progressScore, 4,
+            "16 ticks score 4 boxes — the roll the defect always resolved at 0");
+
+          await completeProgressTrack(track.id).catch(() => {});
+        });
+      });
+
+      describe("Enter the Fray position carry — threshold card → track creation", function () {
+        it("createCombatTrackFromThreshold applies the carried position to the new track", async function () {
+          this.timeout(20000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const { createCombatTrackFromThreshold } = await import(`${MODULE_PATH}/index.js`);
+          const { getActiveCombatPosition, completeProgressTrack } =
+            await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const { endCombatTracker } = await import(`${MODULE_PATH}/moves/combatTracker.js`);
+
+          const label = `Quench Position Foe ${Date.now()}`;
+          const result = await createCombatTrackFromThreshold({
+            label, rank: "dangerous", vowName: "", objective: "",
+            position: "bad_spot", actorId: null,
+          });
+          try {
+            assert.isOk(result?.track?.id, "the threshold choice created a combat track");
+            assert.equal(result.track.linkedVowName ?? null, null, "no vow link was requested");
+            assert.equal(await getActiveCombatPosition(), "bad_spot",
+              "Enter the Fray's outcome position (miss → bad spot) landed on the track at creation — it was discarded before this fix");
+          } finally {
+            await endCombatTracker(result?.track?.id).catch(() => {});
+            if (result?.track?.id) await completeProgressTrack(result.track.id).catch(() => {});
+          }
         });
       });
     },

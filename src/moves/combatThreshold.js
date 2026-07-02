@@ -29,10 +29,13 @@ function esc(s) {
 /**
  * Build the threshold decision card HTML. Pure — no Foundry calls.
  *
- * @param {{ label?: string, suggestedRank?: string, vowNames?: string[] }} opts
+ * @param {{ label?: string, suggestedRank?: string, vowNames?: string[],
+ *           position?: ('in_control'|'bad_spot'|null) }} opts
+ *   position — Enter the Fray's own outcome position, applied to the track at
+ *   creation; shown here so the player sees it before committing.
  * @returns {string}
  */
-export function buildCombatThresholdHtml({ label, suggestedRank, vowNames = [] } = {}) {
+export function buildCombatThresholdHtml({ label, suggestedRank, vowNames = [], position = null } = {}) {
   const foe  = esc(label || "the enemy");
   const rank = normalizeCombatRank(suggestedRank);
   const rankOpts = COMBAT_RANKS
@@ -41,10 +44,16 @@ export function buildCombatThresholdHtml({ label, suggestedRank, vowNames = [] }
   const vowOpts = ['<option value="">(not tied to a vow)</option>']
     .concat((vowNames ?? []).filter(Boolean).map(n => `<option value="${esc(n)}">${esc(n)}</option>`))
     .join("");
+  const positionLine = position === "in_control"
+    ? `<p>⚑ If you enter this fight, you begin <strong>in control</strong>.</p>`
+    : position === "bad_spot"
+      ? `<p>⚑ If you enter this fight, you begin <strong>in a bad spot</strong>.</p>`
+      : "";
   return `<div class="sf-card sf-combat-threshold" data-suggested-rank="${rank}">`
     + `<div class="sf-card-header">⚔ A fight looms — ${foe}</div>`
     + `<div class="sf-card-body">`
     + `<p>Commit to the fight, or look for a way out. The narrator suggests this is a <strong>${rank}</strong> fight.</p>`
+    + positionLine
     + `<p><label>Difficulty: <select class="sf-threshold-rank">${rankOpts}</select></label></p>`
     + `<p><label>This fight serves: <select class="sf-threshold-vow">${vowOpts}</select></label></p>`
     + `<p><label>Objective: <input type="text" class="sf-threshold-objective" maxlength="120" placeholder="e.g. free the hostages" /></label></p>`

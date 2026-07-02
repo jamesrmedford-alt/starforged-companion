@@ -1072,8 +1072,11 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   let outcome, isMatch;
 
   if (isProgressMove) {
-    // Progress move: tally filled boxes from the relevant progress track
-    // statValue is repurposed here to carry the progress ticks from interpretation
+    // Progress move: score from the relevant track's filled boxes. statValue
+    // is repurposed as the tick carrier — filled from live module data
+    // (combat/expedition tracks, vow items, connection records) by
+    // enrichProgressTicks (src/moves/statEnrichment.js) before resolveMove
+    // is called. The interpreter never supplies tick counts.
     const ticks = statValue;
     ({ progressScore, outcome, isMatch } = calcProgressOutcome(ticks, challengeDice));
   } else {

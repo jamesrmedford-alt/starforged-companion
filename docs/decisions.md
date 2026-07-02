@@ -6,6 +6,52 @@ rejected.
 
 ---
 
+## Progress-move scores come from module data, never the AI
+
+**Decision:** A progress move's score (Take Decisive Action, Fulfill Your Vow,
+Forge a Bond, Finish an Expedition) is filled by `enrichProgressTicks`
+(`src/moves/statEnrichment.js`) from the live module data — combat/expedition
+journal tracks, actor vow **Items** (the live store; journal `vow` tracks are
+creation-time mirrors that are never tick-synced), connection records
+(`relationshipTicks`). The interpreter is instructed to leave `statValue` and
+`progressTicks` at 0 and only name the `moveTarget`; the resolver reads
+`statValue` as the tick carrier. `PROGRESS_TICK_SOURCES` is the move→source
+map; `continue_a_legacy` / `overcome_destruction` are deliberate no-ops (the
+module doesn't store legacy tracks per-player).
+
+**Reason:** Before this, *nothing* filled the tick carrier, so every pipeline
+progress roll scored 0 — a guaranteed miss. Take Decisive Action could never
+win a fight and the victory card's "Attempt to Fulfill" always failed, while
+the consequence wiring above it (milestones, rewards) was fully built and
+unreachable. Asking the AI to estimate tick counts was rejected: the model
+doesn't reliably know track state, and the module is the source of truth.
+
+**Rejected:**
+- *Have the interpreter fill `progressTicks` from prompt context* — the value
+  must be exact; a hallucinated count corrupts a core roll.
+- *Read ticks inside `resolveMove`* — the resolver is pure and
+  dependency-free; enrichment stays a pipeline step like
+  `enrichInterpretationStatValue`.
+
+## Enter the Fray's position rides the threshold card
+
+**Decision:** `enter_the_fray`'s outcome position (strong hit → in control,
+miss → bad spot) is carried in the combat-threshold card's flags
+(`position`/`actorId`) and applied by `createCombatTrackFromThreshold` when the
+player commits — via the shared `applyCombatPositionToTrack` (track
+`combatState` + actor sheet + combatant badge). The weak-hit choose-one's "You
+are in control" maps to a `combat-position` suffer call whose executor writes
+an open track, or stashes onto the newest pending threshold card when the
+track doesn't exist yet (either click order works).
+
+**Reason:** The combat track is created only when the player clicks Enter the
+Fray, but the `combatPosition` consequence fires at resolution time — before
+the track exists — so the opening position was silently discarded (and the
+weak-hit choice produced zero writes: its string value fell through the
+numeric meter loop, with the card reporting "Applied: no change").
+
+---
+
 ## Scope documents live as GitHub issues, not files
 
 **Decision:** Feature scope documents are **GitHub issues**, not `*-scope.md`

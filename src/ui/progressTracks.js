@@ -134,7 +134,41 @@ async function saveTracks(tracks) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Which move a panel Progress Roll resolves through the move pipeline.
+ * scene_challenge is deliberately absent — no Starforged move maps to it, so
+ * it keeps the bespoke display roll below. Exported for tests.
+ */
+export const TRACK_TYPE_TO_MOVE = {
+  combat:     'take_decisive_action',
+  expedition: 'finish_an_expedition',
+};
+
+/**
+ * True when the move pipeline will accept a forced-move bridge message right
+ * now: pipeline entry is gated on an active session (index.js session-active
+ * gate), so a pre-session bridge post would be silently ignored. Fails toward
+ * the always-works display roll.
+ */
+async function movePipelineAvailable() {
+  try {
+    const { isSessionActive } = await import('../session/lifecycle.js');
+    return isSessionActive(game.settings.get(MODULE_ID, 'campaignState'));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Execute a Progress Roll for a track.
+ *
+ * Combat and expedition rolls are real Starforged progress moves with
+ * pipeline consequences (Take Decisive Action → endCombat → victory card /
+ * linked-vow milestone; Finish an Expedition → legacy + arrival), so during
+ * an active session they route through the forced-move bridge and the move
+ * pipeline rolls, narrates, and applies consequences. The bespoke card below
+ * looked right but had no consumer — a "won" fight never actually ended.
+ * scene_challenge (no mapped move) and pre-session rolls keep the instant
+ * display roll:
  * Score = number of fully filled boxes (ticks / 4, floored).
  * Roll 2d10 challenge dice. Compare score against each:
  *   Strong Hit  — score > both dice
@@ -142,9 +176,25 @@ async function saveTracks(tracks) {
  *   Miss        — score ≤ both dice
  * Posts a chat message matching the module's existing move card format.
  *
+ * Exported so Quench can drive it.
+ *
  * @param {object} track
  */
-async function rollProgress(track) {
+export async function rollProgress(track) {
+  const moveId = TRACK_TYPE_TO_MOVE[track.type];
+  if (moveId && await movePipelineAvailable()) {
+    const content = moveId === 'take_decisive_action'
+      ? `Take decisive action — ${track.label}.`
+      : `Attempt to finish the expedition — ${track.label}.`;
+    await ChatMessage.create({
+      content,
+      // forcedMoveTarget: the row's own label, so tick enrichment resolves
+      // exactly the track the player clicked even with several open fights.
+      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label } },
+    });
+    return;
+  }
+
   const score = Math.floor(track.ticks / TICKS_PER_BOX);
   const c1 = Math.ceil(Math.random() * 10);
   const c2 = Math.ceil(Math.random() * 10);
