@@ -801,6 +801,8 @@ async function buildCharacterStateSection(_campaignState) {
       const lines = openCombat.map(t => {
         const bits = [t.label];
         if (t.objective)     bits.push(`objective: ${t.objective}`);
+        if (t.combatState === "in_control") bits.push("the character is IN CONTROL of this fight");
+        else if (t.combatState === "bad_spot") bits.push("the character is IN A BAD SPOT in this fight");
         if (t.linkedVowName) bits.push(`serves the vow "${t.linkedVowName}" — winning it is a milestone on that vow`);
         return `  - ${bits.join(" — ")}`;
       });
@@ -1005,9 +1007,10 @@ function formatCharacterBlock(snap, summary, recentEntries) {
     `Debilities: ${debList}`,
   ];
 
-  // Background vow = the first vow item on the character per play-kit
-  // convention. Active vows beyond the background one are listed under
-  // "Other vows" so the narrator can reflect ongoing quests.
+  // Background vow = the SHARED inciting vow when one exists (readVows marks
+  // isBackground on the flags.sharedVow copy — see #248 B1), falling back to
+  // the first vow item per the play-kit convention. Active vows beyond it are
+  // listed under "Other vows" so the narrator can reflect ongoing quests.
   if (vows?.length) {
     const background = vows.find(v => v.isBackground);
     const others     = vows.filter(v => !v.isBackground && !v.completed);

@@ -14,7 +14,6 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-import { getPlayerActors, createCharacterVowItem } from '../character/actorBridge.js';
 import { createClock } from '../clocks/clocks.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -504,7 +503,6 @@ export class ProgressTrackApp extends ApplicationV2 {
       track.ticks = Math.min(track.ticks + ticksPerMark, MAX_TICKS);
 
       await saveTracks(tracks);
-      await ProgressTrackApp.#syncConnectionEntity(track);
       this.render();
     })();
     this._lastAction = work;
@@ -524,7 +522,6 @@ export class ProgressTrackApp extends ApplicationV2 {
       track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
 
       await saveTracks(tracks);
-      await ProgressTrackApp.#syncConnectionEntity(track);
       this.render();
     })();
     this._lastAction = work;
@@ -658,30 +655,13 @@ export class ProgressTrackApp extends ApplicationV2 {
     return work;
   }
 
-  // -----------------------------------------------------------------------
-  // Connection entity sync
-  // -----------------------------------------------------------------------
-
-  /**
-   * If a track is linked to a connection entity (entityId), write the updated
-   * tick count back to that entity's progress field so connection.js stays
-   * authoritative and context injection sees the live value.
-   *
-   * connection.js stores progress as { ticks, rank } in its flags.
-   * @param {object} track
-   */
-  static async #syncConnectionEntity(track) {
-    if (track.type !== 'connection' || !track.entityId) return;
-
-    const journal = game.journal.get(track.entityId);
-    if (!journal) return;
-
-    const existing = journal.getFlag(MODULE_ID, 'connection') ?? {};
-    await journal.setFlag(MODULE_ID, 'connection', {
-      ...existing,
-      progress: { ticks: track.ticks, rank: track.rank },
-    });
-  }
+  // (The old #syncConnectionEntity hook was removed in the 2026-07 soft-spot
+  // cleanup: it fired only for `type:'connection'` tracks — which nothing
+  // creates — read the wrong host (`game.journal`; connections are
+  // Actor-hosted post-migration), and wrote a `connection.progress` field no
+  // reader consumed. Connection progress lives on the entity record's
+  // `relationshipTicks`, mirrored to PC bond Items by
+  // `markRelationshipProgress`.)
 
   // -----------------------------------------------------------------------
   // Visual helpers
@@ -837,24 +817,12 @@ export async function addProgressTrack(data) {
   tracks.push(track);
   await saveTracks(tracks);
 
-  // Mirror vows onto the active character as ironsworn `progress` Items with
-  // subtype "vow" so they appear on the character sheet's Progress tab.
-  // Connections are mirrored as subtype "bond" by entityExtractor when the
-  // connection itself is created; this is the vow-only path.
-  if (track.type === 'vow') {
-    try {
-      const actor = getPlayerActors()[0];
-      if (actor) {
-        await createCharacterVowItem(actor, {
-          name:  track.label,
-          rank:  track.rank,
-          vowId: track.id,
-        });
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | addProgressTrack: vow item registration failed:`, err);
-    }
-  }
+  // NOTE: journal `vow` tracks deliberately get NO item mirror. Vows live as
+  // actor progress Items (the live store — swearVow.js creates them); the
+  // old creation-time mirror here produced a second, never-tick-synced copy
+  // whose staleness the 2026-07 flow audit flagged. The panel doesn't offer
+  // the vow type (PANEL_TRACK_TYPES), so this path only ever runs
+  // programmatically (e.g. Quench's journal-storage test).
 
   // Refresh the panel if it's open.
   const instance = ProgressTrackApp._ProgressTrackApp__instance;  // access private via name mangling
@@ -910,6 +878,24 @@ export async function markProgressById(trackId, times = 1) {
   const marks        = Math.max(1, Math.floor(times) || 1);
   track.ticks = Math.min(track.ticks + ticksPerMark * marks, MAX_TICKS);
 
+  await saveTracks(tracks);
+  return track;
+}
+
+/**
+ * Patch arbitrary fields on a track by ID from outside the panel — e.g. the
+ * expedition→site link (`siteId`) at creation, or recommit's ticks/rank
+ * rewrite. GM-only (journal write); null if not found.
+ *
+ * @param {string} trackId
+ * @param {object} [patch]
+ * @returns {Promise<object|null>}  Updated track or null if not found
+ */
+export async function updateTrackFields(trackId, patch = {}) {
+  const tracks = await loadTracks();
+  const track  = tracks.find(t => t.id === trackId);
+  if (!track) return null;
+  Object.assign(track, patch);
   await saveTracks(tracks);
   return track;
 }

@@ -114,19 +114,21 @@ summary lives in the `known-issues.md` table and the code.
    bridge (which passes the row label) behaves correctly in the same
    situation.
 
-## Softer gaps (recorded, not yet bugs-with-consequences)
+## Softer gaps — resolved or reaffirmed in the 2026-07 cleanup
 
-- **Expedition→site linkage is name-fuzzy**: no stored key ties a track to a
-  discovery; reveal-on-finish usually resolves via the type keyword or
-  sole-undiscovered fallback, so with several undiscovered mixed-type sites
-  the "wrong" site can reveal (or none).
-- **Rank is first-write-wins**: inferred only at track creation; forced
-  interpretations carry no `expeditionRank`, so a wrong initial guess governs
-  mark size and the finish legacy until manually re-ranked in the panel.
-- **Arrival inference degrades to free text** for narrator-invented
-  destinations not yet in the entity index — the position line renders but
-  loses planet/sector scoping and token sync.
-- Advisory-only branches: waypoint Make-a-Discovery / Confront Chaos seeds,
-  and the finish-miss "recommit" instruction — GM adjudicates by hand.
-- ~~The discoveries legacy accrues ticks but never converts to XP~~ — fixed
-  with LEGACY-XP-DEAD (`addLegacyTicks` now awards box XP module-wide).
+- ~~Expedition→site linkage was name-fuzzy~~ — **addressed**: expedition
+  creation stamps `siteId` when the destination confidently names an
+  undiscovered site (`selectSiteForReveal` with `requireLabelMatch`; never
+  the sole-undiscovered guess), and `revealSectorSite` reveals the linked
+  site first.
+- ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers
+  **🔁 Recommit** (rolls the challenge dice, clears the lowest die's boxes,
+  raises the rank — `planRecommit`), and Explore a Waypoint match results
+  carry one-click **🔭 Make a Discovery** / **🌀 Confront Chaos** buttons
+  (`waypointOracleFor`).
+- **Rank is player-re-ranked — reaffirmed deliberate** (see `decisions.md` →
+  "Flow-audit soft spots").
+- **Arrival inference degrades to freeText — reaffirmed deliberate** (same
+  decision entry).
+- ~~The discoveries legacy accrued ticks without XP~~ — fixed with
+  LEGACY-XP-DEAD (`addLegacyTicks` awards box XP module-wide).

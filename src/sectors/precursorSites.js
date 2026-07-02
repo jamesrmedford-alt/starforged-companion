@@ -247,9 +247,14 @@ function normalizeLabel(s) {
  *
  * @param {Array<{id,name,type,discovered}>} sites
  * @param {string|null} label — the expedition destination / command target
+ * @param {{ requireLabelMatch?: boolean }} [opts] — true skips the final
+ *   sole-undiscovered fallback, so only a name/type-confident match returns.
+ *   Used when STAMPING an expedition→site link at creation (a guess there
+ *   would tie unrelated expeditions to the one remaining site); the reveal
+ *   path keeps the fallback.
  * @returns {Object|null}
  */
-export function selectSiteForReveal(sites, label) {
+export function selectSiteForReveal(sites, label, { requireLabelMatch = false } = {}) {
   const undiscovered = (sites ?? []).filter(s => s && !s.discovered);
   if (!undiscovered.length) return null;
 
@@ -276,6 +281,7 @@ export function selectSiteForReveal(sites, label) {
     }
   }
 
+  if (requireLabelMatch) return null;
   return undiscovered.length === 1 ? undiscovered[0] : null;
 }
 

@@ -241,3 +241,24 @@ describe("selectSiteForReveal", () => {
     expect(selectSiteForReveal(one, "somewhere unrelated")?.id).toBe("a");
   });
 });
+
+
+describe("selectSiteForReveal — requireLabelMatch (expedition→site stamping)", () => {
+  const sites = [
+    { id: "s1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false },
+  ];
+
+  it("still falls back to the sole undiscovered site by default (reveal path)", () => {
+    expect(selectSiteForReveal(sites, "somewhere unrelated")?.id).toBe("s1");
+  });
+
+  it("returns null for a non-matching label when requireLabelMatch is set (stamping path)", () => {
+    expect(selectSiteForReveal(sites, "Bleakhold Station", { requireLabelMatch: true })).toBeNull();
+    expect(selectSiteForReveal(sites, null, { requireLabelMatch: true })).toBeNull();
+  });
+
+  it("still resolves confident matches with requireLabelMatch set", () => {
+    expect(selectSiteForReveal(sites, "sunken choir", { requireLabelMatch: true })?.id).toBe("s1");
+    expect(selectSiteForReveal(sites, "the vault", { requireLabelMatch: true })?.id).toBe("s1");
+  });
+});

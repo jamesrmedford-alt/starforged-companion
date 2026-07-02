@@ -48,8 +48,11 @@ the actor's sheet field, and the combatant badge). A combat-track card posts
 (stakes line, **Battle instead** button on fresh tracks) and the Foundry Combat
 doc opens with position/range badges.
 
-**Find another way** is advisory: it posts the `WAY_OUT_PROMPT` nudge naming
-Face Danger / Compel / Secure an Advantage but arms no move.
+**Find another way** posts the way-out card: the `WAY_OUT_PROMPT` nudge plus
+one-click **Face Danger / Compel / Secure an Advantage** buttons
+(`WAY_OUT_MOVES` / `buildWayOutHtml`), each posting the forced move so
+choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
+advisory text only).
 
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
@@ -73,10 +76,10 @@ that writes the open track — or stashes onto the pending threshold card when
 clicked before Enter the Fray.
 
 **Narrator awareness:** the context assembler appends an `### ACTIVE FIGHT`
-block under CHARACTER STATE (label, objective, linked vow) for every open
-combat track; shipboard fights additionally inject Battle Stations guidance
-(`src/moves/battleStations.js`). The fight block does not currently include
-the position.
+block under CHARACTER STATE (label, objective, current position
+in-control/bad-spot, linked vow) for every open combat track; shipboard
+fights additionally inject Battle Stations guidance
+(`src/moves/battleStations.js`).
 
 ## 3. Ending a fight
 
@@ -163,11 +166,16 @@ and "Enter the Fray's position rides the threshold card"):
    at consequence time) and the weak-hit "You are in control" pick applied
    nothing (no `combatPosition` handling in the suffer option mapper).
 
-## Known soft spots (deliberate or unshipped, not bugs)
+## Soft spots — resolved in the 2026-07 cleanup
 
-- The **way-out button is advisory only** — it names the off-ramp moves but
-  does not arm one (the original design sketch wanted a prompted move).
-- **Range badges are display-only**; no mechanic consumes close/far.
-- The narrator's ACTIVE FIGHT block **omits the current position**.
-- **Combat rewards** are deliberately not proposed per-fight — the linked
-  vow's promised reward is the payoff carrier.
+- ~~The way-out button was advisory only~~ — **addressed**: the way-out card
+  now carries one-click Face Danger / Compel / Secure an Advantage buttons
+  (`WAY_OUT_MOVES` / `buildWayOutHtml`, wired by `registerWayOutHook`), each
+  posting the forced move so choosing an exit rolls it.
+- ~~The ACTIVE FIGHT block omitted the position~~ — **addressed**: the
+  assembler's fight lines now include in-control / bad-spot.
+- **Range badges are advisory — reaffirmed deliberate** (no RAW range
+  mechanic; the tooltip says so). See `decisions.md` → "Flow-audit soft
+  spots".
+- **Combat rewards ride the linked vow — reaffirmed deliberate** (same
+  decision entry).

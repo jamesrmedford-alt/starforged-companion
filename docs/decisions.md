@@ -6,6 +6,34 @@ rejected.
 
 ---
 
+## Flow-audit soft spots: what stays deliberate (2026-07)
+
+**Decision:** The soft-spot cleanup that followed the flow audits implemented
+every gap where a faithful Starforged mechanic exists (way-out one-click
+moves, waypoint match-oracle buttons, expedition recommit, `!sever`, targeted
+`!bond`, the expedition→site link, shared-vow rank sync, the no-reward
+fulfilment note, dead-code removal). Four observations were **reaffirmed as
+deliberate** rather than changed:
+
+1. **Combat range badges are advisory.** Starforged has no range mechanic —
+   close/far is fictional positioning; wiring a roll modifier would invent
+   rules. The badge tooltip now says so.
+2. **Combat tracks carry no promised reward of their own.** The linked vow's
+   promised reward is the payoff carrier (#241 Phase 2 design); per-fight
+   rewards would double-pay the same fiction.
+3. **Expedition rank is player-re-ranked, not auto-re-inferred.** The rank is
+   inferred once at creation (forced interpretations default dangerous) and
+   the progress card points at the panel to adjust — re-inferring on later
+   marks would fight the player's correction.
+4. **Arrival inference degrades to freeText for unknown destinations.** A
+   narrator-invented place that isn't yet an entity still renders a position
+   line without planet/sector scoping — graceful fallback, not a defect; the
+   entity-discovery flow catches the place on its own schedule.
+
+**Rejected:** inventing a range modifier; per-combat reward proposals;
+re-ranking expeditions on every mark; blocking position writes on unknown
+destinations.
+
 ## Legacy XP pays at the tick write, to every player character
 
 **Decision:** `addLegacyTicks` (src/index.js) is the single legacy-tick

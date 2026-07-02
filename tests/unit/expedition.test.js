@@ -14,6 +14,8 @@ import {
   applyExpeditionProgress,
   legacyRewardTicks,
   finishExpedition,
+  nextExpeditionRank,
+  planRecommit,
   LEGACY_REWARD,
   EXPEDITION_RANKS,
   DEFAULT_EXPEDITION_RANK,
@@ -153,5 +155,44 @@ describe("finishExpedition", () => {
     const d = deps([exp({ id: "done", completed: true })]);
     expect(await finishExpedition({ moveTarget: null }, d)).toBeNull();
     expect(d.completeTrack).not.toHaveBeenCalled();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recommit (Finish an Expedition miss) — 2026-07 soft-spot cleanup: the play
+// kit's "clear boxes equal to the lowest die, raise the rank" is now a click.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("nextExpeditionRank", () => {
+  it("steps up one rank and clamps at epic", () => {
+    expect(nextExpeditionRank("troublesome")).toBe("dangerous");
+    expect(nextExpeditionRank("dangerous")).toBe("formidable");
+    expect(nextExpeditionRank("epic")).toBe("epic");
+  });
+
+  it("normalises unknown ranks to the default first", () => {
+    expect(nextExpeditionRank("weird")).toBe("formidable"); // → dangerous → +1
+  });
+});
+
+describe("planRecommit", () => {
+  it("clears filled boxes equal to the lowest die and raises the rank", () => {
+    const plan = planRecommit(24, "dangerous", [7, 3]);
+    expect(plan.lowest).toBe(3);
+    expect(plan.newTicks).toBe(12);      // 24 - 3*4
+    expect(plan.clearedBoxes).toBe(3);
+    expect(plan.newRank).toBe("formidable");
+  });
+
+  it("floors at zero ticks when the lowest die clears more than exists", () => {
+    const plan = planRecommit(6, "troublesome", [9, 8]);
+    expect(plan.newTicks).toBe(0);
+    expect(plan.clearedBoxes).toBe(2);   // ceil(6/4)
+    expect(plan.newRank).toBe("dangerous");
+  });
+
+  it("rank clamps at epic", () => {
+    expect(planRecommit(40, "epic", [1, 1]).newRank).toBe("epic");
   });
 });

@@ -21,6 +21,37 @@ export const WAY_OUT_PROMPT =
   + "Take the move that fits (Face Danger, Compel, or Secure an Advantage); the "
   + "fight only begins if you choose to Enter the Fray.";
 
+/**
+ * The off-ramp moves a way-out click offers, one button each. The narration
+ * strings clear isPlayerNarration's 10-char floor and give the interpreter
+ * usable fiction when the forced move resolves.
+ */
+export const WAY_OUT_MOVES = [
+  { moveId: "face_danger",         label: "🏃 Slip away (Face Danger)",
+    narration: "I look for a way out of this fight — slipping away before it starts." },
+  { moveId: "compel",              label: "🗣 Talk them down (Compel)",
+    narration: "I look for a way out of this fight — talking them down before iron is drawn." },
+  { moveId: "secure_an_advantage", label: "🪙 Buy your way clear (Secure an Advantage)",
+    narration: "I look for a way out of this fight — buying my way clear of it." },
+];
+
+/**
+ * Build the way-out card: the advisory prompt plus one forced-move button per
+ * off-ramp, so choosing an exit rolls the move instead of leaving the player
+ * to retype it. Pure — no Foundry calls.
+ *
+ * @returns {string}
+ */
+export function buildWayOutHtml() {
+  const buttons = WAY_OUT_MOVES
+    .map(m => `<button type="button" class="entity-btn" data-action="sf-way-out-move" data-move-id="${m.moveId}">${m.label}</button>`)
+    .join(" ");
+  return `<div class="sf-card sf-way-out"><div class="sf-card-body">`
+    + `<p>🚪 <em>${esc(WAY_OUT_PROMPT)}</em></p>`
+    + `<p>${buttons}</p>`
+    + `</div></div>`;
+}
+
 function esc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

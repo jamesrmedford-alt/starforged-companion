@@ -238,7 +238,9 @@ export function registerCombatTrackerHooks() {
       const rangeBadge = document.createElement('button');
       rangeBadge.type      = 'button';
       rangeBadge.className = `sf-combat-badge sf-range-badge sf-range-${range}`;
-      rangeBadge.title     = 'Click to toggle range (close / far)';
+      // Advisory only — Starforged has no range mechanic; the badge is a
+      // fictional-positioning aid (see decisions.md "Range badges are advisory").
+      rangeBadge.title     = 'Click to toggle range (close / far) — fictional positioning aid, no roll modifier';
       rangeBadge.textContent = RANGE_LABELS[range] ?? range;
       rangeBadge.addEventListener('click', (e) => {
         e.stopPropagation();
