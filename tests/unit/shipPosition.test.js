@@ -285,14 +285,17 @@ describe('formatShipPositionLine — mobility status (Finding L)', () => {
     expect(line).toContain('docked at Bleakhold Station');
   });
 
-  it('set_a_course source → "in transit to" phrasing', () => {
+  // SHIP-TRANSIT-LINE regression — the position is only written after a
+  // non-miss (arrival confirmed: resolver text, token snap), so set_a_course
+  // must read as arrived, not "in transit to" the place the ship is docked at.
+  it('set_a_course source → "docked at" phrasing (arrival, not transit)', () => {
     const line = formatShipPositionLine({ ...pos, updatedBy: 'set_a_course' }, state, 'Vanguard');
-    expect(line).toContain('in transit to Bleakhold Station');
+    expect(line).toContain('docked at Bleakhold Station');
     expect(line).not.toContain('near ');
-    expect(line).not.toContain('docked');
+    expect(line).not.toContain('in transit');
   });
 
-  it('set_a_course with planet-only → "in transit to {planet}"', () => {
+  it('set_a_course with planet-only → "in orbit of {planet}"', () => {
     const planetState = makeCampaignState({
       planets: [planet('p2', 'Tartarus')],
       sectors: [sec('sec1', 'Outlands Mark')],
@@ -302,17 +305,18 @@ describe('formatShipPositionLine — mobility status (Finding L)', () => {
       planetState,
       'Vanguard',
     );
-    expect(line).toContain('in transit to Tartarus');
-    expect(line).not.toContain('in orbit of');
+    expect(line).toContain('in orbit of Tartarus');
+    expect(line).not.toContain('in transit');
   });
 
-  it('set_a_course with freeText → "in transit ({freeText})"', () => {
+  it('set_a_course with freeText → bare freeText (no transit claim)', () => {
     const line = formatShipPositionLine(
       { nearestSettlementId: null, nearestPlanetId: null, sectorId: null, freeText: 'the void', updatedBy: 'set_a_course' },
       makeCampaignState({}),
       'Vanguard',
     );
-    expect(line).toContain('in transit (the void)');
+    expect(line).toContain('the void');
+    expect(line).not.toContain('in transit');
   });
 
   it('narrator_sidecar source → neutral "near" phrasing (no status claim)', () => {

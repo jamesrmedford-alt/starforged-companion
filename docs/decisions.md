@@ -6,6 +6,52 @@ rejected.
 
 ---
 
+## Legacy XP pays at the tick write, to every player character
+
+**Decision:** `addLegacyTicks` (src/index.js) is the single legacy-tick
+entrance and now awards XP itself: 2 XP per newly filled box (1 once the track
+is `cleared`, play kit rule 1.12), granted to **every player character**, with
+an earned-XP chat card. The award is fire-and-forget (call sites stay
+synchronous; failures warn). `!bond`'s formerly inline tick bump routes
+through it too.
+
+**Reason:** LEGACY-XP-DEAD (2026-07 flow audit) — legacy ticks accrued but no
+XP was ever awarded: the awarding path (`persistResolution.markLegacyProgress`)
+required `consequences.progressTrackId`, which no resolver sets, so the whole
+legacy → XP → assets economy was disconnected in play. Awarding to all PCs
+matches the module's shared-crew legacy model (one `campaignState.legacyTracks`
+set for the table, like the shared supply).
+
+**Rejected:**
+- *Per-character legacy tracks* (RAW-strict) — a data-model migration far
+  beyond the defect; the shared model is an established module decision.
+- *Wire `progressTrackId` through the resolvers instead* — every legacy write
+  site would need consequence plumbing; paying at the single entrance can't
+  be bypassed by a future call site.
+
+## Vow payoffs resolve vowId-first; forsaking completes with a `forsaken` flag
+
+**Decision:** Fulfilment/forsake completion and payoff resolve the target vow
+via `resolveVowItemCopies` (src/index.js): name ladder (exact → substring →
+sole open vow, mirroring `selectMilestoneVow`), then **every copy collected by
+the shared `vowId` flag** (name only as fallback). Forsake Your Vow's new
+`forsakeVow` consequence marks all copies `completed` + a `forsaken` module
+flag — audit-preserving, nothing deleted — closes the journal twin, and flips
+a still-promised reward to `lost`.
+
+**Reason:** VOW-RENAME-PAYOFF — payoffs matched by exact lowercased name while
+creation/sync/rewards key `vowId`, so a renamed vow (or a stale
+`linkedVowName` snapshot on a combat track / victory card) rolled hits that
+completed nothing and paid nothing. VOW-FORSAKE-COSMETIC — forsaking presented
+costs but never cleared the vow.
+
+**Rejected:**
+- *Deleting the forsaken item* — destructive; violates the module's
+  audit-preserving norm (cf. `!truth strike` retracting, not deleting).
+- *Completing without a marker* — mislabels an abandoned vow as achieved.
+
+---
+
 ## Progress-move scores come from module data, never the AI
 
 **Decision:** A progress move's score (Take Decisive Action, Fulfill Your Vow,

@@ -3,11 +3,35 @@
 Open bugs, workarounds, and items pending resolution. Update this file as
 issues are resolved or discovered.
 
-_Last audited against the code at v1.6.0 (2026-05)._
+_Last audited against the code at the v1.7.30 cycle (2026-07); the flow audits
+below were verified against source — full traces in `docs/flows/*.md`._
 
 ---
 
 ## Active issues
+
+### Flow-audit findings (2026-07) — all fixed in the v1.7.30 cycle
+
+The combat/vow/connection/exploration flow audits surfaced eleven verified
+defects; every one was fixed in the same cycle (combat pair in PR #257, the
+remaining eleven in the follow-up fix commit). Kept here as a resolved ledger —
+full context and post-fix behaviour live in the matching `docs/flows/*-flow.md`.
+
+| Code | Was | Fix |
+|---|---|---|
+| VOW-FULFIL-SIBLINGS | Native-sheet fulfil left shared-vow copies open on other PCs | `completed` joined `SHARED_VOW_SYNC_FIELDS`; pipeline fulfil already closes all copies |
+| VOW-RENAME-PAYOFF | Renamed vows rolled hits but completed/paid nothing (exact-name matching) | `resolveVowItemCopies`: name ladder (exact → substring → sole-open), copies collected by `vowId`; used by completion + both payoff paths |
+| VOW-FORSAKE-COSMETIC | Forsake presented costs but never cleared the vow | New `forsakeVow` consequence + pipeline branch: all copies completed + `forsaken` flag, journal twin closed, promised reward → lost, forsake card |
+| BOND-WEAK-FORGE | Weak-hit Forge a Bond changed nothing mechanically | Resolver weak hit now sets `forgeABond`; the bond forms (with their request in the fiction) |
+| BOND-NATIVE-FORGE | Sheet-rolled Forge a Bond never updated the record | Native consequence hook gains a forge branch (`shouldForgeBond` → `payForgedBondNative`: bonded + rank legacy + card, idempotent) |
+| LEGACY-XP-DEAD | Legacy ticks never converted to XP anywhere | `addLegacyTicks` awards 2 XP per newly filled box (1 once cleared) to every PC + an earned-XP card; `!bond` rerouted through it |
+| BOND-ITEM-MIRROR | The sheet's Connections-tab track never advanced | `markRelationshipProgress` mirrors `relationshipTicks` onto each PC's bond Item (`setBondItemTicks`, keyed by connectionId → name) |
+| WAYPOINT-PROGRESS-NOOP | Waypoint "mark progress" pick silently skipped with no open expedition | Executor resolve-or-creates a default expedition (0 open); ambiguous (>1) now warns |
+| EXPEDITION-FINISH-TARGET | The card's Finish button lost the destination | The progress card carries `trackLabel`; the button forwards it as `forcedMoveTarget` |
+| SHIP-TRANSIT-LINE | Narrator said "in transit to X" after arriving | `set_a_course` (written only on non-miss = arrival) now reads as docked/in-orbit |
+| LOCATION-DUAL-STORE | Travel-by-move never updated `currentLocationId` | The arrival block resolves the destination with the `!at` resolver and updates `currentLocationId/Type` |
+
+---
 
 ### VENDOR-BONDSET — non-GM "lacks permission to create Item" on character-actor creation
 

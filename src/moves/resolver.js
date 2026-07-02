@@ -246,6 +246,10 @@ function emptyConsequences() {
     // { ranksDown } — pipeline closes the target vow track and marks the quests legacy
     // reward (Fulfill Your Vow). One rank lower on weak hit. null = not a fulfillment.
     fulfillVow:            null,
+    // true → pipeline marks every copy of the target vow forsaken (completed +
+    // forsaken flag), closes the journal twin, and flips a promised reward to
+    // lost (Forsake Your Vow — outcome-independent; the move is no-roll).
+    forsakeVow:            false,
     // true → pipeline calls forgeBond on the target connection, marks bonds legacy.
     forgeABond:            false,
     // true → pipeline resolves the active vow and marks progress on it per its
@@ -431,6 +435,9 @@ const CONSEQUENCE_MAP = {
 
   forsake_your_vow: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
+    // The pipeline actually clears the vow (VOW-FORSAKE-COSMETIC fix — the
+    // costs used to be presented while the vow item/track stayed open).
+    forsakeVow: true,
     // B2: one-or-more costs. The dialog presents these as a multi-select;
     // suffer-routed options apply via the executor, the non-suffer ones
     // (test relationship, asset discard, narrative cost) post a card and
@@ -487,12 +494,14 @@ const CONSEQUENCE_MAP = {
   },
 
   forge_a_bond: (outcome, _isMatch) => {
-    // Progress move
+    // Progress move. The bond forms on ANY hit (play kit: a weak hit forges
+    // it too, once their request is met) — pre-fix the weak hit was text-only,
+    // so `bonded` never flipped and no legacy marked (BOND-WEAK-FORGE).
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), forgeABond: true,
         otherEffect: "Bond forged. Legacy reward marked on bonds track. Choose: Bolster Influence (+2) OR Expand Influence (second role, +1)." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Bond forged, but they ask something more first. Envision the request and do it (or Swear an Iron Vow)." };
+      case "weak_hit": return { ...emptyConsequences(), forgeABond: true,
+        otherEffect: "Bond forged — but they ask something more of you first. Envision the request and do it (or Swear an Iron Vow)." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Conflicting motivation revealed. Recommit: roll challenge dice, clear lowest value in progress boxes, raise rank by one." };
     }

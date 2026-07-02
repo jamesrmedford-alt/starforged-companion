@@ -15,6 +15,7 @@ import {
   nextRank,
   BOND_LEGACY_TICKS,
   CONNECTION_RANKS,
+  shouldForgeBond,
 } from "../../src/moves/developRelationship.js";
 
 const conn = (over = {}) => ({
@@ -212,5 +213,23 @@ describe("constants", () => {
   });
   it("CONNECTION_RANKS is the five-rank ladder in order", () => {
     expect(CONNECTION_RANKS).toEqual(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// shouldForgeBond — native-sheet Forge a Bond payoff gate (BOND-NATIVE-FORGE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("shouldForgeBond", () => {
+  it("pays on a strong or weak hit of forge_a_bond (the bond forms on any hit)", () => {
+    expect(shouldForgeBond({ moveId: "forge_a_bond", outcome: "strong_hit" })).toBe(true);
+    expect(shouldForgeBond({ moveId: "forge_a_bond", outcome: "weak_hit" })).toBe(true);
+  });
+
+  it("pays nothing on a miss or for other moves", () => {
+    expect(shouldForgeBond({ moveId: "forge_a_bond", outcome: "miss" })).toBe(false);
+    expect(shouldForgeBond({ moveId: "fulfill_your_vow", outcome: "strong_hit" })).toBe(false);
+    expect(shouldForgeBond({})).toBe(false);
   });
 });

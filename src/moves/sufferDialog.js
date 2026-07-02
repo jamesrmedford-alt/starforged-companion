@@ -272,16 +272,33 @@ export async function runSufferResolution(calls, actor, opts = {}) {
         break;
       }
       case "expedition-progress": {
-        const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
+        const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
         const allTracks = await listProgressTracks();
         const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
         if (open.length === 1) {
           for (let i = 0; i < (call.count ?? 1); i++) {
             await markProgressById(open[0].id).catch(err =>
-              console.warn("starforged-companion | expedition-progress executor:", err));
+              console.warn(`${MODULE_ID} | expedition-progress executor:`, err));
           }
           results.push({ kind: "expedition-progress", count: call.count, trackId: open[0].id });
+        } else if (open.length === 0) {
+          // Explore a Waypoint's "mark progress" pick used to silently skip
+          // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
+          // applyExpeditionProgress's resolve-or-create: begin a default
+          // expedition and mark it, so the chosen reward always lands.
+          try {
+            const created = await addProgressTrack({ label: "Expedition", type: "expedition", rank: "dangerous" });
+            for (let i = 0; i < (call.count ?? 1); i++) {
+              await markProgressById(created.id).catch(err =>
+                console.warn(`${MODULE_ID} | expedition-progress executor:`, err));
+            }
+            results.push({ kind: "expedition-progress", count: call.count, trackId: created.id, created: true });
+          } catch (err) {
+            console.warn(`${MODULE_ID} | expedition-progress executor: create failed:`, err?.message ?? err);
+            results.push({ kind: "expedition-progress", count: call.count, skipped: true });
+          }
         } else {
+          console.warn(`${MODULE_ID} | expedition-progress executor: ${open.length} open expeditions — ambiguous, progress not marked. Name the expedition or mark it in the Progress Tracks panel.`);
           results.push({ kind: "expedition-progress", count: call.count, skipped: true });
         }
         break;

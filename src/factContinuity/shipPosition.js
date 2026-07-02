@@ -149,23 +149,24 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
 
   const ship      = (shipName ?? "").trim() || "Command vehicle";
   const source    = position.updatedBy ?? null;
-  // Derive mobility status from how the position was last recorded.
-  // set_a_course means DESTINATION (ship hasn't arrived yet → in transit).
-  // scene_token / at_command / expedition mean ARRIVAL (ship is stationary).
-  const inTransit = source === "set_a_course";
-  const docked    = source === "scene_token" || source === "at_command" || source === "expedition";
+  // Every recorder writes the position only after ARRIVAL is confirmed:
+  // set_a_course and finish_an_expedition hits mean "you reach your
+  // destination" (play kit; the pipeline gates the write on a non-miss and
+  // snaps the token), and the token drag / !at are declarative. So every
+  // known source reads as stationary; an unknown source degrades to the
+  // neutral "near". (SHIP-TRANSIT-LINE fix — set_a_course used to render
+  // "in transit to" after the ship had already arrived.)
+  const docked = source === "set_a_course" || source === "scene_token"
+    || source === "at_command" || source === "expedition";
 
   const parts = [];
   if (settlement) {
-    if (docked)         parts.push(`docked at ${settlement}`);
-    else if (inTransit) parts.push(`in transit to ${settlement}`);
-    else                parts.push(`near ${settlement}`);
+    if (docked) parts.push(`docked at ${settlement}`);
+    else        parts.push(`near ${settlement}`);
   } else if (planet) {
-    if (inTransit)      parts.push(`in transit to ${planet}`);
-    else                parts.push(`in orbit of ${planet}`);
+    parts.push(`in orbit of ${planet}`);
   } else if (free) {
-    if (inTransit)      parts.push(`in transit (${free})`);
-    else                parts.push(free);
+    parts.push(free);
   }
 
   const scope = [];

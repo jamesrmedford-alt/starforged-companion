@@ -49,6 +49,19 @@ export function buildConnectionSuggestion(resolution, activeConnections, moveCat
 export const BOND_LEGACY_TICKS = { strong_hit: 2, weak_hit: 1, miss: 0 };
 
 /**
+ * Pure: does a Forge a Bond resolution earn its connection payoff (bonded flip
+ * + bonds legacy)? True on any hit — the bond forms on a weak hit too, once
+ * their request is met (BOND-WEAK-FORGE). Used by the native-sheet consequence
+ * hook, mirroring vow.js shouldPayFulfilledVow.
+ *
+ * @param {{ moveId?: string, outcome?: string }} args
+ * @returns {boolean}
+ */
+export function shouldForgeBond({ moveId, outcome } = {}) {
+  return moveId === "forge_a_bond" && (outcome === "strong_hit" || outcome === "weak_hit");
+}
+
+/**
  * Raise a rank by one step, clamped at epic. Unknown ranks pass through.
  * @param {string} rank
  * @returns {string}

@@ -40,10 +40,15 @@ vi.mock("../../src/character/actorBridge.js", () => ({
 
 // Mock the track store + position applier so the combat-position / progress
 // executors run without a live Foundry journal.
-const trackState = { tracks: [] };
+const trackState = { tracks: [], marked: [], created: [] };
 vi.mock("../../src/ui/progressTracks.js", () => ({
   listProgressTracks: vi.fn(async () => trackState.tracks),
-  markProgressById:   vi.fn(async () => null),
+  markProgressById:   vi.fn(async (id) => { trackState.marked.push(id); return null; }),
+  addProgressTrack:   vi.fn(async (data) => {
+    const t = { id: `new-${trackState.created.length + 1}`, ticks: 0, completed: false, ...data };
+    trackState.created.push(t);
+    return t;
+  }),
 }));
 const positionCalls = [];
 vi.mock("../../src/moves/combatTracker.js", () => ({
@@ -59,6 +64,8 @@ beforeEach(() => {
   bridgeCalls.setDebility.length = 0;
   chatCalls.length = 0;
   trackState.tracks = [];
+  trackState.marked = [];
+  trackState.created = [];
   positionCalls.length = 0;
   globalThis.ChatMessage = { create: vi.fn(async (d) => { chatCalls.push(d); return d; }) };
 });
@@ -434,5 +441,41 @@ describe("runSufferResolution — combat-position", () => {
     expect(r[0]).toMatchObject({ kind: "combat-position", skipped: true });
     expect(positionCalls).toEqual([]);
     expect(getCapturedWarns().some(w => w.includes("combat-position"))).toBe(true);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// runSufferResolution — expedition-progress executor (Explore a Waypoint pick)
+// WAYPOINT-PROGRESS-NOOP regression: picking "mark expedition progress" with no
+// open expedition used to skip silently. It now resolve-or-creates.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runSufferResolution — expedition-progress", () => {
+  it("marks the sole open expedition", async () => {
+    trackState.tracks = [{ id: "e1", type: "expedition", completed: false }];
+    const r = await runSufferResolution([{ kind: "expedition-progress", count: 1 }], { id: "pc1" });
+    expect(trackState.marked).toEqual(["e1"]);
+    expect(r[0]).toMatchObject({ kind: "expedition-progress", trackId: "e1" });
+  });
+
+  it("creates a default expedition and marks it when none is open", async () => {
+    trackState.tracks = [];
+    const r = await runSufferResolution([{ kind: "expedition-progress", count: 1 }], { id: "pc1" });
+    expect(trackState.created).toHaveLength(1);
+    expect(trackState.created[0]).toMatchObject({ label: "Expedition", type: "expedition", rank: "dangerous" });
+    expect(trackState.marked).toEqual([trackState.created[0].id]);
+    expect(r[0]).toMatchObject({ kind: "expedition-progress", created: true });
+  });
+
+  it("warns and skips when several expeditions are open (ambiguous)", async () => {
+    trackState.tracks = [
+      { id: "e1", type: "expedition", completed: false },
+      { id: "e2", type: "expedition", completed: false },
+    ];
+    const r = await runSufferResolution([{ kind: "expedition-progress", count: 1 }], { id: "pc1" });
+    expect(r[0]).toMatchObject({ kind: "expedition-progress", skipped: true });
+    expect(trackState.marked).toEqual([]);
+    expect(getCapturedWarns().some(w => w.includes("expedition-progress"))).toBe(true);
   });
 });
