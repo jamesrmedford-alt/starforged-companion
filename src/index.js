@@ -80,7 +80,7 @@ import {
   narrateAndPostVowSwearing,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { openChroniclePanel } from "./character/chroniclePanel.js";
 import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
 import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
@@ -167,9 +167,10 @@ import {
   registerCompanionToolbarSettings,
 } from "./ui/companionToolbar.js";
 
-import { resolveRelevance } from "./context/relevanceResolver.js";
+import { resolveRelevance, collectAllEntities } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
 import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
+import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import {
   strikeTruth as fcStrikeTruth,
@@ -1215,6 +1216,13 @@ export function registerChatHook() {
             if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
               await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
                 console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
+              // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
+              // raised rank (NARR-BOND-RANK-STALE).
+              await setBondItemRank(
+                { connectionId: plan.connection.__hostId, name: plan.connection.name },
+                plan.newRank,
+              ).catch(err =>
+                console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
             }
             await postDevelopRelationshipCard(plan).catch(err =>
               console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
@@ -2497,6 +2505,19 @@ async function handleFactContinuityCommand(message) {
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   const ctx = { isGM, actor: isGM ? "gm" : "player" };
 
+  // NARR-CMD-SUBJECT (narrator-context audit 2026-07): resolve command
+  // subjects against the full entity roster, exactly like the sidecar apply
+  // path does. Without it, entity-keyed ledger entries could never be
+  // addressed by name from `!truth` / `!state` ("No matching state entry"),
+  // and command-set truths landed text-keyed. Tolerant: an empty roster
+  // degrades to text subjects, same as before.
+  let fcEntities = [];
+  try {
+    fcEntities = collectAllEntities(campaignState);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | handleFactContinuityCommand: entity roster collect failed:`, err?.message ?? err);
+  }
+
   let resultLine = "";
   try {
     if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "strike") {
@@ -2510,7 +2531,7 @@ async function handleFactContinuityCommand(message) {
         ui.notifications.warn('Usage: !truth set <subject> <fact-text>');
         return;
       }
-      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const subject = fcResolveSubject(parsed.subject, campaignState, fcEntities);
       const truth   = fcSetTruth(subject, parsed.rest, campaignState, ctx);
       resultLine = truth
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest)}</em>.`
@@ -2521,7 +2542,7 @@ async function handleFactContinuityCommand(message) {
         ui.notifications.warn('Usage: !state strike <subject> <attribute>');
         return;
       }
-      const subject = fcResolveSubject(parsed.subject, campaignState);
+      const subject = fcResolveSubject(parsed.subject, campaignState, fcEntities);
       const ok      = fcStrikeStateValue(fcSubjectKey(subject), parsed.rest.trim(), campaignState);
       resultLine = ok
         ? `State <code>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest.trim())}</code> struck.`
@@ -2535,7 +2556,7 @@ async function handleFactContinuityCommand(message) {
       }
       const attribute = parsed.rest.slice(0, eqIdx).trim();
       const value     = parsed.rest.slice(eqIdx + 1).trim();
-      const subject   = fcResolveSubject(parsed.subject, campaignState);
+      const subject   = fcResolveSubject(parsed.subject, campaignState, fcEntities);
       const result    = fcSetStateValue(fcSubjectKey(subject), attribute, value, campaignState);
       resultLine = result
         ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(attribute)}: ${escapeHtml(value)}</em>.`
@@ -2818,7 +2839,21 @@ async function handleOracleCommand(message) {
 
   await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
-    flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+    flags:   {
+      [MODULE_ID]: {
+        oracleCommandCard: true,
+        // Structured payload for the canonical GM's oracle-memory capture
+        // hook (narrator-context audit 2026-07 — raw oracle results had no
+        // memory home). The command may run on a player client that cannot
+        // write world settings, so the card carries the data and the GM
+        // ledgers it.
+        oracleMemory: {
+          name:     `Ask the Oracle (${oddsLabel})`,
+          question,
+          answer:   `${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+        },
+      },
+    },
   });
 
   // Fire-and-forget narration follow-up (silent skip if Claude key is unset).
@@ -2878,7 +2913,13 @@ async function handlePayThePriceCommand(message) {
 
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
-    flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
+    flags:   {
+      [MODULE_ID]: {
+        payThePriceCard: true,
+        sufferRoute:     result.sufferRoute ?? null,
+        oracleMemory:    { name: "Pay the Price", question, answer: result.result },
+      },
+    },
   });
 
   if (result.sufferRoute) {
@@ -2896,6 +2937,32 @@ async function handlePayThePriceCommand(message) {
     oracleName: "Pay the Price",
     question,
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  });
+}
+
+/**
+ * Oracle-memory capture (narrator-context audit 2026-07): every `!oracle` /
+ * `!pay-the-price` result card carries a structured `oracleMemory` flag; the
+ * canonical GM ledgers it into `campaignState.recentOracles` so the narrator
+ * is always told what the dice established (system-prompt section [3b]).
+ * The commands themselves run on whichever client typed them — possibly a
+ * player who cannot write world settings — hence capture-on-GM via the hook.
+ */
+function registerOracleMemoryCaptureHook() {
+  Hooks.on("createChatMessage", (message) => {
+    try {
+      if (!isCanonicalGM()) return;
+      const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
+      if (!entry || typeof entry !== "object") return;
+
+      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      const stored = recordOracleResult(campaignState, entry);
+      if (!stored) return;
+      game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+        console.warn(`${MODULE_ID} | oracle-memory: persist failed:`, err?.message ?? err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
+    }
   });
 }
 
@@ -3890,7 +3957,13 @@ async function postFaceDefeatPayThePriceCard() {
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
-      flags:   { [MODULE_ID]: { payThePriceCard: true, sufferRoute: result.sufferRoute ?? null } },
+      flags:   {
+        [MODULE_ID]: {
+          payThePriceCard: true,
+          sufferRoute:     result.sufferRoute ?? null,
+          oracleMemory:    { name: "Pay the Price", question: "Face Defeat", answer: result.result },
+        },
+      },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFaceDefeatPayThePriceCard: chat post failed:`, err?.message ?? err);
@@ -3988,9 +4061,19 @@ async function advanceClocksOnPayThePrice() {
         for (const cd of justTriggered) {
           const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
           if (text) {
+            // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
+            // enter the ring/summary or the narrator forgets it immediately.
             await ChatMessage.create({
               content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(text)}</em></div>`,
-              flags:   { [MODULE_ID]: { clockCard: true, clockVignetteCard: true } },
+              flags:   {
+                [MODULE_ID]: {
+                  clockCard:         true,
+                  clockVignetteCard: true,
+                  narratorCard:      true,
+                  narrationText:     text,
+                  sessionId:         cs.currentSessionId ?? null,
+                },
+              },
             });
           }
         }
@@ -4216,8 +4299,14 @@ async function handleBondCommand(message) {
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
 
     if (raiseRank) {
-      await conn.updateConnection(target.__hostId, { rank: nextRank(target.rank) }).catch(err =>
+      const raisedRank = nextRank(target.rank);
+      await conn.updateConnection(target.__hostId, { rank: raisedRank }).catch(err =>
         console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
+      // Mirror onto the PCs' bond Items so CHARACTER STATE shows the raised
+      // rank (NARR-BOND-RANK-STALE).
+      await setBondItemRank({ connectionId: target.__hostId, name: target.name }, raisedRank)
+        .catch(err =>
+          console.warn(`${MODULE_ID} | !bond rank mirror failed:`, err?.message ?? err));
     }
 
     if (momentumChange > 0) {
@@ -4953,8 +5042,28 @@ Hooks.once("ready", () => {
     }
 
     const wasNewSession = isNewSessionStart(prevState);
+    const priorSessionId = prevState.currentSessionId ?? null;
     const updated = initSessionId(prevState);
-    game.settings.set(MODULE_ID, "campaignState", updated).then(async () => {
+
+    // NARR-SESSION-SCENE (narrator-context audit 2026-07): a re-minted
+    // session id means the previous session never cleanly ended (End Session
+    // now closes the scene itself). Without this, the new session started
+    // with an empty ring and empty summary while the PREVIOUS session's
+    // scene truths kept rendering — mixed memory. End the stale scene so its
+    // truths migrate to their durable homes. endScene persists internally;
+    // the set below persists the re-minted ids either way.
+    const staleScene = updated.currentSessionId !== priorSessionId
+      && (updated.currentSceneId
+          || (updated.sceneTruths?.length ?? 0) > 0
+          || Object.keys(updated.sceneState?.bySubject ?? {}).length > 0);
+    const endStaleScene = staleScene
+      ? endScene(updated, { reason: "session_gap_remint" }).catch(err =>
+          console.warn(`${MODULE_ID} | ready: stale-scene close failed:`, err?.message ?? err))
+      : Promise.resolve();
+
+    endStaleScene.then(() =>
+      game.settings.set(MODULE_ID, "campaignState", updated),
+    ).then(async () => {
       // Auto-recap: post campaign recap when a new session is detected
       if (wasNewSession && getAutoRecapEnabled()) {
         const freshState = game.settings.get(MODULE_ID, "campaignState");
@@ -5100,6 +5209,7 @@ Hooks.once("ready", () => {
   registerCommandVehicleHook();
   registerNativeProgressRollHook();
   registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
+  registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

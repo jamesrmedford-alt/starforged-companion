@@ -15,6 +15,7 @@ import {
   resolveSubject,
   promoteTextSubject,
   subjectKey,
+  findEquivalentTruth,
 } from '../../src/factContinuity/ledgers.js';
 
 
@@ -504,5 +505,91 @@ describe('applySceneFrame', () => {
 
   it('returns false without a campaignState', () => {
     expect(applySceneFrame({ location: 'X' }, null)).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applySidecar — truth dedup (NARR-TRUTH-DUP, narrator-context audit 2026-07)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applySidecar — truth dedup', () => {
+  it('skips a newTruth whose subject + fact already exist', () => {
+    const cs = makeCampaignState();
+    const first = applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }] },
+      { campaignState: cs },
+    );
+    expect(first.truthIds).toHaveLength(1);
+
+    const second = applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }] },
+      { campaignState: cs },
+    );
+    expect(second.truthIds).toHaveLength(0);
+    expect(cs.sceneTruths).toHaveLength(1);
+  });
+
+  it('normalises case, whitespace, and trailing punctuation before comparing', () => {
+    const cs = makeCampaignState();
+    applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }] },
+      { campaignState: cs },
+    );
+    const dup = applySidecar(
+      { newTruths: [{ subject: 'vance', fact: '  walks  with a LIMP. ' }] },
+      { campaignState: cs },
+    );
+    expect(dup.truthIds).toHaveLength(0);
+    expect(cs.sceneTruths).toHaveLength(1);
+  });
+
+  it('keeps the same fact under a different subject', () => {
+    const cs = makeCampaignState();
+    applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Wanted by the syndicate' }] },
+      { campaignState: cs },
+    );
+    const other = applySidecar(
+      { newTruths: [{ subject: 'Kael', fact: 'Wanted by the syndicate' }] },
+      { campaignState: cs },
+    );
+    expect(other.truthIds).toHaveLength(1);
+    expect(cs.sceneTruths).toHaveLength(2);
+  });
+
+  it('blocks re-assertion of a RETRACTED fact — the correction stands', () => {
+    const cs = makeCampaignState();
+    applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Betrayed the crew' }] },
+      { campaignState: cs },
+    );
+    cs.sceneTruths[0].retracted = true;
+
+    const reassert = applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Betrayed the crew' }] },
+      { campaignState: cs },
+    );
+    expect(reassert.truthIds).toHaveLength(0);
+    expect(cs.sceneTruths).toHaveLength(1);
+    expect(cs.sceneTruths[0].retracted).toBe(true);
+  });
+});
+
+
+describe('findEquivalentTruth', () => {
+  it('matches on subjectKey + normalised fact and returns the entry', () => {
+    const cs = makeCampaignState();
+    applySidecar(
+      { newTruths: [{ subject: 'scene', fact: 'Comms are jammed' }] },
+      { campaignState: cs },
+    );
+    const hit = findEquivalentTruth(
+      cs.sceneTruths, { kind: 'scene', sceneId: cs.currentSceneId }, 'comms are jammed.',
+    );
+    expect(hit).toBe(cs.sceneTruths[0]);
+    expect(findEquivalentTruth(cs.sceneTruths, { kind: 'text', text: 'other' }, 'Comms are jammed'))
+      .toBeNull();
+    expect(findEquivalentTruth([], { kind: 'scene' }, 'x')).toBeNull();
   });
 });

@@ -610,12 +610,12 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK, {
-    name:    'Consistency Check (experimental)',
-    hint:    'After every narration, run a Haiku audit pass that checks the prose against the active-scene ledger. High-confidence contradictions surface on the existing GM-only Narrative Review card. Adds ~$0.0004 and 200–500ms per narration; off by default.',
+    name:    'Consistency Check',
+    hint:    'After every narration, run a Haiku audit pass that checks the prose against the active-scene ledger (frame, truths, retracted facts, state, ship position). High-confidence contradictions surface on the existing GM-only Narrative Review card. Fire-and-forget (~$0.0004 per narration, no added latency); on by default — the only active contradiction defense.',
     scope:   'world',
     config:  false,
     type:    Boolean,
-    default: false,
+    default: true,
   });
 
   game.settings.register(MODULE_ID, SETTING.FC_SCENE_FRAME, {
@@ -738,7 +738,7 @@ export function getFactContinuityEnabled()        { return game.settings.get(MOD
 export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
 export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
-export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? false; }
+export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? true; }
 export function getFactContinuitySceneFrame()      { return game.settings.get(MODULE_ID, SETTING.FC_SCENE_FRAME)        ?? true; }
 
 // Ship positioning (§20) — feature-gated via a master toggle plus three
@@ -1234,9 +1234,9 @@ export class SettingsPanelApp extends ApplicationV2 {
           <label class="pacing-field-label">
             <input type="checkbox" name="factContinuity.consistencyCheck"
                    ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
-            Consistency check (experimental)
+            Consistency check
           </label>
-          <span class="pacing-field-hint">Run a Haiku audit pass after every narration. High-confidence contradictions surface on the GM Narrative Review card. ~$0.0004 and 200–500ms per call; off by default.</span>
+          <span class="pacing-field-hint">Run a Haiku audit pass after every narration, checking the prose against the scene frame, binding truths, retracted facts, current state, and ship position. High-confidence contradictions surface on the GM Narrative Review card. Fire-and-forget, ~$0.0004 per call; on by default.</span>
         </div>
         ${ctx.isGM ? `
           <div class="pacing-actions">

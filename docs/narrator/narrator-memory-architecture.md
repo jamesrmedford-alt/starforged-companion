@@ -29,7 +29,8 @@ durability, capacity, and write discipline:
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers) | permanent | entity confirm flow, scene-end truth migration, tier updates | relevance resolver → ENTITIES IN SCENE cards | per-entity |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed, debounced at ~1.5×N | every non-meta narrator call (system prompt §[4c]) | ~≤320 tokens (Haiku-capped) |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed, debounced at ~1.5×N | every non-meta narrator call (system prompt §[4c], ledger-wins caveat) | ~≤320 tokens (Haiku-capped) |
+| **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
 
 Durable campaign context (world truths, sector, current location, character
 state, World Journal injections) rides alongside these in the system prompt —
@@ -105,7 +106,10 @@ should remember* must carry all three flags:
 | paced narration (`postPacedNarrativeCard`) | always | |
 | @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions |
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
-| galley / end-session vignettes | **not yet** — see §8 backlog | |
+| galley / end-session vignettes | 2026-06-15 | |
+| vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
+| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix |
+| oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
 
 **Audited consumers of `narratorCard`** (re-audit when adding a card type —
 CLAUDE.md "audit consumers" rule):
@@ -229,7 +233,7 @@ reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
 | `factContinuity.ledgerInContext` | true | Fact Continuity | §6.5 block injection |
 | `factContinuity.sceneFrame` | true | Fact Continuity | frame emission + block + scoping/relevance unions |
 | `factContinuity.maxLedgerTokens` | 400 | Fact Continuity | §6.5 soft cap (state drops first) |
-| `factContinuity.consistencyCheck` | false | Fact Continuity | post-narration Haiku audit vs ledger |
+| `factContinuity.consistencyCheck` | **true** (2026-07) | Fact Continuity | post-narration Haiku audit vs the full ledger block (frame, truths, retractions, state, ship) |
 
 ---
 
@@ -242,13 +246,17 @@ from 300). The post-A sidecar on a heavy turn: required stateChanges
 ≈ **240–290 tokens**, and the inciting premise addendum can reach ~400.
 Failure mode when headroom is too small: the fence is clipped mid-JSON,
 `extractSidecar` strips it defensively (prose stays clean, parseError
-logged) — and the turn **silently loses its frame update and required
-emissions**. `maxTokens` is a cap, not a target, so generous headroom costs
-nothing unless used. **Watch for** `"truncated by maxTokens"` warnings in
-the console during playtests; if they appear, raise the headroom further.
+logged) — and the turn loses its frame update and required emissions.
+Since 2026-07 this is **never silent**: `callNarratorAPI` warns on
+`stop_reason: "max_tokens"` (catching truncation before the fence even
+opens) and `applyNarratorSidecar` warns when a response carries no fence at
+all. `maxTokens` is a cap, not a target, so generous headroom costs nothing
+unless used. If the truncation warnings appear in playtests, raise the
+headroom further.
 
-Per-site totals (base + 500): @scene 700 · oracle follow-up 720 · paced/move
-`narrationMaxTokens`+500 (800 at default) · vignettes 880 · inciting 980.
+Per-site budgets: move/paced use `narrationMaxTokens + 500`; every other
+mode passes `maxTokensWithSidecar(16000)` — deliberately far above any real
+response so only the model's own length discipline governs.
 
 **Input side (fine; two watch items).** Per-call additions from Cluster A:
 scene frame block ~30–60; ENTITIES IN SCENE on paced/@scene ~50–150 per
@@ -258,12 +266,12 @@ default 3 unchanged (each step toward 10 adds ~100–200). Total system
 prompt typically grows ~5–15%; nowhere near any context-window concern.
 
 Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
-(400) only sheds *state*; truths/frame/ship render regardless. Required
-emission accumulates truths faster, so a long scene that never ends
-(`!scene end` hygiene) can exceed the cap on truths alone (~20 truths ≈
-400). Not a correctness failure — the block just runs over the soft cap —
-but it's the mechanism by which prompts grow in marathon scenes. Backlog
-§8.8 covers the elide option if playtests show it.
+(400) only sheds *state*; truths/frame/corrections/ship render regardless.
+Since 2026-07 `applySidecar` dedups truths (subject + normalised fact), so
+re-anchoring no longer accretes duplicates — marathon growth now requires
+genuinely distinct facts. A very long scene can still exceed the cap on
+truths alone; backlog §8.8 keeps the elide option if playtests show it.
+`!scene end` hygiene remains the designed pressure valve.
 
 ## 7. Tuning guide — symptom → layer
 
@@ -276,8 +284,8 @@ but it's the mechanism by which prompts grow in marathon scenes. Backlog
 | Conversation partner forgotten on short turns | frame `present` + scoping | confirm the name appears in `present`; confirm `resolvePathRelevance` unioned it (matched cards in prompt) |
 | Established entity facts not surfacing | entity records + scoping | is the entity confirmed? are its truths entity-keyed (not text)? did relevance match it? |
 | Prompt too large / cost creep | budgets | lower `narratorContextCards` / `maxLedgerTokens`; frame is ~30–60 tokens and not the culprit |
-| Contradiction slipped through anyway | consistency check | enable `factContinuity.consistencyCheck`; it can only defend what the ledger holds — fix emission first |
-| Wrong fact got ledgered (canon inversion) | corrections | Correct-a-fact dialog / `!truth` — the retraction defends against re-assertion |
+| Contradiction slipped through anyway | consistency check | confirm `factContinuity.consistencyCheck` is on (default since 2026-07); it audits frame/truths/retractions/state/ship — it can only defend what the ledger holds, so fix emission first |
+| Wrong fact got ledgered (canon inversion) | corrections | Correct-a-fact dialog / `!truth` — a bare Strike renders as a CORRECTED do-not-re-assert line, the write layer blocks narrator re-assertion, and the consistency check audits retractions (2026-07) |
 
 **Live inspection one-liners** (browser console, GM):
 
@@ -297,20 +305,23 @@ game.messages.contents.filter(m =>
 Recorded so tuning starts where this round stopped — none of these are
 regressions, all are known scope cuts:
 
-1. **Vignette cards don't feed the ring.** Galley / end-session vignettes
-   post without the flag family. Same one-line-shaped fix as A1 once their
-   prose is judged ring-worthy (they're mood pieces; recap inclusion is the
-   real question).
+1. **Vignette cards don't feed the ring. ✅ done.** Galley / end-session
+   gained the family 2026-06-15; the vow-swearing scene, all three
+   clock-vignette post sites, and oracle follow-up narrations joined
+   2026-07 (NARR-RING-VOWSCENE / NARR-RING-CLOCKVIG). Every narrator
+   fiction card now carries the family — see decisions.md → "Narrator
+   context: the ledger actively defends".
 2. **Move-path relevance doesn't union frame names.** Deliberate (it would
    change hybrid-move permission classification). If move narration shows the
    partner-forgotten symptom, extend `narrateResolution`'s internal
    `resolveRelevance` call with the same union, but audit the hybrid
    `interaction`-vs-Phase-2 implications first.
-3. **Frame staleness.** An omitted `sceneFrame` keeps the previous snapshot
-   by design (idempotence), which means a model that stops emitting frames
-   keeps a slowly-staling one. If observed: have the consistency check audit
-   prose against the frame, or re-render the previous frame into the user
-   message as "confirm or update".
+3. **Frame staleness — mitigation shipped (2026-07).** An omitted
+   `sceneFrame` keeps the previous snapshot by design (idempotence,
+   reaffirmed in decisions.md). The sketched mitigation is now live: the
+   consistency check audits prose against the frame (plus retractions and
+   ship position). The "confirm or update" user-message re-render stays a
+   fallback idea if frame drift is still observed.
 4. **Frame names → entity ids inside `buildLedgerBlock`.** Present-name
    scoping is text-based at render time; entity-keyed entries for present
    NPCs are covered via the relevance union instead. If a case appears where
@@ -363,9 +374,20 @@ regressions, all are known scope cuts:
 
 ## 9. Verification checklist for the next playtest
 
-- [ ] Inciting incident: `cs.sceneTruths` contains target NPC identity /
+- [ ] Inciting incident: a scene is ACTIVE (`cs.currentSceneId` set by the
+      inciting call — 2026-07); `cs.sceneTruths` contains target NPC identity /
       history / stakes / deadline; `sceneState` has their location+condition;
-      `cs.sceneFrame` populated. Recap card includes the incident.
+      `cs.sceneFrame` populated — and all of it SURVIVES the first move
+      (which continues the scene instead of implicitly ending it). Recap
+      card includes the incident.
+- [ ] End Session closes the scene (truths migrated, `currentSceneId`
+      null); a 4h-gap reload re-mints the session AND closes any stale
+      scene (`session_gap_remint` in the console).
+- [ ] `!oracle yes` → the answer renders under RECENT ORACLE RESULTS on the
+      next narrator call; the narration does not contradict it.
+- [ ] Strike a truth → it renders under CORRECTED and the narrator does not
+      re-assert it; a narrator sidecar re-emitting it is blocked at the
+      write (console debug).
 - [ ] Challenge an NPC about an established fact → narrator holds the line
       (F7 repro inverted).
 - [ ] Ask a no-name follow-up ("what does that mean?") → partner's card +

@@ -10,29 +10,34 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Narrator-context audit findings (2026-07) — OPEN, awaiting direction
+### Narrator-context audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
-Surfaced by the narrator context/memory audit (full trace:
-`docs/flows/narrator-context-flow.md`; design reference:
-`docs/narrator/narrator-memory-architecture.md`). Verified against source;
-none fixed yet. Failure classes: LOSE-PLOT / WRONG-DETAIL / INVENT-RISK.
+Surfaced by the narrator context/memory audit; every defect and the
+actionable design exposures were fixed in the same cycle ("Fix all gaps").
+Post-fix behaviour is documented in `docs/flows/narrator-context-flow.md`
+(§3 resolved ledger, §4 design decisions); design reference:
+`docs/narrator/narrator-memory-architecture.md`.
 
-| Code | Class | Defect |
+| Code | Class | Defect → fix |
 |---|---|---|
-| NARR-RING-VOWSCENE | LOSE-PLOT | The vow-swearing scene card has no `narratorCard`/`narrationText`/`sessionId` flags — the oath scene never enters the ring, rolling summary, or recap |
-| NARR-RING-CLOCKVIG | LOSE-PLOT | Clock-advancement/trigger vignettes post prose without the flag family — threat-advance fiction is immediately forgotten |
-| NARR-SIDECAR-SILENT | LOSE-PLOT | A narrator response with no sidecar fence loses its frame update + required emissions with zero logging; no `stop_reason` truncation check exists anywhere |
-| NARR-INCITING-SCENE | LOSE-PLOT | The inciting incident writes premise truths/state/frame with no scene started; the first real turn's implicit endScene discards the opening NPC state and frame |
-| NARR-SESSION-SCENE | LOSE-PLOT | End Session and the 4h-gap session re-mint never end the scene: new sessions start with an empty ring/summary while stale prior-session truths keep rendering |
-| NARR-TRUTH-DUP | WRONG-DETAIL | No truth dedup: required identity-anchor emissions accrete duplicates every turn; truths are cap-exempt, so marathon scenes grow the prompt unboundedly |
-| NARR-RETRACT-PASSIVE | INVENT-RISK | A bare Strike only hides the truth — no "do not re-assert" is emitted, the prose stays in ring/summary, and (check off) nothing re-strikes a re-assertion |
-| NARR-CMD-SUBJECT | WRONG-DETAIL | `!truth set` / `!state strike\|set` resolve subjects without the entity roster — entity-keyed entries are unreachable by name from the commands |
-| NARR-BOND-RANK-STALE | WRONG-DETAIL | CHARACTER STATE reads the bond Item's rank, which never updates when the connection record's rank raises |
+| NARR-RING-VOWSCENE | LOSE-PLOT | Vow-swearing scene card lacked the flag family → carries `narratorCard`/`narrationText`/`sessionId`; the oath scene now feeds the ring, rolling summary, and recap |
+| NARR-RING-CLOCKVIG | LOSE-PLOT | Clock vignettes (Pay the Price, Begin Session, manual advance — all three post sites) lacked the family → all carry it now |
+| NARR-SIDECAR-SILENT | LOSE-PLOT | Fence-less responses and pre-fence maxTokens truncation were invisible → `applyNarratorSidecar` warns on a missing fence; `callNarratorAPI` warns on `stop_reason: "max_tokens"` |
+| NARR-INCITING-SCENE | LOSE-PLOT | Premise wrote under `currentSceneId: null`, first turn's implicit endScene discarded opening state/frame → `narrateIncitingIncident` starts the scene first; the first move continues it |
+| NARR-SESSION-SCENE | LOSE-PLOT | End Session / 4h re-mint left the scene open across sessions → End Session ends the scene (`session_close`); the ready-hook closes a stale scene before re-minting (`session_gap_remint`) |
+| NARR-TRUTH-DUP | WRONG-DETAIL | Required identity anchors accreted duplicates unboundedly → `applySidecar` dedups on subject + normalised fact; the sidecar instruction says anchors are recorded once |
+| NARR-RETRACT-PASSIVE | INVENT-RISK | A bare Strike only hid the truth → renders as a CORRECTED do-not-re-assert block (never dropped, capped at 5); the write layer blocks narrator re-assertion of a retracted fact; the consistency check audits retractions |
+| NARR-CMD-SUBJECT | WRONG-DETAIL | Commands resolved subjects without the roster → `!truth` / `!state` pass `collectAllEntities`, so entity-keyed entries are addressable by name |
+| NARR-BOND-RANK-STALE | WRONG-DETAIL | Bond-Item rank never updated on record rank raises → `setBondItemRank` mirrors at both raise sites (develop-match, `!bond`-match) |
 
-Design-level exposure recorded alongside (consistency check default-off and
-narrow; unvalidated rolling summary; oracle results have no memory home;
-unvalidated frame replacement; WJ Haiku transitions; lexical relevance
-misses; tier double-capture; architecture-doc drift) — see the flow doc §4.
+Design exposures addressed in the same cycle: the consistency check now
+defaults ON and audits the full ledger block (frame, truths, retracted
+facts, state, ship position); the rolling summary carries a ledger-wins
+caveat; raw oracle results gained a memory home (`recentOracles` ring →
+prompt section [3b] + the assembler's RECENT ORACLES section); scene-end
+tier migration dedups; the summary persist is canonical-GM gated.
+Reaffirmed as deliberate (decisions.md): frame full-replacement without
+validation, lexical non-move relevance, WJ Haiku transitions.
 
 ### Flow-audit findings (2026-07) — all fixed in the v1.7.30 cycle
 

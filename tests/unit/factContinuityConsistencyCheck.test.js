@@ -268,3 +268,47 @@ describe('runConsistencyCheck', () => {
     });
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Broadened audit scope (narrator-context audit 2026-07): frame, retracted
+// facts, and ship position join truths + state in the audit prompt.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildAuditPrompt — broadened sections', () => {
+  it('includes frame, corrections, and ship position when provided', () => {
+    const prompt = buildAuditPrompt('TRUTHS:\n  scene — x', 'STATE', 'Some prose.', {
+      frame:        'SCENE FRAME (the scene as it stands):\n  Where: the docks',
+      corrections:  'CORRECTED …:\n  Vance — Betrayed the crew',
+      shipPosition: 'SHIP POSITION: docked at Bleakhold',
+    });
+    expect(prompt).toMatch(/SCENE FRAME \(where the scene is set/);
+    expect(prompt).toMatch(/Where: the docks/);
+    expect(prompt).toMatch(/RETRACTED FACTS/);
+    expect(prompt).toMatch(/Betrayed the crew/);
+    expect(prompt).toMatch(/SHIP POSITION:/);
+    expect(prompt).toMatch(/docked at Bleakhold/);
+    expect(prompt).toMatch(/"retraction"/);
+  });
+
+  it('renders (none) for absent sections', () => {
+    const prompt = buildAuditPrompt('', '', 'Prose.');
+    const noneCount = (prompt.match(/\(none\)/g) ?? []).length;
+    expect(noneCount).toBe(5); // frame, truths, corrections, state, ship
+  });
+});
+
+describe('parseAuditResponse — broadened kinds', () => {
+  it('preserves frame / ship / retraction kinds and defaults unknown to truth', () => {
+    const raw = JSON.stringify({
+      contradictions: [
+        { subject: 'a', violated: 'v', kind: 'frame',      confidence: 'high' },
+        { subject: 'b', violated: 'v', kind: 'ship',       confidence: 'low'  },
+        { subject: 'c', violated: 'v', kind: 'retraction', confidence: 'high' },
+        { subject: 'd', violated: 'v', kind: 'banana',     confidence: 'high' },
+      ],
+    });
+    const out = parseAuditResponse(raw);
+    expect(out.map(c => c.kind)).toEqual(['frame', 'ship', 'retraction', 'truth']);
+  });
+});

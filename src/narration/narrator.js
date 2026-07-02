@@ -17,6 +17,7 @@ import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
+import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene }         from '../factContinuity/sceneLifecycle.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
@@ -196,6 +197,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   extras.rollingSummary = (mode === 'campaign_recap')
     ? ''
     : await getRollingSessionSummary(campaignState);
+
+  // Recent oracle results (narrator-context audit 2026-07) — the raw
+  // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
+  // never contradicts a roll the table just made. Rendered as [3b]; the
+  // prompt builder skips it for meta modes.
+  extras.recentOracles = readRecentOracleResults(campaignState);
 
   // Shipboard combat (Battle Stations!) — when a fight is active aboard the
   // crew's command vehicle, hand the narrator the canonical shipboard-combat
@@ -883,9 +890,11 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   };
   campaignState.sessionSummary = record;
 
-  // GM-gated persist (world-scoped write). Non-GM clients keep the fresh text
-  // for this call but leave the durable write to the GM's own narration pass.
-  if (globalThis.game?.user?.isGM) {
+  // Canonical-GM-gated persist (world-scoped write; single-emitter like every
+  // other ledger write — a plain isGM gate raced in multi-GM worlds). Non-GM
+  // clients keep the fresh text for this call but leave the durable write to
+  // the canonical GM's own narration pass.
+  if (isCanonicalGM()) {
     try {
       const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
       stored.sessionSummary = record;
@@ -1201,6 +1210,10 @@ function buildOracleUserMessage({
 
 async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
   const header = oracleName || (kind === 'pay_the_price' ? 'Pay the Price' : 'Oracle');
+  // Flag family (narrator-context audit 2026-07): the oracle follow-up is
+  // in-fiction prose anchored to the scene — without the family it never
+  // entered the ring or rolling summary, so the narrator forgot how an
+  // oracle result landed the moment it posted it.
   await ChatMessage.create({
     content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
     flags:   {
@@ -1208,6 +1221,8 @@ async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
         oracleNarrationCard: true,
         narrationKind:       kind,
         sessionId:           sessionId ?? '',
+        narratorCard:        true,
+        narrationText:       text,
       },
     },
   });
@@ -1432,9 +1447,22 @@ export async function narrateAndPostVowSwearing({ vow, campaignState }) {
   const clean = stripMarkup(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   try {
+    // Flag family (NARR-RING-VOWSCENE, narrator-context audit 2026-07): the
+    // oath scene is fiction the narrator must remember — without these flags
+    // it never entered the ring, the rolling summary, or the session recap,
+    // and the narrator could contradict its own swearing scene next turn.
+    // Consumer audit (architecture §2): no audio/correction markup → those
+    // hooks no-op; no resolutionId → burn-supersede unaffected.
     await ChatMessage.create({
       content: `<div class="sf-card sf-vow-scene"><div class="sf-card-body"><p>⚔ <em>${clean}</em></p></div></div>`,
-      flags:   { [MODULE_ID]: { vowSceneCard: true } },
+      flags:   {
+        [MODULE_ID]: {
+          vowSceneCard:  true,
+          narratorCard:  true,
+          narrationText: text,
+          sessionId:     campaignState?.currentSessionId ?? null,
+        },
+      },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | narrateAndPostVowSwearing: card post failed:`, err?.message ?? err);
@@ -1461,6 +1489,14 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
+
+  // NARR-INCITING-SCENE (narrator-context audit 2026-07): the premise sidecar
+  // used to write truths/state/frame under `currentSceneId: null`; the first
+  // real turn's ensureSceneStarted then saw non-empty ledgers and implicitly
+  // ended that phantom scene — discarding the target NPC's opening
+  // location/condition (state never migrates) and clearing the opening frame.
+  // Starting the scene HERE means the first move continues it instead.
+  await ensureSceneStarted(campaignState, 'inciting_incident');
 
   const character = getActiveCharacter(campaignState);
   const extras = await buildNarratorExtras('inciting_incident', campaignState, { character });
@@ -2264,6 +2300,16 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
 
   if (parseError) {
     console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);
+  } else if (!sidecar) {
+    // NARR-SIDECAR-SILENT (narrator-context audit 2026-07): the sidecar is
+    // MANDATORY in every mode that reaches this function, so a response with
+    // no fence at all means this turn's scene-frame update and required
+    // emissions are lost. That used to happen with zero logging — a
+    // no-silent-failures violation. Warn; never block the narration post.
+    console.warn(
+      `${MODULE_ID} | factContinuity: narrator response carried no sidecar fence — ` +
+      `this turn's scene-frame update and required emissions were not captured.`,
+    );
   }
 
   // Hardening (multiplayer): applying the sidecar persists campaignState (a
@@ -2403,6 +2449,18 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
   };
 
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+
+  // NARR-SIDECAR-SILENT (narrator-context audit 2026-07): a response cut off
+  // by max_tokens BEFORE the sidecar fence opens parses as clean prose with
+  // no sidecar — invisible without this check. The unclosed-fence heuristic
+  // in extractSidecar only catches truncation AFTER the fence opened.
+  if (data?.stop_reason === 'max_tokens') {
+    console.warn(
+      `${MODULE_ID} | narrator: response truncated by maxTokens (cap ${maxTokens ?? 16000}) — ` +
+      `prose and/or the fact-continuity sidecar may be incomplete. ` +
+      `Raise the narration length headroom if this recurs.`,
+    );
+  }
 
   const text = (data.content ?? [])
     .filter(b => b.type === 'text')

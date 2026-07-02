@@ -6,6 +6,99 @@ rejected.
 
 ---
 
+## Narrator context: the ledger actively defends, and every fiction card remembers (2026-07)
+
+**Decision:** The narrator-context fix cycle ("Fix all gaps") hardened the
+memory architecture in four directions, all now load-bearing:
+
+1. **Every narrator fiction card carries the flag family.** Vow-swearing
+   scenes, all three clock-vignette post sites, and oracle follow-up
+   narrations now post `narratorCard`/`narrationText`/`sessionId` like move,
+   paced, @scene, inciting, and galley/end-session cards before them. If a
+   new card type posts narrator fiction, it joins the family and its
+   consumers get audited (rules/narrator-memory.md invariant 1) — "mood
+   piece" is not an exemption; recap-worthiness is decided by the reader,
+   not by withholding the flags.
+2. **Retraction is enforced, not cosmetic.** A bare Strike renders as a
+   CORRECTED do-not-re-assert block (never dropped under budget, capped at
+   the 5 most recent), `applySidecar` refuses to re-ledger a fact equivalent
+   to a retracted one (GM `!truth set` bypasses — GM authority), and the
+   consistency check audits prose against retractions. Replace-corrections
+   are exempt from the CORRECTED block: the replacement truth stands for
+   them.
+3. **Truths dedup at the write.** Subject + normalised fact (case,
+   whitespace, trailing punctuation) — required identity anchors land once;
+   marathon scenes stop growing the prompt with duplicates.
+4. **Scenes close when their fiction closes.** End Session ends the scene
+   (`session_close`), the 4h re-mint closes a stale scene before minting
+   (`session_gap_remint`), and the inciting incident starts a real scene so
+   its premise state survives the first move. Scene-scoped facts migrate at
+   those boundaries instead of leaking across sessions.
+
+**Rejected:** inference machinery for missing sidecar emissions (invariant 3
+still holds — fix instruction wording first); auto-correcting prose on a
+consistency-check hit (GM stays the authority); scope-filtering the
+CORRECTED block (retractions are rare and must hold even on turns that
+don't name the subject).
+
+## Consistency check defaults on, audits the full ledger block (2026-07)
+
+**Decision:** `factContinuity.consistencyCheck` now defaults **true** and the
+Haiku audit compares prose against everything the ledger block holds — scene
+frame, binding truths, retracted facts, current state, and ship position
+(previously truths+state only, default off). It stays fire-and-forget
+(no latency on the narration post), whisper-only (a high-confidence hit
+posts the GM review card; nothing auto-corrects), and ~$0.0004/narration.
+The frame audit is the §8.3 staleness mitigation the architecture doc
+sketched. The unregistered-settings fallback inside `runConsistencyCheck`
+stays `false` so unit tests and early init never fire an API call.
+
+**Reason:** it was the only active contradiction defense and it shipped
+dark; every playtest drift complaint post-dates a narration the check would
+have flagged. Cost is negligible against the narration call it rides.
+
+**Rejected:** auto-retraction on detection; auditing entity cards / world
+truths (they are durable context, not scene assertions — false-positive
+surface without a correction affordance).
+
+## Raw oracle results are memory, not just chat (2026-07)
+
+**Decision:** `!oracle yes` and `!pay-the-price` outcomes are ledgered into
+a small `campaignState.recentOracles` ring (cap 8, session-scoped read) via
+a structured `oracleMemory` flag on the result card + a canonical-GM capture
+hook — the command itself may run on a player client that cannot write
+world settings. Injected two ways: narrator system-prompt section [3b]
+(RECENT ORACLE RESULTS, last 5, "the dice established these") and the
+assembler's RECENT ORACLES packet section (last 3, replacing the
+`oracleResultIds` count that no code ever wrote). Oracle follow-up
+narration cards also joined the flag family, so the interpreted prose
+lands in the ring alongside the raw answer.
+
+**Rejected:** parsing card HTML on the GM side (flags carry structure);
+scene-scoping the ring (oracle answers outlive scenes; the cap bounds it).
+
+## Narrator-context reaffirmations: what stays deliberate (2026-07)
+
+**Decision:** Three audit exposures were reaffirmed rather than changed:
+
+1. **The scene frame applies as an unvalidated full replacement.** The
+   idempotence↔staleness trade stands (omitted frame keeps the previous
+   one); the broadened consistency check now audits prose against the frame,
+   which was the designed mitigation. Cross-validating frame against truths
+   at apply time would need entity resolution machinery for marginal gain.
+2. **Non-move relevance stays lexical** (invariant 5). Pronoun-only
+   references still ride the frame-present union; a Haiku pass per paced
+   turn buys little over it and re-opens the hybrid permission-class
+   question (§8.2).
+3. **World Journal threat/faction transitions ride the salience-gated Haiku
+   read.** They write visible journal entries with manual `!journal`
+   correction affordances; the lore-contradiction card stays notify-only.
+   A confirm-card per transition is GM fatigue for a low-error surface
+   (detector tightened in v1.7.28).
+
+**Rejected:** frame validation layer; Haiku relevance for paced/@scene;
+per-transition confirmation cards.
+
 ## Flow-audit soft spots: what stays deliberate (2026-07)
 
 **Decision:** The soft-spot cleanup that followed the flow audits implemented

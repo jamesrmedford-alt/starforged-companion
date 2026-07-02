@@ -45,6 +45,7 @@ import { formatSafetyContext, estimateSafetyTokens, isSceneSuppressed } from "./
 import { getPlayerActors, readCharacterSnapshot } from "../character/actorBridge.js";
 import { getChronicleForContext } from "../character/chronicle.js";
 import { NARRATOR_PERMISSIONS, formatEntityCard, formatOracleSeedsBlock, buildLedgerBlock } from "../narration/narratorPrompt.js";
+import { readRecentOracleResults, formatOracleResultLine } from "../oracles/oracleMemory.js";
 import { getConnection } from "../entities/connection.js";
 import { getSettlement } from "../entities/settlement.js";
 import { getFaction }    from "../entities/faction.js";
@@ -888,18 +889,18 @@ function buildSectorSection(campaignState) {
 }
 
 /**
- * Recent oracle results section.
- * Last 3 oracle result IDs from the current session.
+ * Recent oracle results section — the actual `!oracle` / `!pay-the-price`
+ * outcomes from campaignState.recentOracles (narrator-context audit 2026-07;
+ * the old `oracleResultIds` field was scaffolding no code ever wrote, so
+ * this section rendered a meaningless count at best).
  */
 function buildOraclesSection(campaignState) {
-  const ids = campaignState.oracleResultIds ?? [];
-  if (!ids.length) return { content: "", oracleIds: [] };
+  const entries = readRecentOracleResults(campaignState, 3);
+  if (!entries.length) return { content: "", oracleIds: [] };
 
-  const recent = ids.slice(-3);
-  if (!recent.length) return { content: "", oracleIds: [] };
-
-  const content = `## RECENT ORACLES\n\n${recent.length} oracle result(s) this session.`;
-  return { content, oracleIds: recent };
+  const lines = entries.map(e => `- ${formatOracleResultLine(e)}`);
+  const content = `## RECENT ORACLES\n\n${lines.join("\n")}`;
+  return { content, oracleIds: [] };
 }
 
 /**

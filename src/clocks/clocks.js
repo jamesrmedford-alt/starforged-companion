@@ -559,7 +559,15 @@ function fireClockVignette(clockData) {
       const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs });
       if (text) {
-        await postCard(`<em>${escapeHtml(text)}</em>`);
+        // Flag family (NARR-RING-CLOCKVIG, narrator-context audit 2026-07):
+        // vignette prose must enter the recent-narration ring and rolling
+        // summary like every other narrator fiction card.
+        await postCard(`<em>${escapeHtml(text)}</em>`, {
+          clockVignetteCard: true,
+          narratorCard:      true,
+          narrationText:     text,
+          sessionId:         cs.currentSessionId ?? null,
+        });
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | clock vignette failed:`, err?.message ?? err);
@@ -567,10 +575,10 @@ function fireClockVignette(clockData) {
   }, 0);
 }
 
-async function postCard(html) {
+async function postCard(html, extraFlags = {}) {
   await ChatMessage.create({
     content: `<div class="sf-clock-card">${html}</div>`,
-    flags:   { [MODULE_ID]: { clockCard: true } },
+    flags:   { [MODULE_ID]: { clockCard: true, ...extraFlags } },
   });
 }
 

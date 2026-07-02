@@ -857,6 +857,14 @@ export const CampaignStateSchema = {
   //   sceneId     — the scene the pointer belongs to (guards stale carry-over)
   spotlight:      { lastActorId: null, sceneId: null },
 
+  // Raw oracle-result memory (narrator-context audit 2026-07). Small append
+  // ring of `!oracle` / `!pay-the-price` outcomes so the narrator is told
+  // what the dice established (prompt section [3b]) instead of being free to
+  // contradict a roll the table just made. Written by the canonical GM's
+  // capture hook (src/index.js) via src/oracles/oracleMemory.js; capped at
+  // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at }.
+  recentOracles:  [],
+
   createdAt: null,
   updatedAt: null,
 };

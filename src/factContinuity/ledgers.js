@@ -63,6 +63,26 @@ export function applySidecar(sidecar, ctx) {
     if (!subjectRef) continue;
 
     const subject = resolveSubject(subjectRef, campaignState, entities);
+
+    // Dedup (narrator-context audit 2026-07, NARR-TRUTH-DUP): the sidecar
+    // instruction REQUIRES identity-anchor emissions, so a model that
+    // re-anchors each turn would accrete duplicate truths — and truths are
+    // exempt from the ledger token cap, growing marathon-scene prompts
+    // unboundedly. Skip a newTruth whose subject + normalised fact already
+    // exists. A RETRACTED match also blocks the append: a struck fact the
+    // narrator re-asserts must not silently re-enter the ledger — the GM's
+    // correction stands (manual `!truth set` bypasses this, GM authority).
+    const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact);
+    if (dupe) {
+      if (dupe.retracted) {
+        console.debug?.(
+          'starforged-companion | factContinuity: narrator re-asserted a retracted truth; append blocked:',
+          fact,
+        );
+      }
+      continue;
+    }
+
     const id = newTruthId();
     campaignState.sceneTruths.push({
       id,
@@ -427,6 +447,39 @@ export function canCorrectTruth(truth, ctx = {}) {
   const isGM = ctx.isGM ?? true;
   if (isGM) return true;
   return truth.asserter !== 'gm';
+}
+
+/**
+ * Find an existing truth equivalent to (subject, fact) — same subjectKey and
+ * the same fact text after normalisation. Includes retracted entries so a
+ * struck fact blocks narrator re-assertion (see applySidecar). Exported for
+ * unit testing.
+ *
+ * @param {Array} truths
+ * @param {Object} subject — resolved subject ({kind, ...})
+ * @param {string} fact
+ * @returns {Object|null}
+ */
+export function findEquivalentTruth(truths, subject, fact) {
+  if (!Array.isArray(truths) || !truths.length) return null;
+  const key  = subjectKey(subject);
+  const norm = normaliseFactText(fact);
+  if (!norm) return null;
+  return truths.find(t =>
+    t && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
+  ) ?? null;
+}
+
+/**
+ * Normalise fact text for equivalence checks: lowercase, collapse internal
+ * whitespace, strip trailing sentence punctuation.
+ */
+function normaliseFactText(fact) {
+  return String(fact ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?\s]+$/u, '')
+    .trim();
 }
 
 /**
