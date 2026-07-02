@@ -140,6 +140,9 @@ export function appendSidecarInstruction(options = {}) {
     '  phrase. Do not emit it when the ship has not moved.',
     '- Do not declare a truth that diverges from the active scene block. If',
     '  a fact needs to change, the player or GM will retract the old one.',
+    '- Do not re-emit a newTruth that restates a fact already shown in the',
+    '  ACTIVE SCENE block — identity anchors are recorded once, the first',
+    '  time. Never re-assert a fact listed under CORRECTED.',
   ];
 
   if (sceneFrameEnabled) {
@@ -189,10 +192,11 @@ export function appendSidecarInstruction(options = {}) {
  *   {
  *     header:        '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE\n\n…',
  *     truths:        'TRUTHS:\n  Vance — Walks with a slight limp\n  …',
+ *     corrections:   'CORRECTED (retracted by the table — do NOT re-assert…',
  *     state:         'CURRENT STATE (right now in this scene):\n  Vance — …',
  *     shipPosition:  '',                        // populated in §20
- *     combined:      header + truths + state,   // for direct prompt use
- *     tokenEstimates:{ header, truths, state, ship },
+ *     combined:      header + truths + corrections + state,  // for direct prompt use
+ *     tokenEstimates:{ header, truths, corrections, state, ship },
  *   }
  *
  * Returns `{ combined: '' }` (all fields empty strings) when there is nothing
@@ -259,6 +263,21 @@ export function buildLedgerBlock(campaignState, options = {}) {
     truthLines.push(`  ${label} — ${fact}`);
   }
 
+  // ── Retraction defense (NARR-RETRACT-PASSIVE) ────────────────────────────
+  // A bare Strike used to just skip the truth at render — the originating
+  // prose stays in the recent-narration ring and the rolling summary, so the
+  // narrator could freely re-assert a fact the GM corrected. Render bare
+  // strikes (no `correctedTo` — replacements already carry the corrected
+  // fact as a live truth) as explicit do-not-re-assert lines. Not scope-
+  // filtered: retractions are rare, load-bearing, and must hold even on
+  // turns that don't name the subject. Capped at the most recent few to
+  // bound tokens; never dropped under budget pressure (truths tier).
+  const MAX_CORRECTION_LINES = 5;
+  const correctionLines = truths
+    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim())
+    .slice(-MAX_CORRECTION_LINES)
+    .map(t => `  ${formatSubjectLabel(t.subject, nameLookup)} — ${String(t.fact).trim()}`);
+
   // ── Filter state ─────────────────────────────────────────────────────────
   const stateLines = [];
   for (const [key, entries] of Object.entries(stateBySubject)) {
@@ -295,10 +314,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const shipPositionLine = buildShipPositionLine(campaignState);
 
   // ── Empty short-circuit ──────────────────────────────────────────────────
-  if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock) {
+  if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock
+      && !correctionLines.length) {
     return {
-      header: '', frame: '', truths: '', state: '', shipPosition: '', combined: '',
-      tokenEstimates: { header: 0, frame: 0, truths: 0, state: 0, ship: 0 },
+      header: '', frame: '', truths: '', corrections: '', state: '', shipPosition: '',
+      combined: '',
+      tokenEstimates: { header: 0, frame: 0, truths: 0, corrections: 0, state: 0, ship: 0 },
     };
   }
 
@@ -306,7 +327,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // Header only renders when there are truths, state, or a frame to
   // introduce — the SHIP POSITION line stands on its own when it's the only
   // thing in the block (§20).
-  const header = (truthLines.length || stateLines.length || frameBlock)
+  const header = (truthLines.length || stateLines.length || frameBlock || correctionLines.length)
     ? [
         '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
         '',
@@ -320,6 +341,14 @@ export function buildLedgerBlock(campaignState, options = {}) {
     ? ['TRUTHS:', ...truthLines].join('\n')
     : '';
 
+  const correctionsBlock = correctionLines.length
+    ? [
+        'CORRECTED (retracted by the table — do NOT re-assert these, even if',
+        'earlier narration mentions them):',
+        ...correctionLines,
+      ].join('\n')
+    : '';
+
   let stateBlock = stateLines.length
     ? ['CURRENT STATE (right now in this scene):', ...stateLines].join('\n')
     : '';
@@ -330,22 +359,23 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // narrator-memory architecture A4). State drops first when the cap is
   // exceeded.
   const tokenEstimates = {
-    header: estimateTokens(header),
-    frame:  estimateTokens(frameBlock),
-    truths: estimateTokens(truthsBlock),
-    state:  estimateTokens(stateBlock),
-    ship:   estimateTokens(shipPositionLine),
+    header:      estimateTokens(header),
+    frame:       estimateTokens(frameBlock),
+    truths:      estimateTokens(truthsBlock),
+    corrections: estimateTokens(correctionsBlock),
+    state:       estimateTokens(stateBlock),
+    ship:        estimateTokens(shipPositionLine),
   };
   let total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-            + tokenEstimates.state + tokenEstimates.ship;
+            + tokenEstimates.corrections + tokenEstimates.state + tokenEstimates.ship;
   if (total > maxTokens && stateBlock) {
     stateBlock = '';
     tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.frame
-          + tokenEstimates.truths + tokenEstimates.ship;
+    total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
+          + tokenEstimates.corrections + tokenEstimates.ship;
   }
 
-  const combined = [header, frameBlock, truthsBlock, stateBlock, shipPositionLine]
+  const combined = [header, frameBlock, truthsBlock, correctionsBlock, stateBlock, shipPositionLine]
     .filter(Boolean)
     .join('\n\n');
 
@@ -353,6 +383,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
     header,
     frame:        frameBlock,
     truths:       truthsBlock,
+    corrections:  correctionsBlock,
     state:        stateBlock,
     shipPosition: shipPositionLine,
     combined,
@@ -1032,6 +1063,7 @@ export function buildNarratorSystemPrompt(
     rollingSummary       = '',
     shipboardGuidance    = '',
     spotlightBlock       = '',
+    recentOracles        = [],
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1111,6 +1143,16 @@ export function buildNarratorSystemPrompt(
   const seedsBlock = formatOracleSeedsBlock(oracleSeeds);
   if (seedsBlock) parts.push(seedsBlock);
 
+  // [3b] Recent oracle results — raw `!oracle` / `!pay-the-price` outcomes
+  //      (narrator-context audit 2026-07: raw oracle results had no memory
+  //      home; the narrator could contradict a roll the table just made).
+  //      Read from campaignState.recentOracles via buildNarratorExtras;
+  //      skipped for meta modes like every other live-scene block.
+  if (!isMetaMode) {
+    const recentOraclesBlock = formatRecentOraclesBlock(recentOracles);
+    if (recentOraclesBlock) parts.push(recentOraclesBlock);
+  }
+
   // [4] World truths
   const worldTruths = buildWorldTruthsBlock(campaignState);
   if (worldTruths) parts.push(worldTruths);
@@ -1132,8 +1174,17 @@ export function buildNarratorSystemPrompt(
   //      session runs long. Droppable continuity, not a fact store: it sheds
   //      before any §6.5 ledger tier and is never rendered for meta modes. See
   //      decisions.md → "Rolling session summary: a debounced trailing tier".
+  //      The caveat line makes the "not a fact store" invariant visible to the
+  //      model itself: the summary re-summarises raw prose (including narration
+  //      whose facts were later retracted), so where it conflicts with the
+  //      ledger, the ledger wins.
   if (!isMetaMode && typeof rollingSummary === 'string' && rollingSummary.trim()) {
-    parts.push(`## STORY SO FAR (THIS SESSION)\n\n${rollingSummary.trim()}`);
+    parts.push(
+      `## STORY SO FAR (THIS SESSION)\n\n` +
+      `(Narrative texture only — where this summary conflicts with the ` +
+      `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
+      rollingSummary.trim(),
+    );
   }
 
   // [5] Current location card — always injected when set
@@ -1238,6 +1289,33 @@ export function formatOracleSeedsBlock(seeds) {
   lines.push(
     'These seeds define the starting outline. Add voice, specific detail, and ' +
     'atmosphere. The campaign record will be built from your narration.',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Format the RECENT ORACLE RESULTS block ([3b]) from the entries
+ * `readRecentOracleResults` returns (src/oracles/oracleMemory.js). Returns ''
+ * when there is nothing to render. Exported for unit testing.
+ *
+ * @param {Array<{ name: string, question: string, answer: string }>} entries
+ * @returns {string}
+ */
+export function formatRecentOraclesBlock(entries) {
+  const list = Array.isArray(entries)
+    ? entries.filter(e => e && (e.name || e.answer))
+    : [];
+  if (!list.length) return '';
+
+  const lines = ['## RECENT ORACLE RESULTS (this session, oldest first)', ''];
+  for (const e of list) {
+    const q = e.question ? ` "${e.question}"` : '';
+    lines.push(`- ${e.name || 'Oracle'}:${q} → ${e.answer}`);
+  }
+  lines.push('');
+  lines.push(
+    'The dice established these outcomes. Your narration must not contradict ' +
+    'them — build on what the oracle answered.',
   );
   return lines.join('\n');
 }

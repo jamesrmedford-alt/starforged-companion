@@ -17,6 +17,7 @@ import {
   resolveNarrationPerspective,
   formatEntityCard,
   formatOracleSeedsBlock,
+  formatRecentOraclesBlock,
   sanitizePlayerText,
   stripHtml,
   NARRATOR_PERMISSIONS,
@@ -1281,5 +1282,70 @@ describe('campaign_recap meta mode', () => {
 
   it('carries no creative-latitude permission block', () => {
     expect(recap()).not.toContain('NARRATOR PERMISSIONS');
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Narrator-context audit 2026-07 — prompt-side fixes
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('STORY SO FAR caveat (summary is not a fact store)', () => {
+  it('prefixes the rolling summary with the ledger-wins caveat', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),
+      makeNarratorSettings(),
+      null,
+      '',
+      { mode: 'paced_narrative', rollingSummary: 'The crew reached the graveyard.' },
+    );
+    expect(prompt).toMatch(/## STORY SO FAR \(THIS SESSION\)/);
+    expect(prompt).toMatch(/Narrative texture only/);
+    expect(prompt.indexOf('Narrative texture only'))
+      .toBeLessThan(prompt.indexOf('The crew reached the graveyard.'));
+  });
+});
+
+describe('formatRecentOraclesBlock ([3b])', () => {
+  it('returns empty for no entries', () => {
+    expect(formatRecentOraclesBlock([])).toBe('');
+    expect(formatRecentOraclesBlock(null)).toBe('');
+    expect(formatRecentOraclesBlock([{ name: '', answer: '' }])).toBe('');
+  });
+
+  it('renders one line per result plus the do-not-contradict guard', () => {
+    const block = formatRecentOraclesBlock([
+      { name: 'Ask the Oracle (likely)', question: 'Is the dock guarded?', answer: 'YES (MATCH — extreme/twist)' },
+      { name: 'Pay the Price', question: '', answer: 'Your gear is damaged' },
+    ]);
+    expect(block).toMatch(/## RECENT ORACLE RESULTS/);
+    expect(block).toMatch(/Ask the Oracle \(likely\): "Is the dock guarded\?" → YES \(MATCH — extreme\/twist\)/);
+    expect(block).toMatch(/Pay the Price: → Your gear is damaged/);
+    expect(block).toMatch(/must not contradict/);
+  });
+
+  it('is injected for live modes and skipped for meta modes', () => {
+    const extras = {
+      recentOracles: [{ name: 'Ask the Oracle (50/50)', question: '', answer: 'NO' }],
+    };
+    const live = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { ...extras, mode: 'paced_narrative' },
+    );
+    expect(live).toMatch(/RECENT ORACLE RESULTS/);
+
+    const meta = buildNarratorSystemPrompt(
+      makeCampaignState(), makeNarratorSettings(), null, '',
+      { ...extras, mode: 'campaign_recap' },
+    );
+    expect(meta).not.toMatch(/RECENT ORACLE RESULTS/);
+  });
+});
+
+describe('appendSidecarInstruction — dedup + retraction rules (2026-07)', () => {
+  it('tells the model not to re-emit established or CORRECTED truths', () => {
+    const text = appendSidecarInstruction();
+    expect(text).toMatch(/Do not re-emit a newTruth/);
+    expect(text).toMatch(/Never re-assert a fact listed under CORRECTED/);
   });
 });

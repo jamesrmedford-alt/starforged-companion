@@ -22,6 +22,7 @@ import {
   createCharacterVowItem,
   completeVowItem,
   setBondItemTicks,
+  setBondItemRank,
   advanceVowClocks,
   revertVowClocksForBurn,
 } from '../../src/character/actorBridge.js';
@@ -960,5 +961,57 @@ describe('setBondItemTicks', () => {
     expect(await setBondItemTicks({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 99)).toBe(0); // clamped to 40 == current
     expect(bond.system.current).toBe(40);
     expect(vow.system.current).toBe(0);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setBondItemRank — mirror connection rank onto the sheet's bond Items
+// (NARR-BOND-RANK-STALE: the item rank was seeded at creation and never
+// updated on develop-match / !bond-match rank raises)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('setBondItemRank', () => {
+  const rankBondItem = (over = {}) => {
+    const item = {
+      id: 'rb1', type: 'progress', name: 'Ash Barlowe',
+      system: { subtype: 'bond', current: 0, rank: 'dangerous' },
+      flags: { 'starforged-companion': { connectionId: 'conn-1' } },
+      update: async (c) => { item.system.rank = c['system.rank']; item._updated = (item._updated ?? 0) + 1; },
+      ...over,
+    };
+    return item;
+  };
+
+  it('updates matching items by connectionId flag and by name fallback', async () => {
+    const byFlag = rankBondItem();
+    const byName = rankBondItem({ id: 'rb2', flags: {} });
+    const a1 = makeTestActor({ id: 'pc-sbr-1', items: { contents: [byFlag] } });
+    const a2 = makeTestActor({ id: 'pc-sbr-2', items: { contents: [byName] } });
+    game.actors._setAll([a1, a2]);
+
+    const n = await setBondItemRank({ connectionId: 'conn-1', name: 'ash barlowe' }, 'formidable');
+    expect(n).toBe(2);
+    expect(byFlag.system.rank).toBe('formidable');
+    expect(byName.system.rank).toBe('formidable');
+  });
+
+  it('rejects invalid ranks and no-ops when already equal', async () => {
+    const item = rankBondItem();
+    const a = makeTestActor({ id: 'pc-sbr-3', items: { contents: [item] } });
+    game.actors._setAll([a]);
+
+    expect(await setBondItemRank({ connectionId: 'conn-1' }, 'legendary')).toBe(0);
+    expect(item.system.rank).toBe('dangerous');
+    expect(await setBondItemRank({ connectionId: 'conn-1' }, 'dangerous')).toBe(0);
+    expect(item._updated).toBeUndefined();
+  });
+
+  it('skips non-bond items', async () => {
+    const vow = rankBondItem({ id: 'rv', system: { subtype: 'vow', rank: 'dangerous' } });
+    const a = makeTestActor({ id: 'pc-sbr-4', items: { contents: [vow] } });
+    game.actors._setAll([a]);
+    expect(await setBondItemRank({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 'epic')).toBe(0);
+    expect(vow.system.rank).toBe('dangerous');
   });
 });

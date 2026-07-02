@@ -10454,6 +10454,34 @@ function registerFateMovesTests(quench) {
             "bare !oracle should produce the usage card");
           await card.delete().catch(() => {});
         });
+
+        it("captures the result into campaignState.recentOracles (oracle memory, 2026-07)", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          const countBefore =
+            (game.settings.get(MODULE_ID, "campaignState")?.recentOracles ?? []).length;
+          await ChatMessage.create({
+            content: "!oracle yes likely does the beacon still transmit",
+          });
+          const card = await waitForCardWithFlag("oracleCommandCard", before);
+          assert.isOk(card, "expected the oracleCommandCard to post");
+          assert.isOk(card.flags?.[MODULE_ID]?.oracleMemory,
+            "result card should carry the structured oracleMemory flag");
+
+          // The canonical GM's capture hook ledgers the flag; give the async
+          // persist a beat, then read back.
+          await new Promise(r => setTimeout(r, 400));
+          const ring = game.settings.get(MODULE_ID, "campaignState")?.recentOracles ?? [];
+          assert.isAbove(ring.length, Math.max(0, countBefore - 1),
+            "recentOracles should not shrink");
+          const last = ring[ring.length - 1];
+          assert.isOk(last, "expected a captured oracle-memory entry");
+          assert.match(last.question ?? "", /beacon still transmit/i,
+            "captured entry should carry the question");
+          assert.match(last.answer ?? "", /(YES|NO)/,
+            "captured entry should carry the answer");
+          await card.delete().catch(() => {});
+        });
       });
 
       describe("rollOracle('pay_the_price') — rule 3.47 d100 table", function () {

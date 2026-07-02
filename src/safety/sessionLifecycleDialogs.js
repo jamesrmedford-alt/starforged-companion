@@ -136,9 +136,19 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
               for (const cd of advanced) {
                 const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
                 if (text) {
+                  // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction
+                  // must enter the ring/summary or it is forgotten instantly.
                   await ChatMessage.create({
                     content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(text)}</em></div>`,
-                    flags:   { [MODULE_ID]: { clockCard: true, clockVignetteCard: true } },
+                    flags:   {
+                      [MODULE_ID]: {
+                        clockCard:         true,
+                        clockVignetteCard: true,
+                        narratorCard:      true,
+                        narrationText:     text,
+                        sessionId:         cs.currentSessionId ?? null,
+                      },
+                    },
                   });
                 }
               }
@@ -238,6 +248,19 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
       endSession(state);
     } catch (err) {
       console.warn(`${MODULE_ID} | endSession state flip failed:`, err?.message ?? err);
+    }
+
+    // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
+    // to flip the gate only — the active scene survived into the next
+    // session, whose empty ring + empty summary then mixed with stale scene
+    // truths. Close the scene so truths migrate to their durable homes
+    // (entity tiers / WJ Lore). `session_close` was already a documented
+    // endScene reason — this wires the call the design intended.
+    try {
+      const { endScene } = await import("../factContinuity/sceneLifecycle.js");
+      await endScene(state, { reason: "session_close" });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | endSession scene close failed:`, err?.message ?? err);
     }
 
     // Finalise the rolling session summary (architecture §8.6) before the

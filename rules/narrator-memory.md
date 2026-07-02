@@ -10,10 +10,13 @@ layers. This file is the never-break list.
 1. **The flag-family contract.** Every chat card whose prose is fiction the
    narrator should remember MUST carry `narratorCard: true`,
    `narrationText: <prose>`, and `sessionId`. Error/fallback cards must NOT.
-   When adding a new card type or co-marking an existing one, audit every
-   `narratorCard` consumer (ring, session recap, correction hook, audio hook,
-   burn-supersede) in the same commit — the consumer list lives in
-   architecture doc §2.
+   As of 2026-07 this covers move, paced, @scene, inciting, galley /
+   end-session vignettes, vow-swearing scenes, all three clock-vignette post
+   sites, and oracle follow-up narrations — "mood piece" is not an
+   exemption. When adding a new card type or co-marking an existing one,
+   audit every `narratorCard` consumer (ring, rolling summary, session
+   recap, correction hook, audio hook, burn-supersede) in the same commit —
+   the consumer list lives in architecture doc §2.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame`) is a matched pair.
@@ -40,7 +43,16 @@ layers. This file is the never-break list.
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
-   migration, not in a lifecycle exemption.
+   migration, not in a lifecycle exemption. Scenes close at their fiction's
+   boundaries (2026-07): End Session (`session_close`), the ready-hook's
+   stale-scene close before a 4h-gap re-mint (`session_gap_remint`), and
+   `closeWorld` — do not add a session boundary that leaves a scene open.
+
+6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
+   ledger block AND blocks narrator re-assertion at `applySidecar` (GM
+   `!truth set` bypasses). Do not "simplify" either half away — the render
+   defense and the write defense cover different failure paths (model
+   ignores instructions vs. model re-emits the fact).
 
 7. **Sidecar subjects resolve against the full roster.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so

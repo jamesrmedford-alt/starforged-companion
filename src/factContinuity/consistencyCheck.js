@@ -2,14 +2,18 @@
  * STARFORGED COMPANION
  * src/factContinuity/consistencyCheck.js
  *
- * Optional post-narration audit pass. After every narration the prose is
- * compared against the active-scene ledger (binding truths + current
- * state) by a Haiku call. High-confidence contradictions surface on the
- * existing GM-only Narrative Review card, augmented in Phase E with a
- * "Retract the offending fact" button that opens the correction dialog.
+ * Post-narration audit pass. After every narration the prose is compared
+ * against the full active-scene ledger block — scene frame, binding truths,
+ * retracted facts, current state, and ship position — by a Haiku call.
+ * High-confidence contradictions surface on the existing GM-only Narrative
+ * Review card, augmented in Phase E with a "Retract the offending fact"
+ * button that opens the correction dialog.
  *
- * fact-continuity scope §11. Off by default — gated on the
- * `factContinuity.consistencyCheck` world setting.
+ * fact-continuity scope §11. ON by default since the 2026-07 narrator-context
+ * fixes (decisions.md → "Consistency check defaults on") — gated on the
+ * `factContinuity.consistencyCheck` world setting; the unregistered-settings
+ * fallback below stays false so unit tests and early init never fire an API
+ * call.
  *
  * Telemetry for every audit (including low/medium-confidence results) is
  * appended to the existing Pacing Telemetry journal on a new
@@ -58,12 +62,22 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     maxTokens:         Infinity,
   });
 
-  // Nothing to audit against — no ledger means nothing can be contradicted.
-  if (!ledger.truths && !ledger.state) {
+  // Nothing to audit against — an empty ledger means nothing can be
+  // contradicted. Broadened (narrator-context audit 2026-07) beyond
+  // truths+state to everything the ledger block holds: the scene frame,
+  // ship position, and retracted facts (a re-assertion of a struck fact is
+  // exactly the contradiction the check exists to catch — and the frame
+  // audit is the §8.3 staleness mitigation the architecture doc sketched).
+  if (!ledger.truths && !ledger.state && !ledger.frame
+      && !ledger.shipPosition && !ledger.corrections) {
     return { contradictions: [], dispatched: false };
   }
 
-  const systemPrompt = buildAuditPrompt(ledger.truths, ledger.state, prose);
+  const systemPrompt = buildAuditPrompt(ledger.truths, ledger.state, prose, {
+    frame:        ledger.frame,
+    shipPosition: ledger.shipPosition,
+    corrections:  ledger.corrections,
+  });
   const startedAt    = Date.now();
 
   let contradictions = [];
@@ -111,19 +125,36 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
 }
 
 /**
- * Build the audit system prompt per scope §11.1. Exported for testing.
+ * Build the audit system prompt per scope §11.1, broadened (2026-07) to the
+ * full ledger block: scene frame, retracted facts, and ship position audit
+ * alongside truths and state. Exported for testing.
+ *
+ * @param {string} truthsBlock
+ * @param {string} stateBlock
+ * @param {string} narration
+ * @param {{ frame?: string, shipPosition?: string, corrections?: string }} [extra]
  */
-export function buildAuditPrompt(truthsBlock, stateBlock, narration) {
+export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {}) {
   return [
     'You are auditing an Ironsworn: Starforged narrator response for',
-    'internal consistency against the binding truths and current state of',
-    'the active scene. Return JSON only.',
+    'internal consistency against the established facts of the active',
+    'scene. Return JSON only.',
+    '',
+    'SCENE FRAME (where the scene is set, who is present):',
+    extra.frame?.trim() || '(none)',
     '',
     'ACTIVE SCENE TRUTHS:',
     truthsBlock?.trim() || '(none)',
     '',
+    'RETRACTED FACTS (corrected by the table — re-asserting one of these IS',
+    'a contradiction):',
+    extra.corrections?.trim() || '(none)',
+    '',
     'ACTIVE SCENE STATE:',
     stateBlock?.trim() || '(none)',
+    '',
+    'SHIP POSITION:',
+    extra.shipPosition?.trim() || '(none)',
     '',
     'NARRATION:',
     narration.trim(),
@@ -132,12 +163,13 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration) {
     '{',
     '  "contradictions": [',
     '    { "subject": string, "violated": string, "evidence": string,',
-    '      "kind": "truth" | "state", "confidence": "high" | "medium" | "low" }',
+    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction",',
+    '      "confidence": "high" | "medium" | "low" }',
     '  ]',
     '}',
     '',
     'Return an empty array if the narration honours the scene ledger.',
-    'Do NOT return contradictions for facts not in the ledger above — your',
+    'Do NOT return contradictions for facts not in the sections above — your',
     'job is consistency with prior assertions, not plausibility judgement.',
   ].join('\n');
 }
@@ -172,7 +204,7 @@ export function parseAuditResponse(rawText) {
       subject:    typeof c.subject    === 'string' ? c.subject.trim()    : '',
       violated:   typeof c.violated   === 'string' ? c.violated.trim()   : '',
       evidence:   typeof c.evidence   === 'string' ? c.evidence.trim()   : '',
-      kind:       c.kind === 'state' ? 'state' : 'truth',
+      kind:       normaliseKind(c.kind),
       confidence: normaliseConfidence(c.confidence),
       truthId:    typeof c.truthId    === 'string' ? c.truthId.trim()    : null,
     }))
@@ -208,6 +240,11 @@ function normaliseConfidence(v) {
   const s = String(v ?? '').toLowerCase();
   if (s === 'high' || s === 'medium' || s === 'low') return s;
   return 'low';
+}
+
+function normaliseKind(v) {
+  const s = String(v ?? '').toLowerCase();
+  return ['state', 'frame', 'ship', 'retraction'].includes(s) ? s : 'truth';
 }
 
 function stripFences(text) {

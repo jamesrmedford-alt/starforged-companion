@@ -599,6 +599,40 @@ export async function setBondItemTicks({ connectionId = null, name = null } = {}
 }
 
 /**
+ * Mirror a connection's rank onto each PC's bond Item (NARR-BOND-RANK-STALE,
+ * narrator-context audit 2026-07): the item's rank was seeded at creation and
+ * never updated when the connection record's rank rose (develop-match /
+ * !bond-match raise the record only), so CHARACTER STATE — which reads the
+ * bond Item — showed the stale rank forever. Same matching rules as
+ * setBondItemTicks.
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {string} rank — one of VALID_RANKS; anything else is ignored
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemRank({ connectionId = null, name = null } = {}, rank) {
+  if (!VALID_RANKS.includes(rank)) return 0;
+  const wanted = String(name ?? "").trim().toLowerCase();
+  let updated  = 0;
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type !== "progress" || item.system?.subtype !== "bond") continue;
+      const byId   = connectionId != null && item.flags?.[MODULE_ID]?.connectionId === connectionId;
+      const byName = wanted !== "" && String(item.name ?? "").trim().toLowerCase() === wanted;
+      if (!byId && !byName) continue;
+      if (item.system?.rank !== rank) {
+        await item.update({ "system.rank": rank }).catch(err =>
+          console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
+        invalidateActorCache(actor.id);
+        updated++;
+      }
+    }
+  }
+  return updated;
+}
+
+/**
  * Create a `progress`-typed Item on the character Actor representing a Vow.
  * The Connections tab filters subtype "vow" out — vows show up in the
  * Progress tab on the character sheet.

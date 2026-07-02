@@ -1280,12 +1280,14 @@ async function persistGenerativeTier(entityRef, tier) {
  * Append a fact-continuity scene-end migration entry to an entity's
  * generative tier. See issue #227 (Fact Continuity) §9.2 step 1.
  *
- * Lower-level than `appendDetailToTier` — does not dedupe against existing
- * entries (migration entries are tagged source: "scene_truth_migration"
- * and may legitimately repeat narrator-extracted detail wording).
+ * Dedupes against existing entries with the same containment check as
+ * `appendDetailToTier` (narrator-context audit 2026-07: a fact captured live
+ * during the scene by the tier-update pass and migrated again at scene end
+ * used to land twice, spending tier tokens on the duplicate in every later
+ * prompt). A dedupe hit returns true — the fact IS in the tier, so the
+ * caller may mark the truth migrated.
  *
- * Returns true on success, false when the entity's journal/page cannot be
- * resolved.
+ * Returns false when the entity's host document cannot be resolved.
  *
  * @param {string} journalId
  * @param {string} type — "connection" | "ship" | "settlement" | …
@@ -1307,6 +1309,17 @@ export async function appendMigratedTruthToTier(journalId, type, entry) {
     const tier          = Array.isArray(existingFlags.generativeTier)
       ? existingFlags.generativeTier
       : [];
+
+    const lc = String(entry.detail ?? "").trim().toLowerCase();
+    if (lc) {
+      const seen = tier.some(e => {
+        const existing = String(e?.detail ?? "").toLowerCase();
+        if (!existing) return false;
+        return existing === lc || existing.includes(lc) || lc.includes(existing);
+      });
+      if (seen) return true;
+    }
+
     const updated = {
       ...existingFlags,
       generativeTier: [...tier, entry],

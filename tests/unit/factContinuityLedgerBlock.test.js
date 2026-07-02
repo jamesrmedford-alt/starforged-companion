@@ -88,13 +88,64 @@ describe('buildLedgerBlock — basic rendering', () => {
       .toBeLessThan(out.combined.indexOf('CURRENT STATE (right now in this scene):'));
   });
 
-  it('omits retracted truths', () => {
+  it('moves retracted truths out of TRUTHS and into the CORRECTED block', () => {
+    // NARR-RETRACT-PASSIVE: a bare strike used to just disappear from the
+    // prompt — now it renders as an explicit do-not-re-assert line.
     const cs = seed(makeCampaignState(), {
       truths: [{ subject: 'scene', fact: 'The wind has died' }],
     });
     cs.sceneTruths[0].retracted = true;
     const out = buildLedgerBlock(cs);
-    expect(out.combined).toBe('');
+    expect(out.truths).toBe('');
+    expect(out.corrections).toMatch(/do NOT re-assert/);
+    expect(out.corrections).toMatch(/scene — The wind has died/);
+    expect(out.combined).toMatch(/CORRECTED/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildLedgerBlock — retraction defense (NARR-RETRACT-PASSIVE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLedgerBlock — retraction defense', () => {
+  it('does not list a corrected (replaced) truth under CORRECTED — the replacement stands', () => {
+    const cs = seed(makeCampaignState(), {
+      truths: [
+        { subject: 'scene', fact: 'The relay is dead'    },
+        { subject: 'scene', fact: 'The relay is damaged' },
+      ],
+    });
+    cs.sceneTruths[0].retracted   = true;
+    cs.sceneTruths[0].correctedTo = cs.sceneTruths[1].id;
+    const out = buildLedgerBlock(cs);
+    expect(out.corrections).toBe('');
+    expect(out.truths).toMatch(/The relay is damaged/);
+    expect(out.combined).not.toMatch(/The relay is dead/);
+  });
+
+  it('caps the CORRECTED block at the five most recent bare strikes', () => {
+    const cs = seed(makeCampaignState(), {
+      truths: Array.from({ length: 7 }, (_, i) =>
+        ({ subject: 'scene', fact: `Struck fact ${i + 1}` })),
+    });
+    for (const t of cs.sceneTruths) t.retracted = true;
+    const out = buildLedgerBlock(cs);
+    expect(out.corrections).not.toMatch(/Struck fact 1\b/);
+    expect(out.corrections).not.toMatch(/Struck fact 2\b/);
+    expect(out.corrections).toMatch(/Struck fact 3\b/);
+    expect(out.corrections).toMatch(/Struck fact 7\b/);
+  });
+
+  it('keeps the CORRECTED block under budget pressure (state drops first)', () => {
+    const cs = seed(makeCampaignState(), {
+      truths:       [{ subject: 'scene', fact: 'Load-bearing struck fact' }],
+      stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'dim' }],
+    });
+    cs.sceneTruths[0].retracted = true;
+    const out = buildLedgerBlock(cs, { maxTokens: 1 });
+    expect(out.state).toBe('');
+    expect(out.corrections).toMatch(/Load-bearing struck fact/);
   });
 });
 
