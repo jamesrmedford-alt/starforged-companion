@@ -10,6 +10,43 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Narrator-consistency audit findings (2026-07) — OPEN, awaiting direction
+
+Surfaced by the consistency-check pipeline audit (full trace:
+`docs/flows/narrator-consistency-flow.md`). Verified against source; none
+fixed yet.
+
+| Code | Class | Defect |
+|---|---|---|
+| NARRCHK-TRUNC-SILENT | LOSE-DETECTION | The audit's Haiku call caps `max_tokens` at 250 with no `stop_reason` check — a contradiction-rich response truncates mid-JSON and catches are silently dropped (the 2026-07 six-section broadening made this more likely; 250 tokens ≈ 3–4 contradiction objects) |
+| NARRCHK-CTX-DROPPED | WRONG-DETAIL | Oracle follow-ups resolve `matchedEntityIds` but don't pass them to the sidecar apply ctx — that path's audit can't see entity-scoped ledger entries or matched-NPC identities |
+| NARRCHK-REMEDY-MISMATCH | design defect | The review card's only affordance is the scene-ledger correction dialog, but frame / ship / identity / retraction contradictions (four of six audit kinds) cannot be remedied there |
+
+Design exposure: medium-confidence catches are telemetry-only (undocumented
+decision); no cross-turn dedup (standing contradictions re-post a card every
+narration); pre-burn review cards linger after a supersede; "check on,
+notifications off" is a silent mode — see the flow doc §4.
+
+### Faction lifecycle audit findings (2026-07) — OPEN, awaiting direction
+
+Surfaced by the faction lifecycle audit (full trace:
+`docs/flows/faction-flow.md`). Verified against source; none fixed yet.
+Headline: the assembler context packet — the conduit that was supposed to
+carry World Journal state to the narrator — is dead at every callsite, so
+the narrator has never seen a faction attitude.
+
+| Code | Class | Defect |
+|---|---|---|
+| FACTION-PACKET-DEAD | LOSE-PLOT | `assembleContextPacket`'s 17-section packet (faction landscape, threats, WJ lore, discoveries, session notes, recent oracles, …) is passed to `narrateResolution` at all three callsites and the parameter is **never read**; the interpreter doesn't take it either. The entire packet subsystem is dead on live paths — wider than factions |
+| FACTION-DUAL-STORE | WRONG-DETAIL | A narrator-named faction gets a WJ entry AND (on draft confirm) an entity record — two vocabularies (`attitude` vs `relationship`), no reconciliation, never merged or retired |
+| FACTION-ATTITUDE-SPLIT-BRAIN | WRONG-DETAIL | `attitudeShift` transitions write only the WJ store (unconditionally — no entity gate on the transitions loop), while no narrative path ever updates `record.relationship` — the card the narrator sees shows a stance frozen at confirm time |
+| FACTION-RECORD-WRITE-ONCE | LOSE-PLOT | `updateFaction`/`addRumor`/`setProject`/`setSceneRelevant` have zero callers; `active` never flips; draft-confirmed factions skip oracle seeding — records are frozen at creation apart from generative-tier accrual and manual panel edits |
+| FACTION-DETECTOR-ONLY-CONTEXT | INVENT-RISK | The detection Haiku sees the WJ attitude landscape; the narrator writing the prose does not — stance contradictions are recorded as new shifts instead of prevented |
+
+Design exposure: faction stance has no canonical home (`attitude` vs
+`relationship` vs `sector.faction` name); no dissolution lifecycle — see the
+flow doc §4.
+
 ### Character-detail drift audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
 Surfaced by the character-detail drift audit; every defect and the
