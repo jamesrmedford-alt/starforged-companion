@@ -31,8 +31,9 @@ import {
   PACED_NARRATIVE_OUTCOME,
 } from '../entities/entityExtractor.js';
 import { getConnection, listConnections }  from '../entities/connection.js';
+import { getActiveThreats, getFactionLandscape, getConfirmedLore } from '../world/worldJournal.js';
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
-import { getFaction }     from '../entities/faction.js';
+import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
 import { getShip }        from '../entities/ship.js';
 import { getPlanet }      from '../entities/planet.js';
 import { getLocation }    from '../entities/location.js';
@@ -203,6 +204,26 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // never contradicts a roll the table just made. Rendered as [3b]; the
   // prompt builder skips it for meta modes.
   extras.recentOracles = readRecentOracleResults(campaignState);
+
+  // World Journal state (FACTION-PACKET-DEAD fix, 2026-07): active threats,
+  // the faction landscape, and recent confirmed lore used to ride the
+  // assembler context packet — which was passed to narrateResolution and
+  // never read, so the narrator had NEVER seen a faction attitude or WJ
+  // threat. They now flow through this seam like everything else, bounded
+  // and gated on the existing WJ per-section settings. Fail-open: any read
+  // failure yields an empty block, never a blocked narration.
+  extras.activeThreats    = wjSectionEnabled('threatsInContext')
+    ? safeWjRead(() => getActiveThreats(campaignState).slice(0, 4), 'threats')
+    : [];
+  extras.factionLandscape = wjSectionEnabled('factionLandscapeInContext')
+    ? safeWjRead(() => mergeFactionLandscape(
+        listFactions(campaignState),
+        getFactionLandscape(campaignState),
+      ), 'factions')
+    : [];
+  extras.confirmedLore    = wjSectionEnabled('loreInContext')
+    ? safeWjRead(() => getConfirmedLore(campaignState).slice(0, 5), 'lore')
+    : [];
 
   // Shipboard combat (Battle Stations!) — when a fight is active aboard the
   // crew's command vehicle, hand the narrator the canonical shipboard-combat
@@ -1156,7 +1177,7 @@ export async function narrateOracleFollowup({
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds ?? [] });
 
     if (!text?.trim()) return null;
 
@@ -1171,7 +1192,7 @@ export async function narrateOracleFollowup({
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: question, matchedEntityIds: extras.matchedEntityIds ?? [] });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId });
           return text;
@@ -1276,7 +1297,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -1287,7 +1308,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
         return (text && text.trim()) ? text : null;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);
@@ -1335,7 +1356,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -1346,7 +1367,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
         return (text && text.trim()) ? text : null;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
@@ -1416,7 +1437,7 @@ export async function narrateVowSwearing({ vow, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   };
 
@@ -1510,7 +1531,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, playerNarration: '', matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   };
 
@@ -2469,6 +2490,34 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
 
   if (!text) throw new Error('Narrator API returned no text content.');
   return text;
+}
+
+/**
+ * Read a World Journal per-section context toggle (threatsInContext /
+ * factionLandscapeInContext / loreInContext). Defaults on, matching the
+ * registrations; unregistered (unit tests, early init) also defaults on so
+ * the pure builders stay testable.
+ */
+function wjSectionEnabled(key) {
+  try {
+    return game.settings.get(MODULE_ID, key) !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Run a World Journal reader defensively — WJ journals may not exist yet
+ * (fresh world, unit tests). Any failure returns [] so the prompt build
+ * never blocks on missing journals.
+ */
+function safeWjRead(fn, label) {
+  try {
+    return fn() ?? [];
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: WJ ${label} read failed:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /**

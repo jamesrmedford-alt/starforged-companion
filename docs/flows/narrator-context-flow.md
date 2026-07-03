@@ -34,7 +34,10 @@ outcomes, last 5 this session, "the dice established these"; skipped for
 meta modes) · [4] world truths · [4a] campaign truths digest · [4b] campaign
 premise (`campaignState.incitingIncident` — durable canon, every call) ·
 [4c] rolling session summary (prefixed with a **ledger-wins caveat** — the
-summary is texture, not a fact store) · [5] current location card · [5b]
+summary is texture, not a fact store) · **[4d] active threats · [4e]
+faction landscape · [4f] established lore** (World Journal state — rode the
+dead assembler packet until 2026-07; see `faction-flow.md`) · [5] current
+location card · [5b]
 active-sector anchor · [6] matched entity cards · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only — frame/truths/corrections/ship are

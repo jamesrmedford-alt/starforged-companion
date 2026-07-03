@@ -18,6 +18,9 @@ import {
   formatEntityCard,
   formatOracleSeedsBlock,
   formatRecentOraclesBlock,
+  formatActiveThreatsBlock,
+  formatFactionLandscapeBlock,
+  formatEstablishedLoreBlock,
   sanitizePlayerText,
   stripHtml,
   NARRATOR_PERMISSIONS,
@@ -1415,5 +1418,63 @@ describe('sidecar identity anchor includes pronouns (CHAR-SIDECAR-NO-PRONOUN-ANC
     expect(out).toMatch(/the pronouns your prose used for them/);
     expect(out).toMatch(/dockmaster at Bleakhold\s*\n?\s*.*Station \(he\/him\)/);
     expect(out).toMatch(/regendered/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// World Journal blocks (FACTION-PACKET-DEAD fix, 2026-07)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('World Journal narrator blocks ([4d]-[4f])', () => {
+  it('formatActiveThreatsBlock renders severity lines and the guard sentence', () => {
+    const block = formatActiveThreatsBlock([
+      { name: 'Reaver flotilla', severity: 'immediate', summary: 'Closing on the station' },
+      { name: 'Hull rot', severity: 'looming' },
+    ]);
+    expect(block).toMatch(/## ACTIVE THREATS/);
+    expect(block).toMatch(/- Reaver flotilla \(immediate\): Closing on the station/);
+    expect(block).toMatch(/- Hull rot \(looming\)/);
+    expect(block).toMatch(/do not resolve or dismiss/);
+    expect(formatActiveThreatsBlock([])).toBe('');
+  });
+
+  it('formatFactionLandscapeBlock renders stance + detail and the consistency guard', () => {
+    const block = formatFactionLandscapeBlock([
+      { name: 'Iron Syndicate', stance: 'warring', detail: 'Guild: Mercenaries' },
+      { name: 'Nameless', stance: '', detail: '' },
+    ]);
+    expect(block).toMatch(/## FACTION LANDSCAPE/);
+    expect(block).toMatch(/- Iron Syndicate — stance: warring · Guild: Mercenaries/);
+    expect(block).toMatch(/- Nameless$/m);
+    expect(block).toMatch(/stances are established/);
+    expect(formatFactionLandscapeBlock([])).toBe('');
+  });
+
+  it('formatEstablishedLoreBlock clips long text', () => {
+    const block = formatEstablishedLoreBlock([
+      { title: 'The Forge', text: 'x'.repeat(200) },
+    ]);
+    expect(block).toMatch(/## ESTABLISHED LORE \(recent\)/);
+    expect(block).toMatch(/…/);
+    expect(block.length).toBeLessThan(260);
+    expect(formatEstablishedLoreBlock([])).toBe('');
+  });
+
+  it('renders for live modes and skips for meta modes', () => {
+    const extras = {
+      mode: 'paced_narrative',
+      activeThreats:    [{ name: 'Reavers', severity: 'active', summary: '' }],
+      factionLandscape: [{ name: 'Iron Syndicate', stance: 'warring', detail: '' }],
+      confirmedLore:    [{ title: 'The Forge', text: 'burns' }],
+    };
+    const live = buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', extras);
+    expect(live).toMatch(/ACTIVE THREATS/);
+    expect(live).toMatch(/FACTION LANDSCAPE/);
+    expect(live).toMatch(/ESTABLISHED LORE/);
+
+    const meta = buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', { ...extras, mode: 'campaign_recap' });
+    expect(meta).not.toMatch(/ACTIVE THREATS/);
+    expect(meta).not.toMatch(/FACTION LANDSCAPE/);
   });
 });

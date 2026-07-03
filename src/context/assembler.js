@@ -2,6 +2,15 @@
  * STARFORGED COMPANION
  * src/context/assembler.js — Builds narrator context packets
  *
+ * ⚠ RETIRED FROM LIVE PATHS (2026-07, FACTION-PACKET-DEAD): no production
+ * code assembles this packet any more. narrateResolution never read its
+ * packet parameter (a Loremaster-era conduit), so the load-bearing sections
+ * — faction landscape, threats, confirmed lore, recent oracles — now flow
+ * through buildNarratorExtras / buildNarratorSystemPrompt instead. The
+ * module is retained for its unit-test coverage and as reference for the
+ * budgeting approach; deleting it needs explicit approval (see decisions.md
+ * → "The context packet is retired").
+ *
  * Responsibilities:
  * - Assemble all context sections in the correct injection order
  * - Enforce token budget — compress or drop lower-priority sections to fit

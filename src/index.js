@@ -23,7 +23,6 @@
  */
 
 import { CampaignStateSchema, MOVES }   from "./schemas.js";
-import { assembleContextPacket } from "./context/assembler.js";
 import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove }           from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
@@ -592,7 +591,8 @@ export function isNewSessionStart(campaignState, gapHours) {
  *   3. Mischief aside generated (if mischiefApplied) and stored on interpretation
  *   4. MoveConfirmDialog shown — player accepts or re-interprets
  *   5. resolveMove() rolls dice, calculates outcome, applies consequences
- *   6. assembleContextPacket() builds the 7-section context packet
+ *   6. (retired 2026-07) the context packet is no longer built — narrator
+ *      context flows through buildNarratorExtras (FACTION-PACKET-DEAD)
  *   7. postMoveResult() posts HTML move result card
  *   8. narrateResolution() calls Claude directly, posts narration card
  *   9. persistResolution() applies meter/track changes to character and campaign state
@@ -1624,12 +1624,12 @@ export function registerChatHook() {
         }
       }
 
-      // Step 8: build the context packet using the resolved class + matches
-      const packet = await assembleContextPacket(resolution, campaignState, {
-        narratorClass:      relevance.resolvedClass,
-        matchedEntityIds:   relevance.entityIds,
-        matchedEntityTypes: relevance.entityTypes,
-      });
+      // Step 8 (retired 2026-07, FACTION-PACKET-DEAD): the assembler context
+      // packet was built here and passed to narrateResolution, whose packet
+      // parameter was never read — a Loremaster-era conduit. The narrator's
+      // context flows entirely through buildNarratorExtras (which now carries
+      // the packet's load-bearing WJ sections: threats, faction landscape,
+      // confirmed lore). See decisions.md → "The context packet is retired".
 
       // Step 9: post move result card. Determine burn eligibility against the
       // active character so the card can carry a 🔥 Burn Momentum button when
@@ -1663,7 +1663,7 @@ export function registerChatHook() {
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, packet, campaignState, { relevance, speakerActorId });
+      await narrateResolution(resolution, null, campaignState, { relevance, speakerActorId });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -5245,12 +5245,10 @@ Hooks.once("ready", () => {
   registerBurnMomentumHook({
     narrate:  narrateResolution,
     persist:  persistResolution,
-    assemble: assembleContextPacket,
   });
   registerImproveResultHook({
     narrate:  narrateResolution,
     persist:  persistResolution,
-    assemble: assembleContextPacket,
   });
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the
   // move lock — see sufferCard.js); wire its buttons.

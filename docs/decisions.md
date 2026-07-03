@@ -6,6 +6,65 @@ rejected.
 
 ---
 
+## The context packet is retired; narrator context has ONE seam (2026-07)
+
+**Decision:** `assembleContextPacket` is no longer called anywhere in
+production. Its packet parameter on `narrateResolution` was never read — a
+Loremaster-era conduit orphaned when narration moved to
+`buildNarratorSystemPrompt` — so the narrator never saw the packet's
+faction landscape, threats, or World Journal lore (FACTION-PACKET-DEAD),
+and burn/improve re-narrations silently ABORTED whenever the dead assembly
+failed. The load-bearing sections now flow through `buildNarratorExtras`
+like every other context: [4d] ACTIVE THREATS (top 4), [4e] FACTION
+LANDSCAPE (merged, records canonical), [4f] ESTABLISHED LORE (recent 5,
+clipped), gated on the existing `threatsInContext` /
+`factionLandscapeInContext` / `loreInContext` settings. `narrateResolution`
+keeps its (now null) second parameter for signature stability. The
+assembler module is retained for its tests and budgeting reference —
+**deleting it needs explicit approval**.
+
+**Reason:** buildNarratorExtras is the single seam (narrator-memory
+architecture §1); resurrecting a second assembly path would reintroduce
+the drift the seam exists to prevent. The composition-test lesson
+(CHAR-PC-BLOCK-STARVED) applies: elaborate builders disconnected from
+consumers survive because only the builder is tested.
+
+**Rejected:** wiring the packet back into narrateResolution (two assembly
+paths); deleting assembler.js outright (file deletions need explicit
+instruction).
+
+## Faction stance: the entity record is canonical (2026-07)
+
+**Decision:** a faction's stance lives on the entity record
+(`relationship`, the 8-value Starforged vocabulary). The World Journal
+entry is the pre-record intelligence layer: every WJ attitude write
+(detection `attitudeShift`, `!journal faction`, auto-surface) maps onto the
+record via `ATTITUDE_TO_RELATIONSHIP` (hostile→antagonistic,
+neutral→apathetic, allied→open_alliance; unknown never overwrites) and
+backlinks the record through the WJ entry's `entityId`. Draft-confirm
+reconciles at birth (inherits the WJ attitude, seeds the faction oracles —
+`seedFactionRecord`, idempotent). The narrator's FACTION LANDSCAPE renders
+records first, WJ-only factions after (`mergeFactionLandscape`).
+
+**Rejected:** unifying the two vocabularies (they mean different things —
+coarse intelligence vs played stance); retiring the WJ entry on confirm
+(it is the encounter/history log); auto-flipping `active` (no dissolution
+mechanic exists to drive it).
+
+## Consistency-check dispositions (2026-07)
+
+**Decision:** medium/low-confidence audit results stay telemetry-only —
+high confidence is the GM-interrupt bar; the Pacing Telemetry journal's
+Consistency Check page is the review surface for the rest. High-confidence
+review cards post once per (scene, subject, violated fact) — the in-memory
+dedup clears on scene change, so a reload re-arms each reminder at most
+once. Review cards raised against pre-burn prose are not retracted on a
+momentum-burn supersede (the flagged fact usually still matters
+post-upgrade). Revisit any of these on playtest evidence, not speculation.
+
+**Rejected:** a medium-confidence chat surface (GM noise without evidence);
+burn-supersede card retraction (machinery without observed need).
+
 ## Character identity is established once and propagated everywhere (2026-07)
 
 **Decision:** The character-detail fix cycle completed the pronoun-propagation

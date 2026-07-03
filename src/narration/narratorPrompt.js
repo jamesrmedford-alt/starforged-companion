@@ -1079,6 +1079,9 @@ export function buildNarratorSystemPrompt(
     shipboardGuidance    = '',
     spotlightBlock       = '',
     recentOracles        = [],
+    activeThreats        = [],
+    factionLandscape     = [],
+    confirmedLore        = [],
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1200,6 +1203,20 @@ export function buildNarratorSystemPrompt(
       `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
       rollingSummary.trim(),
     );
+  }
+
+  // [4d]-[4f] World Journal state (FACTION-PACKET-DEAD fix, 2026-07) —
+  //      active threats, the faction landscape, and recent confirmed lore.
+  //      These rode the assembler context packet, which no live path ever
+  //      read; they now render like every other extras block. Skipped for
+  //      meta modes with the other live-scene sections.
+  if (!isMetaMode) {
+    const threatsBlock = formatActiveThreatsBlock(activeThreats);
+    if (threatsBlock) parts.push(threatsBlock);
+    const factionsBlock = formatFactionLandscapeBlock(factionLandscape);
+    if (factionsBlock) parts.push(factionsBlock);
+    const loreBlock = formatEstablishedLoreBlock(confirmedLore);
+    if (loreBlock) parts.push(loreBlock);
   }
 
   // [5] Current location card — always injected when set
@@ -1332,6 +1349,61 @@ export function formatRecentOraclesBlock(entries) {
     'The dice established these outcomes. Your narration must not contradict ' +
     'them — build on what the oracle answered.',
   );
+  return lines.join('\n');
+}
+
+/**
+ * Format the ACTIVE THREATS block ([4d]) from getActiveThreats entries.
+ * Returns '' when empty. Exported for unit testing.
+ */
+export function formatActiveThreatsBlock(threats) {
+  const list = Array.isArray(threats) ? threats.filter(t => t && t.name) : [];
+  if (!list.length) return '';
+  const lines = ['## ACTIVE THREATS', ''];
+  for (const t of list) {
+    const summary = t.summary ? `: ${t.summary}` : '';
+    lines.push(`- ${t.name} (${t.severity ?? 'looming'})${summary}`);
+  }
+  lines.push('');
+  lines.push('These dangers are established and in motion — weave them consistently; do not resolve or dismiss one without the fiction earning it.');
+  return lines.join('\n');
+}
+
+/**
+ * Format the FACTION LANDSCAPE block ([4e]) from mergeFactionLandscape
+ * entries ({ name, stance, detail }). Returns '' when empty. Exported for
+ * unit testing.
+ */
+export function formatFactionLandscapeBlock(entries) {
+  const list = Array.isArray(entries) ? entries.filter(e => e && e.name) : [];
+  if (!list.length) return '';
+  const lines = ['## FACTION LANDSCAPE', ''];
+  for (const e of list) {
+    const bits = [e.stance ? `stance: ${e.stance}` : '', e.detail ?? ''].filter(Boolean).join(' · ');
+    lines.push(`- ${e.name}${bits ? ` — ${bits}` : ''}`);
+  }
+  lines.push('');
+  lines.push('These stances are established — keep faction behaviour consistent with them; a stance changes only through played fiction.');
+  return lines.join('\n');
+}
+
+/**
+ * Format the ESTABLISHED LORE block ([4f]) from confirmed WJ lore entries
+ * ({ title, text }). Text is clipped to keep the block bounded. Returns ''
+ * when empty. Exported for unit testing.
+ */
+export function formatEstablishedLoreBlock(lore) {
+  const list = Array.isArray(lore) ? lore.filter(l => l && (l.title || l.text)) : [];
+  if (!list.length) return '';
+  const clip = (t) => {
+    const v = String(t ?? '').trim();
+    return v.length > 160 ? `${v.slice(0, 157)}…` : v;
+  };
+  const lines = ['## ESTABLISHED LORE (recent)', ''];
+  for (const l of list) {
+    const text = clip(l.text);
+    lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
+  }
   return lines.join('\n');
 }
 

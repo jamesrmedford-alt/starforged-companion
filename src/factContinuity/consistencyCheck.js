@@ -30,7 +30,12 @@ import { getConnection } from '../entities/connection.js';
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const HAIKU_MODEL   = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS    = 250;
+// NARRCHK-TRUNC-SILENT (narrator-consistency audit 2026-07): 250 tokens held
+// ~3–4 contradiction objects and truncated silently on contradiction-rich
+// audits — exactly when the check matters most. 1000 is still trivially
+// cheap on Haiku (maxTokens is a cap, not a target) and callHaiku now warns
+// on a max_tokens stop.
+const MAX_TOKENS    = 1000;
 
 /**
  * Run the consistency-check audit on a piece of narrator prose.
@@ -104,16 +109,25 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   let dispatched = false;
   for (const c of contradictions) {
     if (c.confidence !== 'high') continue;
+    // Cross-turn dedup (narrator-consistency audit 2026-07): a standing
+    // contradiction — prose that keeps asserting the same violated fact —
+    // used to re-post an identical review card every narration. One card per
+    // (scene, subject, violated fact); telemetry below still logs every
+    // audit. In-memory by design: a reload re-arms the reminder once.
+    const dedupKey = contradictionDedupKey(campaignState.currentSceneId, c);
+    if (_dispatchedContradictions.has(dedupKey)) continue;
     try {
       await applyStateTransition({
         entryType:        'factContinuity',
         change:           'contradicted',
+        kind:             c.kind ?? 'truth',
         name:             c.subject ?? '(unknown)',
         newValue:         c.evidence ?? '',
         summary:          c.violated ?? '',
         truthId:          c.truthId  ?? null,
         matchedEntityIds: options.matchedEntityIds ?? [],
       }, campaignState);
+      _dispatchedContradictions.add(dedupKey);
       dispatched = true;
     } catch (err) {
       console.warn(`${MODULE_ID} | consistencyCheck: dispatch failed:`, err);
@@ -243,6 +257,14 @@ async function callHaiku(apiKey, systemPrompt) {
     'anthropic-version': '2023-06-01',
   };
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+  if (data?.stop_reason === 'max_tokens') {
+    // Truncated audit — the parse below salvages what it can, but catches
+    // beyond the cut are lost. Never silent (NARRCHK-TRUNC-SILENT).
+    console.warn(
+      `${MODULE_ID} | consistencyCheck: audit response truncated by maxTokens (${MAX_TOKENS}) — ` +
+      `some contradictions may have been dropped.`,
+    );
+  }
   const text = (data?.content ?? [])
     .filter(b => b?.type === 'text')
     .map(b => b.text)
@@ -260,6 +282,25 @@ function normaliseConfidence(v) {
 function normaliseKind(v) {
   const s = String(v ?? '').toLowerCase();
   return ['state', 'frame', 'ship', 'retraction', 'identity'].includes(s) ? s : 'truth';
+}
+
+// Review cards already posted, keyed by scene + subject + violated fact.
+// Bounded: entries for finished scenes are dropped the first time a new
+// scene's contradiction lands (single-scene working set).
+const _dispatchedContradictions = new Set();
+let _dedupSceneId = null;
+
+/**
+ * Dedup key for a dispatched contradiction. Exported for unit testing.
+ * Clears the working set when the scene changes so the set stays small.
+ */
+export function contradictionDedupKey(sceneId, c) {
+  const scene = sceneId ?? 'no-scene';
+  if (scene !== _dedupSceneId) {
+    _dispatchedContradictions.clear();
+    _dedupSceneId = scene;
+  }
+  return `${scene}|${String(c?.subject ?? '').toLowerCase()}|${String(c?.violated ?? '').toLowerCase()}`;
 }
 
 /**

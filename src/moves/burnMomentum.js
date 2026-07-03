@@ -135,11 +135,10 @@ function labelForOutcome(outcome) {
  * @param {Object} hooks      — narrator + persist injections so this module
  *                              can re-narrate and re-persist after a burn
  *                              without pulling in the full pipeline graph.
- * @param {Function} hooks.narrate    async (resolution, packet, state, opts) => void
+ * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
  * @param {Function} hooks.persist    async (resolution, state) => void
- * @param {Function} hooks.assemble   async (resolution, state, opts) => packet
  */
-export function registerBurnMomentumHook({ narrate, persist, assemble }) {
+export function registerBurnMomentumHook({ narrate, persist }) {
   onChatMessageRender((message, root) => {
     const burn = message?.flags?.[MODULE_ID]?.burn;
     if (!burn?.canBurn) return;
@@ -161,7 +160,7 @@ export function registerBurnMomentumHook({ narrate, persist, assemble }) {
       freshBtn.disabled = true;
       freshBtn.textContent = "🔥 Burning…";
       try {
-        await handleBurnClick(message, { narrate, persist, assemble });
+        await handleBurnClick(message, { narrate, persist });
       } catch (err) {
         console.error(`${MODULE_ID} | burnMomentum: click handler failed:`, err);
         freshBtn.disabled = false;
@@ -176,7 +175,7 @@ export function registerBurnMomentumHook({ narrate, persist, assemble }) {
 // CLICK HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleBurnClick(message, { narrate, persist, assemble }) {
+async function handleBurnClick(message, { narrate, persist }) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const burn  = flags.burn;
   if (!burn?.canBurn || burn.consumed) return;
@@ -236,7 +235,7 @@ async function handleBurnClick(message, { narrate, persist, assemble }) {
   // Re-narrate on the upgraded outcome. Best-effort — if the campaign has
   // no API key configured or the narrator is otherwise disabled, the move
   // card is still correctly updated above.
-  await renarrate({ burn, burnResult, newConsequences, narrate, persist, assemble })
+  await renarrate({ burn, burnResult, newConsequences, narrate, persist })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 }
 
@@ -313,8 +312,8 @@ async function revertPtpEffects(ptpReversals, actor) {
   }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: revert card failed:`, err));
 }
 
-async function renarrate({ burn, burnResult, newConsequences, narrate, persist, assemble }) {
-  if (typeof narrate !== "function" || typeof assemble !== "function") return;
+async function renarrate({ burn, burnResult, newConsequences, narrate, persist }) {
+  if (typeof narrate !== "function") return;
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   const synthResolution = {
@@ -341,13 +340,10 @@ async function renarrate({ burn, burnResult, newConsequences, narrate, persist, 
     sessionId:       campaignState.currentSessionId ?? "",
   };
 
-  const packet = await assemble(synthResolution, campaignState, {}).catch(err => {
-    console.warn(`${MODULE_ID} | burnMomentum: assembleContextPacket failed:`, err);
-    return null;
-  });
-  if (!packet) return;
-
-  await narrate(synthResolution, packet, campaignState, {});
+  // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
+  // narrateResolution never read it, and the old `if (!packet) return`
+  // guard silently ABORTED this re-narration when the dead assembly failed.
+  await narrate(synthResolution, null, campaignState, {});
   if (typeof persist === "function" && game.user?.isGM) {
     // Don't double-persist meters — applyBurnMeterDeltas above already did
     // that. Just append the upgraded resolution to the session log via a

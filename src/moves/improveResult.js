@@ -116,11 +116,10 @@ function improveButtonLabel(state) {
  * after use.
  *
  * @param {Object}   hooks
- * @param {Function} hooks.narrate    async (resolution, packet, state, opts) => void
+ * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
  * @param {Function} hooks.persist    async (resolution, state) => void
- * @param {Function} hooks.assemble   async (resolution, state, opts) => packet
  */
-export function registerImproveResultHook({ narrate, persist, assemble }) {
+export function registerImproveResultHook({ narrate, persist }) {
   onChatMessageRender((message, root) => {
     const improve = message?.flags?.[MODULE_ID]?.improve;
     if (!improve?.canImprove) return;
@@ -142,7 +141,7 @@ export function registerImproveResultHook({ narrate, persist, assemble }) {
       freshBtn.disabled = true;
       freshBtn.textContent = "✦ Improving…";
       try {
-        await handleImproveClick(message, { narrate, persist, assemble });
+        await handleImproveClick(message, { narrate, persist });
       } catch (err) {
         console.error(`${MODULE_ID} | improveResult: click handler failed:`, err);
         freshBtn.disabled = false;
@@ -157,7 +156,7 @@ export function registerImproveResultHook({ narrate, persist, assemble }) {
 // CLICK HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleImproveClick(message, { narrate, persist, assemble }) {
+async function handleImproveClick(message, { narrate, persist }) {
   const improve = message?.flags?.[MODULE_ID]?.improve;
   if (!improve?.canImprove || improve.consumed) return;
 
@@ -189,7 +188,7 @@ async function handleImproveClick(message, { narrate, persist, assemble }) {
   await supersedeOriginalNarration(improve).catch(err =>
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
-  await renarrate({ improve, newConsequences, narrate, persist, assemble })
+  await renarrate({ improve, newConsequences, narrate, persist })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
 }
 
@@ -250,8 +249,8 @@ function buildImprovedCardContent(originalContent, clockNote) {
   return `${String(originalContent ?? "")}${banner}`;
 }
 
-async function renarrate({ improve, newConsequences, narrate, persist, assemble }) {
-  if (typeof narrate !== "function" || typeof assemble !== "function") return;
+async function renarrate({ improve, newConsequences, narrate, persist }) {
+  if (typeof narrate !== "function") return;
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   const synthResolution = {
@@ -277,13 +276,10 @@ async function renarrate({ improve, newConsequences, narrate, persist, assemble 
     sessionId:       campaignState.currentSessionId ?? "",
   };
 
-  const packet = await assemble(synthResolution, campaignState, {}).catch(err => {
-    console.warn(`${MODULE_ID} | improveResult: assembleContextPacket failed:`, err);
-    return null;
-  });
-  if (!packet) return;
-
-  await narrate(synthResolution, packet, campaignState, {});
+  // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
+  // narrateResolution never read it, and the old `if (!packet) return`
+  // guard silently ABORTED this re-narration when the dead assembly failed.
+  await narrate(synthResolution, null, campaignState, {});
   if (typeof persist === "function" && game.user?.isGM) {
     // Meters were already applied by applyImproveMeterDeltas — log only.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };

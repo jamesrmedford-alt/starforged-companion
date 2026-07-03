@@ -26,6 +26,7 @@ import {
   runConsistencyCheck,
   parseAuditResponse,
   buildAuditPrompt,
+  contradictionDedupKey,
 } from '../../src/factContinuity/consistencyCheck.js';
 import { apiPost }                from '../../src/api-proxy.js';
 import { applyStateTransition }   from '../../src/entities/entityExtractor.js';
@@ -324,5 +325,22 @@ describe('parseAuditResponse — broadened kinds', () => {
       contradictions: [{ subject: 'x', violated: 'v', kind: 'identity', confidence: 'high' }],
     }));
     expect(idOut[0].kind).toBe('identity');
+  });
+});
+
+
+describe('contradictionDedupKey — cross-turn review-card dedup (2026-07)', () => {
+  it('is stable and case-insensitive per scene + subject + violated fact', () => {
+    const a = contradictionDedupKey('sc-1', { subject: 'Vance', violated: 'Walks with a limp' });
+    const b = contradictionDedupKey('sc-1', { subject: 'vance', violated: 'walks with a LIMP' });
+    expect(a).toBe(b);
+    const other = contradictionDedupKey('sc-1', { subject: 'Vance', violated: 'different fact' });
+    expect(other).not.toBe(a);
+  });
+
+  it('scopes keys by scene', () => {
+    const a = contradictionDedupKey('sc-1', { subject: 'Vance', violated: 'x' });
+    const b = contradictionDedupKey('sc-2', { subject: 'Vance', violated: 'x' });
+    expect(a).not.toBe(b);
   });
 });
