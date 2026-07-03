@@ -123,12 +123,14 @@ export function appendSidecarInstruction(options = {}) {
     '- REQUIRED: the first time your prose introduces or names a character or',
     '  faction who does NOT appear in the ENTITIES IN SCENE cards, emit a',
     '  newTruth anchoring their identity — who or what they are, their role',
-    '  in this context, their agenda, and their relationship to the player',
-    '  character — e.g. { "subject": "Kael Dros", "fact": "dockmaster at',
-    '  Bleakhold Station; meeting the PC here for the first time" } or',
+    '  in this context, their agenda, their relationship to the player',
+    '  character, and (for a person) the pronouns your prose used for them —',
+    '  e.g. { "subject": "Kael Dros", "fact": "dockmaster at Bleakhold',
+    '  Station (he/him); meeting the PC here for the first time" } or',
     '  { "subject": "Khatri Syndicate", "fact": "bounty-hunting cartel;',
     '  pursuing the PC for an outstanding debt" }. Without this anchor,',
-    '  the same entity can be written differently each turn.',
+    '  the same entity can be written differently — or regendered — each',
+    '  turn.',
     '- A subject is the name as it appears in the scene. If the subject is',
     '  the scene itself (lighting, weather, ambient sound) use "scene".',
     '- REQUIRED: when your prose moves the player\'s command vehicle —',
@@ -885,7 +887,8 @@ const ROLE_DESCRIPTIONS = {
     `Suggested vow: <a short first-person vow statement> (<rank>)\n` +
     `Suggested clock: <a short clock label> (<segments> segments)\n` +
     `Immediate crisis: <a short danger label> (<segments> segments)\n` +
-    `Vow target: <Name> — <2-3 sentences on one line: who they are — for an ` +
+    `Vow target: <Name> (<pronouns — the set your prose established for them, ` +
+    `e.g. she/her, he/him, they/them>) — <2-3 sentences on one line: who they are — for an ` +
     `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
     `role, goal, and pronouns, never reassigning or contradicting them — their ` +
     `history with the character, and their current situation and condition>\n` +
@@ -963,9 +966,21 @@ const LEVITY_DESCRIPTIONS = {
     "Even under pressure, find the wry, human moment.",
 };
 
+// CHAR-PERSPECTIVE-NO-PRONOUN-RULE (character-detail audit 2026-07): both
+// perspectives make recorded pronouns binding. Third person is where drift
+// bit hardest (every PC referred to by name AND pronoun); second person still
+// needs the rule for NPC dialogue ABOUT the player character.
 const PERSPECTIVE_DESCRIPTIONS = {
-  second_person: 'Address the player character directly as "you". e.g. "You feel the deck shudder..."',
-  third_person:  'Refer to characters by name. e.g. "Kira feels the deck shudder..."',
+  second_person:
+    'Address the player character directly as "you". e.g. "You feel the deck ' +
+    'shudder..." When other characters speak ABOUT the player character, use ' +
+    'the recorded pronouns from the CHARACTER section.',
+  third_person:
+    'Refer to characters by name. e.g. "Kira feels the deck shudder..." Use ' +
+    'each character\'s recorded pronouns (CHARACTER, PARTY, and ENTITIES IN ' +
+    'SCENE sections) exactly as given. If no pronouns are recorded for ' +
+    'someone, do not infer gender from their name — write around it or use ' +
+    'they/them.',
 };
 
 // ---------------------------------------------------------------------------
@@ -1534,24 +1549,42 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
 /**
  * Render the multiplayer party roster (section [8b]). Returns '' unless
  * the party carries two or more PCs — solo play needs no disambiguation.
- * Exported for unit testing.
+ * Prefers `party.members` ({name, pronouns, callsign} — CHAR-PARTY-NAMES-ONLY
+ * fix) and falls back to the legacy names-only shape. Exported for unit
+ * testing.
  *
- * @param {{ names: string[], speaking?: string|null }|null} party
+ * @param {{ names?: string[], members?: Array<{name:string,pronouns?:string,callsign?:string}>,
+ *           speaking?: string|null }|null} party
  * @returns {string}
  */
 export function buildPartyBlock(party) {
-  const names = Array.isArray(party?.names)
-    ? party.names.filter(n => typeof n === 'string' && n.trim()).map(n => n.trim())
-    : [];
-  if (names.length < 2) return '';
+  const members = Array.isArray(party?.members) && party.members.length
+    ? party.members
+        .filter(m => m && typeof m.name === 'string' && m.name.trim())
+        .map(m => ({
+          name:     m.name.trim(),
+          pronouns: typeof m.pronouns === 'string' ? m.pronouns.trim() : '',
+          callsign: typeof m.callsign === 'string' ? m.callsign.trim() : '',
+        }))
+    : (Array.isArray(party?.names) ? party.names : [])
+        .filter(n => typeof n === 'string' && n.trim())
+        .map(n => ({ name: n.trim(), pronouns: '', callsign: '' }));
+  if (members.length < 2) return '';
 
   const speaking = typeof party?.speaking === 'string' && party.speaking.trim()
     ? party.speaking.trim()
     : null;
-  const roster = names
-    .map(n => (speaking && n === speaking ? `${n} (speaking this turn)` : n))
+  const roster = members
+    .map(m => {
+      const idBits = [];
+      if (m.callsign) idBits.push(`"${m.callsign}"`);
+      if (m.pronouns) idBits.push(m.pronouns);
+      const id = idBits.length ? ` (${idBits.join(', ')})` : '';
+      return `${m.name}${id}${speaking && m.name === speaking ? ' (speaking this turn)' : ''}`;
+    })
     .join(', ');
 
+  const anyPronouns = members.some(m => m.pronouns);
   return [
     '## PARTY',
     '',
@@ -1560,6 +1593,10 @@ export function buildPartyBlock(party) {
     'dialogue to the named speaker only, and never merge the player',
     'characters into a single "you". Other PCs are present in the scene',
     'only when the fiction or the scene frame says so.',
+    ...(anyPronouns ? [
+      'The pronouns above are each character\'s recorded pronouns — use them',
+      'exactly; never infer gender from a name.',
+    ] : []),
   ].join('\n');
 }
 

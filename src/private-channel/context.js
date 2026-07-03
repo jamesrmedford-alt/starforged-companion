@@ -29,8 +29,19 @@ const ROLE = [
 ].join("\n");
 
 function formatCharacterBlock(character) {
-  const lines = ["## CHARACTER", "", `Name: ${character.name ?? "Unknown"}`];
+  // getActiveCharacter now returns the full snapshot (CHAR-PC-BLOCK-STARVED
+  // fix) — render the identity fields directly. The old `description` field
+  // never existed on the vendor schema, and narratorNotes no longer falls
+  // back to biography, so biography renders on its own line here.
+  const idBits = [];
+  if (character.callsign) idBits.push(`"${character.callsign}"`);
+  if (character.pronouns) idBits.push(character.pronouns);
+  const lines = [
+    "## CHARACTER", "",
+    `Name: ${character.name ?? "Unknown"}${idBits.length ? ` (${idBits.join(", ")})` : ""}`,
+  ];
   if (character.description) lines.push(`Description: ${character.description}`);
+  if (character.biography)   lines.push(`Biography: ${character.biography}`);
   const m = character.meters;
   if (m && typeof m === "object") {
     const bits = Object.entries(m)

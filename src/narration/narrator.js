@@ -2570,11 +2570,26 @@ function maybeAdvanceSpotlight(mode, campaignState) {
  */
 function buildPartyContext(speakingName = null) {
   try {
-    const names = (getPlayerActors() ?? [])
-      .map(a => a?.name)
-      .filter(n => typeof n === 'string' && n.trim());
-    if (names.length < 2) return null;
-    return { names, speaking: speakingName ?? null };
+    // CHAR-PARTY-NAMES-ONLY (character-detail audit 2026-07): the roster
+    // used to carry bare names, so third-person narration had pronouns for
+    // no PC and misgendered non-speaking party members. Carry each member's
+    // recorded pronouns + callsign (snapshot reads are cached).
+    const members = (getPlayerActors() ?? [])
+      .map(a => {
+        try { return readCharacterSnapshot(a); } catch { return null; }
+      })
+      .filter(s => s && typeof s.name === 'string' && s.name.trim())
+      .map(s => ({
+        name:     s.name.trim(),
+        pronouns: s.pronouns ?? '',
+        callsign: s.callsign ?? '',
+      }));
+    if (members.length < 2) return null;
+    return {
+      names:    members.map(m => m.name),   // kept for back-compat consumers
+      members,
+      speaking: speakingName ?? null,
+    };
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: party context build failed:`, err?.message ?? err);
     return null;
@@ -2706,14 +2721,18 @@ export function getActiveCharacter(campaignState, speakerActorId = null) {
     if (!actor) return null;
     const snap = readCharacterSnapshot(actor);
     if (!snap) return null;
-    const notes = actor.getFlag?.(MODULE_ID, 'narratorNotes')
-      ?? actor.system?.biography
-      ?? '';
+    // CHAR-PC-BLOCK-STARVED (character-detail audit 2026-07): this used to
+    // narrow the snapshot to {name, description, narratorNotes, meters} —
+    // and `system.description` doesn't even exist on the vendor character —
+    // so the CHARACTER block never carried the PC's pronouns, callsign,
+    // biography, stats, impacts, assets, or vows on ANY narrator path, and
+    // the narrator guessed gender from the name. Pass the full snapshot;
+    // buildCharacterBlock renders every field it holds. narratorNotes stays
+    // flag-only: the old `?? system.biography` fallback would now render
+    // the biography twice (the snapshot carries it as its own line).
     return {
-      name:           snap.name,
-      description:    actor.system?.description ?? '',
-      narratorNotes:  notes,
-      meters:         snap.meters,
+      ...snap,
+      narratorNotes: actor.getFlag?.(MODULE_ID, 'narratorNotes') ?? '',
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: getActiveCharacter failed:`, err);

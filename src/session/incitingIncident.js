@@ -146,14 +146,23 @@ export function splitImmediateCrisis(text) {
 }
 
 /**
- * Split a trailing `Vow target: <Name> — <description>` line off the
- * narrator prose (Cluster B / F3). Returns `{ prose, target }` where
- * `target` is `{ name, description }` or null. The name/description divider
- * accepts an em dash, en dash, or spaced hyphen; a line with no divider is
- * treated as a bare name. Pure — unit-tested.
+ * Split a trailing `Vow target: <Name> (<pronouns>) — <description>` line off
+ * the narrator prose (Cluster B / F3). Returns `{ prose, target }` where
+ * `target` is `{ name, pronouns, description }` or null. The pronoun
+ * parenthetical is optional and only consumed when it is pronoun-shaped
+ * (`she/her`, `they/them`, …) — a name like "Vance (the Elder)" keeps its
+ * parenthetical. The name/description divider accepts an em dash, en dash,
+ * or spaced hyphen; a line with no divider is treated as a bare name.
+ * Pure — unit-tested.
+ *
+ * Pronoun capture is CHAR-NPC-PRONOUN-ROLL-BLIND (character-detail audit
+ * 2026-07): the prose that opens the campaign genders its vow target; without
+ * carrying that to the connection record, seeding rolled pronouns at random
+ * and had a 2/3 chance of contradicting the opening fiction.
  *
  * @param {string} text
- * @returns {{ prose: string, target: { name: string, description: string } | null }}
+ * @returns {{ prose: string,
+ *             target: { name: string, pronouns: string, description: string } | null }}
  */
 export function splitVowTarget(text) {
   const full = String(text ?? "");
@@ -163,13 +172,25 @@ export function splitVowTarget(text) {
   const prose = full.replace(m[0], "").trim();
   const line  = m[1].trim();
   const div   = line.match(/\s*(?:—|–|:|\s-\s)\s*/);
+
+  const splitPronouns = (rawName) => {
+    // Trailing "(she/her)"-shaped parenthetical only — two or three
+    // slash-separated word tokens. Anything else stays part of the name.
+    const pm = rawName.match(/^(.*?)\s*\(([a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)?)\)$/);
+    if (!pm) return { name: rawName, pronouns: "" };
+    return { name: pm[1].trim(), pronouns: pm[2].toLowerCase() };
+  };
+
   if (!div) {
-    return { prose, target: line ? { name: line, description: "" } : null };
+    if (!line) return { prose, target: null };
+    const { name, pronouns } = splitPronouns(line);
+    return { prose, target: name ? { name, pronouns, description: "" } : null };
   }
-  const name        = line.slice(0, div.index).trim();
+  const rawName     = line.slice(0, div.index).trim();
   const description = line.slice(div.index + div[0].length).trim();
+  const { name, pronouns } = splitPronouns(rawName);
   if (!name) return { prose, target: null };
-  return { prose, target: { name, description } };
+  return { prose, target: { name, pronouns, description } };
 }
 
 /**

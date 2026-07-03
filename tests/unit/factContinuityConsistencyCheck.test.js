@@ -294,7 +294,17 @@ describe('buildAuditPrompt — broadened sections', () => {
   it('renders (none) for absent sections', () => {
     const prompt = buildAuditPrompt('', '', 'Prose.');
     const noneCount = (prompt.match(/\(none\)/g) ?? []).length;
-    expect(noneCount).toBe(5); // frame, truths, corrections, state, ship
+    expect(noneCount).toBe(6); // frame, identities, truths, corrections, state, ship
+  });
+
+  it('includes recorded identities when provided', () => {
+    const prompt = buildAuditPrompt('', '', 'Prose.', {
+      identities: '  Kira Vex — she/her\n  Vance — he/him',
+    });
+    expect(prompt).toMatch(/RECORDED IDENTITIES/);
+    expect(prompt).toMatch(/Kira Vex — she\/her/);
+    expect(prompt).toMatch(/misgenders one of them IS a contradiction/);
+    expect(prompt).toMatch(/"identity"/);
   });
 });
 
@@ -310,5 +320,9 @@ describe('parseAuditResponse — broadened kinds', () => {
     });
     const out = parseAuditResponse(raw);
     expect(out.map(c => c.kind)).toEqual(['frame', 'ship', 'retraction', 'truth']);
+    const idOut = parseAuditResponse(JSON.stringify({
+      contradictions: [{ subject: 'x', violated: 'v', kind: 'identity', confidence: 'high' }],
+    }));
+    expect(idOut[0].kind).toBe('identity');
   });
 });

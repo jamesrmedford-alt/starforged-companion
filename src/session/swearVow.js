@@ -220,6 +220,10 @@ export async function swearSharedVowForAll(message) {
       connection = await createConnection({
         name:                      meta.target.name,
         description:               meta.target.description ?? "",
+        // Pronouns the opening prose established (splitVowTarget) — with
+        // them set, seedConnectionActor keeps them instead of rolling a
+        // random set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
+        pronouns:                  meta.target.pronouns ?? "",
         sectorId:                  campaignState.activeSectorId ?? null,
         firstAppearance:           campaignState.currentSessionId ?? "",
         portraitSourceDescription: meta.target.description ?? "",

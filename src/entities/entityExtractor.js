@@ -260,6 +260,11 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `- location: named specific place (derelict, vault, structure, site)`,
     `- creature: named or distinctly described creature type`,
     ``,
+    `For a connection, set "pronouns" to the pronoun set the narration`,
+    `established for that person ("she/her", "he/him", "they/them"), or null`,
+    `when the prose never gendered them. Report what the text used — do not`,
+    `guess from the name.`,
+    ``,
     `ESTABLISHED ENTITIES (do not return these as new entities):`,
     established.length ? established.join(", ") : "(none)",
     `Treat honorifics and titles as equivalent to the bare name —`,
@@ -291,7 +296,7 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `{`,
     `  "entities": [`,
     `    { "type": string, "name": string, "description": string,`,
-    `      "confidence": "high"|"medium"|"low" }`,
+    `      "pronouns": string|null, "confidence": "high"|"medium"|"low" }`,
     `  ],`,
     `  "renames": [`,
     `    { "from": string, "to": string }`,
@@ -444,7 +449,11 @@ export function parseDetectionResponse(text, campaignState) {
     .filter(e => !dismissed.has(normalizeEntityName(e.name)))
     .filter(e => !established.has(normalizeEntityName(e.name)))
     .filter(e => !pending.has(normalizeEntityName(e.name)))
-    .filter(e => !renameTargets.has(normalizeEntityName(e.name)));
+    .filter(e => !renameTargets.has(normalizeEntityName(e.name)))
+    // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
+    // pronoun-shaped values ("she/her", "ze/zir", up to three tokens);
+    // anything else — prose, guesses, junk — drops to "".
+    .map(e => ({ ...e, pronouns: normalisePronounSet(e.pronouns) }));
 
   return {
     entities: filteredEntities,
@@ -513,6 +522,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           description:               seedData.description,
           role:                      seedData.role,
           motivation:                seedData.motivation,
+          pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
           firstAppearance:           options.sessionId ?? "",
         }, campaignState);
@@ -685,8 +695,27 @@ export function buildConnectionSeedData(draft, seed) {
     description,
     role:           s.role  ?? "",
     motivation:     s.goal  ?? "",
+    // Pronouns the narration established (detector capture) — with these on
+    // the record, seedConnectionActor keeps them instead of rolling a random
+    // set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
+    pronouns:       normalisePronounSet(draft?.pronouns),
     portraitSource: portraitParts.join(". "),
   };
+}
+
+/**
+ * Coerce a detected pronoun value to a canonical "a/b" or "a/b/c" set —
+ * lowercased word tokens separated by slashes, e.g. "she/her", "they/them",
+ * "ze/zir". Anything else (prose, null, name-based guesses the prompt
+ * forbids) returns "". Exported for unit testing.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function normalisePronounSet(value) {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!v || v.length > 24) return "";
+  return /^[a-z]+\/[a-z]+(\/[a-z]+)?$/.test(v) ? v : "";
 }
 
 /**
@@ -1519,7 +1548,9 @@ async function handleDraftConfirm(message, draftIndex) {
   try {
     if (draft.type === "connection") {
       const seedData = buildConnectionSeedData(
-        { name: draft.name, description: draft.description ?? "" },
+        // `pronouns` rode the draft card from the detection pass
+        // (postDraftEntityCard spreads the whole entity into the flag).
+        { name: draft.name, description: draft.description ?? "", pronouns: draft.pronouns ?? "" },
         rollFreshConnectionSeed(),
       );
       record = await creator({
@@ -1527,6 +1558,7 @@ async function handleDraftConfirm(message, draftIndex) {
         description:               seedData.description,
         role:                      seedData.role,
         motivation:                seedData.motivation,
+        pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
       await registerConnectionOnActiveCharacter(record).catch(err =>
