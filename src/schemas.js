@@ -434,6 +434,11 @@ export const ConnectionSchema = {
   // Narrative — populated progressively through play
   firstAppearance: "",          // Session/scene reference
   description: "",              // Physical description
+  pronouns: "",                 // Pronoun set ("she/her" | "he/him" | "they/them" | custom).
+                                // Established once: detection capture / inciting target line /
+                                // createConnection data win; seedConnectionActor rolls only
+                                // when still blank (finding E; CHAR-NPC-PRONOUN-ROLL-BLIND).
+                                // Anchors portrait prompt, entity card, seeded Notes, audio voice.
   background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
   goal: "",                     // CHARACTERS.GOAL oracle result — the driving objective

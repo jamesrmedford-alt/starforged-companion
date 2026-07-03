@@ -6,6 +6,39 @@ rejected.
 
 ---
 
+## Character identity is established once and propagated everywhere (2026-07)
+
+**Decision:** The character-detail fix cycle completed the pronoun-propagation
+cluster (v1.7.10/11 findings E/R) along four rules:
+
+1. **The narrator always sees the full character.** `getActiveCharacter`
+   passes the complete `readCharacterSnapshot` (pronouns, callsign,
+   biography, stats, impacts, assets, vows, connections) to every narrator
+   path; `narratorNotes` is flag-only (the old biography fallback would
+   double-render now that biography is its own block line). Never re-narrow
+   this seam — `tests/unit/characterDetail.test.js` exercises the live
+   composition precisely because the original defect hid in an untested
+   narrowing between a correct reader and a correct renderer.
+2. **Recorded pronouns are binding, for everyone in the party.** The PARTY
+   roster carries `{name, pronouns, callsign}` per member; both perspective
+   instructions forbid inferring gender from a name.
+3. **Established beats rolled.** An NPC's pronouns are captured where the
+   fiction establishes them — the detection pass (sanitised by
+   `normalisePronounSet`), the draft card, and the inciting `Vow target:
+   <Name> (<pronouns>)` line — and `seedConnectionActor`'s finding-E random
+   roll fires ONLY when nothing upstream set a value. The roll stays (an
+   ungendered NPC still needs one anchor for portrait/card/audio); it just
+   lost precedence over the fiction.
+4. **Misgendering is auditable.** The consistency check's RECORDED
+   IDENTITIES section carries every PC's and matched NPC's pronouns (kind
+   `identity`), because pronouns live outside every ledger tier and were
+   otherwise invisible to the audit.
+
+**Rejected:** a PC appearance/description field (no vendor schema home —
+biography is the anchor, and it now actually reaches the narrator);
+inferring NPC pronouns from names anywhere (the detection prompt explicitly
+forbids it — report what the text used or null).
+
 ## Narrator context: the ledger actively defends, and every fiction card remembers (2026-07)
 
 **Decision:** The narrator-context fix cycle ("Fix all gaps") hardened the

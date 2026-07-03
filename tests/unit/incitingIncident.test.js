@@ -250,9 +250,9 @@ describe("splitVowTarget (F3)", () => {
 
   it("accepts a spaced hyphen and a colon as dividers", () => {
     expect(splitVowTarget("x\nVow target: Kira - Salvage broker").target)
-      .toEqual({ name: "Kira", description: "Salvage broker" });
+      .toEqual({ name: "Kira", pronouns: "", description: "Salvage broker" });
     expect(splitVowTarget("x\nVow target: Kira: Salvage broker").target)
-      .toEqual({ name: "Kira", description: "Salvage broker" });
+      .toEqual({ name: "Kira", pronouns: "", description: "Salvage broker" });
   });
 
   it("keeps later dashes inside the description", () => {
@@ -263,7 +263,7 @@ describe("splitVowTarget (F3)", () => {
 
   it("treats a bare name as a target with empty description", () => {
     expect(splitVowTarget("x\nVow target: Vance").target)
-      .toEqual({ name: "Vance", description: "" });
+      .toEqual({ name: "Vance", pronouns: "", description: "" });
   });
 
   it("returns null target when no line is present", () => {
@@ -541,7 +541,47 @@ describe("postIncitingIncidentCard — incitingMeta flags (Cluster B)", () => {
     const flags = created[0].flags["starforged-companion"];
     expect(flags.incitingMeta.vow.statement).toBe("I will reach Vance");
     expect(flags.incitingMeta.clock).toEqual({ label: "Life support", segments: 6 });
-    expect(flags.incitingMeta.target).toEqual({ name: "Vance", description: "Estranged mentor." });
+    expect(flags.incitingMeta.target).toEqual({ name: "Vance", pronouns: "", description: "Estranged mentor." });
     expect(flags.narrationText).toBe("Prose.");          // meta lines stripped from ring text
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// splitVowTarget — pronoun parenthetical (CHAR-NPC-PRONOUN-ROLL-BLIND)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitVowTarget — pronoun capture", () => {
+  it("captures a pronoun-shaped parenthetical off the name", () => {
+    const { target } = splitVowTarget(
+      "Prose here.\nVow target: Captain Vessa (she/her) — runs the tether dock; owes the PC a life-debt.",
+    );
+    expect(target).toEqual({
+      name: "Captain Vessa",
+      pronouns: "she/her",
+      description: "runs the tether dock; owes the PC a life-debt.",
+    });
+  });
+
+  it("captures three-token sets and lowercases them", () => {
+    const { target } = splitVowTarget("Vow target: Wren (They/Them/Theirs) — a salvager.");
+    expect(target.pronouns).toBe("they/them/theirs");
+    expect(target.name).toBe("Wren");
+  });
+
+  it("leaves non-pronoun parentheticals in the name", () => {
+    const { target } = splitVowTarget("Vow target: Vance (the Elder) — a hermit.");
+    expect(target.name).toBe("Vance (the Elder)");
+    expect(target.pronouns).toBe("");
+  });
+
+  it("returns empty pronouns when no parenthetical is present", () => {
+    const { target } = splitVowTarget("Vow target: Vance — a hermit.");
+    expect(target).toEqual({ name: "Vance", pronouns: "", description: "a hermit." });
+  });
+
+  it("handles a bare name with pronouns and no description", () => {
+    const { target } = splitVowTarget("Vow target: Vance (he/him)");
+    expect(target).toEqual({ name: "Vance", pronouns: "he/him", description: "" });
   });
 });

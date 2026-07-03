@@ -24,6 +24,8 @@ import { apiPost }              from '../api-proxy.js';
 import { buildLedgerBlock }     from '../narration/narratorPrompt.js';
 import { applyStateTransition } from '../entities/entityExtractor.js';
 import { logConsistencyDecision } from '../pacing/telemetry.js';
+import { getPlayerActors, readCharacterSnapshot } from '../character/actorBridge.js';
+import { getConnection } from '../entities/connection.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -62,6 +64,13 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     maxTokens:         Infinity,
   });
 
+  // Recorded identities (character-detail audit 2026-07): PC and in-scene
+  // NPC pronouns live on actor sheets and connection records — outside every
+  // ledger tier — so prose misgendering a character was the one contradiction
+  // this check could never see. Fail-open: an empty block just skips the
+  // section.
+  const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
+
   // Nothing to audit against — an empty ledger means nothing can be
   // contradicted. Broadened (narrator-context audit 2026-07) beyond
   // truths+state to everything the ledger block holds: the scene frame,
@@ -69,7 +78,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // exactly the contradiction the check exists to catch — and the frame
   // audit is the §8.3 staleness mitigation the architecture doc sketched).
   if (!ledger.truths && !ledger.state && !ledger.frame
-      && !ledger.shipPosition && !ledger.corrections) {
+      && !ledger.shipPosition && !ledger.corrections && !identities) {
     return { contradictions: [], dispatched: false };
   }
 
@@ -77,6 +86,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     frame:        ledger.frame,
     shipPosition: ledger.shipPosition,
     corrections:  ledger.corrections,
+    identities,
   });
   const startedAt    = Date.now();
 
@@ -132,7 +142,8 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
  * @param {string} truthsBlock
  * @param {string} stateBlock
  * @param {string} narration
- * @param {{ frame?: string, shipPosition?: string, corrections?: string }} [extra]
+ * @param {{ frame?: string, shipPosition?: string, corrections?: string,
+ *           identities?: string }} [extra]
  */
 export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {}) {
   return [
@@ -142,6 +153,10 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '',
     'SCENE FRAME (where the scene is set, who is present):',
     extra.frame?.trim() || '(none)',
+    '',
+    'RECORDED IDENTITIES (each character\'s established pronouns — prose that',
+    'misgenders one of them IS a contradiction):',
+    extra.identities?.trim() || '(none)',
     '',
     'ACTIVE SCENE TRUTHS:',
     truthsBlock?.trim() || '(none)',
@@ -163,7 +178,7 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '{',
     '  "contradictions": [',
     '    { "subject": string, "violated": string, "evidence": string,',
-    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction",',
+    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction" | "identity",',
     '      "confidence": "high" | "medium" | "low" }',
     '  ]',
     '}',
@@ -244,7 +259,39 @@ function normaliseConfidence(v) {
 
 function normaliseKind(v) {
   const s = String(v ?? '').toLowerCase();
-  return ['state', 'frame', 'ship', 'retraction'].includes(s) ? s : 'truth';
+  return ['state', 'frame', 'ship', 'retraction', 'identity'].includes(s) ? s : 'truth';
+}
+
+/**
+ * Compact "Name — pronouns" lines for every character whose pronouns are on
+ * record: all player characters (actor sheets) plus the connections matched
+ * into this scene. Character-detail audit 2026-07 — pronouns live outside
+ * every ledger tier, so without this section the audit could never flag a
+ * misgendering. Returns '' when nobody has recorded pronouns. Never throws.
+ * Exported for testing.
+ *
+ * @param {string[]} matchedEntityIds
+ * @returns {string}
+ */
+export function buildRecordedIdentitiesBlock(matchedEntityIds = []) {
+  const lines = [];
+  try {
+    for (const actor of getPlayerActors() ?? []) {
+      const snap = readCharacterSnapshot(actor);
+      if (snap?.name && snap?.pronouns) lines.push(`  ${snap.name} — ${snap.pronouns}`);
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | consistencyCheck: PC identity collect failed:`, err?.message ?? err);
+  }
+  try {
+    for (const id of matchedEntityIds ?? []) {
+      const rec = getConnection(id);
+      if (rec?.name && rec?.pronouns) lines.push(`  ${rec.name} — ${rec.pronouns}`);
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | consistencyCheck: NPC identity collect failed:`, err?.message ?? err);
+  }
+  return lines.length ? lines.join('\n') : '';
 }
 
 function stripFences(text) {

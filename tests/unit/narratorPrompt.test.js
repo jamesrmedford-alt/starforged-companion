@@ -1120,7 +1120,7 @@ describe('inciting_incident role description — structured proposal block (Clus
     expect(prompt).toMatch(/Suggested vow: <a short first-person vow statement> \(<rank>\)/);
     expect(prompt).toMatch(/Suggested clock: <a short clock label> \(<segments> segments\)/);
     expect(prompt).toMatch(/Immediate crisis: <a short danger label> \(<segments> segments\)/);
-    expect(prompt).toMatch(/Vow target: <Name> —/);
+    expect(prompt).toMatch(/Vow target: <Name> \(<pronouns/);
     // #248 Theme A: the vow clock is re-anchored on the vow's own deadline
     // (rare + coupled), not the opening scene's drama.
     expect(prompt).toMatch(/DEADLINE ON THE VOW ITSELF/);
@@ -1347,5 +1347,73 @@ describe('appendSidecarInstruction — dedup + retraction rules (2026-07)', () =
     const text = appendSidecarInstruction();
     expect(text).toMatch(/Do not re-emit a newTruth/);
     expect(text).toMatch(/Never re-assert a fact listed under CORRECTED/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Character-detail drift fixes (2026-07)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildPartyBlock — member pronouns (CHAR-PARTY-NAMES-ONLY)', () => {
+  it('renders pronouns and callsigns per member plus the binding rule', () => {
+    const out = buildPartyBlock({
+      members: [
+        { name: 'Kira Vex', pronouns: 'she/her', callsign: 'Ghost' },
+        { name: 'Dane Okoye', pronouns: 'he/him', callsign: '' },
+      ],
+      speaking: 'Kira Vex',
+    });
+    expect(out).toMatch(/Kira Vex \("Ghost", she\/her\) \(speaking this turn\)/);
+    expect(out).toMatch(/Dane Okoye \(he\/him\)/);
+    expect(out).toMatch(/recorded pronouns — use them/);
+    expect(out).toMatch(/never infer gender from a name/);
+  });
+
+  it('keeps working with the legacy names-only shape (no binding line)', () => {
+    const out = buildPartyBlock({ names: ['Kira', 'Dane'], speaking: 'Dane' });
+    expect(out).toMatch(/Kira, Dane \(speaking this turn\)/);
+    expect(out).not.toMatch(/recorded pronouns/);
+  });
+
+  it('omits the binding line when no member has pronouns', () => {
+    const out = buildPartyBlock({
+      members: [
+        { name: 'Kira', pronouns: '', callsign: '' },
+        { name: 'Dane', pronouns: '', callsign: '' },
+      ],
+    });
+    expect(out).toMatch(/Kira, Dane/);
+    expect(out).not.toMatch(/recorded pronouns/);
+  });
+});
+
+describe('perspective pronoun rules (CHAR-PERSPECTIVE-NO-PRONOUN-RULE)', () => {
+  it('third person makes recorded pronouns binding and forbids name-guessing', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),
+      makeNarratorSettings({ narrationPerspective: 'third_person' }),
+      null, '', { mode: 'paced_narrative' },
+    );
+    expect(prompt).toMatch(/recorded pronouns \(CHARACTER, PARTY, and ENTITIES IN\s*SCENE sections\) exactly as given/);
+    expect(prompt).toMatch(/do not infer gender from their name/);
+  });
+
+  it('second person covers NPC dialogue about the player character', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState(),
+      makeNarratorSettings({ narrationPerspective: 'second_person' }),
+      null, '', { mode: 'paced_narrative' },
+    );
+    expect(prompt).toMatch(/speak ABOUT the player character, use\s*the recorded pronouns/);
+  });
+});
+
+describe('sidecar identity anchor includes pronouns (CHAR-SIDECAR-NO-PRONOUN-ANCHOR)', () => {
+  it('requires the pronouns the prose used in the first-introduction anchor', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/the pronouns your prose used for them/);
+    expect(out).toMatch(/dockmaster at Bleakhold\s*\n?\s*.*Station \(he\/him\)/);
+    expect(out).toMatch(/regendered/);
   });
 });

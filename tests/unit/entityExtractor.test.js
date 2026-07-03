@@ -37,6 +37,7 @@ import {
   parseTierUpdateResponse,
   normalizeEntityName,
   buildConnectionSeedData,
+  normalisePronounSet,
   buildShipSeedData,
   isPlaceholderName,
   applyEntityRenames,
@@ -1633,5 +1634,67 @@ describe("routeEntityDrafts — connection seed backfill on auto-create", () => 
     // Verified by the unit test on buildConnectionSeedData above.
     expect(result.created).toEqual([]);
     fixture.restore();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pronoun capture through detection → seed (CHAR-NPC-PRONOUN-ROLL-BLIND)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("normalisePronounSet", () => {
+  it("accepts pronoun-shaped sets, lowercased", () => {
+    expect(normalisePronounSet("She/Her")).toBe("she/her");
+    expect(normalisePronounSet("they/them/theirs")).toBe("they/them/theirs");
+    expect(normalisePronounSet("ze/zir")).toBe("ze/zir");
+  });
+
+  it("rejects prose, guesses, and junk", () => {
+    expect(normalisePronounSet(null)).toBe("");
+    expect(normalisePronounSet("probably female")).toBe("");
+    expect(normalisePronounSet("she her")).toBe("");
+    expect(normalisePronounSet("a".repeat(30) + "/b")).toBe("");
+    expect(normalisePronounSet(42)).toBe("");
+  });
+});
+
+describe("buildConnectionSeedData — pronouns", () => {
+  it("carries sanitized detector pronouns into the seed", () => {
+    const seed = buildConnectionSeedData(
+      { name: "Captain Vessa", description: "Dockmaster.", pronouns: "She/Her" },
+      null,
+    );
+    expect(seed.pronouns).toBe("she/her");
+  });
+
+  it("drops non-pronoun values to empty (seedConnectionActor then rolls)", () => {
+    const seed = buildConnectionSeedData(
+      { name: "Vessa", description: "", pronouns: "female-presenting" },
+      null,
+    );
+    expect(seed.pronouns).toBe("");
+  });
+});
+
+describe("buildCombinedDetectionPrompt — pronoun capture field", () => {
+  it("asks for established pronouns and forbids name-guessing", () => {
+    const prompt = buildCombinedDetectionPrompt("Some narration.", "face_danger", "strong_hit", {});
+    expect(prompt).toMatch(/set "pronouns" to the pronoun set the narration/);
+    expect(prompt).toMatch(/do not\s*\n?guess from the name/);
+    expect(prompt).toMatch(/"pronouns": string\|null/);
+  });
+});
+
+describe("parseDetectionResponse — pronoun sanitization", () => {
+  it("keeps pronoun-shaped values and drops junk", () => {
+    const raw = JSON.stringify({
+      entities: [
+        { type: "connection", name: "Vessa", description: "d", pronouns: "She/Her", confidence: "high" },
+        { type: "connection", name: "Kael",  description: "d", pronouns: "unclear", confidence: "high" },
+      ],
+    });
+    const out = parseDetectionResponse(raw, {});
+    expect(out.entities[0].pronouns).toBe("she/her");
+    expect(out.entities[1].pronouns).toBe("");
   });
 });
