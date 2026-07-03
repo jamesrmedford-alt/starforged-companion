@@ -284,9 +284,29 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     attitudeAtTime: attitude,
   });
 
+  // Entity-record sync (FACTION-ATTITUDE-SPLIT-BRAIN / FACTION-DUAL-STORE,
+  // 2026-07): when a faction entity record exists, it is the canonical
+  // stance home — every WJ attitude write (detection transitions, !journal,
+  // auto-surface) maps onto record.relationship, and the WJ entry backlinks
+  // the record via entityId. The WJ entry remains the intelligence log.
+  // Fail-open: a sync failure never blocks the journal write.
+  let linkedEntityId = entry?.entityId ?? existing?.entityId ?? null;
+  try {
+    const { findFactionByName, applyAttitudeToFactionRecord } = await import("../entities/faction.js");
+    const hit = findFactionByName(cleanName, campaignState);
+    if (hit) {
+      linkedEntityId = linkedEntityId ?? hit.id;
+      if (attitude !== "unknown") {
+        await applyAttitudeToFactionRecord(cleanName, attitude, campaignState);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: faction record sync failed:`, err?.message ?? err);
+  }
+
   const data = {
     factionName:  cleanName,
-    entityId:     entry?.entityId ?? existing?.entityId ?? null,
+    entityId:     linkedEntityId,
     knownGoal:    entry?.knownGoal ?? existing?.knownGoal ?? "",
     attitude,
     encounters,
@@ -743,6 +763,18 @@ export function getFactionLandscape(_campaignState) {
 }
 
 /**
+ * A single WJ faction entry by name (case-insensitive page match), or null.
+ * Used by the draft-confirm path to reconcile pre-record intelligence onto
+ * a freshly created faction entity record (FACTION-DUAL-STORE, 2026-07).
+ */
+export function getFactionEntry(name) {
+  const cleanName = String(name ?? "").trim();
+  if (!cleanName) return null;
+  const journal = findJournal(JOURNAL_NAMES.factions);
+  return findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+}
+
+/**
  * Current-session unconfirmed lore — whatever the narrator established this
  * session that has not yet been promoted.
  */
@@ -985,17 +1017,32 @@ async function postContradictionNotification(transition) {
   const detail = escapeHtml(transition.summary ?? transition.newValue ?? "");
   const isFactContinuity = transition.entryType === "factContinuity";
 
-  const retractButton = isFactContinuity
+  // Kind-aware remedy (NARRCHK-REMEDY-MISMATCH, 2026-07): the correction
+  // dialog only fixes scene truths/state — for the other audit kinds the
+  // remedy lives elsewhere, so point the GM at the right tool instead of a
+  // dialog that cannot address the flag.
+  const kind = String(transition.kind ?? "truth").toLowerCase();
+  const REMEDY_HINTS = {
+    frame:      "The scene frame refreshes with the next narration — nudge with <code>@scene</code> (or <code>!scene start</code>) if it stays stale.",
+    ship:       "Ship position lives on the ship record — correct it with <code>!ship</code> or by moving the command-vehicle token.",
+    identity:   "Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).",
+    retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
+  };
+  const dialogApplies = isFactContinuity && !(kind in REMEDY_HINTS);
+
+  const remedy = dialogApplies
     ? `<div class="sf-wj-contradiction-actions">` +
       `<button class="sf-correct-fact-btn" data-action="openCorrectionDialog" aria-label="Retract the offending fact">` +
       `<i class="fas fa-list-check"></i> Retract the offending fact</button></div>`
-    : "";
+    : (isFactContinuity && REMEDY_HINTS[kind]
+        ? `<p class="sf-wj-contradiction-hint"><em>${REMEDY_HINTS[kind]}</em></p>`
+        : "");
 
   const html =
     `<div class="sf-wj-contradiction"><div class="sf-wj-contradiction-label">◈ Narrative Review</div>` +
     `<p>The narrator may have contradicted an established fact.</p>` +
     `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p>` +
-    retractButton +
+    remedy +
     `</div>`;
 
   try {

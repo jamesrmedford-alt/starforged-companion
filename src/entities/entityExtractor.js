@@ -56,6 +56,7 @@ import {
   getNarratorAssertedLore,
   getActiveThreats,
   getFactionLandscape,
+  getFactionEntry,
 } from "../world/worldJournal.js";
 import { passesSalience, getSalienceThreshold } from "../world/salience.js";
 
@@ -1575,6 +1576,34 @@ async function handleDraftConfirm(message, draftIndex) {
         firstLook:                 seedData.firstLook,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
+    } else if (draft.type === "faction") {
+      // Faction confirm (faction-lifecycle audit 2026-07): reconcile any
+      // pre-record WJ intelligence onto the new record (attitude → canonical
+      // stance, known goal, entityId backlink) and seed the Starforged
+      // faction oracles — previously factions were created bare (name +
+      // description) and frozen there (FACTION-DUAL-STORE /
+      // FACTION-RECORD-WRITE-ONCE).
+      const wjEntry = getFactionEntry(draft.name);
+      record = await creator({
+        name:                      draft.name,
+        description:               draft.description ?? "",
+        portraitSourceDescription: draft.description ?? "",
+      }, campaignState);
+      try {
+        const { findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } =
+          await import("./faction.js");
+        const hit = findFactionByName(draft.name, campaignState);
+        if (hit) {
+          await seedFactionRecord(hit.id);
+          if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
+            await applyAttitudeToFactionRecord(draft.name, wjEntry.attitude, campaignState);
+          }
+          // Backlink the WJ intelligence entry to the record (also re-syncs).
+          await recordFactionIntelligence(draft.name, { entityId: hit.id }, campaignState);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
+      }
     } else {
       record = await creator({
         name:                      draft.name,

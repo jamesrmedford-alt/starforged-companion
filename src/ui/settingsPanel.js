@@ -470,7 +470,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.WJ_CONTRADICTION_NOTIFY, {
     name:    'Contradiction Notifications',
-    hint:    'When enabled, the GM is notified via chat card when the narrator may have contradicted a confirmed lore entry.',
+    hint:    'When enabled, the GM is notified via chat card when the narrator may have contradicted a confirmed lore entry or an established scene fact. Note: turning this off silences the consistency check\'s review cards too — catches then land only in the Pacing Telemetry journal.',
     scope:   'world',
     config:  false,
     type:    Boolean,

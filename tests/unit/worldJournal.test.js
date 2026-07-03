@@ -743,3 +743,73 @@ describe("getConfirmedLore / getNarratorAssertedLore / getActiveThreats / getFac
     expect(result.map(l => l.locationName)).toEqual(["L2", "L1"]);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faction record sync + kind-aware review card (2026-07 fixes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("recordFactionIntelligence — entity record sync (FACTION-ATTITUDE-SPLIT-BRAIN)", () => {
+  function installFactionEntity(id, record) {
+    const page = {
+      flags: { [MODULE_ID]: { faction: { ...record } } },
+      setFlag: async (mod, key, val) => { page.flags[mod] = { ...(page.flags[mod] ?? {}), [key]: val }; },
+    };
+    const entry = { id, name: record.name, pages: { contents: [page] }, update: async () => {} };
+    // Register under a unique key so game.journal.get(id) finds it.
+    _journals.set(`entity-${id}`, entry);
+    return entry;
+  }
+
+  it("maps the attitude onto the record stance and backlinks entityId", async () => {
+    installFactionEntity("fac-1", { name: "Iron Syndicate", relationship: "unknown" });
+    const cs = campaign({ factionIds: ["fac-1"] });
+
+    const data = await recordFactionIntelligence(
+      "Iron Syndicate", { attitude: "hostile", summary: "Opened fire on the dock" }, cs,
+    );
+
+    expect(data.entityId).toBe("fac-1");
+    const record = _journals.get("entity-fac-1").pages.contents[0].flags[MODULE_ID].faction;
+    expect(record.relationship).toBe("antagonistic");
+  });
+
+  it("leaves the record untouched when no entity exists (WJ-only faction)", async () => {
+    const cs = campaign({ factionIds: [] });
+    const data = await recordFactionIntelligence(
+      "Ghost Cartel", { attitude: "allied", summary: "" }, cs,
+    );
+    expect(data.entityId).toBeNull();
+    expect(data.attitude).toBe("allied");
+  });
+});
+
+describe("postContradictionNotification — kind-aware remedies (NARRCHK-REMEDY-MISMATCH)", () => {
+  it("keeps the retract button for truth/state kinds", async () => {
+    global.ChatMessage._reset?.();
+    await applyStateTransition(
+      { entryType: "factContinuity", change: "contradicted", kind: "truth", name: "Vance", summary: "limp" },
+      campaign(),
+    );
+    const card = global.ChatMessage._created[0];
+    expect(card.content).toMatch(/openCorrectionDialog/);
+  });
+
+  it("replaces the button with a targeted hint for identity/ship/frame/retraction kinds", async () => {
+    for (const [kind, hint] of [
+      ["identity",   /character sheet \/ connection record/],
+      ["ship",       /!ship/],
+      ["frame",      /@scene/],
+      ["retraction", /already blocked at the ledger/],
+    ]) {
+      global.ChatMessage._reset?.();
+      await applyStateTransition(
+        { entryType: "factContinuity", change: "contradicted", kind, name: "X", summary: "y" },
+        campaign(),
+      );
+      const card = global.ChatMessage._created[0];
+      expect(card.content).not.toMatch(/openCorrectionDialog/);
+      expect(card.content).toMatch(hint);
+    }
+  });
+});

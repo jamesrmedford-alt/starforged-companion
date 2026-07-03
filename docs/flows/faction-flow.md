@@ -6,8 +6,8 @@ docs: `narrator-context-flow.md`, `character-detail-flow.md`,
 `connection-flow.md`.
 
 Prompted by: "I'd like the same treatment applied to faction lifecycle".
-Findings are tagged **WRONG-DETAIL** / **LOSE-PLOT** / **INVENT-RISK** as in
-the sibling audits. §3 is the open defect ledger (fixes await direction).
+All five audit defects were **fixed in the same cycle** ("Please address all
+identified issues") — §3 is the resolved ledger, §4 the dispositions.
 
 ## 1. The two faction stores (and a half)
 
@@ -25,9 +25,9 @@ records with the full Starforged shape — type/subtype, influence,
 dominion/leadership, `projects[]`, `rumors[]`, quirk, and
 `relationship ∈ antagonistic | apathetic | distrustful | does_business |
 open_alliance | temporary_alliance | warring | unknown`. Created by the
-sector generator and by draft-card confirmation (`ENTITY_CREATORS.faction →
-createFaction` with name + description only — no oracles rolled, unlike
-connections). Read by the relevance resolver → ENTITIES IN SCENE cards
+sector generator (pre-populated) and by draft-card confirmation, which since
+2026-07 reconciles any WJ intelligence and rolls the faction oracles
+(`seedFactionRecord`). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
 the entity panel (which can edit `relationship` manually).
 
@@ -36,82 +36,43 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
 
 ## 2. What the narrator actually sees
 
-- **Matched entity cards only.** A faction reaches the narrator system
-  prompt solely when the relevance resolver matches its name (or the frame
-  union carries it) — rendering the *entity record*: type, influence,
+- **Matched entity cards** render the full record (type, influence,
   `relationship` stance, latest project, quirk, description, generative-tier
-  details.
-- **The WJ faction landscape reaches the narrator nowhere.** Its only
-  consumers are the assembler's FACTION LANDSCAPE packet section — see §3
-  defect 1 — and `describeWorldJournalState`, which feeds current attitudes
-  to the *detection Haiku* so it can classify transitions. The detector
-  knows the political landscape; the narrator does not.
+  details) when the relevance resolver matches the faction's name — and
+  since 2026-07 the [4e] landscape carries every faction's stance line on
+  every call regardless of matching.
+- **The faction landscape reaches every narrator call** ([4e], 2026-07):
+  `mergeFactionLandscape` renders entity records first (canonical stance +
+  type + latest project) with WJ-only factions appended (attitude + known
+  goal), deduped by name and capped. ACTIVE THREATS [4d] and ESTABLISHED
+  LORE [4f] ride the same seam. `describeWorldJournalState` still feeds the
+  detection Haiku, which now classifies against the same map the narrator
+  writes with.
 - **Generative tier works.** The paced/move tier-update pass is
   type-agnostic (`runNarrationTierUpdate` maps matched ids + types), so a
   matched faction accrues salience-gated development details like any other
   entity — the one narrative write the record receives.
 
-## 3. Verified defects (open — awaiting direction; see `known-issues.md`)
+## 3. Audit defects — all resolved (v1.7.30 cycle)
 
-1. **FACTION-PACKET-DEAD** (LOSE-PLOT — root cause, wider than factions):
-   `assembleContextPacket` builds a 17-section packet — FACTION LANDSCAPE,
-   immediate/looming threats, confirmed + asserted WJ lore, recent
-   discoveries, session notes, lore recap, RECENT ORACLES, progress tracks,
-   character state — and every callsite (move pipeline `index.js:1666`,
-   burn-momentum re-narration, improve-result re-narration) passes it to
-   `narrateResolution(resolution, contextPacket, …)` whose `contextPacket`
-   parameter is **never read**. The interpreter doesn't take it either
-   (`interpretMove` assembles its own inputs). The packet subsystem is dead
-   on every live path — a Loremaster-era conduit orphaned when narration
-   moved to `buildNarratorSystemPrompt`, surviving because unit tests
-   exercise the builder but nothing tests the composition (the exact
-   CHAR-PC-BLOCK-STARVED failure shape). Consequence for factions: **the
-   living political state (WJ attitudes) is invisible to the narrator**, as
-   are WJ threats and non-migrated lore.
-2. **FACTION-DUAL-STORE** (WRONG-DETAIL): a narrator-named faction is
-   WJ-surfaced immediately (good — durable home) *and* queued as a draft;
-   confirming the draft creates the entity record with
-   `relationship: "unknown"` — and nothing merges or retires the WJ entry.
-   Two records for the same faction, two vocabularies (`attitude` 4-value vs
-   `relationship` 8-value), no reconciliation, free to diverge.
-3. **FACTION-ATTITUDE-SPLIT-BRAIN** (WRONG-DETAIL): `attitudeShift`
-   transitions write the WJ store unconditionally — the transitions loop in
-   `routeWorldJournalResults` has no `entityExistsForName` gate (the
-   new-faction loop does) — while **no narrative path ever updates
-   `record.relationship`** (`updateFaction` has zero callers outside the
-   file). Net: the story's attitude changes land in the store the narrator
-   can't see (defect 1), and the store the narrator *can* see (the entity
-   card) shows a stance frozen at confirm time. The narrator can court a
-   faction the fiction says is now `warring`.
-4. **FACTION-RECORD-WRITE-ONCE** (LOSE-PLOT): `updateFaction`, `addRumor`,
-   `setProject`, and `setSceneRelevant` are exported and never called;
-   `active` is never flipped and `listFactions` doesn't filter on it
-   anyway; draft-confirmed factions skip oracle seeding entirely (name +
-   description only — no type/influence/quirk, unlike connections'
-   `seedConnectionActor`). Beyond the generative tier and manual panel
-   edits, a faction record is frozen at creation: projects and rumors are
-   dead fields the narrator sees as eternally current.
-5. **FACTION-DETECTOR-ONLY-CONTEXT** (INVENT-RISK): the detection Haiku
-   receives the WJ attitude landscape (`describeWorldJournalState`) but the
-   narrator generating the prose does not — so transitions are *classified*
-   against a political map the *author* of the prose never saw. The
-   narrator can invent a faction stance that contradicts the recorded
-   attitude, and the pipeline's answer is to record the contradiction as a
-   new shift rather than prevent it.
+| Code | Class | Defect → fix |
+|---|---|---|
+| FACTION-PACKET-DEAD | LOSE-PLOT | The assembler packet was built at three callsites and never read → **retired from all live paths** (index Step 8, burn-momentum, improve-result — whose `if (!packet) return` guard had silently aborted re-narration on assembly failure). The load-bearing sections now flow through `buildNarratorExtras`: **[4d] ACTIVE THREATS** (top 4), **[4e] FACTION LANDSCAPE** (`mergeFactionLandscape` — records canonical, WJ-only appended), **[4f] ESTABLISHED LORE** (recent 5, clipped), gated on the existing `threatsInContext` / `factionLandscapeInContext` / `loreInContext` settings. The assembler module is retained for reference/tests (header marked; deletion needs explicit approval) |
+| FACTION-DUAL-STORE | WRONG-DETAIL | Two unreconciled records per faction → draft-confirm now reconciles: the new entity record inherits the WJ entry's attitude (mapped) and the WJ entry backlinks the record via `entityId`; the WJ entry remains the intelligence log under the record's canon |
+| FACTION-ATTITUDE-SPLIT-BRAIN | WRONG-DETAIL | Attitude shifts wrote only the WJ store → `recordFactionIntelligence` itself syncs every attitude write (detection transitions, `!journal faction`, auto-surface) onto `record.relationship` via `ATTITUDE_TO_RELATIONSHIP` (hostile→antagonistic, neutral→apathetic, allied→open_alliance; unknown never overwrites). The record is the canonical stance home — decisions.md |
+| FACTION-RECORD-WRITE-ONCE | LOSE-PLOT | Records frozen at creation → `seedFactionRecord` rolls the Starforged faction oracles (type + per-type subtype, influence, quirk, first project) on draft-confirm, idempotent via the new `seeded` flag; the attitude sync above gives the record its narrative write path; generative-tier accrual unchanged. `addRumor`/`setProject` remain panel/API affordances |
+| FACTION-DETECTOR-ONLY-CONTEXT | INVENT-RISK | The narrator never saw the landscape the detector classified against → resolved by [4e]: the narrator now reads the same political map, with a stances-are-established guard sentence |
 
-## 4. Design-level exposure
+## 4. Design-level exposure — dispositions (2026-07)
 
-- **Faction stance has no single source of truth by design history**, not
-  decision: WJ `attitude` (narrative intelligence) and record
-  `relationship` (Starforged stance) genuinely mean different things, but
-  nothing documents which wins, maps one to the other, or updates either
-  from play. Any fix should pick a canonical home and mirror (the
-  connection record ↔ bond Item pattern).
-- **`sector.faction` is a third, name-only mention** — fine as flavor, but
-  if the control faction gains a record/WJ entry the three are never
-  linked.
-- **No faction lifecycle end**: no dissolution/absorption affordance
-  (`active` dormant). Low urgency; recorded for completeness.
+- **Faction stance now has a canonical home**: the entity record's
+  `relationship`, with the WJ `attitude` as the coarse intelligence layer
+  that maps onto it on every write (decisions.md → "Faction stance: the
+  entity record is canonical"). `sector.faction` stays a name-only flavor
+  mention (unchanged).
+- **No dissolution lifecycle — reaffirmed.** `active` stays dormant until a
+  real need appears; the landscape block naturally rotates to recently
+  updated factions.
 
 ## 5. What held up under audit
 

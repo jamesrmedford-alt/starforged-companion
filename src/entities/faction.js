@@ -59,6 +59,10 @@ export const FactionSchema = {
   canonicalLocked: false,
   generativeTier:  [],
 
+  // Oracle seeding ran (draft-confirm path; sector-generator factions arrive
+  // pre-populated and never need it). See seedFactionRecord.
+  seeded: false,
+
   createdAt: null,
   updatedAt: null,
 };
@@ -108,6 +112,172 @@ export function getFaction(journalEntryId) {
   } catch {
     return null;
   }
+}
+
+/**
+ * WJ attitude → record relationship mapping (faction-lifecycle audit
+ * 2026-07). The entity record is the CANONICAL stance home once it exists
+ * (decisions.md → "Faction stance: the entity record is canonical"); the
+ * World Journal's coarse attitude vocabulary maps onto the nearest
+ * Starforged stance. "unknown" never overwrites an established stance.
+ */
+export const ATTITUDE_TO_RELATIONSHIP = {
+  hostile: "antagonistic",
+  neutral: "apathetic",
+  allied:  "open_alliance",
+};
+
+/**
+ * Find a faction entity record by name (case-insensitive, trimmed).
+ * Returns `{ id, faction }` — the journal host id plus the record — or null.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {{ id: string, faction: Object } | null}
+ */
+export function findFactionByName(name, campaignState) {
+  const wanted = String(name ?? "").trim().toLowerCase();
+  if (!wanted) return null;
+  for (const id of campaignState?.factionIds ?? []) {
+    const faction = getFaction(id);
+    if (faction && String(faction.name ?? "").trim().toLowerCase() === wanted) {
+      return { id, faction };
+    }
+  }
+  return null;
+}
+
+/**
+ * Sync a narrative attitude change onto the faction entity record
+ * (FACTION-ATTITUDE-SPLIT-BRAIN fix): maps the WJ attitude to a Starforged
+ * stance and writes `relationship` when it differs. No-ops for unmapped /
+ * unknown attitudes or when no record exists. Never throws.
+ *
+ * @param {string} name
+ * @param {string} attitude — WJ vocabulary (hostile | neutral | allied | unknown)
+ * @param {Object} campaignState
+ * @returns {Promise<Object|null>} the updated record, or null when nothing changed
+ */
+export async function applyAttitudeToFactionRecord(name, attitude, campaignState) {
+  try {
+    const mapped = ATTITUDE_TO_RELATIONSHIP[String(attitude ?? "").toLowerCase()];
+    if (!mapped) return null;
+    const hit = findFactionByName(name, campaignState);
+    if (!hit) return null;
+    if (hit.faction.relationship === mapped) return null;
+    const updated = await updateFaction(hit.id, { relationship: mapped });
+    console.debug?.(
+      `${MODULE_ID} | faction: attitude "${attitude}" → record stance "${mapped}" for ${name}`,
+    );
+    return updated;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | faction: attitude→record sync failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * Seed a draft-confirmed faction record with the Starforged faction oracles
+ * (FACTION-RECORD-WRITE-ONCE fix — connections get seedConnectionActor;
+ * factions got name + description only). Fills type, subtype (per type),
+ * influence, quirk, and a first project, preserving anything already set.
+ * Idempotent via the `seeded` flag. Never throws.
+ *
+ * @param {string} journalEntryId — faction host id
+ * @returns {Promise<Object|null>} the updated record, or null
+ */
+export async function seedFactionRecord(journalEntryId) {
+  try {
+    const faction = getFaction(journalEntryId);
+    if (!faction || faction.seeded) return faction ?? null;
+
+    const { rollOracle } = await import("../oracles/roller.js");
+    const roll = (key) => {
+      try { return rollOracle(key)?.result ?? ""; } catch { return ""; }
+    };
+
+    const type = faction.type || roll("faction_type");
+    let subtype = faction.subtype;
+    let dominion = faction.dominion;
+    let leadership = faction.leadership;
+    if (!subtype) {
+      const t = String(type).toLowerCase();
+      if (t.includes("dominion")) {
+        dominion   = dominion   || roll("faction_dominion");
+        leadership = leadership || roll("faction_dominion_leadership");
+        subtype    = dominion;
+      } else if (t.includes("guild")) {
+        subtype = roll("faction_guild");
+      } else if (t.includes("fringe")) {
+        subtype = roll("faction_fringe");
+      }
+    }
+
+    const updates = {
+      type,
+      subtype:    subtype ?? "",
+      dominion:   dominion ?? "",
+      leadership: leadership ?? "",
+      influence:  faction.influence || roll("faction_influence"),
+      quirk:      faction.quirk     || roll("faction_quirks"),
+      projects:   faction.projects?.length ? faction.projects : [roll("faction_projects")].filter(Boolean),
+      seeded:     true,
+    };
+    return await updateFaction(journalEntryId, updates);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | faction: oracle seeding failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * Merge the canonical faction picture for narrator context
+ * (FACTION-PACKET-DEAD / FACTION-DUAL-STORE fix): entity records win for
+ * record-backed factions (their `relationship` is the canonical stance);
+ * WJ-only factions contribute their attitude + known goal. Deduped by name,
+ * capped. Pure — exported for unit testing.
+ *
+ * @param {Array<Object>} records   — faction entity records (listFactions)
+ * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape)
+ * @param {number} [cap=4]
+ * @returns {Array<{ name: string, stance: string, detail: string }>}
+ */
+export function mergeFactionLandscape(records, wjEntries, cap = 4) {
+  const out = [];
+  const seen = new Set();
+
+  for (const f of records ?? []) {
+    if (!f?.name) continue;
+    const key = f.name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const latestProject = f.projects?.[f.projects.length - 1];
+    out.push({
+      name:   f.name,
+      stance: (f.relationship && f.relationship !== "unknown")
+        ? f.relationship.replace(/_/g, " ")
+        : "",
+      detail: [
+        f.subtype ? `${f.type}: ${f.subtype}` : f.type,
+        latestProject ? `project: ${latestProject}` : "",
+      ].filter(Boolean).join(" · "),
+    });
+  }
+
+  for (const e of wjEntries ?? []) {
+    const name = e?.factionName ?? "";
+    if (!name) continue;
+    const key = name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      name,
+      stance: (e.attitude && e.attitude !== "unknown") ? e.attitude : "",
+      detail: e.knownGoal ? `goal: ${e.knownGoal}` : "",
+    });
+  }
+
+  return out.slice(0, Math.max(0, cap));
 }
 
 export function listFactions(campaignState) {
