@@ -10,23 +10,24 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Vault & derelict (site) audit findings (2026-07) — OPEN, awaiting direction
+### Vault & derelict (site) audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
-Surfaced by the site creation/exploration audit (full trace:
-`docs/flows/site-flow.md`). Verified against source; none fixed yet.
-Creation and discovery are solid; the gaps are all on the exploration side.
+Surfaced by the site creation/exploration audit; all six defects were fixed
+in the same cycle ("Please address all items"). Post-fix behaviour:
+`docs/flows/site-flow.md`. Creation and discovery were already solid; the
+fixes are all on the exploration side.
 
-| Code | Class | Defect |
+| Code | Class | Defect → fix |
 |---|---|---|
-| SITE-ZONE-TABLES-DEAD | LOSE-CONTENT | `tables/derelicts.js` ships 20 canonical tables; the roller registers 7 — the whole derelict zone-crawl suite (ACCESS area/feature/peril/opportunity + seven per-zone AREA tables) is unreachable from any affordance |
-| SITE-WAYPOINT-BLIND | WRONG-DETAIL | The discovery card says "Explore a Waypoint to move through its zones," but `explore_a_waypoint` seeds are site-agnostic; vault interior tables are registered yet rolled only once at generation — the exploration loop never rolls fresh interior/zone results |
-| SITE-ANCHOR-ABSENT | LOSE-PLOT | `formatActiveSector` lists settlements only — a discovered site never joins the standing sector picture, so "the derelict" in prose matches nothing and the narrator can contradict prep it was never shown |
-| SITE-TYPE-TABLE-MISMATCH | canon fidelity | `derelict_type` always uses the deep-space weights; `TYPE_PLANETSIDE`/`TYPE_ORBITAL` exist unregistered — planetside derelicts should skew settlement |
-| SITE-DISCOVERY-CARD-GENERIC | LOSE-PAYOFF | The Site Discovered card omits the rolled exterior (condition, scale/form, outer first look) — the payoff moment surfaces none of the prep |
-| SITE-NO-COMPLETION | minor | `status: "cleared"` is documented but never set; the lifecycle stops at `visited` (stamped on reveal, pre-boarding) with no way to close a site |
+| SITE-ZONE-TABLES-DEAD | LOSE-CONTENT | 13 dead derelict tables registered (type-by-location + Access suite + seven zone AREA tables) — reachable via `!oracle` and the site-aware waypoint seeds |
+| SITE-WAYPOINT-BLIND | WRONG-DETAIL | `buildOracleSeeds(currentSite)` rolls the vault interior / derelict Access tables when the current location is a site; the pipeline passes `getCurrentSiteKind(campaignState)` |
+| SITE-ANCHOR-ABSENT | LOSE-PLOT | Discovered sites render a "Charted sites" block in the ACTIVE SECTOR anchor (type + status) |
+| SITE-TYPE-TABLE-MISMATCH | canon fidelity | `derelictTypeTableFor(location)` routes the type roll to the planetside/orbital/deep-space table |
+| SITE-DISCOVERY-CARD-GENERIC | LOSE-PAYOFF | The Site Discovered card now surfaces the location record's first look |
+| SITE-NO-COMPLETION | minor | `clearSectorSite` + `!clear-site` close the unexplored → visited → cleared lifecycle |
 
-Design observations: interior prep bakes into one description field (no
-staged outer/inner reveal); no zone-position state — see the flow doc §4.
+Dispositions: interior-in-one-field and no-zone-position both reaffirmed;
+zone AREA tables reachable by `!oracle` — see the flow doc §4.
 
 ### Narrator-consistency audit findings (2026-07) — all fixed in the v1.7.30 cycle
 

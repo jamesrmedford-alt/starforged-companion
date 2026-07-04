@@ -169,6 +169,7 @@ import {
 import { resolveRelevance, collectAllEntities } from "./context/relevanceResolver.js";
 import { suppressScene } from "./context/safety.js";
 import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
+import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import {
@@ -762,6 +763,7 @@ export function registerChatHook() {
     if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
     if (isIncitingIncidentCommand(message)) { await handleIncitingIncidentCommand(message); return; }
     if (isRevealSiteCommand(message))   { await handleRevealSiteCommand(message); return; }
+    if (isClearSiteCommand(message))    { await handleClearSiteCommand(message); return; }
 
     // !clock command — create / advance / list campaign and tension clocks
     if (isClockCommand(message)) {
@@ -1060,7 +1062,11 @@ export function registerChatHook() {
         (interpretation.moveId === "take_decisive_action" && tickInfo?.combatState)
           ? tickInfo.combatState
           : combatPosition;
-      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition });
+      // Site-aware waypoint seeds (SITE-WAYPOINT-BLIND): when the crew's
+      // current location is a vault or derelict, explore_a_waypoint rolls
+      // that site's canonical interior tables.
+      const currentSite = getCurrentSiteKind(campaignState);
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite });
 
       // Fact-continuity §20 — when a travel move with ARRIVAL semantics
       // resolves to a non-miss, the ship arrived at the destination the
@@ -2363,6 +2369,41 @@ export function isRevealSiteCommand(message) {
   const text = message.content?.trim() ?? "";
   if (message.flags?.[MODULE_ID]?.siteDiscovered) return false;
   return /^!reveal-site(\s|$)/i.test(text);
+}
+
+/**
+ * !clear-site <name> — mark a discovered site fully explored
+ * (unexplored → visited → cleared; SITE-NO-COMPLETION fix, 2026-07).
+ * GM-only, mirrors !reveal-site.
+ */
+export function isClearSiteCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (message.flags?.[MODULE_ID]) return false;
+  return /^!clear-site(\s|$)/i.test(text);
+}
+
+async function handleClearSiteCommand(message) {
+  if (message?.author?.id && message.author.id !== game.user?.id) return;
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Clearing a site is available to GMs only.");
+    return;
+  }
+  const text  = message.content?.trim() ?? "";
+  const label = text.replace(/^!clear-site\s*/i, "").trim();
+  try {
+    const { clearSectorSite } = await import("./sectors/siteDiscovery.js");
+    const cleared = await clearSectorSite(label || null);
+    if (cleared) {
+      await ChatMessage.create({
+        content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${cleared.site.type === "vault" ? "vault" : "derelict"} is fully explored. Its secrets are yours — or spent.</p></div>`,
+        flags:   { [MODULE_ID]: { siteCleared: true, siteId: cleared.site.id } },
+      });
+    } else {
+      ui.notifications?.info("No matching discovered site to clear.");
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | clear-site command failed:`, err?.message ?? err);
+  }
 }
 
 /**

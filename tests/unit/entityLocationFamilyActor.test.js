@@ -175,3 +175,29 @@ describe("Three location-typeKey actors don't shadow each other", () => {
     expect(getLocation(settlementId)).toBeNull();
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getCurrentSiteKind — site-aware waypoint helper (SITE-WAYPOINT-BLIND)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { getCurrentSiteKind } from "../../src/entities/location.js";
+
+describe("getCurrentSiteKind", () => {
+  it("returns kind/name/status when the current location is a vault or derelict", async () => {
+    const state = { locationIds: [], sectors: [{ id: "sec-1", name: "S" }], activeSectorId: "sec-1" };
+    await createLocation({ name: "Precursor Vault — Monolith", type: "vault", status: "visited" }, state);
+    const id = state.locationIds[0];
+    const cs = { currentLocationId: id, currentLocationType: "location" };
+    expect(getCurrentSiteKind(cs)).toEqual({ kind: "vault", name: "Precursor Vault — Monolith", status: "visited" });
+  });
+
+  it("returns null for a non-site location and when nothing is current", async () => {
+    const state = { locationIds: [], sectors: [{ id: "sec-1", name: "S" }], activeSectorId: "sec-1" };
+    await createLocation({ name: "A Ruin", type: "ruin" }, state);
+    const id = state.locationIds[0];
+    expect(getCurrentSiteKind({ currentLocationId: id, currentLocationType: "location" })).toBeNull();
+    expect(getCurrentSiteKind({ currentLocationId: null, currentLocationType: null })).toBeNull();
+    expect(getCurrentSiteKind({ currentLocationId: id, currentLocationType: "settlement" })).toBeNull();
+  });
+});

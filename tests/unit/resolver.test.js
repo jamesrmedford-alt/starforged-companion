@@ -1503,3 +1503,39 @@ describe("forsake_your_vow consequences", () => {
     expect(mapConsequences("swear_an_iron_vow", "strong_hit", false).forsakeVow).toBe(false);
   });
 });
+
+
+describe("explore_a_waypoint — site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026-07)", () => {
+  beforeEach(() => {
+    rollOracle.mockReset();
+    // Echo each table id as its result so seed lines are populated + assertable.
+    rollOracle.mockImplementation((tableId) => ({ result: `roll:${tableId}` }));
+  });
+
+  it("seeds vault interior tables when the current site is a vault", () => {
+    const seeds = buildOracleSeeds("explore_a_waypoint", "weak_hit", false, { kind: "vault", name: "Precursor Vault — Monolith" });
+    expect(seeds.results.some(r => /Inside the vault — Interior Feature:/.test(r))).toBe(true);
+    expect(seeds.context).toMatch(/inside Precursor Vault — Monolith/);
+  });
+
+  it("seeds vault peril on a miss and opportunity on a strong-hit match", () => {
+    const miss = buildOracleSeeds("explore_a_waypoint", "miss", false, { kind: "vault", name: "V" });
+    expect(miss.results.some(r => /Interior Peril:/.test(r))).toBe(true);
+    const shm = buildOracleSeeds("explore_a_waypoint", "strong_hit", true, { kind: "vault", name: "V" });
+    expect(shm.results.some(r => /Interior Opportunity:/.test(r))).toBe(true);
+    expect(shm.results.some(r => /Make a Discovery:/.test(r))).toBe(true); // generic chain preserved
+  });
+
+  it("seeds the derelict Access suite when the current site is a derelict", () => {
+    const seeds = buildOracleSeeds("explore_a_waypoint", "strong_hit", false, { kind: "derelict", name: "Derelict Starship" });
+    expect(seeds.results.some(r => /Inside the derelict — Area:/.test(r))).toBe(true);
+    expect(seeds.results.some(r => /Inside the derelict — Feature:/.test(r))).toBe(true);
+    const miss = buildOracleSeeds("explore_a_waypoint", "miss", false, { kind: "derelict", name: "D" });
+    expect(miss.results.some(r => /Inside the derelict — Peril:/.test(r))).toBe(true);
+  });
+
+  it("stays generic outside a site", () => {
+    const seeds = buildOracleSeeds("explore_a_waypoint", "weak_hit", false, null);
+    expect((seeds?.results ?? []).some(r => /Inside the/.test(r))).toBe(false);
+  });
+});

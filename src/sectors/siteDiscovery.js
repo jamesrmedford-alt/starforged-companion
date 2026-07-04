@@ -15,7 +15,7 @@
 
 import { selectSiteForReveal } from "./precursorSites.js";
 import { restyleSiteOnScene }  from "./sceneBuilder.js";
-import { updateLocation }      from "../entities/location.js";
+import { updateLocation, getLocation } from "../entities/location.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -85,12 +85,28 @@ export async function postSiteDiscoveryCard(result) {
   const site = result?.site;
   if (!site) return;
   const kind = site.type === "vault" ? "precursor vault" : "derelict";
+
+  // Surface the rolled exterior at the payoff moment (SITE-DISCOVERY-CARD-
+  // GENERIC fix, 2026-07): the map discovery record is deliberately light,
+  // so read the location Actor's record for the first look. Fail-open — a
+  // missing record just renders the original generic line.
+  let firstLookLine = "";
+  try {
+    const record = site.actorId ? getLocation(site.actorId) : null;
+    if (record?.firstLook) {
+      firstLookLine = `<p><em>${escapeSiteHtml(record.firstLook)}</em></p>`;
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | postSiteDiscoveryCard: record read failed:`, err?.message ?? err);
+  }
+
   const content =
     `<div class="starforged-companion-card">` +
     `<h3>◈ Site Discovered — ${site.name}</h3>` +
     `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
     `It is now charted on the sector map — undertake an expedition there, or ` +
     `Explore a Waypoint to move through its zones.</p>` +
+    firstLookLine +
     `</div>`;
   try {
     await ChatMessage.create({
@@ -100,4 +116,50 @@ export async function postSiteDiscoveryCard(result) {
   } catch (err) {
     console.warn(`${MODULE_ID} | postSiteDiscoveryCard failed:`, err?.message ?? err);
   }
+}
+
+/**
+ * Mark a DISCOVERED site fully explored (SITE-NO-COMPLETION fix, 2026-07):
+ * sets the location Actor's status to "cleared" and stamps the discovery
+ * record, closing the unexplored → visited → cleared lifecycle the schema
+ * always documented. Same matching ladder as revealSectorSite, over
+ * discovered sites that aren't already cleared. GM-gated by the caller.
+ *
+ * @param {string|null} label
+ * @param {Object} [opts] — same injection seams as revealSectorSite
+ * @returns {Promise<{sector:Object, site:Object}|null>}
+ */
+export async function clearSectorSite(label, opts = {}) {
+  const getState  = opts.getState  ?? (() => game.settings.get(MODULE_ID, "campaignState"));
+  const setState  = opts.setState  ?? (s => game.settings.set(MODULE_ID, "campaignState", s));
+  const updateLoc = opts.updateLoc ?? updateLocation;
+
+  const state = getState();
+  for (const sector of state?.sectors ?? []) {
+    const discoveries = sector.mapData?.discoveries ?? [];
+    const eligible = discoveries.filter(d => d && d.discovered && !d.cleared);
+    // Reuse the reveal ladder by presenting eligible sites as "undiscovered"
+    // candidates (the ladder filters on !discovered).
+    const match = selectSiteForReveal(
+      eligible.map(d => ({ ...d, discovered: false })),
+      label,
+    );
+    if (!match) continue;
+    const record = discoveries.find(d => d && d.id === match.id);
+    if (!record) continue;
+
+    record.cleared = true;
+    if (record.actorId) {
+      try { await updateLoc(record.actorId, { status: "cleared" }); }
+      catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
+    }
+    await setState(state);
+    return { sector, site: record };
+  }
+  return null;
+}
+
+function escapeSiteHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

@@ -136,6 +136,23 @@ export const ORACLE_TABLES = {
   derelict_inner_look:   { name: "Derelict Inner First Look", table: DERELICTS.INNER_FIRST_LOOK, category: "derelicts" },
   derelict_zone_starship:   { name: "Derelict Zone (Starship)",   table: DERELICTS.ZONE_STARSHIP,   category: "derelicts" },
   derelict_zone_settlement: { name: "Derelict Zone (Settlement)", table: DERELICTS.ZONE_SETTLEMENT, category: "derelicts" },
+  // Location-specific type tables + the zone-crawl suite (SITE-ZONE-TABLES-DEAD
+  // fix, 2026-07): these shipped in tables/derelicts.js but were never
+  // registered, so the rulebook's in-derelict exploration loop (Area →
+  // Feature → Peril/Opportunity) was unreachable from every affordance.
+  derelict_type_planetside: { name: "Derelict Type (Planetside)", table: DERELICTS.TYPE_PLANETSIDE, category: "derelicts" },
+  derelict_type_orbital:    { name: "Derelict Type (Orbital)",    table: DERELICTS.TYPE_ORBITAL,    category: "derelicts" },
+  derelict_access_area:        { name: "Derelict Access Area",        table: DERELICTS.ACCESS_AREA,        category: "derelicts" },
+  derelict_access_feature:     { name: "Derelict Access Feature",     table: DERELICTS.ACCESS_FEATURE,     category: "derelicts" },
+  derelict_access_peril:       { name: "Derelict Access Peril",       table: DERELICTS.ACCESS_PERIL,       category: "derelicts" },
+  derelict_access_opportunity: { name: "Derelict Access Opportunity", table: DERELICTS.ACCESS_OPPORTUNITY, category: "derelicts" },
+  derelict_area_community:   { name: "Derelict Community Area",   table: DERELICTS.COMMUNITY_AREA,   category: "derelicts" },
+  derelict_area_engineering: { name: "Derelict Engineering Area", table: DERELICTS.ENGINEERING_AREA, category: "derelicts" },
+  derelict_area_living:      { name: "Derelict Living Area",      table: DERELICTS.LIVING_AREA,      category: "derelicts" },
+  derelict_area_medical:     { name: "Derelict Medical Area",     table: DERELICTS.MEDICAL_AREA,     category: "derelicts" },
+  derelict_area_operations:  { name: "Derelict Operations Area",  table: DERELICTS.OPERATIONS_AREA,  category: "derelicts" },
+  derelict_area_production:  { name: "Derelict Production Area",  table: DERELICTS.PRODUCTION_AREA,  category: "derelicts" },
+  derelict_area_research:    { name: "Derelict Research Area",    table: DERELICTS.RESEARCH_AREA,    category: "derelicts" },
 
   // Precursor Vaults
   vault_location:    { name: "Vault Location",       table: VAULTS.LOCATION,       category: "vaults" },

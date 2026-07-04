@@ -6,8 +6,9 @@ explored — verified against source (v1.7.30 cycle). Sibling docs:
 `narrator-context-flow.md` (the context surfaces site details ride on).
 
 Prompted by: "Can you review the Vault and Derelict creation and exploration
-flow?" §3 is the open defect ledger (fixes await direction). Tags:
-**LOSE-CONTENT** (shipped content unreachable), **WRONG-DETAIL**,
+flow?" All six audit defects were **fixed in the same cycle** ("Please
+address all items") — §3 is the resolved ledger, §4 the dispositions.
+Tags: **LOSE-CONTENT** (shipped content unreachable), **WRONG-DETAIL**,
 **LOSE-PLOT**, **LOSE-PAYOFF**.
 
 ## 1. Creation — sector generation only
@@ -22,7 +23,7 @@ spread:
 - **Vault**: location, scale, form, shape, material, outer + inner first
   look, purpose, interior feature / peril / opportunity — name
   `Precursor Vault — <Form>`.
-- **Derelict**: location, type, condition, outer + inner first look, one
+- **Derelict**: location, then the location-appropriate type (planetside/orbital/deep-space table), condition, outer + inner first look, one
   notable zone (starship vs settlement zone table by rolled type) — name
   from the type, Roman-numeral deduped within the sector.
 
@@ -53,64 +54,27 @@ restyles the scene pin + passage to charted appearance, persists, and posts
 the **◈ Site Discovered** card ("undertake an expedition there, or Explore
 a Waypoint to move through its zones").
 
-## 3. Verified defects (open — awaiting direction; see `known-issues.md`)
+## 3. Audit defects — all resolved (v1.7.30 cycle)
 
-1. **SITE-ZONE-TABLES-DEAD** (LOSE-CONTENT): `tables/derelicts.js` ships
-   **20** canonical tables; the roller registers **7**. The entire derelict
-   zone-crawl suite — `ACCESS_AREA` / `ACCESS_FEATURE` / `ACCESS_PERIL` /
-   `ACCESS_OPPORTUNITY` plus the seven per-zone AREA tables (community,
-   engineering, living, medical, operations, production, research) — is
-   unreachable from every affordance: no oracle id, no `!oracle` reach, no
-   waypoint button, no exploration seed. The rulebook's derelict exploration
-   loop (pick a zone → roll Area → Feature → Peril/Opportunity on trouble)
-   has its data in-tree and dead.
-2. **SITE-WAYPOINT-BLIND** (WRONG-DETAIL): the discovery card tells the
-   player to "Explore a Waypoint to move through its zones," but
-   `explore_a_waypoint`'s oracle seeds are site-agnostic — action + theme,
-   plus Make a Discovery / Confront Chaos on matches. Exploring INSIDE a
-   derelict or vault never rolls the site's zone/interior tables and never
-   tells the narrator what kind of site the waypoint belongs to. The vault
-   interior feature/peril/opportunity tables ARE registered — but they are
-   rolled exactly once at generation as static prep; the exploration loop
-   (rulebook: roll fresh interior results per area explored) never touches
-   them again.
-3. **SITE-ANCHOR-ABSENT** (LOSE-PLOT): `formatActiveSector` lists
-   settlements only. A **discovered** site never joins the standing sector
-   picture — the narrator learns it exists only when the player types its
-   exact name (lexical relevance) or after arrival sets it current. Between
-   discovery and arrival, prose about "the derelict" matches nothing
-   ("Derelict Starship II" ≠ "the derelict"), so the narrator can invent
-   details that contradict the rolled prep it was never shown.
-4. **SITE-TYPE-TABLE-MISMATCH** (canon fidelity, minor): `derelict_type` is
-   registered to `TYPE_DEEP_SPACE` unconditionally; `TYPE_PLANETSIDE` and
-   `TYPE_ORBITAL` exist in the table file, unregistered and unused.
-   `generateDerelictSite` rolls the location first and then types every
-   derelict with deep-space weights — canonically the type table varies by
-   location (planetside derelicts skew settlement).
-5. **SITE-DISCOVERY-CARD-GENERIC** (LOSE-PAYOFF, minor): the Site
-   Discovered card announces "a passage opens through to a precursor vault"
-   without the site's rolled exterior — condition, scale/form, outer first
-   look. The payoff moment shows none of the prep; the GM has to open the
-   location record to narrate the approach.
-6. **SITE-NO-COMPLETION** (minor): the location schema documents
-   `status: "cleared"` but nothing ever sets it — the lifecycle stops at
-   `visited` (set on reveal, before anyone has even boarded). Nothing
-   distinguishes glimpsed-from-orbit from fully-delved, and no affordance
-   closes a site.
+| Code | Class | Defect → fix |
+|---|---|---|
+| SITE-ZONE-TABLES-DEAD | LOSE-CONTENT | `tables/derelicts.js` shipped 20 tables, only 7 registered → the roller now registers the remaining 13 (planetside/orbital type tables + the Access suite + all seven per-zone AREA tables), reachable via `!oracle` and the site-aware waypoint seeds below |
+| SITE-WAYPOINT-BLIND | WRONG-DETAIL | `explore_a_waypoint` seeds were site-agnostic → `buildOracleSeeds` takes a `currentSite` and, inside a vault, rolls Interior Feature (Peril on a miss, Opportunity on a strong-hit match); inside a derelict, the Access Area/Feature/Peril/Opportunity suite. The pipeline passes `getCurrentSiteKind(campaignState)` so the seeds fire whenever the crew's current location is a vault/derelict |
+| SITE-ANCHOR-ABSENT | LOSE-PLOT | `formatActiveSector` listed settlements only → discovered sites now render a "Charted sites (established — do not reinvent them)" block with type + status, so "the derelict" has a standing anchor from discovery onward |
+| SITE-TYPE-TABLE-MISMATCH | canon fidelity | `derelict_type` always rolled deep-space weights → `derelictTypeTableFor(location)` routes the roll to the planetside / orbital / deep-space type table matching the rolled location |
+| SITE-DISCOVERY-CARD-GENERIC | LOSE-PAYOFF | The Site Discovered card omitted the rolled exterior → it now reads the location record's first look and renders it beneath the announcement (fail-open) |
+| SITE-NO-COMPLETION | minor | `status: "cleared"` was never set → new `clearSectorSite` + `!clear-site <name>` (GM-only) close the unexplored → visited → cleared lifecycle, stamping the discovery record and the location Actor |
 
-## 4. Design-level observations
+## 4. Design-level observations — dispositions (2026-07)
 
-- **Interior prep is baked into one description field** — outer and inner
-  first looks, purpose, notable zone all concatenate into
-  `location.description`, so the narrator (via the CURRENT LOCATION card or
-  a matched entity card) reads the interior before the crew breaches the
-  airlock. Acceptable as GM-brain prep — the narrator should pace
-  revelation — but there is no staged outer/inner reveal if drift shows up
-  in play.
-- **No zone-position state.** Exploration depth inside a site is purely
-  fictional (no "current zone" tracking). Fine for Starforged — it has no
-  delve mechanic — but the dead zone tables (§3.1) suggest the richer crawl
-  was the original intent.
+- **Interior prep stays baked into one description field** — reaffirmed. The
+  narrator paces revelation; the site-aware waypoint seeds (§3) are the live
+  reveal mechanism, so a staged outer/inner split is unnecessary machinery.
+- **No zone-position state — reaffirmed.** Starforged has no delve track;
+  exploration depth stays fictional. The zone AREA tables are now reachable
+  by `!oracle` when the fiction names a specific zone (community,
+  engineering, medical, …); the waypoint seeds use the always-applicable
+  Access suite so a roll needs no prior zone pick.
 
 ## 5. What held up under audit
 

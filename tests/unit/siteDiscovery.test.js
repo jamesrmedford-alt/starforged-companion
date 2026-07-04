@@ -121,3 +121,68 @@ describe("revealSectorSite — stored siteId link (expedition→site FK)", () =>
     expect(result?.site?.id).toBe("d1");
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// clearSectorSite — mark a discovered site fully explored (SITE-NO-COMPLETION)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { clearSectorSite } from "../../src/sectors/siteDiscovery.js";
+
+// Two DISCOVERED sites so keyword targeting is exercised without the
+// sole-eligible fallback (which mirrors the reveal ladder).
+function clearedState() {
+  return {
+    sectors: [
+      {
+        id: "sec-1",
+        mapData: {
+          discoveries: [
+            { id: "site-a", type: "vault",    name: "Precursor Vault — Monument", discovered: true, cleared: false, actorId: "loc-a" },
+            { id: "site-b", type: "derelict", name: "Derelict Starship",          discovered: true, cleared: false, actorId: "loc-b" },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+describe("clearSectorSite", () => {
+  it("marks the keyword-matched discovered site cleared and sets its status", async () => {
+    const state = clearedState();
+    const updateLoc = vi.fn(async () => {});
+    const setState  = vi.fn(async () => {});
+    const result = await clearSectorSite("monument", { getState: () => state, setState, updateLoc });
+
+    expect(result?.site?.id).toBe("site-a");
+    expect(state.sectors[0].mapData.discoveries[0].cleared).toBe(true);
+    expect(state.sectors[0].mapData.discoveries[1].cleared).toBe(false);
+    expect(updateLoc).toHaveBeenCalledWith("loc-a", { status: "cleared" });
+    expect(setState).toHaveBeenCalledTimes(1);
+  });
+
+  it("targets the derelict by type keyword, leaving the vault untouched", async () => {
+    const state = clearedState();
+    const result = await clearSectorSite("derelict", { getState: () => state, setState: vi.fn(async () => {}), updateLoc: vi.fn(async () => {}) });
+    expect(result?.site?.id).toBe("site-b");
+    expect(state.sectors[0].mapData.discoveries[1].cleared).toBe(true);
+    expect(state.sectors[0].mapData.discoveries[0].cleared).toBe(false);
+  });
+
+  it("never clears an UNDISCOVERED site (not yet revealed)", async () => {
+    const state = clearedState();
+    state.sectors[0].mapData.discoveries[0].discovered = false; // vault back to hidden
+    state.sectors[0].mapData.discoveries[1].discovered = false; // derelict back to hidden
+    const result = await clearSectorSite("monument", { getState: () => state, setState: vi.fn(async () => {}), updateLoc: vi.fn(async () => {}) });
+    expect(result).toBeNull();
+    expect(state.sectors[0].mapData.discoveries.every(d => !d.cleared)).toBe(true);
+  });
+
+  it("returns null when the only discovered site is already cleared", async () => {
+    const state = clearedState();
+    state.sectors[0].mapData.discoveries[1].discovered = false; // only the vault is discovered
+    state.sectors[0].mapData.discoveries[0].cleared = true;
+    const result = await clearSectorSite("monument", { getState: () => state, setState: vi.fn(async () => {}), updateLoc: vi.fn(async () => {}) });
+    expect(result).toBeNull();
+  });
+});
