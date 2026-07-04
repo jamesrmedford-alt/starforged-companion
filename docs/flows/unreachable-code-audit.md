@@ -63,8 +63,25 @@ ported:
   only the **ledger sub-block** (`maxLedgerTokens ~400`; drops `state` first —
   `narratorPrompt.js:373`). There is no whole-prompt budget and no cross-section
   shedding anywhere live.
-- **Three lowest-priority sections** with no live equivalent: session notes, lore
-  recap, recent discoveries (all first-to-drop under the old budget).
+- **Three lowest-priority sections** — but none is a losable capability today,
+  and one is a real casualty worth fixing on its own:
+  - **session notes** — an unwired stub: `sessionState.notes` has **no writer
+    anywhere** in `src/`, so `buildSessionNotesSection` always rendered empty,
+    even pre-retirement. Delete freely.
+  - **recent discoveries** — already covered live: the site audit surfaces
+    charted sites via `mapData.discoveries` (`narrator.js:2188`, the Charted
+    Sites block). The assembler's "this session — unconfirmed" variant is a
+    separate low-value cut, not a regression.
+  - **lore recap** — the real casualty. The `!lore` command
+    (`generateLoreRecap`, `truths/generator.js:337`) is fully live and
+    independent of the assembler (posts a card + a "The Story So Far" journal
+    page), but it also persists `campaignState.loreRecap` *"for context
+    injection"* (`schemas.js:809`) — and the assembler's dead
+    `buildLoreRecapSection` was the **only** injector. See
+    `LORERECAP-INJECT-ORPHANED` below.
+
+So deleting the assembler breaks none of these; the lore-recap injection is
+already broken and needs its own decision.
 
 The budget most likely no longer matters — Opus 4.8 / Sonnet run 200K–1M context
 and the one genuinely unbounded surface (the ledger) is already locally capped —
@@ -87,6 +104,7 @@ look mutually live.
 | PLANET-ADDFEATURE-DEAD | `addFeature` (`planet.js:200`) | Zero callers. |
 | CONN-LIST-DEAD | `listAllyConnections` (`connection.js:153`), `listSceneConnections` (`connection.js:163`) | Zero callers. |
 | LIST-LOC-PLANET-DEAD | `listLocations` (`location.js:143`), `listPlanets` (`planet.js:158`) | **Zero production callers** — only quench's string-dispatch harness invokes them. The narrator surfaces settlements + connections but never locations/planets via these. Latent missing-feature *or* dead producers — a design call. |
+| LORERECAP-INJECT-ORPHANED | `loreRecap` written at `truths/generator.js:361`, read only at the dead `assembler.js:930` | **Produced-but-dead write — a real regression, not just dead surface.** `!lore` (`generateLoreRecap`) still generates the recap, posts a card, and writes the "The Story So Far" journal page, and persists `campaignState.loreRecap` *"for context injection"* (`schemas.js:809`) — but the assembler's dead `buildLoreRecapSection` was the **only** injector, so since the 2026-07 packet retirement the narrator no longer receives the world-lore recap. Fix = re-home the injection into `buildNarratorExtras`, or drop the now-purposeless `loreRecap`/`loreRecapSessionId` write + schema fields. Independent of the assembler-deletion decision. |
 
 ## 4. Tier 3 — dead parameters, stubs, getters, settings
 
