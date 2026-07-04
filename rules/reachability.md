@@ -101,12 +101,56 @@ six times.
   fact mirrored with no decision naming the winner is a drift bug waiting to
   happen — record the decision first.
 
+## 6. Resolve identity by stable id, not by mutable display name
+
+Match entities on a persistent id (`vowId`, `siteId`, `connectionId`,
+`entityId`), not on a name or label a player can rename or that can collide. A
+name/label match is a *fallback* below the id, and it must never mint a
+duplicate or silently hit the wrong target.
+
+- `EXPEDITION-FINISH-TARGET` revealed the wrong site because finish matched by
+  the expedition's *label*; fixed by stamping a `siteId` FK at creation and
+  revealing that exact discovery. `VOW-RENAME-PAYOFF` lost the fulfilment
+  payoff when a vow was renamed, because the payoff matched by name; fixed by
+  resolving vow copies `vowId`-first. `FOLDER-001` spawned a duplicate sector
+  folder every load because "does this folder exist?" matched loosely.
+  Placeholder figures were duplicated instead of renamed in place until the
+  detector matched the existing record.
+- When only a name is available (narrator prose, a chat command), use a
+  **bounded ladder** — exact → substring → type-keyword-when-unique →
+  sole-open — and **stop before guessing** when a wrong guess is costly
+  (`requireLabelMatch` on the expedition→site stamp is exactly this: no
+  sole-open fallback when *creating* a link, only when *revealing*). A rename
+  or an ambiguous name must never fan a write to the wrong record.
+
+## 7. World state must survive reload and reconnect
+
+Foundry reloads the world and reconnects clients constantly. Anything created
+per-session must be idempotent on reload, and transient locks must reset.
+
+- **Creation guards against re-creating.** `FOLDER-001` (duplicate sector
+  folders each load) and "settled settlements moved to Unsorted on reload"
+  were both reload re-runs that didn't check for the existing document first.
+  A "create the folder / entity" path must be get-or-create keyed on a stable
+  id, never an unconditional create.
+- **Transient locks reset on `ready`.** A `pendingMove` / `busy` guard
+  persisted in world state wedges every later action after a mid-move reload
+  (`PLAYTEST-1712 P` — a stale lock triggered a spurious roll). Clear in-flight
+  pipeline locks on world ready; see also the `finally`-release constraint in
+  CLAUDE.md.
+- **Client-local state re-derives on reconnect.** Audio autoplay, PTT, and
+  keyed-GM presence are per-client — persist what must survive (autoplay state
+  across reconnect) and re-advertise / re-register the rest on `ready`; never
+  assume a socket peer's memory carried over.
+
 ## The through-line
 
 `npm test` and `npm run lint` both signal "done" and both are blind to
-reachability and to mirror drift. A **flow trace** — following a value from
-source until it reaches a sink (or dangles), and following a fact's writes to
-every store (or misses one) — is the one verification act that catches this
-class, which is why the `docs/flows/*-flow.md` audits found every instance.
-When you add a feature to a flow, update that flow doc's injection/consumption
-map in the same commit: naming the consumer (and every store) *is* the gate.
+reachability, mirror drift, identity resolution, and reload survival — every
+rule here guards a property the gate cannot see. A **flow trace** — following a
+value from source until it reaches a sink (or dangles), and following a fact's
+writes to every store (or misses one) — is the one verification act that
+catches this class, which is why the `docs/flows/*-flow.md` audits found every
+instance. When you add a feature to a flow, update that flow doc's
+injection/consumption map in the same commit: naming the consumer (and every
+store) *is* the gate.

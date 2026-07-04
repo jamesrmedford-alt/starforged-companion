@@ -396,8 +396,10 @@ Topic-specific rules are split out under `rules/`. Read on demand:
 - `rules/narrator-memory.md` — narrator memory invariants (flag-family
   contract, sidecar contract, never-dropped tiers); full architecture +
   tuning guide in `docs/narrator/narrator-memory-architecture.md`
-- `rules/reachability.md` — the repo's most persistent bug class: produced-but-
-  dead features and mirror-store drift (both pass tests + lint). The
-  reachability gate, teardown rule, composition test, no-speculative-surface,
-  and single-source-of-truth write-through rule
+- `rules/reachability.md` — the invisible-invariant bug families that pass
+  tests + lint: produced-but-dead features, mirror-store drift,
+  identity-by-mutable-name, and reload/reconnect state loss. The reachability
+  gate, teardown rule, composition test, no-speculative-surface,
+  single-source-of-truth write-through, resolve-by-stable-id, and
+  survive-reload rules
 - `rules/project-context.md` — module overview, transport, system dependency
