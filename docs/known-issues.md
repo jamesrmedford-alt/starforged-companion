@@ -10,6 +10,29 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Unreachable-code audit (2026-07) — OPEN, audit only
+
+A whole-tree sweep for produced-but-unconsumed code (dead exports, parallel-dead
+sibling helpers, a dead-in-production module, unregistered oracle content, a dead
+parameter, and two dead settings). Nothing fixed yet — full ledger with stable
+finding codes and file:line anchors in `docs/flows/unreachable-code-audit.md`.
+Headline items:
+
+| Code | Class | Finding |
+|---|---|---|
+| ASSEMBLER-DEAD-IN-PROD | DEAD-IN-PROD | `src/context/assembler.js` (1175 lines) — sole export `assembleContextPacket` has zero production callers (tests only); superseded by `buildNarratorExtras` |
+| THEME-PERIL-OPP-DEAD | DEAD-CONTENT | 14 theme `*_PERIL`/`*_OPPORTUNITY` oracle tables authored in `tables/themes.js`, never registered in `roller.js` (SITE-ZONE-TABLES-DEAD repeating) |
+| FORMATFORCONTEXT-DEAD | DEAD-EXPORT | `formatForContext(entity)` defined in 7 entity modules, zero consumers (masked by a same-named live truths fn) |
+| SCENERELEVANT-DEAD | INCOMPLETE-TEARDOWN | `setSceneRelevant` left dead in 5 entity modules after the 2026-07 cleanup removed only connection.js's copy |
+| CONTEXTPACKET-PARAM-DEAD | DEAD-PARAM | `narrateResolution`'s `contextPacket` param unread; every caller passes `null`/`{}`; JSDoc still points at the dead assembler |
+| SETTING-DEAD | DEAD-SETTING | `locationArtSource`, `privateChannel.windowPosition` — registered, never read/written |
+
+Plus Tier 4 dead singletons (telemetry readers, roller helpers, unused
+schema/enum exports) and a Tier 5 test-only-in-prod set. Checked clean:
+`CONSEQUENCE_MAP` (all 52 keys live), chat-command dispatch. Not swept:
+statement-level dead branches inside the four largest files (parallel reader
+agents hit the session rate-limit) — see the doc's §8.
+
 ### Vault & derelict (site) audit findings (2026-07) — all fixed in the v1.7.30 cycle
 
 Surfaced by the site creation/exploration audit; all six defects were fixed
