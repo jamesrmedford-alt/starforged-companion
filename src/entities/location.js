@@ -118,6 +118,28 @@ export function getLocation(actorId) {
   }
 }
 
+/**
+ * When the campaign's current location is a precursor vault or derelict,
+ * return `{ kind, name, status }` (kind: "vault" | "derelict") — else null.
+ * Used to make explore_a_waypoint's oracle seeds site-aware
+ * (SITE-WAYPOINT-BLIND fix, 2026-07). Never throws.
+ *
+ * @param {Object} campaignState
+ * @returns {{ kind: string, name: string, status: string } | null}
+ */
+export function getCurrentSiteKind(campaignState) {
+  try {
+    if (campaignState?.currentLocationType !== "location") return null;
+    const loc = getLocation(campaignState.currentLocationId);
+    if (!loc) return null;
+    const kind = String(loc.type ?? "").toLowerCase();
+    if (kind !== "vault" && kind !== "derelict") return null;
+    return { kind, name: loc.name ?? "", status: loc.status ?? "" };
+  } catch {
+    return null;
+  }
+}
+
 export function listLocations(campaignState) {
   return (campaignState.locationIds ?? [])
     .map(id => getLocation(id))

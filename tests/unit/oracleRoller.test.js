@@ -165,3 +165,22 @@ describe("rollOracle — Pay the Price sufferRoute (F16 Phase E)", () => {
     expect(r.sufferRoute).toBeUndefined();
   });
 });
+
+
+describe("derelict zone-crawl registry (SITE-ZONE-TABLES-DEAD fix, 2026-07)", () => {
+  const IDS = [
+    "derelict_type_planetside", "derelict_type_orbital",
+    "derelict_access_area", "derelict_access_feature",
+    "derelict_access_peril", "derelict_access_opportunity",
+    "derelict_area_community", "derelict_area_engineering",
+    "derelict_area_living", "derelict_area_medical",
+    "derelict_area_operations", "derelict_area_production",
+    "derelict_area_research",
+  ];
+  it("registers all thirteen previously dead tables and they roll", () => {
+    for (const id of IDS) {
+      const out = rollOracle(id, { roll: 50 });
+      expect(out.result, id).toBeTruthy();
+    }
+  });
+});

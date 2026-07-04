@@ -6,6 +6,30 @@ rejected.
 
 ---
 
+## Site exploration is oracle-seed-driven, not a delve track (2026-07)
+
+**Decision:** The vault/derelict fix cycle made exploration work through the
+existing move + oracle-seed pipeline rather than adding a delve/zone-position
+mechanic. `explore_a_waypoint` becomes site-aware: when the crew's current
+location is a vault or derelict (`getCurrentSiteKind`), `buildOracleSeeds`
+rolls that site's canonical interior tables — vault Interior
+Feature/Peril/Opportunity, or the derelict Access Area/Feature/Peril/
+Opportunity suite. All 13 previously-dead derelict tables are registered so
+they also answer `!oracle` (the per-zone AREA tables when the fiction names a
+specific zone). Site status closes a real lifecycle (unexplored → visited →
+cleared) via `!clear-site`; discovered sites anchor the ACTIVE SECTOR block
+so the narrator can't reinvent them.
+
+**Reason:** Starforged has no delve track — exploration depth is fictional.
+Seeding the canonical tables into the move that already means "examine this
+place" honours the rules without inventing position state the game doesn't
+have.
+
+**Rejected:** a per-site zone-position tracker (no rules basis); a staged
+outer/inner description reveal (the narrator paces revelation, and the
+waypoint seeds are the live reveal); auto-clearing on the expedition finish
+(discovery ≠ fully explored — clearing stays a deliberate GM beat).
+
 ## The context packet is retired; narrator context has ONE seam (2026-07)
 
 **Decision:** `assembleContextPacket` is no longer called anywhere in

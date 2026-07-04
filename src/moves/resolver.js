@@ -1127,7 +1127,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // Oracle seeding (narrator-entity-discovery scope §7) — runs after the
   // outcome is known so we can condition on hit-with-match etc. Only the
   // configured moves produce seeds; everything else gets null.
-  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch);
+  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null);
 
   return {
     playerNarration,
@@ -1192,7 +1192,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null) {
   try {
     const results = [];
     const names   = [];
@@ -1234,6 +1234,42 @@ export function buildOracleSeeds(moveId, outcome, isMatch) {
         if (outcome === "miss" && isMatch) {
           const chaos = safeRoll("confront_chaos");
           if (chaos) results.push(`Confront Chaos: ${chaos}`);
+        }
+        // Site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026-07): exploring a
+        // waypoint INSIDE a vault or derelict rolls that site's canonical
+        // interior tables so the narrator gets zone-true material instead of
+        // generic space sights. Vaults: Interior Feature (Peril on a miss,
+        // Opportunity on a strong-hit match). Derelicts: the Access suite —
+        // the always-applicable entry tables; the per-zone Area tables are
+        // registered for `!oracle` when the fiction names a specific zone.
+        if (currentSite?.kind === "vault") {
+          if (outcome === "miss") {
+            const peril = safeRoll("vault_peril");
+            if (peril) results.push(`Inside the vault — Interior Peril: ${peril}`);
+          } else {
+            const feat = safeRoll("vault_feature");
+            if (feat) results.push(`Inside the vault — Interior Feature: ${feat}`);
+          }
+          if (outcome === "strong_hit" && isMatch) {
+            const opp = safeRoll("vault_opportunity");
+            if (opp) results.push(`Inside the vault — Interior Opportunity: ${opp}`);
+          }
+          context = `${moveId} (inside ${currentSite.name || "a precursor vault"})`;
+        } else if (currentSite?.kind === "derelict") {
+          if (outcome === "miss") {
+            const peril = safeRoll("derelict_access_peril");
+            if (peril) results.push(`Inside the derelict — Peril: ${peril}`);
+          } else {
+            const area = safeRoll("derelict_access_area");
+            if (area) results.push(`Inside the derelict — Area: ${area}`);
+            const feat = safeRoll("derelict_access_feature");
+            if (feat) results.push(`Inside the derelict — Feature: ${feat}`);
+          }
+          if (outcome === "strong_hit" && isMatch) {
+            const opp = safeRoll("derelict_access_opportunity");
+            if (opp) results.push(`Inside the derelict — Opportunity: ${opp}`);
+          }
+          context = `${moveId} (inside ${currentSite.name || "a derelict"})`;
         }
         break;
       }

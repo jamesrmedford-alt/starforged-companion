@@ -2179,6 +2179,28 @@ export function formatActiveSector(campaignState) {
     'should be given enough substance to recur — not a single throwaway mention.',
   );
 
+
+  // Charted sites (SITE-ANCHOR-ABSENT fix, 2026-07): DISCOVERED vaults and
+  // derelicts join the standing sector picture so prose about "the derelict"
+  // has an anchor between discovery and arrival. Undiscovered sites stay
+  // hidden. Status comes from the location record (visited/cleared).
+  try {
+    const charted = (sector.mapData?.discoveries ?? [])
+      .filter(d => d && d.discovered)
+      .map(d => {
+        let status = "";
+        try { status = getLocation(d.actorId)?.status ?? ""; }
+        catch (err) { console.debug?.(`${MODULE_ID} | narrator: site status read failed:`, err?.message ?? err); }
+        return `- ${d.name} (${d.type}${status ? `, ${status}` : ""})`;
+      });
+    if (charted.length) {
+      lines.push("Charted sites (established — do not reinvent them):");
+      lines.push(...charted);
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: charted-sites block failed:`, err?.message ?? err);
+  }
+
   return lines.join('\n');
 }
 

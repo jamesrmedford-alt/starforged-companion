@@ -13,6 +13,7 @@ import {
   planSectorSites,
   generateVaultSite,
   generateDerelictSite,
+  derelictTypeTableFor,
   generateSectorSites,
   buildSiteLocationData,
   selectSiteForReveal,
@@ -110,7 +111,8 @@ describe("generateDerelictSite", () => {
     const seen = [];
     const results = {
       derelict_location:  "Orbital",
-      derelict_type:      "Derelict starship",
+      // Orbital location routes to the orbital type table (SITE-TYPE-TABLE-MISMATCH fix).
+      derelict_type_orbital: "Derelict starship",
       derelict_condition: "Cold and dark",
       derelict_outer_look:"Hazardous readings",
       derelict_inner_look:"Active bots",
@@ -260,5 +262,15 @@ describe("selectSiteForReveal — requireLabelMatch (expedition→site stamping)
   it("still resolves confident matches with requireLabelMatch set", () => {
     expect(selectSiteForReveal(sites, "sunken choir", { requireLabelMatch: true })?.id).toBe("s1");
     expect(selectSiteForReveal(sites, "the vault", { requireLabelMatch: true })?.id).toBe("s1");
+  });
+});
+
+
+describe("derelictTypeTableFor (SITE-TYPE-TABLE-MISMATCH)", () => {
+  it("routes the type roll by rolled location", () => {
+    expect(derelictTypeTableFor("Planetside")).toBe("derelict_type_planetside");
+    expect(derelictTypeTableFor("Orbital")).toBe("derelict_type_orbital");
+    expect(derelictTypeTableFor("Deep Space")).toBe("derelict_type");
+    expect(derelictTypeTableFor(null)).toBe("derelict_type");
   });
 });

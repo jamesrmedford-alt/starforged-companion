@@ -133,6 +133,22 @@ export function generateVaultSite(rollOracle) {
 }
 
 /**
+ * Pick the location-appropriate derelict type table (SITE-TYPE-TABLE-MISMATCH
+ * fix, 2026-07): canonically the type weights vary by where the derelict sits
+ * — planetside wrecks skew settlement, deep-space ones skew starship. Pure —
+ * exported for unit testing.
+ *
+ * @param {string} location — rolled "Planetside" | "Orbital" | "Deep Space"
+ * @returns {string} oracle table id
+ */
+export function derelictTypeTableFor(location) {
+  const l = String(location ?? "").toLowerCase();
+  if (l.includes("planet")) return "derelict_type_planetside";
+  if (l.includes("orbit"))  return "derelict_type_orbital";
+  return "derelict_type";
+}
+
+/**
  * Roll a single derelict from the canonical oracles.
  *
  * @param {Function} rollOracle — (tableId) => { result }
@@ -140,7 +156,7 @@ export function generateVaultSite(rollOracle) {
  */
 export function generateDerelictSite(rollOracle) {
   const location  = rollOracle("derelict_location").result;
-  const type      = rollOracle("derelict_type").result;        // "Derelict starship" | "Derelict settlement"
+  const type      = rollOracle(derelictTypeTableFor(location)).result;  // "Derelict starship" | "Derelict settlement"
   const condition = rollOracle("derelict_condition").result;
   const outer     = rollOracle("derelict_outer_look").result;
   const inner     = rollOracle("derelict_inner_look").result;

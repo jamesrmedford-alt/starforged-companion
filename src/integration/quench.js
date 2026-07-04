@@ -11656,6 +11656,37 @@ function registerPrecursorSiteTests(quench) {
           const passage = scene.drawings.contents.find(d => d.getFlag(MODULE, "siteId") === disc.id);
           assert.isTrue(!!passage.getFlag(MODULE, "discovered"), "passage re-styled to discovered");
         });
+
+        it("clears a discovered site: status → cleared, discovery record stamped", async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          if (!sector || !scene) { this.skip(); return; }
+          const { clearSectorSite } = await import(`${MODULE_PATH}/sectors/siteDiscovery.js`);
+          const target = sector.sites[0]; // revealed in the previous test
+
+          const cleared = await clearSectorSite(target.name, { source: "manual" });
+          assert.isOk(cleared, "clear should match the discovered site");
+
+          const after        = game.settings.get(MODULE, "campaignState");
+          const storedSector = after.sectors.find(s => s.id === sector.id);
+          const disc         = storedSector.mapData.discoveries.find(d => d.name === target.name);
+          assert.isTrue(disc.cleared, "discovery record stamped cleared");
+          const actor = game.actors.get(disc.actorId);
+          assert.equal(actor.getFlag(MODULE, "location")?.status, "cleared", "Actor status → cleared");
+        });
+
+        it("registers the derelict zone-crawl oracle suite (SITE-ZONE-TABLES-DEAD)", async function () {
+          const { rollOracle } = await import(`${MODULE_PATH}/oracles/roller.js`);
+          for (const id of [
+            "derelict_type_planetside", "derelict_type_orbital",
+            "derelict_access_area", "derelict_access_feature",
+            "derelict_access_peril", "derelict_access_opportunity",
+            "derelict_area_operations", "derelict_area_research",
+          ]) {
+            const out = rollOracle(id, { roll: 50 });
+            assert.isOk(out?.result, `${id} should be registered and roll a result`);
+          }
+        });
       });
     },
     { displayName: "STARFORGED: Precursor Sites", timeout: 60000 },
