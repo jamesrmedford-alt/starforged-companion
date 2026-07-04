@@ -28,6 +28,30 @@ you to address a specific one in the current session conversation.
   `tests/`, and `src/integration/quench.js` — and update them in the same
   commit. Three of the four v1.7.6 playtest bugs came from one unaudited
   type-meaning change (NPCs becoming `character` actors).
+- **Verify reachability when adding; keep mirrors write-through.** A producer
+  with zero consumers is a bug, not a feature — before committing a new exported
+  function, registered oracle table, oracle id, setting, chat command, card
+  flag, or schema field, grep for what consumes it and confirm the wiring hop
+  exists (authoring a table is not registering it; writing a builder is not
+  calling it). Zero consumers → delete it, wire it, or mark `// UNWIRED:
+  <who/when>` + a `known-issues.md` line. When a refactor supersedes an old
+  path, delete the old path in the same commit — inert-but-present is a latent
+  bug (`FACTION-PACKET-DEAD`'s dead `packet` param silently aborted
+  re-narration). And when one fact lives in two stores, name the canonical one
+  and write through to the mirror on **every** change — never leave two stores
+  independently writable (`BOND-ITEM-MIRROR`, `LOCATION-DUAL-STORE`,
+  `FACTION-DUAL-STORE`). This produced-but-dead / mirror-drift family is the
+  repo's most persistent bug class — full rules in `rules/reachability.md`.
+- **Verify reachability when adding:** a producer with zero consumers is a bug,
+  not a feature. Before committing a new exported function, registered oracle
+  table, oracle id, setting, chat command, card flag, or schema field, grep for
+  what consumes it and confirm the wiring hop exists — authoring a table is not
+  registering it; writing a builder is not calling it. Zero consumers → delete
+  it, wire it in the same commit, or mark it `// UNWIRED: <who/when>` **and** add
+  a `known-issues.md` line. When a refactor supersedes an old path, delete the
+  old path in the same commit (inert-but-present is a latent bug, not a
+  courtesy). Six v1.7.30 audits each found a shipped-but-dead feature that passed
+  tests and lint — see `rules/reachability.md`.
 - **Settled decisions: search, don't re-derive.** If the user says a decision
   was already made, find it (`decisions.md`, the scope **issue** on GitHub,
   `docs/testing/*playtest-findings*`) before re-opening it. If a doc or issue
@@ -114,6 +138,13 @@ edits, other config tidy-ups, reformatting, stray debug logging. "While I'm
 here" config changes need their own explicit go-ahead and never ride along
 inside a feature commit (a `.claude/`-ignore edit bundled into the
 clocks/vignettes commit had to be unwound exactly this way).
+
+**Reachability check.** For any new producer in the diff (exported function,
+registered table, oracle id, setting, command, card flag, schema field), grep
+its consumer and confirm the wiring hop exists; for any write to a mirrored
+fact, confirm every store is updated. Tests and lint are blind to both — see
+`rules/reachability.md`. A zero-consumer add or an unmirrored write is a defect
+even with a green gate.
 
 Commit message format:
 ```
@@ -314,7 +345,19 @@ These are deliberate decisions — do not change without reading
   the v1 `Application` class.
 - No jQuery. DOM API only (`querySelector`, `createElement`, `addEventListener`).
 - `game.settings` world-scoped writes require GM permissions. Player-triggered
-  actions that need to persist state must use a GM-check gate.
+  actions that need to persist state must use a GM-check gate. Two sharper
+  distinctions the repo has had to fix repeatedly (multiplayer/GM handling is
+  its third-most-common bug family):
+  - **Single-emitter writes gate on `isCanonicalGM()`, not `game.user.isGM`.**
+    Anything that posts a shared document or persists world state from the
+    pipeline (ledger writes, the rolling-summary persist, contradiction cards)
+    must be canonical-GM-gated so a two-GM table doesn't double-emit or race.
+    Plain `isGM` is only for a local, idempotent read.
+  - **Credit the roller, not the GM.** Move effects (momentum, meter changes,
+    XP) apply to the player who rolled — resolve the acting actor from the chat
+    speaker, never `game.user.character` or "first PC in campaignState." The
+    inciting/founding vow is the one shared exception (see decisions.md →
+    "Multiplayer attribution").
 - Concurrency guards and pipeline locks (e.g. `campaignState.pendingMove`, an
   ApplicationV2's `busy` flag) must be released in a `finally`, never on the
   happy path alone. An exception — or an awaited promise that never settles —
@@ -353,4 +396,8 @@ Topic-specific rules are split out under `rules/`. Read on demand:
 - `rules/narrator-memory.md` — narrator memory invariants (flag-family
   contract, sidecar contract, never-dropped tiers); full architecture +
   tuning guide in `docs/narrator/narrator-memory-architecture.md`
+- `rules/reachability.md` — the repo's most persistent bug class: produced-but-
+  dead features and mirror-store drift (both pass tests + lint). The
+  reachability gate, teardown rule, composition test, no-speculative-surface,
+  and single-source-of-truth write-through rule
 - `rules/project-context.md` — module overview, transport, system dependency
