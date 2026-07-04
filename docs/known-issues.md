@@ -10,28 +10,30 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Unreachable-code audit (2026-07) — OPEN, audit only
+### Unreachable-code audit (2026-07) — OPEN, tracked as #269–#277
 
 A whole-tree sweep for produced-but-unconsumed code (dead exports, parallel-dead
 sibling helpers, a dead-in-production module, unregistered oracle content, a dead
 parameter, two dead settings, and one produced-but-dead write that is a real
-regression — the orphaned lore-recap injection). Nothing fixed yet — full ledger
-with stable finding codes and file:line anchors in
-`docs/flows/unreachable-code-audit.md`.
-Headline items:
+regression — the orphaned lore-recap injection). No code changed yet; every
+finding is now tracked as GitHub issues **#269–#277** — full ledger, file:line
+anchors, and the issue map in `docs/flows/unreachable-code-audit.md`.
+Headline items (issue in the first column):
 
-| Code | Class | Finding |
-|---|---|---|
-| ASSEMBLER-DEAD-IN-PROD | DEAD-IN-PROD | `src/context/assembler.js` (1175 lines) — sole export `assembleContextPacket` has zero production callers (tests only); superseded by `buildNarratorExtras` |
-| THEME-PERIL-OPP-DEAD | DEAD-CONTENT | 14 theme `*_PERIL`/`*_OPPORTUNITY` oracle tables authored in `tables/themes.js`, never registered in `roller.js` (SITE-ZONE-TABLES-DEAD repeating) |
-| FORMATFORCONTEXT-DEAD | DEAD-EXPORT | `formatForContext(entity)` defined in 7 entity modules, zero consumers (masked by a same-named live truths fn) |
-| SCENERELEVANT-DEAD | INCOMPLETE-TEARDOWN | `setSceneRelevant` left dead in 5 entity modules after the 2026-07 cleanup removed only connection.js's copy |
-| CONTEXTPACKET-PARAM-DEAD | DEAD-PARAM | `narrateResolution`'s `contextPacket` param unread; every caller passes `null`/`{}`; JSDoc still points at the dead assembler |
-| SETTING-DEAD | DEAD-SETTING | `locationArtSource`, `privateChannel.windowPosition` — registered, never read/written |
-| LORERECAP-INJECT-ORPHANED | PRODUCED-BUT-DEAD | `!lore` persists `campaignState.loreRecap` "for context injection" but its only injector (the dead assembler) was retired in 2026-07 — the narrator silently stopped receiving the world-lore recap. A real regression: re-home into `buildNarratorExtras`, or drop the field |
+| Issue | Code | Class | Finding |
+|---|---|---|---|
+| #271 | ASSEMBLER-DEAD-IN-PROD | DEAD-IN-PROD | `src/context/assembler.js` (1175 lines) — sole export `assembleContextPacket` has zero production callers (tests only); superseded by `buildNarratorExtras`. Blocked by #269/#270 |
+| #269 | LORERECAP-INJECT-ORPHANED | PRODUCED-BUT-DEAD | `!lore` persists `campaignState.loreRecap` "for context injection" but its only injector (the dead assembler) was retired in 2026-07 — the narrator silently stopped receiving the world-lore recap. A real regression: re-home into `buildNarratorExtras`, or drop the field |
+| #270 | SESSION-NOTES-STUB | DEAD-STUB | `buildSessionNotesSection` reads `sessionState.notes`, which has no writer anywhere — always rendered empty. Wire the feature or remove the stub |
+| #272 | THEME-PERIL-OPP-DEAD | DEAD-CONTENT | 14 theme `*_PERIL`/`*_OPPORTUNITY` oracle tables authored in `tables/themes.js`, never registered in `roller.js` (SITE-ZONE-TABLES-DEAD repeating) |
+| #273 | FORMATFORCONTEXT-DEAD | DEAD-EXPORT | `formatForContext(entity)` defined in 7 entity modules, zero consumers (masked by a same-named live truths fn) |
+| #274 | SCENERELEVANT-DEAD | INCOMPLETE-TEARDOWN | `setSceneRelevant` left dead in 5 entity modules after the 2026-07 cleanup removed only connection.js's copy (+ addRumor/setProject/addFeature/listAlly/Scene) |
+| #271 | CONTEXTPACKET-PARAM-DEAD | DEAD-PARAM | `narrateResolution`'s `contextPacket` param unread; every caller passes `null`/`{}`; JSDoc still points at the dead assembler (retired with the module) |
+| #276 | SETTING-DEAD | DEAD-SETTING | `locationArtSource`, `privateChannel.windowPosition` — registered, never read/written |
 
-Plus Tier 4 dead singletons (telemetry readers, roller helpers, unused
-schema/enum exports) and a Tier 5 test-only-in-prod set. Checked clean:
+Plus #275 (`listLocations`/`listPlanets` dead producers) and #277 (Tier-4 dead
+singletons — telemetry readers, roller helpers, unused schema/enum exports); a
+Tier-5 test-only-in-prod set is documented, no issue. Checked clean:
 `CONSEQUENCE_MAP` (all 52 keys live), chat-command dispatch. Not swept:
 statement-level dead branches inside the four largest files (parallel reader
 agents hit the session rate-limit) — see the doc's §8.

@@ -10,16 +10,33 @@ verified against source (v1.7.30 cycle, 2026-07). Companion to
 Prompted by: "Please audit the codebase for currently unreachable blocks of
 code."
 
-**Status: OPEN — audit only.** Unlike the feature-flow ledgers (whose defects
-were fixed in the same cycle), nothing here has been changed yet. §1 is the
-method, §2–§6 are the findings by tier, §7 is what was checked and found clean,
-§8 is coverage/caveats. Each finding carries a stable code for a later
-"address these" pass.
+**Status: OPEN — tracked as issues #269–#277.** Unlike the feature-flow ledgers
+(whose defects were fixed in the same cycle), no code has been changed yet —
+every finding is now a GitHub issue (mapped below). §1 is the method, §2–§6 are
+the findings by tier, §7 is what was checked and found clean, §8 is
+coverage/caveats. Each finding carries a stable code.
 
 Tags: **DEAD-IN-PROD** (runs only under tests), **DEAD-EXPORT** (no consumer),
 **DEAD-CONTENT** (authored table never registered), **INCOMPLETE-TEARDOWN**
 (superseded path left inert), **DEAD-PARAM**, **DEAD-SETTING**, **DRIFT-RISK**
 (dead mirror of a live value).
+
+## Tracked as GitHub issues (#269–#277)
+
+| Issue | Finding code(s) | What it is |
+|---|---|---|
+| #269 | LORERECAP-INJECT-ORPHANED | fix — re-home the lore-recap injection out of `assembler.js` |
+| #270 | SESSION-NOTES-STUB | decide — wire the session-notes stub live, or remove it |
+| #271 | ASSEMBLER-DEAD-IN-PROD + CONTEXTPACKET-PARAM-DEAD | retire `assembler.js` (**blocked by #269, #270**) + the global-budget decision |
+| #272 | THEME-PERIL-OPP-DEAD | register (or drop) the 14 theme peril/opportunity oracle tables |
+| #273 | FORMATFORCONTEXT-DEAD | delete the 7 dead entity `formatForContext` functions |
+| #274 | SCENERELEVANT-DEAD, FACTION-API-DEAD, PLANET-ADDFEATURE-DEAD, CONN-LIST-DEAD | entity-record API teardown |
+| #275 | LIST-LOC-PLANET-DEAD | surface planets/locations to the narrator, or remove the producers |
+| #276 | CHRONICLE-HOOKS-NOOP, SHIPTOKEN-GETTERS-DEAD, SETTING-DEAD | Tier-3 dead-surface teardown |
+| #277 | Tier-4 dead singletons (telemetry / roller / schema / enum / misc) | remove, or wire |
+
+Sequencing: **#269 + #270 land first, then #271.** The rest are independent.
+Tier 5 (test-only-in-prod) is left documented here, no issue.
 
 ## 1. Method
 
