@@ -47,9 +47,33 @@ cannot be.
 
 | Code | Location | Finding |
 |---|---|---|
-| ASSEMBLER-DEAD-IN-PROD | `src/context/assembler.js:96` (whole 1175-line file) | Sole export `assembleContextPacket` has **zero production callers** — every reference is in `src/integration/quench.js` or `tests/unit/assembler.test.js`. Narrator context moved to `buildNarratorExtras` (`narrator.js`); the module + its ~1400-line test file are CI-gated but never run live. Documented as "retained for reference/tests"; `reachability.md` rule 2 argues for teardown. |
+| ASSEMBLER-DEAD-IN-PROD | `src/context/assembler.js:96` (whole 1175-line file) | Sole export `assembleContextPacket` has **zero production callers** — every reference is in `src/integration/quench.js` or `tests/unit/assembler.test.js`. Narrator context moved to `buildNarratorExtras` (`narrator.js`); the module + its ~1400-line test file are CI-gated but never run live. **Content parity holds** — every load-bearing section flows through `buildNarratorExtras` + `narratorPrompt.js`, often via the same shared helpers — **but one capability was never ported**: global priority-ordered token-budget enforcement (`enforceBudget`/`truncateToTokens`, `:950`/`:986`). Deleting it is a decision, not a clean no-op — see the parity note below. `decisions.md:47` parks it ("budgeting reference; deletion needs explicit approval"). |
 | THEME-PERIL-OPP-DEAD | `src/oracles/tables/themes.js:24-287` (14 tables) | The 7 themes' `*_PERIL` / `*_OPPORTUNITY` tables are authored but **never registered** — `roller.js` does `import * as THEMES` and wires only the 7 `*_FEATURE` tables (`roller.js:171-177`). Unreachable via `!oracle`. This is `SITE-ZONE-TABLES-DEAD` repeating, and inconsistent: space/planets/vaults/derelicts *do* register their peril/opportunity (`roller.js:64-168`). |
 | FORMATFORCONTEXT-DEAD ×7 | `connection.js:423`, `location.js:194`, `settlement.js:221`, `planet.js:226`, `creature.js:155`, `ship.js:381`, `faction.js:370` | `formatForContext(entity)` defined in **7 entity modules with zero consumers** — no import, no `.member` dispatch, not even the (dead) assembler, which uses `formatEntityCard` from `narratorPrompt.js`. Masked because `truths/generator.js:252` defines a same-named live `formatForContext(truthSet)` whose one call site (`:444`) binds locally. Superseded by `formatEntityCard`, never torn down. |
+
+**Parity note — the assembler is dead-in-prod but its deletion is a decision, not
+a no-op.** The live path (`buildNarratorExtras` → `buildNarratorSystemPrompt`)
+reproduces every load-bearing *content* section, but two things were never
+ported:
+
+- **Global token budgeting.** `enforceBudget` (`assembler.js:950`) capped the
+  whole packet at ~8000 tokens and shed whole sections in a fixed priority order
+  (session notes → lore recap → recent discoveries → asserted lore → …) under
+  pressure, with safety / permissions / ledger exempt. The live path budgets
+  only the **ledger sub-block** (`maxLedgerTokens ~400`; drops `state` first —
+  `narratorPrompt.js:373`). There is no whole-prompt budget and no cross-section
+  shedding anywhere live.
+- **Three lowest-priority sections** with no live equivalent: session notes, lore
+  recap, recent discoveries (all first-to-drop under the old budget).
+
+The budget most likely no longer matters — Opus 4.8 / Sonnet run 200K–1M context
+and the one genuinely unbounded surface (the ledger) is already locally capped —
+so the recommendation is to **declare the global budget obsolete and delete
+`assembler.js` + `assembler.test.js`**, recording that decision. But that call
+belongs to the maintainer, which is why `decisions.md:47` deferred it. Deleting
+it as a *clean* teardown, on the assumption of full parity, would silently drop
+the whole-prompt budget guard — so make the obsolete-budget decision explicitly
+first.
 
 ## 3. Tier 2 — parallel-dead + speculative entity API
 
@@ -68,7 +92,7 @@ look mutually live.
 
 | Code | Location | Finding |
 |---|---|---|
-| CONTEXTPACKET-PARAM-DEAD | `src/narration/narrator.js:284` (+ JSDoc `:275`) | `narrateResolution(resolution, contextPacket, …)` — `contextPacket` appears only in the signature and a JSDoc line that still points at the dead `assembler.js`. Every caller passes `null`/`{}`; the body never reads it. FACTION-PACKET-DEAD residue — benign (no abort) but dead surface + a doc pointer to a dead module. |
+| CONTEXTPACKET-PARAM-DEAD | `src/narration/narrator.js:284` (+ JSDoc `:275`) | `narrateResolution(resolution, contextPacket, …)` — `contextPacket` appears only in the signature and a JSDoc line that still points at the dead `assembler.js`. Every caller passes `null`/`{}`; the body never reads it. FACTION-PACKET-DEAD residue — benign (no abort) but dead surface + a doc pointer to a dead module. **Retention is intentional** (`decisions.md:46`, "kept for signature stability") — a recorded choice, not an oversight; still an unread param whose JSDoc points at dead code. |
 | CHRONICLE-HOOKS-NOOP | `src/character/chroniclePanel.js:311` | `registerChroniclePanelHooks()` is an **empty stub** (body is one comment) and is never called. Superseded by the floating toolbar. |
 | SHIPTOKEN-GETTERS-DEAD | `src/ui/settingsPanel.js:754` / `:757` | `getShipTokenEnabled` / `getShipTokenSnapRadius` — zero callers; the setting is read **directly** via `game.settings.get(…, "factContinuity.shipTokenEnabled")` at `sceneBuilder.js:417` and `sectorSceneHooks.js:137/165/445`. Dead getters **and** DRIFT-RISK (two reads of one setting with potentially different defaults). |
 | SETTING-DEAD | `index.js:304` (`locationArtSource`), `private-channel/index.js:25` (`privateChannel.windowPosition`) | Registered, then **never read or written**. `windowPosition` means the private-channel panel position is not actually persisted. |
@@ -124,12 +148,16 @@ worth a glance, not a sweep.
 
 ## 9. The through-line
 
-Every Tier 1–3 finding is a producer whose consumer was removed (or never
+Most Tier 1–3 findings are a producer whose consumer was removed (or never
 arrived) without the producer being torn down in the same change —
-`ASSEMBLER-DEAD-IN-PROD` orphaning `FORMATFORCONTEXT-DEAD` and
-`CONTEXTPACKET-PARAM-DEAD`; the 2026-07 cleanup removing one `setSceneRelevant`
-and leaving five; the theme peril/opportunity tables authored a registration hop
-short. This is exactly the class `rules/reachability.md` rules 1 (reachability
+`FORMATFORCONTEXT-DEAD` left in seven modules after the live narrator settled on
+`formatEntityCard`; the 2026-07 cleanup removing one `setSceneRelevant` and
+leaving five; the theme peril/opportunity tables authored a registration hop
+short. Two are **deliberate retentions** rather than misses —
+`ASSEMBLER-DEAD-IN-PROD` (kept for its budgeting reference) and its now-null
+`CONTEXTPACKET-PARAM-DEAD` parameter — both parked in `decisions.md`: dead in
+production, but by recorded choice, and the assembler's global token-budget guard
+was never re-homed. This is exactly the class `rules/reachability.md` rules 1 (reachability
 gate) and 2 (teardown) exist to prevent — and the doc's own cited examples
 (`addRumor` / `setProject` / `setSceneRelevant`) are among the findings, which
 means the rule was recorded but the teardown was never executed.
