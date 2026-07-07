@@ -33,7 +33,7 @@ developer-only and excluded from the release.
 | `index.js` | Module entry point: registers all settings + hooks, the `createChatMessage` dispatcher (every `!`/`@scene`/`\` command), the two-hook toolbar buttons, and the move/narration pipeline. |
 | `api-proxy.js` | `apiPost()` — direct browser fetch to the Anthropic API with the `anthropic-dangerous-direct-browser-access` header and BYOK key injection. **All Claude calls route through here.** |
 | `net/fetchWithTimeout.js` | `fetchWithTimeout()` + `DEFAULT_TIMEOUT_MS` (120s) — `fetch` bounded by an `AbortController` so a stalled request rejects instead of hanging forever. Used by `api-proxy.js` and `art/openRouterImage.js`; added after the v1.7.23 sector-creator silent hang (unbounded portrait fetch stalled, Scene never built, nothing logged). |
-| `schemas.js` | Core data schemas and enums: `CampaignStateSchema`, `MOVES`, `STATS`, `CHALLENGE_RANKS`, entity record shapes, `ContextPacketSchema` (token budget). |
+| `schemas.js` | Core data schemas and enums: `CampaignStateSchema`, `MOVES`, `STATS`, `CHALLENGE_RANKS`, entity record shapes. |
 
 ### `art/` — entity portrait generation
 
@@ -73,7 +73,6 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `assembler.js` | Builds the narrator context packet (safety, truths, entity cards, tracks, character state, ledgers). |
 | `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection; exports `collectAllEntities` (full roster for sidecar subject resolution). Lexical on the paced/@scene paths (`moveId: null`). |
 | `safety.js` | Safety-config formatting — always injected first into the system prompt. |
 

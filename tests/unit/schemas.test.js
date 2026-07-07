@@ -14,7 +14,6 @@ import {
   NARRATOR_CLASSES,
   ConnectionSchema,
   CampaignStateSchema,
-  ContextPacketSchema,
 } from "../../src/schemas.js";
 import { ShipSchema }       from "../../src/entities/ship.js";
 import { SettlementSchema } from "../../src/entities/settlement.js";
@@ -212,11 +211,3 @@ describe("CampaignStateSchema entity-discovery additions", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token budget
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("ContextPacketSchema.tokenBudget", () => {
-  it("is 8000", () => {
-    expect(ContextPacketSchema.tokenBudget).toBe(8000);
-  });
-});

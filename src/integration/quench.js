@@ -24,7 +24,6 @@ Hooks.on("quenchReady", (quench) => {
   registerSafetyTests(quench);
   registerActorBridgeTests(quench);
   registerProgressTrackTests(quench);
-  registerAssemblerTests(quench);
   registerNarratorTests(quench);
   registerPipelineTests(quench);
   registerSectorCreatorTests(quench);
@@ -101,7 +100,7 @@ Hooks.on("quenchReady", (quench) => {
   // existing sectorCreator batch respectively.
   registerSectorArtTests(quench);
   // NED permissions matrix — the schema MOVES table → resolveRelevance →
-  // assembleContextPacket → NARRATOR_PERMISSIONS block contract. Pure
+  // buildNarratorSystemPrompt → NARRATOR_PERMISSIONS block contract. Pure
   // resolveRelevance coverage lives in tests/unit/relevanceResolver.test.js;
   // this batch pins the end-to-end integration: that the right permissions
   // block appears in the assembled system prompt for each narrator class.
@@ -890,58 +889,6 @@ function registerProgressTrackTests(quench) {
 // ASSEMBLER
 // ─────────────────────────────────────────────────────────────────────────────
 
-function registerAssemblerTests(quench) {
-  quench.registerBatch(
-    "starforged-companion.assembler",
-    (context) => {
-      const { describe, it, assert } = context;
-
-      describe("assembleContextPacket — live world", function () {
-        it("returns a packet with a non-empty assembled string", async function () {
-          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
-          const campaignState = game.settings.get("starforged-companion", "campaignState");
-
-          const packet = await assembleContextPacket({}, campaignState);
-
-          assert.isObject(packet, "packet should be an object");
-          assert.isString(packet.assembled, "assembled should be a string");
-          assert.isAbove(packet.assembled.length, 0, "assembled should not be empty");
-        });
-
-        it("safety section is always first", async function () {
-          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
-          const campaignState = game.settings.get("starforged-companion", "campaignState");
-
-          const packet = await assembleContextPacket({}, campaignState);
-          const safetyIdx = packet.assembled.indexOf("SAFETY CONFIGURATION");
-
-          assert.isAbove(safetyIdx, -1, "SAFETY CONFIGURATION header should be present");
-          assert.equal(safetyIdx, packet.assembled.search(/\S/),
-            "SAFETY CONFIGURATION should be the first non-whitespace content");
-        });
-
-        it("X-Card suppresses the packet when campaignState.xCardActive is true", async function () {
-          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
-          const { suppressScene, clearXCard } = await import(`${MODULE_PATH}/context/safety.js`);
-
-          await suppressScene();
-          let packet;
-          try {
-            const campaignState = game.settings.get("starforged-companion", "campaignState");
-            packet = await assembleContextPacket({}, campaignState);
-          } finally {
-            await clearXCard();
-          }
-
-          assert.include(packet.assembled, "SCENE PAUSED", "X-Card should produce SCENE PAUSED packet");
-          assert.equal(packet.triggeredBy, "x_card");
-        });
-      });
-    },
-    { displayName: "STARFORGED: Assembler" }
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // NARRATOR
 // ─────────────────────────────────────────────────────────────────────────────
@@ -990,7 +937,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const beforeIds = new Set(game.messages.contents.map(m => m.id));
 
-          await narrateResolution(sampleResolution, {}, campaignState);
+          await narrateResolution(sampleResolution, campaignState);
 
           const newMessages = game.messages.contents.filter(m => !beforeIds.has(m.id));
           newMessages.forEach(m => createdMessageIds.push(m.id));
@@ -1034,7 +981,7 @@ function registerNarratorTests(quench) {
           const campaignState = game.settings.get("starforged-companion", "campaignState");
           const beforeIds = new Set(game.messages.contents.map(m => m.id));
 
-          await narrateResolution(sampleResolution, {}, campaignState);
+          await narrateResolution(sampleResolution, campaignState);
 
           // Restore key
           await game.settings.set("starforged-companion", "claudeApiKey", realKey);
@@ -1247,31 +1194,28 @@ function registerSectorCreatorTests(quench) {
           seededSectorId = null;
         });
 
-        it("assembled packet contains 'ACTIVE SECTOR' when a sector is active", async function () {
-          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
+        it("extras.activeSectorBlock is populated when a sector is active", async function () {
+          const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get("starforged-companion", "campaignState");
           if (!state.activeSectorId) { this.skip(); return; }
 
-          // Inflate the token budget — the test world accumulates character
-          // Actors across batches, and CHARACTER STATE is priority 1 (never
-          // dropped). With the default 1200-token budget the activeSector
-          // section (priority 6) can drop on a busy world. We're asserting
-          // "is this section built when a sector is active", not "does it
-          // fit under the default budget".
-          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
-          assert.include(packet.assembled, "ACTIVE SECTOR",
-            "assembled packet should contain ACTIVE SECTOR section");
+          // Live-seam successor of the retired assembler's ACTIVE SECTOR
+          // packet section: buildNarratorExtras carries the sector anchor and
+          // buildNarratorSystemPrompt wraps it under "## ACTIVE SECTOR".
+          const extras = await buildNarratorExtras("paced_narrative", state, { playerNarration: "" });
+          assert.isAbove(String(extras.activeSectorBlock ?? "").trim().length, 0,
+            "activeSectorBlock should be populated when a sector is active");
         });
 
-        it("assembled packet omits sector section when no active sector", async function () {
-          const { assembleContextPacket } = await import(`${MODULE_PATH}/context/assembler.js`);
+        it("extras.activeSectorBlock is empty when no active sector", async function () {
+          const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get("starforged-companion", "campaignState");
           const savedId = state.activeSectorId;
           state.activeSectorId = null;
 
-          const packet = await assembleContextPacket(null, state, { tokenBudget: 10000 });
-          assert.notInclude(packet.assembled, "ACTIVE SECTOR",
-            "assembled packet should not contain ACTIVE SECTOR when no sector is active");
+          const extras = await buildNarratorExtras("paced_narrative", state, { playerNarration: "" });
+          assert.equal(String(extras.activeSectorBlock ?? "").trim(), "",
+            "activeSectorBlock should be empty when no sector is active");
 
           state.activeSectorId = savedId;
         });
@@ -1846,7 +1790,6 @@ function registerConnectionPipelineTests(quench) {
                     consequences:    {},
                     oracleSeeds:     { context: "make_a_connection", results: [], names: [] },
                   },
-                  {},
                   state,
                 );
               });
@@ -1896,7 +1839,6 @@ function registerConnectionPipelineTests(quench) {
                     playerNarration: "I mark progress on my vow.",
                     consequences:    {},
                   },
-                  {},
                   state,
                 );
               });
@@ -1941,7 +1883,6 @@ function registerConnectionPipelineTests(quench) {
               consequences:    {},
               oracleSeeds:     { context: "make_a_connection", results: [], names: [] },
             },
-            {},
             state,
           );
 
@@ -2631,41 +2572,41 @@ function registerWorldJournalTests(quench) {
         });
       });
 
-      describe("Assembler injection — Sections 3, 4, 9, 10", function () {
-        it("confirmed lore appears in Section 3 of the assembled context packet", async function () {
+      describe("Narrator extras injection — WJ sections [4d]-[4f]", function () {
+        it("confirmed lore reaches extras.confirmedLore", async function () {
           this.timeout(30000);
-          const wj   = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get(MODULE, "campaignState");
           const title = `QUENCH TEST — Section 3 confirmed ${Date.now()}`;
 
           const result = await wj.recordLoreDiscovery(title, { confirmed: true, text: "section-3 test" }, state);
           if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
 
-          const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
-          assert.match(packet.assembled, /ESTABLISHED LORE/);
-          assert.include(packet.assembled, title);
+          const extras = await buildNarratorExtras("paced_narrative", state, { playerNarration: "" });
+          assert.include(JSON.stringify(extras.confirmedLore ?? []), title,
+            "the confirmed lore entry should reach the live narrator seam");
         });
 
-        it("immediate threats appear in Section 4 of the assembled context packet", async function () {
+        it("immediate threats reach extras.activeThreats", async function () {
           this.timeout(30000);
-          const wj  = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const asm = await import(`${MODULE_PATH}/context/assembler.js`);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const state = game.settings.get(MODULE, "campaignState");
           const name = `QUENCH TEST — Section 4 immediate ${Date.now()}`;
 
           const result = await wj.recordThreat(name, { severity: "immediate", summary: "section-4 test" }, state);
           if (result?.pageId) createdPageIds.push({ journalId: result.journalId, pageId: result.pageId });
 
-          const packet = await asm.assembleContextPacket(null, state, { tokenBudget: 4000 });
-          assert.match(packet.assembled, /ACTIVE THREATS/);
-          assert.match(packet.assembled, new RegExp(`IMMEDIATE: ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+          const extras = await buildNarratorExtras("paced_narrative", state, { playerNarration: "" });
+          assert.include(JSON.stringify(extras.activeThreats ?? []), name,
+            "the immediate threat should reach the live narrator seam");
         });
 
-        it("faction landscape (Section 9) includes WJ-only factions, excludes those with entity records", async function () {
+        it("faction landscape reaches extras.factionLandscape as the MERGED view (records canonical)", async function () {
           this.timeout(30000);
-          const wj   = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const asm  = await import(`${MODULE_PATH}/context/assembler.js`);
+          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
+          const { buildNarratorExtras } = await import(`${MODULE_PATH}/narration/narrator.js`);
           const { createFaction } = await import(`${MODULE_PATH}/entities/faction.js`);
           const state = game.settings.get(MODULE, "campaignState");
           const wjOnlyName = `QUENCH TEST — WJ-only Faction ${Date.now()}`;
@@ -2683,13 +2624,17 @@ function registerWorldJournalTests(quench) {
           if (entityResult?.pageId) createdPageIds.push({ journalId: entityResult.journalId, pageId: entityResult.pageId });
           await game.settings.set(MODULE, "campaignState", state);
 
+          // The retired packet EXCLUDED entity-backed factions (Section 9);
+          // the live [4e] FACTION LANDSCAPE is the MERGED view with the
+          // entity record canonical (faction-flow decision, 2026-07) — both
+          // factions surface.
           const fresh  = game.settings.get(MODULE, "campaignState");
-          const packet = await asm.assembleContextPacket(null, fresh, { tokenBudget: 4000 });
-          const factionBlock = packet.assembled.split("FACTION ATTITUDES")[1] ?? "";
-          assert.include(factionBlock, wjOnlyName,
-            "WJ-only faction should appear in Section 9");
-          assert.notInclude(factionBlock, entityName,
-            "Entity-backed faction should NOT appear in Section 9");
+          const extras = await buildNarratorExtras("paced_narrative", fresh, { playerNarration: "" });
+          const landscape = JSON.stringify(extras.factionLandscape ?? []);
+          assert.include(landscape, wjOnlyName,
+            "WJ-only faction should appear in the merged landscape");
+          assert.include(landscape, entityName,
+            "entity-backed faction should ALSO appear (records canonical)");
 
           // Track the entity journal for cleanup
           const entityJournal = (fresh.factionIds ?? [])
@@ -5844,7 +5789,7 @@ function registerAudioCrossClientTests(quench) {
 //     ChatMessages, the dispatcher routing them to handleFactContinuityCommand
 //     / handleSceneCommand, and the response cards being flagged correctly
 //   - factContinuity.enabled = false gating the chat handlers
-//   - Section 6.5 surfacing in assembleContextPacket against a live
+//   - Section 6.5 surfacing in the live narrator prompt against a live
 //     campaignState
 
 function registerFactContinuityTests(quench) {
@@ -6187,8 +6132,8 @@ function registerFactContinuityTests(quench) {
         });
       });
 
-      // ── 9: Section 6.5 surfaces in the assembled context packet ──────────
-      describe("Section 6.5 — surfaces in assembleContextPacket", function () {
+      // ── 9: Section 6.5 surfaces in the live narrator prompt ──────────────
+      describe("Section 6.5 — surfaces in buildNarratorSystemPrompt", function () {
         it("a sceneTruth in campaignState appears as a binding-truths block", async function () {
           this.timeout(15000);
           if (skipNotGM(this)) return;
@@ -6197,8 +6142,10 @@ function registerFactContinuityTests(quench) {
             await withTempSetting("factContinuity.ledgerInContext", true, async () => {
               const { setTruth } = await import(
                 `/modules/${MODULE_ID}/src/factContinuity/ledgers.js`);
-              const { assembleContextPacket } = await import(
-                `/modules/${MODULE_ID}/src/context/assembler.js`);
+              const { buildNarratorExtras } = await import(
+                `/modules/${MODULE_ID}/src/narration/narrator.js`);
+              const { buildNarratorSystemPrompt } = await import(
+                `/modules/${MODULE_ID}/src/narration/narratorPrompt.js`);
 
               const state = JSON.parse(JSON.stringify(originalState ?? {}));
               state.sceneTruths       = [];
@@ -6212,20 +6159,21 @@ function registerFactContinuityTests(quench) {
                 "The blast door is welded shut", state,
                 { actor: "gm", isGM: true });
 
-              const packet = await assembleContextPacket(
-                /* resolution */ null,
-                state,
-                { tokenBudget: 4000 },
-              );
-              assert.isObject(packet, "assembleContextPacket returns an object");
-              assert.isString(packet.assembled, "assembled string present");
+              const extras = await buildNarratorExtras(
+                "paced_narrative", state, { playerNarration: "" });
+              const prompt = buildNarratorSystemPrompt(state, {
+                narrationTone: "wry", narrationLevity: "default",
+                narrationPerspective: "auto", narrationLength: 3,
+                narrationInstructions: "",
+              }, null, "", extras);
+              assert.isString(prompt, "assembled prompt present");
               assert.include(
-                packet.assembled,
+                prompt,
                 "ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE",
-                "Section 6.5 header should appear in the assembled prompt",
+                "Section 6.5 header should appear in the live prompt",
               );
               assert.include(
-                packet.assembled,
+                prompt,
                 "The blast door is welded shut",
                 "the seeded truth should be rendered in the block",
               );
@@ -6744,11 +6692,12 @@ function registerSectorArtTests(quench) {
 // the non-hybrid path, the hybrid name-match path, the dismissed-entities
 // path). This batch pins the integration contract that unit tests cannot
 // reach: that the right NARRATOR_PERMISSIONS block actually surfaces in the
-// `assembled` system prompt produced by assembleContextPacket for each
+// `assembled` system prompt produced by buildNarratorSystemPrompt for each
 // narrator class — and that the canonical moves in the schema MOVES table
 // map to the documented narratorClass values. Together those guarantee a
 // regression in either the schema, the resolver, or the assembler shows up
-// as a clear failure here.
+// as a clear failure here. (The packet-based variant retired with the
+// assembler in 2026-07; the prompt builder is the live seam.)
 
 function registerNedPermissionsMatrixTests(quench) {
   quench.registerBatch(
@@ -6759,14 +6708,14 @@ function registerNedPermissionsMatrixTests(quench) {
       // Hoisted modules so the schema/MOVES table is read once and re-used
       // across every test in the batch.
       let MOVES = null;
-      let assembleContextPacket = null;
+      let buildNarratorSystemPrompt = null;
       let resolveRelevance = null;
       let NARRATOR_PERMISSIONS = null;
 
       before(async function () {
         ({ MOVES } = await import(`/modules/${MODULE_ID}/src/schemas.js`));
-        ({ assembleContextPacket } = await import(
-          `/modules/${MODULE_ID}/src/context/assembler.js`));
+        ({ buildNarratorSystemPrompt } = await import(
+          `/modules/${MODULE_ID}/src/narration/narratorPrompt.js`));
         ({ resolveRelevance } = await import(
           `/modules/${MODULE_ID}/src/context/relevanceResolver.js`));
         ({ NARRATOR_PERMISSIONS } = await import(
@@ -6809,8 +6758,8 @@ function registerNedPermissionsMatrixTests(quench) {
         }
       });
 
-      // ── 2: assembler renders the right NARRATOR_PERMISSIONS block per class
-      describe("assembler renders NARRATOR_PERMISSIONS block per class", function () {
+      // ── 2: prompt builder renders the right NARRATOR_PERMISSIONS block per class
+      describe("prompt builder renders NARRATOR_PERMISSIONS block per class", function () {
         const CLASSES = [
           { key: "discovery",     marker: "## NARRATOR PERMISSIONS — DISCOVERY MODE" },
           { key: "interaction",   marker: "## NARRATOR PERMISSIONS — INTERACTION MODE" },
@@ -6822,37 +6771,28 @@ function registerNedPermissionsMatrixTests(quench) {
             this.timeout(10000);
             if (skipNotGM(this)) return;
             const state = game.settings.get(MODULE_ID, "campaignState");
-            const packet = await assembleContextPacket(null, state, {
-              narratorClass: key,
-              tokenBudget:   4000,
-            });
-            assert.isString(packet.assembled);
-            assert.include(packet.assembled, marker,
+            const prompt = buildNarratorSystemPrompt(state, {
+              narrationTone: "wry", narrationLevity: "default",
+              narrationPerspective: "auto", narrationLength: 3,
+              narrationInstructions: "",
+            }, null, "", { mode: "move_resolution", narratorClass: key });
+            assert.isString(prompt);
+            assert.include(prompt, marker,
               `assembled prompt should contain the ${key.toUpperCase()} header`);
             // Negative: must not also contain the OTHER two class headers.
             for (const other of CLASSES) {
               if (other.key === key) continue;
-              assert.notInclude(packet.assembled, other.marker,
+              assert.notInclude(prompt, other.marker,
                 `assembled prompt for "${key}" must not bleed in the ${other.key.toUpperCase()} block`);
             }
           });
         }
       });
 
-      // ── 3: assembler emits no permissions block when narratorClass is null
-      describe("assembler omits the permissions block when narratorClass is null", function () {
-        it("the assembled prompt contains no NARRATOR PERMISSIONS marker at all", async function () {
-          this.timeout(10000);
-          if (skipNotGM(this)) return;
-          const state = game.settings.get(MODULE_ID, "campaignState");
-          const packet = await assembleContextPacket(null, state, {
-            narratorClass: null,
-            tokenBudget:   4000,
-          });
-          assert.notMatch(packet.assembled, /## NARRATOR PERMISSIONS —/,
-            "no permissions marker should appear when narratorClass is null (assembler default)");
-        });
-      });
+      // ── 3: (retired with the assembler, 2026-07) the packet emitted NO
+      // permissions block for a null narratorClass; the live prompt builder
+      // instead applies DEFAULT_PERMISSION_CLASS_BY_MODE per narrator mode —
+      // that contract is covered by tests/unit/narratorPrompt.test.js.
 
       // ── 4: resolveRelevance — non-hybrid passes the table class through ──
       describe("resolveRelevance — non-hybrid passes table narratorClass through", function () {

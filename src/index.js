@@ -1669,7 +1669,7 @@ export function registerChatHook() {
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, null, campaignState, { relevance, speakerActorId });
+      await narrateResolution(resolution, campaignState, { relevance, speakerActorId });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -1922,7 +1922,7 @@ function registerNativeProgressRollHook() {
         };
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome.
-        return narrateResolution(resolution, {}, campaignState);
+        return narrateResolution(resolution, campaignState);
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
     } catch (err) {

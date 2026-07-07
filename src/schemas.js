@@ -650,7 +650,6 @@ export const SessionSchema = {
     additionalVeils: [],
   },
 
-  notes: "",
   questFocus: "",               // Vow to spotlight in next session (set at End a Session)
   connectionFocus: "",          // Connection to spotlight
 
@@ -925,75 +924,3 @@ export const ArtAssetSchema = {
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONTEXT PACKET
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * The assembled Loremaster context packet.
- * Built by context/assembler.js before every @lm call.
- *
- * Injection order — safety is always first, no exceptions:
- *   1. Safety configuration (lines, veils — never omitted regardless of token budget)
- *   2. World Truths summary
- *   3. Active connections (scene-relevant first, then allies, then others by recency)
- *   4. Open vows and progress track states
- *   5. Recent oracle results
- *   6. Session notes
- *   7. Resolved move outcome (move name, stat, outcome, specific consequences)
- *
- * Token budget: assembler compresses or drops lower-priority sections to fit.
- * Safety section is exempt from budget pressure — never dropped, never summarised.
- *
- * Source: Brief §1 Feature 6
- */
-export const ContextPacketSchema = {
-  _id: "",
-  timestamp: null,
-  sessionId: "",
-  triggeredBy: "",              // "move_resolution" | "oracle" | "player_message" | "manual"
-
-  sections: {
-    safety: {
-      content: "",
-      tokenEstimate: 0,
-      alwaysInclude: true,      // Never omitted. Never summarised. Hard rule.
-    },
-    worldTruths: {
-      content: "",
-      tokenEstimate: 0,
-      summarized: false,        // true if compressed to fit token budget
-    },
-    activeConnections: {
-      content: "",
-      tokenEstimate: 0,
-      connectionIds: [],
-    },
-    progressTracks: {
-      content: "",
-      tokenEstimate: 0,
-      trackIds: [],
-    },
-    recentOracles: {
-      content: "",
-      tokenEstimate: 0,
-      oracleResultIds: [],
-    },
-    sessionNotes: {
-      content: "",
-      tokenEstimate: 0,
-    },
-    moveOutcome: {
-      content: "",
-      tokenEstimate: 0,
-      moveResolutionId: "",
-    },
-  },
-
-  totalTokenEstimate: 0,
-  tokenBudget: 8000,            // Target token ceiling for the context packet
-  budgetExceeded: false,
-  omittedSections: [],          // Sections dropped to fit budget. Never includes "safety".
-
-  assembled: "",                // Final concatenated string prepended to the Loremaster call
-};

@@ -281,7 +281,6 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
  * On any failure, posts a fallback card and returns null — never blocks the move result.
  *
  * @param {Object} resolution    — MoveResolutionSchema from resolver.js
- * @param {Object} contextPacket — ContextPacketSchema from assembler.js
  * @param {Object} campaignState — CampaignStateSchema
  * @param {Object} [options]
  * @param {Object} [options.relevance] — Pre-resolved RelevanceResult from
@@ -290,7 +289,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
  *   is called internally.
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
-export async function narrateResolution(resolution, contextPacket, campaignState, options = {}) {
+export async function narrateResolution(resolution, campaignState, options = {}) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
 
