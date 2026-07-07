@@ -67,34 +67,6 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
 
 
 /**
- * Estimate the token count for the safety context string.
- * Rough approximation: ~4 characters per token.
- * Used by the assembler for budget tracking — safety is exempt from the cap
- * but the assembler still needs to know how many tokens it consumes.
- *
- * @param {string} safetyContext
- * @returns {number}
- */
-export function estimateSafetyTokens(safetyContext) {
-  return Math.ceil(safetyContext.length / 4);
-}
-
-
-/**
- * Check whether an X-Card signal should suppress context for the current scene.
- * Checks both the passed sessionState and the persisted campaignState flag so
- * the X-Card remains active across the remainder of the session.
- *
- * @param {Object|null} sessionState — SessionSchema
- * @returns {boolean}
- */
-export function isSceneSuppressed(sessionState) {
-  if (!sessionState) return false;
-  return sessionState.xCardActive === true;
-}
-
-
-/**
  * Activate the X-Card — sets xCardActive on campaignState so the assembler
  * suppresses all creative content for the remainder of the scene.
  *

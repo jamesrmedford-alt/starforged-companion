@@ -770,19 +770,6 @@ export function getFactionEntry(name) {
 }
 
 /**
- * Current-session unconfirmed lore — whatever the narrator established this
- * session that has not yet been promoted.
- */
-export function getRecentDiscoveries(campaignState) {
-  const sessionId = campaignState?.currentSessionId;
-  if (!sessionId) return [];
-  const journal = findJournal(JOURNAL_NAMES.lore);
-  return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.sessionId === sessionId && e.confirmed !== true)
-    .sort(byRecency);
-}
-
-/**
  * All locations with a known name. Phase 6 surfaces these in the panel.
  */
 export function listLocationEntries(_campaignState) {
