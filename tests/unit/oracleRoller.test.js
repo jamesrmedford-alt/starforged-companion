@@ -184,3 +184,20 @@ describe("derelict zone-crawl registry (SITE-ZONE-TABLES-DEAD fix, 2026-07)", ()
     }
   });
 });
+
+
+describe("theme peril/opportunity registry (THEME-PERIL-OPP-DEAD fix, issue #272)", () => {
+  const THEME_KEYS = [
+    "chaotic", "haunted", "infested", "inhabited",
+    "mechanical", "ruined", "sacred",
+  ];
+  it("registers the peril + opportunity table for every theme and they roll", () => {
+    for (const key of THEME_KEYS) {
+      for (const suffix of ["peril", "opportunity"]) {
+        const id = `theme_${key}_${suffix}`;
+        const out = rollOracle(id, { roll: 50 });
+        expect(out.result, id).toBeTruthy();
+      }
+    }
+  });
+});
