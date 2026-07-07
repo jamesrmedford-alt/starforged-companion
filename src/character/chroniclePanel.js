@@ -303,11 +303,3 @@ export function openChroniclePanel(actorId) {
   _chroniclePanelInstance.render({ force: true });
 }
 
-/**
- * Placeholder hook registration for the chronicle panel. The launcher button
- * lives on the floating Companion toolbar (src/ui/companionToolbar.js); this
- * is kept as a no-op so callers in index.js stay stable.
- */
-export function registerChroniclePanelHooks() {
-  // Panel button is on the floating Companion toolbar, same as the other panels.
-}

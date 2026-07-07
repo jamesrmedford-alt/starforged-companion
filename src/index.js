@@ -301,21 +301,6 @@ function registerCoreSettings() {
     default: "black-forest-labs/flux.2-pro",
   });
 
-  game.settings.register(MODULE_ID, "locationArtSource", {
-    name:    "Location Background Art Source",
-    hint:    "Choose system-bundled location art (free) or OpenRouter generation (paid). Auto prefers system art when available.",
-    scope:   "world",
-    config:  true,
-    type:    String,
-    choices: {
-      auto:       "Auto (system art first, OpenRouter fallback)",
-      kirin:      "System — illustrated (Kirin)",
-      rains:      "System — photorealistic (Rains)",
-      openrouter: "Always generate via OpenRouter",
-    },
-    default: "auto",
-  });
-
   game.settings.register(MODULE_ID, "sectorArtEnabled", {
     name:    "Generate Sector Background Art",
     hint:    "Generate a background image (via OpenRouter, FLUX.2 Pro by default) for each new sector. Requires the OpenRouter API key.",

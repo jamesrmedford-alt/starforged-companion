@@ -9,7 +9,6 @@ import {
   isIronswornAvailable,
   _resetIronswornAvailabilityCache,
   pickStarshipIcon,
-  resolveLocationArt,
   iconForPlanetType,
   iconForStellarObject,
   statIcon,
@@ -32,7 +31,7 @@ describe('Phase 1 — IS_PATHS constants', () => {
   });
 
   it('IS_PATHS contains every documented sub-path', () => {
-    for (const key of ['PLANETS', 'STELLAR', 'STARSHIPS', 'LOCATIONS',
+    for (const key of ['PLANETS', 'STELLAR', 'STARSHIPS',
                        'ASSETS', 'ORACLES', 'SECTORS', 'ICONS', 'DICE', 'MISC']) {
       expect(IS_PATHS[key]).toMatch(/^systems\/foundry-ironsworn\/assets\//);
     }
@@ -111,40 +110,6 @@ describe('Phase 3 — pickStarshipIcon', () => {
       expect(num).toBeGreaterThanOrEqual(1);
       expect(num).toBeLessThanOrEqual(15);
     }
-  });
-});
-
-describe('Phase 4 — resolveLocationArt', () => {
-  it('resolves every category × environment combination under "auto"', () => {
-    for (const cat of ['settlement', 'vault', 'derelict']) {
-      for (const env of ['deep-space', 'orbital', 'planetside']) {
-        const path = resolveLocationArt(cat, env, 'auto');
-        expect(path).toMatch(new RegExp(`^${IS_PATHS.LOCATIONS}/Kirin/`));
-      }
-    }
-  });
-
-  it('honours kirin preference', () => {
-    const path = resolveLocationArt('settlement', 'orbital', 'kirin');
-    expect(path).toBe(`${IS_PATHS.LOCATIONS}/Kirin/Settlement-Orbital.svg`);
-  });
-
-  it('honours rains preference (.webp)', () => {
-    const path = resolveLocationArt('vault', 'planetside', 'rains');
-    expect(path).toBe(`${IS_PATHS.LOCATIONS}/Rains/Vault-Planetside.webp`);
-  });
-
-  it('default preference is "auto"', () => {
-    expect(resolveLocationArt('derelict', 'deep-space'))
-      .toBe(`${IS_PATHS.LOCATIONS}/Kirin/Derelict-DeepSpace.svg`);
-  });
-
-  it('returns null for unknown category', () => {
-    expect(resolveLocationArt('mystery', 'orbital')).toBeNull();
-  });
-
-  it('returns null for unknown environment', () => {
-    expect(resolveLocationArt('settlement', 'underground')).toBeNull();
   });
 });
 

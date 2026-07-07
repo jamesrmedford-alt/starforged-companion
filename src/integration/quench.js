@@ -2677,16 +2677,6 @@ function registerSystemAssetTests(quench) {
           assert.match(path, new RegExp(`^${IS_PATHS.STARSHIPS.replace(/\//g, "\\/")}\\/`));
         });
 
-        it("resolveLocationArt produces a non-null path for every category × environment", async function () {
-          const { resolveLocationArt } =
-            await import(`${MODULE_PATH}/system/ironswornAssets.js`);
-          for (const cat of ["settlement", "vault", "derelict"]) {
-            for (const env of ["deep-space", "orbital", "planetside"]) {
-              const path = resolveLocationArt(cat, env, "auto");
-              assert.isString(path, `${cat}/${env} should resolve to a path`);
-            }
-          }
-        });
       });
 
       describe("ironswornPacks — live compendium lookups", function () {

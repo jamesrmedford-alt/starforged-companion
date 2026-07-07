@@ -21,7 +21,6 @@ export const IS_PATHS = Object.freeze({
   PLANETS:    `${IS_BASE}/planets`,
   STELLAR:    `${IS_BASE}/stellar-objects`,
   STARSHIPS:  `${IS_BASE}/starships`,
-  LOCATIONS:  `${IS_BASE}/locations`,
   ASSETS:     `${IS_BASE}/assets`,
   ORACLES:    `${IS_BASE}/oracles`,
   SECTORS:    `${IS_BASE}/sectors`,
@@ -112,70 +111,6 @@ export function pickStarshipIcon(seed) {
   const idx = (stableHash(seed) % STARSHIP_TOKEN_COUNT) + 1;
   const num = String(idx).padStart(2, "0");
   return `${IS_PATHS.STARSHIPS}/Starforged-Starship-Token-${num}.webp`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LOCATION BACKGROUND RESOLVER (Phase 4)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Filename patterns for location backgrounds. Confirmed against the
- * foundry-ironsworn assets/locations/ tree:
- *   Kirin/{Settlement,Vault,Derelict}-{DeepSpace,Orbital,Planetside}.svg
- *   Rains/{Settlement,Vault,Derelict}-{DeepSpace,Orbital,Planetside}.webp
- *   Root/{Settlement,Vault,Derelict}-{DeepSpace,Orbital,Planetside}.webp
- */
-const LOCATION_CATEGORY_LABELS = {
-  settlement: "Settlement",
-  vault:      "Vault",
-  derelict:   "Derelict",
-};
-
-const LOCATION_ENVIRONMENT_LABELS = {
-  "deep-space": "DeepSpace",
-  orbital:     "Orbital",
-  planetside:  "Planetside",
-};
-
-const LOCATION_SET_EXTENSIONS = {
-  Kirin: "svg",
-  Rains: "webp",
-  Root:  "webp",
-};
-
-function buildLocationPath(set, category, environment) {
-  const cat = LOCATION_CATEGORY_LABELS[category];
-  const env = LOCATION_ENVIRONMENT_LABELS[environment];
-  const ext = LOCATION_SET_EXTENSIONS[set];
-  if (!cat || !env || !ext) return null;
-  return `${IS_PATHS.LOCATIONS}/${set}/${cat}-${env}.${ext}`;
-}
-
-/**
- * Resolve a system-bundled location background for a category × environment.
- * Honours the user's preferred art set:
- *   - "kirin" — illustrated set only
- *   - "rains" — photorealistic set only
- *   - "auto"  — kirin first, fall back to rains, then root (default)
- *
- * Returns null when category or environment are unrecognised.
- *
- * @param {"settlement"|"vault"|"derelict"} category
- * @param {"deep-space"|"orbital"|"planetside"} environment
- * @param {"kirin"|"rains"|"auto"} [preference="auto"]
- * @returns {string|null}
- */
-export function resolveLocationArt(category, environment, preference = "auto") {
-  if (!LOCATION_CATEGORY_LABELS[category])      return null;
-  if (!LOCATION_ENVIRONMENT_LABELS[environment]) return null;
-
-  if (preference === "kirin") return buildLocationPath("Kirin", category, environment);
-  if (preference === "rains") return buildLocationPath("Rains", category, environment);
-
-  // auto — Kirin first, then Rains, then Root
-  return buildLocationPath("Kirin", category, environment)
-      ?? buildLocationPath("Rains", category, environment)
-      ?? buildLocationPath("Root",  category, environment);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

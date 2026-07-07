@@ -80,6 +80,22 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       app.initialMessage = initialMessage;
     }
     await app.render({ force: true });
+    // Restore the last saved window position/size (client-scoped
+    // privateChannel.windowPosition — wired in the 2026-07 cleanup, issue
+    // #276: the setting was registered at feature launch but never read).
+    try {
+      const saved = game.settings?.get?.(MODULE_ID, "privateChannel.windowPosition");
+      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+        app.setPosition({
+          left: saved.left,
+          top:  saved.top,
+          ...(Number.isFinite(saved.width)  ? { width:  saved.width }  : {}),
+          ...(Number.isFinite(saved.height) ? { height: saved.height } : {}),
+        });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | private channel: could not restore window position:`, err);
+    }
     return app;
   }
 
@@ -123,6 +139,15 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
   }
 
   _onClose(_options) {
+    // Persist the resting position/size for the next open (client-scoped).
+    try {
+      const { left, top, width, height } = this.position ?? {};
+      if (Number.isFinite(left) && Number.isFinite(top)) {
+        game.settings?.set?.(MODULE_ID, "privateChannel.windowPosition", { left, top, width, height });
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | private channel: could not save window position:`, err);
+    }
     PrivateChannelApp.#instances.delete(this.userId);
     flushNow(this.userId).catch(() => {});   // persist any pending turns
   }
