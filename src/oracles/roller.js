@@ -360,20 +360,6 @@ export function rollPaired(tableId1, tableId2) {
 }
 
 /**
- * Roll Action + Theme.
- */
-export function rollActionTheme() {
-  return rollPaired("action", "theme");
-}
-
-/**
- * Roll Descriptor + Focus.
- */
-export function rollDescriptorFocus() {
-  return rollPaired("descriptor", "focus");
-}
-
-/**
  * Ask the Oracle — yes/no with odds (play kit p. 8, "FATE MOVES > ASK THE ORACLE").
  *
  * Rolls a d100 and compares to the threshold for the chosen odds:
@@ -420,30 +406,6 @@ export function rollYesNo(odds, { roll, question = "" } = {}) {
     question,
   };
 }
-
-/**
- * Format an oracle result for chat injection.
- * Returns a short HTML string suitable for a Foundry chat message.
- */
-export function formatOracleResult(result) {
-  if (result.combined) {
-    // Paired roll
-    return `<strong>${result.tableId1} / ${result.tableId2}:</strong> ${result.combined}`;
-  }
-  return `<strong>${result.tableName}:</strong> ${result.result}`;
-}
-
-/**
- * Format an oracle result for Loremaster context injection.
- * Returns a bracketed string matching the move context format.
- */
-export function formatOracleContext(result) {
-  if (result.combined) {
-    return `[ORACLE: ${result.combined}]`;
-  }
-  return `[ORACLE: ${result.tableName} → ${result.result}]`;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS

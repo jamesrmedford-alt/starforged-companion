@@ -42,11 +42,6 @@ export const FLAG_KEYS = {
 export const THREAT_SEVERITIES = ["immediate", "active", "looming", "resolved"];
 const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
 
-export const FACTION_ATTITUDES = ["hostile", "neutral", "allied", "unknown"];
-export const LOCATION_STATUSES = ["current", "departed", "destroyed", "unknown"];
-export const LORE_CATEGORIES   = ["ascendancy", "ai", "essentia", "truthConnection", "precursor", "other"];
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────────────────────

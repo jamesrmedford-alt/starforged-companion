@@ -211,6 +211,11 @@ import {
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
+import {
+  DEFAULT_NARRATOR_VOICE_ID,
+  DEFAULT_NPC_VOICE_ID,
+  DEFAULT_NPC_FEMININE_VOICE_ID,
+} from "./audio/elevenlabs.js";
 import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
@@ -417,11 +422,11 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
     name: "Narrator voice ID", scope: "world", config: false,
-    type: String, default: "fNmw8sukfGuvWVOp33Ge",
+    type: String, default: DEFAULT_NARRATOR_VOICE_ID,
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceId", {
     name: "NPC voice ID", scope: "world", config: false,
-    type: String, default: "pNInz6obpgDQGcFmaJgB",
+    type: String, default: DEFAULT_NPC_VOICE_ID,
   });
   // Pronoun-keyed NPC voices (v1.7.11 finding F). When set, an NPC card's
   // focal connection picks the voice matching its established pronouns;
@@ -430,7 +435,7 @@ function registerCoreSettings() {
   // the narrator out of the box.
   game.settings.register(MODULE_ID, "audio.npcVoiceFeminine", {
     name: "NPC voice — feminine (she/her)", scope: "world", config: false,
-    type: String, default: "21m00Tcm4TlvDq8ikWAM",
+    type: String, default: DEFAULT_NPC_FEMININE_VOICE_ID,
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceMasculine", {
     name: "NPC voice — masculine (he/him)", scope: "world", config: false,

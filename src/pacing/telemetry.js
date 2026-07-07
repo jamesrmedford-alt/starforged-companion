@@ -143,45 +143,6 @@ export async function logConsistencyDecision(entry) {
   }
 }
 
-/**
- * Read all consistency-check telemetry entries. Returns [] when the page
- * is missing.
- *
- * @returns {Array<Object>}
- */
-export function readConsistencyTelemetry() {
-  try {
-    const journal = findJournal();
-    if (!journal) return [];
-    const page = journal.pages?.contents?.find(p => p.name === "Consistency Check");
-    return page?.flags?.[MODULE_ID]?.consistencyCheckTelemetry?.entries ?? [];
-  } catch (err) {
-    console.warn(`${MODULE_ID} | consistency telemetry: read failed:`, err);
-    return [];
-  }
-}
-
-/**
- * Read all telemetry entries for a session. Returns [] when the journal or
- * page is missing.
- *
- * @param {number} sessionNumber
- * @returns {Array<Object>}
- */
-export function readPacingTelemetry(sessionNumber) {
-  try {
-    const journal = findJournal();
-    if (!journal) return [];
-    const pageName = sessionNumber > 0 ? `Session ${sessionNumber}` : "Pre-session";
-    const page = journal.pages?.contents?.find(p => p.name === pageName);
-    return page?.flags?.[MODULE_ID]?.[FLAG_KEY]?.entries ?? [];
-  } catch (err) {
-    console.warn(`${MODULE_ID} | pacing telemetry: read failed:`, err);
-    return [];
-  }
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────

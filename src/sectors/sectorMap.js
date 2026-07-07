@@ -52,21 +52,6 @@ export function renderSectorMap(mapData) {
   </svg>`.trim();
 }
 
-/**
- * Add a passage to mapData.
- * @param {SectorMapData} mapData
- * @param {string|number} fromId
- * @param {string|number} toId
- * @param {boolean} [toEdge=false]
- * @returns {SectorMapData} — mutated mapData
- */
-export function addPassage(mapData, fromId, toId, toEdge = false) {
-  mapData.passages = mapData.passages ?? [];
-  mapData.passages.push({ fromId, toId: toEdge ? null : toId, toEdge });
-  return mapData;
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // BUILDERS
 // ─────────────────────────────────────────────────────────────────────────────

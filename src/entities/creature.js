@@ -104,12 +104,6 @@ export function getCreature(journalEntryId) {
   }
 }
 
-export function listCreatures(campaignState) {
-  return (campaignState.creatureIds ?? [])
-    .map(id => getCreature(id))
-    .filter(Boolean);
-}
-
 export async function updateCreature(journalEntryId, updates) {
   const entry = game.journal?.get(journalEntryId);
   if (!entry) throw new Error(`Creature journal entry not found: ${journalEntryId}`);
