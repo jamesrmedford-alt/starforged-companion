@@ -80,7 +80,6 @@ export const SettlementSchema = {
   portraitSourceDescription:   "",
 
   // Context injection
-  sceneRelevant:   false,
   loremasterNotes: "",
 
   // Linked entities
@@ -197,10 +196,6 @@ export async function updateSettlement(actorId, updates) {
   }
 
   return updated;
-}
-
-export async function setSceneRelevant(actorId, value) {
-  return updateSettlement(actorId, { sceneRelevant: value });
 }
 
 export async function setPortraitId(actorId, artAssetId) {

@@ -47,7 +47,6 @@ export const CreatureSchema = {
   portraitSourceDescription: "",
 
   // Context injection
-  sceneRelevant:  false,
   narratorNotes:  "",
 
   // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
@@ -132,10 +131,6 @@ export async function updateCreature(journalEntryId, updates) {
   }
 
   return updated;
-}
-
-export async function setSceneRelevant(journalEntryId, value) {
-  return updateCreature(journalEntryId, { sceneRelevant: value });
 }
 
 export async function setPortraitId(journalEntryId, artAssetId) {

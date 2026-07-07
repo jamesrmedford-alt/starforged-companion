@@ -119,7 +119,7 @@ describe("LocationSchema", () => {
     "firstLook", "feature", "peril", "opportunity",
     "description", "history", "notes",
     "portraitId", "portraitSourceDescription",
-    "sceneRelevant", "narratorNotes",
+    "narratorNotes",
     "sectorId", "settlementId",
     "canonicalLocked", "generativeTier",
     "createdAt", "updatedAt",
@@ -150,7 +150,7 @@ describe("CreatureSchema", () => {
     "rank", "attackPattern",
     "description", "notes",
     "portraitId", "portraitSourceDescription",
-    "sceneRelevant", "narratorNotes",
+    "narratorNotes",
     "canonicalLocked", "generativeTier",
     "createdAt", "updatedAt",
   ];

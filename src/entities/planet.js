@@ -91,7 +91,6 @@ export const PlanetSchema = {
   portraitSourceDescription:   "",
 
   // Context injection
-  sceneRelevant:   false,
   loremasterNotes: "",
 
   // Narrator entity-discovery flags
@@ -187,26 +186,6 @@ export async function updatePlanet(actorId, updates) {
   }
 
   return updated;
-}
-
-/**
- * Add a discovered planetside feature.
- * Features accumulate as the planet is explored — append only.
- *
- * @param {string} actorId
- * @param {string} feature — Oracle result or player description
- * @returns {Promise<Object>}
- */
-export async function addFeature(actorId, feature) {
-  const planet = getPlanet(actorId);
-  if (!planet) throw new Error(`Planet not found: ${actorId}`);
-
-  const features = [...(planet.features ?? []), feature];
-  return updatePlanet(actorId, { features });
-}
-
-export async function setSceneRelevant(actorId, value) {
-  return updatePlanet(actorId, { sceneRelevant: value });
 }
 
 export async function setPortraitId(actorId, artAssetId) {

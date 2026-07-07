@@ -455,8 +455,6 @@ export const ConnectionSchema = {
   loremasterNotes: "",          // How to voice/play this character — injected into context
 
   // Context injection flags
-  allyFlag: false,              // true = inject into every context packet
-  sceneRelevant: false,         // true = inject into current scene packet
 
   // Privacy — per Brief §3: individual player Lines must not be visible to other players
   playerVisible: true,          // false = GM-only record (hidden antagonists, secret NPCs)

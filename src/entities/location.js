@@ -52,7 +52,6 @@ export const LocationSchema = {
   portraitSourceDescription: "",
 
   // Context injection
-  sceneRelevant:  false,
   narratorNotes:  "",
 
   // Optional parent links — sectorId drives per-sector folder placement
@@ -171,10 +170,6 @@ export async function updateLocation(actorId, updates) {
   }
 
   return updated;
-}
-
-export async function setSceneRelevant(actorId, value) {
-  return updateLocation(actorId, { sceneRelevant: value });
 }
 
 export async function setPortraitId(actorId, artAssetId) {
