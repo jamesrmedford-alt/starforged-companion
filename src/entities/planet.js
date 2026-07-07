@@ -217,34 +217,6 @@ export function isReadyForArtGeneration(planet) {
   return planet.active && !!planet.portraitSourceDescription && !planet.portraitId;
 }
 
-/**
- * Format a Planet for narrator context injection.
- *
- * @param {Object} planet
- * @returns {string}
- */
-export function formatForContext(planet) {
-  const parts = [`**${planet.name || "Unknown Planet"}**`];
-
-  if (planet.type)          parts.push(planet.type);
-  if (planet.atmosphere)    parts.push(`Atmosphere: ${planet.atmosphere}`);
-  if (planet.life)          parts.push(`Life: ${planet.life}`);
-
-  if (planet.biomes?.length) {
-    parts.push(`Biomes: ${planet.biomes.join(", ")}`);
-  }
-
-  if (planet.features?.length) {
-    // Only include the most recently discovered feature to keep context concise
-    parts.push(`Notable: ${planet.features[planet.features.length - 1]}`);
-  }
-
-  if (planet.description)      parts.push(planet.description);
-  if (planet.loremasterNotes)  parts.push(`Note: ${planet.loremasterNotes}`);
-
-  return parts.join(" | ");
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

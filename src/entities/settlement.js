@@ -211,31 +211,6 @@ export function isReadyForArtGeneration(settlement) {
   return settlement.active && !!settlement.portraitSourceDescription && !settlement.portraitId;
 }
 
-/**
- * Format a Settlement for narrator context injection.
- * Used when the scene is set at this location.
- *
- * @param {Object} settlement
- * @returns {string}
- */
-export function formatForContext(settlement) {
-  const parts = [`**${settlement.name || "Unknown Settlement"}**`];
-
-  if (settlement.location)   parts.push(`Location: ${settlement.location}`);
-  if (settlement.population) parts.push(`Population: ${settlement.population}`);
-  if (settlement.authority)  parts.push(`Authority: ${settlement.authority}`);
-  if (settlement.trouble)    parts.push(`Current trouble: ${settlement.trouble}`);
-
-  if (settlement.projects?.length) {
-    parts.push(`Projects: ${settlement.projects.join(", ")}`);
-  }
-
-  if (settlement.description)     parts.push(settlement.description);
-  if (settlement.loremasterNotes) parts.push(`Note: ${settlement.loremasterNotes}`);
-
-  return parts.join(" | ");
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

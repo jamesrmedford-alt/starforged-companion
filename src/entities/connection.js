@@ -412,39 +412,6 @@ export async function setPortraitId(journalEntryId, artAssetId) {
 // CONTEXT FORMATTING
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Format a Connection record for narrator context injection.
- * Progressive disclosure — only populated fields are included.
- * Secrets are never included (GM-only).
- *
- * @param {Object} connection
- * @returns {string}
- */
-export function formatForContext(connection) {
-  const parts = [];
-
-  parts.push(`**${connection.name || "Unknown"}**`);
-
-  if (connection.role)             parts.push(`Role: ${connection.role}`);
-  if (connection.secondRole)       parts.push(`Also: ${connection.secondRole}`);
-  if (connection.rank)             parts.push(`Rank: ${connection.rank}`);
-  if (connection.relationshipType) parts.push(`Relationship: ${connection.relationshipType}`);
-  if (connection.bonded)           parts.push("Bonded.");
-  if (!connection.active)          parts.push("(Connection lost.)");
-
-  if (connection.description)      parts.push(connection.description);
-  if (connection.motivation)       parts.push(`Motivation: ${connection.motivation}`);
-
-  // Last history entry gives recent context
-  const lastEntry = connection.history?.[connection.history.length - 1];
-  if (lastEntry?.entry) parts.push(`Last interaction: ${lastEntry.entry}`);
-
-  if (connection.loremasterNotes)  parts.push(`Voice note: ${connection.loremasterNotes}`);
-
-  return parts.join(" | ");
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────

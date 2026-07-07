@@ -147,31 +147,6 @@ export function isReadyForArtGeneration(creature) {
 }
 
 /**
- * Format a Creature for narrator context injection.
- *
- * @param {Object} creature
- * @returns {string}
- */
-export function formatForContext(creature) {
-  const parts = [`**${creature.name || "Unknown Creature"}**`];
-
-  if (creature.scale)       parts.push(`Scale: ${creature.scale}`);
-  if (creature.environment) parts.push(`Environment: ${creature.environment}`);
-  if (creature.form)        parts.push(`Form: ${creature.form}`);
-
-  if (creature.aspect?.length) {
-    parts.push(`Aspect: ${creature.aspect.join(", ")}`);
-  }
-
-  if (creature.behavior)      parts.push(`Behavior: ${creature.behavior}`);
-  if (creature.rank)          parts.push(`Rank: ${creature.rank}`);
-  if (creature.description)   parts.push(creature.description);
-  if (creature.narratorNotes) parts.push(`Note: ${creature.narratorNotes}`);
-
-  return parts.join(" | ");
-}
-
-/**
  * Render the Creature's descriptive fields into HTML for the page body so the
  * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives
  * on the page flag for the entity panel.

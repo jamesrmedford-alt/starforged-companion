@@ -372,27 +372,6 @@ export function isReadyForArtGeneration(ship) {
   return ship.active && !!ship.portraitSourceDescription && !ship.portraitId;
 }
 
-/**
- * Format a Ship for narrator context injection.
- *
- * @param {Object} ship
- * @returns {string}
- */
-export function formatForContext(ship) {
-  const parts = [`**${ship.name || "Unknown Ship"}**`];
-
-  if (ship.type)        parts.push(`Type: ${ship.type}`);
-  if (ship.mission)     parts.push(`Mission: ${ship.mission}`);
-
-  const integrityStr = `Integrity: ${ship.integrity}/${ship.integrityMax ?? 5}`;
-  const impacts = [ship.battered && "battered", ship.cursed && "cursed"].filter(Boolean);
-  parts.push(impacts.length ? `${integrityStr} [${impacts.join(", ")}]` : integrityStr);
-
-  if (ship.description)     parts.push(ship.description);
-
-  return parts.join(" | ");
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

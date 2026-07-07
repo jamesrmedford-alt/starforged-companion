@@ -362,30 +362,6 @@ export function isReadyForArtGeneration(faction) {
 }
 
 /**
- * Format a Faction for narrator context injection.
- *
- * @param {Object} faction
- * @returns {string}
- */
-export function formatForContext(faction) {
-  const parts = [`**${faction.name || "Unknown Faction"}**`];
-
-  if (faction.type)         parts.push(faction.subtype ? `${faction.type}: ${faction.subtype}` : faction.type);
-  if (faction.influence)    parts.push(`Influence: ${faction.influence}`);
-  if (faction.relationship && faction.relationship !== "unknown") {
-    parts.push(`Stance: ${faction.relationship.replace(/_/g, " ")}`);
-  }
-
-  const latestProject = faction.projects?.[faction.projects.length - 1];
-  if (latestProject)        parts.push(`Current project: ${latestProject}`);
-  if (faction.quirk)        parts.push(`Quirk: ${faction.quirk}`);
-  if (faction.description)  parts.push(faction.description);
-  if (faction.loremasterNotes) parts.push(`Note: ${faction.loremasterNotes}`);
-
-  return parts.join(" | ");
-}
-
-/**
  * Render the Faction's descriptive fields into HTML for the page body so the
  * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives
  * on the page flag for the entity panel.

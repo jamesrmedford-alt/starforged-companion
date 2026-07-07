@@ -185,29 +185,6 @@ export function isReadyForArtGeneration(location) {
   return location.active && !!location.portraitSourceDescription && !location.portraitId;
 }
 
-/**
- * Format a Location for narrator context injection.
- *
- * @param {Object} location
- * @returns {string}
- */
-export function formatForContext(location) {
-  const parts = [`**${location.name || "Unknown Location"}**`];
-
-  if (location.type)   parts.push(location.type);
-  if (location.status) parts.push(`Status: ${location.status}`);
-  if (location.region) parts.push(`Region: ${location.region}`);
-
-  if (location.feature)     parts.push(`Feature: ${location.feature}`);
-  if (location.peril)       parts.push(`Peril: ${location.peril}`);
-  if (location.opportunity) parts.push(`Opportunity: ${location.opportunity}`);
-
-  if (location.description)   parts.push(location.description);
-  if (location.narratorNotes) parts.push(`Note: ${location.narratorNotes}`);
-
-  return parts.join(" | ");
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
