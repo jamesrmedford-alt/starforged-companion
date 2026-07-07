@@ -84,7 +84,8 @@ Session, manual advance)**, and **oracle follow-up narrations**. Raw oracle
 *results* additionally carry a structured `oracleMemory` flag; the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
-cap 8) for section [3b] and the assembler's RECENT ORACLES section.
+cap 8) for section [3b] (the retired assembler's RECENT ORACLES section
+went with the module, 2026-07 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
 `!scene start`, an `@scene` intercept, `ensureSceneStarted` on the first
@@ -142,8 +143,8 @@ Addressed:
   Decision: decisions.md → "Consistency check defaults on".
 - **Rolling summary** carries the ledger-wins caveat every turn; persist gate
   is `isCanonicalGM` (was plain `isGM` — multi-GM last-writer race).
-- **Raw oracle results have a memory home** — `recentOracles` ring → [3b] +
-  the assembler section (which previously rendered a count from
+- **Raw oracle results have a memory home** — `recentOracles` ring → [3b]
+  (the assembler variant died with the module — it had rendered a count from
   `oracleResultIds`, a field no code ever wrote). Oracle follow-up prose
   joined the flag family. Decision: decisions.md → "Raw oracle results are
   memory, not just chat".
