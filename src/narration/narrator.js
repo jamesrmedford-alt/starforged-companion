@@ -225,6 +225,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     ? safeWjRead(() => getConfirmedLore(campaignState).slice(0, 5), 'lore')
     : [];
 
+  // World-lore recap (LORERECAP-INJECT-ORPHANED fix, 2026-07): `!lore`
+  // persists its narrator recap to campaignState.loreRecap "for context
+  // injection", but the only injector was the retired assembler packet — the
+  // narrator silently stopped receiving it. It now rides this seam, gated
+  // with the other lore surfacing. Plain property read; cannot throw.
+  extras.loreRecap        = wjSectionEnabled('loreInContext')
+    ? String(campaignState?.loreRecap ?? '').trim()
+    : '';
+
   // Shipboard combat (Battle Stations!) — when a fight is active aboard the
   // crew's command vehicle, hand the narrator the canonical shipboard-combat
   // framing (11 crew roles, per-character position, Aid Your Ally hands off
