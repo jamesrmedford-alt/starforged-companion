@@ -55,6 +55,15 @@ dead; leaving it is not neutral.
   The safe-looking choice (leave the old path) *was* the bug.
 - Additive-only refactors are how you get two paths where one is dead —
   deletion anxiety is the enemy here, not the safeguard.
+- **Teardown is bidirectional — retiring a consumer needs the same sweep as
+  retiring a producer.** When a change deletes the *reader* of a field or
+  section, grep everything it consumed for remaining readers: a write left with
+  zero readers is orphaned, not harmless. `LORERECAP-INJECT-ORPHANED` — the
+  2026-07 packet retirement deleted the only injector of
+  `campaignState.loreRecap`, so `!lore` kept persisting a field nothing read
+  and the narrator silently lost the world-lore recap; the issue-#274 review
+  caught `forgeBond`'s live `allyFlag` write about to be orphaned the same way.
+  Retire the write or re-home the read in the same commit.
 
 ## 3. Test the composition, not just the units
 
@@ -142,6 +151,27 @@ per-session must be idempotent on reload, and transient locks must reset.
   keyed-GM presence are per-client — persist what must survive (autoplay state
   across reconnect) and re-advertise / re-register the rest on `ready`; never
   assume a socket peer's memory carried over.
+
+## Detection — the mechanical sweep
+
+The rules above **prevent** new dead surface; they do not **find** existing
+dead surface. This file's own cited examples (`addRumor`, `setProject`,
+`setSceneRelevant`) sat dead in the tree for months after being written up here
+— until the 2026-07 unreachable-code audit
+(`docs/flows/unreachable-code-audit.md`, issues #269–#277) swept for them. Run
+
+```bash
+node scripts/deadscan.mjs            # advisory report
+node scripts/deadscan.mjs --strict   # exit 1 on DEAD findings (CI-suitable)
+```
+
+for the mechanical half: it flags zero-consumer exports (multi-definition
+aware), test-only-in-production exports, and registered-but-never-read
+settings, in ~5 seconds. Known blind spot: a *live* same-named function masks
+parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid behind the truths module's
+live `formatForContext`) — which is why the flow-trace audits in `docs/flows/`
+remain the load-bearing check. Run the scan at least once per release cycle and
+after any refactor that retires a path.
 
 ## The through-line
 

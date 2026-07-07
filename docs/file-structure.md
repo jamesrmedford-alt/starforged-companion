@@ -249,6 +249,7 @@ developer-only and excluded from the release.
 | `lang/en.json` | Localisation strings. |
 | `packs/help/` | LevelDB pack dir (legacy; help is created programmatically — see PACKS-001). |
 | `scripts/build-help-site.mjs` | Renders the help pages to a static HTML site. |
+| `scripts/deadscan.mjs` | Mechanical reachability scan (`node scripts/deadscan.mjs`, `--strict` for a CI-suitable non-zero exit): flags zero-consumer exports, test-only-in-production exports, and registered-but-unread settings. The detection half of `rules/reachability.md`. |
 | `vendor/foundry-ironsworn/` | Pinned system submodule (read-only reference; never edit without instruction). |
 
 ---

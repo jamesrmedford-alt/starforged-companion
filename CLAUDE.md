@@ -41,17 +41,9 @@ you to address a specific one in the current session conversation.
   and write through to the mirror on **every** change — never leave two stores
   independently writable (`BOND-ITEM-MIRROR`, `LOCATION-DUAL-STORE`,
   `FACTION-DUAL-STORE`). This produced-but-dead / mirror-drift family is the
-  repo's most persistent bug class — full rules in `rules/reachability.md`.
-- **Verify reachability when adding:** a producer with zero consumers is a bug,
-  not a feature. Before committing a new exported function, registered oracle
-  table, oracle id, setting, chat command, card flag, or schema field, grep for
-  what consumes it and confirm the wiring hop exists — authoring a table is not
-  registering it; writing a builder is not calling it. Zero consumers → delete
-  it, wire it in the same commit, or mark it `// UNWIRED: <who/when>` **and** add
-  a `known-issues.md` line. When a refactor supersedes an old path, delete the
-  old path in the same commit (inert-but-present is a latent bug, not a
-  courtesy). Six v1.7.30 audits each found a shipped-but-dead feature that passed
-  tests and lint — see `rules/reachability.md`.
+  repo's most persistent bug class — six v1.7.30 audits each found a
+  shipped-but-dead feature that passed tests and lint — full rules in
+  `rules/reachability.md`; whole-tree detection: `node scripts/deadscan.mjs`.
 - **Settled decisions: search, don't re-derive.** If the user says a decision
   was already made, find it (`decisions.md`, the scope **issue** on GitHub,
   `docs/testing/*playtest-findings*`) before re-opening it. If a doc or issue
@@ -101,19 +93,28 @@ Before doing any work, read these files in order:
    - Character/actor work: always read the Ironsworn API scope (issue #212)
      first, then `rules/foundry-ironsworn.md` for the full schema-rules contract
      before fetching live source and writing any code
-6. When the task touches narrator behaviour, move interpretation, pacing
+6. When the task touches a mapped feature flow — combat, vow, connection,
+   exploration, faction, site (vault/derelict), narrator context, narrator
+   consistency, or character detail — read the matching `docs/flows/*-flow.md`
+   **first**: each is a source-verified producer→consumer map of that flow
+   (what writes what, which store is canonical, what the narrator actually
+   sees). Re-tracing a flow from scratch costs a session; reading its map costs
+   minutes. When your change alters a flow, update its map in the same commit —
+   the flow docs are write-through mirrors of the code
+   (see `rules/reachability.md`, "The through-line").
+7. When the task touches narrator behaviour, move interpretation, pacing
    classification, scene mechanics, oracles, or any new game-side feature —
    read `docs/rules-reference/rulebook-summary.md` (design intent) and
    `docs/rules-reference/playkit-rules-and-coverage.md` Part 1 (verbatim rules) before
    writing code. See `rules/game-rules.md` for when to reach for which.
-7. When the task touches narrator **context, memory, or continuity** — the
+8. When the task touches narrator **context, memory, or continuity** — the
    sidecar contract, scene truths/state ledgers, the scene frame, the
    recent-narration ring, narrator-card flags, relevance/entity-card
    injection, or drift complaints from playtests — read
    `rules/narrator-memory.md` (invariants) and
    `docs/narrator/narrator-memory-architecture.md` (full architecture,
    tuning guide, refinement backlog) before writing code.
-8. Before writing any Foundry API code — read `rules/foundry-api.md` and
+9. Before writing any Foundry API code — read `rules/foundry-api.md` and
    the relevant section of `docs/foundry-reference/foundry-api-reference.md` to confirm current
    method signatures, valid values, and deprecation status. Never rely on
    memory for Foundry APIs.
@@ -142,9 +143,14 @@ clocks/vignettes commit had to be unwound exactly this way).
 **Reachability check.** For any new producer in the diff (exported function,
 registered table, oracle id, setting, command, card flag, schema field), grep
 its consumer and confirm the wiring hop exists; for any write to a mirrored
-fact, confirm every store is updated. Tests and lint are blind to both — see
-`rules/reachability.md`. A zero-consumer add or an unmirrored write is a defect
-even with a green gate.
+fact, confirm every store is updated; and for any **consumer the diff deletes
+or retires**, grep each field/section it consumed for remaining readers — a
+write left with zero readers is orphaned: retire the write or re-home the read
+in the same commit (`LORERECAP-INJECT-ORPHANED`: the packet retirement deleted
+the only injector of `campaignState.loreRecap`, so `!lore` kept writing a field
+nothing read). Tests and lint are blind to all three — see
+`rules/reachability.md`. A zero-consumer add, an unmirrored write, or an
+orphaned write is a defect even with a green gate.
 
 Commit message format:
 ```
