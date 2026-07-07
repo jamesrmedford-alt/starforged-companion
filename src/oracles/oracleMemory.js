@@ -80,16 +80,3 @@ export function readRecentOracleResults(campaignState, limit = 5) {
     }));
 }
 
-/**
- * Render one result as a single prompt line:
- *   `Ask the Oracle (likely): "Is the dock guarded?" → YES (MATCH)`
- *
- * @param {{ name: string, question: string, answer: string }} e
- * @returns {string}
- */
-export function formatOracleResultLine(e) {
-  if (!e) return '';
-  const q = e.question ? ` "${e.question}"` : '';
-  const head = e.name || 'Oracle';
-  return `${head}:${q} → ${e.answer}`.trim();
-}

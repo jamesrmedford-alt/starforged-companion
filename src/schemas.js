@@ -86,24 +86,6 @@ export function rankName(rank) {
 }
 
 /**
- * All 11 move categories.
- * Source: Reference Guide p.5 (A-Z index)
- */
-export const MOVE_CATEGORIES = [
-  "session",
-  "adventure",
-  "quest",
-  "connection",
-  "exploration",
-  "combat",
-  "suffer",
-  "recover",
-  "threshold",
-  "legacy",
-  "fate",
-];
-
-/**
  * All 40 named moves with category, stat options, and progress move flag.
  *
  * stat meanings:
@@ -223,13 +205,6 @@ export const RELATIONSHIP_TYPES = ["ally", "neutral", "antagonist", "unknown"];
 export const TRACK_TYPES = ["vow", "expedition", "connection", "combat", "scene_challenge"];
 
 /**
- * The three legacy tracks. Each is a 10-box track.
- * Filling a box (4 ticks) triggers Earn Experience: 2 exp per box (1 per box on a cleared track).
- * Source: Reference Guide p.118–119
- */
-export const LEGACY_TRACKS = ["quests", "bonds", "discoveries"];
-
-/**
  * All named impacts, grouped by type.
  * Each marked impact reduces max momentum by 1 and affects momentum reset.
  * Source: Reference Guide p.120
@@ -347,54 +322,6 @@ export const CharacterSchema = {
 // PROGRESS TRACK
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Universal progress track.
- * Used for vows, expeditions, connections, fights, and scene challenges.
- * 10 boxes × 4 ticks = 40 ticks maximum.
- * Source: Reference Guide p.118
- */
-export const ProgressTrackSchema = {
-  _id: "",
-  type: "vow",                  // TRACK_TYPES
-  name: "",
-  rank: "dangerous",            // RANKS
-  ticks: 0,                     // 0–40. Rendered boxes = Math.floor(ticks / 4)
-  active: true,
-  outcome: null,                // "strong_hit" | "weak_hit" | "miss" | "forsaken" on resolution
-
-  // Vow fields (type === "vow")
-  vow: {
-    description: "",            // Full vow text as sworn
-    characterId: "",
-    allyIds: [],
-    connectionId: null,         // If sworn to a connection: +1 on roll; +2 if bonded
-  },
-
-  // Expedition fields (type === "expedition")
-  expedition: {
-    description: "",
-    currentWaypoint: "",
-    route: "",
-  },
-
-  // Combat fields (type === "combat")
-  combat: {
-    objective: "",
-    controlState: "neutral",    // "in_control" | "bad_spot" | "neutral"
-  },
-
-  // Scene challenge fields (type === "scene_challenge")
-  sceneChallenge: {
-    objective: "",
-    tensionClockId: null,       // Associated Clock _id (4-segment tension clock)
-  },
-
-  notes: "",
-  createdAt: null,
-  updatedAt: null,
-};
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CONNECTION (NPC)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -455,8 +382,6 @@ export const ConnectionSchema = {
   loremasterNotes: "",          // How to voice/play this character — injected into context
 
   // Context injection flags
-  allyFlag: false,              // true = inject into every context packet
-  sceneRelevant: false,         // true = inject into current scene packet
 
   // Privacy — per Brief §3: individual player Lines must not be visible to other players
   playerVisible: true,          // false = GM-only record (hidden antagonists, secret NPCs)
@@ -478,30 +403,6 @@ export const ConnectionSchema = {
 // ─────────────────────────────────────────────────────────────────────────────
 // CLOCK
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Clock schema — campaign clocks and tension clocks.
- * Campaign clocks: advance at Begin a Session via Ask the Oracle.
- * Tension clocks: advance when you Pay the Price or face a complication.
- * Source: Reference Guide pp.122–123
- */
-export const ClockSchema = {
-  _id: "",
-  name: "",
-  type: "tension",              // "campaign" | "tension"
-  segments: 4,                  // 4 | 6 | 8 | 10
-  filled: 0,                    // 0 to segments
-  active: true,
-
-  // Campaign clocks only — odds used when checking at Begin a Session
-  advanceOdds: "likely",        // ORACLE_ODDS key
-
-  description: "",
-  notes: "",
-  createdAt: null,
-  updatedAt: null,
-};
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MOVE RESOLUTION
@@ -607,30 +508,6 @@ export const MoveResolutionSchema = {
 // ORACLE RESULT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * A single oracle roll result.
- * Stored and injected into context packets as recent oracle results.
- */
-export const OracleResultSchema = {
-  _id: "",
-  timestamp: null,
-  sessionId: "",
-
-  tableId: "",                  // Oracle table identifier, e.g. "action", "theme", "pay_the_price"
-  tableName: "",                // Display name
-  roll: 0,                      // d100 result (1–100)
-  result: "",                   // Text result from the table
-
-  // For paired oracles (Action + Theme, Descriptor + Focus)
-  pairedTableId: null,
-  pairedRoll: null,
-  pairedResult: null,
-
-  context: "",                  // What prompted this oracle roll (player narration or move outcome)
-  injectedIntoContext: false,   // Whether this has been included in a context packet
-};
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────────────────────────
@@ -650,7 +527,6 @@ export const SessionSchema = {
     additionalVeils: [],
   },
 
-  notes: "",
   questFocus: "",               // Vow to spotlight in next session (set at End a Session)
   connectionFocus: "",          // Connection to spotlight
 
@@ -925,75 +801,3 @@ export const ArtAssetSchema = {
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONTEXT PACKET
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * The assembled Loremaster context packet.
- * Built by context/assembler.js before every @lm call.
- *
- * Injection order — safety is always first, no exceptions:
- *   1. Safety configuration (lines, veils — never omitted regardless of token budget)
- *   2. World Truths summary
- *   3. Active connections (scene-relevant first, then allies, then others by recency)
- *   4. Open vows and progress track states
- *   5. Recent oracle results
- *   6. Session notes
- *   7. Resolved move outcome (move name, stat, outcome, specific consequences)
- *
- * Token budget: assembler compresses or drops lower-priority sections to fit.
- * Safety section is exempt from budget pressure — never dropped, never summarised.
- *
- * Source: Brief §1 Feature 6
- */
-export const ContextPacketSchema = {
-  _id: "",
-  timestamp: null,
-  sessionId: "",
-  triggeredBy: "",              // "move_resolution" | "oracle" | "player_message" | "manual"
-
-  sections: {
-    safety: {
-      content: "",
-      tokenEstimate: 0,
-      alwaysInclude: true,      // Never omitted. Never summarised. Hard rule.
-    },
-    worldTruths: {
-      content: "",
-      tokenEstimate: 0,
-      summarized: false,        // true if compressed to fit token budget
-    },
-    activeConnections: {
-      content: "",
-      tokenEstimate: 0,
-      connectionIds: [],
-    },
-    progressTracks: {
-      content: "",
-      tokenEstimate: 0,
-      trackIds: [],
-    },
-    recentOracles: {
-      content: "",
-      tokenEstimate: 0,
-      oracleResultIds: [],
-    },
-    sessionNotes: {
-      content: "",
-      tokenEstimate: 0,
-    },
-    moveOutcome: {
-      content: "",
-      tokenEstimate: 0,
-      moveResolutionId: "",
-    },
-  },
-
-  totalTokenEstimate: 0,
-  tokenBudget: 8000,            // Target token ceiling for the context packet
-  budgetExceeded: false,
-  omittedSections: [],          // Sections dropped to fit budget. Never includes "safety".
-
-  assembled: "",                // Final concatenated string prepended to the Loremaster call
-};

@@ -26,7 +26,6 @@ import {
   getNarratorAssertedLore,
   getActiveThreats,
   getFactionLandscape,
-  getRecentDiscoveries,
   listLocationEntries,
   JOURNAL_NAMES,
 } from "../../src/world/worldJournal.js";
@@ -691,7 +690,7 @@ describe("executeJournalCommand", () => {
 // Read functions for the assembler (Phase 5 wires these in)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("getConfirmedLore / getNarratorAssertedLore / getActiveThreats / getFactionLandscape / getRecentDiscoveries", () => {
+describe("getConfirmedLore / getNarratorAssertedLore / getActiveThreats / getFactionLandscape", () => {
   it("getConfirmedLore returns only confirmed: true entries", async () => {
     await recordLoreDiscovery("A", { confirmed: true,  text: "a" }, campaign());
     await recordLoreDiscovery("B", { confirmed: false, text: "b" }, campaign());
@@ -727,15 +726,7 @@ describe("getConfirmedLore / getNarratorAssertedLore / getActiveThreats / getFac
     expect(result.map(f => f.factionName)).toEqual(["F4", "F3", "F2"]);
   });
 
-  it("getRecentDiscoveries returns current-session unconfirmed lore only", async () => {
-    await recordLoreDiscovery("CurrentSoft", { text: "x" }, campaign({ currentSessionId: "ses-1" }));
-    await recordLoreDiscovery("OldSoft",     { text: "x", sessionId: "ses-prev" }, campaign({ currentSessionId: "ses-1" }));
-    await recordLoreDiscovery("CurrentHard", { text: "x", confirmed: true }, campaign({ currentSessionId: "ses-1" }));
-    const result = getRecentDiscoveries(campaign({ currentSessionId: "ses-1" }));
-    expect(result.map(e => e.title)).toEqual(["CurrentSoft"]);
-  });
-
-  it("listLocationEntries returns all locations sorted by recency", async () => {
+    it("listLocationEntries returns all locations sorted by recency", async () => {
     await recordLocation("L1", { type: "settlement" }, campaign());
     await new Promise(r => setTimeout(r, 5));
     await recordLocation("L2", { type: "derelict" },   campaign());

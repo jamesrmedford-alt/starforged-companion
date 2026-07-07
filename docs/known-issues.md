@@ -10,15 +10,19 @@ below were verified against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Unreachable-code audit (2026-07) — OPEN, tracked as #269–#277
+### Unreachable-code audit (2026-07) — all resolved in the v1.7.30 cycle (issues #269–#277)
 
-A whole-tree sweep for produced-but-unconsumed code (dead exports, parallel-dead
-sibling helpers, a dead-in-production module, unregistered oracle content, a dead
-parameter, two dead settings, and one produced-but-dead write that is a real
-regression — the orphaned lore-recap injection). No code changed yet; every
-finding is now tracked as GitHub issues **#269–#277** — full ledger, file:line
-anchors, and the issue map in `docs/flows/unreachable-code-audit.md`.
-Headline items (issue in the first column):
+A whole-tree sweep for produced-but-unconsumed code. **Every finding is now
+fixed** (issues #269–#277, "Please address the remaining recent issues"):
+the lore-recap injection re-homed to the live seam, the assembler retired
+(global token budget declared obsolete), the 14 theme oracles registered,
+the dead entity API torn down bidirectionally (allyFlag/sceneRelevant fields
+retired with their readers), planets/locations wired into the sector roster,
+windowPosition wired, and the Tier-3/Tier-4 surface deleted — plus the
+assembler-deletion collaterals swept per the new bidirectional-teardown rule.
+Post-fix proof: `node scripts/deadscan.mjs` reports **0 dead exports, 0 dead
+settings**. Dispositions per finding: `docs/flows/unreachable-code-audit.md`.
+Original headline items (issue in the first column):
 
 | Issue | Code | Class | Finding |
 |---|---|---|---|

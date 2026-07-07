@@ -21,6 +21,7 @@ import {
   formatActiveThreatsBlock,
   formatFactionLandscapeBlock,
   formatEstablishedLoreBlock,
+  formatWorldLoreRecapBlock,
   sanitizePlayerText,
   stripHtml,
   NARRATOR_PERMISSIONS,
@@ -1461,20 +1462,33 @@ describe('World Journal narrator blocks ([4d]-[4f])', () => {
     expect(formatEstablishedLoreBlock([])).toBe('');
   });
 
+  it('formatWorldLoreRecapBlock renders the !lore recap clipped to ~400 chars', () => {
+    const block = formatWorldLoreRecapBlock('y'.repeat(500));
+    expect(block).toMatch(/## WORLD LORE/);
+    expect(block).toMatch(/…$/);
+    expect(block.length).toBeLessThan(420);
+    expect(formatWorldLoreRecapBlock('')).toBe('');
+    expect(formatWorldLoreRecapBlock(null)).toBe('');
+  });
+
   it('renders for live modes and skips for meta modes', () => {
     const extras = {
       mode: 'paced_narrative',
       activeThreats:    [{ name: 'Reavers', severity: 'active', summary: '' }],
       factionLandscape: [{ name: 'Iron Syndicate', stance: 'warring', detail: '' }],
       confirmedLore:    [{ title: 'The Forge', text: 'burns' }],
+      loreRecap:        'The Forge remembers every oath sworn in its light.',
     };
     const live = buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', extras);
     expect(live).toMatch(/ACTIVE THREATS/);
     expect(live).toMatch(/FACTION LANDSCAPE/);
     expect(live).toMatch(/ESTABLISHED LORE/);
+    expect(live).toMatch(/## WORLD LORE/);
+    expect(live).toContain('The Forge remembers every oath');
 
     const meta = buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '', { ...extras, mode: 'campaign_recap' });
     expect(meta).not.toMatch(/ACTIVE THREATS/);
     expect(meta).not.toMatch(/FACTION LANDSCAPE/);
+    expect(meta).not.toMatch(/## WORLD LORE/);
   });
 });

@@ -52,7 +52,6 @@ export const LocationSchema = {
   portraitSourceDescription: "",
 
   // Context injection
-  sceneRelevant:  false,
   narratorNotes:  "",
 
   // Optional parent links — sectorId drives per-sector folder placement
@@ -173,39 +172,12 @@ export async function updateLocation(actorId, updates) {
   return updated;
 }
 
-export async function setSceneRelevant(actorId, value) {
-  return updateLocation(actorId, { sceneRelevant: value });
-}
-
 export async function setPortraitId(actorId, artAssetId) {
   return updateLocation(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(location) {
   return location.active && !!location.portraitSourceDescription && !location.portraitId;
-}
-
-/**
- * Format a Location for narrator context injection.
- *
- * @param {Object} location
- * @returns {string}
- */
-export function formatForContext(location) {
-  const parts = [`**${location.name || "Unknown Location"}**`];
-
-  if (location.type)   parts.push(location.type);
-  if (location.status) parts.push(`Status: ${location.status}`);
-  if (location.region) parts.push(`Region: ${location.region}`);
-
-  if (location.feature)     parts.push(`Feature: ${location.feature}`);
-  if (location.peril)       parts.push(`Peril: ${location.peril}`);
-  if (location.opportunity) parts.push(`Opportunity: ${location.opportunity}`);
-
-  if (location.description)   parts.push(location.description);
-  if (location.narratorNotes) parts.push(`Note: ${location.narratorNotes}`);
-
-  return parts.join(" | ");
 }
 
 function generateId() {

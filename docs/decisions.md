@@ -57,6 +57,36 @@ consumers survive because only the builder is tested.
 paths); deleting assembler.js outright (file deletions need explicit
 instruction).
 
+**Update (2026-07-07 — issue #271, explicitly approved):** `assembler.js` and
+`tests/unit/assembler.test.js` are **deleted**. The global priority-ordered
+token budget is declared **obsolete** — narration models run 200K–1M context
+and the one genuinely unbounded surface (the scene ledger) is already locally
+capped (`maxLedgerTokens`, `narratorPrompt.js`); no whole-prompt budgeter was
+ported. `narrateResolution` dropped its never-read `contextPacket` parameter
+(the signature-stability retention above is superseded), `ContextPacketSchema`
+was deleted with it, and the packet-based Quench batches were rewritten against
+the live seam (`buildNarratorExtras` / `buildNarratorSystemPrompt`) — including
+the NED permissions matrix and the Section 6.5 surfacing test. Sequencing per
+the maintainer: the `!lore` recap injection (#269) and the session-notes stub
+(#270 — removed; `sessionState.notes` never had a writer and the pipeline never
+passed `sessionState` at all) were resolved out of the assembler first.
+
+## Location background art never shipped its consumer — surface removed (2026-07-07)
+
+**Decision:** the `locationArtSource` setting (a visible config promising
+system-vs-OpenRouter location background art) and `resolveLocationArt` (the
+ironswornAssets Phase-4 resolver that implemented the kirin/rains/auto
+preference) are **removed** (issue #276). Both halves of the feature shipped —
+the setting and the resolver — but the third piece, an actual art-choosing
+call site (a location Scene or backdrop), never did: the setting was never
+read and the resolver never called outside its own tests. A user could set
+the option today and nothing would change.
+
+**Reason:** wiring it means building the missing location-backdrop feature,
+which is new scope, not cleanup; a `config: true` no-op setting is a standing
+user-facing lie. If location background art is wanted later, open a scope
+issue — the deleted resolver is one `git log` away.
+
 ## Faction stance: the entity record is canonical (2026-07)
 
 **Decision:** a faction's stance lives on the entity record

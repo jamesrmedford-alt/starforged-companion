@@ -37,7 +37,7 @@ describe('narrateResolution fallback card', () => {
       sessionNumber:    7,
     };
 
-    await narrateResolution(resolution, {}, campaignState);
+    await narrateResolution(resolution, campaignState);
 
     const last = ChatMessage._created.at(-1);
     expect(last).toBeDefined();
@@ -59,7 +59,7 @@ describe('narrateResolution fallback card', () => {
       sessionNumber:    3,
     };
 
-    await narrateResolution(resolution, {}, campaignState);
+    await narrateResolution(resolution, campaignState);
     const flags = ChatMessage._created.at(-1)?.flags?.[MODULE_ID];
 
     // The Quench `narrator card has sessionId flag` assertion expects a
@@ -75,7 +75,7 @@ describe('narrateResolution fallback card', () => {
 
   it('fallback card sessionId is null (not undefined) when campaignState is empty', async () => {
     const resolution = { _id: 'r3', moveId: 'compel', moveName: 'Compel', outcome: 'weak_hit', outcomeLabel: 'Weak Hit' };
-    await narrateResolution(resolution, {}, {});
+    await narrateResolution(resolution, {});
 
     const flags = ChatMessage._created.at(-1)?.flags?.[MODULE_ID];
     // Recap reader uses string equality on sessionId; null is unambiguous

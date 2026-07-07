@@ -112,28 +112,6 @@ export function* iterEntityDocuments(typeKey) {
 }
 
 /**
- * Resolve a typeKey from a host document by inspecting which flag is set.
- * Useful when a caller has a document id but doesn't already know its type
- * (entity-panel's tier promotion / canonical-lock handlers do this today by
- * walking ENTITY_TYPES). Returns the first matching typeKey or null.
- *
- * @param {ClientDocument} document
- * @returns {string|null}
- */
-export function resolveTypeKeyFromDocument(document) {
-  if (!document) return null;
-  for (const typeKey of Object.keys(HOST_COLLECTION)) {
-    if (HOST_COLLECTION[typeKey] === 'journal') {
-      const page = document.pages?.contents?.[0];
-      if (page?.flags?.[MODULE_ID]?.[typeKey]) return typeKey;
-    } else if (document.flags?.[MODULE_ID]?.[typeKey]) {
-      return typeKey;
-    }
-  }
-  return null;
-}
-
-/**
  * Walk every typeKey and ask the appropriate collection for `id`. Returns the
  * first match as { typeKey, document, data } or null if no entity has that id.
  * Use this when you have a host document id but don't know whether it lives on

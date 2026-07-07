@@ -47,7 +47,6 @@ export const CreatureSchema = {
   portraitSourceDescription: "",
 
   // Context injection
-  sceneRelevant:  false,
   narratorNotes:  "",
 
   // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
@@ -105,12 +104,6 @@ export function getCreature(journalEntryId) {
   }
 }
 
-export function listCreatures(campaignState) {
-  return (campaignState.creatureIds ?? [])
-    .map(id => getCreature(id))
-    .filter(Boolean);
-}
-
 export async function updateCreature(journalEntryId, updates) {
   const entry = game.journal?.get(journalEntryId);
   if (!entry) throw new Error(`Creature journal entry not found: ${journalEntryId}`);
@@ -134,41 +127,12 @@ export async function updateCreature(journalEntryId, updates) {
   return updated;
 }
 
-export async function setSceneRelevant(journalEntryId, value) {
-  return updateCreature(journalEntryId, { sceneRelevant: value });
-}
-
 export async function setPortraitId(journalEntryId, artAssetId) {
   return updateCreature(journalEntryId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(creature) {
   return creature.active && !!creature.portraitSourceDescription && !creature.portraitId;
-}
-
-/**
- * Format a Creature for narrator context injection.
- *
- * @param {Object} creature
- * @returns {string}
- */
-export function formatForContext(creature) {
-  const parts = [`**${creature.name || "Unknown Creature"}**`];
-
-  if (creature.scale)       parts.push(`Scale: ${creature.scale}`);
-  if (creature.environment) parts.push(`Environment: ${creature.environment}`);
-  if (creature.form)        parts.push(`Form: ${creature.form}`);
-
-  if (creature.aspect?.length) {
-    parts.push(`Aspect: ${creature.aspect.join(", ")}`);
-  }
-
-  if (creature.behavior)      parts.push(`Behavior: ${creature.behavior}`);
-  if (creature.rank)          parts.push(`Rank: ${creature.rank}`);
-  if (creature.description)   parts.push(creature.description);
-  if (creature.narratorNotes) parts.push(`Note: ${creature.narratorNotes}`);
-
-  return parts.join(" | ");
 }
 
 /**

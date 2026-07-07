@@ -6,6 +6,13 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **`!lore`'s world-lore recap reaches the narrator again.** The recap `!lore` generates is injected into every narration; an earlier refactor had silently orphaned it (the recap was written on every `!lore` and read by nothing).
+- Added: **All 14 theme Peril and Opportunity oracles are rollable.** Every location theme (Chaotic through Sacred) now answers `!oracle theme_<name>_peril` / `theme_<name>_opportunity`, matching the Feature tables that were already live.
+- Added: **The narrator sees your planets and named locations.** The active-sector context lists known planets (with class) and named non-site locations alongside settlements and charted sites, so established places aren't reinvented. Undiscovered vaults and derelicts stay hidden.
+- Added: **The Private Channel window remembers its position.** Position and size are saved per player and restored on the next open.
+- Removed: the "Location Background Art Source" setting — it was never wired to anything (the choice was silently ignored). If location backdrop art is wanted it will return as a real feature.
+- Internal: retired the dead context-packet assembler and every unreachable export/setting surfaced by the unreachable-code audit (issues #269–#277). The whole tree now scans clean: `node scripts/deadscan.mjs` reports 0 dead exports and 0 dead settings.
+
 - Fixed: **Exploring inside a vault or derelict now rolls the right oracles.** When the crew's current location is a precursor vault or derelict, Explore a Waypoint seeds the narrator with that site's canonical interior tables — vault Interior Feature/Peril/Opportunity, or a derelict's Access Area/Feature/Peril/Opportunity — instead of generic space sights. Thirteen canonical derelict tables that shipped unreachable (the location-specific type tables and the whole zone-crawl suite) are now live and answer `!oracle` too.
 - Fixed: **Derelict types match where the derelict sits.** A planetside wreck rolls the planetside type table (skewing settlement), an orbital one the orbital table — previously every derelict used the deep-space weights.
 - Added: **Discovered sites stay in the narrator's picture.** A charted vault or derelict now appears in the active-sector context with its type and status, so the narrator won't reinvent "the derelict" between discovery and arrival.

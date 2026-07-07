@@ -76,8 +76,3 @@ export function registerSharedSupplyHook() {
   });
 }
 
-/** Test-only reset of the in-flight guard + install flag. */
-export function _resetSharedSupplyForTests() {
-  _supplySyncInFlight.active = false;
-  registerSharedSupplyHook._installed = false;
-}

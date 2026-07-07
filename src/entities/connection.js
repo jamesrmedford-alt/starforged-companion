@@ -8,7 +8,6 @@
  * — A bond state (bonded after Forge a Bond hit)
  * — A role that grants +1 on moves where it's relevant
  * — An append-only history log
- * — Context injection flags (allyFlag, sceneRelevant)
  * — GM-only visibility option for hidden antagonists
  *
  * Storage: each Connection is a foundry-ironsworn `character` Actor (an NPC
@@ -144,27 +143,6 @@ export function listConnections(campaignState) {
     .filter(Boolean);
 }
 
-/**
- * Retrieve only active, ally-flagged connections for context injection.
- *
- * @param {Object} campaignState
- * @returns {Array<Object>}
- */
-export function listAllyConnections(campaignState) {
-  return listConnections(campaignState).filter(c => c.active && c.allyFlag);
-}
-
-/**
- * Retrieve connections currently flagged as scene-relevant.
- *
- * @param {Object} campaignState
- * @returns {Array<Object>}
- */
-export function listSceneConnections(campaignState) {
-  return listConnections(campaignState).filter(c => c.active && c.sceneRelevant);
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // UPDATE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,7 +271,6 @@ export async function markRelationshipProgress(journalEntryId, marks = 1) {
 export async function forgeBond(journalEntryId, options = {}) {
   const updates = {
     bonded:     true,
-    allyFlag:   true,  // Bonded connections are always context-injected
   };
 
   if (options.secondRole) {
@@ -323,8 +300,6 @@ export async function forgeBond(journalEntryId, options = {}) {
 export async function loseConnection(journalEntryId, reason = "", sessionId = "") {
   const updated = await updateConnection(journalEntryId, {
     active:        false,
-    allyFlag:      false,
-    sceneRelevant: false,
   });
 
   if (reason) {
@@ -338,12 +313,13 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT INJECTION FLAGS
 // ─────────────────────────────────────────────────────────────────────────────
-// The per-scene flag togglers that used to live here (setAllyFlag,
-// setSceneRelevant, clearAllSceneFlags) were removed in the 2026-07 soft-spot
-// cleanup: nothing ever called them — scene relevance is decided live by the
-// relevance resolver (src/context/relevanceResolver.js), and `allyFlag` is
-// set directly by forgeBond. `loseConnection` above remains the severance
-// entrance (the GM `!sever` command).
+// The per-scene context-injection flags (allyFlag, sceneRelevant) and their
+// togglers are fully retired (2026-07 unreachable-code cleanup, issue #274):
+// nothing ever read them — scene relevance is decided live by the relevance
+// resolver (src/context/relevanceResolver.js), and every active connection's
+// profile already reaches the narrator via the ACTIVE SECTOR roster.
+// `loseConnection` above remains the severance entrance (the GM `!sever`
+// command).
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -411,39 +387,6 @@ export async function setPortraitId(journalEntryId, artAssetId) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT FORMATTING
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Format a Connection record for narrator context injection.
- * Progressive disclosure — only populated fields are included.
- * Secrets are never included (GM-only).
- *
- * @param {Object} connection
- * @returns {string}
- */
-export function formatForContext(connection) {
-  const parts = [];
-
-  parts.push(`**${connection.name || "Unknown"}**`);
-
-  if (connection.role)             parts.push(`Role: ${connection.role}`);
-  if (connection.secondRole)       parts.push(`Also: ${connection.secondRole}`);
-  if (connection.rank)             parts.push(`Rank: ${connection.rank}`);
-  if (connection.relationshipType) parts.push(`Relationship: ${connection.relationshipType}`);
-  if (connection.bonded)           parts.push("Bonded.");
-  if (!connection.active)          parts.push("(Connection lost.)");
-
-  if (connection.description)      parts.push(connection.description);
-  if (connection.motivation)       parts.push(`Motivation: ${connection.motivation}`);
-
-  // Last history entry gives recent context
-  const lastEntry = connection.history?.[connection.history.length - 1];
-  if (lastEntry?.entry) parts.push(`Last interaction: ${lastEntry.entry}`);
-
-  if (connection.loremasterNotes)  parts.push(`Voice note: ${connection.loremasterNotes}`);
-
-  return parts.join(" | ");
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS

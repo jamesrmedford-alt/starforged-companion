@@ -13,7 +13,6 @@ import {
   RECENT_ORACLE_CAP,
   recordOracleResult,
   readRecentOracleResults,
-  formatOracleResultLine,
 } from '../../src/oracles/oracleMemory.js';
 
 
@@ -103,14 +102,3 @@ describe('readRecentOracleResults', () => {
 });
 
 
-describe('formatOracleResultLine', () => {
-  it('renders name, question, and answer', () => {
-    expect(formatOracleResultLine({ name: 'Ask the Oracle (likely)', question: 'Guarded?', answer: 'YES' }))
-      .toBe('Ask the Oracle (likely): "Guarded?" → YES');
-  });
-
-  it('omits the question segment when absent', () => {
-    expect(formatOracleResultLine({ name: 'Pay the Price', question: '', answer: 'Your gear is damaged' }))
-      .toBe('Pay the Price: → Your gear is damaged');
-  });
-});

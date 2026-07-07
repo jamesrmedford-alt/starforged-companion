@@ -1082,6 +1082,7 @@ export function buildNarratorSystemPrompt(
     activeThreats        = [],
     factionLandscape     = [],
     confirmedLore        = [],
+    loreRecap            = '',
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1205,8 +1206,9 @@ export function buildNarratorSystemPrompt(
     );
   }
 
-  // [4d]-[4f] World Journal state (FACTION-PACKET-DEAD fix, 2026-07) —
-  //      active threats, the faction landscape, and recent confirmed lore.
+  // [4d]-[4g] World Journal state (FACTION-PACKET-DEAD fix, 2026-07) —
+  //      active threats, the faction landscape, recent confirmed lore, and
+  //      the `!lore` world-lore recap (LORERECAP-INJECT-ORPHANED fix).
   //      These rode the assembler context packet, which no live path ever
   //      read; they now render like every other extras block. Skipped for
   //      meta modes with the other live-scene sections.
@@ -1217,6 +1219,8 @@ export function buildNarratorSystemPrompt(
     if (factionsBlock) parts.push(factionsBlock);
     const loreBlock = formatEstablishedLoreBlock(confirmedLore);
     if (loreBlock) parts.push(loreBlock);
+    const recapBlock = formatWorldLoreRecapBlock(loreRecap);
+    if (recapBlock) parts.push(recapBlock);
   }
 
   // [5] Current location card — always injected when set
@@ -1405,6 +1409,21 @@ export function formatEstablishedLoreBlock(lore) {
     lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * Format the WORLD LORE block ([4g]) from the persisted `!lore` recap
+ * (`campaignState.loreRecap` — LORERECAP-INJECT-ORPHANED fix, 2026-07). The
+ * retired assembler's buildLoreRecapSection was this field's only injector;
+ * the block now renders through the live seam. Clipped to ~400 chars, the
+ * assembler's original bound. Returns '' when empty. Exported for unit
+ * testing.
+ */
+export function formatWorldLoreRecapBlock(recap) {
+  const text = String(recap ?? '').trim();
+  if (!text) return '';
+  const clipped = text.length > 400 ? `${text.slice(0, 397)}…` : text;
+  return `## WORLD LORE\n\n${clipped}`;
 }
 
 // ---------------------------------------------------------------------------

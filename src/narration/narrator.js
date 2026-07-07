@@ -35,8 +35,8 @@ import { getActiveThreats, getFactionLandscape, getConfirmedLore } from '../worl
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
 import { getShip }        from '../entities/ship.js';
-import { getPlanet }      from '../entities/planet.js';
-import { getLocation }    from '../entities/location.js';
+import { getPlanet, listPlanets }       from '../entities/planet.js';
+import { getLocation, listLocations }   from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
@@ -225,6 +225,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     ? safeWjRead(() => getConfirmedLore(campaignState).slice(0, 5), 'lore')
     : [];
 
+  // World-lore recap (LORERECAP-INJECT-ORPHANED fix, 2026-07): `!lore`
+  // persists its narrator recap to campaignState.loreRecap "for context
+  // injection", but the only injector was the retired assembler packet — the
+  // narrator silently stopped receiving it. It now rides this seam, gated
+  // with the other lore surfacing. Plain property read; cannot throw.
+  extras.loreRecap        = wjSectionEnabled('loreInContext')
+    ? String(campaignState?.loreRecap ?? '').trim()
+    : '';
+
   // Shipboard combat (Battle Stations!) — when a fight is active aboard the
   // crew's command vehicle, hand the narrator the canonical shipboard-combat
   // framing (11 crew roles, per-character position, Aid Your Ally hands off
@@ -272,7 +281,6 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
  * On any failure, posts a fallback card and returns null — never blocks the move result.
  *
  * @param {Object} resolution    — MoveResolutionSchema from resolver.js
- * @param {Object} contextPacket — ContextPacketSchema from assembler.js
  * @param {Object} campaignState — CampaignStateSchema
  * @param {Object} [options]
  * @param {Object} [options.relevance] — Pre-resolved RelevanceResult from
@@ -281,7 +289,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
  *   is called internally.
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
-export async function narrateResolution(resolution, contextPacket, campaignState, options = {}) {
+export async function narrateResolution(resolution, campaignState, options = {}) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
 
@@ -2127,6 +2135,50 @@ export function formatActiveSector(campaignState) {
       'place, and do not introduce an official, administrator, or governing ' +
       'figure for a settlement whose Authority is none or lawless):',
       ...settlementLines,
+    );
+  }
+
+  // Known planets & standalone locations (LIST-LOC-PLANET-DEAD fix, issue
+  // #275): settlements and charted sites had standing anchors; planets and
+  // named non-site locations did not, so the narrator could re-invent them.
+  // Site records (type vault/derelict) are EXCLUDED here — undiscovered
+  // sites must not leak (site-flow §5), and discovered ones render in the
+  // Charted sites block below. Capped like the NPC roster.
+  let planetLines = [];
+  try {
+    planetLines = listPlanets(campaignState)
+      .filter(p => p && p.active !== false && (!p.sectorId || p.sectorId === id))
+      .slice(0, 12)
+      .map(p => `- ${p.name}${p.type ? ` (${p.type})` : ''}`);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: planet read failed:`, err?.message ?? err);
+  }
+  if (planetLines.length) {
+    lines.push(
+      '',
+      'Known planets (established — reuse these names; do not invent a ' +
+      'different world for the same place):',
+      ...planetLines,
+    );
+  }
+
+  let locationLines = [];
+  try {
+    locationLines = listLocations(campaignState)
+      .filter(l => l && l.active !== false
+        && l.type !== 'vault' && l.type !== 'derelict'
+        && (!l.sectorId || l.sectorId === id))
+      .slice(0, 12)
+      .map(l => `- ${l.name}${l.type ? ` (${l.type})` : ''}`);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: location read failed:`, err?.message ?? err);
+  }
+  if (locationLines.length) {
+    lines.push(
+      '',
+      'Known locations (established — reuse these; vaults and derelicts are ' +
+      'listed under Charted sites once discovered):',
+      ...locationLines,
     );
   }
 

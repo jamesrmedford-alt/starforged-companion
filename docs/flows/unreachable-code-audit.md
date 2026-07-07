@@ -10,11 +10,25 @@ verified against source (v1.7.30 cycle, 2026-07). Companion to
 Prompted by: "Please audit the codebase for currently unreachable blocks of
 code."
 
-**Status: OPEN — tracked as issues #269–#277.** Unlike the feature-flow ledgers
-(whose defects were fixed in the same cycle), no code has been changed yet —
-every finding is now a GitHub issue (mapped below). §1 is the method, §2–§6 are
-the findings by tier, §7 is what was checked and found clean, §8 is
-coverage/caveats. Each finding carries a stable code.
+**Status: RESOLVED — all nine issues (#269–#277) fixed in the v1.7.30 cycle**
+("Please address the remaining recent issues"). Dispositions: #269 lore-recap
+re-homed to `buildNarratorExtras` → the [4g] WORLD LORE block; #270
+session-notes stub removed (doubly dead — no writer, and the pipeline never
+passed sessionState); #271 assembler + its test file deleted, global token
+budget declared obsolete (decisions.md), `contextPacket` param +
+`ContextPacketSchema` retired, packet-based Quench batches rewritten to the
+live seam; #272 all 14 theme peril/opportunity tables registered; #273 the 7
+entity `formatForContext` copies deleted; #274 dead entity API deleted with
+the write side completed (allyFlag/sceneRelevant fields retired); #275
+planets + non-site locations WIRED into the ACTIVE SECTOR roster (sites
+excluded — no leak); #276 windowPosition wired, locationArtSource removed
+with a recorded decision, stub + getters deleted; #277 Tier-4 singletons
+deleted, the three ElevenLabs voice defaults single-sourced, `listCreatures`
+(missed by the issue partitioning) removed. The assembler-deletion
+collaterals (safety token/suppression helpers, `formatOracleResultLine`,
+`getRecentDiscoveries`) were swept under the bidirectional-teardown rule.
+**Post-fix proof: `node scripts/deadscan.mjs` → 0 DEAD exports, 0 DEAD
+settings.** The sections below are preserved as the audit record.
 
 Tags: **DEAD-IN-PROD** (runs only under tests), **DEAD-EXPORT** (no consumer),
 **DEAD-CONTENT** (authored table never registered), **INCOMPLETE-TEARDOWN**

@@ -751,16 +751,6 @@ export function getShipPositioningEnabled() {
 export function getShipAutoMoveOnCourse() {
   try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE) !== false; } catch { return true; }
 }
-export function getShipTokenEnabled() {
-  try { return game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED) !== false; } catch { return true; }
-}
-export function getShipTokenSnapRadius() {
-  try {
-    const v = Number(game.settings.get(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS));
-    if (!Number.isFinite(v) || v < 0) return 1;
-    return v;
-  } catch { return 1; }
-}
 
 // ---------------------------------------------------------------------------
 // Settings helpers — write (always sync to campaignState after writing)

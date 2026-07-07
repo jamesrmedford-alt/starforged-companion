@@ -127,3 +127,27 @@ describe("buildNarratorExtras — relevance has two rules", () => {
     }
   });
 });
+
+describe("loreRecap — LORERECAP-INJECT-ORPHANED fix (issue #269)", () => {
+  it("carries campaignState.loreRecap through the live seam", async () => {
+    const cs = { ...state(), loreRecap: "  The Forge remembers. " };
+    const extras = await buildNarratorExtras("paced_narrative", cs, { playerNarration: "x" });
+    expect(extras.loreRecap).toBe("The Forge remembers.");
+  });
+
+  it("is empty when the campaign has no recap", async () => {
+    const extras = await buildNarratorExtras("paced_narrative", state(), { playerNarration: "x" });
+    expect(extras.loreRecap).toBe("");
+  });
+
+  it("is gated on loreInContext with the other lore surfacing", async () => {
+    game.settings._store.set(`${MODULE_ID}.loreInContext`, false);
+    try {
+      const cs = { ...state(), loreRecap: "The Forge remembers." };
+      const extras = await buildNarratorExtras("paced_narrative", cs, { playerNarration: "x" });
+      expect(extras.loreRecap).toBe("");
+    } finally {
+      game.settings._store.delete(`${MODULE_ID}.loreInContext`);
+    }
+  });
+});

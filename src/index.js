@@ -211,6 +211,11 @@ import {
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
+import {
+  DEFAULT_NARRATOR_VOICE_ID,
+  DEFAULT_NPC_VOICE_ID,
+  DEFAULT_NPC_FEMININE_VOICE_ID,
+} from "./audio/elevenlabs.js";
 import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
 import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
 
@@ -299,21 +304,6 @@ function registerCoreSettings() {
     config:  true,
     type:    String,
     default: "black-forest-labs/flux.2-pro",
-  });
-
-  game.settings.register(MODULE_ID, "locationArtSource", {
-    name:    "Location Background Art Source",
-    hint:    "Choose system-bundled location art (free) or OpenRouter generation (paid). Auto prefers system art when available.",
-    scope:   "world",
-    config:  true,
-    type:    String,
-    choices: {
-      auto:       "Auto (system art first, OpenRouter fallback)",
-      kirin:      "System — illustrated (Kirin)",
-      rains:      "System — photorealistic (Rains)",
-      openrouter: "Always generate via OpenRouter",
-    },
-    default: "auto",
   });
 
   game.settings.register(MODULE_ID, "sectorArtEnabled", {
@@ -432,11 +422,11 @@ function registerCoreSettings() {
   });
   game.settings.register(MODULE_ID, "audio.narratorVoiceId", {
     name: "Narrator voice ID", scope: "world", config: false,
-    type: String, default: "fNmw8sukfGuvWVOp33Ge",
+    type: String, default: DEFAULT_NARRATOR_VOICE_ID,
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceId", {
     name: "NPC voice ID", scope: "world", config: false,
-    type: String, default: "pNInz6obpgDQGcFmaJgB",
+    type: String, default: DEFAULT_NPC_VOICE_ID,
   });
   // Pronoun-keyed NPC voices (v1.7.11 finding F). When set, an NPC card's
   // focal connection picks the voice matching its established pronouns;
@@ -445,7 +435,7 @@ function registerCoreSettings() {
   // the narrator out of the box.
   game.settings.register(MODULE_ID, "audio.npcVoiceFeminine", {
     name: "NPC voice — feminine (she/her)", scope: "world", config: false,
-    type: String, default: "21m00Tcm4TlvDq8ikWAM",
+    type: String, default: DEFAULT_NPC_FEMININE_VOICE_ID,
   });
   game.settings.register(MODULE_ID, "audio.npcVoiceMasculine", {
     name: "NPC voice — masculine (he/him)", scope: "world", config: false,
@@ -1669,7 +1659,7 @@ export function registerChatHook() {
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, null, campaignState, { relevance, speakerActorId });
+      await narrateResolution(resolution, campaignState, { relevance, speakerActorId });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -1922,7 +1912,7 @@ function registerNativeProgressRollHook() {
         };
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome.
-        return narrateResolution(resolution, {}, campaignState);
+        return narrateResolution(resolution, campaignState);
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
     } catch (err) {

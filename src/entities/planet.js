@@ -91,7 +91,6 @@ export const PlanetSchema = {
   portraitSourceDescription:   "",
 
   // Context injection
-  sceneRelevant:   false,
   loremasterNotes: "",
 
   // Narrator entity-discovery flags
@@ -189,60 +188,12 @@ export async function updatePlanet(actorId, updates) {
   return updated;
 }
 
-/**
- * Add a discovered planetside feature.
- * Features accumulate as the planet is explored — append only.
- *
- * @param {string} actorId
- * @param {string} feature — Oracle result or player description
- * @returns {Promise<Object>}
- */
-export async function addFeature(actorId, feature) {
-  const planet = getPlanet(actorId);
-  if (!planet) throw new Error(`Planet not found: ${actorId}`);
-
-  const features = [...(planet.features ?? []), feature];
-  return updatePlanet(actorId, { features });
-}
-
-export async function setSceneRelevant(actorId, value) {
-  return updatePlanet(actorId, { sceneRelevant: value });
-}
-
 export async function setPortraitId(actorId, artAssetId) {
   return updatePlanet(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(planet) {
   return planet.active && !!planet.portraitSourceDescription && !planet.portraitId;
-}
-
-/**
- * Format a Planet for narrator context injection.
- *
- * @param {Object} planet
- * @returns {string}
- */
-export function formatForContext(planet) {
-  const parts = [`**${planet.name || "Unknown Planet"}**`];
-
-  if (planet.type)          parts.push(planet.type);
-  if (planet.atmosphere)    parts.push(`Atmosphere: ${planet.atmosphere}`);
-  if (planet.life)          parts.push(`Life: ${planet.life}`);
-
-  if (planet.biomes?.length) {
-    parts.push(`Biomes: ${planet.biomes.join(", ")}`);
-  }
-
-  if (planet.features?.length) {
-    // Only include the most recently discovered feature to keep context concise
-    parts.push(`Notable: ${planet.features[planet.features.length - 1]}`);
-  }
-
-  if (planet.description)      parts.push(planet.description);
-  if (planet.loremasterNotes)  parts.push(`Note: ${planet.loremasterNotes}`);
-
-  return parts.join(" | ");
 }
 
 function generateId() {

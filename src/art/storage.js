@@ -138,21 +138,6 @@ export function getDataUri(asset) {
   return `data:image/png;base64,${asset.b64}`;
 }
 
-/**
- * Get the data URI for an entity's current portrait.
- * Convenience wrapper used by UI panels.
- *
- * @param {string} portraitId   — from entity.portraitId
- * @param {Object} campaignState
- * @returns {Promise<string|null>}
- */
-export async function getPortraitDataUri(portraitId, campaignState) {
-  if (!portraitId) return null;
-  const asset = await loadArtAsset(portraitId, campaignState);
-  return getDataUri(asset);
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL
 // ─────────────────────────────────────────────────────────────────────────────

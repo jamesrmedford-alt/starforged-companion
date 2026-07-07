@@ -52,7 +52,6 @@ export const FactionSchema = {
   portraitSourceDescription: "",
 
   // Context injection
-  sceneRelevant:   false,
   loremasterNotes: "",
 
   // Narrator entity-discovery flags (see narrator-entity-discovery scope §3)
@@ -309,80 +308,12 @@ export async function updateFaction(journalEntryId, updates) {
   return updated;
 }
 
-/**
- * Add a discovered rumor to a faction record.
- * Rumors are append-only — new information never replaces old.
- *
- * @param {string} journalEntryId
- * @param {string} rumor
- * @returns {Promise<Object>}
- */
-export async function addRumor(journalEntryId, rumor) {
-  const faction = getFaction(journalEntryId);
-  if (!faction) throw new Error(`Faction not found: ${journalEntryId}`);
-
-  const updatedRumors = [...(faction.rumors ?? []), {
-    discovered: new Date().toISOString(),
-    text:       rumor,
-  }];
-
-  return updateFaction(journalEntryId, { rumors: updatedRumors });
-}
-
-/**
- * Add or replace a faction project.
- *
- * @param {string} journalEntryId
- * @param {string} project
- * @returns {Promise<Object>}
- */
-export async function setProject(journalEntryId, project) {
-  const faction = getFaction(journalEntryId);
-  if (!faction) throw new Error(`Faction not found: ${journalEntryId}`);
-
-  // Replace the most recent project entry, or append if projects is empty
-  const projects = [...(faction.projects ?? [])];
-  if (projects.length === 0 || projects[projects.length - 1] !== project) {
-    projects.push(project);
-  }
-
-  return updateFaction(journalEntryId, { projects });
-}
-
-export async function setSceneRelevant(journalEntryId, value) {
-  return updateFaction(journalEntryId, { sceneRelevant: value });
-}
-
 export async function setPortraitId(journalEntryId, artAssetId) {
   return updateFaction(journalEntryId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(faction) {
   return faction.active && !!faction.portraitSourceDescription && !faction.portraitId;
-}
-
-/**
- * Format a Faction for narrator context injection.
- *
- * @param {Object} faction
- * @returns {string}
- */
-export function formatForContext(faction) {
-  const parts = [`**${faction.name || "Unknown Faction"}**`];
-
-  if (faction.type)         parts.push(faction.subtype ? `${faction.type}: ${faction.subtype}` : faction.type);
-  if (faction.influence)    parts.push(`Influence: ${faction.influence}`);
-  if (faction.relationship && faction.relationship !== "unknown") {
-    parts.push(`Stance: ${faction.relationship.replace(/_/g, " ")}`);
-  }
-
-  const latestProject = faction.projects?.[faction.projects.length - 1];
-  if (latestProject)        parts.push(`Current project: ${latestProject}`);
-  if (faction.quirk)        parts.push(`Quirk: ${faction.quirk}`);
-  if (faction.description)  parts.push(faction.description);
-  if (faction.loremasterNotes) parts.push(`Note: ${faction.loremasterNotes}`);
-
-  return parts.join(" | ");
 }
 
 /**

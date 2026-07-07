@@ -167,14 +167,31 @@ export const ORACLE_TABLES = {
   vault_peril:       { name: "Vault Interior Peril",  table: VAULTS.INTERIOR_PERIL,   category: "vaults" },
   vault_opportunity: { name: "Vault Interior Opportunity", table: VAULTS.INTERIOR_OPPORTUNITY, category: "vaults" },
 
-  // Location Themes
-  theme_chaotic:     { name: "Theme: Chaotic",    table: THEMES.CHAOTIC_FEATURE,   category: "themes" },
-  theme_haunted:     { name: "Theme: Haunted",    table: THEMES.HAUNTED_FEATURE,   category: "themes" },
-  theme_infested:    { name: "Theme: Infested",   table: THEMES.INFESTED_FEATURE,  category: "themes" },
-  theme_inhabited:   { name: "Theme: Inhabited",  table: THEMES.INHABITED_FEATURE, category: "themes" },
-  theme_mechanical:  { name: "Theme: Mechanical", table: THEMES.MECHANICAL_FEATURE, category: "themes" },
-  theme_ruined:      { name: "Theme: Ruined",     table: THEMES.RUINED_FEATURE,    category: "themes" },
-  theme_sacred:      { name: "Theme: Sacred",     table: THEMES.SACRED_FEATURE,    category: "themes" },
+  // Location Themes — each theme carries the canonical Feature/Peril/
+  // Opportunity triple (THEME-PERIL-OPP-DEAD fix, issue #272: the peril and
+  // opportunity tables were authored but never registered — unreachable via
+  // !oracle while space/planets/vaults/derelicts registered theirs).
+  theme_chaotic:                { name: "Theme: Chaotic",                table: THEMES.CHAOTIC_FEATURE,        category: "themes" },
+  theme_chaotic_peril:          { name: "Theme: Chaotic Peril",          table: THEMES.CHAOTIC_PERIL,          category: "themes" },
+  theme_chaotic_opportunity:    { name: "Theme: Chaotic Opportunity",    table: THEMES.CHAOTIC_OPPORTUNITY,    category: "themes" },
+  theme_haunted:                { name: "Theme: Haunted",                table: THEMES.HAUNTED_FEATURE,        category: "themes" },
+  theme_haunted_peril:          { name: "Theme: Haunted Peril",          table: THEMES.HAUNTED_PERIL,          category: "themes" },
+  theme_haunted_opportunity:    { name: "Theme: Haunted Opportunity",    table: THEMES.HAUNTED_OPPORTUNITY,    category: "themes" },
+  theme_infested:               { name: "Theme: Infested",               table: THEMES.INFESTED_FEATURE,       category: "themes" },
+  theme_infested_peril:         { name: "Theme: Infested Peril",         table: THEMES.INFESTED_PERIL,         category: "themes" },
+  theme_infested_opportunity:   { name: "Theme: Infested Opportunity",   table: THEMES.INFESTED_OPPORTUNITY,   category: "themes" },
+  theme_inhabited:              { name: "Theme: Inhabited",              table: THEMES.INHABITED_FEATURE,      category: "themes" },
+  theme_inhabited_peril:        { name: "Theme: Inhabited Peril",        table: THEMES.INHABITED_PERIL,        category: "themes" },
+  theme_inhabited_opportunity:  { name: "Theme: Inhabited Opportunity",  table: THEMES.INHABITED_OPPORTUNITY,  category: "themes" },
+  theme_mechanical:             { name: "Theme: Mechanical",             table: THEMES.MECHANICAL_FEATURE,     category: "themes" },
+  theme_mechanical_peril:       { name: "Theme: Mechanical Peril",       table: THEMES.MECHANICAL_PERIL,       category: "themes" },
+  theme_mechanical_opportunity: { name: "Theme: Mechanical Opportunity", table: THEMES.MECHANICAL_OPPORTUNITY, category: "themes" },
+  theme_ruined:                 { name: "Theme: Ruined",                 table: THEMES.RUINED_FEATURE,         category: "themes" },
+  theme_ruined_peril:           { name: "Theme: Ruined Peril",           table: THEMES.RUINED_PERIL,           category: "themes" },
+  theme_ruined_opportunity:     { name: "Theme: Ruined Opportunity",     table: THEMES.RUINED_OPPORTUNITY,     category: "themes" },
+  theme_sacred:                 { name: "Theme: Sacred",                 table: THEMES.SACRED_FEATURE,         category: "themes" },
+  theme_sacred_peril:           { name: "Theme: Sacred Peril",           table: THEMES.SACRED_PERIL,           category: "themes" },
+  theme_sacred_opportunity:     { name: "Theme: Sacred Opportunity",     table: THEMES.SACRED_OPPORTUNITY,     category: "themes" },
 
   // Miscellaneous
   story_complication: { name: "Story Complication", table: MISC.STORY_COMPLICATION, category: "misc" },
@@ -343,20 +360,6 @@ export function rollPaired(tableId1, tableId2) {
 }
 
 /**
- * Roll Action + Theme.
- */
-export function rollActionTheme() {
-  return rollPaired("action", "theme");
-}
-
-/**
- * Roll Descriptor + Focus.
- */
-export function rollDescriptorFocus() {
-  return rollPaired("descriptor", "focus");
-}
-
-/**
  * Ask the Oracle — yes/no with odds (play kit p. 8, "FATE MOVES > ASK THE ORACLE").
  *
  * Rolls a d100 and compares to the threshold for the chosen odds:
@@ -403,30 +406,6 @@ export function rollYesNo(odds, { roll, question = "" } = {}) {
     question,
   };
 }
-
-/**
- * Format an oracle result for chat injection.
- * Returns a short HTML string suitable for a Foundry chat message.
- */
-export function formatOracleResult(result) {
-  if (result.combined) {
-    // Paired roll
-    return `<strong>${result.tableId1} / ${result.tableId2}:</strong> ${result.combined}`;
-  }
-  return `<strong>${result.tableName}:</strong> ${result.result}`;
-}
-
-/**
- * Format an oracle result for Loremaster context injection.
- * Returns a bracketed string matching the move context format.
- */
-export function formatOracleContext(result) {
-  if (result.combined) {
-    return `[ORACLE: ${result.combined}]`;
-  }
-  return `[ORACLE: ${result.tableName} → ${result.result}]`;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS

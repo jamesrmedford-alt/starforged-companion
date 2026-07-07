@@ -14,7 +14,6 @@ import {
   NARRATOR_CLASSES,
   ConnectionSchema,
   CampaignStateSchema,
-  ContextPacketSchema,
 } from "../../src/schemas.js";
 import { ShipSchema }       from "../../src/entities/ship.js";
 import { SettlementSchema } from "../../src/entities/settlement.js";
@@ -120,7 +119,7 @@ describe("LocationSchema", () => {
     "firstLook", "feature", "peril", "opportunity",
     "description", "history", "notes",
     "portraitId", "portraitSourceDescription",
-    "sceneRelevant", "narratorNotes",
+    "narratorNotes",
     "sectorId", "settlementId",
     "canonicalLocked", "generativeTier",
     "createdAt", "updatedAt",
@@ -151,7 +150,7 @@ describe("CreatureSchema", () => {
     "rank", "attackPattern",
     "description", "notes",
     "portraitId", "portraitSourceDescription",
-    "sceneRelevant", "narratorNotes",
+    "narratorNotes",
     "canonicalLocked", "generativeTier",
     "createdAt", "updatedAt",
   ];
@@ -212,11 +211,3 @@ describe("CampaignStateSchema entity-discovery additions", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token budget
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("ContextPacketSchema.tokenBudget", () => {
-  it("is 8000", () => {
-    expect(ContextPacketSchema.tokenBudget).toBe(8000);
-  });
-});

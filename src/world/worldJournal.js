@@ -42,11 +42,6 @@ export const FLAG_KEYS = {
 export const THREAT_SEVERITIES = ["immediate", "active", "looming", "resolved"];
 const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
 
-export const FACTION_ATTITUDES = ["hostile", "neutral", "allied", "unknown"];
-export const LOCATION_STATUSES = ["current", "departed", "destroyed", "unknown"];
-export const LORE_CATEGORIES   = ["ascendancy", "ai", "essentia", "truthConnection", "precursor", "other"];
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -772,19 +767,6 @@ export function getFactionEntry(name) {
   if (!cleanName) return null;
   const journal = findJournal(JOURNAL_NAMES.factions);
   return findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
-}
-
-/**
- * Current-session unconfirmed lore — whatever the narrator established this
- * session that has not yet been promoted.
- */
-export function getRecentDiscoveries(campaignState) {
-  const sessionId = campaignState?.currentSessionId;
-  if (!sessionId) return [];
-  const journal = findJournal(JOURNAL_NAMES.lore);
-  return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.sessionId === sessionId && e.confirmed !== true)
-    .sort(byRecency);
 }
 
 /**

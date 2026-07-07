@@ -80,7 +80,6 @@ export const SettlementSchema = {
   portraitSourceDescription:   "",
 
   // Context injection
-  sceneRelevant:   false,
   loremasterNotes: "",
 
   // Linked entities
@@ -199,41 +198,12 @@ export async function updateSettlement(actorId, updates) {
   return updated;
 }
 
-export async function setSceneRelevant(actorId, value) {
-  return updateSettlement(actorId, { sceneRelevant: value });
-}
-
 export async function setPortraitId(actorId, artAssetId) {
   return updateSettlement(actorId, { portraitId: artAssetId });
 }
 
 export function isReadyForArtGeneration(settlement) {
   return settlement.active && !!settlement.portraitSourceDescription && !settlement.portraitId;
-}
-
-/**
- * Format a Settlement for narrator context injection.
- * Used when the scene is set at this location.
- *
- * @param {Object} settlement
- * @returns {string}
- */
-export function formatForContext(settlement) {
-  const parts = [`**${settlement.name || "Unknown Settlement"}**`];
-
-  if (settlement.location)   parts.push(`Location: ${settlement.location}`);
-  if (settlement.population) parts.push(`Population: ${settlement.population}`);
-  if (settlement.authority)  parts.push(`Authority: ${settlement.authority}`);
-  if (settlement.trouble)    parts.push(`Current trouble: ${settlement.trouble}`);
-
-  if (settlement.projects?.length) {
-    parts.push(`Projects: ${settlement.projects.join(", ")}`);
-  }
-
-  if (settlement.description)     parts.push(settlement.description);
-  if (settlement.loremasterNotes) parts.push(`Note: ${settlement.loremasterNotes}`);
-
-  return parts.join(" | ");
 }
 
 function generateId() {
