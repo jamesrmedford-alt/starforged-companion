@@ -22,10 +22,20 @@ vi.mock("../../src/entities/connection.js", async () => {
   const actual = await vi.importActual("../../src/entities/connection.js");
   return { ...actual, listConnections: vi.fn(() => []) };
 });
+vi.mock("../../src/entities/planet.js", async () => {
+  const actual = await vi.importActual("../../src/entities/planet.js");
+  return { ...actual, listPlanets: vi.fn(() => []) };
+});
+vi.mock("../../src/entities/location.js", async () => {
+  const actual = await vi.importActual("../../src/entities/location.js");
+  return { ...actual, listLocations: vi.fn(() => []) };
+});
 
 import { formatActiveSector } from "../../src/narration/narrator.js";
 import { listSettlements } from "../../src/entities/settlement.js";
 import { listConnections } from "../../src/entities/connection.js";
+import { listPlanets } from "../../src/entities/planet.js";
+import { listLocations } from "../../src/entities/location.js";
 
 const SECTOR = {
   id:      "sec-1",
@@ -48,6 +58,47 @@ function state(overrides = {}) {
 beforeEach(() => {
   vi.mocked(listSettlements).mockReturnValue([]);
   vi.mocked(listConnections).mockReturnValue([]);
+  vi.mocked(listPlanets).mockReturnValue([]);
+  vi.mocked(listLocations).mockReturnValue([]);
+});
+
+describe("formatActiveSector — planets & locations roster (issue #275)", () => {
+  it("surfaces known planets with their class", () => {
+    vi.mocked(listPlanets).mockReturnValue([
+      { name: "Kalidas", sectorId: "sec-1", type: "Furnace World" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).toContain("Known planets");
+    expect(block).toContain("Kalidas (Furnace World)");
+  });
+
+  it("surfaces known non-site locations", () => {
+    vi.mocked(listLocations).mockReturnValue([
+      { name: "Relay Station Kappa", sectorId: "sec-1", type: "station" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).toContain("Known locations");
+    expect(block).toContain("Relay Station Kappa (station)");
+  });
+
+  it("EXCLUDES vault/derelict location records — sites must not leak", () => {
+    vi.mocked(listLocations).mockReturnValue([
+      { name: "Precursor Vault — Sphere", sectorId: "sec-1", type: "vault" },
+      { name: "The Bellwether", sectorId: "sec-1", type: "derelict" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).not.toContain("Precursor Vault — Sphere");
+    expect(block).not.toContain("The Bellwether");
+    expect(block).not.toContain("Known locations");
+  });
+
+  it("filters planets to the active sector", () => {
+    vi.mocked(listPlanets).mockReturnValue([
+      { name: "Elsewhere Prime", sectorId: "sec-OTHER", type: "Vital World" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).not.toContain("Elsewhere Prime");
+  });
 });
 
 describe("formatActiveSector — sector cast & attributes (PLAYTEST-1712 T)", () => {

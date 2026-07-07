@@ -35,8 +35,8 @@ import { getActiveThreats, getFactionLandscape, getConfirmedLore } from '../worl
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
 import { getShip }        from '../entities/ship.js';
-import { getPlanet }      from '../entities/planet.js';
-import { getLocation }    from '../entities/location.js';
+import { getPlanet, listPlanets }       from '../entities/planet.js';
+import { getLocation, listLocations }   from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
 import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
@@ -2135,6 +2135,50 @@ export function formatActiveSector(campaignState) {
       'place, and do not introduce an official, administrator, or governing ' +
       'figure for a settlement whose Authority is none or lawless):',
       ...settlementLines,
+    );
+  }
+
+  // Known planets & standalone locations (LIST-LOC-PLANET-DEAD fix, issue
+  // #275): settlements and charted sites had standing anchors; planets and
+  // named non-site locations did not, so the narrator could re-invent them.
+  // Site records (type vault/derelict) are EXCLUDED here — undiscovered
+  // sites must not leak (site-flow §5), and discovered ones render in the
+  // Charted sites block below. Capped like the NPC roster.
+  let planetLines = [];
+  try {
+    planetLines = listPlanets(campaignState)
+      .filter(p => p && p.active !== false && (!p.sectorId || p.sectorId === id))
+      .slice(0, 12)
+      .map(p => `- ${p.name}${p.type ? ` (${p.type})` : ''}`);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: planet read failed:`, err?.message ?? err);
+  }
+  if (planetLines.length) {
+    lines.push(
+      '',
+      'Known planets (established — reuse these names; do not invent a ' +
+      'different world for the same place):',
+      ...planetLines,
+    );
+  }
+
+  let locationLines = [];
+  try {
+    locationLines = listLocations(campaignState)
+      .filter(l => l && l.active !== false
+        && l.type !== 'vault' && l.type !== 'derelict'
+        && (!l.sectorId || l.sectorId === id))
+      .slice(0, 12)
+      .map(l => `- ${l.name}${l.type ? ` (${l.type})` : ''}`);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | formatActiveSector: location read failed:`, err?.message ?? err);
+  }
+  if (locationLines.length) {
+    lines.push(
+      '',
+      'Known locations (established — reuse these; vaults and derelicts are ' +
+      'listed under Charted sites once discovered):',
+      ...locationLines,
     );
   }
 
