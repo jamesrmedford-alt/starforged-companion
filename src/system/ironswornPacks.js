@@ -31,11 +31,6 @@ const ALL_MOVE_PACKS = [
   IS_PACKS.IRONSWORN_MOVES,
 ];
 
-const ALL_ORACLE_PACKS = [
-  IS_PACKS.STARFORGED_ORACLES,
-  IS_PACKS.IRONSWORN_ORACLES,
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CACHE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,17 +175,6 @@ async function findByNameInPack(name, packId, kind) {
 export async function getCanonicalMove(slug, packIds = ALL_MOVE_PACKS) {
   if (!slug) return null;
   return findInPacks(slug, packIds, "move");
-}
-
-/**
- * Find a RollTable / oracle by slug across the configured oracle packs.
- * @param {string} slug
- * @param {string[]} [packIds]
- * @returns {Promise<Object|null>}
- */
-export async function getCanonicalOracle(slug, packIds = ALL_ORACLE_PACKS) {
-  if (!slug) return null;
-  return findInPacks(slug, packIds, "oracle");
 }
 
 /**

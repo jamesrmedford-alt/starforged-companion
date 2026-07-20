@@ -1923,6 +1923,15 @@ now have consistent version and manifest URLs.
 
 ---
 
+### SHIP-INTEGRITY-API-UNWIRED — pre-built ship damage/repair API awaits #216 Phase D
+
+**Status:** OPEN (deliberate). `sufferDamage` / `repairIntegrity` /
+`clearBattered` (`src/entities/ship.js`) have no live caller — they are the
+pre-built API for Battle Stations Phase D (station play → ship
+integrity/battered, issue #216), marked `// UNWIRED` in-code per
+`rules/reachability.md`. Their unit tests lock the semantics until Phase D
+wires them. Recorded 2026-07-07 (test-suite review).
+
 ### ASSEMBLER-001 — World truths section always empty in production ✓
 
 **Resolved in:** Post-session-3 hardening

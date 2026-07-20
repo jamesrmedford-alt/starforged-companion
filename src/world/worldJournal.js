@@ -769,16 +769,6 @@ export function getFactionEntry(name) {
   return findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
 }
 
-/**
- * All locations with a known name. Phase 6 surfaces these in the panel.
- */
-export function listLocationEntries(_campaignState) {
-  const journal = findJournal(JOURNAL_NAMES.locations);
-  return readEntries(journal, FLAG_KEYS.locations)
-    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // !journal command parsing
 // ─────────────────────────────────────────────────────────────────────────────

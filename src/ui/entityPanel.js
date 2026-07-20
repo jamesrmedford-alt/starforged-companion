@@ -16,6 +16,7 @@
 // Output path (Foundry): modules/starforged-companion/src/ui/entityPanel.js
 
 import { generatePortrait, regeneratePortrait } from '../art/generator.js';
+import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
 import {
   getEntityDocument,
@@ -416,7 +417,9 @@ export class EntityPanelApp extends ApplicationV2 {
     // first-time portrait) on demand; once finalized, offer a manual regenerate.
     // ship + connection run their full oracle/module/art seed here (finalize-first,
     // FOLDER-002); settlement/planet/location run the generic flavour pass.
-    const supportsFinalizeType = ['ship', 'settlement', 'planet', 'location', 'connection'].includes(entity.typeKey);
+    // Single-sourced from entities/finalize.js (2026-07 test-suite review —
+    // this was a hardcoded twin of supportsFinalize's GETTERS list).
+    const supportsFinalizeType = supportsFinalize(entity.typeKey);
     const isFinalizing = this.#generatingIds.has(`flavor:${entity.journalId}`);
     const finalizeBtnHtml = !supportsFinalizeType
       ? ''

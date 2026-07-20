@@ -182,6 +182,11 @@ export const MOVES = {
  *   "interaction"   — narrator must use established entities; may add generative detail
  *   "embellishment" — sensory/atmospheric only; no entity introduction permitted
  *   "hybrid"        — class resolved at runtime via the relevance resolver
+ *
+ * Contract anchor — deliberately no runtime consumer: the MOVES narratorClass
+ * contract test (tests/unit/schemas.test.js) enforces membership against this
+ * list, which is what keeps the valid set single-sourced. Do not delete as
+ * "test-only" (2026-07 test-suite review).
  */
 export const NARRATOR_CLASSES = ["discovery", "interaction", "embellishment", "hybrid"];
 

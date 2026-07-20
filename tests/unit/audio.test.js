@@ -37,7 +37,6 @@ import {
   PLAYBACK_STATE,
   markGestureReceived,
   userGestureReceived,
-  waitForUserGesture,
   _resetGestureForTests,
   _resetActivePlaybackForTests,
   stopActivePlayback,
@@ -707,17 +706,6 @@ describe('user-gesture queue', () => {
     expect(userGestureReceived()).toBe(false);
   });
 
-  it('markGestureReceived() flips the flag and resolves pending waiters', async () => {
-    const pending = waitForUserGesture();
-    markGestureReceived();
-    await pending;
-    expect(userGestureReceived()).toBe(true);
-  });
-
-  it('waitForUserGesture() resolves synchronously after gesture seen', async () => {
-    markGestureReceived();
-    await expect(waitForUserGesture()).resolves.toBeUndefined();
-  });
 });
 
 

@@ -8,9 +8,9 @@
  * - Always produce output — never returns null or empty string
  * - Provide suppressScene() for the X-Card hook in settingsPanel.js
  *
- * The safety section is always the first element in every Loremaster
- * context packet. It is exempt from token budget pressure and is never
- * omitted, never summarised, never truncated.
+ * The safety section is always the first element in every narrator system
+ * prompt (buildNarratorSystemPrompt renders it ahead of all creative
+ * content). It is never omitted, never summarised, never truncated.
  *
  * Private per-player Lines are included only when the requesting user
  * is the player they belong to, or the GM. They are never broadcast.
@@ -67,8 +67,9 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
 
 
 /**
- * Activate the X-Card — sets xCardActive on campaignState so the assembler
- * suppresses all creative content for the remainder of the scene.
+ * Activate the X-Card — sets xCardActive on campaignState; every live
+ * narrator path gates on it (`campaignState.xCardActive` checks in
+ * narrator.js) and suppresses creative content for the rest of the scene.
  *
  * Called by the `!x` chat-command handler in `src/index.js` (and a
  * parallel guard hook in `src/ui/settingsPanel.js`). The `/x` form was

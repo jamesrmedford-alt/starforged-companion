@@ -11,9 +11,6 @@ import {
   pickStarshipIcon,
   iconForPlanetType,
   iconForStellarObject,
-  statIcon,
-  assetIcon,
-  oracleIcon,
 } from '../../src/system/ironswornAssets.js';
 
 describe('Phase 1 — IS_PATHS constants', () => {
@@ -134,28 +131,3 @@ describe('iconForPlanetType / iconForStellarObject', () => {
   });
 });
 
-describe('Phase 9 — stat / asset / oracle icon resolvers', () => {
-  it('statIcon returns paths under IS_PATHS.ICONS for known stats', () => {
-    expect(statIcon('edge')).toBe(`${IS_PATHS.ICONS}/edge.svg`);
-    expect(statIcon('heart')).toBe(`${IS_PATHS.ICONS}/heart.svg`);
-    expect(statIcon('iron')).toBe(`${IS_PATHS.ICONS}/iron.svg`);
-    expect(statIcon('shadow')).toBe(`${IS_PATHS.ICONS}/shadow.svg`);
-    expect(statIcon('wits')).toBe(`${IS_PATHS.ICONS}/wits.svg`);
-  });
-
-  it('statIcon returns null for unknown slugs', () => {
-    expect(statIcon('mystery')).toBeNull();
-    expect(statIcon('')).toBeNull();
-    expect(statIcon(undefined)).toBeNull();
-  });
-
-  it('assetIcon and oracleIcon kebab-case the input', () => {
-    expect(assetIcon('Command Vehicle')).toBe(`${IS_PATHS.ASSETS}/command-vehicle.svg`);
-    expect(oracleIcon('Action_Oracle')).toBe(`${IS_PATHS.ORACLES}/action-oracle.svg`);
-  });
-
-  it('assetIcon and oracleIcon return null for empty input', () => {
-    expect(assetIcon('')).toBeNull();
-    expect(oracleIcon(null)).toBeNull();
-  });
-});

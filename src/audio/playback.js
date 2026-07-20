@@ -68,39 +68,6 @@ export function stopActivePlayback() {
   return Promise.resolve(s.stop()).then(() => true).catch(() => false);
 }
 
-function ensureGestureListener() {
-  if (_gestureReceived) return;
-  // In headless / node-test environments there is no document — gesture
-  // tracking is a no-op and callers fall back to markGestureReceived().
-  if (typeof document === "undefined") return;
-  const onGesture = () => {
-    if (_gestureReceived) return;
-    _gestureReceived = true;
-    document.removeEventListener("click",   onGesture, true);
-    document.removeEventListener("keydown", onGesture, true);
-    document.removeEventListener("touchstart", onGesture, true);
-    while (_gestureWaiters.length) {
-      const resolve = _gestureWaiters.shift();
-      try { resolve(); } catch (err) {
-        console.warn(`${MODULE_ID} | playback gesture waiter threw:`, err);
-      }
-    }
-  };
-  document.addEventListener("click",      onGesture, true);
-  document.addEventListener("keydown",    onGesture, true);
-  document.addEventListener("touchstart", onGesture, true);
-}
-
-/**
- * Resolves once a user gesture has been observed. If a gesture has
- * already been received this session, resolves synchronously.
- */
-export function waitForUserGesture() {
-  if (_gestureReceived) return Promise.resolve();
-  ensureGestureListener();
-  return new Promise(resolve => _gestureWaiters.push(resolve));
-}
-
 export function userGestureReceived() {
   return _gestureReceived;
 }

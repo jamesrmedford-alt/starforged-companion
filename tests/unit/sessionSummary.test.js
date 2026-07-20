@@ -16,7 +16,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   rollingSummaryThreshold,
-  getRollingSummaryText,
   getRollingSessionSummary,
 } from '../../src/narration/narrator.js';
 import { buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
@@ -99,28 +98,6 @@ describe('rollingSummaryThreshold (debounce = 1.5 × N)', () => {
 // ---------------------------------------------------------------------------
 // 2. getRollingSummaryText — pure read
 // ---------------------------------------------------------------------------
-
-describe('getRollingSummaryText (pure read)', () => {
-  it('returns the cached text when it matches the current session', () => {
-    const state = makeState({ sessionSummary: { text: 'So far…', sessionId: 'sess-1' } });
-    expect(getRollingSummaryText(state)).toBe('So far…');
-  });
-
-  it('returns "" for a stale summary from a different session', () => {
-    const state = makeState({ sessionSummary: { text: 'Old', sessionId: 'sess-0' } });
-    expect(getRollingSummaryText(state)).toBe('');
-  });
-
-  it('returns "" when there is no summary', () => {
-    expect(getRollingSummaryText(makeState())).toBe('');
-  });
-
-  it('returns "" when the feature is disabled', () => {
-    game.settings._store.set(`${MODULE_ID}.narratorSessionSummary`, false);
-    const state = makeState({ sessionSummary: { text: 'So far…', sessionId: 'sess-1' } });
-    expect(getRollingSummaryText(state)).toBe('');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 3. getRollingSessionSummary — debounce / regen / persist

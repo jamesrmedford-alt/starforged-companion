@@ -98,47 +98,6 @@ export function rollCategory(categoryId, options = {}) {
   return result;
 }
 
-/**
- * Apply a pre-determined truth result (for importing Session Zero rolls).
- * Used when the GM has already rolled truths and just wants to record them.
- *
- * @param {string} categoryId
- * @param {number} roll
- * @param {number} [subRoll]
- * @returns {TruthResult}
- */
-export function applyRoll(categoryId, roll, subRoll = null) {
-  return rollCategory(categoryId, { roll, subRoll: subRoll ?? undefined });
-}
-
-/**
- * Build the established truth set for this campaign from Session Zero rolls.
- * This is a convenience function — in the actual game the GM uses rollWorldTruths()
- * or rolls manually. Provided here so the module can be initialised with the
- * correct state from the beginning without requiring a re-roll.
- *
- * @returns {Object} truthSet
- */
-export function buildSessionZeroTruths() {
-  return {
-    cataclysm:     applyRoll("cataclysm",     82, 15),
-    exodus:        applyRoll("exodus",         4),
-    communities:   applyRoll("communities",    36),
-    iron:          applyRoll("iron",           29),
-    laws:          applyRoll("laws",           95),
-    religion:      applyRoll("religion",       87),
-    magic:         applyRoll("magic",          70, 12),
-    communication: applyRoll("communication",  76),
-    medicine:      applyRoll("medicine",       5),
-    ai:            applyRoll("ai",             12, 28),
-    war:           applyRoll("war",            30),
-    lifeforms:     applyRoll("lifeforms",      78),
-    precursors:    applyRoll("precursors",     72),
-    horrors:       applyRoll("horrors",        92),
-  };
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // STORAGE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,18 +125,6 @@ export async function storeWorldTruths(truthSet, campaignState) {
 
   return createTruthsJournal(truthSet);
 }
-
-/**
- * Load the truth set from campaign state.
- * Returns null if no truths have been established yet.
- *
- * @param {Object} campaignState
- * @returns {Object|null}
- */
-export function loadWorldTruths(campaignState) {
-  return campaignState.worldTruths ?? null;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JOURNAL ENTRY
@@ -264,19 +211,6 @@ export function formatForContext(truthSet) {
 }
 
 /**
- * Format a single category truth for targeted context injection.
- * Used when a move or oracle result relates to a specific truth.
- *
- * @param {Object} truth — single TruthResult
- * @returns {string}
- */
-export function formatSingleTruth(truth) {
-  if (!truth) return "";
-  const sub = truth.subResult ? ` (${truth.subResult})` : "";
-  return `[${truth.categoryName}: ${truth.title}${sub}]`;
-}
-
-/**
  * Get a truth result for a specific category from the campaign state.
  * Convenience accessor for the pipeline.
  *
@@ -286,22 +220,6 @@ export function formatSingleTruth(truth) {
  */
 export function getTruth(campaignState, categoryId) {
   return campaignState.worldTruths?.[categoryId] ?? null;
-}
-
-/**
- * Check whether world truths have been established for this campaign.
- * Accepts truths set via the system dialog (worldTruthsSet flag) OR via
- * the old module-built structured format (worldTruths with all 14 categories).
- *
- * @param {Object} campaignState
- * @returns {boolean}
- */
-export function hasTruths(campaignState) {
-  return !!(
-    campaignState.worldTruthsSet ||
-    (campaignState.worldTruths &&
-      Object.keys(campaignState.worldTruths).length === TRUTH_CATEGORIES.length)
-  );
 }
 
 /**

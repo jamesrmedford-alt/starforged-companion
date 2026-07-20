@@ -17,6 +17,7 @@
 //   syncSafetyToCampaignState() bridges the two, called on every write and on ready.
 
 import { suppressScene } from '../context/safety.js';
+import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1354,12 +1355,9 @@ export class SettingsPanelApp extends ApplicationV2 {
     const a = ctx.audio ?? {};
     const escAttr = (s) => String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-    const MODEL_OPTIONS = [
-      { id: 'eleven_flash_v2_5',      label: 'Flash v2.5 — fastest, lowest cost'   },
-      { id: 'eleven_turbo_v2_5',      label: 'Turbo v2.5 — balanced'                },
-      { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — long-form quality'  },
-      { id: 'eleven_v3',              label: 'Eleven v3 — highest expressiveness'   },
-    ];
+    // Single-sourced from audio/elevenlabs.js (2026-07 test-suite review —
+    // this was a hardcoded drift mirror of ELEVENLABS_MODELS).
+    const MODEL_OPTIONS = ELEVENLABS_MODELS;
 
     const modelOptionsHtml = MODEL_OPTIONS.map(m => `
       <option value="${escAttr(m.id)}" ${a.modelId === m.id ? 'selected' : ''}>${m.label}</option>

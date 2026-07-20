@@ -22,7 +22,6 @@ import {
   canBurnMomentum,
   OUTCOME_RANK,
   applyMomentumBurn,
-  countMarkedImpacts,
   mapConsequences,
   rollDie,
   rollActionDie,
@@ -299,29 +298,6 @@ describe("applyMomentumBurn", () => {
     expect(applyMomentumBurn(8, [5, 6], 4).newMomentum).toBe(0);
   });
 });
-
-describe("countMarkedImpacts", () => {
-  it("counts marked impacts correctly", () => {
-    const impacts = {
-      wounded: true, shaken: false, unprepared: true,
-      battered: false, cursed: false,
-      doomed: true, tormented: false, indebted: false,
-      permanently_harmed: false, traumatized: false,
-    };
-    expect(countMarkedImpacts(impacts)).toBe(3);
-  });
-
-  it("returns 0 with no impacts marked", () => {
-    const impacts = {
-      wounded: false, shaken: false, unprepared: false,
-      battered: false, cursed: false,
-      doomed: false, tormented: false, indebted: false,
-      permanently_harmed: false, traumatized: false,
-    };
-    expect(countMarkedImpacts(impacts)).toBe(0);
-  });
-});
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSEQUENCE MAPPING

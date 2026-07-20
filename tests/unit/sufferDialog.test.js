@@ -74,7 +74,6 @@ import {
   resolveSufferSelection,
   runSufferResolution,
   isOptionAvailable,
-  promptSufferChoice,
 } from "../../src/moves/sufferDialog.js";
 
 
@@ -363,29 +362,6 @@ describe("runSufferResolution — dispatches calls into executors / bridge", () 
 // ─────────────────────────────────────────────────────────────────────────────
 // promptSufferChoice — test-env fallback
 // ─────────────────────────────────────────────────────────────────────────────
-
-describe("promptSufferChoice", () => {
-  it("returns the no-app-v2 fallback when ApplicationV2 isn't available", async () => {
-    const saved = globalThis.foundry?.applications?.api?.ApplicationV2;
-    if (globalThis.foundry?.applications?.api) {
-      globalThis.foundry.applications.api.ApplicationV2 = undefined;
-    }
-    try {
-      const r = await promptSufferChoice({ kind: "any", amount: 1, count: 1 }, { system: {} });
-      expect(r).toMatchObject({ cancelled: true, calls: [] });
-      expect(r.reason).toBe("no-app-v2");
-    } finally {
-      if (globalThis.foundry?.applications?.api) {
-        globalThis.foundry.applications.api.ApplicationV2 = saved;
-      }
-    }
-  });
-
-  it("no-op with empty sufferPrompt", async () => {
-    expect(await promptSufferChoice(null, {})).toEqual({ cancelled: false, selection: {}, calls: [] });
-  });
-});
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // runSufferResolution — combat-position executor (enter_the_fray weak hit)

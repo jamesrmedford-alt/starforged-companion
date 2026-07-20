@@ -26,7 +26,6 @@ import {
   getNarratorAssertedLore,
   getActiveThreats,
   getFactionLandscape,
-  listLocationEntries,
   JOURNAL_NAMES,
 } from "../../src/world/worldJournal.js";
 
@@ -726,13 +725,6 @@ describe("getConfirmedLore / getNarratorAssertedLore / getActiveThreats / getFac
     expect(result.map(f => f.factionName)).toEqual(["F4", "F3", "F2"]);
   });
 
-    it("listLocationEntries returns all locations sorted by recency", async () => {
-    await recordLocation("L1", { type: "settlement" }, campaign());
-    await new Promise(r => setTimeout(r, 5));
-    await recordLocation("L2", { type: "derelict" },   campaign());
-    const result = listLocationEntries(campaign());
-    expect(result.map(l => l.locationName)).toEqual(["L2", "L1"]);
-  });
 });
 
 
