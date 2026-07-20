@@ -320,6 +320,14 @@ function resolveDirective(entry, parentTable, depth = 0) {
     return `${rollAndResolve(CORE.ACTION, depth + 1)} ${rollAndResolve(CORE.THEME, depth + 1)}`;
   }
 
+  // DESCRIPTOR-FOCUS-UNCHAINED fix (2026-07, found by the table-integrity
+  // property test): 15 tables carry ref "descriptor_focus" rows, but only
+  // the action_theme chain was ever implemented — those rolls returned the
+  // literal placeholder "Descriptor + Focus" to the player.
+  if (entry.ref === "descriptor_focus") {
+    return `${rollAndResolve(CORE.DESCRIPTOR, depth + 1)} ${rollAndResolve(CORE.FOCUS, depth + 1)}`;
+  }
+
   if (/^Roll (twice|again)\b/i.test(entry.result)) {
     const a = rollAndResolve(parentTable, depth + 1);
     const b = rollAndResolve(parentTable, depth + 1);

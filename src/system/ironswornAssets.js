@@ -180,11 +180,3 @@ export function iconForStellarObject(oracleResult) {
 // STAT / METER / ICON RESOLVERS (Phase 9)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STAT_ICON_FILES = {
-  edge:   "edge.svg",
-  heart:  "heart.svg",
-  iron:   "iron.svg",
-  shadow: "shadow.svg",
-  wits:   "wits.svg",
-};
-

@@ -31,11 +31,6 @@ const ALL_MOVE_PACKS = [
   IS_PACKS.IRONSWORN_MOVES,
 ];
 
-const ALL_ORACLE_PACKS = [
-  IS_PACKS.STARFORGED_ORACLES,
-  IS_PACKS.IRONSWORN_ORACLES,
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CACHE
 // ─────────────────────────────────────────────────────────────────────────────

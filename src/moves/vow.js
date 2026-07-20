@@ -6,7 +6,7 @@
  * two progress-track lifecycles stay consistent.
  */
 
-import { EXPEDITION_RANKS, legacyRewardTicks } from "./expedition.js";
+import { legacyRewardTicks } from "./expedition.js";
 
 
 /**

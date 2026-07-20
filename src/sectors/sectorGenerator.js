@@ -774,7 +774,17 @@ export function rollTableResult(table, fixedRoll, opts = {}) {
   const entry      = table.find(e => roll >= e.min && roll <= e.max);
   if (!entry) return "Unknown";
 
-  // Cross-reference directive: "Action + Theme" rolls CORE.ACTION + CORE.THEME.
+  // Cross-reference directives: "Action + Theme" / "Descriptor + Focus" roll
+  // their CORE pairs (DESCRIPTOR-FOCUS-UNCHAINED fix, 2026-07 — only the
+  // action_theme chain existed; descriptor_focus rows leaked the placeholder
+  // string into generated sector data).
+  if (entry.ref === "descriptor_focus") {
+    if (depth >= MAX_DIRECTIVE_DEPTH) return "Unknown";
+    const sub = { depth: depth + 1, fixedRolls };
+    const d = rollTableResult(CORE.DESCRIPTOR, undefined, sub);
+    const f = rollTableResult(CORE.FOCUS, undefined, sub);
+    return `${d} ${f}`;
+  }
   if (entry.ref === "action_theme") {
     if (depth >= MAX_DIRECTIVE_DEPTH) return "Unknown";
     const sub = { depth: depth + 1, fixedRolls };
@@ -806,6 +816,7 @@ export function rollTableResult(table, fixedRoll, opts = {}) {
 
 function isDirectiveEntry(entry) {
   return entry?.ref === "action_theme"
+      || entry?.ref === "descriptor_focus"
       || /^Roll (twice|again)\b/i.test(entry?.result ?? "");
 }
 
