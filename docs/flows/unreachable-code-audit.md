@@ -170,11 +170,20 @@ Confirmed to appear exactly once (definition only), not on `module.api`:
 
 ## 6. Tier 5 — dead-in-production but test-covered (low priority)
 
-~26 exports are referenced *only* by `tests/` (e.g. `sufferDamage` /
-`repairIntegrity` / `clearBattered` in `ship.js`, `buildEnvisionPrompt`, several
-`*Schema` exports). Not unreachable in the strict sense — exercised by unit
-tests but with no live caller. Many are legitimately kept for the test surface;
-worth a glance, not a sweep.
+~26 exports were referenced *only* by `tests/`. **Update (2026-07-07,
+test-suite review): all processed.** Dispositions — 3 WIRED (each a drift
+mirror of a live literal: `ELEVENLABS_MODELS` → the settings-panel model
+dropdown, `SALIENCE_ORDER` derived from `SALIENCE_TIERS`, the entity panel's
+finalize gate → `supportsFinalize`); 4 KEPT documented (`sufferDamage` /
+`repairIntegrity` / `clearBattered` marked `// UNWIRED: #216 Phase D`,
+`NARRATOR_CLASSES` as the MOVES contract-test anchor); 16 DELETED as
+superseded siblings (including `promptSufferChoice` and its whole dialog
+rendering layer, the session-zero truths quartet + `applyRoll`, and
+`buildStationNoteData` — whose station-pin tests were rewired to the live
+`buildDeckFeatures` → `buildDeckFeatureNoteData` pair). Writing the
+table-integrity property test along the way exposed and fixed a live defect:
+`descriptor_focus` chain rows returned their placeholder text
+(DESCRIPTOR-FOCUS-UNCHAINED). deadscan TEST-ONLY: 22 → 4, all deliberate.
 
 ## 7. Checked and clean
 

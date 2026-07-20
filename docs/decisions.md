@@ -71,6 +71,34 @@ the maintainer: the `!lore` recap injection (#269) and the session-notes stub
 (#270 — removed; `sessionState.notes` never had a writer and the pipeline never
 passed `sessionState` at all) were resolved out of the assembler first.
 
+## Coverage gate: ratchet + core bar, not a flat 95% (2026-07-07)
+
+**Decision:** `vitest.config.js` coverage now measures everything the unit
+suite can structurally reach (all of `src/` minus Quench, `index.js` wiring,
+ApplicationV2/DialogV2 render layers, browser Speech, and static help
+content) with a two-tier threshold: a **floor** calibrated ~2 pts under
+measured actuals (70 lines / 68 branches / 60 functions vs 82.4 / 73.4 / 77.6
+at adoption) that fails on regression, and a **95-class core bar** (95 lines /
+95 functions / 80 branches) over the pure-logic spine — `schemas.js`,
+`resolver.js`, `mischief.js`, `narratorPrompt.js`, `chronicle.js`,
+`context/safety.js`, `truths/tables.js` (98.7% lines aggregate at adoption).
+Both tiers verified live: the core glob fails the gate at a 99 bar and passes
+at 95.
+
+**A flat "95% across the board" was considered and rejected.** Coverage
+measures execution, not consumption: the retired assembler carried ~1,400
+lines of passing tests (excellent coverage, dead in production), and none of
+the 2026-07 audit's ~46 defects — produced-but-dead code, mirror drift,
+GM-gating, composition starvation — would have been caught by more line
+coverage. Chasing 95% on render layers and wiring would have manufactured
+assertion-free execution tests: false confidence, the exact disease the audit
+diagnosed. Detection for those families lives in `scripts/deadscan.mjs`, the
+reachability rules, the flow docs, and Quench/e2e.
+
+**Recalibration protocol:** when real coverage rises, raise the floor toward
+it (keep ~2 pts of headroom) in a dedicated commit. Never lower a threshold to
+make a feature land — that is the regression the gate exists to catch.
+
 ## Location background art never shipped its consumer — surface removed (2026-07-07)
 
 **Decision:** the `locationArtSource` setting (a visible config promising
@@ -1321,7 +1349,7 @@ only at session start. The rolling summary fills that middle band cheaply.
   (contradiction or token bloat); revisit by biasing the summariser prompt away
   from facts if a playtest shows it.
 
-**Where:** `getRollingSessionSummary` / `getRollingSummaryText` /
+**Where:** `getRollingSessionSummary` /
 `rollingSummaryThreshold` in `src/narration/narrator.js`; rendering in
 `buildNarratorSystemPrompt` (`src/narration/narratorPrompt.js`); End Session
 persistence in `src/safety/sessionLifecycleDialogs.js` + `writeSessionLog`
@@ -1982,8 +2010,11 @@ lock-up the blocking approach caused.
   strictly more robust.
 
 The `SufferChoiceDialog` code (`promptSufferChoice` in `sufferDialog.js`)
-remains exported and unit-tested but is no longer used by the move pipeline or
-the Pay-the-Price routes.
+remained exported and unit-tested but unused. **Update (2026-07-07, test-suite
+review):** the dialog entry point and its whole rendering layer (dialog class,
+meter preview, pickers) are deleted — the card flow is the only path. The
+pure resolution helpers (`resolveSufferSelection`, `runSufferResolution`,
+`isOptionAvailable`) live on; they are what the card flow executes.
 
 ## Burn Momentum reverses Pay-the-Price side effects (2026-06-22)
 

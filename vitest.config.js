@@ -21,52 +21,62 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
 
-      // Only measure coverage for the pure-logic modules that unit tests can
-      // actually reach. Everything else requires live Foundry documents,
-      // external APIs (Claude, DALL-E), or browser APIs (Web Speech) and
-      // is covered by integration tests instead.
-      include: [
-        'src/context/**',
-        'src/moves/mischief.js',
-        'src/moves/resolver.js',
-        'src/truths/**',
-        'src/schemas.js',
-        'src/narration/narratorPrompt.js',
-        'src/character/chronicle.js',
-      ],
+      // Measure EVERYTHING the unit suite can structurally reach (rewritten in
+      // the 2026-07 test-suite review — the old include list was a Session-2
+      // fossil that measured 9 files / ~8% of src while narrator.js, entities,
+      // and the roller went ungated). Exclusions below are limited to code a
+      // Node unit test cannot execute meaningfully; each names its real
+      // instrument. Do NOT re-add exclusions for modules that merely LOOK
+      // Foundry-bound — entities/, moves/, narration/ all test fine through
+      // the tests/setup.js stubs.
+      include: ['src/**/*.js'],
       exclude: [
-        // Foundry entry point — hooks, settings registration, UI wiring
+        // Quench integration suite — runs only inside live Foundry.
+        'src/integration/**',
+        // Entry point: hooks, settings registration, chat dispatch, UI wiring.
+        // Protected by the Quench batches + the Cypress e2e stack.
         'src/index.js',
-        // Requires live game.modules to check Loremaster presence
-        'src/loremaster.js',
-        // DALL-E API — requires external network and API key
-        'src/art/**',
-        // JournalEntry CRUD — requires live Foundry document layer
-        'src/entities/**',
-        // Web Speech API — browser-only, no Node equivalent
-        'src/input/**',
-        // Claude API — requires external network and API key
-        'src/moves/interpreter.js',
-        // JournalEntry + game.settings writes — requires live Foundry
-        'src/moves/persistResolution.js',
-        // External API proxy — Forge/Electron environment detection, integration only
-        'src/api-proxy.js',
-        // Pure data tables and roller — no logic branches, integration only
-        'src/oracles/**',
-        // ApplicationV2 UI panels — require live Foundry rendering
+        // ApplicationV2 panels / DialogV2 dialogs — need live Foundry
+        // rendering; under units they are import-only (function coverage ~14%
+        // proved the statement numbers were inflation, not protection).
         'src/ui/**',
+        'src/safety/**',
+        'src/character/chroniclePanel.js',
+        'src/world/worldJournalPanel.js',
+        'src/world/clarificationDialog.js',
+        'src/sectors/sectorPanel.js',
+        'src/factContinuity/correctionDialog.js',
+        'src/private-channel/app.js',
+        // Browser Web Speech API — no Node equivalent.
+        'src/input/**',
+        // Static help content — consumed by scripts/build-help-site.mjs and
+        // the in-world journal; no logic to cover.
+        'src/help/helpJournal.js',
       ],
 
-      // Thresholds apply only to the included files above.
-      // resolver.js drags function coverage to ~54% because its move-specific
-      // consequence handlers are data-shaped functions not reachable from unit
-      // tests without a full move pipeline mock. All other included files are
-      // at 75%+ functions. Threshold set to 50% to give a safe buffer over the
-      // current 54% aggregate; raise it once resolver coverage improves.
+      // Two-tier gate (see decisions.md → "Coverage gate: ratchet + core bar").
+      // A flat 95% was considered and rejected: coverage measures execution,
+      // not consumption — the retired assembler carried ~1,400 lines of tests
+      // (high coverage, dead in production), and none of the 2026-07 audit's
+      // ~46 defects would have been caught by more line coverage. What a gate
+      // CAN do is (a) hold a hard bar where the logic is pure and the bar is
+      // real, and (b) ratchet everywhere else so regressions fail loudly.
       thresholds: {
-        lines:     80,
-        functions: 50,
-        branches:  75,
+        // Floor over every included file — calibrated ~2pts under measured
+        // actuals (73.6 lines / 72.3 branches / 64.9 funcs at adoption).
+        // If a change drops below this, coverage regressed materially: add
+        // tests or consciously re-calibrate in its own reviewed commit.
+        lines:     70,
+        branches:  68,
+        functions: 60,
+
+        // Core bar — the pure-logic spine, held at 95-class. These files are
+        // at 97-100% lines today; the bar makes that a promise, not a fact.
+        'src/{schemas.js,moves/resolver.js,moves/mischief.js,narration/narratorPrompt.js,character/chronicle.js,context/safety.js,truths/tables.js}': {
+          lines:     95,
+          functions: 95,
+          branches:  80,
+        },
       },
     },
 

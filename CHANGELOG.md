@@ -6,6 +6,11 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **"Descriptor + Focus" oracle rows now roll real words.** Fifteen tables (space sightings, settlement/starship first looks, vault/derelict looks, theme perils, story clues …) carry rows that chain into the Descriptor and Focus oracles — those rolls returned the literal text "Descriptor + Focus" instead of rolling it. Both the `!oracle` roller and sector generation now resolve the chain (the Action + Theme chain always did).
+- Internal: test-suite hardening from the coverage review — a property suite now locks all 129 oracle tables' integrity (contiguity, d100 domain, resolvable refs), `context/safety.js` regained dedicated units (X-Card write paths included), 16 more test-only dead exports were removed with 3 drift mirrors wired live, and the coverage gate was rebuilt as a calibrated ratchet + 95-class core bar (see decisions.md).
+
+## [1.7.30] — 2026-07-07
+
 - Fixed: **`!lore`'s world-lore recap reaches the narrator again.** The recap `!lore` generates is injected into every narration; an earlier refactor had silently orphaned it (the recap was written on every `!lore` and read by nothing).
 - Added: **All 14 theme Peril and Opportunity oracles are rollable.** Every location theme (Chaotic through Sacred) now answers `!oracle theme_<name>_peril` / `theme_<name>_opportunity`, matching the Feature tables that were already live.
 - Added: **The narrator sees your planets and named locations.** The active-sector context lists known planets (with class) and named non-site locations alongside settlements and charted sites, so established places aren't reinvented. Undiscovered vaults and derelicts stay hidden.
