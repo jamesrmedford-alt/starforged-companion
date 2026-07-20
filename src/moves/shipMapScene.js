@@ -286,16 +286,6 @@ export function buildDeckFeatureNoteData(features, shipActorId, offset = { x: 0,
 }
 
 /**
- * Convenience wrapper: Note payloads for the 11 stations only. Pure.
- * @param {string} shipActorId
- * @param {Object} offset
- * @param {Object|null} [normalizedCoords]
- */
-export function buildStationNoteData(shipActorId, offset = { x: 0, y: 0 }, normalizedCoords = null) {
-  return buildDeckFeatureNoteData(stationFeatures(), shipActorId, offset, normalizedCoords);
-}
-
-/**
  * Build a schematic hull-outline Drawing — a stretched hexagon silhouette the
  * deck pins sit inside. Used as the backdrop when no AI deck-plan art is
  * available so the bare Scene still reads as a ship. Pure.

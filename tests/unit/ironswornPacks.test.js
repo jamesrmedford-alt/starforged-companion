@@ -5,7 +5,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   IS_PACKS,
   getCanonicalMove,
-  getCanonicalOracle,
   getCanonicalEncounterActor,
   listCanonicalEncounters,
   listCanonicalTruths,
@@ -145,16 +144,6 @@ describe('Phase 5 — getCanonicalEncounterActor / listCanonicalEncounters', () 
 
 describe('Phase 5 — getCanonicalOracle / listCanonicalTruths', () => {
   beforeEach(() => { _clearPackCache(); });
-
-  it('getCanonicalOracle finds by name slug', async () => {
-    const oracle = { _id: 'o1', name: 'Action Oracle', system: {} };
-    global.game.packs = {
-      get: (id) => id === IS_PACKS.STARFORGED_ORACLES
-        ? makeFakePack({ id, entries: [oracle] })
-        : null,
-    };
-    expect(await getCanonicalOracle('action_oracle')).toBe(oracle);
-  });
 
   it('listCanonicalTruths loads each truth document via the pack', async () => {
     const truths = [

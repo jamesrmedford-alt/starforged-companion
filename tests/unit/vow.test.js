@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { selectVowTrack, finishVow, VOW_RANKS, shouldPayFulfilledVow } from '../../src/moves/vow.js';
+import { selectVowTrack, finishVow, shouldPayFulfilledVow } from '../../src/moves/vow.js';
 
 const OPEN_VOWS = [
   { id: "v1", type: "vow", label: "Rescue the Colonists",  rank: "dangerous",  completed: false },
@@ -108,12 +108,6 @@ describe("finishVow", () => {
       const result = await finishVow({ moveTarget: null, ranksDown: 0 }, deps);
       expect(result.legacyTicks).toBe(ticks);
     }
-  });
-});
-
-describe("VOW_RANKS", () => {
-  it("contains all five rank levels", () => {
-    expect(VOW_RANKS).toEqual(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
   });
 });
 

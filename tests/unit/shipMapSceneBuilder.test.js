@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   STATION_LAYOUT,
   AMENITY_LAYOUT,
-  buildStationNoteData,
+  buildDeckFeatureNoteData,
   buildModuleFeatures,
   buildDeckFeatures,
   buildHullOutlineDrawing,
@@ -100,14 +100,22 @@ describe("STATION_LAYOUT ↔ SHIPBOARD_ROLES parity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildStationNoteData — pure
+// Station note payloads — via the LIVE builder pair (buildDeckFeatures →
+// buildDeckFeatureNoteData). The buildStationNoteData convenience wrapper was
+// removed in the 2026-07 test-suite review (test-only export); pin math is
+// asserted through the path createShipMapScene actually uses.
 // ---------------------------------------------------------------------------
 
-describe("buildStationNoteData()", () => {
+describe("station note payloads (buildDeckFeatureNoteData)", () => {
   const offset = { x: SCENE_X, y: SCENE_Y, sceneWidth: SCENE_W, sceneHeight: SCENE_H };
+  const stationNotes = (shipActorId, off, coords = null) =>
+    buildDeckFeatureNoteData(
+      buildDeckFeatures(makeShipActor({ modules: [] })).filter(f => f.kind === "station"),
+      shipActorId, off, coords,
+    );
 
   it("places all 11 pins at fixed grid coords, offset by the scene rect", () => {
-    const notes = buildStationNoteData("actor-ship-1", offset);
+    const notes = stationNotes("actor-ship-1", offset);
     expect(notes).toHaveLength(11);
 
     const gunnery = notes.find(n => n.flags[MODULE_ID].stationId === "gunnery");
@@ -120,14 +128,14 @@ describe("buildStationNoteData()", () => {
   });
 
   it("labels each pin with the canonical role label", () => {
-    const notes = buildStationNoteData("actor-ship-1", offset);
+    const notes = stationNotes("actor-ship-1", offset);
     const piloting = notes.find(n => n.flags[MODULE_ID].stationId === "piloting");
     expect(piloting.text).toBe("Piloting");
   });
 
   it("uses normalized vision coords when supplied, mapped onto the scene rect", () => {
     const coords = { gunnery: { x: 0.5, y: 0.25 } };   // partial — only gunnery
-    const notes  = buildStationNoteData("actor-ship-1", offset, coords);
+    const notes  = stationNotes("actor-ship-1", offset, coords);
 
     const gunnery = notes.find(n => n.flags[MODULE_ID].stationId === "gunnery");
     expect(gunnery.x).toBe(Math.round(SCENE_X + 0.5 * SCENE_W));

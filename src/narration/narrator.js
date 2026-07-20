@@ -838,22 +838,6 @@ function rollingSummaryEnabled() {
 }
 
 /**
- * Pure read of the current session's rolling summary text — no API, no write.
- * Returns '' when disabled, absent, or stale (stored summary belongs to a
- * different session). Used by `buildNarratorExtras` to render the block.
- *
- * @param {Object} campaignState
- * @returns {string}
- */
-export function getRollingSummaryText(campaignState) {
-  if (!rollingSummaryEnabled()) return '';
-  const sessionId = campaignState?.currentSessionId ?? null;
-  const cache     = campaignState?.sessionSummary ?? null;
-  if (!sessionId || !cache || cache.sessionId !== sessionId) return '';
-  return typeof cache.text === 'string' ? cache.text : '';
-}
-
-/**
  * Maintain (and return) the rolling session summary. Debounced: regenerates
  * from the full session card feed only once ≥ K new cards have accrued since
  * the last regeneration (K = `rollingSummaryThreshold(ring depth)`); otherwise

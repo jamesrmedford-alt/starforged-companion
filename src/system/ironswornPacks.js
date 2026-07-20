@@ -183,17 +183,6 @@ export async function getCanonicalMove(slug, packIds = ALL_MOVE_PACKS) {
 }
 
 /**
- * Find a RollTable / oracle by slug across the configured oracle packs.
- * @param {string} slug
- * @param {string[]} [packIds]
- * @returns {Promise<Object|null>}
- */
-export async function getCanonicalOracle(slug, packIds = ALL_ORACLE_PACKS) {
-  if (!slug) return null;
-  return findInPacks(slug, packIds, "oracle");
-}
-
-/**
  * Find an encounter Actor by name in the Starforged foe pack.
  * Encounters are best searched by name since slugs vary across editions.
  * @param {string} name

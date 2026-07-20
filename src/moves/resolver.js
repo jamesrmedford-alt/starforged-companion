@@ -169,15 +169,6 @@ export function applyMomentumBurn(momentum, challengeDice, markedImpactCount) {
   return { outcome, isMatch, newMomentum };
 }
 
-/**
- * Count marked impacts from a character's impacts object.
- * Vehicle troubles (battered, cursed) only count when aboard — caller's responsibility.
- */
-export function countMarkedImpacts(impacts) {
-  return Object.values(impacts).filter(Boolean).length;
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSEQUENCE MAPPING
 // ─────────────────────────────────────────────────────────────────────────────

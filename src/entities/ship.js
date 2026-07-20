@@ -316,6 +316,8 @@ export async function updateShip(actorId, updates) {
   return updated;
 }
 
+// UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),
+// 2026-07-07 — pre-built API with no live caller yet; unit tests lock its semantics.
 /**
  * Apply damage to a ship's integrity.
  * Clamps to 0. If integrity reaches 0, the caller should trigger
@@ -333,6 +335,8 @@ export async function sufferDamage(actorId, amount) {
   return updateShip(actorId, { integrity: newIntegrity });
 }
 
+// UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),
+// 2026-07-07 — pre-built API with no live caller yet; unit tests lock its semantics.
 /**
  * Repair integrity (e.g. after a successful Repair move).
  * Does not clear battered — that requires spending repair points.
@@ -354,6 +358,8 @@ export async function repairIntegrity(actorId, amount) {
   return updateShip(actorId, { integrity: newIntegrity });
 }
 
+// UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),
+// 2026-07-07 — pre-built API with no live caller yet; unit tests lock its semantics.
 /**
  * Clear the battered impact (costs 2 repair points in the Repair move).
  *

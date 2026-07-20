@@ -27,13 +27,9 @@ const MODULE_ID = "starforged-companion";
 // Ordered least → most durable. Mirrors the SEVERITY_ORDER idiom in worldJournal.js.
 export const SALIENCE_TIERS = ["trivial", "scene", "notable", "significant", "defining"];
 
-export const SALIENCE_ORDER = {
-  trivial:     0,
-  scene:       1,
-  notable:     2,
-  significant: 3,
-  defining:    4,
-};
+// Derived from SALIENCE_TIERS so the tier list and its ordering cannot drift
+// apart (2026-07 test-suite review — the two were parallel literals).
+export const SALIENCE_ORDER = Object.fromEntries(SALIENCE_TIERS.map((t, i) => [t, i]));
 
 /** Conservative default floor (D5) — records "significant" and "defining" only. */
 export const DEFAULT_THRESHOLD = "significant";

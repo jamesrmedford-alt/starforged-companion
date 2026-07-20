@@ -188,39 +188,3 @@ const STAT_ICON_FILES = {
   wits:   "wits.svg",
 };
 
-/**
- * Resolve a stat icon path. Returns null for unknown slugs so the caller
- * can choose whether to render a placeholder or skip the icon entirely.
- *
- * @param {"edge"|"heart"|"iron"|"shadow"|"wits"} slug
- * @returns {string|null}
- */
-export function statIcon(slug) {
-  const file = STAT_ICON_FILES[slug];
-  return file ? `${IS_PATHS.ICONS}/${file}` : null;
-}
-
-/**
- * Resolve an asset card icon by category. Returns null for unknown categories.
- *
- * @param {"command_vehicle"|"companion"|"path"|"combat_talent"|"module"|"support_vehicle"|"deed"} category
- * @returns {string|null}
- */
-export function assetIcon(category) {
-  const cleaned = String(category ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  if (!cleaned) return null;
-  return `${IS_PATHS.ASSETS}/${cleaned}.svg`;
-}
-
-/**
- * Resolve an oracle category icon. The system's oracle SVGs are filed under
- * IS_PATHS.ORACLES with kebab-case names matching oracle category slugs.
- *
- * @param {string} category — e.g. "action_oracle", "planet_type"
- * @returns {string|null}
- */
-export function oracleIcon(category) {
-  const cleaned = String(category ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  if (!cleaned) return null;
-  return `${IS_PATHS.ORACLES}/${cleaned}.svg`;
-}

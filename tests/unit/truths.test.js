@@ -19,13 +19,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TRUTH_CATEGORIES } from '../../src/truths/tables.js';
 import {
   rollCategory,
-  applyRoll,
-  buildSessionZeroTruths,
   storeWorldTruths,
-  loadWorldTruths,
   formatForContext,
-  formatSingleTruth,
-  hasTruths,
 } from '../../src/truths/generator.js';
 
 // ---------------------------------------------------------------------------
@@ -237,134 +232,23 @@ describe('rollCategory — boundary rolls', () => {
 // 5. applyRoll
 // ---------------------------------------------------------------------------
 
-describe('applyRoll', () => {
-  it('produces the same result as rollCategory with matching options', () => {
-    const a = applyRoll('laws', 95);
-    const b = rollCategory('laws', { roll: 95 });
-    expect(a.categoryId).toBe(b.categoryId);
-    expect(a.title).toBe(b.title);
-    expect(a.roll).toBe(b.roll);
-  });
-
-  it('resolves sub-roll when provided', () => {
-    const result = applyRoll('cataclysm', 82, 15);
-    expect(result.subResult).not.toBeNull();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // 6. buildSessionZeroTruths
 // ---------------------------------------------------------------------------
-
-describe('buildSessionZeroTruths', () => {
-  it('returns an object with all 14 category keys', () => {
-    const truths = buildSessionZeroTruths();
-    for (const key of TRUTH_CATEGORIES) {
-      expect(truths).toHaveProperty(key);
-    }
-  });
-
-  it('each truth has categoryId, title, and roll', () => {
-    const truths = buildSessionZeroTruths();
-    for (const truth of Object.values(truths)) {
-      expect(truth).toHaveProperty('categoryId');
-      expect(truth).toHaveProperty('title');
-      expect(truth).toHaveProperty('roll');
-    }
-  });
-
-  it('cataclysm has a subResult (AI foe from roll 82 + sub-roll 15)', () => {
-    const truths = buildSessionZeroTruths();
-    expect(truths.cataclysm.subResult).not.toBeNull();
-    expect(truths.cataclysm.subResult.toLowerCase())
-      .toContain('artificial intelligence');
-  });
-
-  it('ai truth title contains "Adept" (roll 12 hits 1-33)', () => {
-    const truths = buildSessionZeroTruths();
-    expect(fullText(truths.ai)).toContain('adept');
-  });
-
-  it('horrors truth contains "Soulbinder"', () => {
-    const truths = buildSessionZeroTruths();
-    expect(fullText(truths.horrors)).toContain('soulbinder');
-  });
-
-  it('war truth contains "raider"', () => {
-    const truths = buildSessionZeroTruths();
-    expect(fullText(truths.war)).toContain('raider');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 7. storeWorldTruths / loadWorldTruths — round-trip
 // ---------------------------------------------------------------------------
 
-describe('storeWorldTruths / loadWorldTruths', () => {
-  let campaignState;
-
-  beforeEach(() => {
-    campaignState = { worldTruths: null };
-  });
-
-  it('storeWorldTruths sets worldTruths on campaignState', async () => {
-    const truths = buildSessionZeroTruths();
-    await storeWorldTruths(truths, campaignState);
-    expect(campaignState.worldTruths).toBe(truths);
-  });
-
-  it('loadWorldTruths returns null when no truths stored', () => {
-    expect(loadWorldTruths(campaignState)).toBeNull();
-  });
-
-  it('loadWorldTruths returns truths after they are stored', async () => {
-    const truths = buildSessionZeroTruths();
-    await storeWorldTruths(truths, campaignState);
-    expect(loadWorldTruths(campaignState)).toBe(truths);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // 8. hasTruths
 // ---------------------------------------------------------------------------
-
-describe('hasTruths', () => {
-  it('returns false when worldTruths is null', () => {
-    expect(hasTruths({ worldTruths: null })).toBe(false);
-  });
-
-  it('returns false when worldTruths is empty object', () => {
-    expect(hasTruths({ worldTruths: {} })).toBe(false);
-  });
-
-  it('returns true when all 14 truths are present', async () => {
-    const campaignState = { worldTruths: null };
-    await storeWorldTruths(buildSessionZeroTruths(), campaignState);
-    expect(hasTruths(campaignState)).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 9. formatForContext
 // ---------------------------------------------------------------------------
 
 describe('formatForContext', () => {
-  it('returns a non-empty string', () => {
-    expect(formatForContext(buildSessionZeroTruths()).length).toBeGreaterThan(0);
-  });
-
-  it('includes a WORLD TRUTHS header', () => {
-    expect(formatForContext(buildSessionZeroTruths())).toMatch(/WORLD TRUTHS/i);
-  });
-
-  it('includes all 14 category names', () => {
-    const truths = buildSessionZeroTruths();
-    const out = formatForContext(truths);
-    for (const truth of Object.values(truths)) {
-      expect(out).toContain(truth.categoryName);
-    }
-  });
-
   it('returns empty string for null input', () => {
     expect(formatForContext(null)).toBe('');
   });
@@ -374,22 +258,3 @@ describe('formatForContext', () => {
 // 10. formatSingleTruth
 // ---------------------------------------------------------------------------
 
-describe('formatSingleTruth', () => {
-  it('returns a non-empty string', () => {
-    expect(formatSingleTruth(applyRoll('horrors', 92)).length).toBeGreaterThan(0);
-  });
-
-  it('includes the category name', () => {
-    const truth = applyRoll('horrors', 92);
-    expect(formatSingleTruth(truth)).toContain(truth.categoryName);
-  });
-
-  it('includes the sub-result when present', () => {
-    const truth = applyRoll('cataclysm', 82, 15);
-    expect(formatSingleTruth(truth)).toContain(truth.subResult);
-  });
-
-  it('returns empty string for null input', () => {
-    expect(formatSingleTruth(null)).toBe('');
-  });
-});

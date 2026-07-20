@@ -572,35 +572,6 @@ function getDialogClass() {
   return _dialogClass;
 }
 
-/**
- * Open the SufferChoiceDialog for the given prompt and await the
- * player's selection. Returns { cancelled, selection, calls }.
- *
- * In test envs where ApplicationV2 isn't available, returns a no-op
- * resolution synchronously — callers should always check `cancelled`
- * before applying writes.
- *
- * @param {Object} sufferPrompt
- * @param {Actor} actor
- * @param {Object} [opts]
- */
-export async function promptSufferChoice(sufferPrompt, actor, opts = {}) {
-  if (!sufferPrompt) return { cancelled: false, selection: {}, calls: [] };
-
-  const Cls = getDialogClass();
-  if (!Cls) {
-    // No ApplicationV2 — return an indicator so the caller can fall
-    // back to a noop (test env, or pre-init).
-    return { cancelled: true, selection: {}, calls: [], reason: "no-app-v2" };
-  }
-
-  return new Promise((resolve, reject) => {
-    const app = new Cls({ sufferPrompt, actor, resolveResult: resolve, rejectResult: reject, opts });
-    app.render(true);
-  });
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // HTML helpers (pure-ish; readers test these via snapshot)
 // ─────────────────────────────────────────────────────────────────────────────

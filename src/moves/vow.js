@@ -8,7 +8,6 @@
 
 import { EXPEDITION_RANKS, legacyRewardTicks } from "./expedition.js";
 
-export const VOW_RANKS = EXPEDITION_RANKS;
 
 /**
  * Find the target vow track from a list of all progress tracks.

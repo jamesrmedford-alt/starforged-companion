@@ -91,16 +91,6 @@ function ensureGestureListener() {
   document.addEventListener("touchstart", onGesture, true);
 }
 
-/**
- * Resolves once a user gesture has been observed. If a gesture has
- * already been received this session, resolves synchronously.
- */
-export function waitForUserGesture() {
-  if (_gestureReceived) return Promise.resolve();
-  ensureGestureListener();
-  return new Promise(resolve => _gestureWaiters.push(resolve));
-}
-
 export function userGestureReceived() {
   return _gestureReceived;
 }
