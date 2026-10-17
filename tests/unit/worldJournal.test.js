@@ -17,7 +17,6 @@ import {
   updateThreatSeverity,
   promoteLoreToConfirmed,
   applyStateTransition,
-  annotateEntry,
   writeSessionLog,
   appendSessionLogBeat,
   parseJournalCommand,
@@ -468,26 +467,6 @@ describe("applyStateTransition — lore contradiction", () => {
     const created = global.ChatMessage._created;
     expect(created.length).toBeGreaterThan(0);
     expect(created[0].flags?.[MODULE_ID]?.worldJournalContradiction).toBe(true);
-  });
-});
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// annotateEntry
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("annotateEntry", () => {
-  it("appends a stamped annotation to a lore entry", async () => {
-    await recordLoreDiscovery("Annotatable", { text: "x" }, campaign());
-    const result = await annotateEntry("lore", "Annotatable", "noted", "Reviewer", campaign());
-    expect(result.annotations).toHaveLength(1);
-    expect(result.annotations[0].author).toBe("Reviewer");
-    expect(result.annotations[0].text).toBe("noted");
-  });
-
-  it("returns null for unknown journal type", async () => {
-    const result = await annotateEntry("nope", "Anything", "x", "Reviewer", campaign());
-    expect(result).toBeNull();
   });
 });
 

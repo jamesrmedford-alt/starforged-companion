@@ -44,9 +44,8 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks } from "./moves/statEnrichment.js";
-import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./moves/resolver.js";
-import { rollYesNo }             from "./oracles/roller.js";
-import { ORACLE_ODDS }           from "./schemas.js";
+import { rollChallengeDice }     from "./moves/resolver.js";
+import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
   openChangeYourFateDialog,
@@ -56,7 +55,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand, openClocksPanel } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -64,7 +63,6 @@ import {
   isShipHistoryCommand,
   handleShipHistoryCommand,
 } from "./entities/shipEnvision.js";
-import { openCustomOraclesPanel } from "./oracles/customOracles.js";
 import {
   isOracleAddCommand,
   handleOracleAddCommand,
@@ -80,9 +78,7 @@ import {
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
-import { openChroniclePanel } from "./character/chroniclePanel.js";
-import { openSessionPanel, SessionPanelApp } from "./ui/sessionPanel.js";
-import { openPrivateChannel, registerPrivateChannelSettings, isPrivateChannelEnabled } from "./private-channel/index.js";
+import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
 import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
@@ -117,7 +113,9 @@ import {
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond, nextRank } from "./moves/developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
+import { handleBondCommand } from "./moves/bondCommand.js";
+import { postReachMilestoneCard } from "./moves/milestonePicker.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
 import {
   extractRiders,
@@ -127,16 +125,12 @@ import {
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
-import {
-  openEntityPanel,
-  registerEntityPanelHooks,
-} from "./ui/entityPanel.js";
+import { registerEntityPanelHooks } from "./ui/entityPanel.js";
 
 import {
   confirmInterpretation,
   registerSettings    as registerUISettings,
   registerSettingsHooks,
-  openSettingsPanel,
   getMischiefDial,
   getAutoRecapEnabled,
   getSessionGapHours,
@@ -156,30 +150,21 @@ import {
   registerErrorLogSocket,
 } from "./logging/errorLog.js";
 import { flushApiTransactionLogBuffer } from "./logging/apiTransactionLog.js";
-import { showMoveRoll, showActionRoll, showD100 } from "./dice/diceAnimation.js";
+import { showMoveRoll, showD100 } from "./dice/diceAnimation.js";
 
-import {
-  openWorldJournalPanel,
-} from "./world/worldJournalPanel.js";
 import {
   openCompanionToolbar,
   registerCompanionToolbarSettings,
 } from "./ui/companionToolbar.js";
 
-import { resolveRelevance, collectAllEntities } from "./context/relevanceResolver.js";
-import { suppressScene } from "./context/safety.js";
+import { resolveRelevance } from "./context/relevanceResolver.js";
+import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
 import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
-import {
-  strikeTruth as fcStrikeTruth,
-  setTruth as fcSetTruth,
-  strikeStateValue as fcStrikeStateValue,
-  setStateValue as fcSetStateValue,
-  resolveSubject as fcResolveSubject,
-  subjectKey as fcSubjectKey,
-} from "./factContinuity/ledgers.js";
+import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
+import { requestOracleNarration } from "./oracles/oracleFollowup.js";
 import { inferShipPosition } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
@@ -210,6 +195,9 @@ import {
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { registerGmRelaySocket, requestGmAction, hasActiveGM } from "./multiplayer/gmRelay.js";
+import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
+import { takeNextMoveAdd, clearPersistedNextMoveAdd } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -217,7 +205,7 @@ import {
   DEFAULT_NPC_FEMININE_VOICE_ID,
 } from "./audio/elevenlabs.js";
 import { getEntityDocument, readEntityFlag } from "./entities/registry.js";
-import { resolveSpeakerActorId }      from "./multiplayer/speaker.js";
+import { resolveSpeakerActorId, isAuthoringClient, messageAuthorId } from "./multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -568,6 +556,212 @@ export function isNewSessionStart(campaignState, gapHours) {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT COMMAND ROUTING — who runs which command
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run-on policies for chat commands. Foundry fires createChatMessage on EVERY
+ * connected client, so each command must say where it executes — before the
+ * 2026-10 audit every `!command` ran once per client: independent dice and
+ * duplicate cards for `!oracle` / `!ptp` / `!bond`, one Claude call per keyed
+ * client for `@scene` (plus "key not configured" fallback cards from unkeyed
+ * ones), and GM-only commands that warned the player and then executed anyway
+ * on the GM's client.
+ *
+ *   AUTHOR        — only the client that typed the message. Dialogs open on the
+ *                   typist's screen; dice roll once; GM-only commands check
+ *                   game.user.isGM, which on the authoring client IS the
+ *                   author's role. World writes a player needs go through the
+ *                   canonical-GM relay (src/multiplayer/gmRelay.js).
+ *   CANONICAL_GM  — only the canonical GM (gmGate.js isCanonicalGM — prefers a
+ *                   GM whose browser holds a Claude key): commands that call
+ *                   Claude and/or write world state on anyone's behalf.
+ */
+const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm" });
+
+/**
+ * Ordered command routes — first match wins, exactly the order the old
+ * if-chain checked predicates in (some predicates overlap textually).
+ * `run` receives the ChatMessage.
+ */
+const CHAT_COMMAND_ROUTES = [
+  { name: "@scene",            match: isSceneQuery,              runOn: RUN_ON.CANONICAL_GM, run: handleSceneQueryCommand },
+  { name: "!sector",           match: isSectorCommand,           runOn: RUN_ON.AUTHOR,       run: handleSectorCommand },
+  { name: "!x",                match: isXCardCommand,            runOn: RUN_ON.CANONICAL_GM, run: handleXCardCommand },
+  { name: "!at",               match: isAtCommand,               runOn: RUN_ON.AUTHOR,       run: handleAtCommand },
+  // !journal assigns the in-flight work synchronously (before any await) so
+  // callers that grab it right after `ChatMessage.create()` resolves can await
+  // the full journal write chain. See getLastJournalCommandPromise().
+  { name: "!journal",          match: isJournalCommand,          runOn: RUN_ON.AUTHOR,
+    run: (message) => (_lastJournalCommandWork = handleJournalCommand(message)) },
+  { name: "!scene",            match: isSceneCommand,            runOn: RUN_ON.AUTHOR,       run: handleSceneCommand },
+  { name: "!truth / !state",   match: isFactContinuityCommand,   runOn: RUN_ON.AUTHOR,       run: handleFactContinuityCommand },
+  { name: "!truths",           match: isTruthsCommand,           runOn: RUN_ON.AUTHOR,       run: handleTruthsCommand },
+  { name: "!lore",             match: isLoreCommand,             runOn: RUN_ON.AUTHOR,       run: handleLoreCommand },
+  { name: "!sfc encounter",    match: isEncounterCommand,        runOn: RUN_ON.AUTHOR,       run: handleEncounterCommand },
+  { name: "!recap",            match: isRecapCommand,            runOn: RUN_ON.CANONICAL_GM, run: handleRecapCommand },
+  { name: "!recap (GM-only)",  match: isDeniedRecapCommand,      runOn: RUN_ON.AUTHOR,       run: handleDeniedRecapCommand },
+  { name: "!pace",             match: isPaceCommand,             runOn: RUN_ON.AUTHOR,       run: handlePaceCommand },
+  { name: "!migrate-entities", match: isMigrateEntitiesCommand,  runOn: RUN_ON.AUTHOR,       run: handleMigrateEntitiesCommand },
+  { name: "!oracle",           match: isOracleCommand,           runOn: RUN_ON.AUTHOR,       run: handleOracleCommand },
+  { name: "!pay-the-price",    match: isPayThePriceCommand,      runOn: RUN_ON.AUTHOR,       run: handlePayThePriceCommand },
+  { name: "!bond",             match: isBondCommand,             runOn: RUN_ON.AUTHOR,       run: handleBondCommand },
+  { name: "!sever",            match: isSeverCommand,            runOn: RUN_ON.AUTHOR,       run: handleSeverCommand },
+  // Session safety / lifecycle — DialogV2 surfaces on the typist's screen;
+  // their world writes relay to the GM from the dialogs' own apply paths.
+  { name: "!flag",             match: isFlagCommand,             runOn: RUN_ON.AUTHOR,       run: () => openSetFlagDialog() },
+  { name: "!fate",             match: isFateCommand,             runOn: RUN_ON.AUTHOR,       run: () => openChangeYourFateDialog() },
+  { name: "!break",            match: isBreakCommand,            runOn: RUN_ON.AUTHOR,       run: () => openTakeABreakDialog() },
+  { name: "!begin-session",    match: isBeginSessionCommand,     runOn: RUN_ON.AUTHOR,       run: () => openBeginSessionDialog() },
+  { name: "!end-session",      match: isEndSessionCommand,       runOn: RUN_ON.AUTHOR,       run: () => openEndSessionDialog() },
+  { name: "!incite",           match: isIncitingIncidentCommand, runOn: RUN_ON.AUTHOR,       run: handleIncitingIncidentCommand },
+  { name: "!reveal-site",      match: isRevealSiteCommand,       runOn: RUN_ON.AUTHOR,       run: handleRevealSiteCommand },
+  { name: "!clear-site",       match: isClearSiteCommand,        runOn: RUN_ON.AUTHOR,       run: handleClearSiteCommand },
+  { name: "!clock",            match: isClockCommand,            runOn: RUN_ON.AUTHOR,       run: handleClockCommand },
+  { name: "!repair",           match: isRepairCommand,           runOn: RUN_ON.AUTHOR,       run: handleRepairCommand },
+  { name: "!stations",         match: isBattleStationsCommand,   runOn: RUN_ON.AUTHOR,       run: handleBattleStationsCommand },
+  { name: "!shipmap",          match: isShipMapCommand,          runOn: RUN_ON.AUTHOR,       run: handleShipMapCommand },
+  { name: "!ship envision",    match: isShipEnvisionCommand,     runOn: RUN_ON.CANONICAL_GM, run: handleShipEnvisionCommand },
+  { name: "!ship history",     match: isShipHistoryCommand,      runOn: RUN_ON.CANONICAL_GM, run: handleShipHistoryCommand },
+  { name: "!oracle-add",       match: isOracleAddCommand,        runOn: RUN_ON.AUTHOR,       run: handleOracleAddCommand },
+  { name: "!roll",             match: isRollCommand,             runOn: RUN_ON.AUTHOR,       run: handleRollCommand },
+];
+
+/**
+ * Route a chat message to its command handler, honouring the run-on policy.
+ *
+ * @param {ChatMessage} message
+ * @returns {Promise<boolean>} true when the message was a command (consumed on
+ *   every client, whether or not it executed here); false for anything else.
+ */
+async function dispatchChatCommand(message) {
+  for (const route of CHAT_COMMAND_ROUTES) {
+    if (!route.match(message)) continue;
+    if (!shouldRunCommandHere(message, route)) return true;
+    try {
+      await route.run(message);
+    } catch (err) {
+      console.error(`${MODULE_ID} | ${route.name} command failed:`, err);
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Decide whether THIS client executes a matched command. Non-executing clients
+ * leave a debug breadcrumb (decisions.md → "No silent failures"); when a
+ * canonical-GM command has no GM to run it, the author is told.
+ *
+ * @param {ChatMessage} message
+ * @param {{ name: string, runOn: string }} route
+ * @returns {boolean}
+ */
+function shouldRunCommandHere(message, route) {
+  if (route.runOn === RUN_ON.CANONICAL_GM) {
+    if (isCanonicalGM()) return true;
+    if (isAuthoringClient(message) && !hasActiveGM()) {
+      console.warn(`${MODULE_ID} | ${route.name}: no GM is connected — command not run.`);
+      ui.notifications?.warn(
+        `Starforged Companion: ${route.name} runs on the GM's client, and no GM is connected. Try again once a GM has joined.`,
+      );
+      return false;
+    }
+    console.debug(`${MODULE_ID} | ${route.name}: runs on the canonical GM — standing down on this client.`);
+    return false;
+  }
+  if (isAuthoringClient(message)) return true;
+  console.debug(`${MODULE_ID} | ${route.name}: authored on another client (${messageAuthorId(message)}) — standing down.`);
+  return false;
+}
+
+/**
+ * @scene — scene interrogation. Starts a new scene moment in the fiction, so
+ * reset the recent move-density window so the pacing classifier doesn't carry
+ * over the previous scene's run of MOVE decisions. Canonical GM only: it calls
+ * Claude and writes campaignState (startScene).
+ */
+async function handleSceneQueryCommand(message) {
+  const text     = message.content?.trim() ?? "";
+  const question = text.replace(/^@scene\s*/i, "").trim();
+  if (!question) {
+    console.debug(`${MODULE_ID} | @scene: empty question — nothing to ask.`);
+    return;
+  }
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  resetRecentDensity();
+  // Fact continuity: every @scene begins a new scene moment. Flush any
+  // unended prior scene and assign a fresh scene ID before narration.
+  // See issue #227 (Fact Continuity) §9.1.
+  if (factContinuityEnabledFromSettings()) {
+    await startScene(campaignState, { reason: "@scene_intercept" });
+  }
+  // Full speaker resolution (token selection → bound character →
+  // ownership → fallback) — the bound-character-only read this
+  // replaces attributed every @scene to the default PC in multiplayer.
+  await interrogateScene(question, campaignState, {
+    speakerActorId: resolveSpeakerActorId(message, campaignState),
+  });
+}
+
+/** !truths — open the system World Truths dialog (GM only). */
+function handleTruthsCommand() {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!truths is GM-only.");
+    return;
+  }
+  openSystemTruthsDialog();
+}
+
+/** !lore — generate and post the narrator world-truths recap (GM only). */
+async function handleLoreCommand() {
+  if (!game.user.isGM) {
+    ui.notifications.warn("!lore is GM-only.");
+    return;
+  }
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  await generateLoreRecap(campaignState).catch(err =>
+    console.error(`${MODULE_ID} | !lore failed:`, err)
+  );
+}
+
+/** !sfc encounter <name> — spawn a canonical foundry-ironsworn encounter. */
+async function handleEncounterCommand(message) {
+  const name = parseEncounterCommand(message.content);
+  if (!name) return;
+  await spawnEncounter(name).catch(err =>
+    console.error(`${MODULE_ID} | encounter spawn failed:`, err)
+  );
+}
+
+/** !recap [session [N] | campaign] — post a recap (canonical GM: Claude call). */
+async function handleRecapCommand(message) {
+  const text = message.content?.trim() ?? "";
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  if (/^!recap\s+session(?:\s+(\d+))?/i.test(text)) {
+    await postSessionRecap(campaignState, null);
+  } else {
+    await postCampaignRecap(campaignState);
+  }
+}
+
+/** A player's `!recap` while the "Recap GM-only" setting is on. */
+function handleDeniedRecapCommand() {
+  ui.notifications?.warn("Starforged Companion: !recap is GM-only (the GM can change this in Companion Settings).");
+}
+
+/**
+ * !stations — post the Battle Stations! shipboard-combat play aid (the 11 crew
+ * roles). Any player may invoke; it's a static reference card.
+ */
+async function handleBattleStationsCommand() {
+  await ChatMessage.create({
+    content: renderBattleStationsCardHtml(),
+    flags:   { [MODULE_ID]: { battleStationsCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | !stations card failed:`, err?.message ?? err));
+}
+
 // ──────────────────────────────────────────���─────────────────────────────────���
 // CHAT MESSAGE HOOK — MOVE INTERPRETATION PIPELINE
 // ────────────────────────────────────────────────────���────────────────────────
@@ -590,224 +784,10 @@ export function isNewSessionStart(campaignState, gapHours) {
  */
 export function registerChatHook() {
   Hooks.on("createChatMessage", async (message) => {
-    // Scene query — intercept before move pipeline.
-    // @scene starts a new scene moment in the fiction, so reset the recent
-    // move-density window so the pacing classifier doesn't carry over the
-    // previous scene's run of MOVE decisions.
-    if (isSceneQuery(message)) {
-      const text     = message.content?.trim() ?? "";
-      const question = text.replace(/^@scene\s*/i, "").trim();
-      if (!question) return;
-      const campaignState = game.settings.get(MODULE_ID, "campaignState");
-      resetRecentDensity();
-      // Fact continuity: every @scene begins a new scene moment. Flush any
-      // unended prior scene and assign a fresh scene ID before narration.
-      // See issue #227 (Fact Continuity) §9.1.
-      if (factContinuityEnabledFromSettings()) {
-        await startScene(campaignState, { reason: "@scene_intercept" });
-      }
-      // Full speaker resolution (token selection → bound character →
-      // ownership → fallback) — the bound-character-only read this
-      // replaces attributed every @scene to the default PC in multiplayer.
-      await interrogateScene(question, campaignState, {
-        speakerActorId: resolveSpeakerActorId(message, campaignState),
-      });
-      return;
-    }
-
-    // !sector command — intercept before move pipeline
-    if (isSectorCommand(message)) {
-      await handleSectorCommand(message);
-      return;
-    }
-
-    // !x command — X-Card. Suppresses the scene immediately. Any player can use
-    // it. The chatMessage hook (settingsPanel.js) handles typed input by
-    // cancelling the message before creation; this branch handles cases where
-    // !x reaches createChatMessage anyway (programmatic ChatMessage.create,
-    // socket-relayed posts, etc.) so the X-Card flag flips reliably.
-    if (isXCardCommand(message)) {
-      await handleXCardCommand(message);
-      return;
-    }
-
-    // !at command — set or clear the current location (intercept before move pipeline)
-    if (isAtCommand(message)) {
-      await handleAtCommand(message);
-      return;
-    }
-
-    // !journal command — manual World Journal entry (intercept before move pipeline)
-    if (isJournalCommand(message)) {
-      // Assign the in-flight work synchronously (before any await) so callers
-      // that grab it after `ChatMessage.create()` resolves can await the full
-      // journal write chain. See getLastJournalCommandPromise().
-      _lastJournalCommandWork = handleJournalCommand(message);
-      await _lastJournalCommandWork;
-      return;
-    }
-
-    // !scene start | !scene end — fact-continuity scene lifecycle (GM only)
-    if (isSceneCommand(message)) {
-      await handleSceneCommand(message);
-      return;
-    }
-
-    // !truth strike|set, !state strike|set — fact-continuity corrections
-    if (isFactContinuityCommand(message)) {
-      await handleFactContinuityCommand(message);
-      return;
-    }
-
-    // !truths command — open the system World Truths dialog (GM only)
-    if (isTruthsCommand(message)) {
-      if (!game.user.isGM) {
-        ui.notifications.warn("!truths is GM-only.");
-        return;
-      }
-      openSystemTruthsDialog();
-      return;
-    }
-
-    // !lore command — generate and post narrator world truths recap (GM only)
-    if (isLoreCommand(message)) {
-      if (!game.user.isGM) {
-        ui.notifications.warn("!lore is GM-only.");
-        return;
-      }
-      const campaignState = game.settings.get(MODULE_ID, "campaignState");
-      await generateLoreRecap(campaignState).catch(err =>
-        console.error(`${MODULE_ID} | !lore failed:`, err)
-      );
-      return;
-    }
-
-    // !sfc encounter command — spawn a canonical foundry-ironsworn encounter
-    if (isEncounterCommand(message)) {
-      const name = parseEncounterCommand(message.content);
-      if (name) {
-        await spawnEncounter(name).catch(err =>
-          console.error(`${MODULE_ID} | encounter spawn failed:`, err)
-        );
-      }
-      return;
-    }
-
-    // !recap command — intercept before move pipeline
-    if (isRecapCommand(message)) {
-      const text = message.content?.trim() ?? "";
-      const campaignState = game.settings.get(MODULE_ID, "campaignState");
-
-      const sessionMatch = text.match(/^!recap\s+session(?:\s+(\d+))?/i);
-      if (sessionMatch) {
-        // !recap session or !recap session N
-        await postSessionRecap(campaignState, null);
-      } else {
-        // !recap or !recap campaign
-        await postCampaignRecap(campaignState);
-      }
-      return;
-    }
-
-    // !pace command — GM-only pacing scene override
-    if (isPaceCommand(message)) {
-      await handlePaceCommand(message);
-      return;
-    }
-
-    // !migrate-entities command — GM-only one-time storage migration
-    if (isMigrateEntitiesCommand(message)) {
-      await handleMigrateEntitiesCommand(message);
-      return;
-    }
-
-    // !oracle yes/no command — any player; no state mutation
-    if (isOracleCommand(message)) {
-      await handleOracleCommand(message);
-      return;
-    }
-
-    // !pay-the-price (alias !ptp) — roll the d100 Pay the Price table
-    // and post the result as a chat card. Any player; no state mutation.
-    if (isPayThePriceCommand(message)) {
-      await handlePayThePriceCommand(message);
-      return;
-    }
-
-    // !bond <rank> command — bonded Develop Your Relationship (play kit p. 3)
-    if (isBondCommand(message)) {
-      await handleBondCommand(message);
-      return;
-    }
-
-    if (isSeverCommand(message)) {
-      await handleSeverCommand(message);
-      return;
-    }
-
-    // Session safety / lifecycle commands — open DialogV2 surfaces.
-    if (isFlagCommand(message))         { openSetFlagDialog();         return; }
-    if (isFateCommand(message))         { openChangeYourFateDialog();  return; }
-    if (isBreakCommand(message))        { openTakeABreakDialog();      return; }
-    if (isBeginSessionCommand(message)) { openBeginSessionDialog();    return; }
-    if (isEndSessionCommand(message))   { openEndSessionDialog();      return; }
-    if (isIncitingIncidentCommand(message)) { await handleIncitingIncidentCommand(message); return; }
-    if (isRevealSiteCommand(message))   { await handleRevealSiteCommand(message); return; }
-    if (isClearSiteCommand(message))    { await handleClearSiteCommand(message); return; }
-
-    // !clock command — create / advance / list campaign and tension clocks
-    if (isClockCommand(message)) {
-      await handleClockCommand(message);
-      return;
-    }
-
-    // !repair — vehicle repair point-spend dialog (play kit p. 7)
-    if (isRepairCommand(message)) {
-      await handleRepairCommand(message);
-      return;
-    }
-
-    // !stations — post the Battle Stations! shipboard-combat play aid (the 11
-    // crew roles). Any player may invoke; it's a static reference card.
-    if (isBattleStationsCommand(message)) {
-      await ChatMessage.create({
-        content: renderBattleStationsCardHtml(),
-        flags:   { [MODULE_ID]: { battleStationsCard: true } },
-      }).catch(err => console.warn(`${MODULE_ID} | !stations card failed:`, err?.message ?? err));
-      return;
-    }
-
-    // !shipmap — build (or rebuild) the command vehicle's deck-plan Scene with
-    // the shipboard-combat stations pinned. GM-only (Scene creation is a world
-    // write).
-    if (isShipMapCommand(message)) {
-      await handleShipMapCommand(message);
-      return;
-    }
-
-    // !ship envision / !ship history — roll supplementary ship oracles,
-    // generate narrator prose, post a card, append a dated section to
-    // system.notes (GM-only on the write). Any player may invoke.
-    if (isShipEnvisionCommand(message)) {
-      await handleShipEnvisionCommand(message);
-      return;
-    }
-    if (isShipHistoryCommand(message)) {
-      await handleShipHistoryCommand(message);
-      return;
-    }
-
-    // !oracle-add command — GM-only; opens a dialog to define a custom table
-    if (isOracleAddCommand(message)) {
-      await handleOracleAddCommand(message);
-      return;
-    }
-
-    // !roll command — force the next undecorated input through the move pipeline
-    if (isRollCommand(message)) {
-      await handleRollCommand(message);
-      return;
-    }
+    // Chat commands (`@scene`, `!…`) — routed before the move pipeline. Every
+    // command is consumed on EVERY client (so plain-narration handling below
+    // never sees one) but executes only where its run-on policy says.
+    if (await dispatchChatCommand(message)) return;
 
     if (!isPlayerNarration(message)) return;
 
@@ -948,17 +928,24 @@ export function registerChatHook() {
         );
       }
 
+      // The ROLLER's character (decisions.md → "Multiplayer attribution"):
+      // the speaker resolved from the message, first PC only as fallback.
+      // One actor drives the ability scan, the stat substitution it offers,
+      // and the stat values read below — scanning PC A's assets but reading
+      // PC B's stats offered substitutions B doesn't have.
+      const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
+      const rollerActor  = speakerActor ?? getPlayerActors()[0] ?? null;
+
       // Scan the character's assets + the command vehicle's modules for
       // abilities that apply to the chosen move. Surfaced on the
       // confirmation dialog as opt-in checkboxes — accepted abilities
       // add their +N to interpretation.adds before the dice are rolled.
-      const characterActorForScan   = getPlayerActors()[0] ?? null;
       const commandShipForScan      = getCommandVehicleActor(campaignState);
       const applicableAbilities = await scanForApplicableAbilities({
         moveId:           interpretation.moveId,
         moveName:         interpretation.moveName,
         narration,
-        characterActor:   characterActorForScan,
+        characterActor:   rollerActor,
         commandShipActor: commandShipForScan,
         apiKey,
       }).catch(err => {
@@ -993,6 +980,15 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
 
+      // Take a Break → "Move on": a single-use +1 on the next action roll (not
+      // a progress move). Consumed from the working copy (so persistResolution's
+      // clone can't resurrect it) and from the stored campaignState.
+      const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId);
+      if (breakAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
+        await clearPersistedNextMoveAdd();
+      }
+
       // Stat substitution — when an asset ability (e.g. Empath's
       // "roll +heart in place of the listed stat") was offered AND the
       // player picked it on the confirm dialog, swap the move stat
@@ -1012,8 +1008,7 @@ export function registerChatHook() {
       // interpreter.js line 149); pre-this-fix nothing did, so every
       // action move resolved as actionDie + 0 + adds — players saw
       // "+iron (0)" and "Action: 6 + 0 = 6" on every chat card.
-      const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
-      enrichInterpretationStatValue(speakerActor, interpretation, campaignState);
+      enrichInterpretationStatValue(rollerActor, interpretation, campaignState);
 
       // Progress moves score from live module data (combat/expedition journal
       // tracks, actor vow Items, connection records) — the fix for pipeline
@@ -1182,9 +1177,8 @@ export function registerChatHook() {
       if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM) {
         try {
           const { applyMeterChanges } = await import("./character/actorBridge.js");
-          const companionActor = speakerActor ?? getPlayerActors()[0] ?? null;
-          if (companionActor) {
-            await applyMeterChanges(companionActor, { companionHealth: resolution.consequences.companionHealthChange });
+          if (rollerActor) {
+            await applyMeterChanges(rollerActor, { companionHealth: resolution.consequences.companionHealthChange });
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | companion health change failed:`, err?.message ?? err);
@@ -1241,7 +1235,7 @@ export function registerChatHook() {
       // "successes are not granting progress on this Vow"). Now GM-gated and
       // driven by planReachMilestone (sole open vow → auto-mark; several → picker).
       if (resolution.consequences?.reachMilestone && game.user.isGM) {
-        await applyReachMilestone(getPlayerActors()[0] ?? null, interpretation.moveTarget ?? null)
+        await applyReachMilestone(rollerActor, interpretation.moveTarget ?? null)
           .catch(err => console.warn(`${MODULE_ID} | reach a milestone failed:`, err?.message ?? err));
       }
 
@@ -1393,14 +1387,14 @@ export function registerChatHook() {
             // Journal path already paid the quests legacy — deliver only the
             // connection deepen + promised reward. Sets fulfilPaid, so a later
             // native-sheet roll of the same vow can't double-pay.
-            if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true });
+            if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, actorId: rollerActor?.id ?? null });
           } else if (itemDone) {
             // Item-only vow (no journal twin): legacy on the pipeline's
             // campaignState, deepen + reward via the shared payoff, then a
             // fulfil card synthesized from the item.
             const ticks = legacyRewardTicks(itemDone.rank, ranksDown);
             if (ticks > 0) addLegacyTicks(campaignState, "quests", ticks);
-            await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true });
+            await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, actorId: rollerActor?.id ?? null });
             await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks }).catch(err =>
               console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
           } else {
@@ -1547,11 +1541,11 @@ export function registerChatHook() {
             if (wonFight && result.track.linkedVowName) {
               const marks = Math.max(1,
                 marksForSourceRank(result.track.rank) - (resolution.outcome === "weak_hit" ? 1 : 0));
-              await postFightVowMilestoneCard(result.track.linkedVowName, marks).catch(err =>
+              await postFightVowMilestoneCard(result.track.linkedVowName, marks, rollerActor?.id ?? null).catch(err =>
                 console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
               // Deliver the vow's promised concrete reward (#241 Phase 2), scaled
               // by the win; one-time (status flips so a re-win can't re-grant).
-              await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome).catch(err =>
+              await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome, { actorId: rollerActor?.id ?? null }).catch(err =>
                 console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err));
             }
           }
@@ -1564,7 +1558,7 @@ export function registerChatHook() {
       // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
       // B1 generic suffer picker so the player can choose which move takes -2.
       if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
-        await postDecisiveActionCostCard().catch(err =>
+        await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err =>
           console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
       }
 
@@ -1574,7 +1568,7 @@ export function registerChatHook() {
       // burn button can undo them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        ptpReversals = await postFaceDefeatPayThePriceCard().catch(err => {
+        ptpReversals = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
           console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err);
           return null;
         });
@@ -1598,26 +1592,10 @@ export function registerChatHook() {
       });
 
       if (relevance.needsClarification) {
-        // Mark pendingClarification on campaignState so other clients can
-        // observe a paused pipeline (GM can read state). Cleared before
-        // narration is requested.
-        if (game.user.isGM) {
-          campaignState.pendingClarification = {
-            resolutionId: resolution._id ?? null,
-            moveId:       resolution.moveId,
-            referenceType: relevance.referenceType,
-            postedAt:     new Date().toISOString(),
-          };
-          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
-        }
-
+        // (The pendingClarification campaignState marker written around this
+        // prompt had no reader and was removed in the 2026-10 audit.)
         const selection = await ClarificationDialog.prompt(campaignState, relevance);
         relevance = applyClarificationSelection(relevance, selection);
-
-        if (game.user.isGM) {
-          campaignState.pendingClarification = null;
-          await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(() => {});
-        }
       }
 
       // Step 8 (retired 2026-07, FACTION-PACKET-DEAD): the assembler context
@@ -1630,7 +1608,7 @@ export function registerChatHook() {
       // Step 9: post move result card. Determine burn eligibility against the
       // active character so the card can carry a 🔥 Burn Momentum button when
       // the dice would actually improve under burn.
-      const burnActor   = speakerActor ?? getPlayerActors()[0] ?? null;
+      const burnActor   = rollerActor;
       const burnState   = buildBurnState(resolution, burnActor, ptpReversals);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
@@ -1768,6 +1746,11 @@ function registerActorHook() {
     // Skip if this is our own write — actorBridge already handled the cache
     if (userId === game.user.id) return;
 
+    // The momentum-bounds recalc is an actor write: one emitter (the canonical
+    // GM), not every other connected client — players lack permission on each
+    // other's PCs and two GMs would double-write.
+    if (!isCanonicalGM()) return;
+
     // If condition debilities changed, recalculate momentum bounds
     if (foundry.utils.hasProperty(changes, "system.debility")) {
       recalculateMomentumBounds(actor).catch(err => {
@@ -1852,7 +1835,9 @@ function registerNativeProgressRollHook() {
       // where the Claude key lives on a player's client, not the GM's
       // (#248 Theme D; decisions.md → "No silent failures"). Other clients
       // correctly stand down here — not a failure, so no log.
-      const authorId = message?.author?.id ?? message?.author ?? message?.user?.id ?? message?.user ?? null;
+      // Unlike the chat-command AUTHOR policy, an author-less message is NOT
+      // treated as ours here — a native roll card always carries its roller.
+      const authorId = messageAuthorId(message);
       const isRoller = authorId != null && authorId === game?.user?.id;
 
       const content = String(message?.content ?? "");
@@ -1928,8 +1913,9 @@ function registerNativeProgressRollHook() {
  * tab, and a portrait if the OpenRouter key is configured.
  *
  * Gating:
- *  - GM only (writes go through actor.update which world-scopes through
- *    Foundry's permission model)
+ *  - Canonical GM only (writes go through actor.update which world-scopes
+ *    through Foundry's permission model; createActor fires on every client,
+ *    so exactly one GM seeds)
  *  - type === "starship"
  *  - Skipped when `autoSeedStarship` setting is false
  *  - Skipped when the actor already carries detail (non-empty notes,
@@ -1943,7 +1929,9 @@ function registerNativeProgressRollHook() {
 function registerStarshipSeedHook() {
   Hooks.on("createActor", (actor) => {
     try {
-      if (!game.user?.isGM) return;
+      // Single emitter: createActor fires on every client; two GMs would
+      // both seed (duplicate oracle rolls / notes / portrait calls).
+      if (!isCanonicalGM()) return;
       if (actor?.type !== "starship") return;
 
       // Read the setting synchronously at fire time (a deferred read inside the
@@ -1981,7 +1969,7 @@ function registerStarshipSeedHook() {
   // flag) and already-seeded cards.
   Hooks.on("createActor", (actor) => {
     try {
-      if (!game.user?.isGM) return;
+      if (!isCanonicalGM()) return;   // single emitter — see the starship seed above
       if (actor?.type !== "character") return;
       if (!game.settings.get(MODULE_ID, "autoSeedConnection")) return;
 
@@ -2010,7 +1998,8 @@ function registerStarshipSeedHook() {
  *    so an existing command vehicle (like one made via the sidebar) gets
  *    flagged without the user having to re-add the asset.
  *
- * GM-gated (world-scoped writes). The sync helper writes only on a status
+ * Canonical-GM gated (world-scoped writes, single emitter — createItem /
+ * deleteItem fire on every client). The sync helper writes only on a status
  * change, so the ready-scan is idempotent. A single tracked starship is still
  * resolved as the command vehicle via the lone-ship fallback even if nothing
  * here ever flags it.
@@ -2018,7 +2007,7 @@ function registerStarshipSeedHook() {
 function registerCommandVehicleHook() {
   const onAssetChange = (item) => {
     try {
-      if (!game.user?.isGM) return;
+      if (!isCanonicalGM()) return;   // single emitter for the world-scoped flag write
       if (item?.type !== "asset") return;
       const actor = item.parent;
       if (actor?.type !== "starship") return;
@@ -2040,7 +2029,7 @@ function registerCommandVehicleHook() {
 
   Hooks.once("ready", () => {
     try {
-      if (!game.user?.isGM) return;
+      if (!isCanonicalGM()) return;
       import("./entities/ship.js").then(async (mod) => {
         const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
         const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
@@ -2160,6 +2149,19 @@ export function isRecapCommand(message) {
 }
 
 /**
+ * A `!recap` that isRecapCommand rejected only because the "Recap GM-only"
+ * setting is on and a player typed it. Routed separately so the typist is told
+ * why nothing happened instead of the command vanishing (decisions.md → "No
+ * silent failures").
+ */
+export function isDeniedRecapCommand(message) {
+  const text = message.content?.trim() ?? "";
+  if (!/^!recap(\s|$)/i.test(text)) return false;
+  if (message.flags?.[MODULE_ID]?.recapCard) return false;
+  return !isRecapCommand(message);
+}
+
+/**
  * Determine whether a chat message is a !sector command.
  * Matches exactly "!sector" or "!sector …" — not "!sectoral" / "!sectoring"
  * (predicate-matrix exclusivity per Priority 3 of the behaviour-coverage audit).
@@ -2244,8 +2246,9 @@ export function isRollCommand(message) {
 }
 
 /**
- * Determine whether a chat message is an !oracle yes/no command.
+ * Determine whether a chat message is an !oracle command.
  *   !oracle yes [odds] [question text]
+ *   !oracle <tableId> [question text]   (any registered oracle table)
  * Anyone may invoke — no state mutation. Odds default to 50/50 if omitted.
  * Valid odds keys and shorthand aliases:
  *   small_chance | small             → ≤ 10
@@ -2277,10 +2280,9 @@ export function isPayThePriceCommand(message) {
 /**
  * Determine whether a chat message is a !bond command — the bonded-path
  * variant of Develop Your Relationship per play kit p. 3.
- *   !bond <rank>
- * Anyone may invoke; the GM-gate only fires when the outcome demands state
- * changes (legacy track / +momentum), which the handler routes through
- * the existing campaign-state writer.
+ *   !bond [rank] [name]
+ * Anyone may invoke; the author rolls and any lasting effect (legacy ticks,
+ * rank raise, +momentum) relays to the canonical GM (src/moves/bondCommand.js).
  */
 export function isBondCommand(message) {
   const text = message.content?.trim() ?? "";
@@ -2336,11 +2338,10 @@ export function isIncitingIncidentCommand(message) {
 
 /**
  * Roll the spark, ask the narrator to compose the inciting incident, and post
- * the card. Runs only on the authoring client — it creates a shared chat
- * document, so unlike a local dialog it must fire exactly once.
+ * the card. Runs only on the authoring client (chat routing, RUN_ON.AUTHOR) —
+ * it creates a shared chat document, so it must fire exactly once.
  */
-async function handleIncitingIncidentCommand(message) {
-  if (message?.author?.id && message.author.id !== game.user?.id) return;
+async function handleIncitingIncidentCommand(_message) {
   try {
     const { runIncitingIncident } = await import("./session/incitingIncident.js");
     const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -2373,7 +2374,6 @@ export function isClearSiteCommand(message) {
 }
 
 async function handleClearSiteCommand(message) {
-  if (message?.author?.id && message.author.id !== game.user?.id) return;
   if (!game.user?.isGM) {
     ui.notifications?.warn("Clearing a site is available to GMs only.");
     return;
@@ -2398,11 +2398,10 @@ async function handleClearSiteCommand(message) {
 
 /**
  * Reveal the named (or sole undiscovered) site and announce it. GM-gated —
- * world-setting writes require GM. Runs only on the authoring client since it
- * creates a shared chat document.
+ * world-setting writes require GM. Runs only on the authoring client (chat
+ * routing, RUN_ON.AUTHOR) since it creates a shared chat document.
  */
 async function handleRevealSiteCommand(message) {
-  if (message?.author?.id && message.author.id !== game.user?.id) return;
   if (!game.user?.isGM) {
     ui.notifications?.warn("Revealing a site is available to GMs only.");
     return;
@@ -2501,151 +2500,6 @@ async function handleSceneCommand(message) {
       },
     },
   });
-}
-
-/**
- * Handle !truth / !state correction commands. fact-continuity scope §10.3.
- *
- * Grammar:
- *   !truth strike <id-prefix>
- *   !truth set <subject> <fact-text>
- *   !state strike <subject> <attribute>
- *   !state set <subject> <attribute>=<value>
- *
- * Subjects accepted as bare words ("Vance", "scene") or as quoted strings
- * for multi-word subjects ("\"Covenant officer\"", "\"cargo bay\""). For
- * !state set, the attribute and value are separated by an unquoted `=`.
- */
-async function handleFactContinuityCommand(message) {
-  const text = (message.content ?? "").trim();
-  const isGM = !!game.user?.isGM;
-
-  if (!factContinuityEnabledFromSettings()) {
-    ui.notifications.warn("Fact Continuity is disabled in Companion Settings.");
-    return;
-  }
-
-  const verbMatch = /^!(truth|state)\s+(strike|set)\s+(.*)$/i.exec(text);
-  if (!verbMatch) {
-    ui.notifications.warn('Usage: !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>');
-    return;
-  }
-  const [, domain, verb, restRaw] = verbMatch;
-  const rest = restRaw.trim();
-
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  const ctx = { isGM, actor: isGM ? "gm" : "player" };
-
-  // NARR-CMD-SUBJECT (narrator-context audit 2026-07): resolve command
-  // subjects against the full entity roster, exactly like the sidecar apply
-  // path does. Without it, entity-keyed ledger entries could never be
-  // addressed by name from `!truth` / `!state` ("No matching state entry"),
-  // and command-set truths landed text-keyed. Tolerant: an empty roster
-  // degrades to text subjects, same as before.
-  let fcEntities = [];
-  try {
-    fcEntities = collectAllEntities(campaignState);
-  } catch (err) {
-    console.debug?.(`${MODULE_ID} | handleFactContinuityCommand: entity roster collect failed:`, err?.message ?? err);
-  }
-
-  let resultLine = "";
-  try {
-    if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "strike") {
-      const struck = fcStrikeTruth(rest, campaignState, ctx);
-      resultLine = struck
-        ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
-        : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
-    } else if (domain.toLowerCase() === "truth" && verb.toLowerCase() === "set") {
-      const parsed = parseSubjectAndRest(rest);
-      if (!parsed) {
-        ui.notifications.warn('Usage: !truth set <subject> <fact-text>');
-        return;
-      }
-      const subject = fcResolveSubject(parsed.subject, campaignState, fcEntities);
-      const truth   = fcSetTruth(subject, parsed.rest, campaignState, ctx);
-      resultLine = truth
-        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest)}</em>.`
-        : `Truth not recorded — empty subject or fact.`;
-    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "strike") {
-      const parsed = parseSubjectAndRest(rest);
-      if (!parsed?.rest) {
-        ui.notifications.warn('Usage: !state strike <subject> <attribute>');
-        return;
-      }
-      const subject = fcResolveSubject(parsed.subject, campaignState, fcEntities);
-      const ok      = fcStrikeStateValue(fcSubjectKey(subject), parsed.rest.trim(), campaignState);
-      resultLine = ok
-        ? `State <code>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.rest.trim())}</code> struck.`
-        : `No matching state entry.`;
-    } else if (domain.toLowerCase() === "state" && verb.toLowerCase() === "set") {
-      const parsed = parseSubjectAndRest(rest);
-      const eqIdx  = parsed?.rest?.indexOf("=") ?? -1;
-      if (!parsed || eqIdx < 1) {
-        ui.notifications.warn('Usage: !state set <subject> <attribute>=<value>');
-        return;
-      }
-      const attribute = parsed.rest.slice(0, eqIdx).trim();
-      const value     = parsed.rest.slice(eqIdx + 1).trim();
-      const subject   = fcResolveSubject(parsed.subject, campaignState, fcEntities);
-      const result    = fcSetStateValue(fcSubjectKey(subject), attribute, value, campaignState);
-      resultLine = result
-        ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(attribute)}: ${escapeHtml(value)}</em>.`
-        : `State not recorded — empty attribute or value.`;
-    } else {
-      ui.notifications.warn('Unrecognised !truth / !state form.');
-      return;
-    }
-
-    if (resultLine) {
-      // Persist after a successful mutation.
-      try {
-        await game.settings.set(MODULE_ID, "campaignState", campaignState);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | handleFactContinuityCommand: persist failed:`, err);
-      }
-    }
-  } catch (err) {
-    console.error(`${MODULE_ID} | handleFactContinuityCommand failed:`, err);
-    resultLine = "Command failed — see the browser console.";
-  }
-
-  await ChatMessage.create({
-    content: `
-      <div class="sf-fc-command-card">
-        <div class="sf-fc-command-label">◈ Fact Continuity</div>
-        <div class="sf-fc-command-body">${resultLine}</div>
-      </div>
-    `.trim(),
-    flags: {
-      [MODULE_ID]: {
-        factContinuityCommand: true,
-        domain: domain.toLowerCase(),
-        verb:   verb.toLowerCase(),
-      },
-    },
-  });
-}
-
-/**
- * Parse "<subject> <rest>" with subject either a quoted string or a single
- * bare word. Returns { subject, rest } or null on malformed input.
- */
-function parseSubjectAndRest(text) {
-  if (!text) return null;
-  const trimmed = text.trim();
-  if (trimmed.startsWith('"')) {
-    const close = trimmed.indexOf('"', 1);
-    if (close < 0) return null;
-    const subject = trimmed.slice(1, close).trim();
-    const rest    = trimmed.slice(close + 1).trim();
-    return subject ? { subject, rest } : null;
-  }
-  const space = trimmed.search(/\s/);
-  if (space < 0) return { subject: trimmed, rest: '' };
-  const subject = trimmed.slice(0, space).trim();
-  const rest    = trimmed.slice(space + 1).trim();
-  return subject ? { subject, rest } : null;
 }
 
 function escapeHtml(s) {
@@ -2824,22 +2678,33 @@ const ODDS_ALIASES = new Map([
 ]);
 
 /**
- * Handle an !oracle yes/no chat command. Any player may invoke.
+ * Handle an !oracle chat command. Any player may invoke; runs once, on the
+ * authoring client (its dice are the only dice).
  *
- *   !oracle yes [odds] [question?]
+ *   !oracle yes [odds] [question?]     — Ask the Oracle (yes/no)
+ *   !oracle <tableId> [question?]      — roll any registered oracle table
+ *                                        (built-in or a custom !oracle-add one)
  *
- * Posts a card with the d100 result, the threshold for the chosen odds,
- * the yes/no answer, and (on a match) a "MATCH" badge prompting the
- * GM/player to envision an extreme result or twist.
+ * The yes/no form posts a card with the d100 result, the threshold for the
+ * chosen odds, the yes/no answer, and (on a match) a "MATCH" badge prompting
+ * the GM/player to envision an extreme result or twist. Anything else posts
+ * the usage card.
  */
 async function handleOracleCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!oracle".length).trim().split(/\s+/);
 
-  // Only "yes" / "yes-no" form is implemented; reject anything else with help.
+  if (parts[0] && !/^yes(-no)?$/i.test(parts[0])) {
+    const tableId = resolveOracleTableId(parts[0]);
+    if (tableId) {
+      await handleOracleTableCommand(message, tableId, parts.slice(1).join(" "));
+      return;
+    }
+  }
+
   if (!parts[0] || !/^yes(-no)?$/i.test(parts[0])) {
     await ChatMessage.create({
-      content: `<div class="sf-oracle-card"><strong>Oracle</strong> <p>Usage: <code>!oracle yes [odds] [question?]</code><br>Odds: <code>small</code> · <code>unlikely</code> · <code>50/50</code> · <code>likely</code> · <code>certain</code> (default <code>50/50</code>)</p></div>`,
+      content: `<div class="sf-oracle-card"><strong>Oracle</strong> <p>Usage: <code>!oracle yes [odds] [question?]</code> or <code>!oracle &lt;table-id&gt; [question?]</code><br>Odds: <code>small</code> · <code>unlikely</code> · <code>50/50</code> · <code>likely</code> · <code>certain</code> (default <code>50/50</code>)${parts[0] ? `<br>No oracle table named <code>${escapeChatHtml(parts[0])}</code>.` : ""}</p></div>`,
       flags:   { [MODULE_ID]: { oracleCommandCard: true } },
     });
     return;
@@ -2887,20 +2752,88 @@ async function handleOracleCommand(message) {
     },
   });
 
-  // Fire-and-forget narration follow-up (silent skip if Claude key is unset).
-  // Reuses the same `oracle_followup` mode as Pay the Price below so safety,
-  // tone, scene anchor, and length come from the configured narrator settings.
-  scheduleOracleNarration({
-    kind:       "oracle_yes_no",
-    oracleName: `Ask the Oracle (${oddsLabel})`,
+  // Narration follow-up — runs once, where a Claude key lives (the author's
+  // client, else the canonical GM). Reuses the same `oracle_followup` mode as
+  // Pay the Price below so safety, tone, scene anchor, and length come from
+  // the configured narrator settings.
+  requestOracleNarration({
+    kind:           "oracle_yes_no",
+    oracleName:     `Ask the Oracle (${oddsLabel})`,
     question,
-    rolledLine: `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+    rolledLine:     `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
+  });
+}
+
+/**
+ * Resolve a typed table id against the registered oracle tables (built-in and
+ * custom): exact id first, then case-insensitive. Null when nothing matches.
+ *
+ * @param {string} raw
+ * @returns {string|null}
+ */
+function resolveOracleTableId(raw) {
+  const id = String(raw ?? "").trim();
+  if (!id) return null;
+  if (Object.prototype.hasOwnProperty.call(ORACLE_TABLES, id)) return id;
+  const lo = id.toLowerCase();
+  return Object.keys(ORACLE_TABLES).find(k => k.toLowerCase() === lo) ?? null;
+}
+
+/**
+ * `!oracle <tableId> [question?]` — roll one registered oracle table and post
+ * the result card, carrying the same `oracleMemory` payload as the yes/no card
+ * so the canonical GM ledgers it (registerOracleMemoryCaptureHook).
+ *
+ * @param {ChatMessage} message
+ * @param {string} tableId   a key of ORACLE_TABLES
+ * @param {string} question  optional context text
+ */
+async function handleOracleTableCommand(message, tableId, question) {
+  let result;
+  try {
+    result = rollOracle(tableId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | !oracle ${tableId}: roll failed:`, err?.message ?? err);
+    await ChatMessage.create({
+      content: `<div class="sf-oracle-card"><strong>Oracle</strong> <p>Rolling <code>${escapeChatHtml(tableId)}</code> failed — see the browser console.</p></div>`,
+      flags:   { [MODULE_ID]: { oracleCommandCard: true } },
+    });
+    return;
+  }
+  const die = result.die ?? 100;
+  // 3D dice for d100 tables only (fire-and-forget, fail-open); custom d4/d6/…
+  // tables post without the animation.
+  if (die === 100) void showD100(result.roll);
+
+  const tableName = result.tableName ?? tableId;
+  const qBlock = question ? `<p><em>${escapeChatHtml(question)}</em></p>` : "";
+  await ChatMessage.create({
+    content: `<div class="sf-oracle-card"><strong>Oracle: ${escapeChatHtml(tableName)}</strong>${qBlock}<p>d${die} = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
+    flags:   {
+      [MODULE_ID]: {
+        oracleCommandCard: true,
+        oracleTableId:     tableId,
+        oracleMemory:      { name: tableName, question, answer: result.result },
+      },
+    },
+  });
+
+  requestOracleNarration({
+    kind:           "oracle_table",
+    oracleName:     tableName,
+    question,
+    rolledLine:     `d${die} = ${result.roll} → ${result.result}`,
+    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
   });
 }
 
 /**
  * Handle a !pay-the-price (or !ptp) chat command. Rolls the d100 Pay the
- * Price table and posts the result. Any player may invoke; no state mutation.
+ * Price table and posts the result. Any player may invoke; runs once, on the
+ * authoring client. A routed suffer lands on the typist's PC (the player owns
+ * it, so the meter write works from their client); the countdown-clock advance
+ * is GM-only and relayed to the canonical GM (src/clocks/payThePriceClocks.js).
  *
  *   !pay-the-price [question?]
  *   !ptp [question?]
@@ -2953,21 +2886,27 @@ async function handlePayThePriceCommand(message) {
     },
   });
 
+  // Credit the roller: a routed suffer lands on the PC of the player who typed
+  // the command, not the first PC in the world.
+  const speakerActorId = resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState"));
   if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+    await dispatchPayThePriceSufferRoute(result.sufferRoute, speakerActorId).catch(err =>
       console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err),
     );
   }
 
-  await advanceClocksOnPayThePrice().catch(err =>
+  // Countdown clocks advance on the canonical GM (world/actor writes) — run
+  // locally there, relayed from a player's client.
+  await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
     console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
 
-  // Fire-and-forget narration follow-up — see scheduleOracleNarration below.
-  scheduleOracleNarration({
+  // Narration follow-up — once, where a Claude key lives (oracleFollowup.js).
+  requestOracleNarration({
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
     question,
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
+    speakerActorId,
   });
 }
 
@@ -3379,7 +3318,7 @@ function registerCombatThresholdSocket() {
 
 // ── Won-fight vow milestone (#241): surface the vow the fight served ─────────
 
-async function postFightVowMilestoneCard(vowName, marks) {
+async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
   // Look up the linked vow on the roster for its rank + connection link.
   let connectionName = null, vowRank = null;
   for (const actor of getPlayerActors()) {
@@ -3403,17 +3342,40 @@ async function postFightVowMilestoneCard(vowName, marks) {
         + `<div class="sf-card-body"><p>You won the fight serving &ldquo;${safeVow}&rdquo;.</p>`
         + `<p><button type="button" class="entity-btn" data-action="sf-mark-milestone">⚑ Mark milestone (×${marks})</button> `
         + `<button type="button" class="entity-btn" data-action="sf-fulfill-vow">🏁 Attempt to Fulfill</button>${deepenBtn}</p></div></div>`,
-      flags: { [MODULE_ID]: { fightVowCard: true, vowName, marks, connectionName, vowRank } },
+      // actorId: the PC whose winning roll ended the fight — the milestone
+      // marks their copy of the vow (credit the roller).
+      flags: { [MODULE_ID]: { fightVowCard: true, vowName, marks, connectionName, vowRank, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFightVowMilestoneCard: chat post failed:`, err?.message ?? err);
   }
 }
 
-// GM-side: mark the linked vow `marks` times (scaled by the fight's rank).
-async function markLinkedVowMilestone(vowName, marks) {
-  await applyReachMilestone(getPlayerActors()[0] ?? null, vowName ?? null, marks).catch(err =>
+// GM-side: mark the linked vow `marks` times (scaled by the fight's rank), on
+// the PC that actually holds the vow — the card's roller when they hold it,
+// else whichever PC does (resolveVowHolderActor). Shared-vow copies on the
+// other PCs follow via the updateItem sync hook.
+async function markLinkedVowMilestone(vowName, marks, actorId = null) {
+  await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks).catch(err =>
     console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err));
+}
+
+/**
+ * The PC that holds the named vow, preferring `preferredActorId` (the roller /
+ * the card's actor) when that PC has a copy. Falls back to the PC owning the
+ * resolved vow item, then the preferred actor, then the first PC — never
+ * blindly the first PC when another PC is the one holding the vow.
+ * Exported for unit testing.
+ *
+ * @param {string|null} vowName
+ * @param {string|null} [preferredActorId]
+ * @returns {Actor|null}
+ */
+export function resolveVowHolderActor(vowName, preferredActorId = null) {
+  const preferred = preferredActorId ? (game.actors?.get?.(preferredActorId) ?? null) : null;
+  const { primary, copies } = resolveVowItemCopies(vowName);
+  if (preferred && copies.some(({ actor }) => actor?.id === preferred.id)) return preferred;
+  return primary?.actor ?? preferred ?? getPlayerActors()[0] ?? null;
 }
 
 // GM-side: deepen the connection a vow served, by `marks` rank-based marks on
@@ -3494,13 +3456,22 @@ export function resolveVowItemCopies(vowName) {
 // reward-choice card was ignored at swear time — so a reward-less fulfilment
 // stops being a silent mystery. Win-path calls leave it off (a fight can
 // legitimately precede the reward pick).
-async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false } = {}) {
-  const { copies } = resolveVowItemCopies(vowName);
-  let reward = null, vowId = null, anyRewardFlag = false;
-  for (const { item } of copies) {
+//
+// The reward goes to the PC that holds the vow — the roller's copy when they
+// hold one (`actorId`), else the copy carrying the promised reward — never
+// blindly the first PC (credit the roller). `copies` lets the fulfil payoff
+// pass the copies it already resolved: by then the vow is completed, and
+// resolveVowItemCopies only resolves OPEN vows, so a fresh lookup found
+// nothing and the promised reward was never granted.
+async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, actorId = null, copies: knownCopies = null } = {}) {
+  const copies = Array.isArray(knownCopies) && knownCopies.length
+    ? knownCopies
+    : resolveVowItemCopies(vowName).copies;
+  let reward = null, vowId = null, anyRewardFlag = false, rewardHolder = null;
+  for (const { actor, item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
     if (r) anyRewardFlag = true;
-    if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; break; }
+    if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; rewardHolder = actor ?? null; break; }
   }
   if (!reward) {
     if (noteIfAbsent && copies.length && !anyRewardFlag) {
@@ -3513,7 +3484,8 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false } =
   }
 
   const plan = planRewardGrant(reward, outcome);
-  const pc   = getPlayerActors()[0] ?? null;
+  const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
+  const pc   = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
   if (plan.status === "granted" && pc) {
     if (plan.form === "supply" || plan.form === "momentum") {
       await applyMeterChanges(pc, { [plan.form]: plan.amount ?? 1 }).catch(err =>
@@ -3547,7 +3519,7 @@ async function postRewardGrantCard(reward, plan) {
 // bypasses the journal-track fulfill branch AND never touches our legacy tracks,
 // so this also marks the Quests legacy. GM-side (world writes); idempotent per
 // vow via the fulfilPaid flag.
-async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = {}) {
+async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false, actorId = null } = {}) {
   // vowId-first resolution with a name ladder — a renamed vow or stale
   // linkedVowName snapshot still resolves (VOW-RENAME-PAYOFF). The completed
   // filter is bypassed here: the vendor sheet may have already marked the
@@ -3606,7 +3578,7 @@ async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false } = 
 
   // Grant the promised reward (one-time; scaled by outcome). The fulfil path
   // surfaces a note when no reward was ever chosen.
-  await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true }).catch(err =>
+  await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }).catch(err =>
     console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
 }
 
@@ -3662,7 +3634,10 @@ function registerNativeFulfilConsequenceHook() {
         }
       });
       if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
-        payFulfilledVowNative(parsed.source, parsed.outcome).catch(err =>
+        // The sheet roll's speaker is the PC who rolled — their copy gets the reward.
+        payFulfilledVowNative(parsed.source, parsed.outcome, {
+          actorId: typeof message?.speaker?.actor === "string" ? message.speaker.actor : null,
+        }).catch(err =>
           console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
       } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
         // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
@@ -3729,8 +3704,9 @@ function registerFightVowMilestoneHook() {
       });
     };
     wire("sf-mark-milestone", async () => {
-      if (isCanonicalGM()) return markLinkedVowMilestone(f.vowName, f.marks);
-      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "vow.markMilestone", vowName: f.vowName, marks: f.marks });
+      const actorId = f.actorId ?? null;
+      if (isCanonicalGM()) return markLinkedVowMilestone(f.vowName, f.marks, actorId);
+      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "vow.markMilestone", vowName: f.vowName, marks: f.marks, actorId });
     });
     wire("sf-fulfill-vow", async () => {
       await ChatMessage.create({
@@ -3754,8 +3730,12 @@ function registerFightVowSocket() {
   game.socket.on(`module.${MODULE_ID}`, async (payload) => {
     try {
       if (!payload || !isCanonicalGM()) return;
-      if (payload.kind === "vow.markMilestone") await markLinkedVowMilestone(payload.vowName, payload.marks);
-      else if (payload.kind === "connection.deepen") await deepenLinkedConnection(payload.connectionName, payload.marks);
+      if (payload.kind === "vow.markMilestone") {
+        await markLinkedVowMilestone(payload.vowName, payload.marks,
+          typeof payload.actorId === "string" ? payload.actorId : null);
+      } else if (payload.kind === "connection.deepen") {
+        await deepenLinkedConnection(payload.connectionName, payload.marks);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | fight-vow socket handler failed:`, err?.message ?? err);
     }
@@ -3855,7 +3835,10 @@ async function applyReachMilestone(actor, target, marks = 1) {
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
   // milestone (a won fight scaled by its rank — #241); shared-vow copies on the
   // other PCs are kept in lockstep by the updateItem sync hook.
-  if (!actor || !game.user?.isGM) return;
+  if (!actor || !game.user?.isGM) {
+    console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
+    return;
+  }
   const plan = planReachMilestone(readVows(actor), target);
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
@@ -3868,23 +3851,10 @@ async function applyReachMilestone(actor, target, marks = 1) {
   // tells the player Reach a Milestone marks vow progress.
 }
 
-async function postReachMilestoneCard(vow, ticks) {
-  const name = escapeChatHtml(vow?.name || "your vow");
-  const rank = escapeChatHtml(vow?.rank ?? "");
-  try {
-    await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
-        `<p>Marked progress on <strong>${name}</strong> — +${ticks} tick${ticks === 1 ? "" : "s"}${rank ? ` (${rank} rank)` : ""}.</p></div>`,
-      flags:   { [MODULE_ID]: { reachMilestoneCard: true } },
-    });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | postReachMilestoneCard: chat post failed:`, err?.message ?? err);
-  }
-}
-
 /**
  * Post a picker when several vows are open and none was named. Each button
- * marks one vow; the handler in wireMilestonePickerButtons applies it.
+ * relays one vow to the canonical GM (wireMilestonePickerButtons →
+ * milestone.pick → src/moves/milestonePicker.js applyMilestonePick).
  */
 async function postMilestonePickerCard(vows, actorId) {
   const rows = (vows ?? []).map(v =>
@@ -3944,7 +3914,7 @@ async function postCombatFinishCard({ track }) {
   }
 }
 
-async function postDecisiveActionCostCard() {
+async function postDecisiveActionCostCard(actorId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -3967,12 +3937,12 @@ async function postDecisiveActionCostCard() {
     return;
   }
   if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+    await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err =>
       console.warn(`${MODULE_ID} | decisive action cost suffer dispatch failed:`, err?.message ?? err));
   }
 }
 
-async function postFaceDefeatPayThePriceCard() {
+async function postFaceDefeatPayThePriceCard(actorId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -4006,7 +3976,7 @@ async function postFaceDefeatPayThePriceCard() {
   // reversal can undo only what was actually applied.
   let sufferMeterDelta = null;
   if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute).catch(err =>
+    await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err =>
       console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
     // Only track simple PC-meter routes; withstand_damage / companion_takes_a_hit
     // affect vehicle/companion stats and are excluded from auto-reversal.
@@ -4022,99 +3992,15 @@ async function postFaceDefeatPayThePriceCard() {
     return [];
   });
 
-  scheduleOracleNarration({
-    kind:       "pay_the_price",
-    oracleName: "Pay the Price",
-    question:   "Face Defeat",
-    rolledLine: `d100 = ${result.roll} → ${result.result}`,
+  requestOracleNarration({
+    kind:           "pay_the_price",
+    oracleName:     "Pay the Price",
+    question:       "Face Defeat",
+    rolledLine:     `d100 = ${result.roll} → ${result.result}`,
+    speakerActorId: actorId,
   });
 
   return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDelta };
-}
-
-/**
- * Advance countdown clocks in response to a Pay the Price. The module's clock
- * contract is that tension clocks advance when you Pay the Price (clocks.js
- * header; issue #203 (Clocks)) — wiring that was documented but never
- * built (playtest finding #10: "I had a pay the price this session, but the vow
- * clock is unmoved"). This advances, by one segment:
- *   - every active campaignState tension clock (the !clock / Clocks panel), and
- *   - the countdown clock on each player character's active vows (e.g. the
- *     inciting incident's "Dani's captivity" clock, stored on the vow item).
- * Campaign clocks are untouched (they advance at Begin a Session). GM-gated —
- * world/actor writes are GM-only, so on a player client this is a silent no-op.
- */
-async function advanceClocksOnPayThePrice() {
-  if (!game.user?.isGM) return [];
-  const advanced = [];
-
-  try {
-    const { advanceTensionClocksForPayThePrice } = await import("./clocks/clocks.js");
-    for (const c of await advanceTensionClocksForPayThePrice()) {
-      advanced.push({ _id: c._id, name: c.name, type: "tension", filled: c.filled, segments: c.segments, triggered: c.triggered });
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: tension clocks failed:`, err?.message ?? err);
-  }
-
-  try {
-    const { getPlayerActors, advanceVowClocks } = await import("./character/actorBridge.js");
-    for (const actor of getPlayerActors()) {
-      for (const v of await advanceVowClocks(actor)) {
-        advanced.push({ actorId: v.actorId, itemId: v.itemId, name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
-      }
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: vow clocks failed:`, err?.message ?? err);
-  }
-
-  if (!advanced.length) return advanced;
-  const lines = advanced.map(a =>
-    `<li>${escapeChatHtml(a.name)} — ${a.filled}/${a.segments}${a.triggered ? " <strong>(TRIGGERED)</strong>" : ""}</li>`,
-  ).join("");
-  try {
-    await ChatMessage.create({
-      content: `<div class="sf-clock-card"><strong>⏳ The clock turns</strong><p>Paying the price advances the countdown:</p><ul>${lines}</ul></div>`,
-      flags:   { [MODULE_ID]: { clockCard: true, payThePriceAdvance: true } },
-    });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: card post failed:`, err?.message ?? err);
-  }
-
-  // Fire-and-forget vignette for any clock that just triggered — the
-  // narrative beat for when a deadline arrives or a threat materialises.
-  const justTriggered = advanced.filter(a => a.triggered);
-  if (justTriggered.length) {
-    setTimeout(async () => {
-      try {
-        const { narrateClockAdvancement } = await import("./narration/narrator.js");
-        const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        for (const cd of justTriggered) {
-          const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
-          if (text) {
-            // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
-            // enter the ring/summary or the narrator forgets it immediately.
-            await ChatMessage.create({
-              content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(text)}</em></div>`,
-              flags:   {
-                [MODULE_ID]: {
-                  clockCard:         true,
-                  clockVignetteCard: true,
-                  narratorCard:      true,
-                  narrationText:     text,
-                  sessionId:         cs.currentSessionId ?? null,
-                },
-              },
-            });
-          }
-        }
-      } catch (err) {
-        console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: trigger vignette failed:`, err?.message ?? err);
-      }
-    }, 0);
-  }
-
-  return advanced;
 }
 
 async function postForsakeVowCard(vowName) {
@@ -4161,13 +4047,17 @@ async function postForgeABondCard(connection, legacyTicks) {
  * the magnitude before dispatch; if no dialog is available (test env or
  * no-app-v2), the default -1 magnitude fires directly.
  *
+ * Credit the roller (decisions.md → "Multiplayer attribution"): the harm lands
+ * on `actorId` — the PC whose move missed / who typed `!ptp` — with the first
+ * PC only as the fallback when no speaker resolved.
+ *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
+ * @param {string|null} [actorId]
  */
-async function dispatchPayThePriceSufferRoute(route) {
-  const { getPlayerActors } = await import("./character/actorBridge.js");
+async function dispatchPayThePriceSufferRoute(route, actorId = null) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
 
-  const actor = getPlayerActors()[0] ?? null;
+  const actor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
   if (!actor) {
     console.warn(`${MODULE_ID} | dispatchPayThePriceSufferRoute: no active character`);
     return;
@@ -4203,158 +4093,6 @@ async function dispatchPayThePriceSufferRoute(route) {
     amount: route.amount ?? 1,
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
-  });
-}
-
-/**
- * Async-queue an oracle-narration follow-up card. Used by every chat command
- * that rolls a one-shot oracle table (`!oracle yes`, `!pay-the-price`, future
- * extensions). Runs `narrateOracleFollowup` in a fresh microtask so the raw
- * oracle-result card has already landed and the chat-render hook has already
- * fired by the time the narrator API call starts — guaranteeing chat order
- * is `<raw card> → <narration card>`.
- *
- * Silent skip if the Claude API key is unset, the X-Card is active, or the
- * narrator-enabled toggle is off (see `narrateOracleFollowup` in
- * `src/narration/narrator.js`).
- *
- * @param {Object} args — passed through verbatim to narrateOracleFollowup
- */
-function scheduleOracleNarration(args) {
-  setTimeout(async () => {
-    try {
-      const { narrateOracleFollowup } = await import("./narration/narrator.js");
-      const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
-      await narrateOracleFollowup({ ...args, campaignState });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | scheduleOracleNarration: narration follow-up failed:`, err?.message ?? err);
-    }
-  }, 0);
-}
-
-// Rank → +X adds for the bonded-path Develop Your Relationship roll
-// (play kit p. 3: troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5).
-const BOND_ROLL_ADDS = {
-  troublesome: 1,
-  dangerous:   2,
-  formidable:  3,
-  extreme:     4,
-  epic:        5,
-};
-
-/**
- * Handle a !bond <rank> chat command — bonded Develop Your Relationship.
- *
- * Per play kit p. 3: when developing a relationship with a bonded
- * connection, skip the normal progress mark. Instead, roll +their rank
- * (troublesome=+1 ... epic=+5) and:
- *   strong hit → mark 2 ticks on bonds legacy track
- *   strong + match → also offer to raise the connection's rank by 1
- *   weak hit → +2 momentum
- *   miss → no lasting benefit
- */
-async function handleBondCommand(message) {
-  const text = message.content?.trim() ?? "";
-  const rest = text.slice("!bond".length).trim();
-  const firstToken = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
-  const rankArg = firstToken in BOND_ROLL_ADDS ? firstToken : null;
-  const nameArg = (rankArg ? rest.slice(firstToken.length) : rest).trim() || null;
-
-  // Resolve which BONDED connection this roll develops: named explicitly, or
-  // the sole bonded one. The resolved connection's own rank drives the adds
-  // (and a hit-with-match raises its rank for real, matching the develop
-  // pipeline); a bare rank arg stays as the untargeted fallback. Before the
-  // 2026-07 soft-spot cleanup this command was disconnected from any specific
-  // connection and its rank-raise was text only.
-  const conn = await import("./entities/connection.js");
-  const campaignStateForBond = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const bondedConnections = (campaignStateForBond.connectionIds ?? [])
-    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-    .filter(c => c && c.active !== false && c.bonded === true);
-  const target = nameArg
-    ? selectConnection(bondedConnections, nameArg)
-    : (bondedConnections.length === 1 ? bondedConnections[0] : null);
-  if (nameArg && !target) {
-    ui.notifications?.warn(`Starforged Companion: no bonded connection matched "${nameArg}".`);
-  }
-
-  const rank = target?.rank ?? rankArg;
-  if (!rank || !(rank in BOND_ROLL_ADDS)) {
-    await ChatMessage.create({
-      content: `<div class="sf-bond-card"><strong>Develop Your Relationship (bonded)</strong> <p>Usage: <code>!bond [rank] [name]</code> — name a bonded connection to use their rank (and raise it on a hit with a match), or give a bare rank for an untargeted roll.<br>Rank: <code>troublesome</code> · <code>dangerous</code> · <code>formidable</code> · <code>extreme</code> · <code>epic</code></p></div>`,
-      flags:   { [MODULE_ID]: { bondCommandCard: true } },
-    });
-    return;
-  }
-
-  const adds          = BOND_ROLL_ADDS[rank];
-  const actionDie     = rollActionDie();
-  const challengeDice = rollChallengeDice();
-  const actionScore   = calcActionScore(actionDie, 0, adds);
-  const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
-
-  // 3D dice for the bond roll (fire-and-forget, fail-open).
-  void showActionRoll(actionDie, challengeDice);
-
-  const matchBadge = isMatch ? " ✦ MATCH" : "";
-  const raiseRank  = !!target && isMatch && outcome !== "miss" && target.rank !== "epic";
-  let body, momentumChange = 0, ticksOnBonds = 0;
-
-  switch (outcome) {
-    case "strong_hit":
-      ticksOnBonds = 2;
-      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.`;
-      break;
-    case "weak_hit":
-      momentumChange = 2;
-      body = `<strong>Weak hit${matchBadge}.</strong> Take +2 momentum.`;
-      break;
-    case "miss":
-      body = `<strong>Miss${matchBadge}.</strong> Take no lasting benefit.`;
-      break;
-  }
-  if (raiseRank) {
-    body += ` The match bolsters your standing — <strong>${escapeChatHtml(target.name)}</strong>'s rank rises to <strong>${nextRank(target.rank)}</strong>.`;
-  } else if (!target && isMatch && outcome !== "miss") {
-    body += " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic).";
-  }
-
-  // GM-only state writes — only fire if there's an actual effect.
-  if (game.user?.isGM && (ticksOnBonds > 0 || momentumChange > 0 || raiseRank)) {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    if (ticksOnBonds > 0) {
-      // Route through addLegacyTicks so filled boxes award XP like every
-      // other legacy write (this used to be a duplicate inline tick bump).
-      addLegacyTicks(campaignState, "bonds", ticksOnBonds);
-    }
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-
-    if (raiseRank) {
-      const raisedRank = nextRank(target.rank);
-      await conn.updateConnection(target.__hostId, { rank: raisedRank }).catch(err =>
-        console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
-      // Mirror onto the PCs' bond Items so CHARACTER STATE shows the raised
-      // rank (NARR-BOND-RANK-STALE).
-      await setBondItemRank({ connectionId: target.__hostId, name: target.name }, raisedRank)
-        .catch(err =>
-          console.warn(`${MODULE_ID} | !bond rank mirror failed:`, err?.message ?? err));
-    }
-
-    if (momentumChange > 0) {
-      const actor = game.user?.character ?? getPlayerActors()[0];
-      if (actor) {
-        const { applyMeterChanges } = await import("./character/actorBridge.js");
-        await applyMeterChanges(actor, { momentum: momentumChange });
-      }
-    }
-  }
-
-  const title = target
-    ? `Develop Your Relationship (bonded: ${escapeChatHtml(target.name)}, ${escapeChatHtml(rank)})`
-    : `Develop Your Relationship (bonded, ${escapeChatHtml(rank)})`;
-  await ChatMessage.create({
-    content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
-    flags:   { [MODULE_ID]: { bondCommandCard: true } },
   });
 }
 
@@ -4463,38 +4201,20 @@ export function resolveCurrentLocationName(name, campaignState) {
 }
 
 /**
- * Handle the !x (X-Card) command. Activates suppressScene so the assembler
- * blocks creative content for the rest of the scene, and posts a visible
- * X-Card card so other players see the scene was paused.
+ * Handle a programmatic !x (X-Card) message — one that reached
+ * createChatMessage (a macro's ChatMessage.create, a socket-relayed post).
+ * Typed `!x` never gets here: the chatMessage hook (settingsPanel.js) cancels
+ * it before creation and raises the X-Card itself.
  *
- * Runs on whichever client received the createChatMessage event. The setting
- * write requires GM permissions; on player clients it logs a warning and the
- * GM client's hook fires the actual persist. The card is posted from the
- * client that called the handler — that's fine, ChatMessage.create relays.
+ * Runs on the canonical GM only (chat routing, RUN_ON.CANONICAL_GM): it sets
+ * the world-scoped xCardActive flag (suppressScene) and posts the X-Card card
+ * once (postXCardCard, which carries the GM "Resume" button). With no GM
+ * connected the routing warns the author instead — there is no author
+ * fallback, since a player client cannot write the flag.
  */
 async function handleXCardCommand(_message) {
-  await suppressScene();
-
-  // Only one client should post the response card to avoid duplicates.
-  // Prefer the GM; if no GM is online, the message author's client posts it.
-  if (!game.user.isGM) return;
-
-  await ChatMessage.create({
-    content: `
-      <div class="starforged-move-card xcard-card">
-        <div class="move-header">
-          <span class="move-type">X-Card</span>
-        </div>
-        <div class="move-body">
-          <p class="xcard-message">
-            Scene paused. Current content is suppressed.<br>
-            The story will redirect at the next narration beat.
-          </p>
-        </div>
-      </div>
-    `.trim(),
-    flags: { [MODULE_ID]: { type: "xcard", xcardCard: true } },
-  });
+  const recorded = await suppressScene();
+  await postXCardCard({ recorded: recorded !== false });
 }
 
 /**
@@ -4588,10 +4308,11 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
 }
 
 /**
- * Handle !sector chat commands.
+ * Handle !sector chat commands (runs on the authoring client only).
+ *   !sector            — usage (whispered to the typist)
  *   !sector new        — open the sector creator (GM only)
  *   !sector list       — list all created sectors
- *   !sector {name}     — switch active sector
+ *   !sector {name}     — switch active sector (GM only)
  */
 async function handleSectorCommand(message) {
   const text  = message.content?.trim() ?? "";
@@ -4599,6 +4320,18 @@ async function handleSectorCommand(message) {
   const sub   = parts[0]?.toLowerCase() ?? "";
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
+
+  // Bare `!sector` — show usage (SECTOR-SWITCH-001: it used to do nothing).
+  // Whispered to the typist; it's help text, not table news.
+  if (!sub) {
+    await ChatMessage.create({
+      content: "<p><strong>Sectors:</strong> <code>!sector list</code> — list sectors · " +
+        "<code>!sector new</code> — create one (GM) · <code>!sector &lt;name&gt;</code> — switch the active sector (GM).</p>",
+      flags:   { [MODULE_ID]: { sectorUsage: true } },
+      whisper: game.user?.id ? [game.user.id] : [],
+    });
+    return;
+  }
 
   if (sub === "new") {
     if (!game.user.isGM) {
@@ -4628,24 +4361,26 @@ async function handleSectorCommand(message) {
     return;
   }
 
-  // !sector {name} — switch active sector
-  if (sub && game.user.isGM) {
-    const name   = parts.join(" ");
-    const match  = (campaignState.sectors ?? []).find(
-      s => s.name.toLowerCase() === name.toLowerCase()
-    );
-    if (!match) {
-      ui.notifications.warn(`Sector "${name}" not found. Use !sector list to see all sectors.`);
-      return;
-    }
-    campaignState.activeSectorId = match.id;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-    await ChatMessage.create({
-      content: `<p>Active sector switched to <strong>${match.name}</strong>.</p>`,
-      flags: { [MODULE_ID]: { sectorSwitch: true } },
-    });
+  // !sector {name} — switch active sector (GM only — writes campaignState).
+  // SECTOR-SWITCH-001: a player's switch used to fall through silently.
+  if (!game.user.isGM) {
+    ui.notifications.warn("!sector <name> (switching the active sector) is GM-only.");
     return;
   }
+  const name   = parts.join(" ");
+  const match  = (campaignState.sectors ?? []).find(
+    s => s.name.toLowerCase() === name.toLowerCase()
+  );
+  if (!match) {
+    ui.notifications.warn(`Sector "${name}" not found. Use !sector list to see all sectors.`);
+    return;
+  }
+  campaignState.activeSectorId = match.id;
+  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  await ChatMessage.create({
+    content: `<p>Active sector switched to <strong>${match.name}</strong>.</p>`,
+    flags: { [MODULE_ID]: { sectorSwitch: true } },
+  });
 }
 
 /**
@@ -5013,7 +4748,7 @@ function injectPushToTalkButton(html) {
   button.addEventListener("touchstart", (e) => { e.preventDefault(); window._sfSpeechInput?.start(); }, { passive: false });
   button.addEventListener("mouseup",    (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
   button.addEventListener("touchend",   (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
-  button.addEventListener("mouseleave", (e) => { window._sfSpeechInput?.stop(); });
+  button.addEventListener("mouseleave", () => { window._sfSpeechInput?.stop(); });
 
   controls.prepend(button);
 }
@@ -5062,8 +4797,11 @@ Hooks.once("ready", () => {
   try { rehydrateCustomOracles(); }
   catch (err) { console.warn(`${MODULE_ID} | rehydrateCustomOracles failed:`, err); }
 
-  // Session ID — GM writes to world-scoped settings; players read from state
-  if (game.user.isGM) {
+  // Session ID — world-scoped write (plus the auto-recap Claude call), so a
+  // single emitter: the canonical GM. With two GMs connected, plain isGM ran
+  // the re-mint / stale-scene close / auto-recap once per GM. Players read
+  // from state.
+  if (isCanonicalGM()) {
     const prevState = game.settings.get(MODULE_ID, "campaignState");
 
     // Reset a stale pendingMove lock — left set if Foundry was closed mid-move.
@@ -5140,6 +4878,12 @@ Hooks.once("ready", () => {
   }
 
   if (game.user.isGM) {
+    // X-Card resume — clearXCard flips the world-scoped xCardActive flag back
+    // off (GM-only write). Exposed on the module API for macros / the console:
+    //   game.modules.get("starforged-companion").api.clearXCard()
+    const xcardMod = game.modules.get(MODULE_ID);
+    if (xcardMod) xcardMod.api = { ...(xcardMod.api ?? {}), clearXCard };
+
     ensureHelpJournal().catch(err =>
       console.warn(`${MODULE_ID} | Help journal creation failed:`, err.message)
     );
@@ -5232,6 +4976,7 @@ Hooks.once("ready", () => {
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }
 
+  registerGmRelaySocket();   // canonical-GM action relay (player-invoked world writes)
   registerChatHook();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
@@ -5554,8 +5299,11 @@ onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, ro
 
 /**
  * Wire the per-vow buttons on a Reach a Milestone picker card (posted when
- * several vows are open and none was named). Clicking one marks that vow and
- * resolves the card so it can't fire twice.
+ * several vows are open and none was named). Clicking one asks the canonical
+ * GM to mark that vow and resolve the card (milestone.pick →
+ * src/moves/milestonePicker.js applyMilestonePick, idempotent per card). The
+ * vow write is GM-gated, so a player's click used to disable the buttons and
+ * silently do nothing; it now relays.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
@@ -5573,26 +5321,22 @@ export function wireMilestonePickerButtons(message, root) {
     fresh.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      for (const b of root.querySelectorAll('[data-action="sf-milestone-pick"]')) b.disabled = true;
-      // GM-only: vow Item writes are GM-gated (PERSIST-001). In solo-GM play the
-      // player is the GM, so this is the normal path.
-      if (!game.user?.isGM) return;
+      const all = root.querySelectorAll('[data-action="sf-milestone-pick"]');
+      for (const b of all) b.disabled = true;
+      let ok = false;
       try {
-        const actorId = fresh.dataset.actorId || null;
-        const vowId   = fresh.dataset.vowId || null;
-        const actor   = (actorId && game.actors?.get?.(actorId)) || getPlayerActors()[0] || null;
-        const vow     = readVows(actor).find(v => v.id === vowId);
-        if (actor && vow) {
-          const { milestoneTicks } = await import("./moves/milestone.js");
-          const ticks = milestoneTicks(vow.rank);
-          await markVowProgress(actor, vow.id, ticks);
-          await postReachMilestoneCard(vow, ticks);
-        }
-        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-          .catch(err => console.warn(`${MODULE_ID} | milestone picker resolve update failed:`, err?.message ?? err));
+        const res = await requestGmAction("milestone.pick", {
+          messageId: message?.id ?? null,
+          actorId:   fresh.dataset.actorId || null,
+          vowId:     fresh.dataset.vowId || null,
+        });
+        ok = res?.ok === true;
       } catch (err) {
         console.error(`${MODULE_ID} | Milestone picker click failed:`, err);
       }
+      // Not delivered (no GM connected — requestGmAction already told the
+      // user — or a failure) → re-arm the buttons so the pick can be retried.
+      if (!ok) for (const b of all) b.disabled = false;
     });
   }
 }
@@ -5730,7 +5474,10 @@ export function wireConnectionPickerButtons(message, root) {
       event.preventDefault();
       event.stopPropagation();
       for (const b of root.querySelectorAll('[data-action="sf-connection-pick"]')) b.disabled = true;
-      if (!game.user?.isGM) return;
+      // No GM gate: the click only posts a forced-move chat message (any user
+      // may), which the canonical GM's pipeline resolves. The old isGM gate
+      // made a player's pick — on a picker card the player's own click had
+      // just posted — silently do nothing.
       try {
         const pickAction = fresh.dataset.pickAction;
         const name = fresh.dataset.connectionName || "connection";
@@ -5742,8 +5489,13 @@ export function wireConnectionPickerButtons(message, root) {
           content,
           flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId } },
         });
-        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-          .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
+        if (message.isOwner === false) {
+          // Only the card's author (or a GM) may stamp it resolved.
+          console.debug(`${MODULE_ID} | connection picker: card owned by another user — resolved flag not set (buttons disabled locally).`);
+        } else {
+          await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
+            .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
+        }
       } catch (err) {
         console.error(`${MODULE_ID} | Connection picker click failed:`, err);
       }
@@ -5817,7 +5569,7 @@ onChatMessageRender((message, root) => {
  * requires ≥2 <h2> elements.
  */
 Hooks.on("createJournalEntry", async (entry) => {
-  if (!game.user.isGM) return;
+  if (!isCanonicalGM()) return;   // single emitter for the campaignState write
   if (entry.flags?.[MODULE_ID]) return;
 
   const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
@@ -5845,7 +5597,7 @@ Hooks.on("createJournalEntry", async (entry) => {
  * Content has ≥2 <h2> elements — one per truth category saved.
  */
 Hooks.on("createJournalEntryPage", async (page) => {
-  if (!game.user.isGM) return;
+  if (!isCanonicalGM()) return;   // single emitter for the campaignState write
 
   const entry = page.parent;
   if (!entry) return;

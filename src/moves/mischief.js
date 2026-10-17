@@ -137,36 +137,6 @@ function selectChaoticHeuristics(narration) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GATING — should mischief be applied at all?
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Determine whether mischief should be applied on this call.
- * Used externally if the pipeline wants to gate mischief by probability
- * rather than always injecting the framing.
- *
- * For balanced: roughly 1 in 5 chance of active reframing
- * For chaotic: always
- * For serious/lawful: never
- *
- * Note: this is advisory — the model still decides in the framing above.
- * This function can be used to suppress framing entirely on some calls
- * for a lighter-touch balanced experience.
- *
- * @param {string} mischiefLevel  — "serious"|"lawful"|"balanced"|"chaotic"
- * @returns {boolean}
- */
-export function shouldApplyMischief(mischiefLevel) {
-  switch (normalizeDial(mischiefLevel)) {
-    case "serious":  return false;
-    case "balanced": return Math.random() < 0.20;   // ~20% of calls get mischief framing
-    case "chaotic":  return true;
-    default:         return false;
-  }
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
 // WRY ASIDE — shown in the confirmation card when mischiefApplied is true
 // ─────────────────────────────────────────────────────────────────────────────
 

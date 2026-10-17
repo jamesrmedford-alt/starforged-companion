@@ -20,8 +20,11 @@
  *      ⚔ Swear this vow affordance.
  *
  * Each phase is fail-open: a failure in one step is logged in the summary card
- * and does not abort the remaining steps. The summary card appears after all
- * five phases complete.
+ * and does not abort the remaining steps. A phase that completed without its
+ * narrator prose (narration off, no API key, or a failed call — envision and
+ * the inciting incident both fall back to roll-only cards) is reported as
+ * degraded (⚠️) rather than as a clean success. The summary card appears after
+ * all five phases complete.
  *
  * Exposed as `game.modules.get("starforged-companion").api.runCampaignStart()`;
  * `ensureCampaignStartMacro()` creates the hotbar-ready Macro document on first
@@ -45,7 +48,7 @@ const MODULE_ID = "starforged-companion";
  * Never throws — each phase reports into the summary card.
  *
  * @param {{ skipConfirm?: boolean }} [opts]
- * @returns {Promise<{ phases: Array<{phase:string, ok:boolean, detail:string}> }|null>}
+ * @returns {Promise<{ phases: Array<{phase:string, ok:boolean, detail:string, degraded?:boolean}> }|null>}
  */
 export async function runCampaignStart(opts = {}) {
   if (!game.user?.isGM) {
@@ -63,17 +66,21 @@ export async function runCampaignStart(opts = {}) {
       `<li><strong>Begin Session</strong> — activate the session gate</li>` +
       `<li><strong>Inciting Incident</strong> — open scene, suggested vow</li></ul>` +
       `<p>Each run creates new content — start on a fresh world for a clean slate.</p>`,
-  }).catch(() => false);
+  }).catch(err => {
+    console.warn(`${MODULE_ID} | campaignStart: confirm dialog failed — not starting:`, err?.message ?? err);
+    return false;
+  });
   if (!confirmed) return null;
 
   const phases = [];
-  const report = (phase, ok, detail) => phases.push({ phase, ok, detail });
+  const report = (phase, ok, detail, degraded = false) =>
+    phases.push({ phase, ok, detail, ...(degraded ? { degraded: true } : {}) });
 
   // ── Phase 1: Quickstart ───────────────────────────────────────────────────
   try {
     const result = await runPlaytestQuickstart({ skipConfirm: true });
     if (!result) throw new Error("quickstart returned null");
-    const failures = result.phases.filter(p => !p.ok);
+    const failures = (result.phases ?? []).filter(p => !p.ok);
     report("Quickstart", failures.length === 0,
       failures.length
         ? `${failures.length} phase(s) failed — see Quickstart card for details`
@@ -101,7 +108,13 @@ export async function runCampaignStart(opts = {}) {
         `</div>`,
       flags: { [MODULE_ID]: { shipEnvisionCard: true, actorId: actor.id, facet: "all" } },
     });
-    report("Ship envision", true, `${actor.name} — captain / crew / agenda / contact`);
+    if (result?.prose) {
+      report("Ship envision", true, `${actor.name} — captain / crew / agenda / contact`);
+    } else {
+      report("Ship envision", true,
+        `${actor.name} — oracle rolls posted, but the narrator returned no prose (narration off, no API key, or the call failed)`,
+        true);
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | campaignStart: ship envision failed:`, err);
     report("Ship envision", false, err?.message ?? "failed");
@@ -118,7 +131,8 @@ export async function runCampaignStart(opts = {}) {
     const label = actor?.name ?? connId;
     try {
       const res = await finalizeEntity("connection", connId, campaignState);
-      report(`Connection — ${label}`, res.ok, res.reason ?? "finalized");
+      if (!res) throw new Error("finalize returned no result");
+      report(`Connection — ${label}`, res.ok === true, res.reason ?? "finalized");
     } catch (err) {
       console.warn(`${MODULE_ID} | campaignStart: connection finalize failed (${label}):`, err?.message ?? err);
       report(`Connection — ${label}`, false, err?.message ?? "failed");
@@ -128,6 +142,7 @@ export async function runCampaignStart(opts = {}) {
   // ── Phase 4: Begin Session ────────────────────────────────────────────────
   campaignState = readCampaignState();
   try {
+    const wasActive = campaignState.sessionActive === true;
     beginSession(campaignState);
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
@@ -137,25 +152,34 @@ export async function runCampaignStart(opts = {}) {
         `<p>Campaign started — session active. Inciting incident follows.</p></div>`,
       flags: { [MODULE_ID]: { sessionLifecycleCard: true } },
     });
-    report("Begin Session", true, "session gate activated");
+    report("Begin Session", true, wasActive ? "session was already active" : "session gate activated");
   } catch (err) {
     console.error(`${MODULE_ID} | campaignStart: begin session failed:`, err);
     report("Begin Session", false, err?.message ?? "failed");
   }
 
   // ── Phase 5: Inciting Incident ────────────────────────────────────────────
+  // runIncitingIncident never throws: with no narrator prose it posts a
+  // spark-only (Action + Theme) card and returns text: null.
   campaignState = readCampaignState();
   try {
-    await runIncitingIncident(campaignState);
-    report("Inciting Incident", true, "opening scene posted");
+    const res = await runIncitingIncident(campaignState);
+    if (res?.text) {
+      report("Inciting Incident", true, "opening scene posted");
+    } else {
+      report("Inciting Incident", true,
+        "narrator returned no prose — posted the Action + Theme spark card only (narration off, no API key, or the call failed)",
+        true);
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | campaignStart: inciting incident failed:`, err);
     report("Inciting Incident", false, err?.message ?? "failed");
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
+  const icon = (p) => (!p.ok ? "❌" : p.degraded ? "⚠️" : "✅");
   const rows = phases
-    .map(p => `<li>${p.ok ? "✅" : "❌"} <strong>${escapeHtml(p.phase)}:</strong> ${escapeHtml(p.detail)}</li>`)
+    .map(p => `<li>${icon(p)} <strong>${escapeHtml(p.phase)}:</strong> ${escapeHtml(p.detail)}</li>`)
     .join("");
   try {
     await ChatMessage.create({
@@ -205,7 +229,10 @@ export async function ensureCampaignStartMacro() {
 
 function readCampaignState() {
   try { return game.settings.get(MODULE_ID, "campaignState") ?? {}; }
-  catch { return {}; }
+  catch (err) {
+    console.warn(`${MODULE_ID} | campaignStart: campaignState read failed — continuing with an empty state:`, err?.message ?? err);
+    return {};
+  }
 }
 
 /**
@@ -215,7 +242,13 @@ function readCampaignState() {
 function findCommandVehicle(campaignState) {
   const ids = campaignState?.shipIds ?? [];
   const actors = ids
-    .map(id => { try { return game.actors?.get?.(id) ?? null; } catch { return null; } })
+    .map(id => {
+      try { return game.actors?.get?.(id) ?? null; }
+      catch (err) {
+        console.warn(`${MODULE_ID} | campaignStart: actor lookup failed for ship ${id}:`, err?.message ?? err);
+        return null;
+      }
+    })
     .filter(a => a?.type === "starship");
 
   const cv = actors.find(a => !!a.flags?.[MODULE_ID]?.ship?.isCommandVehicle);

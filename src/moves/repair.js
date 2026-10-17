@@ -21,14 +21,25 @@
  *
  * This module is the follow-up affordance to the normal Repair move:
  * once a player has rolled Repair and seen the result, they invoke
- * `!repair` to allocate points. Integrity / battered / companion-health
- * spends actually mutate the relevant Actor / Item; the "broken module"
- * and "other device" rows record the spend on the chat card only
- * (no schema for those yet).
+ * `!repair` to allocate points. The integrity / battered spends mutate the
+ * command vehicle's canonical ship record (src/entities/ship.js —
+ * clearBattered / repairIntegrity, which mirror battered onto the native
+ * debility and clamp integrity to integrityMax); the supply trade debits
+ * the repairing player's PC. Companion health, "broken module" and "other
+ * device" rows record the spend on the chat card only (no schema yet).
+ *
+ * Multiplayer: the dialog runs on the typing player's client (`!repair` is
+ * routed to its author), but ship / other-actor writes need GM authority,
+ * so Apply relays the allocation to the canonical GM via
+ * requestGmAction("repair.apply") — applyRepairSpends is that handler, and
+ * the card it posts reports what actually landed.
  */
 
-import { getCommandVehicleActor } from "./abilityScanner.js";
-import { applyMeterChanges }       from "../character/actorBridge.js";
+import { applyMeterChanges, getActor, readCharacterSnapshot } from "../character/actorBridge.js";
+import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity } from "../entities/ship.js";
+import { requestGmAction }         from "../multiplayer/gmRelay.js";
+import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
+import { requesterOwnsActor }      from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -49,6 +60,19 @@ const SPEND_COST = {
   other_device_cx:  2,
 };
 
+// Max allocations per spend kind (the dialog's input bounds; re-enforced on
+// the GM when the relayed allocation is applied).
+const SPEND_MAX = {
+  integrity:        6,
+  clear_battered:   1,
+  companion_health: 5,
+  fix_module:       4,
+  other_device:     4,
+  other_device_cx:  4,
+};
+
+const MAX_EXTRA = 3;
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chat command dispatch
@@ -60,8 +84,28 @@ export function isRepairCommand(message) {
   return /^!repair(\s|$)/i.test(text);
 }
 
-export async function handleRepairCommand(_message) {
-  return openRepairDialog();
+export async function handleRepairCommand(message) {
+  return openRepairDialog(message);
+}
+
+/**
+ * The PC whose supply pays for Sacrifice Resources — the repairing player's
+ * own character. Runs on the authoring client, so `game.user` IS the player
+ * who typed `!repair`: honour a selected PC token (message.speaker), then the
+ * user's bound character, then a PC they own (src/multiplayer/speaker.js).
+ * Falls back to the campaign's first PC only when none of those resolve.
+ *
+ * @param {ChatMessage|Object|null} message the `!repair` message, if any
+ * @returns {string|null} Actor id
+ */
+export function resolveRepairActorId(message = null) {
+  let campaignState = null;
+  try { campaignState = game.settings.get(MODULE_ID, "campaignState") ?? null; }
+  catch (err) { console.debug?.(`${MODULE_ID} | repair: campaignState read failed:`, err?.message ?? err); }
+  return resolveSpeakerActorId(
+    { speaker: message?.speaker ?? null, author: game.user ?? null },
+    campaignState,
+  );
 }
 
 
@@ -69,7 +113,7 @@ export async function handleRepairCommand(_message) {
 // Dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function openRepairDialog() {
+export async function openRepairDialog(message = null) {
   const { DialogV2 } = foundry.applications.api;
 
   const content = `
@@ -102,12 +146,12 @@ export async function openRepairDialog() {
 
       <fieldset>
         <legend>Spends</legend>
-        ${spendRow("integrity",        "+1 integrity on the command vehicle",                       1, 6)}
-        ${spendRow("clear_battered",   "Clear battered impact on the command vehicle",              2, 1)}
-        ${spendRow("companion_health", "+1 health on a mechanical companion",                       1, 5)}
-        ${spendRow("fix_module",       "Fix one broken module (recorded only)",                     2, 4)}
-        ${spendRow("other_device",     "Repair any other device (recorded only)",                   3, 4)}
-        ${spendRow("other_device_cx",  "Repair other device with complication (recorded only)",     2, 4)}
+        ${spendRow("integrity",        "+1 integrity on the command vehicle")}
+        ${spendRow("clear_battered",   "Clear battered impact on the command vehicle")}
+        ${spendRow("companion_health", "+1 health on a mechanical companion")}
+        ${spendRow("fix_module",       "Fix one broken module (recorded only)")}
+        ${spendRow("other_device",     "Repair any other device (recorded only)")}
+        ${spendRow("other_device_cx",  "Repair other device with complication (recorded only)")}
       </fieldset>
 
       <p class="hint"><em>Points budget will be validated on Apply.</em></p>
@@ -123,27 +167,30 @@ export async function openRepairDialog() {
         const form = button.form;
         if (!form) return;
 
-        const situation = form.querySelector('select[name="situation"]')?.value;
-        const outcome   = form.querySelector('select[name="outcome"]')?.value;
-        const extra     = clamp(intVal(form, 'input[name="extra"]'), 0, 3);
-
         const spends = {};
-        let totalCost = 0;
         for (const kind of Object.keys(SPEND_COST)) {
-          const n = clamp(intVal(form, `input[name="${kind}"]`), 0, 10);
-          spends[kind] = n;
-          totalCost += n * SPEND_COST[kind];
+          spends[kind] = intVal(form, `input[name="${kind}"]`);
         }
-
-        const earned = (POINTS_TABLE[situation]?.[outcome] ?? 0) + extra;
-        if (totalCost > earned) {
-          ui.notifications?.warn(
-            `Repair: ${totalCost} points allocated but only ${earned} earned (${POINTS_TABLE[situation]?.[outcome] ?? 0} from situation + ${extra} traded). Reduce spends or earn more supply.`,
-          );
+        const alloc = normaliseAllocation({
+          situation: form.querySelector('select[name="situation"]')?.value,
+          outcome:   form.querySelector('select[name="outcome"]')?.value,
+          extra:     intVal(form, 'input[name="extra"]'),
+          spends,
+        });
+        if (!alloc.ok) {
+          ui.notifications?.warn(`Repair: ${alloc.reason}`);
           return;
         }
 
-        await applyRepairSpends({ situation, outcome, earned, extra, spends });
+        const actorId = alloc.extra > 0 ? resolveRepairActorId(message) : null;
+        await requestGmAction("repair.apply", {
+          situation: alloc.situation,
+          outcome:   alloc.outcome,
+          earned:    alloc.earned,
+          extra:     alloc.extra,
+          spends:    alloc.spends,
+          actorId,
+        });
       },
     },
   });
@@ -154,60 +201,70 @@ export async function openRepairDialog() {
 // Spend application
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function applyRepairSpends({ situation, outcome, earned, extra, spends }) {
-  const isGM = game.user?.isGM;
-  const lines = [];
+/**
+ * Validate and normalise a Repair allocation. Shared by the dialog (to warn
+ * the player before sending) and the GM-side handler (which never trusts a
+ * relayed payload): clamps every count to its bounds, re-derives the earned
+ * points from the table, and rejects an over-budget allocation.
+ *
+ * @param {{ situation, outcome, extra, spends }} raw
+ * @returns {{ ok: true, situation, outcome, extra, spends, earned, totalCost }
+ *          | { ok: false, reason: string }}
+ */
+export function normaliseAllocation({ situation, outcome, extra, spends } = {}) {
+  const base = POINTS_TABLE[situation]?.[outcome];
+  if (base === undefined) {
+    return { ok: false, reason: `unknown situation/outcome "${situation}" / "${outcome}".` };
+  }
+  const extraN = clamp(toInt(extra), 0, MAX_EXTRA);
+  const clean  = {};
+  let totalCost = 0;
+  for (const kind of Object.keys(SPEND_COST)) {
+    const n = clamp(toInt(spends?.[kind]), 0, SPEND_MAX[kind]);
+    clean[kind] = n;
+    totalCost  += n * SPEND_COST[kind];
+  }
+  const earned = base + extraN;
+  if (totalCost > earned) {
+    return {
+      ok: false,
+      reason: `${totalCost} points allocated but only ${earned} earned (${base} from situation + ${extraN} traded). Reduce spends or earn more supply.`,
+    };
+  }
+  return { ok: true, situation, outcome, extra: extraN, spends: clean, earned, totalCost };
+}
+
+/**
+ * gmRelay handler for "repair.apply" — runs on the canonical GM (locally when
+ * the GM typed `!repair`, via the socket relay otherwise). Applies every
+ * spend to its canonical store and posts the Repair card describing what
+ * actually landed — never what was merely allocated.
+ *
+ * Order matters: battered is cleared BEFORE integrity, because a battered
+ * vehicle cannot gain integrity (repairIntegrity refuses).
+ *
+ * @param {{ situation, outcome, earned, extra, spends, actorId }} payload
+ * @param {{ requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ */
+export async function applyRepairSpends(payload = {}, ctx = {}) {
+  const alloc = normaliseAllocation(payload);
+  if (!alloc.ok) {
+    console.warn(`${MODULE_ID} | repair: rejected relayed allocation — ${alloc.reason}`);
+    return;
+  }
+  const { situation, outcome, earned, extra, spends } = alloc;
+  const lines   = [];
   const actions = [];
 
-  // 1. Sacrifice Resources for extra points (always applies if extra > 0).
+  // 1. Sacrifice Resources — debit the repairing player's PC (payload.actorId,
+  //    resolved on their own client), never the GM's game.user.character.
   if (extra > 0) {
-    if (isGM) {
-      const actor = globalThis.game?.user?.character ?? null;
-      if (actor) {
-        try { await applyMeterChanges(actor, { supply: -extra }); }
-        catch (err) { console.warn(`${MODULE_ID} | repair: supply trade failed:`, err); }
-      }
-    }
-    actions.push(`Sacrificed ${extra} supply → +${extra} repair point${extra === 1 ? "" : "s"}.`);
+    actions.push(await applySupplyTrade(payload.actorId, extra, ctx));
   }
 
-  // 2. Integrity (+N) on the command vehicle. Stored on a flag, not a meter,
-  //    so we mutate the actor directly rather than going through the bridge.
-  if (spends.integrity > 0) {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    const vehicle = getCommandVehicleActor(campaignState);
-    if (vehicle && isGM) {
-      try {
-        const current = vehicle.flags?.[MODULE_ID]?.ship?.integrity ?? 0;
-        await vehicle.update({ [`flags.${MODULE_ID}.ship.integrity`]: current + spends.integrity });
-        actions.push(`+${spends.integrity} integrity on **${vehicle.name}** (now ${current + spends.integrity}).`);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | repair: integrity update failed:`, err);
-        actions.push(`<em>Integrity update failed — see console.</em>`);
-      }
-    } else if (!vehicle) {
-      actions.push(`<em>No command vehicle found — +${spends.integrity} integrity recorded only.</em>`);
-    } else {
-      actions.push(`+${spends.integrity} integrity allocated (GM-only writes; ask the GM to apply).`);
-    }
-  }
-
-  // 3. Clear battered debility on the command vehicle (one spend = one clear).
-  if (spends.clear_battered > 0) {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    const vehicle = getCommandVehicleActor(campaignState);
-    if (vehicle && isGM) {
-      try {
-        await vehicle.update({ "system.debility.battered": false });
-        actions.push(`Cleared **battered** on **${vehicle.name}**.`);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | repair: clear-battered failed:`, err);
-      }
-    } else if (!vehicle) {
-      actions.push(`<em>No command vehicle found — battered-clear recorded only.</em>`);
-    } else {
-      actions.push(`Battered-clear allocated (GM-only writes).`);
-    }
+  // 2 + 3. Command-vehicle spends — through the canonical ship record.
+  if (spends.clear_battered > 0 || spends.integrity > 0) {
+    actions.push(...await applyVehicleSpends(spends));
   }
 
   // 4. Companion +health. We don't have a picker; surface the spend
@@ -230,7 +287,7 @@ async function applyRepairSpends({ situation, outcome, earned, extra, spends }) 
   }
 
   lines.push(
-    `<strong>Repair</strong> — ${situation.replace("_", " ")} / ${outcome} hit · ${earned} points allocated`,
+    `<strong>Repair</strong> — ${situation.replace("_", " ")} / ${outcome} hit · ${alloc.totalCost} of ${earned} points allocated`,
   );
   if (actions.length === 0) {
     actions.push("No spends allocated.");
@@ -243,12 +300,111 @@ async function applyRepairSpends({ situation, outcome, earned, extra, spends }) 
   });
 }
 
+/**
+ * Debit `extra` supply from the repairing PC. Permission is the REQUESTER's
+ * (ctx), not this GM client's: a player may only spend their own PC's supply.
+ *
+ * @returns {Promise<string>} the card line describing what happened
+ */
+async function applySupplyTrade(actorId, extra, ctx) {
+  const pts   = `${extra} repair point${extra === 1 ? "" : "s"}`;
+  const actor = actorId ? getActor(actorId) : null;
+  if (!actor) {
+    console.warn(`${MODULE_ID} | repair: no character resolved to pay ${extra} supply (actorId=${actorId ?? "none"}).`);
+    return `<em>No character found to pay ${extra} supply for +${pts} — adjust supply by hand.</em>`;
+  }
+  const name = escapeHtml(actor.name);
+  if (!requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | repair: requester ${ctx?.requesterId ?? "unknown"} does not own ${actor.name}; supply not debited.`);
+    return `<em>${name}'s supply was not debited (not your character) — adjust supply by hand.</em>`;
+  }
+  try {
+    const before = readCharacterSnapshot(actor)?.meters?.supply ?? 0;
+    await applyMeterChanges(actor, { supply: -extra });
+    const after  = readCharacterSnapshot(actor)?.meters?.supply ?? before;
+    const paid   = Math.max(0, before - after);
+    if (paid < extra) {
+      return `<strong>${name}</strong> had only ${before} supply — sacrificed ${paid} (supply now ${after}); ` +
+        `${extra - paid} of the +${pts} were not covered.`;
+    }
+    return `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.`;
+  } catch (err) {
+    console.error(`${MODULE_ID} | repair: supply trade failed:`, err);
+    return `<em>Supply trade failed for ${name} — see console; adjust supply by hand.</em>`;
+  }
+}
+
+/**
+ * Apply the clear-battered and integrity spends to the command vehicle's
+ * canonical ship record (flags.<module>.ship, mirrored onto
+ * system.debility.battered by updateShip). Clear-battered first: a battered
+ * vehicle cannot gain integrity.
+ *
+ * @returns {Promise<string[]>} card lines
+ */
+async function applyVehicleSpends(spends) {
+  const out = [];
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const vehicleId     = getCommandVehicleActorId(campaignState);
+  const ship          = vehicleId ? getShip(vehicleId) : null;
+  if (!ship) {
+    console.warn(`${MODULE_ID} | repair: no command vehicle record found — vehicle spends recorded only.`);
+    if (spends.clear_battered > 0) out.push(`<em>No command vehicle found — battered-clear not applied.</em>`);
+    if (spends.integrity > 0)      out.push(`<em>No command vehicle found — +${spends.integrity} integrity not applied.</em>`);
+    return out;
+  }
+  const name = `<strong>${escapeHtml(ship.name ?? "the command vehicle")}</strong>`;
+  let battered = !!ship.battered;
+
+  if (spends.clear_battered > 0) {
+    if (!battered) {
+      out.push(`${name} was not battered — nothing to clear.`);
+    } else {
+      try {
+        await clearBattered(vehicleId);
+        battered = false;
+        out.push(`Cleared <strong>battered</strong> on ${name}.`);
+      } catch (err) {
+        console.error(`${MODULE_ID} | repair: clear-battered failed:`, err);
+        out.push(`<em>Clearing battered on ${name} failed — see console.</em>`);
+      }
+    }
+  }
+
+  if (spends.integrity > 0) {
+    if (battered) {
+      // Rules: integrity can't be raised while battered. Skip the call so the
+      // card states the reason rather than repairIntegrity warning silently.
+      out.push(`${name} is battered — integrity not raised (clear battered first).`);
+    } else {
+      try {
+        const before  = Number(getShip(vehicleId)?.integrity ?? 0);
+        const updated = await repairIntegrity(vehicleId, spends.integrity);
+        const after   = Number(updated?.integrity ?? before);
+        const max     = Number(updated?.integrityMax ?? ship.integrityMax ?? 5);
+        const gained  = after - before;
+        if (gained < spends.integrity) {
+          out.push(`+${gained} integrity on ${name} — integrity capped at ${max} (now ${after}).`);
+        } else {
+          out.push(`+${gained} integrity on ${name} (now ${after}/${max}).`);
+        }
+      } catch (err) {
+        console.error(`${MODULE_ID} | repair: integrity update failed:`, err);
+        out.push(`<em>Integrity update on ${name} failed — see console.</em>`);
+      }
+    }
+  }
+  return out;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Templating helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function spendRow(name, label, cost, max) {
+function spendRow(name, label) {
+  const cost = SPEND_COST[name];
+  const max  = SPEND_MAX[name];
   return `
     <label class="row">
       <span>${escapeHtml(label)} <em>(${cost} pt)</em></span>
@@ -258,7 +414,10 @@ function spendRow(name, label, cost, max) {
 }
 
 function intVal(form, sel) {
-  const v = form.querySelector(sel)?.value;
+  return toInt(form.querySelector(sel)?.value);
+}
+
+function toInt(v) {
   const n = parseInt(v, 10);
   return Number.isNaN(n) ? 0 : n;
 }
@@ -274,4 +433,4 @@ function escapeHtml(s) {
 }
 
 // Exported for unit testing.
-export const _internal = { POINTS_TABLE, SPEND_COST };
+export const _internal = { POINTS_TABLE, SPEND_COST, SPEND_MAX };

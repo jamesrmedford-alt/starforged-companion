@@ -308,14 +308,6 @@ export async function updateFaction(journalEntryId, updates) {
   return updated;
 }
 
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updateFaction(journalEntryId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(faction) {
-  return faction.active && !!faction.portraitSourceDescription && !faction.portraitId;
-}
-
 /**
  * Render the Faction's descriptive fields into HTML for the page body so the
  * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives

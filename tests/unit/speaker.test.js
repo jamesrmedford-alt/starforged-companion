@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resolveSpeakerActorId } from '../../src/multiplayer/speaker.js';
+import { resolveSpeakerActorId, isAuthoringClient, messageAuthorId } from '../../src/multiplayer/speaker.js';
 
 beforeEach(() => {
   global.game.actors?._reset?.();
@@ -130,5 +130,49 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
   it('still reaches the campaignState fallback when speaker and author both resolve nothing', () => {
     const msg = { speaker: { actor: null, alias: 'Gamemaster' }, author: { id: 'u1' } };
     expect(resolveSpeakerActorId(msg, { characterIds: ['actor-fallback'] })).toBe('actor-fallback');
+  });
+});
+
+
+describe('messageAuthorId', () => {
+  it.each([
+    [{ author: { id: 'u1' } },          'u1'],
+    [{ author: 'u2' },                  'u2'],
+    [{ user: { id: 'u3' } },            'u3'],
+    [{ user: 'u4' },                    'u4'],
+    [{ _source: { author: 'u5' } },     'u5'],
+  ])('reads %j', (message, expected) => {
+    expect(messageAuthorId(message)).toBe(expected);
+  });
+
+  it('ignores an author object without a string id', () => {
+    expect(messageAuthorId({ author: { name: 'Nobody' } })).toBeNull();
+    expect(messageAuthorId({ author: { id: 7 } })).toBeNull();
+  });
+
+  it('returns null for author-less / null messages', () => {
+    expect(messageAuthorId({ content: '!x' })).toBeNull();
+    expect(messageAuthorId(null)).toBeNull();
+  });
+});
+
+describe('isAuthoringClient', () => {
+  it('is true on the client whose user wrote the message', () => {
+    const restore = withUser({ id: 'u1' });
+    try {
+      expect(isAuthoringClient({ author: { id: 'u1' } })).toBe(true);
+    } finally { restore(); }
+  });
+
+  it('is false on every other client', () => {
+    const restore = withUser({ id: 'u2' });
+    try {
+      expect(isAuthoringClient({ author: { id: 'u1' } })).toBe(false);
+      expect(isAuthoringClient({ user: 'u1' })).toBe(false);
+    } finally { restore(); }
+  });
+
+  it('treats an author-less (programmatic / legacy) message as authored here', () => {
+    expect(isAuthoringClient({ content: '!x' })).toBe(true);
   });
 });

@@ -51,27 +51,6 @@ export async function getChronicleEntries(actorId) {
 }
 
 /**
- * Get a condensed summary + recent entries for context injection.
- * Returns: { summary: string, recent: Object[] }
- *
- * Summary: the first N entries condensed to one paragraph (static, from old entries).
- * Recent: last N entries (configurable via chronicleContextCount setting), pinned first.
- *
- * @param {string} actorId
- * @returns {Promise<{ summary: string, recent: Object[] }>}
- */
-export async function getChronicleForContext(actorId) {
-  const entries = await getChronicleEntries(actorId);
-  if (!entries.length) return { summary: '', recent: [] };
-
-  const contextCount = getContextCount();
-  const summary = buildSummary(entries);
-  const recent  = selectRecentEntries(entries, contextCount);
-
-  return { summary, recent };
-}
-
-/**
  * Update the text of an existing chronicle entry (player annotation / correction).
  * @param {string} actorId
  * @param {string} entryId
@@ -163,43 +142,10 @@ function getCurrentEntries(page) {
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Context helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function buildSummary(entries) {
-  const firstThree = entries.slice(0, 3);
-  if (!firstThree.length) return '';
-
-  // Condense first 3 entries to a plain-text paragraph.
-  // In production, a cached Claude-generated summary replaces this. The generated
-  // summary is stored alongside the entries and returned here when available.
-  const cached = entries[0]?._cachedSummary;
-  if (cached) return cached;
-
-  return firstThree.map(e => e.text).join(' ').trim();
-}
-
-function selectRecentEntries(entries, count) {
-  const pinned   = entries.filter(e => e.pinned);
-  const unpinned = entries.filter(e => !e.pinned);
-  const recent   = unpinned.slice(-count).reverse();
-
-  // Prepend any pinned entries not already in recent
-  const recentIds   = new Set(recent.map(e => e.id));
-  const extraPinned = pinned.filter(e => !recentIds.has(e.id));
-
-  return [...extraPinned, ...recent];
-}
-
-function getContextCount() {
-  try {
-    return game.settings?.get(MODULE_ID, 'chronicleContextCount') ?? 5;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | chronicle: chronicleContextCount settings read failed; defaulting to 5:`, err);
-    return 5;
-  }
-}
+// The narrator reads entries directly (getChronicleEntries — narrator.js
+// selects its own recent window); the retired context assembler's
+// getChronicleForContext summary/recent helper was removed in the 2026-10
+// dead-export audit along with the chronicleContextCount setting it read.
 
 
 // ─────────────────────────────────────────────────────────────────────────────

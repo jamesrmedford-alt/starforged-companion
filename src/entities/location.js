@@ -172,14 +172,6 @@ export async function updateLocation(actorId, updates) {
   return updated;
 }
 
-export async function setPortraitId(actorId, artAssetId) {
-  return updateLocation(actorId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(location) {
-  return location.active && !!location.portraitSourceDescription && !location.portraitId;
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

@@ -203,9 +203,29 @@ describe("CampaignStateSchema entity-discovery additions", () => {
     expect(CampaignStateSchema.dismissedEntities).toEqual([]);
   });
 
-  it("has pendingClarification defaulting to null", () => {
-    expect(CampaignStateSchema).toHaveProperty("pendingClarification");
-    expect(CampaignStateSchema.pendingClarification).toBeNull();
+  it("has questFocus / connectionFocus defaulting to '' (End a Session spotlights)", () => {
+    expect(CampaignStateSchema.questFocus).toBe("");
+    expect(CampaignStateSchema.connectionFocus).toBe("");
+  });
+
+  it("no longer carries the dead fields removed in the 2026-10 audit", () => {
+    // No live writer or reader: re-adding one without wiring it is a
+    // produced-but-dead regression (rules/reachability.md).
+    for (const field of ["progressTrackIds", "loreRecapSessionId", "pendingClarification"]) {
+      expect(CampaignStateSchema, field).not.toHaveProperty(field);
+    }
+  });
+});
+
+describe("schemas.js dead exports stay deleted", () => {
+  it("does not re-export the consumer-less schema templates / enums", async () => {
+    const schemas = await import("../../src/schemas.js");
+    for (const name of [
+      "CharacterSchema", "SessionSchema", "MoveResolutionSchema", "ArtAssetSchema",
+      "MISCHIEF_LEVELS", "RELATIONSHIP_TYPES", "ART_BACKENDS", "IMPACTS", "TRACK_TYPES",
+    ]) {
+      expect(schemas, name).not.toHaveProperty(name);
+    }
   });
 });
 

@@ -9,9 +9,9 @@
 import {
   addChronicleEntry,
   getChronicleEntries,
-  getChronicleForContext,
   updateChronicleEntry,
 } from '../../src/character/chronicle.js';
+import * as chronicle from '../../src/character/chronicle.js';
 
 const MODULE_ID     = 'starforged-companion';
 const CHRONICLE_KEY = 'chronicle';
@@ -198,81 +198,6 @@ describe('getChronicleEntries', () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// getChronicleForContext
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('getChronicleForContext', () => {
-  it('returns summary and recent entries', async () => {
-    setupActor();
-    const entries = [
-      { id: 'e1', type: 'revelation', text: 'Entry one.',   timestamp: '2024-01-01T00:00:00Z', pinned: false },
-      { id: 'e2', type: 'scar',       text: 'Entry two.',   timestamp: '2024-01-02T00:00:00Z', pinned: false },
-      { id: 'e3', type: 'annotation', text: 'Entry three.', timestamp: '2024-01-03T00:00:00Z', pinned: false },
-      { id: 'e4', type: 'vow',        text: 'Entry four.',  timestamp: '2024-01-04T00:00:00Z', pinned: false },
-    ];
-    setupExistingJournal(ACTOR_NAME, entries);
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-
-    expect(typeof ctx.summary).toBe('string');
-    expect(ctx.summary.length).toBeGreaterThan(0);
-    expect(Array.isArray(ctx.recent)).toBe(true);
-  });
-
-  it('recent entries are last N (N from chronicleContextCount setting)', async () => {
-    setupActor();
-    // Set contextCount to 2 via settings
-    game.settings._store.set(`${MODULE_ID}.chronicleContextCount`, 2);
-
-    const entries = [];
-    for (let i = 1; i <= 6; i++) {
-      entries.push({ id: `e${i}`, type: 'annotation', text: `Entry ${i}.`, timestamp: `2024-01-0${i}T00:00:00Z`, pinned: false });
-    }
-    setupExistingJournal(ACTOR_NAME, entries);
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-    // Should include last 2 (most recent first)
-    expect(ctx.recent).toHaveLength(2);
-    expect(ctx.recent[0].id).toBe('e6');
-    expect(ctx.recent[1].id).toBe('e5');
-
-    game.settings._store.delete(`${MODULE_ID}.chronicleContextCount`);
-  });
-
-  it('returns empty summary for new characters with no entries', async () => {
-    setupActor();
-    setupExistingJournal(ACTOR_NAME, []);
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-    expect(ctx.summary).toBe('');
-    expect(ctx.recent).toEqual([]);
-  });
-
-  it('pinned entries always appear in recent', async () => {
-    setupActor();
-    game.settings._store.set(`${MODULE_ID}.chronicleContextCount`, 2);
-
-    const entries = [];
-    for (let i = 1; i <= 4; i++) {
-      entries.push({
-        id: `e${i}`, type: 'annotation', text: `Entry ${i}.`,
-        timestamp: `2024-01-0${i}T00:00:00Z`,
-        pinned: i === 1, // first entry is pinned
-      });
-    }
-    setupExistingJournal(ACTOR_NAME, entries);
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-    const ids = ctx.recent.map(e => e.id);
-    expect(ids).toContain('e1'); // pinned, must be present
-    expect(ids).toContain('e4'); // most recent unpinned
-
-    game.settings._store.delete(`${MODULE_ID}.chronicleContextCount`);
-  });
-});
-
-
-// ─────────────────────────────────────────────────────────────────────────────
 // updateChronicleEntry
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -338,7 +263,6 @@ describe('updateChronicleEntry', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Error-path coverage for catch blocks in
 //   getOrCreateChronicleJournal (console.error)
-//   getContextCount             (console.warn)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('error path coverage', () => {
@@ -353,36 +277,10 @@ describe('error path coverage', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('getChronicleForContext defaults to 5 recent entries when settings.get throws', async () => {
-    setupActor();
-    const entries = [];
-    for (let i = 1; i <= 8; i++) {
-      entries.push({
-        id: `e${i}`, type: 'annotation', text: `Entry ${i}.`,
-        timestamp: `2024-01-0${i}T00:00:00Z`, pinned: false,
-      });
-    }
-    setupExistingJournal(ACTOR_NAME, entries);
-
-    const originalGet = game.settings.get;
-    game.settings.get = () => { throw new Error('settings unavailable'); };
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-    expect(ctx.recent).toHaveLength(5);
-
-    game.settings.get = originalGet;
-  });
-
-  it('uses cached summary when present on the first entry', async () => {
-    setupActor();
-    const entries = [
-      { id: 'e1', type: 'annotation', text: 'first',  timestamp: '2024-01-01T00:00:00Z', pinned: false, _cachedSummary: 'Pre-built summary text.' },
-      { id: 'e2', type: 'annotation', text: 'second', timestamp: '2024-01-02T00:00:00Z', pinned: false },
-    ];
-    setupExistingJournal(ACTOR_NAME, entries);
-
-    const ctx = await getChronicleForContext(ACTOR_ID);
-    expect(ctx.summary).toBe('Pre-built summary text.');
+  it('no longer exports the retired-assembler helper getChronicleForContext', () => {
+    // Its only consumer (the context assembler) was retired; the narrator
+    // reads getChronicleEntries directly. Re-adding it unwired is dead code.
+    expect(chronicle).not.toHaveProperty('getChronicleForContext');
   });
 
   it('builds entry with default fields when omitted (?? branches)', async () => {

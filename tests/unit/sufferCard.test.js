@@ -86,10 +86,36 @@ describe("renderSufferCard", () => {
 describe("summarizeSufferCalls", () => {
   it("summarises meter and suffer calls", () => {
     expect(summarizeSufferCalls([{ kind: "meter", meterKey: "momentum", delta: 2 }]))
-      .toBe("momentum +2");
+      .toBe("Momentum +2");
     expect(summarizeSufferCalls([{ kind: "suffer", sufferId: "lose_momentum", amount: 1 }]))
       .toBe("Lose Momentum (-1)");
     expect(summarizeSufferCalls([])).toBe("no change");
+  });
+
+  it("labels meters and impacts through the system localisation (i18n)", () => {
+    const saved = game.i18n;
+    game.i18n = {
+      localize: (key) => ({
+        "IRONSWORN.Health":   "Santé",
+        "IRONSWORN.Doomed":   "Condamné",
+        "IRONSWORN.Wounded":  "Blessé",
+      })[key] ?? key,
+    };
+    try {
+      expect(summarizeSufferCalls([
+        { kind: "meter", meterKey: "health", delta: -1 },
+        { kind: "mark", debility: "doomed" },
+        { kind: "clear-impact", debility: "wounded" },
+      ])).toBe("Santé -1, marked Condamné, cleared Blessé");
+    } finally {
+      game.i18n = saved;
+    }
+  });
+
+  it("keeps a non-meter numeric option key verbatim (no unknown-slug lookup)", () => {
+    expect(summarizeSufferCalls([{ kind: "meter", meterKey: "integrity", delta: 1 }]))
+      .toBe("integrity +1");
+    expect(getCapturedWarns()).toEqual([]);
   });
 });
 

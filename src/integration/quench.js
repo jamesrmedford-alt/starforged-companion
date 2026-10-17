@@ -653,6 +653,30 @@ function registerSafetyTests(quench) {
           const state = game.settings.get("starforged-companion", "campaignState");
           assert.isFalse(state.xCardActive, "xCardActive should be false after clearXCard");
         });
+
+        it("playXCard records the pause via the GM relay and posts a card with a resume button", async function () {
+          this.timeout(10000);
+          if (!game.user.isGM) { this.skip(); return; }
+          const safety = await import(`${MODULE_PATH}/context/safety.js`);
+          const { recorded } = await safety.playXCard();
+          assert.isTrue(recorded, "the canonical GM records the pause locally");
+          assert.isTrue(game.settings.get("starforged-companion", "campaignState").xCardActive,
+            "xCardActive should be true after playXCard");
+          const card = (game.messages?.contents ?? []).filter(m => m.flags?.["starforged-companion"]?.xcardCard).at(-1);
+          assert.isOk(card, "an X-Card card should be posted");
+          assert.include(card.content, safety.XCARD_RESUME_ACTION, "the card carries the GM resume button");
+
+          const ok = await safety.resumeNarrationAfterXCard();
+          assert.isTrue(ok, "a GM can resume narration");
+          assert.isFalse(game.settings.get("starforged-companion", "campaignState").xCardActive,
+            "resuming clears xCardActive");
+          assert.isTrue(!!game.messages?.get(card.id)?.flags?.["starforged-companion"]?.xcardResolved,
+            "the X-Card card is marked resolved");
+          const cleared = (game.messages?.contents ?? []).filter(m => m.flags?.["starforged-companion"]?.xcardClearedCard).at(-1);
+          assert.isOk(cleared, "an X-Card cleared card should be posted");
+          await card.delete().catch(() => {});
+          await cleared?.delete().catch(() => {});
+        });
       });
 
       describe("formatSafetyContext", function () {
@@ -1552,7 +1576,7 @@ function registerEntityWorldJournalTests(quench) {
         });
       });
 
-      describe("Clarification card — pendingClarification state", function () {
+      describe("Clarification card", function () {
         it("ClarificationDialog.prompt resolves with the player's selection", async function () {
           this.timeout(20000);
           if (!game.user.isGM) { this.skip(); return; }
@@ -2522,24 +2546,6 @@ function registerWorldJournalTests(quench) {
             "the lore entry's text should not have been mutated");
         });
 
-        it("annotateEntry surfaces in the entry's annotations array", async function () {
-          this.timeout(20000);
-          const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
-          const state = game.settings.get(MODULE, "campaignState");
-          const title = `QUENCH TEST — Annotatable lore ${Date.now()}`;
-
-          const loreResult = await wj.recordLoreDiscovery(title, { confirmed: true, text: "x" }, state);
-          if (loreResult?.pageId) createdPageIds.push({ journalId: loreResult.journalId, pageId: loreResult.pageId });
-          await wj.annotateEntry("lore", title, "GM note", "Quench Reviewer", state);
-
-          const journal = game.journal?.getName?.(wj.JOURNAL_NAMES.lore);
-          const pg      = journal?.pages?.contents?.find(p => p.name === title);
-          const entry   = pg?.flags?.[MODULE]?.[wj.FLAG_KEYS.lore];
-          const ann     = entry?.annotations ?? [];
-          assert.isAtLeast(ann.length, 1);
-          assert.equal(ann.at(-1).author, "Quench Reviewer");
-        });
-
         it("writeSessionLog produces a session-log page", async function () {
           this.timeout(20000);
           const wj = await import(`${MODULE_PATH}/world/worldJournal.js`);
@@ -3008,14 +3014,16 @@ function registerMovePipelineExtendedTests(quench) {
             `/modules/${MODULE_ID}/src/moves/persistResolution.js`);
           const state = game.settings.get(MODULE_ID, "campaignState");
           const beforeMomentum = actor.system.momentum.value;
-          await withTempSetting("campaignState", { ...state, activeCharacterId: actor.id }, async () => {
+          await withTempSetting("campaignState", { ...state }, async () => {
             const freshState = game.settings.get(MODULE_ID, "campaignState");
+            // The rolling actor is the speaker (third argument) — persistResolution
+            // credits the roller, falling back to the first PC only when none.
             await persistResolution({
               _id: "quench-persist-1",
               moveId: "face_danger", moveName: "Face Danger", statUsed: "wits",
               outcome: "miss",
               consequences: { momentumChange: -1 },
-            }, freshState);
+            }, freshState, actor.id);
           });
           assert.equal(actor.system.momentum.value, beforeMomentum - 1,
             "momentum should decrement after persistResolution");
@@ -3069,18 +3077,6 @@ function registerMischiefTests(quench) {
           const out = m.buildMischiefFraming("chaotic", "I scan the horizon for threats");
           assert.isString(out);
           assert.isAbove(out.length, 0, "chaotic should produce framing text");
-        });
-      });
-
-      describe("shouldApplyMischief — gating per dial level", function () {
-        it("never gates serious / lawful", async function () {
-          const m = await import(`/modules/${MODULE_ID}/src/moves/mischief.js`);
-          assert.isFalse(m.shouldApplyMischief("lawful"));
-          assert.isFalse(m.shouldApplyMischief("serious"));
-        });
-        it("always gates chaotic", async function () {
-          const m = await import(`/modules/${MODULE_ID}/src/moves/mischief.js`);
-          assert.isTrue(m.shouldApplyMischief("chaotic"));
         });
       });
 
@@ -3566,42 +3562,23 @@ function registerPortraitGenerationTests(quench) {
         return a?.getFlag?.(MODULE, "connection") ?? a?.flags?.[MODULE]?.connection ?? null;
       }
 
-      describe("Gating — placeholder, ready, locked states", function () {
-        it("isReadyForArtGeneration is false until a source description is set", async function () {
+      describe("Gating — source description", function () {
+        // The "can generate" gate lives in the entity panel
+        // (!!entity.data.portraitSourceDescription); the entity-module
+        // readiness helpers had no production caller and were removed (2026-10).
+        it("portraitSourceDescription persists on the connection record", async function () {
           if (!testJournalId) { this.skip(); return; }
-          const { isReadyForArtGeneration } = await import(
+          const { updateConnection } = await import(
             `/modules/${MODULE}/src/entities/connection.js`);
 
           const initial = readConnectionData();
           assert.isOk(initial, "connection data should be readable");
-          // Schema default leaves active=true; missing description must block readiness.
-          assert.isFalse(isReadyForArtGeneration({ ...initial, active: true }),
-            "no source description → not ready");
-        });
+          assert.isNotOk(initial.portraitSourceDescription, "beforeEach clears the description");
 
-        it("setPortraitSourceDescription flips isReadyForArtGeneration to true", async function () {
-          if (!testJournalId) { this.skip(); return; }
-          const { setPortraitSourceDescription, isReadyForArtGeneration } = await import(
-            `/modules/${MODULE}/src/entities/connection.js`);
-
-          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+          await updateConnection(testJournalId, { portraitSourceDescription: "wiry quartermaster in oiled leathers" });
           const data = readConnectionData();
           assert.equal(data.portraitSourceDescription, "wiry quartermaster in oiled leathers",
-            "source description should be persisted on the page flag");
-          assert.isTrue(isReadyForArtGeneration({ ...data, active: true }),
-            "with description and no portraitId → ready");
-        });
-
-        it("portraitId set + no asset record → not ready (already generated)", async function () {
-          if (!testJournalId) { this.skip(); return; }
-          const { setPortraitSourceDescription, setPortraitId, isReadyForArtGeneration } = await import(
-            `/modules/${MODULE}/src/entities/connection.js`);
-
-          await setPortraitSourceDescription(testJournalId, "wiry quartermaster");
-          await setPortraitId(testJournalId, "fake-asset-id");
-          const data = readConnectionData();
-          assert.isFalse(isReadyForArtGeneration({ ...data, active: true }),
-            "with portraitId already set → no longer ready for first generation");
+            "source description should be persisted on the record");
         });
       });
 
@@ -3610,12 +3587,12 @@ function registerPortraitGenerationTests(quench) {
           this.timeout(30000);
           if (!testJournalId) { this.skip(); return; }
 
-          const { setPortraitSourceDescription } = await import(
+          const { updateConnection } = await import(
             `/modules/${MODULE}/src/entities/connection.js`);
           const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
           const { loadArtAsset, getDataUri } = await import(`${MODULE_PATH}/art/storage.js`);
 
-          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+          await updateConnection(testJournalId, { portraitSourceDescription: "wiry quartermaster in oiled leathers" });
           const data = readConnectionData();
 
           let asset = null;
@@ -3656,13 +3633,13 @@ function registerPortraitGenerationTests(quench) {
           this.timeout(30000);
           if (!testJournalId) { this.skip(); return; }
 
-          const { setPortraitSourceDescription } = await import(
+          const { updateConnection } = await import(
             `/modules/${MODULE}/src/entities/connection.js`);
           const { generatePortrait, regeneratePortrait } = await import(
             `${MODULE_PATH}/art/generator.js`);
           const { loadArtAsset } = await import(`${MODULE_PATH}/art/storage.js`);
 
-          await setPortraitSourceDescription(testJournalId, "wiry quartermaster in oiled leathers");
+          await updateConnection(testJournalId, { portraitSourceDescription: "wiry quartermaster in oiled leathers" });
 
           // First generation
           let firstAsset = null;
@@ -3743,13 +3720,14 @@ function registerPortraitGenerationTests(quench) {
           if (!testJournalId) { this.skip(); return; }
           if (skipNoKey(this, "openRouterApiKey")) return;
 
-          const { setPortraitSourceDescription } = await import(
+          const { updateConnection } = await import(
             `/modules/${MODULE}/src/entities/connection.js`);
           const { generatePortrait } = await import(`${MODULE_PATH}/art/generator.js`);
           const { loadArtAsset, getDataUri } = await import(`${MODULE_PATH}/art/storage.js`);
 
-          await setPortraitSourceDescription(testJournalId,
-            "a wiry quartermaster in oiled leathers, lit by station floodlights");
+          await updateConnection(testJournalId, {
+            portraitSourceDescription: "a wiry quartermaster in oiled leathers, lit by station floodlights",
+          });
 
           let asset = null;
           await withSilencedNotifications(async () => {
@@ -3869,14 +3847,13 @@ function registerChronicleTests(quench) {
         });
       });
 
-      describe("getChronicleForContext — output shape", function () {
-        it("returns an object with summary/recent fields", async function () {
+      describe("getChronicleEntries — output shape", function () {
+        it("returns an array of entries for the actor", async function () {
           if (!actor) { this.skip(); return; }
-          const { getChronicleForContext } = await import(
+          const { getChronicleEntries } = await import(
             `/modules/${MODULE_ID}/src/character/chronicle.js`);
-          const out = await getChronicleForContext(actor.id);
-          assert.isObject(out);
-          assert.property(out, "recent");
+          const out = await getChronicleEntries(actor.id);
+          assert.isArray(out);
         });
       });
     },
@@ -10127,8 +10104,7 @@ function registerMoveOutcomeMatrixTests(quench) {
           const c = mapConsequences("face_danger", "strong_hit", false);
           for (const key of [
             "momentumChange", "healthChange", "spiritChange", "supplyChange",
-            "progressMarked", "sufferMoveTriggered", "progressTrackId",
-            "combatPosition", "otherEffect",
+            "sufferMoveTriggered", "combatPosition", "otherEffect",
           ]) {
             assert.property(c, key,
               `consequences must include ${key} field for downstream persistResolution`);
@@ -10372,6 +10348,22 @@ function registerFateMovesTests(quench) {
           await card.delete().catch(() => {});
         });
 
+        it("!oracle <tableId> rolls a registered table and tags the card", async function () {
+          this.timeout(8000);
+          const before = game.messages?.contents?.length ?? 0;
+          await ChatMessage.create({
+            content: "!oracle action what does the stranger want",
+          });
+          const card = await waitForCardWithFlag("oracleCommandCard", before);
+          assert.isOk(card, "expected an oracleCommandCard chat response");
+          assert.equal(card.flags?.[MODULE_ID]?.oracleTableId, "action",
+            "card should name the rolled table");
+          assert.match(card.content, /d100 = /, "built-in tables roll d100");
+          assert.isOk(card.flags?.[MODULE_ID]?.oracleMemory,
+            "table rolls carry the oracleMemory flag like the yes/no card");
+          await card.delete().catch(() => {});
+        });
+
         it("usage card on bare !oracle (no subcommand)", async function () {
           this.timeout(8000);
           const before = game.messages?.contents?.length ?? 0;
@@ -10411,6 +10403,33 @@ function registerFateMovesTests(quench) {
           assert.match(last.answer ?? "", /(YES|NO)/,
             "captured entry should carry the answer");
           await card.delete().catch(() => {});
+        });
+      });
+
+      describe("custom oracle tables roll their own die", function () {
+        it("a 1–6 custom table rolls d6 and always resolves an entry", async function () {
+          const { registerOracleTable, unregisterOracleTable, rollOracle } =
+            await import(`${MODULE_PATH}/oracles/roller.js`);
+          const id = `quench_d6_${Date.now()}`;
+          registerOracleTable(id, {
+            name:  "Quench d6",
+            table: [
+              { min: 1, max: 2, result: "low" },
+              { min: 3, max: 4, result: "mid" },
+              { min: 5, max: 6, result: "high" },
+            ],
+          });
+          try {
+            for (let i = 0; i < 30; i++) {
+              const out = rollOracle(id);
+              assert.equal(out.die, 6, "custom table should report its own die");
+              assert.isAtLeast(out.roll, 1);
+              assert.isAtMost(out.roll, 6);
+              assert.include(["low", "mid", "high"], out.result, "every roll lands on an entry");
+            }
+          } finally {
+            unregisterOracleTable(id);
+          }
         });
       });
 

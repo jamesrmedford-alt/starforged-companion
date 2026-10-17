@@ -148,10 +148,10 @@ export async function runPlaytestQuickstart(opts = {}) {
     report("Sector", false, err?.message ?? "failed");
   }
 
-  // 3 — Player characters (two PCs; first is registered as the active character)
-  for (const [label, setActive] of [["Character 1", true], ["Character 2", false]]) {
+  // 3 — Player characters (two PCs)
+  for (const label of ["Character 1", "Character 2"]) {
     try {
-      const pc = await createQuickstartPc({ setActive });
+      const pc = await createQuickstartPc();
       const paths = (pc.items?.contents ?? [])
         .filter(i => i.type === "asset")
         .map(i => i.name)
@@ -198,9 +198,9 @@ export async function runPlaytestQuickstart(opts = {}) {
 
 /**
  * Create the PC: character Actor in PCs/, 3/2/2/1/1 stats, two random
- * Path assets from the canonical pack, registered as the active character.
+ * Path assets from the canonical pack.
  */
-async function createQuickstartPc({ setActive = false } = {}) {
+async function createQuickstartPc() {
   const folder = await getOrCreateActorFolder("PCs").catch(() => null);
   // Pin the Starforged sheet — the system defaults `character` actors to the
   // classic Ironsworn sheet, and quickstart bypasses the create-dialog that
@@ -254,10 +254,6 @@ async function createQuickstartPc({ setActive = false } = {}) {
     console.warn(`${MODULE_ID} | quickstart: connection backfill failed:`, err?.message ?? err);
   }
 
-  if (setActive) {
-    await game.settings.set(MODULE_ID, "activeCharacterId", actor.id).catch(err =>
-      console.warn(`${MODULE_ID} | quickstart: activeCharacterId set failed:`, err));
-  }
   return actor;
 }
 

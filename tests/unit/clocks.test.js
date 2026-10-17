@@ -3,13 +3,23 @@
  * tests/unit/clocks.test.js
  *
  * Unit coverage for the programmatic clock-advance hook used by the move
- * pipeline on a Pay the Price (playtest finding #10). The chat-command surface
- * (!clock new/advance/…) is exercised via the integration suite; this file
- * pins the pure-ish campaignState mutation.
+ * pipeline on a Pay the Price (playtest finding #10), plus the `!clock advance`
+ * / `!clock fill` verbs' trigger handling (no re-trigger or second paid
+ * vignette on an already-full clock). The rest of the chat-command surface
+ * (!clock new/list/…) is exercised via the integration suite.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { advanceTensionClocksForPayThePrice, revertTensionClocksForBurn } from '../../src/clocks/clocks.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// fireClockVignette dynamically imports the narrator; stub the paid call.
+vi.mock('../../src/narration/narrator.js', () => ({
+  narrateClockAdvancement: vi.fn(async () => 'The net tightens.'),
+}));
+
+import { narrateClockAdvancement } from '../../src/narration/narrator.js';
+import {
+  advanceTensionClocksForPayThePrice, revertTensionClocksForBurn, handleClockCommand,
+} from '../../src/clocks/clocks.js';
 
 const KEY = 'starforged-companion.campaignState';
 
@@ -103,5 +113,120 @@ describe('revertTensionClocksForBurn', () => {
     setClocks([{ _id: 't1', name: 'X', type: 'tension', segments: 4, filled: 3, active: true }]);
     await revertTensionClocksForBurn([]);
     expect(storedClocks()[0].filled).toBe(3); // unchanged
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// !clock advance / fill — no re-trigger on a full clock (D2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('!clock advance / fill', () => {
+  const cmd = (content) => ({ content, flags: {} });
+  const flush = () => new Promise(r => setTimeout(r, 0)).then(() => new Promise(r => setTimeout(r, 0)));
+  const cards = () => ChatMessage._created.filter(m => !m.flags?.['starforged-companion']?.clockVignetteCard);
+  const vignettes = () => ChatMessage._created.filter(m => m.flags?.['starforged-companion']?.clockVignetteCard);
+
+  beforeEach(() => {
+    game.settings._store.clear();
+    ChatMessage._reset();
+    narrateClockAdvancement.mockClear();
+  });
+
+  it('advance on a tension clock fills a segment and fires one vignette', async () => {
+    setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 1, active: true }]);
+    await handleClockCommand(cmd('!clock advance Breach'));
+    await flush();
+    expect(storedClocks()[0].filled).toBe(2);
+    expect(cards()[0].content).toContain('Clock advanced');
+    expect(narrateClockAdvancement).toHaveBeenCalledTimes(1);
+    expect(narrateClockAdvancement.mock.calls[0][0].clock).toMatchObject({ filled: 2, triggered: false });
+    expect(vignettes()).toHaveLength(1);
+  });
+
+  it('advance onto the last segment announces TRIGGERED once with a trigger vignette', async () => {
+    setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 3, active: true }]);
+    await handleClockCommand(cmd('!clock advance Breach'));
+    await flush();
+    expect(cards()[0].content).toContain('TRIGGERED');
+    expect(narrateClockAdvancement.mock.calls[0][0].clock.triggered).toBe(true);
+  });
+
+  it('advance on an already-full clock posts a notice and no vignette', async () => {
+    setClocks([{ _id: 't1', name: 'Reactor breach', type: 'tension', segments: 4, filled: 4, active: true }]);
+    await handleClockCommand(cmd('!clock advance Reactor'));
+    await flush();
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0].content).toContain('already triggered');
+    expect(cards()[0].content).not.toContain('<em>TRIGGERED.</em>');
+    expect(cards()[0].content).toContain('!clock reset &quot;Reactor breach&quot;');
+    expect(narrateClockAdvancement).not.toHaveBeenCalled();
+    expect(storedClocks()[0].filled).toBe(4);
+  });
+
+  it('advance on a full campaign clock does not roll or narrate', async () => {
+    setClocks([{ _id: 'c1', name: 'Plot', type: 'campaign', segments: 6, filled: 6, active: true, advanceOdds: 'likely' }]);
+    const rnd = vi.spyOn(Math, 'random');
+    await handleClockCommand(cmd('!clock advance Plot'));
+    await flush();
+    expect(rnd).not.toHaveBeenCalled();
+    expect(cards()[0].content).toContain('already triggered');
+    expect(narrateClockAdvancement).not.toHaveBeenCalled();
+  });
+
+  it('advance on a campaign clock rolling YES fills and narrates; NO does neither', async () => {
+    setClocks([{ _id: 'c1', name: 'Plot', type: 'campaign', segments: 6, filled: 2, active: true, advanceOdds: 'likely' }]);
+    vi.spyOn(Math, 'random').mockReturnValue(0.1);   // d100 = 11 ≤ 75 → YES
+    await handleClockCommand(cmd('!clock advance Plot'));
+    await flush();
+    expect(storedClocks()[0].filled).toBe(3);
+    expect(narrateClockAdvancement).toHaveBeenCalledTimes(1);
+
+    ChatMessage._reset();
+    narrateClockAdvancement.mockClear();
+    vi.spyOn(Math, 'random').mockReturnValue(0.95);  // d100 = 96 > 75 → NO
+    await handleClockCommand(cmd('!clock advance Plot'));
+    await flush();
+    expect(storedClocks()[0].filled).toBe(3);
+    expect(cards()[0].content).toContain('did not advance');
+    expect(narrateClockAdvancement).not.toHaveBeenCalled();
+  });
+
+  it('fill below full posts the card without a vignette', async () => {
+    setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 1, active: true }]);
+    await handleClockCommand(cmd('!clock fill Breach'));
+    await flush();
+    expect(storedClocks()[0].filled).toBe(2);
+    expect(cards()[0].content).toContain('Clock filled');
+    expect(narrateClockAdvancement).not.toHaveBeenCalled();
+  });
+
+  it('fill onto the last segment fires the trigger vignette (transition only)', async () => {
+    setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 3, active: true }]);
+    await handleClockCommand(cmd('!clock fill Breach'));
+    await flush();
+    expect(cards()[0].content).toContain('TRIGGERED');
+    expect(narrateClockAdvancement).toHaveBeenCalledTimes(1);
+    expect(narrateClockAdvancement.mock.calls[0][0].clock.triggered).toBe(true);
+  });
+
+  it('fill on an already-full clock posts a notice and no vignette', async () => {
+    setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 4, active: true }]);
+    await handleClockCommand(cmd('!clock fill Breach'));
+    await flush();
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0].content).toContain('already triggered');
+    expect(narrateClockAdvancement).not.toHaveBeenCalled();
+  });
+
+  it('players cannot advance clocks', async () => {
+    const restore = globalThis.asPlayer();
+    try {
+      setClocks([{ _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 1, active: true }]);
+      await handleClockCommand(cmd('!clock advance Breach'));
+      expect(storedClocks()[0].filled).toBe(1);
+      expect(cards()).toHaveLength(0);
+    } finally {
+      restore();
+    }
   });
 });

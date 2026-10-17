@@ -191,47 +191,6 @@ export const MOVES = {
 export const NARRATOR_CLASSES = ["discovery", "interaction", "embellishment", "hybrid"];
 
 /**
- * Mischief dial settings for the Trickster Layer move interpretation personality.
- * serious  — literal interpretation, no reframing
- * balanced — occasional organic misreads for emergent story moments
- * chaotic  — deliberately forces square pegs into round holes
- * Source: Brief §1 Feature 2
- */
-export const MISCHIEF_LEVELS = ["serious", "balanced", "chaotic"];
-
-/**
- * Connection/entity relationship stance from the player character's perspective.
- */
-export const RELATIONSHIP_TYPES = ["ally", "neutral", "antagonist", "unknown"];
-
-/**
- * Progress track types — each gets a progress track and a rank.
- */
-export const TRACK_TYPES = ["vow", "expedition", "connection", "combat", "scene_challenge"];
-
-/**
- * All named impacts, grouped by type.
- * Each marked impact reduces max momentum by 1 and affects momentum reset.
- * Source: Reference Guide p.120
- */
-export const IMPACTS = {
-  misfortunes:     ["wounded", "shaken", "unprepared"],
-  vehicle_troubles:["battered", "cursed"],
-  burdens:         ["doomed", "tormented", "indebted"],
-  lasting_effects: ["permanently_harmed", "traumatized"],
-};
-
-/**
- * External art generation backends.
- *
- * Image generation goes through OpenRouter; the specific model is selected
- * via the `openRouterImageModel` setting (default `black-forest-labs/flux.2-pro`).
- * This constant is retained for ArtAssetSchema metadata fields that record
- * which provider produced a stored asset.
- */
-export const ART_BACKENDS = ["openrouter"];
-
-/**
  * Ask the Oracle yes/no odds and their threshold rolls.
  * Source: Reference Guide p.24
  */
@@ -244,88 +203,11 @@ export const ORACLE_ODDS = {
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CHARACTER
-// ─────────────────────────────────────────────────────────────────────────────
+// Player characters are foundry-ironsworn `character` Actors, read and written
+// only through src/character/actorBridge.js — there is no module-side
+// character schema (the old CharacterSchema template had no consumer and was
+// removed in the 2026-10 dead-export audit).
 
-/**
- * Player character schema.
- * Stats: 1–3 at creation, max 4 during play.
- * Health / spirit / supply: 0–5.
- * Momentum: -6 to +10. Default max 10, default reset +2.
- * Source: Rulebook character sheet / Reference Guide p.119
- */
-export const CharacterSchema = {
-  _id: "",                      // foundry.utils.randomID()
-  name: "",
-  pronouns: "",
-  description: "",              // Brief appearance/background for Loremaster context
-  portraitId: null,             // ArtAsset _id
-
-  stats: {
-    edge:   1,                  // Speed, mobility, agility
-    heart:  1,                  // Resolve, command, sociability
-    iron:   1,                  // Strength, endurance, aggression
-    shadow: 1,                  // Deception, stealth, trickery
-    wits:   1,                  // Expertise, focus, observation
-  },
-
-  meters: {
-    health:   5,                // Physical condition. Reduced by Endure Harm.
-    spirit:   5,                // Morale/mental state. Reduced by Endure Stress.
-    supply:   5,                // Shared with allies. Reduced by Sacrifice Resources.
-    momentum: 2,                // -6 to +10.
-  },
-
-  momentumMax:   10,            // Reduced by 1 per marked impact. Default 10.
-  momentumReset: 2,             // Default +2. Drops to +1 (1 impact) or 0 (2+ impacts).
-
-  // Impacts — true if currently marked
-  impacts: {
-    // Misfortunes — cleared by recover moves
-    wounded:            false,
-    shaken:             false,
-    unprepared:         false,
-    // Vehicle troubles — only apply when aboard the vehicle
-    battered:           false,
-    cursed:             false,  // Permanent on command vehicle
-    // Burdens — cleared only by completing the associated quest
-    doomed:             false,
-    tormented:          false,
-    indebted:           false,
-    // Lasting effects — permanent
-    permanently_harmed: false,
-    traumatized:        false,
-  },
-
-  // Legacy tracks — 0 to 40 ticks (10 boxes × 4 ticks per box)
-  // cleared: true means the track has been completed once; experience rate drops to 1/box
-  legacyTracks: {
-    quests:      { ticks: 0, cleared: false },
-    bonds:       { ticks: 0, cleared: false },
-    discoveries: { ticks: 0, cleared: false },
-  },
-
-  experience: {
-    earned: 0,
-    spent:  0,
-  },
-
-  assetIds: [],                 // Foundry document IDs of owned assets
-
-  ironShard: null,              // Description of the character's iron shard (World Truth: Iron)
-
-  notes: "",
-  loremasterNotes: "",          // Injected into context packet — voice/personality notes
-
-  createdAt: null,
-  updatedAt: null,
-};
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PROGRESS TRACK
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONNECTION (NPC)
@@ -347,7 +229,7 @@ export const ConnectionSchema = {
   role: "",                     // Defining role — drives the +1 bonus on related moves
   secondRole: null,             // Set if bond forged and Expand Influence chosen
   rank: "dangerous",            // RANKS — governs progress per Develop Your Relationship
-  relationshipType: "neutral",  // RELATIONSHIP_TYPES
+  relationshipType: "neutral",  // "ally" | "neutral" | "antagonist" | "unknown"
 
   portraitId: null,             // ArtAsset _id — populated after first Loremaster description
   portraitSourceDescription: "",// The Loremaster narration excerpt that triggered art generation
@@ -406,146 +288,48 @@ export const ConnectionSchema = {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLOCK
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
 // MOVE RESOLUTION
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A fully resolved move result produced by the Trickster Layer.
- * This is the complete output passed to the Loremaster context packet.
- * Loremaster receives move name, stat, numerical outcome, AND specific consequences —
- * not just a dice number.
+ * A fully resolved move — interpreter.js picks the move, resolver.js rolls
+ * and attaches the consequences, persistResolution.js applies them, and the
+ * narrator receives the whole record. Documentation-only typedef: the
+ * runtime `MoveResolutionSchema` template object had no consumer (2026-10
+ * dead-export audit); the many JSDoc `@param … MoveResolutionSchema`
+ * references across src/ point here.
  *
- * Mischief is not signalled to the player — interpretation plays it straight.
- * The rationale field is populated for internal debugging only.
+ * @typedef {Object} MoveResolutionSchema
+ * @property {string}   moveId           key from MOVES, e.g. "face_danger"
+ * @property {string}   moveName         display name, e.g. "Face Danger"
+ * @property {string}   playerNarration  raw player text (typed or speech-transcribed)
+ * @property {string}   statUsed         e.g. "wits"
+ * @property {number}   statValue
+ * @property {number}   adds             bonus adds from assets or move context
+ * @property {string}   rationale        internal only — why this move was chosen
+ * @property {boolean}  mischiefApplied  internal only — whether mischief reframed it
+ * @property {number}   actionDie        d6 (1–6); 0 for progress moves
+ * @property {number}   actionScore      actionDie + statValue + adds, capped at 10
+ * @property {number[]} challengeDice    two d10 results
+ * @property {boolean}  isMatch          both challenge dice equal
+ * @property {boolean}  momentumBurned
+ * @property {string}   outcome          "strong_hit" | "weak_hit" | "miss"
+ * @property {string}   outcomeLabel     display label, e.g. "Strong Hit with a Match"
+ * @property {boolean}  isProgressMove
+ * @property {number}   progressScore    filled boxes — progress moves only
+ * @property {Object}   consequences     mechanical effects applied before narration:
+ *   momentumChange / healthChange / spiritChange / supplyChange (numbers);
+ *   progressMarked (mark-progress count — ranked tracks multiply by the rank's
+ *   ticks, legacy tracks take it as raw ticks); sufferPrompt (the
+ *   SufferChoiceDialog prompt — { kind: "any", amount, count } |
+ *   { kind: "enumerated", options, multi?, allowComplication? } | null; see
+ *   docs/moves/suffer-routing-audit.md); progressTrackId; combatPosition
+ *   ("in_control" | "bad_spot" | null); expeditionProgress (boolean);
+ *   legacyMark ({ track, ticks } | null); finishExpedition ({ ranksDown } |
+ *   null); otherEffect (narrative consequence text).
+ * @property {string}   loremasterContext formatted narrator-context string
+ * @property {string}   sessionId
  */
-export const MoveResolutionSchema = {
-  _id: "",
-  timestamp: null,
-
-  // Input
-  playerNarration: "",          // Raw text from player (typed or speech-transcribed)
-  inputMethod: "chat",          // "chat" | "speech"
-  mischiefLevel: "balanced",    // Dial setting at time of interpretation
-
-  // Interpretation — produced by moves/interpreter.js via Claude API
-  moveId: "",                   // Key from MOVES, e.g. "face_danger"
-  moveName: "",                 // Display name, e.g. "Face Danger"
-  statUsed: "",                 // e.g. "wits"
-  statValue: 0,
-  adds: 0,                      // Any bonus adds from assets or move context
-  rationale: "",                 // Internal only — why this move was chosen. Not surfaced to player.
-  mischiefApplied: false,       // Whether mischief reframing occurred. Internal only.
-  playerConfirmed: true,        // Did player accept the interpretation in the confirmation UI?
-
-  // Dice — produced by moves/resolver.js
-  actionDie: 0,                 // d6 result (1–6). 0 if progress move.
-  actionScore: 0,               // actionDie + statValue + adds, capped at 10
-  challengeDice: [0, 0],        // Two d10 results
-  isMatch: false,               // Both challenge dice show the same value
-  momentumBurned: false,
-  momentumBurnedFrom: 0,        // Momentum value used if burned
-
-  // Outcome
-  outcome: "",                  // "strong_hit" | "weak_hit" | "miss"
-  outcomeLabel: "",             // "Strong Hit with a Match" etc. for display
-  isProgressMove: false,
-  progressScore: 0,             // Filled boxes tally — progress moves only
-
-  // Specific mechanical consequences for this move + outcome combination.
-  // Populated from move text, not inferred from dice alone.
-  // These are applied to the character sheet before Loremaster is called.
-  consequences: {
-    momentumChange:        0,   // e.g. +1 on Face Danger strong hit
-    healthChange:          0,
-    spiritChange:          0,
-    supplyChange:          0,
-    progressMarked:        0,   // Number of mark-progress operations.
-                                 // For ranked tracks (vow / expedition / connection /
-                                 // combat / scene_challenge) the persistence layer
-                                 // multiplies by the track's ticksPerMark per its rank.
-                                 // For legacy tracks (quests / bonds / discoveries)
-                                 // this is treated as a raw tick count, matching the
-                                 // play kit's per-rank legacy-reward values.
-    sufferMoveTriggered:   null,// DEPRECATED — kept for one-release back-compat;
-                                // new code reads sufferPrompt below (F16 §5.2).
-    sufferPrompt:          null,// F16: structured prompt the SufferChoiceDialog
-                                // renders. Three shapes:
-                                //   { kind: "any", amount, count }
-                                //     → player picks any of the 6 suffer moves
-                                //   { kind: "enumerated", options: [...],
-                                //     multi?: 1|2|true, allowComplication? }
-                                //     → player picks from listed options
-                                //   null = no choice required.
-                                // See docs/moves/suffer-routing-audit.md.
-    progressTrackId:       null,// Which track to apply progressMarked to
-    combatPosition:        null,// "in_control" | "bad_spot" | null
-                                 // Persisted onto the bound combat track's
-                                 // combat.controlState so subsequent moves
-                                 // know whether to use proactive (Gain Ground,
-                                 // Strike, Take Decisive Action) or reactive
-                                 // (React Under Fire, Clash) moves. Play kit
-                                 // p. 5 "In Control / In a Bad Spot".
-    expeditionProgress:    false,// Exploration lifecycle: mark one rank-step on
-                                 // the shared expedition track (Undertake an
-                                 // Expedition / Explore a Waypoint). See
-                                 // src/moves/expedition.js.
-    legacyMark:            null, // { track: "discoveries"|"quests"|"bonds", ticks }
-                                 // — mark a legacy track (Make a Discovery / Confront
-                                 // Chaos). null = none.
-    finishExpedition:      null, // { ranksDown } — complete the open expedition
-                                 // track and pay its rank's legacy reward (Finish
-                                 // an Expedition). null = not a finish.
-    otherEffect:           "",  // Narrative consequence for Loremaster
-  },
-
-  // Fully formatted string injected into the Loremaster context packet
-  loremasterContext: "",
-
-  sessionId: "",
-};
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ORACLE RESULT
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SESSION
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Session record — one per play session.
- */
-export const SessionSchema = {
-  _id: "",
-  sessionNumber: 1,
-  date: null,
-  mischiefLevel: "balanced",    // MISCHIEF_LEVELS — configurable per session
-
-  // Session-scoped safety overrides (supplement campaign-level config)
-  safetyOverrides: {
-    additionalLines: [],
-    additionalVeils: [],
-  },
-
-  questFocus: "",               // Vow to spotlight in next session (set at End a Session)
-  connectionFocus: "",          // Connection to spotlight
-
-  // Momentum snapshots for tracking drift across the session
-  momentumAtStart: {},          // { [characterId]: momentum }
-  momentumAtEnd:   {},
-
-  moveCount: 0,
-  moveResolutionIds: [],
-  oracleResultIds: [],
-
-  createdAt: null,
-  updatedAt: null,
-};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -621,7 +405,6 @@ export const CampaignStateSchema = {
   settlementIds:    [],
   locationIds:      [],         // JournalEntry IDs for location records
   creatureIds:      [],         // JournalEntry IDs for creature records
-  progressTrackIds: [],
   clockIds:         [],
   oracleResultIds:  [],         // Recent results for context injection
 
@@ -643,10 +426,6 @@ export const CampaignStateSchema = {
   // entity panel's dismiss action.
   dismissedEntities:   [],
 
-  // Set when a hybrid move with implicit reference is awaiting clarification.
-  // Pipeline pauses until the clarification card is resolved.
-  pendingClarification: null,
-
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that
   // would race on campaignState writes. Cleared on ready if left stuck.
@@ -664,7 +443,7 @@ export const CampaignStateSchema = {
 
   // Art generation — external API only
   art: {
-    // ART_BACKENDS: "openrouter"
+    // "openrouter" (the only image provider — src/art/openRouterImage.js)
     // null until first generation records a value
     backend: null,
     // API key stored in Foundry's client settings (not here — never serialise credentials)
@@ -688,7 +467,6 @@ export const CampaignStateSchema = {
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
   worldTruthsPageId: null,      // JournalEntryPage Foundry ID
   loreRecap:          "",       // last generated lore recap text (for context injection)
-  loreRecapSessionId: null,     // session ID when loreRecap was last generated
 
   currentSessionId:     "",    // managed by initSessionId() on ready hook
   sessionNumber:        0,     // increments each new session
@@ -707,6 +485,12 @@ export const CampaignStateSchema = {
   // Wall-clock ISO of the last beginSession() call. Powers the panel's
   // "active for N minutes" display and the session-vignette anchor.
   sessionActiveStartedAt: null,
+
+  // End a Session spotlights: the vow and connection the
+  // table wants to focus on next time. Written by applyEndSession, surfaced
+  // and cleared at the next Begin a Session (src/safety/sessionLifecycleDialogs.js).
+  questFocus:           "",
+  connectionFocus:      "",
 
   campaignRecapCache: {
     text:            "",
@@ -760,49 +544,8 @@ export const CampaignStateSchema = {
 // ART ASSET
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Art asset metadata record.
- *
- * Storage path: starforged-companion/{entityType}/{entityId}.webp
- * (The Forge manages this as cloud storage under Foundry Data.)
- *
- * Generation policy:
- * - Triggered after Loremaster's first description of the entity, not on name appearance
- * - Generated once and stored permanently — no regeneration drift, predictable cost
- * - One regeneration permitted if the image misses — then locked permanently
- * - Backend is always an external API (ART_BACKENDS)
- *
- * Source: Brief §1 Feature 7
- */
-export const ArtAssetSchema = {
-  _id: "",                      // Matches the owning entity's Foundry document ID
-  entityType: "",               // "connection" | "settlement" | "ship" | "faction" | "planet"
-  entityId: "",
-
-  // Generation state machine
-  // pending → generating → complete | failed
-  // complete → (one regeneration allowed) → complete → locked
-  status: "pending",            // "pending" | "generating" | "complete" | "failed" | "locked"
-  regenerationAvailable: true,  // false after first regeneration
-
-  // File
-  path: "",                     // Foundry Data path, e.g. starforged-companion/connections/{id}.webp
-  filename: "",
-
-  // Prompt traceability
-  sourceDescription: "",        // Loremaster narration excerpt that triggered generation
-  promptUsed: "",               // Final translated prompt sent to the backend
-  styleTokens: [],              // Style tokens appended by art/promptBuilder.js
-
-  // Backend metadata — stored for debugging and consistency reference
-  backend: "",                  // ART_BACKENDS
-  model: "",                    // Specific model or checkpoint used
-  settings: {},                 // Backend-specific: steps, CFG scale, seed, etc.
-  generatedAt: null,
-
-  // Lock state
-  lockedAt: null,               // Timestamp of permanent lock (after second generation)
-  overrideFlag: false,          // GM-only manual override to unlock
-};
+// Art asset records are built and stored by src/art/generator.js +
+// src/art/storage.js (storeArtAsset / loadArtAsset); the old ArtAssetSchema
+// template had no consumer and was removed in the 2026-10 dead-export audit.
 
 

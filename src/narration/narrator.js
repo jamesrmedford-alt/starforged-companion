@@ -1116,10 +1116,14 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * up card flagged `oracleNarrationCard: true` that renders the rolled result
  * as 2–3 sentences of in-fiction prose in the configured tone.
  *
- * Silent skip — no fallback card, no error toast — when any of these is true:
+ * Skips — no fallback card, no error toast, just a console.debug breadcrumb —
+ * when any of these is true:
  *   - the Claude API key is unset (so the feature is opt-in via key config)
  *   - the X-Card is active (scene paused; never narrate during suppression)
  *   - the narrator-enabled toggle is off in module settings
+ *
+ * Callers do not call this directly: src/oracles/oracleFollowup.js routes the
+ * follow-up to exactly one keyed client (the author's, or the canonical GM).
  *
  * Reuses the narrator's `oracle_followup` mode (added to
  * narratorPrompt.js's ROLE_DESCRIPTIONS) so safety / tone / perspective /
@@ -1127,28 +1131,40 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * `buildNarratorSystemPrompt` path the move pipeline uses.
  *
  * @param {Object}  args
- * @param {string}  args.kind            — `oracle_yes_no` | `pay_the_price` (extensible)
+ * @param {string}  args.kind            — `oracle_yes_no` | `oracle_table` | `pay_the_price` (extensible)
  * @param {string}  args.oracleName      — e.g. "Ask the Oracle (50/50)" or "Pay the Price"
  * @param {string}  [args.question]      — optional player-supplied question text
  * @param {string}  args.rolledLine      — the structured roll line, e.g.
  *                                          "d100 = 47 → An ally is exposed to harm"
+ * @param {string|null} [args.speakerActorId] — the PC of the player who rolled
+ *                                          (credit the roller); falls back to
+ *                                          the campaign's first PC
  * @param {Object}  args.campaignState
- * @returns {Promise<string|null>} the rendered narration text or null on silent skip / failure
+ * @returns {Promise<string|null>} the rendered narration text or null on skip / failure
  */
 export async function narrateOracleFollowup({
-  kind, oracleName, question = '', rolledLine, campaignState,
+  kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null,
 }) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
   const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
+  if (!settings.narrationEnabled) {
+    console.debug(`${MODULE_ID} | narrateOracleFollowup: narration disabled — skipped.`);
+    return null;
+  }
 
-  if (campaignState?.xCardActive) return null;
+  if (campaignState?.xCardActive) {
+    console.debug(`${MODULE_ID} | narrateOracleFollowup: X-Card active — skipped.`);
+    return null;
+  }
 
   const apiKey = getApiKey();
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.debug(`${MODULE_ID} | narrateOracleFollowup: no Claude key on this client — skipped.`);
+    return null;
+  }
 
-  const character = getActiveCharacter(campaignState);
+  const character = getActiveCharacter(campaignState, speakerActorId);
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
     character,

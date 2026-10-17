@@ -18,6 +18,14 @@
  * correct meter delta whether or not the original outcome reached the
  * sheet (player clients defer to GM, so multi-user races are possible).
  *
+ * Multiplayer: the move card is authored by the canonical GM, so a player
+ * cannot message.update() its `consumed` flag. A click therefore relays to
+ * the canonical GM (requestGmAction("move.burnMomentum", { messageId })),
+ * and applyBurnFromRelay re-checks `consumed` there — the authoritative
+ * idempotency check — before applying anything. Before this, the player's
+ * update silently failed, the button stayed live, and a second click
+ * re-applied the deltas.
+ *
  * Limitations of this implementation:
  *   - Only meter consequences (health/spirit/supply/momentum) reverse on
  *     burn. Progress-track marking and auto-debility flips from suffer
@@ -39,8 +47,29 @@ import {
   applyMeterChanges,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
+import { requestGmAction }     from "../multiplayer/gmRelay.js";
 
 const MODULE_ID = "starforged-companion";
+
+// Foundry's OWNER ownership level (CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER).
+const OWNERSHIP_OWNER = 3;
+
+// How long a relayed button click waits for the GM to consume the card before
+// the button re-enables. The relay is fire-and-forget (no ack): if the GM
+// refused or failed the action the card never updates, and without this the
+// button would sit on "Burning…" forever.
+export const RELAY_RECOVERY_MS = 15000;
+
+// narrate / persist injected by registerBurnMomentumHook (src/index.js). Kept
+// at module scope so the GM-side relay handler — which runs outside the click
+// closure, possibly for another player's click — can re-narrate and log.
+let _deps = { narrate: null, persist: null };
+
+// Move-card ids whose burn is being applied on this (the canonical GM's)
+// client. Two near-simultaneous clicks both relay; the second must not
+// re-apply the meter deltas while the first is still before the `consumed`
+// stamp.
+const _inFlight = new Set();
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,7 +167,9 @@ function labelForOutcome(outcome) {
  * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
  * @param {Function} hooks.persist    async (resolution, state) => void
  */
-export function registerBurnMomentumHook({ narrate, persist }) {
+export function registerBurnMomentumHook({ narrate, persist } = {}) {
+  _deps = { narrate: narrate ?? null, persist: persist ?? null };
+
   onChatMessageRender((message, root) => {
     const burn = message?.flags?.[MODULE_ID]?.burn;
     if (!burn?.canBurn) return;
@@ -159,31 +190,150 @@ export function registerBurnMomentumHook({ narrate, persist }) {
       ev.stopPropagation();
       freshBtn.disabled = true;
       freshBtn.textContent = "🔥 Burning…";
-      try {
-        await handleBurnClick(message, { narrate, persist });
-      } catch (err) {
-        console.error(`${MODULE_ID} | burnMomentum: click handler failed:`, err);
-        freshBtn.disabled = false;
-        freshBtn.textContent = `🔥 Burn Momentum (${burn.momentum} → ${labelForOutcome(burn.previewOutcome)})`;
-      }
+      await relayCardButtonClick({
+        kind:       "move.burnMomentum",
+        messageId:  message?.id,
+        isConsumed: () => !!currentFlags(message)?.burn?.consumed,
+        restore:    () => {
+          freshBtn.disabled    = false;
+          freshBtn.textContent = `🔥 Burn Momentum (${burn.momentum} → ${labelForOutcome(burn.previewOutcome)})`;
+        },
+      });
     });
   });
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLICK HANDLER
+// RELAY (shared with improveResult.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Send a move-card button click to the canonical GM and keep the button
+ * honest about the outcome. `restore` puts the button back in its clickable
+ * state; it runs when:
+ *   - the request throws or is refused (no GM connected — requestGmAction has
+ *     already warned the user);
+ *   - the action ran locally (this client is the canonical GM) but the card
+ *     did not end up consumed (permission refusal, stale card, failure);
+ *   - the action was relayed and the card is still not consumed after
+ *     RELAY_RECOVERY_MS (the relay has no ack channel).
+ * A consumed card re-renders with the button disabled, so no restore is needed.
+ *
+ * @param {Object}   opts
+ * @param {string}   opts.kind        gmRelay action kind
+ * @param {string}   opts.messageId   the move card's ChatMessage id
+ * @param {Function} opts.isConsumed  () => boolean — reads the live card flag
+ * @param {Function} opts.restore     () => void
+ * @param {number}   [opts.recoveryMs]
+ * @returns {Promise<Object|null>} the requestGmAction result (null on throw)
+ */
+export async function relayCardButtonClick({ kind, messageId, isConsumed, restore, recoveryMs = RELAY_RECOVERY_MS }) {
+  if (!messageId) {
+    console.warn(`${MODULE_ID} | ${kind}: move card has no id — cannot relay the click.`);
+    restore();
+    return null;
+  }
+  let res = null;
+  try {
+    res = await requestGmAction(kind, { messageId });
+  } catch (err) {
+    console.error(`${MODULE_ID} | ${kind}: click handler failed:`, err);
+    restore();
+    return null;
+  }
+  if (!res?.ok) {
+    restore();
+    return res;
+  }
+  if (!res.relayed) {
+    if (!isConsumed()) restore();
+    return res;
+  }
+  setTimeout(() => {
+    if (isConsumed()) return;
+    console.debug(`${MODULE_ID} | ${kind}: card ${messageId} not consumed after ${recoveryMs}ms — re-enabling the button.`);
+    restore();
+  }, recoveryMs);
+  return res;
+}
+
+/**
+ * True when the requesting user may spend this actor's resources: a GM, or a
+ * user with OWNER permission on the actor. On the relay path this runs on the
+ * GM's client, so it reads the REQUESTER from the gmRelay ctx, never
+ * game.user.
+ *
+ * @param {Actor|null} actor
+ * @param {{ requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {boolean}
+ */
+export function requesterOwnsActor(actor, ctx = {}) {
+  if (ctx?.requesterIsGM) return true;
+  const user = ctx?.requester ?? null;
+  if (!actor || !user) return false;
+  if (typeof actor.testUserPermission === "function") {
+    return !!actor.testUserPermission(user, "OWNER");
+  }
+  const ownership = actor.ownership ?? {};
+  return ownership[user.id] === OWNERSHIP_OWNER || ownership.default === OWNERSHIP_OWNER;
+}
+
+/**
+ * gmRelay handler for "move.burnMomentum" — runs on the canonical GM.
+ *
+ * Loads the move card, re-checks `consumed` (and the in-flight set) as the
+ * authoritative idempotency check, refuses a requester who neither is a GM
+ * nor owns the burning actor, then applies the burn.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyBurnFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | burnMomentum: move card ${messageId ?? "?"} not found — burn not applied.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const burn = message.flags?.[MODULE_ID]?.burn;
+  if (!burn?.canBurn) {
+    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} offers no burn — ignoring.`);
+    return { applied: false, reason: "not-burnable" };
+  }
+  if (burn.consumed || _inFlight.has(messageId)) {
+    console.debug(`${MODULE_ID} | burnMomentum: card ${messageId} already burned — ignoring repeat click.`);
+    return { applied: false, reason: "already-consumed" };
+  }
+  const actor = resolveActor(burn.actorId);
+  if (actor && !requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | burnMomentum: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — burn refused.`);
+    return { applied: false, reason: "not-owner" };
+  }
+
+  _inFlight.add(messageId);
+  try {
+    return await handleBurnClick(message, _deps);
+  } finally {
+    _inFlight.delete(messageId);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLICK HANDLER (runs on the canonical GM via applyBurnFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function handleBurnClick(message, { narrate, persist }) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const burn  = flags.burn;
-  if (!burn?.canBurn || burn.consumed) return;
+  if (!burn?.canBurn || burn.consumed) return { applied: false, reason: "already-consumed" };
 
   const actor = resolveActor(burn.actorId);
   if (!actor) {
     console.warn(`${MODULE_ID} | burnMomentum: no actor available to burn against`);
-    return;
+    return { applied: false, reason: "no-actor" };
   }
 
   const burnResult = applyMomentumBurn(
@@ -197,7 +347,7 @@ async function handleBurnClick(message, { narrate, persist }) {
   // the card. Bail without touching meters or the card.
   if (OUTCOME_RANK[burnResult.outcome] <= OUTCOME_RANK[burn.originalOutcome]) {
     console.warn(`${MODULE_ID} | burnMomentum: burn would not improve ${burn.originalOutcome} → ${burnResult.outcome}; ignoring`);
-    return;
+    return { applied: false, reason: "no-improvement" };
   }
 
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
@@ -237,6 +387,8 @@ async function handleBurnClick(message, { narrate, persist }) {
   // card is still correctly updated above.
   await renarrate({ burn, burnResult, newConsequences, narrate, persist })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
+
+  return { applied: true };
 }
 
 async function applyBurnMeterDeltas({ actor, burnState, newMomentumReset, newConsequences }) {
@@ -313,7 +465,10 @@ async function revertPtpEffects(ptpReversals, actor) {
 }
 
 async function renarrate({ burn, burnResult, newConsequences, narrate, persist }) {
-  if (typeof narrate !== "function") return;
+  if (typeof narrate !== "function") {
+    console.warn(`${MODULE_ID} | burnMomentum: no narrator registered (registerBurnMomentumHook) — burned outcome not re-narrated.`);
+    return;
+  }
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   const synthResolution = {
@@ -440,6 +595,15 @@ function countImpacts(actor) {
   return Object.values(d).filter(Boolean).length;
 }
 
+/**
+ * The module flags of the card as it stands NOW — the live game.messages
+ * copy when it exists (the render-time `message` can be a stale snapshot).
+ */
+function currentFlags(message) {
+  const live = message?.id ? globalThis.game?.messages?.get?.(message.id) : null;
+  return (live ?? message)?.flags?.[MODULE_ID] ?? null;
+}
+
 function resolveActor(actorId) {
   if (actorId) {
     const a = game.actors?.get?.(actorId);
@@ -461,8 +625,6 @@ function emptyConsequences() {
     healthChange:        0,
     spiritChange:        0,
     supplyChange:        0,
-    progressMarked:      0,
-    progressTrackId:     null,
     otherEffect:         "",
     sufferMoveTriggered: null,
   };

@@ -335,10 +335,9 @@ export async function sufferDamage(actorId, amount) {
   return updateShip(actorId, { integrity: newIntegrity });
 }
 
-// UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),
-// 2026-07-07 — pre-built API with no live caller yet; unit tests lock its semantics.
 /**
- * Repair integrity (e.g. after a successful Repair move).
+ * Repair integrity (e.g. after a successful Repair move). Live caller:
+ * the `!repair` point-spend handler (src/moves/repair.js applyRepairSpends).
  * Does not clear battered — that requires spending repair points.
  *
  * @param {string} actorId
@@ -358,24 +357,15 @@ export async function repairIntegrity(actorId, amount) {
   return updateShip(actorId, { integrity: newIntegrity });
 }
 
-// UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),
-// 2026-07-07 — pre-built API with no live caller yet; unit tests lock its semantics.
 /**
  * Clear the battered impact (costs 2 repair points in the Repair move).
+ * Live caller: src/moves/repair.js applyRepairSpends.
  *
  * @param {string} actorId
  * @returns {Promise<Object>}
  */
 export async function clearBattered(actorId) {
   return updateShip(actorId, { battered: false });
-}
-
-export async function setPortraitId(actorId, artAssetId) {
-  return updateShip(actorId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(ship) {
-  return ship.active && !!ship.portraitSourceDescription && !ship.portraitId;
 }
 
 function generateId() {
