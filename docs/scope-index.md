@@ -11,7 +11,8 @@ Single-glance status of all features, and the map from each scope to its
 > `*-scope.md` file. See `decisions.md` → "Scope documents live as GitHub
 > issues".
 
-Latest release tag: **v1.7.23**.
+Latest release tag: **v1.7.30** (fetched 2026-10-17 — always re-check with
+`git fetch --tags origin && git tag --sort=-version:refname | head -1`).
 
 ---
 
@@ -111,9 +112,8 @@ Standalone: Clocks (✅) · Sector Creator (✅) → Sector Creator Enhanced (�
 
 ## What to work on next
 
-- **Visual UI polish** — wire the `statIcon` / `assetIcon` / `oracleIcon` resolvers (shipped in System Asset Integration Phase 9) into the entity panel and chat-card templates; the helpers exist but the templates were never updated.
+- **Visual UI polish** — stat / asset / oracle icons on the entity panel and chat-card templates. (The unwired `statIcon` / `assetIcon` / `oracleIcon` resolvers from System Asset Integration Phase 9 were deleted in the 2026-07 test-suite review; this would be a fresh build, not a wiring job.)
 - **Fact Continuity panel surfaces** — the Entity Panel "Active truths" collapsible and the WJ Panel scene-truth filter row were deferred from the Phase D slice; they slot naturally into panel-polish work.
-- **Ability scanner — stat substitution** — `src/moves/abilityScanner.js` extracts numeric `+N` adds but surfaces stat-substitution abilities (e.g. Empath's *"roll +heart"*) as text only; extend the scanner/dialog to parse and apply stat substitution automatically.
 - **Shipboard Combat Phases B–D** ([#216](https://github.com/jamesrmedford-alt/starforged-companion/issues/216)) — "man the stations" token placement, station-aware move suggestions, and combat-lifecycle integration.
 
 Other possible directions:
