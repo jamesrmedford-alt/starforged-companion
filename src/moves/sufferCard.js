@@ -23,6 +23,7 @@ import {
 } from "./sufferDialog.js";
 import { getActor, getPlayerActors } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
+import { localizeMeter, localizeDebility } from "../system/i18n.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -122,9 +123,9 @@ export function summarizeSufferCalls(calls) {
   for (const c of calls ?? []) {
     switch (c.kind) {
       case "suffer":              parts.push(`${labelForSuffer(c.sufferId)} (-${c.amount})`); break;
-      case "meter":               parts.push(`${c.meterKey} ${c.delta >= 0 ? "+" : ""}${c.delta}`); break;
-      case "mark":                parts.push(`marked ${c.debility}`); break;
-      case "clear-impact":        parts.push(`cleared ${c.debility}`); break;
+      case "meter":               parts.push(`${meterLabel(c.meterKey)} ${c.delta >= 0 ? "+" : ""}${c.delta}`); break;
+      case "mark":                parts.push(`marked ${localizeDebility(c.debility)}`); break;
+      case "clear-impact":        parts.push(`cleared ${localizeDebility(c.debility)}`); break;
       case "combat-progress":     parts.push(`combat progress ×${c.count ?? 1}`); break;
       case "expedition-progress": parts.push(`expedition progress ×${c.count ?? 1}`); break;
       case "combat-position":     parts.push(c.skipped
@@ -137,6 +138,16 @@ export function summarizeSufferCalls(calls) {
     }
   }
   return parts.length ? parts.join(", ") : "no change";
+}
+
+// The four PC meters the system localises. An option's numeric field can name
+// something else (e.g. a companion/vehicle value) — those keep their raw key
+// rather than tripping i18n's unknown-slug warning.
+const LOCALIZED_METERS = new Set(["health", "spirit", "supply", "momentum"]);
+
+/** System-localised meter label ("Momentum", "Élan", …); raw key otherwise. */
+function meterLabel(key) {
+  return LOCALIZED_METERS.has(key) ? localizeMeter(key) : String(key ?? "");
 }
 
 function labelForSuffer(id) {

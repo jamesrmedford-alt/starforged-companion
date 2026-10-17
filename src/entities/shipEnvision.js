@@ -414,9 +414,11 @@ export function parseShipHistoryCommand(text, campaignState) {
 
 /**
  * Handle `!ship envision`. Rolls oracles, generates prose, posts a chat card,
- * appends a labeled section to system.notes. Any player may invoke; only the
- * notes-write step requires GM permissions (a non-GM invoker still gets the
- * chat card).
+ * appends a labeled section to system.notes. Any player may invoke; the chat
+ * routing (src/index.js, RUN_ON.CANONICAL_GM) runs it once, on the canonical
+ * GM — the Claude key lives there and the notes write needs GM permissions.
+ * Before that routing every keyed client made its own Claude call and every
+ * unkeyed client posted a "key not configured" fallback card.
  */
 export async function handleShipEnvisionCommand(message) {
   const text = String(message?.content ?? "").trim();
@@ -446,7 +448,7 @@ export async function handleShipEnvisionCommand(message) {
     flags: { [MODULE_ID]: { shipEnvisionCard: true, actorId: actor.id, facet } },
   });
 
-  if (canWriteNotes()) {
+  if (canWriteNotes("!ship envision")) {
     await appendNotesSection(actor, `Envisioned ${facetLabel}`, sectionHtml)
       .catch(err => console.warn(`${MODULE_ID} | !ship envision: notes write failed:`, err?.message ?? err));
   }
@@ -484,7 +486,7 @@ export async function handleShipHistoryCommand(message) {
     flags: { [MODULE_ID]: { shipHistoryCard: true, actorId: actor.id } },
   });
 
-  if (canWriteNotes()) {
+  if (canWriteNotes("!ship history")) {
     await appendNotesSection(actor, `History`, sectionHtml)
       .catch(err => console.warn(`${MODULE_ID} | !ship history: notes write failed:`, err?.message ?? err));
   }
@@ -626,8 +628,13 @@ function readCampaignState() {
   catch { return {}; }
 }
 
-function canWriteNotes() {
-  try { return !!globalThis.game?.user?.isGM; } catch { return false; }
+// The routed command runs on the canonical GM, so this is normally true; a
+// direct non-GM call still posts the card but skips the notes write — say so.
+function canWriteNotes(label) {
+  let ok = false;
+  try { ok = !!globalThis.game?.user?.isGM; } catch { ok = false; }
+  if (!ok) console.debug(`${MODULE_ID} | ${label}: not a GM client — ship notes not updated.`);
+  return ok;
 }
 
 function escapeHtml(s) {

@@ -23,14 +23,31 @@
  *     hasClock/clockTicks/clockMax). Abilities whose improvement carries no
  *     clock still upgrade the result; the card notes any non-clock cost in
  *     text for the player to apply.
+ *
+ * Multiplayer: like Burn Momentum, the click relays to the canonical GM
+ * (requestGmAction("move.improveResult", { messageId })) because a player
+ * cannot update the GM-authored move card's `consumed` flag; the GM-side
+ * applyImproveFromRelay is the authoritative idempotency check.
  */
 
 import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
 import { getActor, applyMeterChanges }   from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
-import { supersedeOriginalNarration }    from "./burnMomentum.js";
+import {
+  supersedeOriginalNarration,
+  relayCardButtonClick,
+  requesterOwnsActor,
+} from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
+
+// narrate / persist injected by registerImproveResultHook (src/index.js), kept
+// at module scope for the GM-side relay handler.
+let _deps = { narrate: null, persist: null };
+
+// Move-card ids whose improvement is being applied on this (canonical GM)
+// client — blocks a near-simultaneous second click before `consumed` lands.
+const _inFlight = new Set();
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +136,9 @@ function improveButtonLabel(state) {
  * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
  * @param {Function} hooks.persist    async (resolution, state) => void
  */
-export function registerImproveResultHook({ narrate, persist }) {
+export function registerImproveResultHook({ narrate, persist } = {}) {
+  _deps = { narrate: narrate ?? null, persist: persist ?? null };
+
   onChatMessageRender((message, root) => {
     const improve = message?.flags?.[MODULE_ID]?.improve;
     if (!improve?.canImprove) return;
@@ -140,36 +159,87 @@ export function registerImproveResultHook({ narrate, persist }) {
       ev.stopPropagation();
       freshBtn.disabled = true;
       freshBtn.textContent = "✦ Improving…";
-      try {
-        await handleImproveClick(message, { narrate, persist });
-      } catch (err) {
-        console.error(`${MODULE_ID} | improveResult: click handler failed:`, err);
-        freshBtn.disabled = false;
-        freshBtn.textContent = improveButtonLabel(improve);
-      }
+      await relayCardButtonClick({
+        kind:       "move.improveResult",
+        messageId:  message?.id,
+        isConsumed: () => {
+          const live = message?.id ? globalThis.game?.messages?.get?.(message.id) : null;
+          return !!(live ?? message)?.flags?.[MODULE_ID]?.improve?.consumed;
+        },
+        restore:    () => {
+          freshBtn.disabled    = false;
+          freshBtn.textContent = improveButtonLabel(improve);
+        },
+      });
     });
   });
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLICK HANDLER
+// RELAY HANDLER (canonical GM)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "move.improveResult" — runs on the canonical GM.
+ *
+ * Loads the move card, re-checks `consumed` (and the in-flight set) as the
+ * authoritative idempotency check, refuses a requester who neither is a GM
+ * nor owns the improving actor, then applies the improvement.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyImproveFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | improveResult: move card ${messageId ?? "?"} not found — not applied.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const improve = message.flags?.[MODULE_ID]?.improve;
+  if (!improve?.canImprove) {
+    console.warn(`${MODULE_ID} | improveResult: card ${messageId} offers no improvement — ignoring.`);
+    return { applied: false, reason: "not-improvable" };
+  }
+  if (improve.consumed || _inFlight.has(messageId)) {
+    console.debug(`${MODULE_ID} | improveResult: card ${messageId} already improved — ignoring repeat click.`);
+    return { applied: false, reason: "already-consumed" };
+  }
+  const actor = getActor(improve.actorId);
+  if (actor && !requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | improveResult: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — improvement refused.`);
+    return { applied: false, reason: "not-owner" };
+  }
+
+  _inFlight.add(messageId);
+  try {
+    return await handleImproveClick(message, _deps);
+  } finally {
+    _inFlight.delete(messageId);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLICK HANDLER (runs on the canonical GM via applyImproveFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function handleImproveClick(message, { narrate, persist }) {
   const improve = message?.flags?.[MODULE_ID]?.improve;
-  if (!improve?.canImprove || improve.consumed) return;
+  if (!improve?.canImprove || improve.consumed) return { applied: false, reason: "already-consumed" };
 
   const actor = getActor(improve.actorId);
   if (!actor) {
     console.warn(`${MODULE_ID} | improveResult: no actor to improve against`);
-    return;
+    return { applied: false, reason: "no-actor" };
   }
 
   // Guard: never "improve" to an outcome that isn't actually better.
   if (OUTCOME_RANK[improve.improveTo] <= OUTCOME_RANK[improve.originalOutcome]) {
     console.warn(`${MODULE_ID} | improveResult: ${improve.originalOutcome} → ${improve.improveTo} is not an improvement; ignoring`);
-    return;
+    return { applied: false, reason: "no-improvement" };
   }
 
   const newConsequences = mapConsequences(improve.moveId, improve.improveTo, improve.isMatch);
@@ -190,6 +260,8 @@ async function handleImproveClick(message, { narrate, persist }) {
 
   await renarrate({ improve, newConsequences, narrate, persist })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
+
+  return { applied: true };
 }
 
 /**
@@ -250,7 +322,10 @@ function buildImprovedCardContent(originalContent, clockNote) {
 }
 
 async function renarrate({ improve, newConsequences, narrate, persist }) {
-  if (typeof narrate !== "function") return;
+  if (typeof narrate !== "function") {
+    console.warn(`${MODULE_ID} | improveResult: no narrator registered (registerImproveResultHook) — improved outcome not re-narrated.`);
+    return;
+  }
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   const synthResolution = {

@@ -428,8 +428,8 @@ describe("mapConsequences", () => {
 
 const REQUIRED_KEYS = [
   "momentumChange", "healthChange", "spiritChange", "supplyChange",
-  "progressMarked", "sufferMoveTriggered", "sufferPrompt",
-  "progressTrackId", "otherEffect",
+  "sufferMoveTriggered", "sufferPrompt",
+  "otherEffect",
   "enterCombat", "combatProgress", "endCombat",
   "rollDecisiveActionCost", "routePayThePrice",
   "developRelationship", "fulfillVow", "forgeABond", "companionHealthChange",
@@ -1282,19 +1282,26 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     expect(miss.routePayThePrice).toBe(true);
   });
 
-  it("develop_your_relationship flags developRelationship and no longer uses the dead progressMarked path (audit 3.14)", () => {
+  it("develop_your_relationship flags developRelationship (audit 3.14)", () => {
     for (const outcome of ["strong_hit", "weak_hit", "miss"]) {
       const c = mapConsequences("develop_your_relationship", outcome, false);
       expect(c.developRelationship).toBe(true);
-      expect(c.progressMarked).toBe(0);
     }
   });
 
-  it("reach_a_milestone flags reachMilestone and no longer uses the dead progressMarked path", () => {
+  it("reach_a_milestone flags reachMilestone", () => {
     const c = mapConsequences("reach_a_milestone", "strong_hit", false);
     expect(c.reachMilestone).toBe(true);
-    expect(c.progressMarked).toBe(0);
-    expect(c.progressTrackId).toBeNull();
+  });
+
+  it("no consequences object carries the removed progressMarked / progressTrackId fields", () => {
+    // The generic mark-progress route was dead (nothing set progressTrackId)
+    // and was deleted along with persistResolution's markProgress steps.
+    for (const moveId of ["reach_a_milestone", "develop_your_relationship", "strike", "face_danger"]) {
+      const c = mapConsequences(moveId, "strong_hit", false);
+      expect(c).not.toHaveProperty("progressMarked");
+      expect(c).not.toHaveProperty("progressTrackId");
+    }
   });
 
   it("endure_harm strong hit gates the +1 health option on !wounded", () => {

@@ -249,7 +249,7 @@ export function openSystemTruthsDialog() {
  * Posts a chat card, writes a "The Story So Far" page to the World Truths journal,
  * and persists the text in campaignState for context injection.
  *
- * @param {Object} campaignState — mutated in place (loreRecap, loreRecapSessionId)
+ * @param {Object} campaignState — mutated in place (loreRecap)
  * @returns {Promise<string|null>} recap text, or null on failure
  */
 export async function generateLoreRecap(campaignState) {
@@ -276,8 +276,7 @@ export async function generateLoreRecap(campaignState) {
   if (!recap) return null;
   if (!recap.trim()) return null;
 
-  campaignState.loreRecap          = recap;
-  campaignState.loreRecapSessionId = campaignState.currentSessionId ?? null;
+  campaignState.loreRecap = recap;
   try {
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
   } catch (err) {

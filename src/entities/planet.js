@@ -188,14 +188,6 @@ export async function updatePlanet(actorId, updates) {
   return updated;
 }
 
-export async function setPortraitId(actorId, artAssetId) {
-  return updatePlanet(actorId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(planet) {
-  return planet.active && !!planet.portraitSourceDescription && !planet.portraitId;
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

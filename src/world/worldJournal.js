@@ -126,7 +126,6 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     moveId:           entry?.moveId   ?? null,
     confirmed:        entry?.confirmed === true,
     narratorAsserted: entry?.narratorAsserted === true,
-    annotations:      Array.isArray(existing?.annotations) ? existing.annotations : [],
     promotedAt:       existing?.promotedAt ?? (entry?.confirmed === true ? now : null),
     // Fact-continuity fields (issue #227 (Fact Continuity) §4.4). Optional;
     // null for entries that did not originate from a scene-truth migration.
@@ -238,7 +237,6 @@ export async function recordThreat(name, entry, campaignState) {
     firstSeen:   existing?.firstSeen ?? sessionId,
     lastUpdated: sessionId,
     history,
-    annotations: Array.isArray(existing?.annotations) ? existing.annotations : [],
     createdAt:   existing?.createdAt ?? now,
     updatedAt:   now,
   };
@@ -305,7 +303,6 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     knownGoal:    entry?.knownGoal ?? existing?.knownGoal ?? "",
     attitude,
     encounters,
-    annotations:  Array.isArray(existing?.annotations) ? existing.annotations : [],
     createdAt:    existing?.createdAt ?? now,
     updatedAt:    now,
   };
@@ -349,7 +346,6 @@ export async function recordLocation(name, entry, campaignState) {
     lastVisited:  sessionId,
     status:       entry?.status      ?? existing?.status      ?? "current",
     visits,
-    annotations:  Array.isArray(existing?.annotations) ? existing.annotations : [],
     createdAt:    existing?.createdAt ?? now,
     updatedAt:    now,
   };
@@ -475,45 +471,6 @@ export async function applyStateTransition(transition, campaignState) {
     default:
       return null;
   }
-}
-
-/**
- * Append an annotation to any entry. Annotations are author-stamped and
- * append-only.
- *
- * @param {"lore"|"threats"|"factions"|"locations"} journalType
- * @param {string} entryName
- * @param {string} text
- * @param {string} authorName
- * @returns {Promise<Object|null>}
- */
-export async function annotateEntry(journalType, entryName, text, authorName, _campaignState) {
-  const journalName = JOURNAL_NAMES[journalType];
-  const flagKey     = FLAG_KEYS[journalType];
-  if (!journalName || !flagKey) return null;
-
-  const journal = await getOrCreateJournal(journalName);
-  if (!journal) return null;
-
-  const page = findPageByName(journal, entryName?.trim() ?? "");
-  if (!page) return null;
-
-  const existing = page.flags?.[MODULE_ID]?.[flagKey];
-  if (!existing) return null;
-
-  const annotation = {
-    author: authorName ?? game.user?.name ?? "Unknown",
-    text:   text ?? "",
-    date:   new Date().toISOString(),
-  };
-
-  const annotations = Array.isArray(existing.annotations)
-    ? [...existing.annotations, annotation]
-    : [annotation];
-
-  const updated = { ...existing, annotations, updatedAt: new Date().toISOString() };
-  await page.setFlag(MODULE_ID, flagKey, updated);
-  return updated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

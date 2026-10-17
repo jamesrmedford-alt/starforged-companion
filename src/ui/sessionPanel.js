@@ -18,10 +18,11 @@
  * The panel renders a small status badge showing whether the session
  * is active and (when active) for how many minutes.
  *
- * State writes are done inside the existing dialog handlers in
- * `src/safety/sessionLifecycleDialogs.js`, not in this panel — the
- * panel is intentionally state-display-only. The session-active gate
- * read happens at the top of every render so the badge stays in sync.
+ * State writes are done by the dialogs' GM-relay handlers in
+ * `src/safety/sessionLifecycleDialogs.js` (run on the canonical GM),
+ * not in this panel — the panel is intentionally state-display-only.
+ * The session-active gate read happens at the top of every render so
+ * the badge stays in sync.
  */
 
 import {
@@ -68,10 +69,14 @@ export class SessionPanelApp extends ApplicationV2 {
 
   /**
    * Open the singleton panel, or bring it to front if already open. The
-   * first call installs a Foundry hook listener so external state flips
+   * first call installs Foundry hook listeners so external state flips
    * (e.g. `!begin-session` typed in chat while the panel is open) keep
-   * the panel's badge in sync — internal-only re-renders happen via the
-   * action-handler awaits.
+   * the panel's badge in sync:
+   *   - `sessionStateChanged` fires on the client that ran Begin / End —
+   *     the canonical GM (applyBeginSession / applyEndSession).
+   *   - `updateSetting` / `createSetting` on campaignState fire on every
+   *     client when that write lands, so a player (or non-canonical GM)
+   *     whose Begin / End was relayed to the canonical GM refreshes too.
    *
    * @returns {SessionPanelApp}
    */
@@ -79,9 +84,20 @@ export class SessionPanelApp extends ApplicationV2 {
     if (!SessionPanelApp.#instance) {
       SessionPanelApp.#instance = new SessionPanelApp();
       Hooks.on(`${MODULE_ID}.sessionStateChanged`, SessionPanelApp.rerenderIfOpen);
+      Hooks.on("updateSetting", SessionPanelApp.onSettingChanged);
+      Hooks.on("createSetting", SessionPanelApp.onSettingChanged);
     }
     SessionPanelApp.#instance.render({ force: true });
     return SessionPanelApp.#instance;
+  }
+
+  /**
+   * World-setting document hook → re-render when campaignState changed.
+   * @param {{ key?: string }} setting — the Setting document
+   */
+  static onSettingChanged(setting) {
+    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    SessionPanelApp.rerenderIfOpen();
   }
 
   /** Refresh the panel — invoked from the campaignState hook on Begin/End. */
@@ -183,8 +199,8 @@ export class SessionPanelApp extends ApplicationV2 {
 
   static async #onBeginSession() {
     await openBeginSessionDialog();
-    // The dialog flips the session-active gate on success; re-render to
-    // update the state badge.
+    // On the canonical GM the flip has landed by now; elsewhere it lands
+    // when the relayed write arrives (updateSetting re-renders then).
     SessionPanelApp.rerenderIfOpen();
   }
 

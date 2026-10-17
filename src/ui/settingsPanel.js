@@ -8,16 +8,17 @@
 //   registerSettingsHooks() — wire X-Card chat hook + initial safety sync (call from ready hook)
 //   openSettingsPanel()     — public opener
 //   confirmInterpretation() — await-able wrapper for MoveConfirmDialog
-//   getSafetyConfig()       — read safety config (for assembler.js)
 //   getMischiefDial()       — read dial value (for mischief.js / index.js)
 //
 // Safety config storage fix:
 //   Lines/Veils are stored in game.settings (world/client-scoped).
-//   assembler.js reads from campaignState.safety.lines / .veils / .privateLines.
+//   The narrator (formatSafetyContext) reads campaignState.safety.lines / .veils / .privateLines.
 //   syncSafetyToCampaignState() bridges the two, called on every write and on ready.
 
-import { suppressScene } from '../context/safety.js';
+import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/safety.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
+import { onChatMessageRender } from '../system/chatHooks.js';
+import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -61,11 +62,8 @@ const SETTING = {
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
   // ── Character management ─────────────────────────────────────────────────
-  ACTIVE_CHARACTER_ID:      'activeCharacterId',
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
-  CHRONICLE_CONTEXT_COUNT:  'chronicleContextCount',
   CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
-  CHARACTER_CONTEXT_ENABLED:'characterContextEnabled',
   // ── Scene interrogation ──────────────────────────────────────────────────
   SCENE_QUERY_ENABLED:      'sceneQueryEnabled',
   SCENE_RESPONSE_LENGTH:    'sceneResponseLength',
@@ -75,8 +73,6 @@ const SETTING = {
   SESSION_GAP_HOURS:        'sessionGapHours',
   RECAP_GM_ONLY:            'recapGmOnly',
   // ── World Journal ─────────────────────────────────────────────────────────
-  WJ_ENABLED:                  'worldJournalEnabled',
-  WJ_AUTO_DETECT:              'worldJournalAutoDetect',
   WJ_LORE_IN_CONTEXT:          'loreInContext',
   WJ_THREATS_IN_CONTEXT:       'threatsInContext',
   WJ_FACTION_IN_CONTEXT:       'factionLandscapeInContext',
@@ -291,15 +287,6 @@ export function registerSettings() {
 
   // ── Character management settings ─────────────────────────────────────────
 
-  game.settings.register(MODULE_ID, SETTING.ACTIVE_CHARACTER_ID, {
-    name:    'Active Character Actor ID',
-    hint:    'The Foundry Actor ID of the active player character. Defaults to game.user.character when blank.',
-    scope:   'world',
-    config:  false,
-    type:    String,
-    default: '',
-  });
-
   game.settings.register(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY, {
     name:    'Chronicle Auto-Entry',
     hint:    'Automatically add a chronicle entry after each narration call.',
@@ -336,15 +323,6 @@ export function registerSettings() {
     default: true,
   });
 
-  game.settings.register(MODULE_ID, SETTING.CHRONICLE_CONTEXT_COUNT, {
-    name:    'Chronicle Entries in Context',
-    hint:    'Number of recent chronicle entries included in each context packet. Range: 1–10.',
-    scope:   'world',
-    config:  false,
-    type:    Number,
-    default: 5,
-  });
-
   game.settings.register(MODULE_ID, SETTING.CHRONICLE_SALIENCE, {
     name:    'Chronicle Capture Threshold',
     hint:    'Minimum salience for an automatic chronicle entry to be recorded. Conservative by default — fleeting scene beats are skipped; the player can still add smaller notes by hand. One of: trivial, scene, notable, significant, defining.',
@@ -353,15 +331,6 @@ export function registerSettings() {
     type:    String,
     choices: SALIENCE_CHOICES,
     default: 'significant',
-  });
-
-  game.settings.register(MODULE_ID, SETTING.CHARACTER_CONTEXT_ENABLED, {
-    name:    'Character Context in Packet',
-    hint:    'Include character state (stats, meters, chronicle) in context packets sent to the narrator.',
-    scope:   'world',
-    config:  false,
-    type:    Boolean,
-    default: true,
   });
 
   // ── Scene interrogation settings ──────────────────────────────────────────
@@ -423,24 +392,6 @@ export function registerSettings() {
   });
 
   // ── World Journal ─────────────────────────────────────────────────────────
-
-  game.settings.register(MODULE_ID, SETTING.WJ_ENABLED, {
-    name:    'World Journal Enabled',
-    hint:    'Master switch for the World Journal subsystem (folder, !journal commands, panel, context injection).',
-    scope:   'world',
-    config:  false,
-    type:    Boolean,
-    default: true,
-  });
-
-  game.settings.register(MODULE_ID, SETTING.WJ_AUTO_DETECT, {
-    name:    'World Journal Auto-Detect',
-    hint:    'When enabled, the combined detection pass populates lore, threats, factions, and locations from narration. Wired in Phase 4.',
-    scope:   'world',
-    config:  false,
-    type:    Boolean,
-    default: true,
-  });
 
   game.settings.register(MODULE_ID, SETTING.WJ_LORE_IN_CONTEXT, {
     name:    'Confirmed Lore in Narrator Context',
@@ -794,12 +745,14 @@ async function setPrivateLines(arr) {
  * This matches the shape that safety.js's resolvePrivateLines() expects.
  */
 async function syncSafetyToCampaignState() {
-  // campaignState is world-scoped — only the GM can write it.
-  // Non-GM players store their Private Lines in client-scoped game.settings;
-  // the assembler reads safety config from campaignState which the GM client
-  // keeps up to date. Private lines for non-GM players reach the assembler via
-  // the client-scoped read in getSafetyConfig() when narration runs locally.
-  if (!game.user?.isGM) return;
+  // campaignState is world-scoped — only the GM can write it. A non-GM
+  // player's Private Lines live in their client-scoped game.settings; the
+  // narrator reads safety config from campaignState, so a player's lines are
+  // relayed to the canonical GM (SAFETY-PRIVATE-LINES-PLAYER).
+  if (!game.user?.isGM) {
+    await relayPrivateLinesToGm();
+    return;
+  }
 
   try {
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
@@ -829,35 +782,91 @@ async function syncSafetyToCampaignState() {
   }
 }
 
+/**
+ * Player client: send this player's Private Lines to the canonical GM, who
+ * writes them into campaignState.safety.privateLines (applyPrivateLinesSync).
+ * With no GM connected the sync is deferred — registerSettingsHooks re-runs it
+ * when a GM joins — so no warning toast on every player login.
+ */
+async function relayPrivateLinesToGm() {
+  try {
+    const { requestGmAction, hasActiveGM } = await import('../multiplayer/gmRelay.js');
+    if (!hasActiveGM()) {
+      console.debug(`${MODULE_ID} | Private Lines sync deferred — no GM connected; it re-runs when a GM joins.`);
+      return;
+    }
+    await requestGmAction('safety.syncPrivateLines', { lines: getPrivateLines() });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Private Lines relay failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * GM-relay handler for `"safety.syncPrivateLines"` (GM_ACTIONS in
+ * src/multiplayer/gmRelay.js) — runs on the canonical GM. Replaces the
+ * requesting player's entry in campaignState.safety.privateLines; an empty
+ * list removes the entry. The player id comes from the relay context, never
+ * the payload, so a client can only write its own lines.
+ *
+ * @param {{ lines?: string[] }} payload
+ * @param {{ requesterId?: string|null }} ctx
+ * @returns {Promise<boolean>} true when campaignState was written
+ */
+export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
+  const playerId = ctx?.requesterId;
+  if (!playerId) {
+    console.warn(`${MODULE_ID} | Private Lines sync: no requesting user — ignored.`);
+    return false;
+  }
+  const lines = (Array.isArray(payload?.lines) ? payload.lines : [])
+    .filter(l => typeof l === 'string' && l.trim())
+    .map(l => l.trim().slice(0, 500));
+
+  const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+  if (!campaignState.safety) campaignState.safety = {};
+  const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
+  campaignState.safety.privateLines = lines.length > 0
+    ? [...others, { playerId, lines }]
+    : others;
+  await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // X-Card hook
 // ---------------------------------------------------------------------------
 
+/**
+ * Typed X-Card commands, intercepted before the message is created (the
+ * `chatMessage` hook fires only on the typing client):
+ *   `!x`        — anyone: playXCard() asks the canonical GM to record the
+ *                 pause (gmRelay "xcard.activate") and posts the X-Card card.
+ *   `!x clear`  — GM only: resumeNarrationAfterXCard(); a player is warned.
+ * Exact-match semantics: `!xyz` / `!x foo` pass through untouched.
+ *
+ * Also binds the X-Card card's GM-only "Resume narration" button on render.
+ * Called from registerSettingsHooks() (the `ready` hook in src/index.js).
+ */
 function registerXCardHook() {
-  Hooks.on('chatMessage', (chatLog, message, _chatData) => {
-    if (message.trim().toLowerCase() !== '!x') return true;
+  Hooks.on('chatMessage', (_chatLog, message, _chatData) => {
+    const text = String(message ?? '').trim().toLowerCase();
 
-    suppressScene();
+    if (text === '!x') {
+      playXCard().catch(err =>
+        console.error(`${MODULE_ID} | X-Card: !x failed:`, err));
+      return false;
+    }
 
-    ChatMessage.create({
-      content: `
-        <div class="starforged-move-card xcard-card">
-          <div class="move-header">
-            <span class="move-type">X-Card</span>
-          </div>
-          <div class="move-body">
-            <p class="xcard-message">
-              Scene paused. Current content is suppressed.<br>
-              The story will redirect at the next narration beat.
-            </p>
-          </div>
-        </div>
-      `.trim(),
-      flags: { [MODULE_ID]: { type: 'xcard' } },
-    });
+    if (/^!x\s+clear$/.test(text)) {
+      resumeNarrationAfterXCard().catch(err =>
+        console.error(`${MODULE_ID} | X-Card: !x clear failed:`, err));
+      return false;
+    }
 
-    return false;
+    return true;
   });
+
+  onChatMessageRender(bindXCardCard);
 }
 
 // ---------------------------------------------------------------------------
@@ -1984,7 +1993,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
     const mischiefBlock = context.mischiefApplied && context.mischiefAside ? `
       <div class="confirm-mischief-aside">
         <span class="mischief-label">Mischief (${context.dialLabel})</span>
-        <p class="mischief-aside-text">${context.mischiefAside}</p>
+        <p class="mischief-aside-text">${escapeAttr(context.mischiefAside)}</p>
       </div>
     ` : '';
 
@@ -1994,15 +2003,15 @@ export class MoveConfirmDialog extends ApplicationV2 {
       <div class="sf-move-confirm">
         <div class="confirm-move-row">
           <span class="confirm-field-label">Move</span>
-          <span class="confirm-field-value confirm-move-id">${context.moveId}</span>
+          <span class="confirm-field-value confirm-move-id" data-move-id="${escapeAttr(context.moveId)}">${escapeAttr(moveLabel(context.moveId))}</span>
         </div>
         <div class="confirm-move-row">
           <span class="confirm-field-label">Stat</span>
-          <span class="confirm-field-value">${context.statUsed}</span>
+          <span class="confirm-field-value confirm-stat">${escapeAttr(statLabel(context.statUsed))}</span>
         </div>
         <div class="confirm-rationale">
           <span class="confirm-field-label">Interpretation</span>
-          <p class="confirm-rationale-text">${context.rationale}</p>
+          <p class="confirm-rationale-text">${escapeAttr(context.rationale)}</p>
         </div>
         ${mischiefBlock}
         ${abilitiesBlock}
@@ -2156,6 +2165,35 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     </div>`;
 }
 
+// Stat / meter slugs the interpreter may return as statUsed (interpreter.js
+// statValid). Stats and the three character meters localise through
+// src/system/i18n.js; anything else (integrity, companion_health, a future
+// slug) is humanised rather than shown raw.
+const CONFIRM_STAT_SLUGS  = new Set(['edge', 'heart', 'iron', 'shadow', 'wits']);
+const CONFIRM_METER_SLUGS = new Set(['health', 'spirit', 'supply']);
+
+function humaniseSlug(slug) {
+  return String(slug ?? '')
+    .split('_')
+    .filter(Boolean)
+    .map(w => w[0].toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Localised label for the confirm dialog's Stat row. '—' passes through. */
+function statLabel(statUsed) {
+  if (!statUsed || statUsed === '—') return '—';
+  if (CONFIRM_STAT_SLUGS.has(statUsed))  return localizeStat(statUsed);
+  if (CONFIRM_METER_SLUGS.has(statUsed)) return localizeMeter(statUsed);
+  return humaniseSlug(statUsed);
+}
+
+/** Localised label for the confirm dialog's Move row. '—' passes through. */
+function moveLabel(moveId) {
+  if (!moveId || moveId === '—') return '—';
+  return localizeMove(moveId);
+}
+
 function escapeAttr(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -2190,19 +2228,14 @@ export function registerSettingsHooks() {
   syncSafetyToCampaignState().catch(err =>
     console.warn(`${MODULE_ID} | Initial safety sync failed:`, err.message)
   );
-}
 
-/**
- * Read safety config from game.settings.
- * Shape matches what safety.js's formatSafetyContext expects when called
- * without a campaignState (e.g. from tests or direct use).
- */
-export function getSafetyConfig() {
-  return {
-    lines:        getGlobalLines(),
-    veils:        getGlobalVeils(),
-    privateLines: getPrivateLines(),
-  };
+  // A player who logged in before any GM had nowhere to send their Private
+  // Lines (relayPrivateLinesToGm defers) — re-send when a GM connects.
+  Hooks.on('userConnected', (user, connected) => {
+    if (!connected || !user?.isGM || game.user?.isGM) return;
+    relayPrivateLinesToGm().catch(err =>
+      console.warn(`${MODULE_ID} | Private Lines re-sync on GM connect failed:`, err?.message ?? err));
+  });
 }
 
 export { getDial as getMischiefDial };

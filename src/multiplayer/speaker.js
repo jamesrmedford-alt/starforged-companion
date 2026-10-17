@@ -31,6 +31,45 @@
 const OWNERSHIP_OWNER = 3;
 
 /**
+ * The id of the user who authored a chat message, or null when the message
+ * carries none (programmatic / legacy shapes). Foundry v13 exposes the author
+ * as `message.author` (a User); older shapes and test fixtures carry a bare
+ * id on `author` / `user`, or only the raw `_source.author`. Only string ids
+ * are accepted — an author object without an id is "unknown", not a match.
+ *
+ * @param {ChatMessage|Object|null} message
+ * @returns {string|null}
+ */
+export function messageAuthorId(message) {
+  const candidates = [
+    message?.author?.id,
+    message?.author,
+    message?.user?.id,
+    message?.user,
+    message?._source?.author,
+  ];
+  return candidates.find(c => typeof c === "string" && c.length > 0) ?? null;
+}
+
+/**
+ * True when THIS client authored the message — the run-on policy for chat
+ * commands that must execute exactly once, on the typing player's client
+ * (src/index.js registerChatHook). Foundry fires createChatMessage on every
+ * connected client, so without this check a `!command` ran once per client.
+ *
+ * A message with no resolvable author (programmatic / legacy) counts as
+ * authored here, preserving the pre-routing behaviour for those shapes.
+ *
+ * @param {ChatMessage|Object|null} message
+ * @returns {boolean}
+ */
+export function isAuthoringClient(message) {
+  const authorId = messageAuthorId(message);
+  if (!authorId) return true;
+  return authorId === globalThis.game?.user?.id;
+}
+
+/**
  * @param {ChatMessage|null} message
  * @param {Object|null}      campaignState
  * @returns {string|null} Actor id or null

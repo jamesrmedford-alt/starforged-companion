@@ -10,7 +10,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { formatSafetyContext, suppressScene, clearXCard } from "../../src/context/safety.js";
+import {
+  formatSafetyContext,
+  suppressScene,
+  clearXCard,
+  playXCard,
+  postXCardCard,
+  resumeNarrationAfterXCard,
+  bindXCardCard,
+  XCARD_RESUME_ACTION,
+} from "../../src/context/safety.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -104,21 +113,198 @@ describe("X-Card write paths (suppressScene / clearXCard)", () => {
   });
 
   it("suppressScene persists xCardActive = true", async () => {
-    await suppressScene();
+    await expect(suppressScene()).resolves.toBe(true);
     expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(true);
   });
 
   it("clearXCard persists xCardActive = false", async () => {
     game.settings._store.set(`${MODULE_ID}.campaignState`, { xCardActive: true });
-    await clearXCard();
+    await expect(clearXCard()).resolves.toBe(true);
     expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(false);
   });
 
-  it("both fail open (warn, no throw) when settings are unavailable", async () => {
+  it("both fail open (warn, no throw, return false) when settings are unavailable", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(game.settings, "get").mockImplementation(() => { throw new Error("no settings"); });
-    await expect(suppressScene()).resolves.toBeUndefined();
-    await expect(clearXCard()).resolves.toBeUndefined();
+    await expect(suppressScene()).resolves.toBe(false);
+    await expect(clearXCard()).resolves.toBe(false);
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// X-Card play / card / resume (B1 / B2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GM     = { id: "gm-1", name: "Gina", isGM: true,  active: true };
+const PLAYER = { id: "pl-1", name: "Pat",  isGM: false, active: true };
+
+describe("X-Card play / resume", () => {
+  let savedUsers;
+  let savedUser;
+  let savedMessages;
+
+  function setUsers(users, currentUserId) {
+    game.users = Object.assign([...users], {
+      get: (id) => users.find(u => u.id === id) ?? null,
+    });
+    game.user = users.find(u => u.id === currentUserId) ?? null;
+  }
+
+  function fakeMessage(flags, id = "m1") {
+    const msg = {
+      id,
+      flags: { [MODULE_ID]: { ...flags } },
+      update: vi.fn(async (changes) => {
+        for (const [path, val] of Object.entries(changes)) {
+          const key = path.split(".").pop();
+          msg.flags[MODULE_ID][key] = val;
+        }
+      }),
+    };
+    return msg;
+  }
+
+  function fakeRoot() {
+    const listeners = {};
+    const btn = {
+      disabled: false,
+      textContent: "Resume narration",
+      removed: false,
+      remove() { this.removed = true; },
+      addEventListener: (ev, fn) => { listeners[ev] = fn; },
+      click: () => listeners.click?.({ preventDefault() {} }),
+    };
+    return {
+      btn,
+      querySelector: (sel) => (sel === `[data-action="${XCARD_RESUME_ACTION}"]` ? btn : null),
+    };
+  }
+
+  beforeEach(() => {
+    savedUsers    = game.users;
+    savedUser     = game.user;
+    savedMessages = game.messages;
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { xCardActive: false });
+    game.socket._reset();
+    ChatMessage._reset();
+  });
+  afterEach(() => {
+    game.users    = savedUsers;
+    game.user     = savedUser;
+    game.messages = savedMessages;
+    game.settings._store.delete(`${MODULE_ID}.campaignState`);
+    vi.restoreAllMocks();
+  });
+
+  it("postXCardCard (recorded) carries the resume button and the xcard flags", async () => {
+    await postXCardCard({ recorded: true });
+    const card = ChatMessage._created[0];
+    expect(card.content).toContain(`data-action="${XCARD_RESUME_ACTION}"`);
+    expect(card.content).toContain("Scene paused");
+    expect(card.flags[MODULE_ID]).toMatchObject({ type: "xcard", xcardCard: true, xcardRecorded: true });
+  });
+
+  it("postXCardCard (not recorded) says so and offers no resume button", async () => {
+    await postXCardCard({ recorded: false });
+    const card = ChatMessage._created[0];
+    expect(card.content).toMatch(/could not be recorded — no GM is connected/);
+    expect(card.content).not.toContain(XCARD_RESUME_ACTION);
+    expect(card.flags[MODULE_ID].xcardRecorded).toBe(false);
+  });
+
+  it("playXCard on the canonical GM records the pause locally and posts the card", async () => {
+    setUsers([GM, PLAYER], "gm-1");
+    await expect(playXCard()).resolves.toEqual({ recorded: true });
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(true);
+    expect(game.socket._emitted ?? []).toHaveLength(0);
+    expect(ChatMessage._created[0].flags[MODULE_ID].xcardRecorded).toBe(true);
+  });
+
+  it("playXCard from a player relays xcard.activate to the GM (no local write)", async () => {
+    setUsers([GM, PLAYER], "pl-1");
+    await expect(playXCard()).resolves.toEqual({ recorded: true });
+    expect(game.socket._emitted).toHaveLength(1);
+    expect(game.socket._emitted[0].payload).toMatchObject({
+      kind: "gmRelay.xcard.activate", requesterId: "pl-1",
+    });
+    // The player's client never writes the world setting itself.
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(false);
+    expect(ChatMessage._created).toHaveLength(1);
+  });
+
+  it("playXCard with no GM connected posts an honest 'not recorded' card and warns", async () => {
+    setUsers([PLAYER], "pl-1");
+    const warn = vi.spyOn(ui.notifications, "warn");
+    await expect(playXCard()).resolves.toEqual({ recorded: false });
+    expect(warn).toHaveBeenCalled();
+    expect(ChatMessage._created[0].content).toMatch(/could not be recorded/);
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(false);
+  });
+
+  it("resumeNarrationAfterXCard (GM) clears the flag, resolves open cards, posts a cleared card", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { xCardActive: true });
+    const open     = fakeMessage({ xcardCard: true }, "a");
+    const resolved = fakeMessage({ xcardCard: true, xcardResolved: true }, "b");
+    const other    = fakeMessage({ narratorCard: true }, "c");
+    game.messages = { contents: [open, resolved, other] };
+
+    await expect(resumeNarrationAfterXCard()).resolves.toBe(true);
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(false);
+    expect(open.update).toHaveBeenCalledWith({ [`flags.${MODULE_ID}.xcardResolved`]: true });
+    expect(resolved.update).not.toHaveBeenCalled();
+    expect(other.update).not.toHaveBeenCalled();
+    const card = ChatMessage._created[0];
+    expect(card.flags[MODULE_ID].xcardClearedCard).toBe(true);
+    expect(card.content).toContain("X-Card cleared");
+  });
+
+  it("resumeNarrationAfterXCard refuses a non-GM (flag stays set, warning shown)", async () => {
+    setUsers([GM, PLAYER], "pl-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { xCardActive: true });
+    const warn = vi.spyOn(ui.notifications, "warn");
+    await expect(resumeNarrationAfterXCard()).resolves.toBe(false);
+    expect(warn).toHaveBeenCalled();
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(true);
+    expect(ChatMessage._created).toHaveLength(0);
+  });
+
+  it("bindXCardCard removes the resume button for players", () => {
+    setUsers([GM, PLAYER], "pl-1");
+    const root = fakeRoot();
+    bindXCardCard(fakeMessage({ xcardCard: true }), root);
+    expect(root.btn.removed).toBe(true);
+  });
+
+  it("bindXCardCard renders a resolved card's button disabled for the GM", () => {
+    setUsers([GM], "gm-1");
+    const root = fakeRoot();
+    bindXCardCard(fakeMessage({ xcardCard: true, xcardResolved: true }), root);
+    expect(root.btn.removed).toBe(false);
+    expect(root.btn.disabled).toBe(true);
+    expect(root.btn.textContent).toBe("Narration resumed");
+  });
+
+  it("bindXCardCard ignores non-X-Card messages", () => {
+    setUsers([GM], "gm-1");
+    const root = fakeRoot();
+    bindXCardCard(fakeMessage({ narratorCard: true }), root);
+    expect(root.btn.disabled).toBe(false);
+    expect(root.btn.removed).toBe(false);
+  });
+
+  it("GM click on the resume button clears the X-Card and resolves the card", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { xCardActive: true });
+    const msg  = fakeMessage({ xcardCard: true });
+    game.messages = { contents: [msg] };
+    const root = fakeRoot();
+    bindXCardCard(msg, root);
+    await root.btn.click();
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).toBe(false);
+    expect(msg.flags[MODULE_ID].xcardResolved).toBe(true);
+    expect(root.btn.disabled).toBe(true);
   });
 });

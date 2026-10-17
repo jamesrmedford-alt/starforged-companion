@@ -242,12 +242,10 @@ export function buildFullCampaignState(overrides = {}) {
     creatureIds:   [],
 
     dismissedEntities:   [],
-    pendingClarification: null,
 
     safety: { lines: [], veils: [], privateLines: [] },
     worldTruths: {},
     sectors:    [],
-    progressTrackIds: [],
     clockIds:        [],
     oracleResultIds: [],
 

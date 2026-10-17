@@ -3,7 +3,7 @@
  * src/oracles/roller.js — Roll on any oracle table; inject result into context
  *
  * Responsibilities:
- * - Roll d100 and find the matching entry in a table
+ * - Roll d100 (or a custom table's own die) and find the matching entry
  * - Handle chained rolls (Action + Theme, Descriptor + Focus)
  * - Handle "roll twice" results
  * - Format results for chat injection and context packets
@@ -217,11 +217,34 @@ export const ORACLE_TABLES = {
 // ROLLER
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Category every runtime-registered (player-defined) table carries. */
+export const CUSTOM_ORACLE_CATEGORY = "custom";
+
+/**
+ * The die a table is rolled with. Built-in tables are all d100 (enforced by
+ * oracleTableIntegrity.test.js). Custom tables mirror the play kit's blank
+ * d4 / d6 / d8 / d10 worksheets: they roll 1..(highest max in the table), so
+ * a six-row table rolls a d6 instead of a d100 that misses it 94% of the time.
+ *
+ * @param {Array<{max:number}>} table
+ * @returns {number} die size (≥ 1)
+ */
+export function dieSizeForTable(table) {
+  let hi = 0;
+  for (const row of table ?? []) {
+    const m = Number(row?.max);
+    if (Number.isFinite(m) && m > hi) hi = m;
+  }
+  return Math.max(1, Math.floor(hi));
+}
+
 /**
  * Register a custom oracle table at runtime. Player-defined tables added
  * via the !oracle-add chat command land here; the table is held in memory
  * only (caller is responsible for any persistence). Throws if the tableId
- * collides with a built-in table.
+ * collides with a built-in table. Re-registering an existing CUSTOM table
+ * overwrites it (a GM re-defining their own table, or a campaignState sync
+ * delivering an edited table); built-ins can never be overwritten.
  *
  * @param {string} tableId
  * @param {{ name: string, table: Array, category?: string }} entry
@@ -231,19 +254,36 @@ export function registerOracleTable(tableId, entry) {
   if (!entry || !Array.isArray(entry.table) || !entry.table.length) {
     throw new Error("registerOracleTable: entry.table must be a non-empty array");
   }
-  if (Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId)) {
-    throw new Error(`registerOracleTable: tableId "${tableId}" already exists`);
+  const existing = Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId)
+    ? ORACLE_TABLES[tableId]
+    : null;
+  if (existing && existing.category !== CUSTOM_ORACLE_CATEGORY) {
+    throw new Error(`registerOracleTable: "${tableId}" is a built-in oracle table and cannot be redefined`);
   }
   ORACLE_TABLES[tableId] = {
     name:     entry.name ?? tableId,
     table:    entry.table,
-    category: entry.category ?? "custom",
+    category: CUSTOM_ORACLE_CATEGORY,
+    die:      dieSizeForTable(entry.table),
   };
 }
 
-/** Remove a previously registered custom oracle table. */
+/**
+ * Remove a previously registered custom oracle table. Built-in tables are
+ * never removed (a stray id must not be able to deregister the Action
+ * oracle); that case warns and returns false.
+ *
+ * @param {string} tableId
+ * @returns {boolean} true when a custom table was removed
+ */
 export function unregisterOracleTable(tableId) {
+  if (!Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId)) return false;
+  if (ORACLE_TABLES[tableId].category !== CUSTOM_ORACLE_CATEGORY) {
+    console.warn(`Oracle | unregisterOracleTable: "${tableId}" is a built-in table — not removed.`);
+    return false;
+  }
   delete ORACLE_TABLES[tableId];
+  return true;
 }
 
 /**
@@ -261,27 +301,33 @@ export function unregisterOracleTable(tableId) {
  * `pay_the_price` chat-command handler can dispatch into the suffer
  * executors. Non-routable entries omit the field entirely.
  *
+ * The die is the table's own (`entry.die`, custom tables — see
+ * dieSizeForTable) or d100 for every built-in; it is reported as `die` so
+ * cards can print "d6 = 4" rather than claiming a d100.
+ *
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
- * @returns {{ tableId, tableName, roll, result, isRef, refTableId, sufferRoute? }}
+ * @returns {{ tableId, tableName, die, roll, result, isRef, refTableId, sufferRoute? }}
  */
 export function rollOracle(tableId, options = {}) {
   const entry = ORACLE_TABLES[tableId];
   if (!entry) throw new Error(`Unknown oracle table: ${tableId}`);
 
-  const roll   = options.roll ?? rollD100();
+  const die    = entry.die ?? 100;
+  const roll   = options.roll ?? rollDie(die);
   const result = findResult(entry.table, roll);
 
   if (!result) {
-    console.warn(`Oracle | No result for roll ${roll} on table ${tableId}`);
-    return { tableId, tableName: entry.name, roll, result: "—", isRef: false };
+    console.warn(`Oracle | No result for roll ${roll} (d${die}) on table ${tableId}`);
+    return { tableId, tableName: entry.name, die, roll, result: "—", isRef: false };
   }
 
-  const resolved = resolveDirective(result, entry.table);
+  const resolved = resolveDirective(result, entry.table, 0, die);
   return {
     tableId,
     tableName: entry.name,
+    die,
     roll,
     result:     resolved,
     isRef:      !!result.ref,
@@ -309,11 +355,12 @@ export function rollOracle(tableId, options = {}) {
  * @param {{result:string, ref?:string}} entry
  * @param {Array<{min:number,max:number,result:string,ref?:string}>} parentTable
  * @param {number} [depth]
+ * @param {number} [parentDie] — die the parent table rolls with (custom tables)
  * @returns {string}
  */
 const MAX_DIRECTIVE_DEPTH = 4;
 
-function resolveDirective(entry, parentTable, depth = 0) {
+function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
   if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
 
   if (entry.ref === "action_theme") {
@@ -329,8 +376,8 @@ function resolveDirective(entry, parentTable, depth = 0) {
   }
 
   if (/^Roll (twice|again)\b/i.test(entry.result)) {
-    const a = rollAndResolve(parentTable, depth + 1);
-    const b = rollAndResolve(parentTable, depth + 1);
+    const a = rollAndResolve(parentTable, depth + 1, parentDie);
+    const b = rollAndResolve(parentTable, depth + 1, parentDie);
     const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
     return `${a}${joiner}${b}`;
   }
@@ -338,11 +385,11 @@ function resolveDirective(entry, parentTable, depth = 0) {
   return entry.result;
 }
 
-function rollAndResolve(table, depth) {
-  const roll = rollD100();
+function rollAndResolve(table, depth, die = 100) {
+  const roll = rollDie(die);
   const entry = findResult(table, roll);
   if (!entry) return "—";
-  return resolveDirective(entry, table, depth);
+  return resolveDirective(entry, table, depth, die);
 }
 
 /**
@@ -421,7 +468,12 @@ export function rollYesNo(odds, { roll, question = "" } = {}) {
 
 /** Roll a d100 (1-100). */
 function rollD100() {
-  return Math.floor(Math.random() * 100) + 1;
+  return rollDie(100);
+}
+
+/** Roll a die of `faces` sides (1..faces). */
+function rollDie(faces) {
+  return Math.floor(Math.random() * faces) + 1;
 }
 
 /**

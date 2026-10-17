@@ -139,27 +139,21 @@ function getPanelClass() {
       this.render();
     }
 
+    // ↻ / + share the chat verbs' logic (advanceClock / fillClock) so the
+    // panel posts the same cards, vignettes and already-triggered notice.
     static async #onAdvanceClock(_event, target) {
       if (!gmGate("Advance clock")) return;
-      const id = target.dataset.clockId;
-      const c  = (readState().clocks ?? []).find(x => x._id === id);
+      const c = (readState().clocks ?? []).find(x => x._id === target.dataset.clockId);
       if (!c) return;
-
-      if (c.type === "campaign") {
-        const r = rollYesNo(c.advanceOdds);
-        if (r.answer === "yes") {
-          await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
-        }
-      } else {
-        await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
-      }
+      await advanceClock(c);
       this.render();
     }
 
     static async #onFillClock(_event, target) {
       if (!gmGate("Fill clock")) return;
-      const id = target.dataset.clockId;
-      await mutateClock(id, x => { x.filled = Math.min(x.filled + 1, x.segments); });
+      const c = (readState().clocks ?? []).find(x => x._id === target.dataset.clockId);
+      if (!c) return;
+      await fillClock(c);
       this.render();
     }
 
@@ -410,40 +404,99 @@ async function cmdAdvance(parts) {
   if (!gmGate("!clock advance")) return;
   const clock = await findClockByArg(parts);
   if (!clock) return;
-
-  // Campaign clocks: roll the configured odds. Tension clocks: just fill one.
-  if (clock.type === "campaign") {
-    const r = rollYesNo(clock.advanceOdds);
-    if (r.answer === "yes") {
-      await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
-      const updated = readState().clocks.find(c => c._id === clock._id);
-      await postCard(
-        `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
-      );
-      fireClockVignette({ name: clock.name, type: clock.type, filled: updated.filled, segments: updated.segments, triggered: updated.filled >= updated.segments });
-      return;
-    }
-    return postCard(
-      `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
-    );
-  }
-
-  await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
-  const updated = readState().clocks.find(c => c._id === clock._id);
-  await postCard(
-    `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
-  );
-  fireClockVignette({ name: clock.name, type: clock.type, filled: updated.filled, segments: updated.segments, triggered: updated.filled >= updated.segments });
+  await advanceClock(clock);
 }
 
 async function cmdFill(parts) {
   if (!gmGate("!clock fill")) return;
   const clock = await findClockByArg(parts);
   if (!clock) return;
-  await mutateClock(clock._id, c => { c.filled = Math.min(c.filled + 1, c.segments); });
-  const updated = readState().clocks.find(c => c._id === clock._id);
+  await fillClock(clock);
+}
+
+/**
+ * Advance one clock — the `!clock advance` verb and the panel's ↻ button.
+ * Campaign clocks roll their advanceOdds; tension clocks fill one segment.
+ * Every real advance gets a narrator vignette (narrateClockAdvancement
+ * writes "grows by a notch" prose, or the trigger moment on the final
+ * segment). A clock that is already full has nothing left to advance: it
+ * gets a short notice and NO vignette — re-announcing "TRIGGERED" and
+ * paying for a second trigger vignette was the old behaviour.
+ *
+ * @param {object} clock — a campaignState.clocks entry
+ */
+async function advanceClock(clock) {
+  if (isFull(clock)) return postAlreadyTriggered(clock);
+
+  // Campaign clocks: roll the configured odds. Tension clocks: just fill one.
+  if (clock.type === "campaign") {
+    const r = rollYesNo(clock.advanceOdds);
+    if (r.answer !== "yes") {
+      return postCard(
+        `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
+      );
+    }
+    const updated = await fillOneSegment(clock);
+    if (!updated) return;
+    await postCard(
+      `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
+    );
+    fireClockVignette(vignetteData(updated));
+    return;
+  }
+
+  const updated = await fillOneSegment(clock);
+  if (!updated) return;
   await postCard(
-    `<strong>Clock filled</strong><p>${escapeHtml(clock.name)} — <strong>${updated.filled}/${updated.segments}</strong>.${updated.filled >= updated.segments ? " <em>TRIGGERED.</em>" : ""}</p>`,
+    `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
+  );
+  fireClockVignette(vignetteData(updated));
+}
+
+/**
+ * Manually fill one segment — the `!clock fill` verb and the panel's +
+ * button. A quiet GM bookkeeping step, so intermediate fills get no
+ * vignette; the transition to full is the clock triggering, which gets the
+ * same trigger vignette `advance` produces. Already full → notice only.
+ *
+ * @param {object} clock — a campaignState.clocks entry
+ */
+async function fillClock(clock) {
+  if (isFull(clock)) return postAlreadyTriggered(clock);
+  const updated = await fillOneSegment(clock);
+  if (!updated) return;
+  await postCard(
+    `<strong>Clock filled</strong><p>${escapeHtml(clock.name)} — <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
+  );
+  if (isFull(updated)) fireClockVignette(vignetteData(updated));
+}
+
+/** Fill one segment and return the persisted clock (null if it vanished). */
+async function fillOneSegment(clock) {
+  await mutateClock(clock._id, c => { c.filled = Math.min((c.filled ?? 0) + 1, c.segments); });
+  const updated = (readState().clocks ?? []).find(c => c._id === clock._id) ?? null;
+  if (!updated) {
+    console.warn(`${MODULE_ID} | clock "${clock.name}" disappeared while advancing — nothing posted.`);
+  }
+  return updated;
+}
+
+function isFull(clock) {
+  return (clock.filled ?? 0) >= clock.segments;
+}
+
+function triggeredSuffix(clock) {
+  return isFull(clock) ? " <em>TRIGGERED.</em>" : "";
+}
+
+function vignetteData(clock) {
+  return { name: clock.name, type: clock.type, filled: clock.filled, segments: clock.segments, triggered: isFull(clock) };
+}
+
+function postAlreadyTriggered(clock) {
+  const ref = /\s/.test(clock.name) ? `"${clock.name}"` : clock.name;
+  return postCard(
+    `<strong>Clock already triggered</strong><p>${escapeHtml(clock.name)} is full (${clock.segments}/${clock.segments}) — nothing to advance. Use <code>!clock reset ${escapeHtml(ref)}</code> to start it again, or <code>!clock remove</code> it.</p>`,
   );
 }
 

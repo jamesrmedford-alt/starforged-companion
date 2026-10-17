@@ -198,14 +198,6 @@ export async function updateSettlement(actorId, updates) {
   return updated;
 }
 
-export async function setPortraitId(actorId, artAssetId) {
-  return updateSettlement(actorId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(settlement) {
-  return settlement.active && !!settlement.portraitSourceDescription && !settlement.portraitId;
-}
-
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }

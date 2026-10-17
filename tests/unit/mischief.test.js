@@ -3,7 +3,6 @@
 //
 // Actual exported API (confirmed from source):
 //   buildMischiefAside(narration, moveId, statUsed, mischiefLevel) → string
-//   shouldApplyMischief(mischiefLevel) → boolean
 //   buildMischiefFraming(mischiefLevel, narration) → string | null
 //
 // Dial value "lawful" (stored by settingsPanel.js / returned by getMischiefDial())
@@ -14,7 +13,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildMischiefAside,
-  shouldApplyMischief,
   buildMischiefFraming,
 } from '../../src/moves/mischief.js';
 
@@ -187,41 +185,13 @@ describe('buildMischiefAside — edge cases', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. shouldApplyMischief
+// 7. shouldApplyMischief — deleted (2026-10 dead-export audit)
 // ---------------------------------------------------------------------------
 
 describe('shouldApplyMischief', () => {
-  it('returns false for serious dial', () => {
-    expect(shouldApplyMischief('serious')).toBe(false);
-  });
-
-  it('returns true for chaotic dial', () => {
-    expect(shouldApplyMischief('chaotic')).toBe(true);
-  });
-
-  it('returns false for unrecognised value', () => {
-    expect(shouldApplyMischief('unknown')).toBe(false);
-    expect(shouldApplyMischief(undefined)).toBe(false);
-  });
-
-  it('returns a boolean for balanced dial', () => {
-    expect(typeof shouldApplyMischief('balanced')).toBe('boolean');
-  });
-
-  it('balanced returns true when Math.random is below the threshold', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.10);
-    expect(shouldApplyMischief('balanced')).toBe(true);
-    vi.restoreAllMocks();
-  });
-
-  it('balanced returns false when Math.random is above the threshold', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.50);
-    expect(shouldApplyMischief('balanced')).toBe(false);
-    vi.restoreAllMocks();
-  });
-
-  it('"lawful" is treated identically to "serious" — returns false', () => {
-    expect(shouldApplyMischief('lawful')).toBe(false);
+  it('is no longer exported (no live path gated on it; the framing carries the dial)', async () => {
+    const mod = await import('../../src/moves/mischief.js');
+    expect(mod).not.toHaveProperty('shouldApplyMischief');
   });
 });
 

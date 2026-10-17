@@ -202,7 +202,6 @@ function emptyConsequences() {
     healthChange:        0,
     spiritChange:        0,
     supplyChange:        0,
-    progressMarked:      0,
     sufferMoveTriggered: null,
     // F16 §5.2: structured prompt that the SufferChoiceDialog renders
     // when the outcome requires a player choice (Shape B1 generic
@@ -210,7 +209,6 @@ function emptyConsequences() {
     // choice required. See docs/moves/suffer-routing-audit.md for the
     // per-move target shapes.
     sufferPrompt:        null,
-    progressTrackId:     null,
     combatPosition:      null,
     // Exploration lifecycle: when true, the pipeline marks one rank-step on the
     // shared expedition progress track (resolve-or-create). See moves/expedition.js.
@@ -244,9 +242,7 @@ function emptyConsequences() {
     // true → pipeline calls forgeBond on the target connection, marks bonds legacy.
     forgeABond:            false,
     // true → pipeline resolves the active vow and marks progress on it per its
-    // rank (Reach a Milestone — a no-roll move). See moves/milestone.js. The old
-    // `progressMarked: 1` was a dead no-op: persistResolution only marks when
-    // progressTrackId is set, which no resolver populates for vows.
+    // rank (Reach a Milestone — a no-roll move). See moves/milestone.js.
     reachMilestone:        false,
     // Pipeline applies this delta to companion health (Companion Takes a Hit strong hit).
     companionHealthChange: 0,
@@ -268,7 +264,9 @@ function emptyConsequences() {
  *   allowComplication? }` (Shape B2). Player picks from listed options.
  *   `sufferMoveTriggered` remains set in parallel as a deprecated back-compat
  *   field for one release; new code reads from `sufferPrompt`.
- * - Progress moves return progressMarked: 0 (progress is tracked separately per track)
+ * - Progress marking is never a generic consequence field: each kind has its
+ *   own pipeline flag (reachMilestone, combatProgress, expeditionProgress,
+ *   legacyMark, developRelationship, …) applied in src/index.js.
  *
  * Audit: docs/moves/suffer-routing-audit.md tabulates every move + outcome
  * against the play kit's outcome text and the target shape below. When
@@ -405,9 +403,8 @@ const CONSEQUENCE_MAP = {
   reach_a_milestone: (_outcome, _isMatch) => ({
     ...emptyConsequences(),
     // Pipeline (GM-gated) resolves the target vow and marks progress per its
-    // rank (moves/milestone.js). The old `progressMarked: 1` was a dead no-op —
-    // persistence only marks when progressTrackId is set, which no resolver
-    // populates for embedded vow Items.
+    // rank (moves/milestone.js). Replaced the old dead `progressMarked: 1`
+    // route (removed 2026-10 — nothing ever set its progressTrackId).
     reachMilestone: true,
     otherEffect: "Mark progress on your vow per its rank.",
   }),
@@ -460,9 +457,8 @@ const CONSEQUENCE_MAP = {
     ...emptyConsequences(),
     // Pipeline (GM-gated) resolves the target connection and applies either a
     // connection-track mark (un-bonded) or a bonds-legacy mark (bonded, per
-    // §3.3.5). See src/moves/developRelationship.js. The old `progressMarked: 1`
-    // was a dead no-op — persistence only marks when progressTrackId is set,
-    // which no resolver populates.
+    // §3.3.5). See src/moves/developRelationship.js. Replaced the old dead
+    // `progressMarked: 1` route (removed 2026-10).
     developRelationship: true,
     otherEffect: "Develop the relationship: mark connection progress, or — if you are bonded — mark your bonds legacy track.",
   }),

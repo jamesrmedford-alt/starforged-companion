@@ -18,7 +18,9 @@ import { MOVES, STATS } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
+import { getPlayerActors, readVows } from "../character/actorBridge.js";
 
+const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
 
@@ -183,21 +185,75 @@ combatRank: only for enter_the_fray. When the narration implies the foe’s dang
  * Kept short by design — the system prompt already has the full move reference.
  * This just gives the interpreter enough context to make good choices.
  */
-function buildContextSummary(campaignState) {
+export function buildContextSummary(campaignState) {
   const lines = [];
 
-  // Active vows — helps identify reach_a_milestone and fulfill_your_vow
-  const activeTracks = (campaignState.progressTrackIds ?? []);
-  if (activeTracks.length) {
-    lines.push(`Active progress tracks: ${activeTracks.length} open (vows, expeditions, combats).`);
-  }
+  // Open vows + other open tracks — helps identify reach_a_milestone,
+  // fulfill_your_vow, finish_an_expedition, take_decisive_action, and name
+  // the moveTarget. Read from the live stores: vow Items on the player
+  // characters and the Progress Tracks journal. (This once read
+  // campaignState.progressTrackIds, which nothing ever wrote — the
+  // interpreter was never told about any track.)
+  const vows = readOpenVowLabels();
+  if (vows.length) lines.push(`Open vows: ${formatList(vows)}.`);
+
+  const tracks = readOpenTrackLabels();
+  if (tracks.length) lines.push(`Open progress tracks: ${formatList(tracks)}.`);
 
   // Current session mischief level (informational — actual framing in system prompt)
-  if (campaignState.currentSessionId) {
+  if (campaignState?.currentSessionId) {
     lines.push(`Session active.`);
   }
 
-  return lines.length ? lines.join(" ") : "New campaign — no active tracks yet.";
+  if (!vows.length && !tracks.length) lines.unshift("No active tracks yet.");
+  return lines.join(" ");
+}
+
+const CONTEXT_LIST_CAP = 8;
+
+// The Progress Tracks journal (src/ui/progressTracks.js JOURNAL_NAME /
+// FLAG_KEY). Read directly — importing the UI panel module here would pull
+// ApplicationV2 code into the interpreter.
+const PROGRESS_JOURNAL_NAME = "Starforged Progress Tracks";
+const PROGRESS_FLAG_KEY     = "tracks";
+
+/** `"Vow name"` for each open vow on the player characters (owner-tagged when >1 PC). */
+function readOpenVowLabels() {
+  try {
+    const pcs   = getPlayerActors();
+    const multi = pcs.length > 1;
+    const out   = [];
+    for (const actor of pcs) {
+      for (const vow of readVows(actor)) {
+        if (vow.completed || !vow.name) continue;
+        out.push(multi ? `"${vow.name}" (${actor.name})` : `"${vow.name}"`);
+      }
+    }
+    return out;
+  } catch (err) {
+    console.debug(`${MODULE_ID} | interpreter: open-vow read failed — omitting vows from context:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/** `type "label"` for each open non-vow track in the Progress Tracks journal. */
+function readOpenTrackLabels() {
+  try {
+    const journal = game.journal?.find?.(j => j.name === PROGRESS_JOURNAL_NAME);
+    if (!journal) return [];
+    const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];
+    return (Array.isArray(tracks) ? tracks : [])
+      .filter(t => t && !t.completed && t.type !== "vow" && t.label)
+      .map(t => `${t.type ?? "track"} "${t.label}"`);
+  } catch (err) {
+    console.debug(`${MODULE_ID} | interpreter: progress-track read failed — omitting tracks from context:`, err?.message ?? err);
+    return [];
+  }
+}
+
+function formatList(items) {
+  if (items.length <= CONTEXT_LIST_CAP) return items.join(", ");
+  return `${items.slice(0, CONTEXT_LIST_CAP).join(", ")}, +${items.length - CONTEXT_LIST_CAP} more`;
 }
 
 

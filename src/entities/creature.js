@@ -104,37 +104,6 @@ export function getCreature(journalEntryId) {
   }
 }
 
-export async function updateCreature(journalEntryId, updates) {
-  const entry = game.journal?.get(journalEntryId);
-  if (!entry) throw new Error(`Creature journal entry not found: ${journalEntryId}`);
-
-  const page    = entry.pages?.contents?.[0];
-  const current = page?.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {};
-  const updated = {
-    ...current,
-    ...updates,
-    _id:       current._id,
-    createdAt: current.createdAt,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await page.setFlag(MODULE_ID, FLAG_KEY, updated);
-
-  if (updates.name && updates.name !== entry.name) {
-    await entry.update({ name: updates.name });
-  }
-
-  return updated;
-}
-
-export async function setPortraitId(journalEntryId, artAssetId) {
-  return updateCreature(journalEntryId, { portraitId: artAssetId });
-}
-
-export function isReadyForArtGeneration(creature) {
-  return creature.active && !!creature.portraitSourceDescription && !creature.portraitId;
-}
-
 /**
  * Render the Creature's descriptive fields into HTML for the page body so the
  * JournalEntryPage isn't blank (F19 / theme T3). The full record still lives
