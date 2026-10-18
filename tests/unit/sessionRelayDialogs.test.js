@@ -14,7 +14,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const calls = [];
 
-vi.mock("../../src/factContinuity/sceneLifecycle.js", () => ({
+vi.mock("../../src/factContinuity/sceneLifecycle.js", async () => ({
+  ...(await vi.importActual("../../src/factContinuity/sceneLifecycle.js")),
   endScene: vi.fn(async () => { calls.push("endScene"); }),
 }));
 vi.mock("../../src/narration/narrator.js", () => ({
@@ -50,6 +51,8 @@ import {
 } from "../../src/safety/sessionLifecycleDialogs.js";
 import { SessionPanelApp } from "../../src/ui/sessionPanel.js";
 import { applyMeterChanges } from "../../src/character/actorBridge.js";
+import { getRollingSessionSummary } from "../../src/narration/narrator.js";
+import { writeSessionLog } from "../../src/world/worldJournal.js";
 
 const MODULE_ID = "starforged-companion";
 const GM     = { id: "gm-1", name: "Gina", isGM: true,  active: true };
@@ -297,6 +300,31 @@ describe("End a Session", () => {
     expect(vi.getTimerCount()).toBe(1);
     // Card posted after the GM-side work.
     expect(ChatMessage._created).toHaveLength(1);
+  });
+
+  // Second review round: `state` is read before endScene and the summary's
+  // Claude call; writing it back whole reverted a move persisted meanwhile —
+  // even its released pendingMove lock, so every later move was refused.
+  it("merges only its own fields onto the latest store — a move persisted during the summary survives", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      sessionActive: true, pendingMove: true, currentSessionId: "s1", sessionLogs: { s1: [] },
+    });
+    getRollingSessionSummary.mockImplementationOnce(async () => {
+      calls.push("summary");
+      // The move pipeline persists its resolution and releases its lock.
+      game.settings._store.set(`${MODULE_ID}.campaignState`, {
+        ...state(), pendingMove: false, sessionLogs: { s1: [{ moveId: "face_danger" }] },
+      });
+    });
+
+    await applyEndSession({ questFocus: "Find the beacon", connectionFocus: "" }, {});
+
+    expect(state()).toMatchObject({ sessionActive: false, questFocus: "Find the beacon", pendingMove: false });
+    expect(state().sessionLogs.s1).toEqual([{ moveId: "face_danger" }]);
+    expect(writeSessionLog).toHaveBeenCalledWith(expect.objectContaining({
+      pendingMove: false, sessionLogs: { s1: [{ moveId: "face_danger" }] },
+    }));
   });
 
   it("no focus → no momentum; sessionLogAutoWrite=false skips the log", async () => {

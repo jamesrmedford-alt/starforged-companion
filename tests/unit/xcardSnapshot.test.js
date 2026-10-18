@@ -15,7 +15,7 @@
  *   they own onto the latest stored campaignState (persistCampaignStateFields).
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { narrateResolution, narratePacedInput } from '../../src/narration/narrator.js';
 import { persistCampaignStateFields, startScene } from '../../src/factContinuity/sceneLifecycle.js';
 
@@ -112,5 +112,47 @@ describe('narrator sidecar persist', () => {
     await new Promise(r => setTimeout(r, 0));
     expect(stored().xCardActive).toBe(true);
     expect(stored().sceneTruths.map(t => t.fact)).toContain('The hatch is open.');
+  });
+
+  // Second review round: the ledgers themselves were written whole from the
+  // snapshot, so a `!truth` strike or an oracle truth that landed during the
+  // narration was lost, and a scene End a Session had closed came back.
+  it('keeps a mid-narration `!truth` strike and oracle truth (union by id, retraction sticks)', async () => {
+    const { applyNarratorSidecar } = await import('../../src/narration/narrator.js');
+    const t1 = { id: 't1', subject: 'door', fact: 'The door is locked.', retracted: false };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      currentSceneId: 'sc', sceneState: { bySubject: {}, sceneId: 'sc' },
+      sceneTruths: [{ ...t1, retracted: true }, { id: 't2', subject: 'oracle', fact: 'A distress beacon pulses.' }],
+    });
+    const snapshot = {
+      currentSessionId: 's', currentSceneId: 'sc',
+      sceneTruths: [{ ...t1 }], sceneState: { bySubject: {}, sceneId: 'sc' },
+    };
+    const raw = 'The hatch groans open.\n\n```json\n'
+      + '{"newTruths":[{"subject":"hatch","fact":"The hatch is open."}],"stateChanges":[]}\n```';
+    applyNarratorSidecar(raw, snapshot, {});
+    await new Promise(r => setTimeout(r, 0));
+    const truths = stored().sceneTruths;
+    expect(truths.find(t => t.id === 't1').retracted).toBe(true);
+    expect(truths.map(t => t.fact)).toEqual(expect.arrayContaining(['A distress beacon pulses.', 'The hatch is open.']));
+  });
+
+  it('writes nothing when the scene changed meanwhile — a closed scene stays closed', async () => {
+    const { applyNarratorSidecar } = await import('../../src/narration/narrator.js');
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const closed = { xCardActive: false, currentSceneId: null, sceneTruths: [], sceneState: { bySubject: {}, sceneId: null } };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, closed);
+    const snapshot = {
+      currentSessionId: 's', currentSceneId: 'sc',
+      sceneTruths: [{ id: 't1', subject: 'door', fact: 'The door is locked.' }],
+      sceneState: { bySubject: {}, sceneId: 'sc' },
+    };
+    const raw = 'The hatch groans open.\n\n```json\n'
+      + '{"newTruths":[{"subject":"hatch","fact":"The hatch is open."}],"stateChanges":[]}\n```';
+    applyNarratorSidecar(raw, snapshot, {});
+    await new Promise(r => setTimeout(r, 0));
+    expect(stored()).toBe(closed);
+    expect(stored().sceneTruths).toEqual([]);
+    expect(debug.mock.calls.some(c => /the scene changed meanwhile — narrator sidecar not persisted/.test(String(c[0])))).toBe(true);
   });
 });

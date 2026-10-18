@@ -1,9 +1,11 @@
 # Connection flow — as implemented
 
 A stage-by-stage map of the connection (NPC bond) lifecycle as the code
-actually implements it, verified against source (post-PR #257). File
-references name the owning function; line numbers drift, so search by symbol.
-Sibling docs: `combat-flow.md`, `vow-flow.md`, `exploration-flow.md`.
+actually implements it, verified against source (post-PR #257; `!bond`, the
+connection picker and the won-fight Deepen button updated for the 2026-10
+audit's GM relay). File references name the owning function; line numbers
+drift, so search by symbol. Sibling docs: `combat-flow.md`, `vow-flow.md`,
+`exploration-flow.md`.
 
 The authoritative record is a `character`-type **Actor** (NPC card) tagged
 `flags[MODULE].entityType:'connection'` (FOLDER-002 — never match bare
@@ -49,15 +51,43 @@ Five paths converge on `createConnection()`:
   **bonded** → bonds-legacy ticks (strong 2 / weak 1) and a match-on-hit
   raises the connection's rank (`nextRank`, clamped at epic). Ambiguous
   target (several active, none named) silently no-ops.
-- **`!bond <rank>`** — a standalone bonded develop roll (+rank adds): strong
-  → 2 bonds-legacy ticks, weak → +2 momentum. Not tied to a specific
-  connection; its "raise rank on a match" is text only.
+- **`!bond [rank] [name]`** — the bonded develop roll
+  (`src/moves/bondCommand.js`). `handleBondCommand` runs once, on the
+  typist's client (chat routing `RUN_ON.AUTHOR`): it resolves the **named**
+  bonded connection (`selectConnection` over active bonded records), else the
+  **sole** bonded one, and that connection's rank drives the adds (a bare
+  rank arg is the untargeted fallback; a name that matches nothing warns).
+  It rolls, posts the card, and relays the lasting effect to the canonical
+  GM (`requestGmAction("bond.apply")` → `applyBondEffects`): strong → 2
+  bonds-legacy ticks (`addLegacyTicks`, so filled boxes pay XP), weak → +2
+  momentum to the **roller's** PC (`resolveSpeakerActorId`), and a hit with a
+  match on a targeted connection raises its rank one step for real
+  (`updateConnection` + the bond-Item mirror via `setBondItemRank`). The
+  handler validates the client-supplied payload: ticks / momentum clamp to
+  the legal {0, 2} (a request carrying both is refused), the raise must be
+  exactly `nextRank` of the bonded connection's current rank, and momentum
+  goes only to a PC the requester owns (or a GM's request). With no GM
+  connected the card still posts and `requestGmAction` warns that nothing was
+  saved.
 - **`deepenLinkedConnection`** — the vow/fight payoff path: marks the
   connection's own `relationshipTicks` (not bonds legacy), scaled by the
   source's rank.
-- **Suggestion buttons** on connection-category move cards open a picker that
-  posts a forced develop/forge move naming the connection (picker wiring is
-  GM-only).
+- **Suggestion buttons** on connection-category move cards
+  (`wireConnectionSuggestionButtons`) post a **connection picker** card
+  (`postConnectionPickerCard` — `flags.choices` lists the offered
+  connections; forge offers only un-bonded ones). Any user's pick relays
+  `connection.pick` to the canonical GM (`wireConnectionPickerButtons` →
+  `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
+  which checks the pick is one of the card's choices (its buttons' data
+  attributes for an older card) and that the clicker's PC is one the
+  requester owns, posts the forced Develop Your Relationship / Forge a Bond
+  move **once** — speaking as the clicker's PC, so the pipeline credits the
+  roller although the GM authors the message — and stamps the card
+  `resolved` (in-flight guarded; a failed post leaves it open). A click with
+  no GM connected, a refusal, or a card still unresolved after
+  `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
+  GM-only; the first 2026-10 fix let any click post the move but only the
+  card's owner could stamp it resolved, so it could fire repeatedly.)
 
 ## 3. Forge the bond
 
@@ -80,8 +110,11 @@ fallback, and forge affordances exclude it.
 Vow↔connection linkage lives on the vow item (`linkedConnectionName`, set at
 inciting swear or via the vow card's picker). Fulfilment and won-linked-fight
 paths deepen the bond (`deepenLinkedConnection`) and grant the vow's promised
-reward; the victory card's 🤝 Deepen button relays over socket
-`connection.deepen` for players. Bonds-legacy ticks accrue on
+reward; the victory card's 🤝 Deepen button relays `fightVow.deepenBond` to
+the canonical GM (`applyFightVowDeepenBond`, one-shot via
+`resolvedActions.deepenBond`, values from the GM-authored card — see
+`combat-flow.md` §4; it replaced the raw `connection.deepen` socket emit).
+Bonds-legacy ticks accrue on
 `campaignState.legacyTracks.bonds`, and every newly filled box now awards XP
 to each PC with an earned-XP card (LEGACY-XP-DEAD fix — `addLegacyTicks`
 pays 2 XP/box, 1 once the track is cleared; `!bond` routes through it too).
@@ -114,7 +147,11 @@ summary lives in the `known-issues.md` table and the code.
    `campaignState.legacyTracks[key].ticks`; the XP-awarding
    `markLegacyProgress` (2 XP/box) is reachable only via
    `consequences.progressTrackId`, which no resolver sets (the resolver's own
-   comments say so). Applies to bonds, quests, and discoveries alike.
+   comments say so). Applies to bonds, quests, and discoveries alike. (Fixed
+   by moving the XP award into `addLegacyTicks`; the dead
+   `progressTrackId` / `progressMarked` route and `persistResolution`'s
+   mark-progress steps, `markLegacyProgress` included, were deleted in the
+   2026-10 audit.)
 4. **The sheet's bond-Item track never advances** (BOND-ITEM-MIRROR):
    `markRelationshipProgress`/`forgeBond` update the record only; the PC's
    `subtype:"bond"` Item stays at 0 forever, so the vendor Connections tab

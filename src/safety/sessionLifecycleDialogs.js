@@ -297,13 +297,16 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   });
 }
 
+/** campaignState fields applyEndSession writes (the rest is merged from the store). */
+const END_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionActive", "sessionActiveStartedAt"]);
+
 /**
  * GM-relay handler for `"session.end"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
  * order: persist foci → session-active flip OFF → close the active scene →
- * finalise the rolling session summary → persist campaignState (+
- * sessionStateChanged) → Session Log write → +1 momentum to all players when
- * a focus was set → closing NPC vignette.
+ * finalise the rolling session summary → persist End's own fields onto the
+ * latest campaignState (+ sessionStateChanged) → Session Log write → +1
+ * momentum to all players when a focus was set → closing NPC vignette.
  *
  * @param {{ questFocus?: string, connectionFocus?: string }} payload
  * @param {Object} [_ctx]
@@ -350,7 +353,16 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
     console.warn(`${MODULE_ID} | rolling session summary finalise failed:`, err?.message ?? err);
   }
 
-  await game.settings.set(MODULE_ID, "campaignState", state);
+  // Write back only the fields End a Session owns, merged onto the latest
+  // stored campaignState. `state` was read before endScene and the summary's
+  // Claude call, and writing it whole reverted a move persisted meanwhile —
+  // its session-log entry, legacy ticks and entity ids, and even its released
+  // `pendingMove` lock (every later move then refused until a reload). The
+  // scene fields were persisted by endScene, the summary by
+  // getRollingSessionSummary. A write failure still throws (the card says so).
+  const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+  const ended = mergeOwnedFields(state, END_SESSION_FIELDS, "end session");
+  await game.settings.set(MODULE_ID, "campaignState", ended);
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
   // Write the session log on End (F18). writeSessionLog was implemented but
@@ -358,7 +370,7 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
   if (game.settings.get(MODULE_ID, "sessionLogAutoWrite") !== false) {
     try {
       const { writeSessionLog } = await import("../world/worldJournal.js");
-      await writeSessionLog(state);
+      await writeSessionLog(ended);
     } catch (err) {
       console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
     }

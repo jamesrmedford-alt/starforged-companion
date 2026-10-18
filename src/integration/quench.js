@@ -4246,6 +4246,25 @@ function registerSafetyExtrasTests(quench) {
           assert.include(out, "A-only");
           assert.include(out, "B-only");
         });
+
+        it("shared narration built on a GM's client carries every player's private lines", async function () {
+          if (!game.user.isGM) this.skip();
+          const { formatNarratorSafetyContext } = await import(
+            `/modules/${MODULE_ID}/src/context/safety.js`);
+          const state = {
+            safety: {
+              lines: [],
+              veils: [],
+              privateLines: [
+                { playerId: "user-A", lines: ["A-only"] },
+                { playerId: "user-B", lines: ["B-only"] },
+              ],
+            },
+          };
+          const out = formatNarratorSafetyContext(state);
+          assert.include(out, "A-only");
+          assert.include(out, "B-only");
+        });
       });
 
       describe("!x via chat hook — full path", function () {

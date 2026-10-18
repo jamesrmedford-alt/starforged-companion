@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatSafetyContext,
+  formatNarratorSafetyContext,
   suppressScene,
   clearXCard,
   playXCard,
@@ -100,6 +101,79 @@ describe("formatSafetyContext", () => {
       expect(out).toContain("- No dogs harmed");
       expect(out).toContain("- No body horror");
     });
+
+    it("the GM's list renders a line two players share once", () => {
+      const out = formatSafetyContext(campaign({
+        privateLines: [
+          { playerId: "user-a", lines: ["No spiders"] },
+          { playerId: "user-b", lines: ["No spiders", "No drowning"] },
+        ],
+      }), null, "gm");
+      expect(out.match(/No spiders/g)).toHaveLength(1);
+      expect(out).toContain("- No drowning");
+    });
+  });
+});
+
+// Shared narration (SAFETY-PRIVATE-LINES-SHARED): the narrator system prompt
+// passed no user id, so it carried no Private Line at all — not even the GM's.
+describe("formatNarratorSafetyContext — Private Lines in shared narration", () => {
+  const state = campaign({
+    lines: ["No harm to children"],
+    privateLines: [
+      { playerId: "test-user-player", lines: ["Stale copy of my line"] },
+      { playerId: "user-b", lines: ["No body horror"] },
+      { playerId: "test-user-gm", lines: ["No drowning"] },
+    ],
+  });
+
+  afterEach(() => {
+    game.settings._store.delete(`${MODULE_ID}.privateLines`);
+  });
+
+  it("on a GM's client carries every player's private lines", () => {
+    const out = formatNarratorSafetyContext(state);
+    expect(out).toContain("- No harm to children");
+    expect(out).toMatch(/### PRIVATE LINES[\s\S]*- No body horror/);
+    expect(out).toContain("- Stale copy of my line");
+    expect(out).toContain("- No drowning");
+  });
+
+  it("on a player's client carries only that player's own lines, from their client setting", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No needles", "  "]);
+    const restore = asPlayer();
+    try {
+      const out = formatNarratorSafetyContext(state);
+      expect(out).toContain("- No harm to children");
+      expect(out).toContain("- No needles");
+      expect(out).not.toContain("Stale copy of my line");
+      expect(out).not.toContain("No body horror");
+      expect(out).not.toContain("No drowning");
+    } finally {
+      restore();
+    }
+  });
+
+  it("on a player's client with no lines of their own renders no PRIVATE LINES section", () => {
+    const restore = asPlayer();
+    try {
+      const out = formatNarratorSafetyContext(state);
+      expect(out).not.toContain("PRIVATE LINES");
+      expect(out).not.toContain("No body horror");
+    } finally {
+      restore();
+    }
+  });
+
+  it("never mutates the caller's campaignState", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No needles"]);
+    const restore = asPlayer();
+    try {
+      formatNarratorSafetyContext(state);
+    } finally {
+      restore();
+    }
+    expect(state.safety.privateLines).toHaveLength(3);
   });
 });
 

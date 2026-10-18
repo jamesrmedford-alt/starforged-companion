@@ -6,9 +6,14 @@ relay updated for the 2026-10 audit). File references name the owning
 function; line numbers drift, so search by symbol. Sibling docs:
 `combat-flow.md`, `connection-flow.md`, `exploration-flow.md`.
 
-Multiplayer, up front: vow Item writes are GM-only, so every vow write runs
-on the **canonical GM** — the move pipeline (gated on `isCanonicalGM()`), or a
-card click relayed through `requestGmAction` (`src/multiplayer/gmRelay.js`).
+Multiplayer, up front: module-side vow Item writes run on the **canonical
+GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
+through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
+`milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`), or
+one of the two older ad-hoc socket relays from the swear cards
+(`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
+folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the
+owner's own client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback (decisions.md →
 "Multiplayer attribution").
@@ -28,8 +33,11 @@ Terminology up front, because it drives every gap below:
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
-  when the name exactly names a vow that is already completed (fulfilling A
-  used to resolve the one other open vow B and pay B's payoff).
+  when the name matches (exactly or by substring) a vow that is already
+  completed (fulfilling A used to resolve the one other open vow B and pay
+  B's payoff). Likewise an exact name for a completed vow skips the substring
+  rung, so fulfilling "Find the ship" can't resolve the open "Find the ship's
+  captain".
 
 ## 1. Creation
 
@@ -139,8 +147,8 @@ nothing completes.
 card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative`, which here also pays quests legacy). Idempotency:
-the `fulfilPaid` flag on the first-matched copy pays once per vow across both
-paths.
+the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
+across both paths.
 
 **Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
 the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
@@ -197,4 +205,10 @@ summary lives in the `known-issues.md` table and the code.
   ~~a shared vow's reward went to the first PC~~ — every PC's copy is
   collected, so the roller's copy is found.
 - ~~Fulfilling vow A with exactly one other open vow B paid B~~ — the
-  sole-open rung no longer applies to a name that names a completed vow.
+  sole-open rung no longer applies to a name that matches a completed vow;
+  ~~nor could an open vow whose name contains A's~~ — an exact name for a
+  completed vow skips the substring rung (FULFIL-SUBSTRING-RUNG).
+- ~~The won-fight "Mark milestone" button could apply twice (raw socket
+  relay, no resolved stamp) and silently did nothing with no GM~~ — relayed
+  `fightVow.markMilestone`, one-shot via `resolvedActions.markMilestone`
+  (`combat-flow.md` §4).

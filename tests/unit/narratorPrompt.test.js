@@ -115,6 +115,48 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('No real-world atrocities');
   });
 
+  // SAFETY-PRIVATE-LINES-SHARED: the shared prompt passed no user id, so no
+  // Private Line — any player's, or the GM's — ever reached shared narration.
+  it('carries every player\'s Private Lines when built on a GM\'s client', () => {
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({
+        safety: {
+          lines: [], veils: [],
+          privateLines: [
+            { playerId: 'user-a', lines: ['No dogs harmed'] },
+            { playerId: 'user-b', lines: ['No body horror'] },
+          ],
+        },
+      }),
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).toMatch(/### PRIVATE LINES[\s\S]*- No dogs harmed/);
+    expect(prompt).toContain('- No body horror');
+  });
+
+  it('carries only the building player\'s own Private Lines on a player\'s client', () => {
+    game.settings._store.set('starforged-companion.privateLines', ['No needles']);
+    const restore = asPlayer();
+    try {
+      const prompt = buildNarratorSystemPrompt(
+        makeCampaignState({
+          safety: {
+            lines: [], veils: [],
+            privateLines: [{ playerId: 'user-b', lines: ['No body horror'] }],
+          },
+        }),
+        makeNarratorSettings(),
+        null,
+      );
+      expect(prompt).toContain('- No needles');
+      expect(prompt).not.toContain('No body horror');
+    } finally {
+      restore();
+      game.settings._store.delete('starforged-companion.privateLines');
+    }
+  });
+
   it('includes WORLD TRUTHS when campaignState.worldTruths has entries', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState({

@@ -6,6 +6,388 @@ rejected.
 
 ---
 
+## Chat commands run once: author / canonical-GM / keyed-runner routing (2026-10)
+
+**Decision:** Every chat command is declared in `CHAT_COMMAND_ROUTES`
+(`src/index.js`) with a run-on policy; `dispatchChatCommand` /
+`shouldRunCommandHere` enforce it. Every client *recognises* every command (so
+a command never falls through into the move pipeline), but exactly one client
+*executes* it:
+
+- **`RUN_ON.AUTHOR`** — the client that typed the message (`isAuthoringClient`
+  / `messageAuthorId`, `src/multiplayer/speaker.js`). The default: dice roll
+  once, dialogs open on the typist's screen, and a GM-only command's
+  `game.user.isGM` check runs on the author's own client, so it means what it
+  says. World writes a player needs go through the GM relay (next entry).
+- **`RUN_ON.CANONICAL_GM`** — only the canonical GM (`isCanonicalGM`), for
+  commands that write world state on someone's behalf and need no Claude key
+  (today: a programmatic `!x`). With no GM connected the author is warned.
+- **`RUN_ON.CLAUDE`** — commands whose job is a Claude call (`@scene`,
+  `!recap`, `!ship envision`, `!ship history`, `!incite`): the canonical GM
+  when a keyed GM is active, otherwise the author with their own key (see
+  "Claude calls run where a key lives, exactly once").
+
+Clients that stand down leave a `console.debug` breadcrumb ("No silent
+failures"). Routes keep the old if-chain's predicate order, since some
+predicates overlap textually. A message with no resolvable author (a
+programmatic / legacy shape) counts as authored on every client — the
+pre-routing behaviour for those shapes.
+
+**Reason:** Foundry fires `createChatMessage` on every connected client, and
+only three handlers checked their author (2026-10 audit — known-issues
+CMD-PER-CLIENT, CMD-GM-ONLY-LEAK, DIALOG-EVERY-SCREEN). Every command ran once
+per browser: duplicate `!oracle` / `!ptp` / `!bond` cards with independent
+dice, one Claude call per keyed client, dialogs on every screen, and GM-only
+commands that warned the player and then executed anyway on the GM's client.
+Several player features only "worked" through that accident (the GM's client
+re-ran the player's command with GM authority), which is why routing shipped
+together with the relay. One declarative table makes the policy greppable and
+testable per command (`tests/unit/chatCommandRouting.test.js`).
+
+**Rejected:**
+- *Per-handler author checks* — the three that existed proved it: easy to
+  forget on the next command; one routing check can't be skipped.
+- *Run every command on the canonical GM* — dialogs would open on the GM's
+  screen, `game.user` would be the GM (wrong speaker, wrong permission check),
+  and keyed players at keyless-GM tables would lose Claude commands
+  (CLAUDE-CMD-KEYLESS-GM).
+- *Keep per-client execution and dedupe the cards* — still N dice rolls and N
+  Claude bills, and still N writers.
+
+## Player-invoked world writes go through the GM relay (2026-10)
+
+**Decision:** A world write a player's action needs — world settings
+(`campaignState`), other users' documents, GM-authored chat cards — is
+requested with `requestGmAction(kind, payload)` (`src/multiplayer/gmRelay.js`)
+and performed by a handler on the canonical GM:
+
+- On the canonical GM it runs locally; elsewhere it is emitted on the module
+  socket as `gmRelay.<kind>`; with no active GM the requester is warned (log +
+  toast) and gets `{ ok: false, reason: "no-gm" }`, so the card can say the
+  change was not saved.
+- Every kind is declared in one table, `GM_ACTIONS` (kind → lazy module import
+  + handler export name): a grep for a handler finds its consumer, and the GM
+  can serve a relay for a module its client hasn't loaded yet.
+- Handlers are `(payload, ctx)` with `ctx = { requesterId, requester,
+  requesterIsGM, local }`. Permission checks use `ctx.requesterIsGM` /
+  `requesterOwnsActor(actor, ctx)` — never `game.user.isGM`, which is the GM on
+  the relay path. Payloads are plain JSON; handlers re-validate and clamp them
+  and take effect values from the GM-authored card, not the payload.
+- Every action runs through **one serialised queue** on the GM, released in a
+  `finally`; a predecessor that never settles is waited on for at most
+  `GM_ACTION_TIMEOUT_MS` (60 s, warned). Handlers' campaignState
+  read-modify-writes therefore never interleave. A handler must not call
+  `requestGmAction` itself — it would queue behind its own caller. **The
+  X-Card is the exception:** `xcard.activate` runs the moment it arrives —
+  queued behind a Claude-calling handler (an oracle follow-up, a burn
+  re-narration, End a Session's summary) it waited up to 60 s while the
+  unqueued move pipeline narrated through it (XCARD-QUEUED). That is safe
+  because `suppressScene` reads and writes the store with no await between,
+  and no handler writes back a snapshot held across an await (next entry).
+- Relays are fire-and-forget (no ack). Once its listener is installed, the
+  canonical GM broadcasts `gmRelay.ready` (`announceGmRelayReady`); state a
+  player must hand the GM is **pulled** on that signal (`onGmRelayReady` —
+  Private Lines), never pushed on `userConnected`, which fires before the GM's
+  `ready` hook installs the listener. One-shot card buttons re-arm when a
+  relayed click isn't confirmed (`relayCardAction` / `relayCardButtonClick`,
+  15 s).
+- **Accepted limitation:** Foundry's module socket doesn't identify the
+  sender, so `requesterId` is client-asserted. Permission checks protect
+  honest clients and the module's own UI; they don't stop a hand-crafted emit
+  from a console or macro. Value validation bounds what even a forged request
+  can do to what the UI could have produced.
+
+Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
+`safety.syncPrivateLines`, `session.begin`, `session.end`, `bond.apply`,
+`factContinuity.command`, `oracle.narrate`, `repair.apply`,
+`payThePrice.advanceClocks`, `move.burnMomentum`, `move.improveResult`,
+`milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
+`fightVow.deepenBond`. Four older world-writing socket relays predate it
+(`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
+`vow.linkConnection`) — fold them in when next touched (known-issues
+RELAY-LEGACY-KINDS).
+
+**Reason:** world settings and other users' documents are GM-write only, so
+player-invoked flows (Set a Flag, Take a Break, Begin / End a Session, the
+X-Card, `!bond`, `!truth` / `!state`, `!repair`, Burn / Improve, the pickers)
+skipped their writes behind `if (isGM)` while their cards said the change had
+landed (SESSION-WRITES-DROPPED, XCARD-PLAYER-NOOP). One contract — one no-GM
+warning, one requester context, one queue — replaces a family of ad-hoc
+relays with as many failure modes. The post-merge review hardened it
+(RELAY-LOAD-WINDOW, RELAY-PAYLOAD-UNCHECKED).
+
+**Rejected:**
+- *Per-feature card-payload hooks* (each card with its own socket kind and GM
+  listener — the pre-audit pattern) — no shared no-GM warning, requester
+  context, serialisation or validation. The won-fight buttons' raw relays were
+  exactly this, and they double-fired (FIGHT-VOW-BUTTONS-REFIRE).
+- *Letting player writes fail silently* — "No silent failures": the cards
+  claimed effects that never happened.
+- *A socketlib dependency* — a runtime dependency every world must install
+  (and a new-dependency discussion per CLAUDE.md) for what one ~400-line
+  module does; it would still need the queue, the no-GM warning and the value
+  validation.
+
+## Long-running pipeline writes merge relay-owned fields (2026-10)
+
+**Decision:** Code that holds a campaignState snapshot across long awaits
+never writes the whole snapshot back.
+
+- `persistResolution` re-reads the stored campaignState immediately before its
+  write (no await between read and set) and merges (`mergeWithLatestState`):
+  **store-owned** fields always take the store's value (`xCardActive`,
+  `safety`, `safetyFlags`, `nextMoveAdd`, `questFocus` / `connectionFocus`, the
+  session-active and session-id fields, `customOracles`, `recentOracles`,
+  `clocks`, `pacing`, `campaignRecapCache`, `dismissedEntities`, `pendingMove`,
+  `activeSectorId`, `incitingIncident`, the `worldTruths*` fields); entity id
+  lists are an ordered union; `sessionLogs` come from the store plus this
+  resolution's entry; `sessionSummary` by newer `updatedAt`; `legacyTracks`
+  take the per-track max (`cleared` sticks); scene ledgers — if the store is
+  on a different scene its scene wins wholesale, otherwise `sceneTruths` is
+  unioned by id (a retraction on either side sticks) and `sceneState` /
+  `sceneFrame` / `spotlight` keep the working copy. Every other field keeps the
+  working copy (the pipeline's own writes: arrival location, site reveals …).
+- Scene start / end write only the fields they own onto the latest stored
+  state (`persistCampaignStateFields` / `mergeOwnedFields`,
+  `src/factContinuity/sceneLifecycle.js`): `currentSceneId`, `sceneTruths`,
+  `sceneState`, `sceneFrame`, `spotlight`. So does End a Session —
+  `questFocus`, `connectionFocus`, `sessionActive`, `sessionActiveStartedAt` —
+  which holds its snapshot across `endScene` and the summary's Claude call
+  (END-SESSION-CLOBBER: it reverted a move persisted meanwhile, even its
+  released `pendingMove` lock).
+- The narrator-sidecar persist (`persistSceneLedgerFields`) writes
+  `sceneTruths`, `sceneState`, `sceneFrame` with the same scene-ledger policy
+  as `persistResolution` (`mergeSceneLedgers`, shared): nothing when the store
+  has moved to another scene, `sceneTruths` unioned by id otherwise
+  (SIDECAR-LEDGER-CLOBBER: replacing them dropped a mid-narration `!truth`
+  strike or oracle truth and resurrected a scene End a Session had closed).
+- Single-field consumers re-read the store: Take a Break's +1 is cleared on
+  the store (`clearPersistedNextMoveAdd`), and every narrator X-Card gate reads
+  the live setting as well as the caller's snapshot.
+
+**Reason:** STALE-SNAPSHOT-CLOBBER — the move pipeline reads campaignState
+before its confirm dialog and Claude calls (seconds to minutes) and wrote it
+back wholesale, undoing everything the GM relay applied meanwhile: an X-Card
+played mid-narration, a Take a Break, a flag, Private Lines, `!bond` ticks,
+oracle memory, clocks. The relay makes mid-pipeline writes normal, so the
+long-running writer is the one that has to yield.
+
+**Rejected:**
+- *Serialise the pipeline's persist behind the relay queue* — the snapshot is
+  already stale by the time the write is queued; holding the queue for the
+  whole move instead would block the X-Card for as long as a player sits in
+  the confirm dialog.
+- *Re-read only `xCardActive`* — fixes the headline case and leaves every
+  other relayed field to be reverted.
+- *A three-way merge against a baseline captured when the move lock is taken*
+  — more precise for fields both sides write; deferred until a playtest shows
+  the static policy losing data.
+
+**Trade-offs accepted (no baseline):** two concurrent adds to the same legacy
+track keep the larger tick count; `sceneState` / `sceneFrame` / `spotlight` /
+`currentLocation*` / `sectors` changed by a relay mid-pipeline are overwritten
+by the pipeline's copy; an entity id removed from the store mid-pipeline can
+return via the id-list union (readers filter missing documents).
+
+## X-Card: anyone plays it, a GM resumes it (2026-10)
+
+**Decision:** Any user can play the X-Card. A typed `!x` is cancelled before
+the message is created (the settings panel's `chatMessage` hook) and handled by
+`playXCard`, which relays `xcard.activate` to the canonical GM
+(`suppressScene` sets `campaignState.xCardActive`, no permission check) and
+posts the X-Card card. A programmatic `!x` message (a macro) is routed
+`RUN_ON.CANONICAL_GM`. With no GM connected the card says the pause could not
+be recorded and carries no resume button. Only a GM resumes: the card's
+**Resume narration** button (removed for non-GM viewers), `!x clear` (a player
+is warned), or `game.modules.get("starforged-companion").api.clearXCard()`.
+Resuming clears the flag, marks every open X-Card card resolved and posts an
+"X-Card cleared" card. While the flag is set every narrator entry point stands
+down — checking the live setting as well as the caller's snapshot; the relayed
+activation runs the moment it reaches the GM, never queued behind other relayed
+actions — and a move resolved meanwhile posts its result card plus a short
+"narration paused" notice (not a narrator card, so it stays out of the
+recent-narration ring and the rolling summary).
+
+**Reason:** the X-Card is the safety tool a player reaches for without
+explanation, and for players it recorded nothing (XCARD-PLAYER-NOOP); move
+narration also had no gate of its own — its only one lived in the retired
+context assembler (XCARD-MOVE-NARRATION). There was no in-module way to
+resume — the help told GMs to run a console snippet.
+
+**Rejected:**
+- *GM-only X-Card* — defeats its purpose: any participant must be able to stop
+  the scene.
+- *Anyone resumes* — the person who played the card shouldn't have it lifted by
+  someone else; one resume authority (the GM, who runs the redirect) keeps the
+  table's pause deliberate.
+- *Auto-clear on the next scene or after N turns* — resuming is a table
+  conversation, not a timer.
+
+## Custom oracle tables roll their own die (2026-10)
+
+**Decision:** A custom table (`!oracle-add`, GM-only) rolls 1..(the highest
+`max` among its entries): `dieSizeForTable`, stamped as `die` by
+`registerOracleTable`, returned by `rollOracle` (through "Roll twice" re-rolls
+too) and shown on cards ("d6 = 4"; Dice So Nice animates only d100 rolls).
+Entries must tile 1..max exactly — start at 1, contiguous, no overlaps
+(`validateCustomOracleEntries` names the problem) — and ids are
+`[A-Za-z0-9_]+` so `!oracle <table-id>` can parse them. Re-saving a custom id
+overwrites it; built-in ids can never be redefined or unregistered. **Built-in
+tables stay d100** (locked by `oracleTableIntegrity.test.js`).
+
+Storage: `campaignState.customOracles` is canonical. The `ORACLE_TABLES`
+entries with `category: "custom"` are a per-client in-memory mirror, rebuilt
+at ready (`rehydrateCustomOracles`) and kept in step on every `updateSetting` /
+`createSetting` of campaignState (`syncCustomOraclesFromState`: registers new
+or changed tables, unregisters removed ones — custom only, idempotent).
+
+**Reason:** CUSTOM-ORACLE-D100 — the play kit's blank oracle worksheets are
+d4 / d6 / d8 / d10 tables; rolling a d100 against a 1–6 table missed 94% of
+the time. New tables reached other clients only after a reload, and deletions
+never did — a mirror with no write-through (rules/reachability.md §5).
+
+**Rejected:**
+- *Scale custom entries onto 1–100* — distorts the author's odds, and the card
+  no longer shows the worksheet's die.
+- *A separate die field* — the highest entry already says it; a second field
+  invites a die the entries don't cover.
+- *Accept gapped tables (gaps roll "—")* — new tables are refused with the
+  reason. Tables stored before validation existed still register (no data
+  loss) with a warning to re-define them.
+
+## Take a Break's +1 applies to the next action roll (2026-10)
+
+**Decision:** Take a Break → "Move on" records a single-use
+`campaignState.nextMoveAdd` (`{ value: 1, source: "take_a_break", setAt }`) on
+the canonical GM (`applyTakeBreak`, relay `session.takeBreak`). The move
+pipeline applies it automatically to the next **action roll** — a move rolled
+with a stat (`isActionRollMove`: not a progress move, has a stat) — adding it
+to the roll's adds and deleting it from the working copy and the store
+(`takeNextMoveAdd` + `clearPersistedNextMoveAdd`, `src/moves/nextMoveAdd.js`).
+Progress moves and no-roll moves (Reach a Milestone, session moves …) leave it
+pending. It is table-wide: the next action roll gets it, whoever makes it.
+
+**Reason:** TAKE-BREAK-NEXTMOVEADD — the flag was written and never read; the
+card promised a +1 nobody received. The play kit's "+1 on the next
+non-progress move" is not optional, so the pipeline adds it to the roll's
+adds itself, alongside the confirm dialog's asset adds.
+
+**Rejected:**
+- *Prompt whether to spend it* — the bonus isn't optional; a prompt adds a
+  dialog to every roll while it's pending.
+- *Apply to the next move of any kind* — the rule excludes progress moves, and
+  a no-roll move has nothing to add to.
+- *Let the table choose the recipient* — the rule allows "you or an ally";
+  the next action roll is the common case and needs no extra prompt.
+
+## Claude calls run where a key lives, exactly once (2026-10)
+
+**Decision:** The Claude key is per browser (issue #209), so work whose job is
+a Claude call picks its runner from data every client shares — the
+world-scoped keyed-GM registry (`keyedGmUserIds`, kept by
+`advertiseClaudeKeyPresence`) and the active-user list — so all clients agree
+and exactly one runs it:
+
+- a keyed GM is active (`hasKeyedActiveGM()`) → the canonical GM runs it. It
+  is keyed by construction (`isCanonicalGM` picks among keyed active GMs
+  first), so the call succeeds **and** its world writes and narrator
+  side-data apply;
+- otherwise → the author's client runs it with its own key (a keyed player at
+  a keyless-GM table). GM-only writes are then skipped and debug-logged — the
+  scene boundary included: `@scene` and the narrators' `ensureSceneStarted`
+  start a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
+  author gets the usual "Claude API key not configured" fallback.
+
+This is `RUN_ON.CLAUDE` for `@scene`, `!recap`, `!ship envision` / `history`
+and `!incite`, and the same ladder in `requestOracleNarration`
+(`src/oracles/oracleFollowup.js`, relay `oracle.narrate`) for the follow-up
+after `!oracle yes`, `!oracle <table-id>`, `!pay-the-price` and Face Defeat —
+where "no key anywhere" skips with a debug line, since the raw card already
+carries the result. The move pipeline itself stays canonical-GM-only (single
+emitter). Exception: the Begin / End a Session vignettes run inside the
+canonical-GM relay handlers, so they need a keyed GM (known-issues, 2026-10
+accepted limitations).
+
+**Reason:** ORACLE-SIDECAR-OFF-GM, CLAUDE-CMD-KEYLESS-GM, INCITE-ROUTING.
+Running on the author whenever it held a key silently dropped the narrator
+sidecar (applied only on the canonical GM); running only on the canonical GM
+broke keyed players at keyless-GM tables; per-client execution (pre-audit)
+made one call per keyed client. The transport is unchanged — every call is
+still a direct browser fetch ("CORS strategy"); the relay only decides *which*
+client makes it, with the author's own key as the no-keyed-GM fallback.
+
+**Rejected:**
+- *Always the author* — side-data and GM-only writes lost whenever a keyed
+  player typed.
+- *Always the canonical GM* — a keyless-GM table loses every Claude command.
+- *Send the key to the GM* — violates #209 (keys never leave the browser).
+
+## Starship battered: the native sheet field is canonical (2026-10)
+
+**Decision:** For a starship's impacts, the foundry-ironsworn native
+`system.debility.battered` (and `cursed`) is canonical; the module ship flag's
+`battered` is a write-through mirror. `isShipBattered(actorOrId)`
+(`src/entities/ship.js`) reads the native boolean and falls back to the flag
+only on a host with no native debility field. Every reader goes through it or
+the native field — `repairIntegrity` (refuses to raise integrity while
+battered), `!repair`'s `applyRepairSpends` (clears battered first via
+`clearBattered`, then integrity), the entity panel's Battered / Cursed fields,
+the narrator's COMMAND VEHICLE line, the suffer dialog's `!battered`
+requirement. Writes go through `updateShip`, which sets both stores.
+
+**Reason:** REPAIR-BATTERED-FLAG — the sheet's Battered toggle and the suffer
+dialog write only the native field, and nothing in production set the flag
+true, so a flag-only read missed every sheet-marked impact: an unclearable
+battered vehicle that still gained integrity, and a panel and narrator that
+said "not battered". rules/reachability.md §5: name the canonical store and
+write through to the mirror.
+
+**Rejected:**
+- *Battered if either store says so* — a stale flag would override a sheet
+  un-tick.
+- *A native → flag sync hook* — a second write path for a mirror no reader
+  needs once readers use the native field.
+
+## Private Lines in shared narration: a GM-built prompt carries every player's (2026-10)
+
+**Decision:** The shared narrator prompt (`buildNarratorSystemPrompt` →
+`formatNarratorSafetyContext`, `src/context/safety.js`) scopes Private Lines to
+the client that builds it:
+
+- **A GM's client** — the normal case: the move pipeline, and every
+  `RUN_ON.CLAUDE` command while a keyed GM is active — carries **every
+  player's** Private Lines, deduplicated, from `campaignState.safety.privateLines`
+  (kept by the `safety.syncPrivateLines` relay). Players never see the prompt.
+- **A player's client** — which narrates only when no keyed GM is online —
+  carries **that player's own** lines, read from their client setting (the
+  canonical store; the campaignState copy is stale or missing when no GM was
+  online to relay it to). One player's lines never go into another player's
+  request.
+- **The Private Channel** is unchanged: its player's own lines only.
+
+The section heading tells the narrator never to cross them and never to
+mention or hint at them — shared narration is read by the whole table.
+
+**Reason:** SAFETY-PRIVATE-LINES-SHARED — the shared prompt passed no user id,
+so no Private Line (not even the GM's) reached shared narration, and a
+player's personal hard limit held only in their Private Channel. The privacy
+model was the maintainer's call (2026-10).
+
+**Boundary:** "private" means never shown in another player's UI and never
+sent in another player's request. The lines sit in the world-scoped
+`campaignState`, which every client receives, so they are not hidden from
+another client's console (known-issues → accepted limitations).
+
+**Rejected:**
+- *Every client carries every player's lines* — a keyed player's request would
+  send the others' private limits from their browser, on their key.
+- *Only the acting player's lines* — narration is shared; a limit someone else
+  at the table set must hold in a scene they are reading.
+- *No Private Lines in shared narration* (the old behaviour) — a hard limit the
+  main scene ignores is not a hard limit.
+
+---
+
 ## Site exploration is oracle-seed-driven, not a delve track (2026-07)
 
 **Decision:** The vault/derelict fix cycle made exploration work through the
@@ -70,6 +452,11 @@ the NED permissions matrix and the Section 6.5 surfacing test. Sequencing per
 the maintainer: the `!lore` recap injection (#269) and the session-notes stub
 (#270 — removed; `sessionState.notes` never had a writer and the pipeline never
 passed `sessionState` at all) were resolved out of the assembler first.
+*(2026-10: two callers were missed — Burn Momentum / Improve Result
+re-narration still passed the dropped slot (`narrate(res, null, campaignState,
+{})`), so `narrateResolution` received a null campaignState; fixed, known-issues
+RENARRATE-ATTRIBUTION. Move narration's only X-Card gate had lived in the
+assembler too; `narrateResolution` now has its own — XCARD-MOVE-NARRATION.)*
 
 ## Coverage gate: ratchet + core bar, not a flat 95% (2026-07-07)
 
@@ -315,7 +702,11 @@ XP was ever awarded: the awarding path (`persistResolution.markLegacyProgress`)
 required `consequences.progressTrackId`, which no resolver sets, so the whole
 legacy → XP → assets economy was disconnected in play. Awarding to all PCs
 matches the module's shared-crew legacy model (one `campaignState.legacyTracks`
-set for the table, like the shared supply).
+set for the table, like the shared supply). *(2026-10: removed — see
+known-issues AUDIT-DEAD-SURFACE. `markLegacyProgress` and the whole
+`progressTrackId` / `progressMarked` persist route were deleted with the other
+unreachable `persistResolution` steps; `addLegacyTicks` is the only legacy
+path.)*
 
 **Rejected:**
 - *Per-character legacy tracks* (RAW-strict) — a data-model migration far
@@ -333,6 +724,17 @@ the shared `vowId` flag** (name only as fallback). Forsake Your Vow's new
 `forsakeVow` consequence marks all copies `completed` + a `forsaken` module
 flag — audit-preserving, nothing deleted — closes the journal twin, and flips
 a still-promised reward to `lost`.
+
+*(2026-10 refinement: the sole-open-vow rung is for a name that matches
+nothing — it never fires when the name matches a vow that is already
+completed (exact or substring), because fulfilling vow A completes A first and
+the rung then paid the one other open vow B. Likewise an exact name for a
+completed vow skips the substring rung, which otherwise resolved an open vow
+whose name contains A's (FULFIL-SUBSTRING-RUNG). After completion the fulfil
+payoff collects every PC's copy and prefers the roller's, so a shared vow's
+reward reaches the player who fulfilled it — known-issues FULFIL-REWARD-NEVER,
+FULFIL-REWARD-FIRST-PC. The rung is kept, not dropped: renamed vows still pay
+out.)*
 
 **Reason:** VOW-RENAME-PAYOFF — payoffs matched by exact lowercased name while
 creation/sync/rewards key `vowId`, so a renamed vow (or a stale
@@ -861,6 +1263,11 @@ context (`scripts/api-client.mjs`, lines 41–50).
 **Rejected:** Foundry socket relay (player → GM client → API). Unreliable in
 single-browser sessions where accounts share a socket connection. Also adds
 account-dependency (GM must be connected) which breaks headless/automated use.
+*(2026-10: still true of the transport — every call is a direct browser fetch.
+The GM relay now decides *which* client makes some calls (oracle follow-ups,
+`RUN_ON.CLAUDE` commands), always falling back to the author's own key when no
+keyed GM is connected — see "Claude calls run where a key lives, exactly
+once".)*
 
 ---
 
@@ -877,7 +1284,11 @@ framework (deprecated in v13); dependency on Patreon-gated external service.
 **What replaced it:** `src/narration/narrator.js` + `src/narration/narratorPrompt.js`.
 Direct Claude API call via `api-proxy.js`. Configurable model (Haiku/Sonnet),
 perspective, tone, length, and custom instructions per campaign. Narration runs
-on whichever client triggered the move — no GM dependency.
+on whichever client triggered the move — no GM dependency. *(Superseded in
+part: the move pipeline runs only on the canonical GM (`gmGate.js`, single
+emitter), and since 2026-10 other Claude calls follow "Claude calls run where a
+key lives, exactly once" — the keyed canonical GM when one is active, else the
+author's own key.)*
 
 **Files removed:** `src/loremaster.js`. Loremaster settings removed from
 `settingsPanel.js`. Socket relay removed from `index.js`.
@@ -896,6 +1307,8 @@ require touching all tests and UI labels), a bridge function was added.
 
 **Where it lives:** Top of `src/moves/mischief.js`. Called at the start of
 `buildMischiefFraming()`, `shouldApplyMischief()`, and `buildMischiefAside()`.
+*(2026-10: `shouldApplyMischief` is removed — it had no production caller;
+`buildMischiefFraming` already gives the model the dial.)*
 
 ---
 
@@ -912,6 +1325,14 @@ a sync function runs on every write and on the `ready` hook.
 **Private Lines:** Stored client-scoped in `game.settings`. In `campaignState.safety.
 privateLines`, they are stored as `[{ playerId, lines }]` objects so each player's
 Lines are preserved when any one player's client syncs.
+
+*(2026-10: the assembler is gone — the narrator reads `campaignState.safety`
+through `formatSafetyContext`. A player's client can't write campaignState, so it
+relays its Private Lines to the canonical GM (`safety.syncPrivateLines`, keyed on
+the relay requester) and re-sends them when the GM's relay announces it is ready —
+see "Player-invoked world writes go through the GM relay". Shared narration
+carries them too — every player's on a GM's client, the building player's own
+on a player's — see "Private Lines in shared narration".)*
 
 ---
 
@@ -940,7 +1361,11 @@ simpler and faster.
 
 **Impact:** `assembler.js` `buildProgressTracksSection()` must call
 `journal.getFlag(MODULE_ID, "tracks")` directly — NOT read from a page.
-`campaignState.progressTrackIds` is unused for this purpose.
+`campaignState.progressTrackIds` is unused for this purpose. *(2026-10:
+removed — `progressTrackIds` had no writer and was deleted from
+`CampaignStateSchema`; the move interpreter, its last reader, now reads the
+journal's tracks and the vow Items — known-issues INTERP-TRACKS-BLIND. The
+assembler itself was deleted in 2026-07.)*
 
 ---
 
@@ -1435,7 +1860,8 @@ of leaving them as instructional text (closes audit 3.18–3.21):
 the flag-array model behind the panel (`ui/progressTracks.js`). The
 `persistResolution.progressTrackId` path (and `campaignState.progressTrackIds`)
 is **vestigial — never written from a resolution** (combat's `progress` suffer
-option is dormant for the same reason), so the move→track wiring lives in
+option is dormant for the same reason) *(2026-10: removed — see known-issues
+AUDIT-DEAD-SURFACE)*, so the move→track wiring lives in
 `src/moves/expedition.js` (dependency-injected, Foundry-free, unit-tested) and a
 GM-gated handler in `index.js`. Legacy/finish writes mutate `campaignState` in
 place; the GM's `persistResolution` deep-clones and persists it (no race).
@@ -1729,6 +2155,10 @@ response schema alongside `expeditionRank`.
 **`progressTrackId` path:** unchanged — still dead for combat (guards require a
 non-null `progressTrackId` that no resolver ever sets). All new combat writes go
 through the injected-deps orchestration module (testable without Foundry).
+*(2026-10: removed — the path, `applyCombatPosition` and the
+`progressTrackId` consequence field are deleted; see known-issues
+AUDIT-DEAD-SURFACE. `consequences.combatPosition` stays — the pipeline reads
+it.)*
 
 ---
 
@@ -1756,6 +2186,8 @@ and applies the writes.
   still tells the player to develop a relationship.
 - **The old `progressMarked: 1` on this move was a dead no-op** — persistence only
   marks when `progressTrackId` is set, which no resolver populates. Removed.
+  *(2026-10: that persistence path is itself removed — see known-issues
+  AUDIT-DEAD-SURFACE.)*
 
 **Battle (audit 3.29).** Battle resolves an entire fight in one roll, so every
 outcome sets `endCombat: true` (closes any open combat track — a safe no-op when
@@ -2047,7 +2479,8 @@ playtest shows it matters we extend.
 progress on the target vow per its rank. The resolver sets
 `consequences.reachMilestone: true` (replacing the dead `progressMarked: 1`,
 which never fired because persistence only marks when `progressTrackId` is set
-and no resolver populates that for embedded vow Items). A GM-gated pipeline
+and no resolver populates that for embedded vow Items — *2026-10: that
+persistence path is removed, see known-issues AUDIT-DEAD-SURFACE*). A GM-gated pipeline
 handler runs `planReachMilestone` (`src/moves/milestone.js`): the sole open vow
 is auto-marked; when several are open and none is named, a picker card is
 posted. Additionally, successful quest-advancing moves (adventure / exploration
@@ -2219,6 +2652,11 @@ mechanics.
    on the GM. The resolved `speakerActorId` (from `resolveSpeakerActorId`) is now threaded into
    `persistResolution` and used for the card's burn/improve/milestone actor. The fallbacks
    (`activeCharacterId`, then `getPlayerActors()[0]`) apply only when no speaker is resolved (solo-GM).
+   *(2026-10: the `activeCharacterId` fallback is removed — `campaignState.activeCharacterId` was
+   never written, so it was really `getActor(null)`, the GM's own bound PC; with no speaker,
+   `persistResolution` now uses the first PC. The same audit extended roller credit to the ability
+   scan, Reach a Milestone, the won-fight vow mark and reward, `!ptp` harm and `!bond` momentum —
+   known-issues CREDIT-ROLLER-SWEEP, RENARRATE-ATTRIBUTION, FULFIL-REWARD-FIRST-PC.)*
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),

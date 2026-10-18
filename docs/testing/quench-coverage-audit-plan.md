@@ -75,7 +75,7 @@ Verified against `src/index.js` and `src/pacing/`:
 
 - `!pace hot|quiet|clear|status` — handler at `src/index.js:525`
 - `!roll` — handler at `src/index.js:553`
-- `!truth` / `!state` — handler at `src/index.js:1321–1387` (`isFactContinuityCommand` / `handleFactContinuityCommand`)
+- `!truth` / `!state` — predicate `isFactContinuityCommand` in `src/index.js` (a `CHAT_COMMAND_ROUTES` row, `RUN_ON.AUTHOR`); since the 2026-10 audit the handler lives in `src/factContinuity/chatCommands.js` — `handleFactContinuityCommand` checks the syntax on the typist's client and relays gmRelay `factContinuity.command` to `applyFactContinuityCommand` on the canonical GM (`parseFactContinuityCommand` is the pure syntax check)
 - `!scene start` / `!scene end` — handlers at `src/index.js:1258–1306`
 - `!recap session` vs `!recap campaign` — both modes route through the same chat-command handler but no batch asserts the split
 - `!journal threat` / `!journal faction` / `!journal location` — share router with `!journal lore` (covered); routing edges not asserted
@@ -88,7 +88,7 @@ None of these are phantom commands. All belong in the coverage plan.
 
 | Priority | Proposed batch | Real code under test | Rough scope |
 |---|---|---|---|
-| 1 | `factContinuity` | `src/factContinuity/{sidecarParser,ledgers,sceneLifecycle,correctionDialog,consistencyCheck}.js` | Sidecar parse; ledger writes; Section 6.5 injection; `!truth`/`!state` commands; scene-end migration to entity / WJ Lore |
+| 1 | `factContinuity` | `src/factContinuity/{sidecarParser,ledgers,sceneLifecycle,correctionDialog,chatCommands,consistencyCheck}.js` | Sidecar parse; ledger writes; Section 6.5 injection; `!truth`/`!state` commands (`chatCommands.js`); scene-end migration to entity / WJ Lore |
 | 2 | `paceCommand` | `src/index.js:525–567`, `src/pacing/router.js` ring buffer | `!pace hot/quiet/clear/status`; `!roll` recovery; ring-buffer effect on next classification |
 | 3 | `sectorCreatorWizard` | `src/sectors/sectorPanel.js` | Settlement/planet/stellar generators in isolation; SECTOR_TROUBLE roll; map + passages JSON shape |
 | 4 | `sectorArt` | `src/sectors/sectorArt.js`, `src/sectors/sceneBuilder.js` | Mock OpenRouter image fetch; assert Scene + Note pins + Drawing passages created with correct flags |
@@ -124,7 +124,7 @@ No other scope-doc changes needed — sub-feature claims in scopes A–F were ve
 This deliverable is an audit; the verification IS the cross-check just performed. To re-verify:
 
 1. `grep -c '"starforged-companion\.' src/integration/quench.js` → expect `33`
-2. `ls src/factContinuity/` → expect `sidecarParser.js`, `ledgers.js`, `sceneLifecycle.js`, `correctionDialog.js`, `consistencyCheck.js`
+2. `ls src/factContinuity/` → expect `sidecarParser.js`, `ledgers.js`, `sceneLifecycle.js`, `correctionDialog.js`, `chatCommands.js`, `consistencyCheck.js`
 3. `grep -n "!pace\|!roll\|!truth\|!state\|!scene start\|!scene end" src/index.js` → expect handler matches in the 525–1400 line range
 4. `grep -n "CONTENT_VERSION" src/help/helpJournal.js` → expect `"1.4.3"`
 5. `grep -n "factContinuity\|shipPositioning\|shipToken" src/ui/settingsPanel.js | wc -l` → expect ≥ 9 setting registrations

@@ -37,15 +37,23 @@
  * -------------
  * Every action runs through ONE promise queue on the canonical GM
  * (runGmAction, local and socket paths alike), so handlers' campaignState
- * read-modify-writes never interleave (two Private Lines syncs, an X-Card
- * landing mid-`!bond`, …). A handler that rejects releases the queue in a
- * `finally`; one that never settles is waited on for at most
+ * read-modify-writes never interleave (two Private Lines syncs, a `!bond`
+ * landing mid-End a Session, …). A handler that rejects releases the queue in
+ * a `finally`; one that never settles is waited on for at most
  * GM_ACTION_TIMEOUT_MS (warned) before the next action runs anyway — one bad
  * action can never wedge every later relay. Consequences:
- *   - a long handler (an oracle follow-up's Claude call) delays later relays
- *     until it settles or times out;
+ *   - a long handler (an oracle follow-up's or End a Session's Claude call)
+ *     delays later relays until it settles or times out;
  *   - a handler must NOT call requestGmAction itself on the canonical GM — the
  *     nested action would queue behind its own caller until the timeout.
+ * The exception is the X-Card (UNQUEUED_ACTIONS): it runs the moment it
+ * arrives. Queued behind a Claude-calling handler it waited up to the timeout
+ * while the move pipeline — which is not queued — narrated straight through
+ * it. Running it unqueued is safe because suppressScene reads and writes the
+ * store with no await in between, and no handler writes back a campaignState
+ * snapshot held across an await (each merges only the fields it owns onto the
+ * latest store — decisions.md → "Long-running pipeline writes merge
+ * relay-owned fields").
  *
  * Trust model — read before relying on a permission check
  * -------------------------------------------------------
@@ -156,6 +164,12 @@ export function hasActiveGM() {
 // GM-side action queue
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Kinds that run immediately instead of waiting in the queue — the X-Card must
+ * take effect the moment it is played (see "Serialisation" in the header).
+ */
+const UNQUEUED_ACTIONS = new Set(["xcard.activate"]);
+
 // Tail of the queue: resolves when the last enqueued action has released it.
 // Gates only ever resolve (never reject), so a failed action cannot poison the
 // chain. `_pending` counts actions queued or running; while it is 0 the queue
@@ -216,9 +230,9 @@ async function waitForPrevious(prev, kind, timeoutMs) {
 
 /**
  * Resolve and run one action on this client, serialised behind every other
- * action this client is running (see "Serialisation" above). Throws when the
- * kind is unknown or the owning module does not export the handler (a wiring
- * bug — surfaced, never swallowed).
+ * action this client is running (see "Serialisation" above) unless its kind is
+ * in UNQUEUED_ACTIONS. Throws when the kind is unknown or the owning module
+ * does not export the handler (a wiring bug — surfaced, never swallowed).
  *
  * @param {string} kind
  * @param {Object} payload
@@ -229,7 +243,7 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
   const entry = GM_ACTIONS[kind];
   if (!entry) throw new Error(`gmRelay: unknown action kind "${kind}"`);
 
-  return enqueueGmAction(kind, async () => {
+  const task = async () => {
     const mod     = await entry.load();
     const handler = mod?.[entry.fn];
     if (typeof handler !== "function") {
@@ -244,7 +258,8 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
       local,
     };
     return handler(payload ?? {}, ctx);
-  });
+  };
+  return UNQUEUED_ACTIONS.has(kind) ? task() : enqueueGmAction(kind, task);
 }
 
 /**

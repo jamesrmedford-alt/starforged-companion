@@ -252,15 +252,15 @@ to find each move's resolver branch.
 | Suffer (6) | `src/moves/resolver.js:547-601` | all 6 |
 | Recover (5) | `src/moves/resolver.js:606-658` | all 5; Repair points/spends not auto-applied to vehicle integrity (advice only) |
 | Threshold (3) | `src/moves/resolver.js:664-695` | all 3; Overcome Destruction rolls against bonds legacy track |
-| Legacy (3) | `src/moves/resolver.js:701-720` | all 3; XP awards persisted (`src/moves/persistResolution.js:187-203`) |
+| Legacy (3) | `src/moves/resolver.js:701-720` | all 3; legacy ticks and their box XP land through `addLegacyTicks` (`src/index.js`) — the old `persistResolution` legacy path was dead and was deleted (2026-10) |
 | Fate (2) | `src/moves/resolver.js:726-734` | both recognised — see §2.4 for gaps |
 
 ### 2.3 Character & progress mechanics
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Legacy tracks (quests, bonds, discoveries) | ✅ | `src/schemas.js:283-287`, `src/moves/persistResolution.js:166-203` |
-| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `src/character/actorBridge.js:244-256`; `src/moves/persistResolution.js:200-201` |
+| Legacy tracks (quests, bonds, discoveries) | ✅ | `campaignState.legacyTracks` (`CampaignStateSchema`, `src/schemas.js`); every write goes through `addLegacyTicks` (`src/index.js`) |
+| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `addLegacyTicks` awards box XP to every PC (LEGACY-XP-DEAD fix) via `awardXP` (`src/character/actorBridge.js`) |
 | Vows persisted as `progress` items on the actor | ✅ | `src/character/actorBridge.js:347-355` (`createCharacterVowItem`) |
 | Connections mirrored as bond items | ✅ | `src/character/actorBridge.js:328-336` (`createCharacterBondItem`) |
 | Connection role/rank/bond, second-role on Bond | ✅ | `src/entities/connection.js:371-379` |
@@ -296,37 +296,43 @@ to find each move's resolver branch.
 | Sector faction / control field | 🔄 | `src/sectors/sectorGenerator.js:103` initialises `faction: null` and displays it; no oracle generates faction control |
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |
-| Progress tracks worksheet (vow/expedition/connection/combat/scene_challenge) | ✅ | `src/schemas.js:183`, `src/ui/progressTracks.js:44-49` |
+| Progress tracks worksheet (vow/expedition/connection/combat/scene_challenge) | ✅ | `TRACK_TYPES` / `PANEL_TRACK_TYPES` in `src/ui/progressTracks.js` (the unused `schemas.js` `TRACK_TYPES` copy was deleted in 2026-10) |
 | Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → bonds legacy (2/1/0 by outcome, match raises rank); un-bonded → connection track |
 
 ### 2.6 Safety, scene, and session lifecycle
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Lines (hard) / Veils (soft), global + private | ✅ | `src/context/safety.js:38-62`; UI in `src/ui/settingsPanel.js:136-150` |
-| X-Card (community standard) — `!x` | ✅ | `src/index.js:1439` `handleXCardCommand`; suppresses scene |
-| Set a Flag — UI / chat command | ❌ | move recognised at `src/schemas.js:84`; no flag-setting dialog or surface |
-| Change Your Fate — 5-option chooser | ❌ | move recognised at `src/schemas.js:85`; no UI for Reframe / Refocus / Replace / Redirect / Reshape |
-| Take a Break — Move on / Stop for now | ❌ | move recognised at `src/schemas.js:86`; no prompt |
-| Begin a Session — flag review, recap, spotlight vignette | 🔄 | recap auto-runs (`issue #207 (Previously On)`); no flag-review prompt; no vignette table |
-| End a Session — milestone reminder, focus capture, +1 momentum | 🔄 | move returns `momentumChange: 1` text; no UI to set `questFocus` / `connectionFocus` (fields exist at `src/schemas.js:562-563`) |
+| Lines (hard) / Veils (soft), global + private | ✅ | `formatSafetyContext` (`src/context/safety.js`) from `campaignState.safety`, synced from the Settings panel by `syncSafetyToCampaignState` (`src/ui/settingsPanel.js`). A player's Private Lines relay to the canonical GM (`safety.syncPrivateLines` → `applyPrivateLinesSync`; re-sent when the GM's relay announces it is ready). The shared narrator prompt carries the global Lines / Veils only; a player's Private Lines are injected into that player's Private Channel context (they are never broadcast) |
+| X-Card (community standard) — `!x` | ✅ | Typed `!x` is intercepted on the typist's client before the message is created (`registerXCardHook`, `src/ui/settingsPanel.js`) → `playXCard` (`src/context/safety.js`) relays `xcard.activate` to the canonical GM (`suppressScene` sets `campaignState.xCardActive`) and posts the X-Card card, which says when the pause could not be recorded (no GM). A programmatic `!x` that reaches `createChatMessage` routes `RUN_ON.CANONICAL_GM` to `handleXCardCommand` (`src/index.js`). Every narrator entry point checks the flag against the live setting (`narrator.js` `isXCardActive`); a move resolved under the X-Card posts its result card plus a "narration paused" notice instead of narration |
+| X-Card resume | ✅ | GM only: the card's **Resume narration** button (`bindXCardCard`, `XCARD_RESUME_ACTION`) or `!x clear` → `resumeNarrationAfterXCard` (`clearXCard`, marks open X-Card cards resolved, posts "X-Card cleared"); also `game.modules.get("starforged-companion").api.clearXCard()` |
+| Set a Flag — UI / chat command | ✅ | `!flag` / Session panel → `openSetFlagDialog` (`src/safety/sessionDialogs.js`); public or private; recorded on `campaignState.safetyFlags` by the canonical GM (`applySafetyFlag`, gmRelay `safety.setFlag`); Begin a Session lists them for review |
+| Change Your Fate — 5-option chooser | ✅ | `!fate` / Session panel → `openChangeYourFateDialog` (`src/safety/sessionDialogs.js`): Reframe / Refocus / Replace / Redirect / Reshape + optional framing, posted as a card (narrative only) |
+| Take a Break — Move on / Stop for now | ✅ | `!break` / Session panel → `openTakeABreakDialog` (`src/safety/sessionDialogs.js`). *Move on* records a single-use `campaignState.nextMoveAdd` on the canonical GM (`applyTakeBreak`, gmRelay `session.takeBreak`); the move pipeline **adds the +1 automatically** to the next action roll and clears it (`takeNextMoveAdd` / `clearPersistedNextMoveAdd`, `src/moves/nextMoveAdd.js`) — progress and no-roll moves leave it pending. *Stop for now* opens End a Session. Not prompted automatically after a progress move |
+| Begin a Session — flag review, recap, spotlight vignette | ✅ | `!begin-session` / Session panel → `openBeginSessionDialog` (`src/safety/sessionLifecycleDialogs.js`): shows last session's quest / connection focus ("Focus from last session"), lists recent flags, optional Spotlight Vignette roll (`spotlight_vignette`, `src/oracles/tables/sessionVignette.js`) and galley vignette. World writes run on the canonical GM (`applyBeginSession`, gmRelay `session.begin`): +1 momentum to all PCs on a vignette roll, `sessionActive` on and the foci cleared, campaign clocks advance, galley vignette. Recap auto-runs (`issue #207 (Previously On)`) |
+| End a Session — milestone reminder, focus capture, +1 momentum | ✅ | `!end-session` / Session panel → `openEndSessionDialog` (`src/safety/sessionLifecycleDialogs.js`) captures quest / connection focus; `applyEndSession` (gmRelay `session.end`, canonical GM) saves the foci to `campaignState.questFocus` / `connectionFocus` (surfaced at the next Begin a Session, then cleared), ends the session and the active scene, finalises the rolling summary and Session Log, awards +1 momentum to all PCs when a focus was set, and runs the closing vignette |
 | Scene start / end (Fact Continuity scene markers) | ✅ | `!scene start|end` at `src/index.js:1011-1066`, `src/factContinuity/sceneLifecycle.js` |
 
 ### 2.7 Clocks and scene challenges
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Clocks (4/6/8-segment, campaign or tension) | ❌ (schema only) | `ClockSchema` declared at `src/schemas.js:429-444`; `clockIds: []` at `src/schemas.js:640`; no creation UI, no advance roll, no advance-on-Begin-Session, no advance-on-Pay-the-Price |
-| Scene Challenges worksheet (rulebook pp. 239–241) | ❌ (schema only) | `scene_challenge` listed in `TRACK_TYPES` (`src/schemas.js:183`) and a `sceneChallenge.tensionClockId` field exists on the progress track (`src/schemas.js:346-349`); no dedicated UI, no challenge setup walkthrough, no clock-advance integration |
-| Custom oracle tables (the oracle worksheet) | ❌ | `ORACLE_TABLES` is a hardcoded const at `src/oracles/roller.js:41`; no API to register player-defined tables |
+| Clocks (4/6/8/10-segment, campaign or tension) | ✅ | `src/clocks/clocks.js`: `!clock new/advance/fill/reset/remove/list` + the Clocks panel; campaign clocks roll their odds and advance at Begin a Session (`advanceCampaignClocksForBeginSession`); tension clocks and vow deadline clocks advance one segment on Pay the Price (`advanceClocksOnPayThePrice`, `src/clocks/payThePriceClocks.js` — a player's `!ptp` relays `payThePrice.advanceClocks` to the canonical GM). A full clock only posts an "already triggered" notice |
+| Scene Challenges worksheet (rulebook pp. 239–241) | 🔄 | the Progress Tracks panel creates `scene_challenge` tracks (`src/ui/progressTracks.js`) with a paired 4-segment tension clock (`tensionClockId`); no Starforged move maps to it (the panel roll is display-only), no setup walkthrough |
+| Custom oracle tables (the oracle worksheet) | ✅ | `!oracle-add` / Custom Oracles panel (`src/oracles/customOracles.js`): entries must run from 1 with no gaps or overlaps (`validateCustomOracleEntries`); the table rolls 1..its highest entry (`dieSizeForTable`, `src/oracles/roller.js` — a 1–6 table rolls a d6); roll with `!oracle <tableId>` or the panel. `campaignState.customOracles` is canonical; each client's `ORACLE_TABLES` copy is a mirror kept in sync |
 
 ### 2.8 Chat commands & toolbar (UI surface inventory)
 
-Chat commands (all routed via `createChatMessage` hook at `src/index.js:366`):
+Chat commands (all routed from the `createChatMessage` hook through the ordered
+`CHAT_COMMAND_ROUTES` table in `src/index.js` — `dispatchChatCommand`; each
+command runs once, on the typist's client (`RUN_ON.AUTHOR`), the canonical GM
+(`RUN_ON.CANONICAL_GM`, `!x`), or the keyed canonical GM else the author
+(`RUN_ON.CLAUDE`: `@scene`, `!recap`, `!ship envision/history`, `!incite`).
+The handler line numbers below predate that table — search by handler name):
 
 | Command | Handler line | Audience |
 |---|---|---|
-| `!x` | `src/index.js:1439` | anyone (X-Card) |
+| `!x` / `!x clear` | `src/ui/settingsPanel.js` `registerXCardHook` (typed, intercepted pre-create); programmatic `!x` → `src/index.js` `handleXCardCommand` | anyone (X-Card); `!x clear` GM |
 | `@scene <q>` | `src/index.js:373` (auto-route to narrator) | anyone |
 | `!at [entity]` | `src/index.js:1471` | GM |
 | `!sector new|list|<name>` | `src/index.js:1516` | GM (`new`) |
@@ -407,8 +413,9 @@ delete the local recompute.
 **3.1.3 `readDebilities` invents 5 fields that don't exist in the canonical
 schema.**
 `src/character/actorBridge.js:139-153` reads `corrupted`, `encumbered`,
-`maimed`, `custom1`, `custom2`. None of these appear in `IMPACTS` at
-`src/schemas.js:197-202` (which matches the play-kit list of 10). They are
+`maimed`, `custom1`, `custom2`. None of these appear in the play-kit list of
+10 impacts (§1.2; the unused `schemas.js` `IMPACTS` copy of that list was
+deleted in 2026-10). They are
 either leftovers from Ironsworn (the classic game) or speculative. Read
 them at most for forward-compat, but do not include them in the momentum
 calculation. `encumbered`, in particular, is currently counted toward

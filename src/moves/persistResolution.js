@@ -34,6 +34,7 @@ import {
   setDebility,
 } from '../character/actorBridge.js';
 import { postSufferChoiceCard } from './sufferCard.js';
+import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -231,7 +232,9 @@ function mergeWithLatestState(working, latestRaw) {
   const legacy = mergeLegacyTracks(latest.legacyTracks, working.legacyTracks);
   if (legacy) working.legacyTracks = legacy;
 
-  mergeSceneLedgers(working, latest);
+  if (!mergeSceneLedgers(working, latest)) {
+    console.debug(`${MODULE_ID} | persistResolution: the scene changed while the move resolved — keeping the stored scene ledgers.`);
+  }
   return working;
 }
 
@@ -269,40 +272,6 @@ function mergeLegacyTracks(store, working) {
   }
   return out;
 }
-
-const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight']);
-
-function mergeSceneLedgers(working, latest) {
-  if ((latest.currentSceneId ?? null) !== (working.currentSceneId ?? null)) {
-    console.debug(`${MODULE_ID} | persistResolution: the scene changed while the move resolved — keeping the stored scene ledgers.`);
-    for (const key of SCENE_FIELDS) {
-      if (key in latest) working[key] = latest[key];
-      else delete working[key];
-    }
-    return;
-  }
-
-  const storeTruths   = Array.isArray(latest.sceneTruths)  ? latest.sceneTruths  : null;
-  const workingTruths = Array.isArray(working.sceneTruths) ? working.sceneTruths : null;
-  if (!storeTruths) return;                       // nothing stored — keep the working copy
-  if (!workingTruths) { working.sceneTruths = storeTruths; return; }
-
-  const truthKey = (t) => t?.id ?? JSON.stringify(t);
-  const mine = new Map(workingTruths.map(t => [truthKey(t), t]));
-  const seen = new Set();
-  const merged = storeTruths.map((t) => {
-    const k = truthKey(t);
-    seen.add(k);
-    const w = mine.get(k);
-    // A retraction (narrator contradiction or `!truth` correction) is one-way.
-    return (w?.retracted && !t?.retracted) ? w : t;
-  });
-  for (const t of workingTruths) {
-    if (!seen.has(truthKey(t))) merged.push(t);
-  }
-  working.sceneTruths = merged;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Session move log

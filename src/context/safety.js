@@ -15,8 +15,12 @@
  * prompt (buildNarratorSystemPrompt renders it ahead of all creative
  * content). It is never omitted, never summarised, never truncated.
  *
- * Private per-player Lines are included only when the requesting user
- * is the player they belong to, or the GM. They are never broadcast.
+ * Private per-player Lines: the shared narrator prompt carries every
+ * player's lines when a GM's client builds it, and only the building
+ * player's own when a player's client does (formatNarratorSafetyContext);
+ * the Private Channel carries its player's own. They are never shown to
+ * another player or sent in another player's request — but they do sit in
+ * the world-scoped campaignState, which every client receives.
  */
 
 const MODULE_ID = "starforged-companion";
@@ -60,12 +64,58 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
 
   if (privateLines.length) {
     sections.push(
-      "### PRIVATE LINES (Player-specific — visible to this player and GM only)\n" +
+      "### PRIVATE LINES (Hard stops set privately by players — never cross these, and never mention or hint at them)\n" +
       privateLines.map(l => `- ${l}`).join("\n")
     );
   }
 
   return sections.join("\n\n");
+}
+
+/**
+ * The safety block for shared narration built on this client — the narrator
+ * system prompt (buildNarratorSystemPrompt) uses it; the Private Channel
+ * passes its player's id to formatSafetyContext instead.
+ *
+ * Private Lines (decisions.md → "Private Lines in shared narration"):
+ * - A GM's client builds for the whole table, so every player's lines go in,
+ *   from campaignState.safety.privateLines (the GM-side copy the
+ *   `safety.syncPrivateLines` relay keeps). Players never see the prompt.
+ * - A player's client narrates only when no keyed GM is online. It carries
+ *   that player's own lines, never another player's, read from the player's
+ *   client setting — the canonical store; the campaignState copy is stale or
+ *   missing when no GM was online to relay them to.
+ *
+ * @param {Object} campaignState — CampaignStateSchema
+ * @returns {string}             — Formatted safety context, always non-empty
+ */
+export function formatNarratorSafetyContext(campaignState) {
+  const user = globalThis.game?.user;
+  if (user?.isGM) return formatSafetyContext(campaignState, null, "gm");
+  if (!user?.id) return formatSafetyContext(campaignState);
+
+  const lines  = readOwnPrivateLines();
+  const safety = {
+    ...(campaignState?.safety ?? {}),
+    privateLines: lines.length ? [{ playerId: user.id, lines }] : [],
+  };
+  return formatSafetyContext({ ...(campaignState ?? {}), safety }, null, user.id);
+}
+
+/**
+ * This client's own Private Lines — the client-scoped `privateLines` setting
+ * the settings panel writes (SETTING.PRIVATE_LINES, src/ui/settingsPanel.js).
+ */
+function readOwnPrivateLines() {
+  try {
+    const lines = game.settings.get(MODULE_ID, "privateLines");
+    return Array.isArray(lines)
+      ? lines.filter(l => typeof l === "string" && l.trim()).map(l => l.trim())
+      : [];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Private Lines: could not read this player's own lines:`, err?.message ?? err);
+    return [];
+  }
 }
 
 
@@ -314,7 +364,8 @@ function mergeVeils(campaignState, sessionState) {
  * Resolve private Lines for the current player.
  * Returns only Lines belonging to the requesting user.
  * If currentUserId is null (e.g. system call), returns empty.
- * GM receives all private Lines.
+ * "gm" (a GM's client building shared narration) receives every player's
+ * Lines, deduplicated.
  */
 function resolvePrivateLines(campaignState, currentUserId) {
   if (!currentUserId) return [];
@@ -323,7 +374,7 @@ function resolvePrivateLines(campaignState, currentUserId) {
   const privateLines = safety.privateLines ?? [];
 
   if (currentUserId === "gm") {
-    return privateLines.flatMap(entry => entry.lines ?? []);
+    return deduplicate(privateLines.flatMap(entry => entry.lines ?? []));
   }
 
   const entry = privateLines.find(e => e.playerId === currentUserId);

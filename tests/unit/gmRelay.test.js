@@ -24,6 +24,7 @@ import {
   _resetGmRelayForTests,
 } from '../../src/multiplayer/gmRelay.js';
 import * as safety from '../../src/context/safety.js';
+import * as sessionDialogs from '../../src/safety/sessionDialogs.js';
 
 function setUsers(users, currentUserId) {
   global.game.users = Object.assign([...users], {
@@ -197,12 +198,12 @@ describe('runGmAction — serialised on the GM', () => {
     setUsers([GM, PLAYER], 'gm-1');
     const order = [];
     const first = deferred();
-    const spy = vi.spyOn(safety, 'suppressScene')
+    const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag')
       .mockImplementationOnce(async () => { order.push('a:start'); await first.promise; order.push('a:end'); })
       .mockImplementationOnce(async () => { order.push('b:start'); order.push('b:end'); });
 
-    const a = runGmAction('xcard.activate', {}, { requesterId: 'pl-1' });
-    const b = runGmAction('xcard.activate', {}, { requesterId: 'pl-1' });
+    const a = runGmAction('safety.setFlag', {}, { requesterId: 'pl-1' });
+    const b = runGmAction('safety.setFlag', {}, { requesterId: 'pl-1' });
     await vi.waitFor(() => expect(order).toEqual(['a:start']));
     first.resolve();
     await Promise.all([a, b]);
@@ -214,13 +215,13 @@ describe('runGmAction — serialised on the GM', () => {
     setUsers([GM, PLAYER], 'gm-1');
     const order = [];
     const first = deferred();
-    const spy = vi.spyOn(safety, 'suppressScene')
+    const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag')
       .mockImplementationOnce(async () => { order.push('relay:start'); await first.promise; order.push('relay:end'); })
       .mockImplementationOnce(async () => { order.push('local'); });
     registerGmRelaySocket();
     const list = game.socket._handlers.get(GM_RELAY_SOCKET);
-    const relayed = list[list.length - 1]({ kind: `${GM_RELAY_KIND_PREFIX}xcard.activate`, payload: {}, requesterId: 'pl-1' });
-    const local = requestGmAction('xcard.activate', {});
+    const relayed = list[list.length - 1]({ kind: `${GM_RELAY_KIND_PREFIX}safety.setFlag`, payload: {}, requesterId: 'pl-1' });
+    const local = requestGmAction('safety.setFlag', {});
     await vi.waitFor(() => expect(order).toEqual(['relay:start']));
     first.resolve();
     await Promise.all([relayed, local]);
@@ -230,11 +231,11 @@ describe('runGmAction — serialised on the GM', () => {
 
   it('a rejecting action does not wedge the queue — the next one still runs', async () => {
     setUsers([GM, PLAYER], 'gm-1');
-    const spy = vi.spyOn(safety, 'suppressScene')
+    const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag')
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce('second');
-    const a = runGmAction('xcard.activate', {});
-    const b = runGmAction('xcard.activate', {});
+    const a = runGmAction('safety.setFlag', {});
+    const b = runGmAction('safety.setFlag', {});
     await expect(a).rejects.toThrow('boom');
     await expect(b).resolves.toBe('second');
     spy.mockRestore();
@@ -244,18 +245,18 @@ describe('runGmAction — serialised on the GM', () => {
     vi.useFakeTimers();
     try {
       setUsers([GM, PLAYER], 'gm-1');
-      const spy = vi.spyOn(safety, 'suppressScene')
+      const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag')
         .mockImplementationOnce(() => new Promise(() => {}))   // hangs forever
         .mockResolvedValueOnce('after');
-      void runGmAction('xcard.activate', {});
-      const b = runGmAction('xcard.activate', {});
+      void runGmAction('safety.setFlag', {});
+      const b = runGmAction('safety.setFlag', {});
       let bDone = false;
       void b.then(() => { bDone = true; });
       await vi.advanceTimersByTimeAsync(GM_ACTION_TIMEOUT_MS - 1);
       expect(bDone).toBe(false);
       await vi.advanceTimersByTimeAsync(2);
       await expect(b).resolves.toBe('after');
-      expect(getCapturedWarns().some(w => /still running after .* running "xcard.activate" anyway/.test(w))).toBe(true);
+      expect(getCapturedWarns().some(w => /still running after .* running "safety.setFlag" anyway/.test(w))).toBe(true);
       spy.mockRestore();
     } finally {
       vi.useRealTimers();
@@ -266,8 +267,8 @@ describe('runGmAction — serialised on the GM', () => {
     vi.useFakeTimers({ toFake: ['setTimeout'] });
     try {
       setUsers([GM, PLAYER], 'gm-1');
-      const spy = vi.spyOn(safety, 'suppressScene').mockResolvedValue(undefined);
-      await runGmAction('xcard.activate', {});
+      const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag').mockResolvedValue(undefined);
+      await runGmAction('safety.setFlag', {});
       expect(vi.getTimerCount()).toBe(0);
       spy.mockRestore();
     } finally {
@@ -277,10 +278,49 @@ describe('runGmAction — serialised on the GM', () => {
 
   it('returns the handler result on the local (canonical GM) path', async () => {
     setUsers([GM, PLAYER], 'gm-1');
-    const spy = vi.spyOn(safety, 'suppressScene').mockResolvedValue({ paused: true });
-    const res = await requestGmAction('xcard.activate', {});
+    const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag').mockResolvedValue({ paused: true });
+    const res = await requestGmAction('safety.setFlag', {});
     expect(res).toEqual({ ok: true, relayed: false, result: { paused: true } });
     spy.mockRestore();
+  });
+  // Second review round: queued behind a Claude-calling handler (an oracle
+  // follow-up, a burn re-narration, End a Session's summary) the X-Card waited
+  // up to the timeout while the unqueued move pipeline narrated through it.
+  it('the X-Card is not queued — it is recorded while a long action is still in flight', async () => {
+    setUsers([GM, PLAYER], 'gm-1');
+    const order = [];
+    const first = deferred();
+    const flag = vi.spyOn(sessionDialogs, 'applySafetyFlag')
+      .mockImplementationOnce(async () => { order.push('flag:start'); await first.promise; order.push('flag:end'); });
+    const xcard = vi.spyOn(safety, 'suppressScene')
+      .mockImplementationOnce(async () => { order.push('xcard'); return true; });
+
+    const a = runGmAction('safety.setFlag', {}, { requesterId: 'pl-1' });
+    await vi.waitFor(() => expect(order).toEqual(['flag:start']));
+    await expect(runGmAction('xcard.activate', {}, { requesterId: 'pl-1' })).resolves.toBe(true);
+    expect(order).toEqual(['flag:start', 'xcard']);
+    first.resolve();
+    await a;
+    expect(order).toEqual(['flag:start', 'xcard', 'flag:end']);
+    flag.mockRestore();
+    xcard.mockRestore();
+  });
+
+  it('an X-Card relayed over the socket during a long action lands at once', async () => {
+    setUsers([GM, PLAYER], 'gm-1');
+    const first = deferred();
+    const flag = vi.spyOn(sessionDialogs, 'applySafetyFlag')
+      .mockImplementationOnce(async () => { await first.promise; });
+    game.settings._store.set('starforged-companion.campaignState', { xCardActive: false });
+    registerGmRelaySocket();
+    const list = game.socket._handlers.get(GM_RELAY_SOCKET);
+    const deliver = list[list.length - 1];
+    const a = deliver({ kind: `${GM_RELAY_KIND_PREFIX}safety.setFlag`, payload: {}, requesterId: 'pl-1' });
+    await deliver({ kind: `${GM_RELAY_KIND_PREFIX}xcard.activate`, payload: {}, requesterId: 'pl-1' });
+    expect(game.settings._store.get('starforged-companion.campaignState').xCardActive).toBe(true);
+    first.resolve();
+    await a;
+    flag.mockRestore();
   });
 });
 
