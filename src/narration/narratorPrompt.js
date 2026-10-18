@@ -1,8 +1,10 @@
 // src/narration/narratorPrompt.js
 // Pure string-building functions for the narrator system prompt and user message.
-// No Foundry API calls — all inputs are passed in; safe to call in tests.
+// No Foundry API calls — all inputs are passed in; safe to call in tests. One
+// exception: the safety block reads the building client's user and that user's
+// Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
-import { formatSafetyContext } from '../context/safety.js';
+import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 
 // ---------------------------------------------------------------------------
@@ -1142,8 +1144,10 @@ export function buildNarratorSystemPrompt(
     parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${campaignRecap.trim()}`);
   }
 
-  // [1] Safety configuration
-  const safetyContent = formatSafetyContext(campaignState);
+  // [1] Safety configuration — with Private Lines scoped to this client: every
+  //     player's on a GM's client, only the building player's own on a
+  //     player's (formatNarratorSafetyContext).
+  const safetyContent = formatNarratorSafetyContext(campaignState);
   if (safetyContent) parts.push(safetyContent);
 
   // [2] Narrator permissions — the creative-latitude block, immediately after

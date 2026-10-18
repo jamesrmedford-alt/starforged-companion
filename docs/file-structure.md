@@ -75,7 +75,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection; exports `collectAllEntities` (full roster for sidecar subject resolution). Lexical on the paced/@scene paths (`moveId: null`). |
-| `safety.js` | Safety-config formatting (`formatSafetyContext`) — always injected first into the system prompt; Private Lines come from `campaignState.safety.privateLines` (players' lines relayed by `ui/settingsPanel.js`). X-Card: `suppressScene` (gmRelay `xcard.activate` — sets `xCardActive`), `clearXCard`, `playXCard` (typed `!x` → relay + card), `postXCardCard` (says when the pause could not be recorded), `resumeNarrationAfterXCard` (GM-only resume, `!x clear`), `bindXCardCard` + `XCARD_RESUME_ACTION` (the card's GM-only "Resume narration" button). |
+| `safety.js` | Safety-config formatting (`formatSafetyContext`; `formatNarratorSafetyContext` for the shared narrator prompt — every player's Private Lines on a GM's client, only the building player's own on a player's) — always injected first into the system prompt; Private Lines come from `campaignState.safety.privateLines` (players' lines relayed by `ui/settingsPanel.js`). X-Card: `suppressScene` (gmRelay `xcard.activate` — sets `xCardActive`), `clearXCard`, `playXCard` (typed `!x` → relay + card), `postXCardCard` (says when the pause could not be recorded), `resumeNarrationAfterXCard` (GM-only resume, `!x clear`), `bindXCardCard` + `XCARD_RESUME_ACTION` (the card's GM-only "Resume narration" button). |
 
 ### `entities/` — entity records & discovery
 

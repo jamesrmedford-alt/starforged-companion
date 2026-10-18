@@ -330,6 +330,44 @@ write through to the mirror.
 - *A native → flag sync hook* — a second write path for a mirror no reader
   needs once readers use the native field.
 
+## Private Lines in shared narration: a GM-built prompt carries every player's (2026-10)
+
+**Decision:** The shared narrator prompt (`buildNarratorSystemPrompt` →
+`formatNarratorSafetyContext`, `src/context/safety.js`) scopes Private Lines to
+the client that builds it:
+
+- **A GM's client** — the normal case: the move pipeline, and every
+  `RUN_ON.CLAUDE` command while a keyed GM is active — carries **every
+  player's** Private Lines, deduplicated, from `campaignState.safety.privateLines`
+  (kept by the `safety.syncPrivateLines` relay). Players never see the prompt.
+- **A player's client** — which narrates only when no keyed GM is online —
+  carries **that player's own** lines, read from their client setting (the
+  canonical store; the campaignState copy is stale or missing when no GM was
+  online to relay it to). One player's lines never go into another player's
+  request.
+- **The Private Channel** is unchanged: its player's own lines only.
+
+The section heading tells the narrator never to cross them and never to
+mention or hint at them — shared narration is read by the whole table.
+
+**Reason:** SAFETY-PRIVATE-LINES-SHARED — the shared prompt passed no user id,
+so no Private Line (not even the GM's) reached shared narration, and a
+player's personal hard limit held only in their Private Channel. The privacy
+model was the maintainer's call (2026-10).
+
+**Boundary:** "private" means never shown in another player's UI and never
+sent in another player's request. The lines sit in the world-scoped
+`campaignState`, which every client receives, so they are not hidden from
+another client's console (known-issues → accepted limitations).
+
+**Rejected:**
+- *Every client carries every player's lines* — a keyed player's request would
+  send the others' private limits from their browser, on their key.
+- *Only the acting player's lines* — narration is shared; a limit someone else
+  at the table set must hold in a scene they are reading.
+- *No Private Lines in shared narration* (the old behaviour) — a hard limit the
+  main scene ignores is not a hard limit.
+
 ---
 
 ## Site exploration is oracle-seed-driven, not a delve track (2026-07)
@@ -1272,9 +1310,9 @@ Lines are preserved when any one player's client syncs.
 through `formatSafetyContext`. A player's client can't write campaignState, so it
 relays its Private Lines to the canonical GM (`safety.syncPrivateLines`, keyed on
 the relay requester) and re-sends them when the GM's relay announces it is ready —
-see "Player-invoked world writes go through the GM relay". The shared narrator
-prompt still passes no user id, so it renders no Private Lines at all —
-known-issues SAFETY-PRIVATE-LINES-SHARED, open.)*
+see "Player-invoked world writes go through the GM relay". Shared narration
+carries them too — every player's on a GM's client, the building player's own
+on a player's — see "Private Lines in shared narration".)*
 
 ---
 

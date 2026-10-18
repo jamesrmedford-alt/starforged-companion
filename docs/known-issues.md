@@ -47,7 +47,7 @@ lives in the matching `docs/flows/*-flow.md` maps.
 | TAKE-BREAK-NEXTMOVEADD | PRODUCED-BUT-DEAD | Take a Break "Move on" wrote `campaignState.nextMoveAdd`; nothing read it | `src/moves/nextMoveAdd.js`: added to the next action roll (not progress / no-roll moves), then cleared on the store (decisions.md → "Take a Break's +1 applies to the next action roll") |
 | ENDSESSION-FOCI-UNREAD | PRODUCED-BUT-DEAD | End a Session saved `questFocus` / `connectionFocus` "for the next Begin a Session" — no reader | Begin a Session shows "Focus from last session" (dialog + card), then clears both |
 | SESSION-WRITES-DROPPED | MULTIPLAYER-WRITE | A player's Set a Flag, Take a Break, Begin / End a Session posted their cards while `if (isGM)` skipped every world write; the Reach a Milestone and connection pickers did nothing for players | GM_ACTIONS `safety.setFlag`, `session.takeBreak`, `session.begin`, `session.end`, `milestone.pick` (the connection picker: CONNECTION-PICK-REFIRE); cards say when no GM was connected; the Begin / End vignettes run on the canonical GM |
-| SAFETY-PRIVATE-LINES-PLAYER | SAFETY | `syncSafetyToCampaignState` returned early on player clients, so a player's Private Lines never reached `campaignState.safety.privateLines` | GM_ACTIONS `safety.syncPrivateLines` → `applyPrivateLinesSync`, keyed on the relay requester; re-pulled when a GM becomes ready (RELAY-LOAD-WINDOW). **The shared narrator still doesn't read them — SAFETY-PRIVATE-LINES-SHARED (open, below)** |
+| SAFETY-PRIVATE-LINES-PLAYER | SAFETY | `syncSafetyToCampaignState` returned early on player clients, so a player's Private Lines never reached `campaignState.safety.privateLines` | GM_ACTIONS `safety.syncPrivateLines` → `applyPrivateLinesSync`, keyed on the relay requester; re-pulled when a GM becomes ready (RELAY-LOAD-WINDOW). Shared narration reads them too — SAFETY-PRIVATE-LINES-SHARED (below) |
 | PTP-CLOCKS-PLAYER | MULTIPLAYER-WRITE | A player's `!ptp` advanced tension / vow clocks only because the GM's client re-ran the whole command with its own dice; AUTHOR routing removed that (caught before merge) | GM_ACTIONS `payThePrice.advanceClocks` (`src/clocks/payThePriceClocks.js`) — once, on the canonical GM |
 | RECAP-DENIED-SILENT | SILENT-FAILURE | With "Recap GM-only" on (the default) a player's `!recap` matched no route and vanished | `isDeniedRecapCommand` route warns the player |
 | HOOK-ISGM-EMITTER | DUPLICATE-EMIT | Single-emitter hooks gated on plain `isGM` (a two-GM table double-emits): starship / connection `createActor` seeding, command-vehicle `createItem` / `deleteItem` + their ready scan, both world-truths journal hooks, the `updateActor` momentum-bounds recalc, the ready-hook session-ID / auto-recap block | `isCanonicalGM()`; idempotent ready-time work (help journal, world journals, migrations, macros, `closeWorld`) stays on `isGM` |
@@ -77,6 +77,12 @@ lives in the matching `docs/flows/*-flow.md` maps.
 | CLAUDE-CMD-KEYLESS-GM | WRONG-RUNNER | (#12) Moving `@scene`, `!recap`, `!ship envision` / `history` to the canonical GM broke them at a keyless-GM table where a player held the key ("Claude API key not configured") | `RUN_ON.CLAUDE`: the keyed canonical GM when one is active, else the author with their own key — every client computes the same runner |
 | DEADSCAN-CONST-MASK | TOOLING | (#19) A bare constant setting key (`SETTING_KEY`) counted by identifier across every file, so an unrelated same-named constant (`combatTracker.js` vs `apiTransactionLog.js`) masked a dead setting | References count only in the defining file and files importing that constant (named / aliased / namespace / dynamic / re-export); a key the file neither defines nor imports is reported unresolved, not guessed |
 | DOC-DRIFT-2026-10 | DOC-DRIFT | (#18, #20) Flow maps, file-structure, decisions, known-issues, the `MoveResolution` JSDoc, the narrator-sidecar comment and the gmRelay "every relayable action" header still described pre-audit behaviour | Docs updated this cycle; comments corrected; the gmRelay header lists the remaining legacy relays |
+
+**Found while verifying this write-up (fixed in the v1.7.31 cycle):**
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| SAFETY-PRIVATE-LINES-SHARED | SAFETY | Shared narration (moves, paced turns, `@scene`, oracle follow-ups, vignettes, the inciting incident) carried no Private Line at all — not even the GM's: `buildNarratorSystemPrompt` called `formatSafetyContext(campaignState)` with no user id, and `resolvePrivateLines` returns `[]` without one. A player's personal hard limit constrained only their Private Channel. Pre-existing; the relay fix (SAFETY-PRIVATE-LINES-PLAYER) only got the lines stored | `formatNarratorSafetyContext` (`src/context/safety.js`): a GM's client carries every player's lines (deduplicated); a player's client — narrating only with no keyed GM online — carries that player's own, read from their client setting, never another player's. The heading tells the narrator never to mention or hint at them (decisions.md → "Private Lines in shared narration") |
 
 **Accepted limitations** (recorded, not defects):
 
@@ -113,6 +119,10 @@ lives in the matching `docs/flows/*-flow.md` maps.
   only (token placement is GM-only); a command message with no resolvable
   author (a programmatic / legacy shape) still runs on every client that
   receives it.
+- **Private Lines are private by convention, not by storage.** They are never
+  shown in another player's UI or sent in another player's narrator request,
+  but the canonical GM stores them in the world-scoped `campaignState`, which
+  every client receives — a player's console can read them.
 
 **Open follow-ups** (found during the audit or while verifying this write-up):
 
@@ -121,7 +131,6 @@ lives in the matching `docs/flows/*-flow.md` maps.
   `expedition.recommit`, `combat.enterFray` (`src/index.js`), `vow.setReward`,
   `vow.linkConnection` (`src/session/swearVow.js`). Fold them into
   `GM_ACTIONS` when next touched (listed in the gmRelay header).
-- **SAFETY-PRIVATE-LINES-SHARED** — see its own entry below.
 - **CARD-STAMP-NONOWNER** (from source; not reproduced live) — two more
   GM-authored cards are stamped "used" from the clicker's client, which a
   player can't do (Foundry lets only a message's author or a GM update it):
@@ -139,32 +148,6 @@ settings, 0 unreachable modules** (82 settings checked); QUENCH-ONLY
 (the documented contract anchor) and `sufferDamage`
 (SHIP-INTEGRITY-API-UNWIRED). Unit suite: 145 files / 3,295 tests, coverage
 85.1 lines / 73.3 branches / 83.2 functions.
-
-### SAFETY-PRIVATE-LINES-SHARED — the shared narrator never sees any Private Line
-
-**Status:** Open (found 2026-10 while verifying SAFETY-PRIVATE-LINES-PLAYER).
-Safety-relevant; needs a maintainer decision on the privacy model before a fix.
-
-**Symptom:** A Private Line — a player's personal hard limit ("visible only to
-you and the GM", per the help journal) — constrains only that player's
-Private Channel. Shared narration (moves, paced turns, `@scene`, oracle
-follow-ups, vignettes, the inciting incident) honours global Lines / Veils
-only. This was already true before the audit, for the GM's own Private Lines
-too.
-
-**Cause:** `buildNarratorSystemPrompt` (`src/narration/narratorPrompt.js`)
-calls `formatSafetyContext(campaignState)` with no `currentUserId`, and
-`resolvePrivateLines` (`src/context/safety.js`) returns `[]` without one. Its
-`"gm"` branch (every player's lines) has no production caller. The only caller
-that passes an id is `buildPrivateContext` (`src/private-channel/context.js`),
-with the player's own. So the 2026-10 relay fix gets every player's lines into
-`campaignState.safety.privateLines` (and their Private Channel), but the
-v1.7.31 changelog line "Players' Private Lines reach the narrator" overstates
-it for shared narration.
-
-**Fix needed:** Decide whether shared narration honours every player's Private
-Lines (pass `"gm"` — the system prompt is never shown to players, so the lines
-stay private) and add a composition test on `buildNarratorSystemPrompt`.
 
 ### Unreachable-code audit (2026-07) — all resolved in the v1.7.30 cycle (issues #269–#277)
 

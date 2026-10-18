@@ -61,10 +61,13 @@ Lines / Veils. Each player's Private Lines now reach
 (`safety.syncPrivateLines` → `applyPrivateLinesSync`, keyed on the relay
 requester) on load and again whenever the canonical GM announces its relay is
 ready (`onGmRelayReady`) — previously `syncSafetyToCampaignState` returned
-early on player clients, so only the GM's own lines were ever stored. The
-shared narrator prompt calls `formatSafetyContext(campaignState)` with no
-user id, so per-player Private Lines are injected only where a user id is
-passed — that player's Private Channel context
+early on player clients, so only the GM's own lines were ever stored. [1] is
+built by `formatNarratorSafetyContext`, which scopes Private Lines to the
+building client: on a GM's client every player's lines (deduplicated); on a
+player's client — narrating only with no keyed GM online — that player's own,
+read from their client setting, never another player's. Before 2026-10 the
+shared prompt passed no user id and carried no Private Line at all
+(SAFETY-PRIVATE-LINES-SHARED). The Private Channel passes its player's id
 (`src/private-channel/context.js` `buildPrivateContext`). The X-Card
 (`xCardActive`, set by the `xcard.activate` relay) is checked by every
 narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
