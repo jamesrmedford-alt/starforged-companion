@@ -2,7 +2,9 @@
 
 The consistency-check pipeline end to end: what triggers the audit, what it
 compares prose against, how a catch reaches the GM, and what the remedy
-affordances actually do — verified against source (v1.7.30 cycle). Sibling
+affordances actually do — verified against source (v1.7.30 cycle; where the
+audit runs and the `!truth` / `!state` relay updated for the 2026-10 audit).
+Sibling
 docs: `narrator-context-flow.md` (the ledger the audit defends),
 `character-detail-flow.md` (the RECORDED IDENTITIES section).
 
@@ -22,6 +24,15 @@ every mode that applies a sidecar — all nine narrator paths. Gated on
 `factContinuity.consistencyCheck` (**default ON** since 2026-07; the
 unregistered-settings fallback stays false so unit tests never fire API
 calls).
+
+Which client that is: move narration always runs on the canonical GM, and
+the Claude-calling commands (`@scene`, `!recap`, `!ship envision/history`,
+`!incite` — `RUN_ON.CLAUDE`) and oracle follow-ups (`requestOracleNarration`)
+run on the keyed canonical GM whenever one is connected, so their prose is
+audited too. Only the fallback — no keyed GM, so a keyed author narrates with
+their own key — runs off the canonical GM; there `applyNarratorSidecar`
+applies no side-data and fires no audit (the skip is debug-logged), and the
+prose is unaudited. See `narrator-context-flow.md` → "Where each call runs".
 
 The audit prompt (`buildAuditPrompt`) compares prose against the FULL
 ledger block (`buildLedgerBlock` at `maxTokens: Infinity`) — SCENE FRAME,
@@ -64,6 +75,15 @@ longer special-cases them).
   (`logConsistencyDecision`, GM-gated, fail-open) and never shown to the GM.
 - **`contradictionNotifications`** (default on) gates the card itself; off
   means even high-confidence catches are telemetry-only.
+- The table-wide text path is **`!truth` / `!state`**
+  (`src/factContinuity/chatCommands.js`): syntax is checked on the typist's
+  client, then the raw text relays to the canonical GM (gmRelay
+  `factContinuity.command` → `applyFactContinuityCommand`), which resolves
+  the subject against the full entity roster, applies the strike / set with
+  the **requester's** permissions (`ctx.requesterIsGM` — a player cannot
+  strike a GM-asserted truth), persists, and posts the result card. Before
+  the 2026-10 audit the command ran on every client, so a player's correction
+  only landed via the GM client's re-run — with GM permissions.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)
   posts the same card WITHOUT the retract button — WJ lore's correction
   affordance is the `!journal` command family (reaffirmed 2026-07).

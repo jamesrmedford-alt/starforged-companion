@@ -10,8 +10,17 @@ Two cross-cutting facts to hold onto:
 - **The move pipeline runs only on the canonical GM client** (`isCanonicalGM()`
   gate at the top of the narration handler in `src/index.js`); the inner
   `game.user.isGM` checks on each consequence branch are belt-and-suspenders.
-  Card-button world writes gate on `isCanonicalGM()` with a relay over the
-  `module.starforged-companion` socket for player clients.
+  Its effects credit the **roller**: one `rollerActor` (the message's speaker,
+  first PC only as a fallback) drives the stat enrichment, the decisive-action
+  cost and Face Defeat Pay the Price routes, and the won-fight card and reward
+  (decisions.md → "Multiplayer attribution").
+- **Card-button world writes run on the canonical GM.** The won-fight buttons
+  (§4), Burn Momentum and Improve Result relay through `requestGmAction`
+  (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
+  a no-GM warning and a re-armed button when the click is not delivered). The
+  threshold card's **Enter the Fray** still uses its older ad-hoc relay
+  (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
+  the canonical GM — no no-GM warning).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -105,23 +114,45 @@ action move that ends the fight on every outcome.
 
 On a won fight (`strong_hit`/`weak_hit`, not Face Defeat) whose track has
 `linkedVowName`, the pipeline posts the **victory card**
-(`postFightVowMilestoneCard`): **⚑ Mark milestone (×N)** — N scales with the
-*fight's* rank (`marksForSourceRank`: troublesome/dangerous 1, formidable/
-extreme 2, epic 3; weak-hit win −1, min 1), each mark adding ticks by the
-*vow's* rank (`milestoneTicks`) to the vow **Item** (`applyReachMilestone` →
-`markVowProgress`) — plus **🏁 Attempt to Fulfill** (a forced
+(`postFightVowMilestoneCard`, flagged `fightVowCard` with the card's `vowName`,
+`marks`, `connectionName`, `vowRank` and the roller's `actorId`):
+**⚑ Mark milestone (×N)** — N scales with the *fight's* rank
+(`marksForSourceRank`: troublesome/dangerous 1, formidable/extreme 2, epic 3;
+weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
+(`milestoneTicks`) to the vow **Item** (`markLinkedVowMilestone` →
+`applyReachMilestone` → `markVowProgress`) on the vow's **holder** — the
+card's roller when they hold a copy, else the PC holding the resolved vow
+(`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks) and
-**🤝 Deepen your bond** when the vow links a connection. It then grants the
-linked vow's promised reward (`grantLinkedVowReward`), outcome-scaled
-(strong = full, weak = reduced/with-a-string, miss = lost) and one-time
-(`reward.status` flips from "promised").
+**🤝 Deepen your bond** when the vow links a connection
+(`deepenLinkedConnection`, scaled by the vow's rank). It then grants the
+linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
+outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
+one-time (`reward.status` flips from "promised"); it lands on the roller's
+copy when they hold one, else on the PC holding the promised reward.
+
+Mark milestone and Deepen your bond are one-shot GM writes:
+`wireFightVowButtons` relays a click via `relayCardAction`
+(`src/moves/cardActions.js`) as `fightVow.markMilestone` /
+`fightVow.deepenBond` → `applyFightVowMarkMilestone` /
+`applyFightVowDeepenBond` on the canonical GM. The handler takes every value
+from the GM-authored card (never the payload), skips an action already in
+flight or stamped, and stamps `flags.resolvedActions.<action>` once applied;
+an applied action renders disabled for everyone, and a click that is not
+delivered (no GM connected — `requestGmAction` warns), or a card still
+unstamped after `RELAY_RECOVERY_MS` (15 s), re-arms the button. (They used to
+emit raw `vow.markMilestone` / `connection.deepen` socket messages with no
+resolved stamp, so a second click — or a re-render on another client —
+applied the milestone twice, and with no GM the click silently did nothing.)
 
 Fulfilling the vow (via the move or the native sheet) completes it everywhere
 it lives — journal track *and* actor items (`completeVowItemByName` /
 `completeVowItem`) — and pays quests legacy + connection deepen + reward
 exactly once (`fulfilPaid` item flag; the pipeline path passes
 `skipLegacy: true` to `payFulfilledVowNative` and pays legacy on its own
-campaignState object so the pipeline's single persist can't clobber it).
+campaignState object, which `persistResolution` merges onto the stored state
+keeping the higher legacy tick count). See `vow-flow.md` §4 for how the
+reward finds the roller's copy once every copy is already completed.
 
 Winning a fight grants **no direct XP or legacy** — quests-legacy ticks come
 only from vow fulfilment. That's the by-the-book bridge: fight → milestone →

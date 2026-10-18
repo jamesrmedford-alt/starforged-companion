@@ -30,6 +30,10 @@ collaterals (safety token/suppression helpers, `formatOracleResultLine`,
 **Post-fix proof: `node scripts/deadscan.mjs` → 0 DEAD exports, 0 DEAD
 settings.** The sections below are preserved as the audit record.
 
+**2026-10 follow-up:** the repo audit (PR #281 + its post-merge review fixes)
+hardened `deadscan` — it found dead surface the 2026-07 scan had missed —
+and deleted or wired everything it reported. See §10.
+
 Tags: **DEAD-IN-PROD** (runs only under tests), **DEAD-EXPORT** (no consumer),
 **DEAD-CONTENT** (authored table never registered), **INCOMPLETE-TEARDOWN**
 (superseded path left inert), **DEAD-PARAM**, **DEAD-SETTING**, **DRIFT-RISK**
@@ -176,7 +180,10 @@ mirror of a live literal: `ELEVENLABS_MODELS` → the settings-panel model
 dropdown, `SALIENCE_ORDER` derived from `SALIENCE_TIERS`, the entity panel's
 finalize gate → `supportsFinalize`); 4 KEPT documented (`sufferDamage` /
 `repairIntegrity` / `clearBattered` marked `// UNWIRED: #216 Phase D`,
-`NARRATOR_CLASSES` as the MOVES contract-test anchor); 16 DELETED as
+`NARRATOR_CLASSES` as the MOVES contract-test anchor — **2026-10:**
+`repairIntegrity` / `clearBattered` are now wired, `!repair`'s GM-side
+`applyRepairSpends` in `src/moves/repair.js`; only `sufferDamage` stays
+UNWIRED); 16 DELETED as
 superseded siblings (including `promptSufferChoice` and its whole dialog
 rendering layer, the session-zero truths quartet + `applyRoll`, and
 `buildStationNoteData` — whose station-pin tests were rewired to the live
@@ -190,7 +197,9 @@ table-integrity property test along the way exposed and fixed a live defect:
 - **`CONSEQUENCE_MAP`** (`resolver.js:287`) — all 52 keys are real move ids; no
   dead handler.
 - **Chat commands** — every `isXCommand` predicate in `index.js` is wired into
-  the `createChatMessage` dispatcher; no undispatched command.
+  the `createChatMessage` dispatcher; no undispatched command. (Since 2026-10
+  the dispatcher is the ordered `CHAT_COMMAND_ROUTES` table — one row per
+  command with its run-on policy.)
 
 ## 8. Coverage / caveats
 
@@ -219,3 +228,66 @@ was never re-homed. This is exactly the class `rules/reachability.md` rules 1 (r
 gate) and 2 (teardown) exist to prevent — and the doc's own cited examples
 (`addRumor` / `setProject` / `setSceneRelevant`) are among the findings, which
 means the rule was recorded but the teardown was never executed.
+
+## 10. 2026-10 follow-up — what the hardened scan found
+
+The 2026-07 scan counted `src/integration/quench.js` and comment mentions as
+consumers, and only resolved settings registered by a quoted key. The 2026-10
+audit rebuilt `scripts/deadscan.mjs` (see `rules/reachability.md` →
+"Mechanical detection"): Quench is its own **QUENCH-ONLY** bucket, comments
+are stripped before counting, constant-keyed settings (`SETTING.KEY` / a bare
+`KEY` constant) resolve to their defining file and the files that import that
+constant, and **UNREACHABLE** lists modules no production entry point
+imports. Run against a snapshot of the pre-audit tree it reported every item
+below — as DEAD or QUENCH-ONLY — which the old scan had passed.
+
+**Deleted (zero production consumer):**
+
+- **Entity per-type art helpers** — `setPortraitId` and
+  `isReadyForArtGeneration` in all seven entity modules (`connection`,
+  `ship`, `settlement`, `planet`, `location`, `faction`, `creature`),
+  `connection.setPortraitSourceDescription`, and `creature.updateCreature`
+  (its only caller was `setPortraitId`). The art pipeline links portraits
+  through the registry (`art/generator.js` → `writeEntityFlag`); the helpers
+  were kept alive by Quench tests only.
+- **`chronicle.getChronicleForContext`**, **`worldJournal.annotateEntry`**
+  (with the `annotations` carry-forward writes in the World Journal record
+  writers — nothing read the field), **`mischief.shouldApplyMischief`**.
+- **`schemas.js`** — `CharacterSchema`, `SessionSchema`, `ArtAssetSchema`,
+  the `MoveResolutionSchema` object (it survives as a documentation-only
+  `@typedef`, so JSDoc references still resolve), `MISCHIEF_LEVELS`,
+  `RELATIONSHIP_TYPES`, `ART_BACKENDS`, `IMPACTS`, `TRACK_TYPES`; the
+  `CampaignStateSchema` fields `progressTrackIds` (never written — the move
+  interpreter now reads the vow Items and the Progress Tracks journal) and
+  `pendingClarification` (written twice in `index.js`, never read — both
+  writes removed).
+- **`settingsPanel.getSafetyConfig`** and five registered-but-unread
+  settings: `activeCharacterId`, `chronicleContextCount`,
+  `characterContextEnabled`, `worldJournalEnabled`, `worldJournalAutoDetect`.
+- **`persistResolution`'s mark-progress steps** (`markProgress`,
+  `markLegacyProgress`, `markProgressOnJournalTrack`) and the
+  `consequences.progressMarked` / `progressTrackId` fields they read: no
+  resolver ever set them (CONNECTION-FLOW defect 3's dead route). Progress is
+  marked by the pipeline in `index.js` from the dedicated consequence flags.
+- **Superseded relay paths** (teardown rule): `scheduleOracleNarration`
+  (replaced by `src/oracles/oracleFollowup.js` `requestOracleNarration`),
+  and `registerFightVowSocket` with its raw `vow.markMilestone` /
+  `connection.deepen` socket emits (replaced by the `fightVow.*` `GM_ACTIONS`
+  in `src/moves/cardActions.js`); the `userConnected` Private Lines re-send
+  (it fired before the GM's relay listener existed — replaced by the
+  `onGmRelayReady` pull).
+
+**Wired (a producer with no consumer, given one):**
+
+- `ship.repairIntegrity` / `ship.clearBattered` — `!repair` (above, Tier 5).
+- `campaignState.nextMoveAdd` (Take a Break "Move on" +1 — written, never
+  read; TAKE-BREAK-NEXTMOVEADD) — the move pipeline consumes it on the next
+  action roll (`src/moves/nextMoveAdd.js`).
+- `campaignState.questFocus` / `connectionFocus` (saved at End a Session,
+  never shown) — surfaced at the next Begin a Session, then cleared.
+
+**Still listed, by choice:** QUENCH-ONLY `getLastJournalCommandPromise`
+(`index.js` — the Quench seam for awaiting a `!journal` write chain);
+TEST-ONLY `NARRATOR_CLASSES` (the MOVES contract-test anchor) and
+`ship.sufferDamage` (`// UNWIRED: #216 Phase D`); the TEST-SEAM `_reset*` /
+`_internal` names. 0 DEAD exports, 0 DEAD settings, 0 UNREACHABLE modules.

@@ -28,8 +28,9 @@ Terminology up front, because it drives every gap below:
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
-  when the name exactly names a vow that is already completed (fulfilling A
-  used to resolve the one other open vow B and pay B's payoff).
+  when the name matches (exactly or by substring) a vow that is already
+  completed (fulfilling A used to resolve the one other open vow B and pay
+  B's payoff).
 
 ## 1. Creation
 
@@ -139,8 +140,8 @@ nothing completes.
 card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative`, which here also pays quests legacy). Idempotency:
-the `fulfilPaid` flag on the first-matched copy pays once per vow across both
-paths.
+the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
+across both paths.
 
 **Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
 the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
@@ -197,4 +198,8 @@ summary lives in the `known-issues.md` table and the code.
   ~~a shared vow's reward went to the first PC~~ — every PC's copy is
   collected, so the roller's copy is found.
 - ~~Fulfilling vow A with exactly one other open vow B paid B~~ — the
-  sole-open rung no longer applies to a name that names a completed vow.
+  sole-open rung no longer applies to a name that matches a completed vow.
+- ~~The won-fight "Mark milestone" button could apply twice (raw socket
+  relay, no resolved stamp) and silently did nothing with no GM~~ — relayed
+  `fightVow.markMilestone`, one-shot via `resolvedActions.markMilestone`
+  (`combat-flow.md` §4).
