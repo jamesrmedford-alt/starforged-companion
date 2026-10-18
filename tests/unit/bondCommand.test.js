@@ -131,14 +131,52 @@ describe('applyBondEffects — canonical GM handler', () => {
   });
 
   it('gives momentum to the relayed roller', async () => {
-    await applyBondEffects({ momentumChange: 2, actorId: 'pc-b' }, {});
+    pcB.ownership = { 'pl-1': 3 };
+    await applyBondEffects({ momentumChange: 2, actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
     expect(pcB._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
     expect(pcA._updateHistory).toHaveLength(0);
   });
 
-  it('falls back to the first PC when the roller is unknown', async () => {
-    await applyBondEffects({ momentumChange: 2, actorId: null }, {});
+  it('falls back to the first PC when the roller is unknown (GM requester)', async () => {
+    await applyBondEffects({ momentumChange: 2, actorId: null }, { requesterId: 'gm-1', requester: GM, requesterIsGM: true });
     expect(pcA._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
+  });
+
+  it('refuses momentum for a PC the requester does not own', async () => {
+    pcB.ownership = { 'pl-2': 3 };
+    await applyBondEffects({ momentumChange: 2, actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
+    expect(pcB._updateHistory).toHaveLength(0);
+    expect(getCapturedWarns().some(w => /does not own Bex — momentum refused/.test(w))).toBe(true);
+  });
+
+  it('clamps an inflated legacy-tick payload to the legal 2 ticks', async () => {
+    await applyBondEffects({ ticksOnBonds: 40 }, { requesterIsGM: false });
+    expect(state().legacyTracks.bonds.ticks).toBe(2);
+    expect(getCapturedWarns().some(w => /ticksOnBonds=40 is not a legal roll result/.test(w))).toBe(true);
+  });
+
+  it('clamps an inflated momentum payload to +2', async () => {
+    await applyBondEffects({ momentumChange: 10, actorId: 'pc-a' }, { requesterIsGM: true });
+    expect(pcA._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
+  });
+
+  it('refuses a payload asking for both legacy ticks and momentum', async () => {
+    const res = await applyBondEffects({ ticksOnBonds: 2, momentumChange: 2, actorId: 'pc-a' }, { requesterIsGM: true });
+    expect(res).toEqual({ applied: false, reason: 'invalid' });
+    expect(state().legacyTracks.bonds).toBeUndefined();
+    expect(pcA._updateHistory).toHaveLength(0);
+  });
+
+  it('refuses a rank raise that skips a rank (not the connection\'s next rank)', async () => {
+    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', targetName: 'Sable', raisedRank: 'epic' }, {});
+    expect(updateConnection).not.toHaveBeenCalled();
+    expect(getCapturedWarns().some(w => /is not the next rank of bonded connection/.test(w))).toBe(true);
+  });
+
+  it('a non-boolean raiseRank is not a raise', async () => {
+    const res = await applyBondEffects({ raiseRank: 'yes', targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
+    expect(res).toEqual({ applied: false });
+    expect(updateConnection).not.toHaveBeenCalled();
   });
 
   it('raises the connection rank', async () => {

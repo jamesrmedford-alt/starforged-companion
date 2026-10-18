@@ -133,8 +133,8 @@ function improveButtonLabel(state) {
  * after use.
  *
  * @param {Object}   hooks
- * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
- * @param {Function} hooks.persist    async (resolution, state) => void
+ * @param {Function} hooks.narrate    async (resolution, state, { speakerActorId }) => void
+ * @param {Function} hooks.persist    async (resolution, state, speakerActorId) => void
  */
 export function registerImproveResultHook({ narrate, persist } = {}) {
   _deps = { narrate: narrate ?? null, persist: persist ?? null };
@@ -354,11 +354,16 @@ async function renarrate({ improve, newConsequences, narrate, persist }) {
   // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
   // narrateResolution never read it, and the old `if (!packet) return`
   // guard silently ABORTED this re-narration when the dead assembly failed.
-  await narrate(synthResolution, null, campaignState, {});
+  // narrateResolution(resolution, campaignState, options) — the old
+  // `(resolution, null, campaignState, {})` call still carried the retired
+  // packet slot, so the narrator got null for campaignState. The improving PC
+  // is the card's actor, not the first PC (credit the roller).
+  const speakerActorId = improve.actorId ?? null;
+  await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
     // Meters were already applied by applyImproveMeterDeltas — log only.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };
-    await persist(logOnly, campaignState).catch(err =>
+    await persist(logOnly, campaignState, speakerActorId).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: persist (log) failed:`, err));
   }
 }

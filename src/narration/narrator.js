@@ -2411,10 +2411,20 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // world-scoped Setting) and may update the ship Actor. Players lack
   // permission for world writes, so gate the whole apply-and-persist block on
   // the canonical GM. The clean prose is extracted above and still returned
-  // below, so a non-GM caller (should one ever reach here) gets correct text
-  // with no failed server write. In production only the canonical GM runs the
-  // narration pipeline, so this never changes behaviour there.
-  if (sidecar && campaignState && isCanonicalGM()) {
+  // below, so a non-canonical caller gets correct text with no failed server
+  // write. The move pipeline runs only on the canonical GM, but some narration
+  // legitimately runs elsewhere: an oracle follow-up or a RUN_ON.CLAUDE
+  // command (@scene, !recap, !incite, …) runs on the author's keyed client
+  // when no keyed GM is connected (src/oracles/oracleFollowup.js,
+  // src/index.js chat routing). There the side-data is dropped — logged below.
+  const applySidecarHere = isCanonicalGM();
+  if (sidecar && campaignState && !applySidecarHere) {
+    console.debug?.(
+      `${MODULE_ID} | factContinuity: not the canonical GM — narrator side-data ` +
+      `(truths, state changes, scene frame) not applied on this client.`,
+    );
+  }
+  if (sidecar && campaignState && applySidecarHere) {
     // Fact-continuity §20 — the "ship" subject is special-cased. A
     // stateChange with subject === "ship" and attribute === "position"
     // is routed to the command vehicle's persistent position field,

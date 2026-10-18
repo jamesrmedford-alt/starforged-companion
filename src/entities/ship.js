@@ -12,7 +12,13 @@
  *   actor.name                            ← ship.name (also kept on the flag)
  *   actor.img                             ← portrait dataUri (set by art pipeline)
  *   actor.system.notes                    ← ship.notes
- *   actor.system.debility.battered        ← ship.battered (clearable)
+ *   actor.system.debility.battered        ← ship.battered (clearable). The NATIVE
+ *                                           field is canonical for battered:
+ *                                           the starship sheet's impact toggle
+ *                                           and the suffer dialog write/read it
+ *                                           only. Read it via isShipBattered();
+ *                                           the flag copy is a write-through
+ *                                           mirror kept by updateShip.
  *   actor.system.debility.cursed          ← ship.cursed (permanent, command vehicle only)
  *   actor.flags[MODULE].ship              ← full Starforged payload (see ShipSchema)
  *   actor.flags[MODULE].entityType        ← "ship" (routing crumb)
@@ -298,9 +304,10 @@ export async function updateShip(actorId, updates) {
     updated.integrity = Math.max(0, Math.min(updated.integrityMax ?? 5, updated.integrity));
   }
 
-  // Mirror battered/cursed onto the native debility fields so the ironsworn
-  // starship sheet renders them correctly (ImpactField widget). The flag
-  // payload remains the source of truth for everything else.
+  // Write battered/cursed onto the native debility fields (ImpactField) —
+  // canonical for battered (isShipBattered) and what the ironsworn starship
+  // sheet renders — alongside the flag mirror. The flag payload remains the
+  // source of truth for everything else.
   const systemPatch = {};
   if (updates.notes !== undefined)    systemPatch["system.notes"] = updated.notes ?? "";
   if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
@@ -348,7 +355,7 @@ export async function repairIntegrity(actorId, amount) {
   const ship = getShip(actorId);
   if (!ship) throw new Error(`Ship not found: ${actorId}`);
 
-  if (ship.battered) {
+  if (isShipBattered(actorId)) {
     console.warn(`${MODULE_ID} | Ship is battered — integrity cannot be raised until battered is cleared.`);
     return ship;
   }
@@ -359,13 +366,36 @@ export async function repairIntegrity(actorId, amount) {
 
 /**
  * Clear the battered impact (costs 2 repair points in the Repair move).
- * Live caller: src/moves/repair.js applyRepairSpends.
+ * Live caller: src/moves/repair.js applyRepairSpends. updateShip writes the
+ * canonical native field (system.debility.battered) and the flag mirror.
  *
  * @param {string} actorId
  * @returns {Promise<Object>}
  */
 export async function clearBattered(actorId) {
   return updateShip(actorId, { battered: false });
+}
+
+/**
+ * Is this ship battered? The native starship field
+ * `system.debility.battered` is canonical: the foundry-ironsworn starship
+ * sheet's Battered toggle writes only that field, and sufferDialog's
+ * "!battered" requirement reads it. The module flag's `battered` is a
+ * write-through mirror (updateShip) that nothing else sets true, so reading
+ * it alone missed every sheet-marked impact. The flag is consulted only when
+ * the host document carries no native debility field (a legacy host).
+ *
+ * @param {Actor|string|null} actorOrId  the ship Actor, or its id
+ * @returns {boolean}
+ */
+export function isShipBattered(actorOrId) {
+  const document = typeof actorOrId === "string"
+    ? getEntityDocument("ship", actorOrId)
+    : (actorOrId ?? null);
+  if (!document) return false;
+  const native = document.system?.debility?.battered;
+  if (typeof native === "boolean") return native;
+  return !!readEntityFlag("ship", document)?.battered;
 }
 
 function generateId() {

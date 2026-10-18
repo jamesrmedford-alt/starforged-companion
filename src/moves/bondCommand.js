@@ -28,6 +28,7 @@ import { showActionRoll } from "../dice/diceAnimation.js";
 import { getPlayerActors, applyMeterChanges, setBondItemRank } from "../character/actorBridge.js";
 import { resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { requesterOwnsActor } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -140,25 +141,57 @@ export async function handleBondCommand(message) {
   });
 }
 
+// The only lasting effects one `!bond` roll can produce (play kit p. 3): a
+// strong hit marks 2 bonds-legacy ticks, a weak hit gives +2 momentum — never
+// both. The relay payload is client-supplied (gmRelay.js "Trust model"), so
+// the handler clamps to these values.
+const BOND_LEGACY_TICKS = 2;
+const BOND_MOMENTUM     = 2;
+
 /**
  * gmRelay handler for "bond.apply" — runs on the canonical GM.
+ *
+ * Validates the client-supplied payload before writing: ticks and momentum
+ * clamp to the legal {0, 2} (a request carrying both is refused — no single
+ * roll yields both), the rank raise must name a real next rank, and the
+ * momentum target must be a PC the requester owns (or the requester is a GM).
  *
  * @param {{ ticksOnBonds?: number, momentumChange?: number, raiseRank?: boolean,
  *           targetHostId?: string|null, targetName?: string|null,
  *           raisedRank?: string|null, actorId?: string|null }} payload
- * @param {Object} [_ctx]  gmRelay context (unused — any player may develop a bond)
- * @returns {Promise<{ applied: boolean }>}
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
-export async function applyBondEffects(payload = {}, _ctx = {}) {
-  const ticks    = toCount(payload.ticksOnBonds);
-  const momentum = toCount(payload.momentumChange);
+export async function applyBondEffects(payload = {}, ctx = {}) {
+  const ticks    = clampEffect(payload.ticksOnBonds,   BOND_LEGACY_TICKS, "ticksOnBonds");
+  let   momentum = clampEffect(payload.momentumChange, BOND_MOMENTUM,     "momentumChange");
   const raise    = payload.raiseRank === true
     && typeof payload.targetHostId === "string" && payload.targetHostId.length > 0
     && typeof payload.raisedRank === "string" && payload.raisedRank in BOND_ROLL_ADDS;
 
+  if (ticks > 0 && momentum > 0) {
+    console.warn(`${MODULE_ID} | !bond: relay asked for both legacy ticks and momentum — no single roll yields both; refused.`, payload);
+    return { applied: false, reason: "invalid" };
+  }
   if (payload.raiseRank === true && !raise) {
     console.warn(`${MODULE_ID} | !bond: rank raise requested without a valid target/rank — skipped.`, payload);
   }
+
+  // Credit the roller — but only a PC the requester may act for.
+  let momentumActor = null;
+  if (momentum > 0) {
+    const actorId = typeof payload.actorId === "string" ? payload.actorId : null;
+    momentumActor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
+    if (!momentumActor) {
+      console.warn(`${MODULE_ID} | !bond: no player character to receive +${momentum} momentum.`);
+      momentum = 0;
+    } else if (!requesterOwnsActor(momentumActor, ctx)) {
+      console.warn(`${MODULE_ID} | !bond: user ${ctx?.requesterId ?? "?"} does not own ${momentumActor.name} — momentum refused.`);
+      momentumActor = null;
+      momentum = 0;
+    }
+  }
+
   if (!ticks && !momentum && !raise) {
     console.debug(`${MODULE_ID} | !bond: relay carried no effect — nothing applied.`);
     return { applied: false };
@@ -176,32 +209,48 @@ export async function applyBondEffects(payload = {}, _ctx = {}) {
 
   if (raise) {
     const conn = await import("../entities/connection.js");
-    await conn.updateConnection(payload.targetHostId, { rank: payload.raisedRank }).catch(err =>
-      console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
-    // Mirror onto the PCs' bond Items so CHARACTER STATE shows the raised
-    // rank (NARR-BOND-RANK-STALE).
-    await setBondItemRank(
-      { connectionId: payload.targetHostId, name: payload.targetName ?? null },
-      payload.raisedRank,
-    ).catch(err =>
-      console.warn(`${MODULE_ID} | !bond rank mirror failed:`, err?.message ?? err));
+    // The raise must be exactly one step up from the connection's CURRENT
+    // rank, on a bonded connection — so a forged or repeated relay cannot
+    // jump ranks or raise twice.
+    const current = conn.getConnection(payload.targetHostId);
+    const legal = current?.bonded === true
+      && current.rank !== "epic"
+      && nextRank(current.rank) === payload.raisedRank;
+    if (!legal) {
+      console.warn(
+        `${MODULE_ID} | !bond: rank raise to "${payload.raisedRank}" is not the next rank of bonded connection ` +
+        `${payload.targetHostId} (current: ${current?.rank ?? "none"}) — skipped.`,
+      );
+    } else {
+      await conn.updateConnection(payload.targetHostId, { rank: payload.raisedRank }).catch(err =>
+        console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
+      // Mirror onto the PCs' bond Items so CHARACTER STATE shows the raised
+      // rank (NARR-BOND-RANK-STALE).
+      await setBondItemRank(
+        { connectionId: payload.targetHostId, name: payload.targetName ?? null },
+        payload.raisedRank,
+      ).catch(err =>
+        console.warn(`${MODULE_ID} | !bond rank mirror failed:`, err?.message ?? err));
+    }
   }
 
-  if (momentum > 0) {
-    const actorId = typeof payload.actorId === "string" ? payload.actorId : null;
-    const actor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
-    if (actor) {
-      await applyMeterChanges(actor, { momentum });
-    } else {
-      console.warn(`${MODULE_ID} | !bond: no player character to receive +${momentum} momentum.`);
-    }
+  if (momentum > 0 && momentumActor) {
+    await applyMeterChanges(momentumActor, { momentum });
   }
   return { applied: true };
 }
 
-function toCount(value) {
+/**
+ * Clamp a relayed effect count to {0, legal}. Anything else is a forged or
+ * corrupted payload — warned, then clamped (a positive value to `legal`).
+ */
+function clampEffect(value, legal, label) {
   const n = Math.floor(Number(value));
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n !== legal) {
+    console.warn(`${MODULE_ID} | !bond: relayed ${label}=${value} is not a legal roll result — clamped to ${legal}.`);
+  }
+  return legal;
 }
 
 function escapeHtml(s) {

@@ -30,8 +30,19 @@ vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
   ...(await importOriginal()),
   routePacedInput: vi.fn(async () => ({ runMove: false, decision: 'NARRATIVE', suggestedMove: null })),
 }));
+vi.mock('../../src/session/incitingIncident.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  runIncitingIncident: vi.fn(async () => ({ spark: null, text: null })),
+}));
+vi.mock('../../src/entities/shipEnvision.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  handleShipEnvisionCommand: vi.fn(async () => {}),
+  handleShipHistoryCommand:  vi.fn(async () => {}),
+}));
 
 import { registerChatHook } from '../../src/index.js';
+import { runIncitingIncident } from '../../src/session/incitingIncident.js';
+import { handleShipEnvisionCommand, handleShipHistoryCommand } from '../../src/entities/shipEnvision.js';
 import { interrogateScene, postCampaignRecap } from '../../src/narration/narrator.js';
 import { requestOracleNarration } from '../../src/oracles/oracleFollowup.js';
 import { routePacedInput } from '../../src/pacing/router.js';
@@ -71,6 +82,11 @@ beforeEach(() => {
   postCampaignRecap.mockClear();
   requestOracleNarration.mockClear();
   routePacedInput.mockClear();
+  runIncitingIncident.mockClear();
+  handleShipEnvisionCommand.mockClear();
+  handleShipHistoryCommand.mockClear();
+  game.settings._store.delete(`${MODULE_ID}.keyedGmUserIds`);
+  game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
   game.socket._reset();
   game.settings._store.set(`${MODULE_ID}.campaignState`, {
     ...CampaignStateSchema, sessionActive: true, xCardActive: false,
@@ -162,47 +178,18 @@ describe('AUTHOR policy — runs only on the client that typed it', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('CANONICAL_GM policy — runs only on the canonical GM', () => {
-  it('!recap typed by a player runs on the canonical GM, not on the player', async () => {
-    setUsers([GM, GM2, P1], 'pl-1');
-    await fire(cmd('!recap', 'pl-1'));
-    expect(postCampaignRecap).not.toHaveBeenCalled();
-
-    setUsers([GM, GM2, P1], 'gm-2');
-    await fire(cmd('!recap', 'pl-1'));
-    expect(postCampaignRecap).not.toHaveBeenCalled();
-
-    setUsers([GM, GM2, P1], 'gm-1');
-    await fire(cmd('!recap', 'pl-1'));
-    expect(postCampaignRecap).toHaveBeenCalledTimes(1);
-  });
-
-  it('@scene makes exactly one Claude call — on the canonical GM — credited to the speaker', async () => {
-    const pc = makeTestActor({ id: 'pc-b', name: 'Bex' });
-    game.actors._setAll([pc]);
-    const msg = cmd('@scene what does the hangar smell like?', 'pl-1', { speaker: { actor: 'pc-b' } });
-
-    setUsers([GM, P1], 'pl-1');
-    await fire(msg);
-    setUsers([GM, P1], 'gm-1');
-    await fire(msg);
-
-    expect(interrogateScene).toHaveBeenCalledTimes(1);
-    expect(interrogateScene.mock.calls[0][2]).toEqual({ speakerActorId: 'pc-b' });
-    game.actors._reset();
-  });
-
   it('warns the author when no GM is connected', async () => {
     const warn = vi.spyOn(ui.notifications, 'warn');
     setUsers([{ ...GM, active: false }, P1], 'pl-1');
-    await fire(cmd('!recap', 'pl-1'));
-    expect(postCampaignRecap).not.toHaveBeenCalled();
+    await fire(cmd('!x', 'pl-1'));
+    expect(state().xCardActive).toBe(false);
     expect(warn.mock.calls.some(c => /no GM is connected/.test(String(c[0])))).toBe(true);
   });
 
   it('a non-author client does not warn when no GM is connected', async () => {
     const warn = vi.spyOn(ui.notifications, 'warn');
     setUsers([{ ...GM, active: false }, P1, P2], 'pl-2');
-    await fire(cmd('!recap', 'pl-1'));
+    await fire(cmd('!x', 'pl-1'));
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -218,6 +205,80 @@ describe('CANONICAL_GM policy — runs only on the canonical GM', () => {
     const cards = ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.xcardCard);
     expect(cards).toHaveLength(1);
     expect(cards[0].flags[MODULE_ID].type).toBe('xcard');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLAUDE policy
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('CLAUDE policy — keyed canonical GM when one is connected, else the author', () => {
+  // Fire one message on every listed client; return the ids that ran it.
+  async function runOn(clients, users, message, spy) {
+    const ran = [];
+    for (const id of clients) {
+      setUsers(users, id);
+      const before = spy.mock.calls.length;
+      await fire(message);
+      if (spy.mock.calls.length > before) ran.push(id);
+    }
+    return ran;
+  }
+  const keyGms = (...ids) => game.settings._store.set(`${MODULE_ID}.keyedGmUserIds`, ids);
+
+  it('keyed GM connected: a player\'s !recap runs once, on the canonical (keyed) GM', async () => {
+    keyGms('gm-1');
+    const ran = await runOn(['pl-1', 'gm-2', 'gm-1'], [GM, GM2, P1], cmd('!recap', 'pl-1'), postCampaignRecap);
+    expect(ran).toEqual(['gm-1']);
+  });
+
+  it('keyed GM connected: a keyed player\'s command still runs on the GM (sidecar + world writes apply there)', async () => {
+    keyGms('gm-1');
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-player');
+    const ran = await runOn(['pl-1', 'gm-1'], [GM, P1], cmd('!incite', 'pl-1'), runIncitingIncident);
+    expect(ran).toEqual(['gm-1']);
+  });
+
+  it('only the keyed assistant GM runs it when the lowest-id GM is keyless', async () => {
+    keyGms('gm-2');
+    const ran = await runOn(['gm-1', 'gm-2', 'pl-1'], [GM, GM2, P1], cmd('!ship envision', 'pl-1'), handleShipEnvisionCommand);
+    expect(ran).toEqual(['gm-2']);
+  });
+
+  it('no keyed GM: the author runs it (keyed author uses their own key) — the keyless GM stands down', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const pc = makeTestActor({ id: 'pc-b', name: 'Bex' });
+    game.actors._setAll([pc]);
+    const msg = cmd('@scene what does the hangar smell like?', 'pl-1', { speaker: { actor: 'pc-b' } });
+    const ran = await runOn(['gm-1', 'pl-2', 'pl-1'], [GM, P1, P2], msg, interrogateScene);
+    expect(ran).toEqual(['pl-1']);
+    expect(interrogateScene.mock.calls[0][2]).toEqual({ speakerActorId: 'pc-b' });
+    expect(debug.mock.calls.some(c => /no keyed GM — runs on the author's client/.test(String(c[0])))).toBe(true);
+    game.actors._reset();
+  });
+
+  it('no keyed GM: a keyless author still runs it (the handler posts its own key-not-configured fallback)', async () => {
+    const ran = await runOn(['gm-1', 'pl-1'], [GM, P1], cmd('!ship history', 'pl-1'), handleShipHistoryCommand);
+    expect(ran).toEqual(['pl-1']);
+  });
+
+  it('a keyed GM that is NOT active does not count — the author runs it', async () => {
+    keyGms('gm-1');
+    const ran = await runOn(['pl-1'], [{ ...GM, active: false }, P1], cmd('!recap', 'pl-1'), postCampaignRecap);
+    expect(ran).toEqual(['pl-1']);
+  });
+
+  it('no GM at all: the author runs it and nobody is warned', async () => {
+    const warn = vi.spyOn(ui.notifications, 'warn');
+    const ran = await runOn(['pl-1', 'pl-2'], [P1, P2], cmd('!incite', 'pl-1'), runIncitingIncident);
+    expect(ran).toEqual(['pl-1']);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a GM-typed command with a keyed GM runs on the canonical GM only', async () => {
+    keyGms('gm-1');
+    const ran = await runOn(['gm-2', 'gm-1'], [GM, GM2], cmd('!recap', 'gm-2', { author: { id: 'gm-2', isGM: true } }), postCampaignRecap);
+    expect(ran).toEqual(['gm-1']);
   });
 });
 

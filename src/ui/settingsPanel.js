@@ -786,13 +786,14 @@ async function syncSafetyToCampaignState() {
  * Player client: send this player's Private Lines to the canonical GM, who
  * writes them into campaignState.safety.privateLines (applyPrivateLinesSync).
  * With no GM connected the sync is deferred — registerSettingsHooks re-runs it
- * when a GM joins — so no warning toast on every player login.
+ * when the canonical GM announces its relay is ready (onGmRelayReady) — so no
+ * warning toast on every player login.
  */
 async function relayPrivateLinesToGm() {
   try {
     const { requestGmAction, hasActiveGM } = await import('../multiplayer/gmRelay.js');
     if (!hasActiveGM()) {
-      console.debug(`${MODULE_ID} | Private Lines sync deferred — no GM connected; it re-runs when a GM joins.`);
+      console.debug(`${MODULE_ID} | Private Lines sync deferred — no GM connected; it re-runs when a GM's relay is ready.`);
       return;
     }
     await requestGmAction('safety.syncPrivateLines', { lines: getPrivateLines() });
@@ -2229,13 +2230,34 @@ export function registerSettingsHooks() {
     console.warn(`${MODULE_ID} | Initial safety sync failed:`, err.message)
   );
 
-  // A player who logged in before any GM had nowhere to send their Private
-  // Lines (relayPrivateLinesToGm defers) — re-send when a GM connects.
-  Hooks.on('userConnected', (user, connected) => {
-    if (!connected || !user?.isGM || game.user?.isGM) return;
-    relayPrivateLinesToGm().catch(err =>
-      console.warn(`${MODULE_ID} | Private Lines re-sync on GM connect failed:`, err?.message ?? err));
-  });
+  // A player whose lines could not reach a GM on load (none connected, or the
+  // GM still loading) re-sends them when the canonical GM announces its relay
+  // listener is up. GM-pull, not a `userConnected` push: userConnected fires
+  // at the START of the GM's page load, before the GM's `ready` hook installs
+  // the relay listener, so a re-send from there was always dropped.
+  if (!game.user?.isGM) registerPrivateLinesGmPull();
+}
+
+/**
+ * Player client: answer the canonical GM's relay-ready broadcast
+ * (gmRelay.onGmRelayReady) with this player's Private Lines. The GM runs relay
+ * handlers one at a time, so simultaneous answers from several players do not
+ * race on campaignState.safety.privateLines.
+ */
+function registerPrivateLinesGmPull() {
+  import('../multiplayer/gmRelay.js')
+    .then((gmRelay) => {
+      if (typeof gmRelay.onGmRelayReady !== 'function') {
+        console.error(`${MODULE_ID} | Private Lines: gmRelay.onGmRelayReady is missing — lines will not re-sync when a GM becomes ready.`);
+        return;
+      }
+      gmRelay.onGmRelayReady(() => {
+        relayPrivateLinesToGm().catch(err =>
+          console.warn(`${MODULE_ID} | Private Lines re-sync on GM ready failed:`, err?.message ?? err));
+      });
+    })
+    .catch(err =>
+      console.warn(`${MODULE_ID} | Private Lines: could not register the GM-ready re-sync:`, err?.message ?? err));
 }
 
 export { getDial as getMischiefDial };

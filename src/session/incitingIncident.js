@@ -392,6 +392,11 @@ export async function runIncitingIncident(campaignState) {
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: premise persist failed:`, err?.message ?? err);
     }
+  } else if (text && campaignState) {
+    // A player's client (RUN_ON.CLAUDE runs !incite on the author when no
+    // keyed GM is connected): the card still posts, but the premise canon is
+    // a world write only a GM may make.
+    console.debug(`${MODULE_ID} | runIncitingIncident: not a GM client — premise not saved as campaign canon.`);
   }
 
   await postIncitingIncidentCard({
@@ -439,6 +444,8 @@ export async function runIncitingIncident(campaignState) {
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: entity detection failed:`, err?.message ?? err);
     }
+  } else if (text) {
+    console.debug(`${MODULE_ID} | runIncitingIncident: not a GM client — entity detection, tier update and lore entry skipped.`);
   }
 
   return { spark, text };

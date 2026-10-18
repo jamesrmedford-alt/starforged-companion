@@ -319,11 +319,9 @@ export const ConnectionSchema = {
  * @property {number}   progressScore    filled boxes — progress moves only
  * @property {Object}   consequences     mechanical effects applied before narration:
  *   momentumChange / healthChange / spiritChange / supplyChange (numbers);
- *   progressMarked (mark-progress count — ranked tracks multiply by the rank's
- *   ticks, legacy tracks take it as raw ticks); sufferPrompt (the
- *   SufferChoiceDialog prompt — { kind: "any", amount, count } |
- *   { kind: "enumerated", options, multi?, allowComplication? } | null; see
- *   docs/moves/suffer-routing-audit.md); progressTrackId; combatPosition
+ *   sufferPrompt (the SufferChoiceDialog prompt — { kind: "any", amount,
+ *   count } | { kind: "enumerated", options, multi?, allowComplication? } |
+ *   null; see docs/moves/suffer-routing-audit.md); combatPosition
  *   ("in_control" | "bad_spot" | null); expeditionProgress (boolean);
  *   legacyMark ({ track, ticks } | null); finishExpedition ({ ranksDown } |
  *   null); otherEffect (narrative consequence text).
