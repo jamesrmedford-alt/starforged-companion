@@ -6,9 +6,14 @@ relay updated for the 2026-10 audit). File references name the owning
 function; line numbers drift, so search by symbol. Sibling docs:
 `combat-flow.md`, `connection-flow.md`, `exploration-flow.md`.
 
-Multiplayer, up front: vow Item writes are GM-only, so every vow write runs
-on the **canonical GM** — the move pipeline (gated on `isCanonicalGM()`), or a
-card click relayed through `requestGmAction` (`src/multiplayer/gmRelay.js`).
+Multiplayer, up front: module-side vow Item writes run on the **canonical
+GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
+through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
+`milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`), or
+one of the two older ad-hoc socket relays from the swear cards
+(`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
+folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the
+owner's own client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback (decisions.md →
 "Multiplayer attribution").

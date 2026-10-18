@@ -13,12 +13,16 @@ one concern: a write or a value that never reaches where it needs to.
   `CHAR-PC-BLOCK-STARVED` (correct producer + consumer, narrowing adapter
   between), the "surface X to the World Journal / narrator" fixes (Soulbinders
   gap, PROGRESS TRACKS empty, faction descriptions), `FACTION-RECORD-WRITE-ONCE`
-  (exported helpers, zero callers).
+  (exported helpers, zero callers), and — 2026-10 — writes a player triggers
+  that are GM-gated, so they never land (`SAFETY-PRIVATE-LINES-PLAYER`, the
+  Reach a Milestone picker; §8).
 - **Data integrity (write side):** one fact lives in two stores and a write
   updates only one. `BOND-ITEM-MIRROR`, `NARR-BOND-RANK-STALE`,
   `LOCATION-DUAL-STORE`, `FACTION-DUAL-STORE` / `FACTION-ATTITUDE-SPLIT-BRAIN`,
   `VOW-FULFIL-SIBLINGS`, and the T1/F3 "write to the Actor, not a dead journal
-  page" migration.
+  page" migration — plus its time-domain twin, a stale whole-object write
+  that reverts a concurrent one (`persistResolution` undoing a relayed X-Card,
+  2026-10; §9).
 
 Root cause: **reachability and mirror-consistency are invisible properties no
 gate checks.** A producer verifies locally; whether anything consumes it — or
@@ -42,6 +46,15 @@ consumes it and confirm the hop that makes it reachable exists.
 - Creation-side twin of CLAUDE.md's "audit consumers when meaning changes" —
   same grep, same same-commit discipline, extended from *on change* to *on
   create*.
+- **A comment mention or a Quench-only import is not a consumer.** Count only
+  production code that executes: a grep hit in a comment, a JSDoc, a test, or
+  `src/integration/quench.js` (test code that merely ships inside the module)
+  keeps nothing alive. The 2026-10 audit deleted `setPortraitId` /
+  `isReadyForArtGeneration` from all seven entity modules, plus
+  `getChronicleForContext`, `annotateEntry` and `shouldApplyMischief`, which
+  had looked live only because Quench tests called them. Nor is a
+  same-named constant in an unrelated file a use of a setting key — resolve
+  the identifier to its definition (or its import) first.
 
 ## 2. Teardown — a superseded path is deleted, not left inert
 
@@ -152,6 +165,66 @@ per-session must be idempotent on reload, and transient locks must reset.
   across reconnect) and re-advertise / re-register the rest on `ready`; never
   assume a socket peer's memory carried over.
 
+## 8. A GM-gated write on a player-invokable path is a silent failure — relay it
+
+World-scoped settings (`campaignState`) and other users' documents are
+GM-writable only. A chat command, card button or dialog that a **player** can
+trigger and that guards its write with `if (!game.user.isGM) return` (or
+`isCanonicalGM()`) does nothing on that player's client — while the card it
+posts claims the effect landed. That is a write that never reaches its store:
+the reachability failure on the write side.
+
+- Route the write through `requestGmAction(kind, payload)`
+  (`src/multiplayer/gmRelay.js`) and declare the handler in `GM_ACTIONS`. The
+  UI (dialog, dice, card) stays on the invoking client; the handler runs once,
+  on the canonical GM, serialised behind every other relayed action. With no GM
+  connected, `requestGmAction` warns — say so on the card too.
+- Handlers take `(payload, ctx)`. Check permissions on `ctx.requesterIsGM` /
+  `requesterOwnsActor(actor, ctx)`, never `game.user.isGM` (that is the GM's
+  own client). `ctx.requesterId` is **client-asserted**, so also clamp and
+  validate payload values to what the UI could legally produce (`bond.apply`
+  clamps ticks / momentum; picks must match the card's own choices).
+- A one-shot card button is idempotent **on the GM** (in-flight guard + a
+  `resolved` / `resolvedActions.<action>` stamp on the card), and its client
+  re-arms the button when the click is not delivered (`relayCardAction`). A
+  local `disabled` is not a guard — another client, or a re-render, re-arms it.
+- Never call `requestGmAction` from inside a handler on the canonical GM: the
+  nested action queues behind its own caller until `GM_ACTION_TIMEOUT_MS`.
+- **Changing *where* code runs needs this audit.** Before the 2026-10 audit
+  every client ran every chat command, so the GM's client re-ran a player's
+  `!bond`, `!truth`, Set a Flag, … with GM authority and its own dice — those
+  writes "worked" by accident. Routing commands to run once (`RUN_ON.AUTHOR`)
+  exposed every GM-gated write behind them (`!ptp`'s clock advance stopped
+  for players the moment the command ran only on the typist — caught in the
+  same audit and relayed as `payThePrice.advanceClocks`). Grep every GM-gated
+  write a re-routed path reaches. `SAFETY-PRIVATE-LINES-PLAYER` was the plain case:
+  `syncSafetyToCampaignState` returned early on player clients, so no
+  player's Private Lines ever reached `campaignState.safety`.
+
+## 9. A long-running pipeline that writes a stale snapshot reverts concurrent writes — merge, don't overwrite
+
+A path that reads `campaignState`, awaits (a confirm dialog, a Claude call,
+another relay), then writes the **whole object** back silently reverts every
+write that landed in between. The move pipeline did exactly that: a player's
+X-Card relayed mid-narration set `xCardActive`, then `persistResolution`
+wrote the pre-X-Card snapshot over it — the card said "paused", the narrator
+kept going. The narrator-sidecar persist and scene start / end had the same
+shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
+`!truth` write that raced them.
+
+- Re-read the store **immediately** before the write (no `await` between the
+  read and the `set`) and write only the fields this path owns
+  (`persistCampaignStateFields(campaignState, fields, label)`,
+  `src/factContinuity/sceneLifecycle.js`) — or, when the path owns a wide
+  slice, merge per a documented field policy (`persistResolution`'s
+  `mergeWithLatestState`: relay-owned fields take the stored value, id lists
+  union, legacy ticks take the higher count, same-scene truths union by id).
+- A safety-critical flag is read **live** at the point of use, not from the
+  snapshot (the narrator's `isXCardActive` checks the stored setting too).
+- Writers that must not interleave run through one queue (the `gmRelay`
+  handler queue on the canonical GM); a merge is still needed for the
+  pipeline, which runs outside it.
+
 ## Detection — the mechanical sweep
 
 The rules above **prevent** new dead surface; they do not **find** existing
@@ -165,22 +238,47 @@ node scripts/deadscan.mjs            # advisory report
 node scripts/deadscan.mjs --strict   # exit 1 on DEAD findings (CI-suitable)
 ```
 
-for the mechanical half: it flags zero-consumer exports (multi-definition
-aware), test-only-in-production exports, and registered-but-never-read
-settings, in ~5 seconds. Known blind spot: a *live* same-named function masks
-parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid behind the truths module's
-live `formatForContext`) — which is why the flow-trace audits in `docs/flows/`
+for the mechanical half, in a couple of seconds. It counts consumers in three
+corpora — production (`src/` minus `src/integration/`), Quench
+(`src/integration/`) and tests (`tests/`) — after stripping comments (string,
+template and regex literals are kept), so a comment mention is never a
+consumer. It reports:
+
+- **DEAD exports** — no consumer anywhere (multi-definition aware: N sibling
+  copies with no external consumer are dead N times), unless on `module.api`;
+- **DEAD settings** — registered, never read or written in production. Keys
+  registered through a constant (`SETTING.KEY` map or a bare `KEY` const) are
+  resolved; a reference to that constant counts only in its defining file or
+  a file that imports it from there (named, aliased, namespace, dynamic or
+  re-exported), so a same-named constant elsewhere cannot mask a dead setting;
+  a key the registering file neither defines nor imports is listed as
+  unresolved, never guessed;
+- **QUENCH-ONLY** exports / settings — used only by `src/integration/`: dead in
+  production (the 2026-07 scan counted Quench as a consumer, which is how the
+  seven entity art helpers passed it);
+- **TEST-ONLY** exports and the informational **TEST-SEAM** bucket (`_reset*`,
+  `*ForTests`, `_`-prefixed);
+- **UNREACHABLE modules** — no static or literal dynamic import path from a
+  production entry point (`module.json` `esmodules`, minus the Quench entry).
+
+`--strict` exits 1 on any DEAD export or setting. Known blind spot: a *live*
+same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid
+behind the truths module's live `formatForContext`), and the scan cannot see
+dead internal functions, dead campaignState fields or a GM-gated write a
+player can never land — which is why the flow-trace audits in `docs/flows/`
 remain the load-bearing check. Run the scan at least once per release cycle and
 after any refactor that retires a path.
 
 ## The through-line
 
 `npm test` and `npm run lint` both signal "done" and both are blind to
-reachability, mirror drift, identity resolution, and reload survival — every
-rule here guards a property the gate cannot see. A **flow trace** — following a
-value from source until it reaches a sink (or dangles), and following a fact's
-writes to every store (or misses one) — is the one verification act that
-catches this class, which is why the `docs/flows/*-flow.md` audits found every
-instance. When you add a feature to a flow, update that flow doc's
+reachability, mirror drift, identity resolution, reload survival, player-side
+GM-gated writes and stale-snapshot overwrites — every rule here guards a
+property the gate cannot see (the unit-test stub user is a GM unless a test
+opts into `asPlayer()`, and no test writes concurrently by default). A **flow
+trace** — following a value from source until it reaches a sink (or dangles),
+and following a fact's writes to every store (or misses one) — is the one
+verification act that catches this class, which is why the
+`docs/flows/*-flow.md` audits found every instance. When you add a feature to a flow, update that flow doc's
 injection/consumption map in the same commit: naming the consumer (and every
 store) *is* the gate.

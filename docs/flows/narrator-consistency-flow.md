@@ -4,8 +4,7 @@ The consistency-check pipeline end to end: what triggers the audit, what it
 compares prose against, how a catch reaches the GM, and what the remedy
 affordances actually do — verified against source (v1.7.30 cycle; where the
 audit runs and the `!truth` / `!state` relay updated for the 2026-10 audit).
-Sibling
-docs: `narrator-context-flow.md` (the ledger the audit defends),
+Sibling docs: `narrator-context-flow.md` (the ledger the audit defends),
 `character-detail-flow.md` (the RECORDED IDENTITIES section).
 
 Prompted by: "the same treatment applied to … narrator consistency" —

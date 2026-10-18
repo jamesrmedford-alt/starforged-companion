@@ -3,8 +3,9 @@
 Where every byte of narrator context comes from, how narrator output becomes
 memory, and what defends against contradictions — verified against source
 (v1.7.30 cycle; where narration runs, the X-Card gate, Private Lines and the
-stale-snapshot persists updated for the 2026-10 audit). Companion to `docs/narrator/narrator-memory-architecture.md`
-(the design reference); this doc records what the code does **today**.
+stale-snapshot persists updated for the 2026-10 audit). Companion to
+`docs/narrator/narrator-memory-architecture.md` (the design reference); this
+doc records what the code does **today**.
 Sibling docs: `combat-flow.md`, `vow-flow.md`, `connection-flow.md`,
 `exploration-flow.md`.
 
@@ -49,6 +50,7 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   relay handlers on the canonical GM (`applyBeginSession` /
   `applyEndSession`), so they need a keyed GM; at a keyless-GM table they are
   skipped.
+
 When a call runs off the canonical GM (the author fallbacks above), its prose
 posts normally but its side-data is not applied — `applyNarratorSidecar`
 debug-logs the skip rather than dropping it silently.
@@ -65,8 +67,10 @@ user id, so per-player Private Lines are injected only where a user id is
 passed — that player's Private Channel context
 (`src/private-channel/context.js` `buildPrivateContext`). The X-Card
 (`xCardActive`, set by the `xcard.activate` relay) is checked by every
-narrator entry point against the caller's campaignState **and** the live
-stored setting (internal `isXCardActive`): the move pipeline narrates from a
+narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
+clock vignettes, vow swearing, inciting incident — against the caller's
+campaignState **and** the live stored setting (internal `isXCardActive`,
+`narrator.js`; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played
 meanwhile is only visible in the store. A move resolved under the X-Card still
 posts its result card, then a short "narration paused" notice
@@ -79,9 +83,10 @@ session-start recap · [1] safety · [2] permission-class latitude · [2.5]
 Battle Stations · [3] oracle seeds (move-provided only) · **[3b] recent
 oracle results** (`campaignState.recentOracles` — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
-session, "the dice established these"; skipped for meta modes) · [4] world truths · [4a] campaign truths digest · [4b] campaign
-premise (`campaignState.incitingIncident` — durable canon, every call) ·
-[4c] rolling session summary (prefixed with a **ledger-wins caveat** — the
+session, "the dice established these"; skipped for meta modes) · [4] world
+truths · [4a] campaign truths digest · [4b] campaign premise
+(`campaignState.incitingIncident` — durable canon, every call) · [4c] rolling
+session summary (prefixed with a **ledger-wins caveat** — the
 summary is texture, not a fact store) · **[4d] active threats · [4e]
 faction landscape · [4f] established lore** (World Journal state — rode the
 dead assembler packet until 2026-07; see `faction-flow.md`) · [5] current

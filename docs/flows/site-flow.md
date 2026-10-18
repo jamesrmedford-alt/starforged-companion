@@ -46,7 +46,8 @@ Two reveal paths, both funnelling through `revealSectorSite`
    creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
    (`selectSiteForReveal`: exact → substring → type-keyword-when-unique →
    sole-undiscovered). The reveal mutates the in-memory campaignState so the
-   pending `persistResolution` write carries it.
+   pending `persistResolution` write carries it (its stale-snapshot merge
+   keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
 2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder.
 
 Revealing flips `discovered`, sets the location Actor `status: "visited"`,
