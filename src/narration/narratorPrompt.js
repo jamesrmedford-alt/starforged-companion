@@ -444,7 +444,13 @@ export function buildShipPositionLine(campaignState) {
     if (payload?.mission)   idParts.push(`mission: ${String(payload.mission).trim()}`);
     if (typeof payload?.integrity === 'number') {
       const max     = payload.integrityMax ?? 5;
-      const impacts = [payload.battered && 'battered', payload.cursed && 'cursed'].filter(Boolean);
+      // The starship sheet's native debility fields are canonical (the sheet
+      // toggle and the suffer dialog write only those); the flag payload's copy
+      // is a write-through mirror, used only when the native field is absent.
+      const debility = actor?.system?.debility ?? {};
+      const battered = typeof debility.battered === 'boolean' ? debility.battered : !!payload.battered;
+      const cursed   = typeof debility.cursed   === 'boolean' ? debility.cursed   : !!payload.cursed;
+      const impacts = [battered && 'battered', cursed && 'cursed'].filter(Boolean);
       idParts.push(`integrity ${payload.integrity}/${max}${impacts.length ? ` [${impacts.join(', ')}]` : ''}`);
     }
     lines.push(`COMMAND VEHICLE: ${name || 'Unknown ship'}${idParts.length ? ` — ${idParts.join('; ')}` : ''}`);

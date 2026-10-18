@@ -496,10 +496,17 @@ export class EntityPanelApp extends ApplicationV2 {
     }
 
     const fields = DETAIL_FIELDS[entity.typeKey] ?? [];
+    // Ship impacts: the starship sheet's native system.debility field is
+    // canonical (the sheet toggle and the suffer dialog write only that); the
+    // flag record's copy is a write-through mirror (decisions.md → "Starship
+    // battered: the native sheet field is canonical").
+    const fieldData = entity.typeKey === 'ship'
+      ? { ...entity.data, ...shipImpactsFromSheet(entity.journalId) }
+      : entity.data;
     const fieldsHtml = fields
-      .filter(f => entity.data[f.key] !== undefined && entity.data[f.key] !== null && entity.data[f.key] !== '')
+      .filter(f => fieldData[f.key] !== undefined && fieldData[f.key] !== null && fieldData[f.key] !== '')
       .map(f => {
-        const val = f.bool ? (entity.data[f.key] ? 'Yes' : 'No') : String(entity.data[f.key]);
+        const val = f.bool ? (fieldData[f.key] ? 'Yes' : 'No') : String(fieldData[f.key]);
         return `
           <div class="detail-field">
             <dt class="detail-label">${f.label}</dt>
@@ -1070,6 +1077,21 @@ export class EntityPanelApp extends ApplicationV2 {
       instance.render();
     });
   }
+}
+
+/**
+ * The native starship impacts (system.debility.battered / cursed) for a ship
+ * Actor, when present as booleans — they override the flag record's mirror.
+ *
+ * @param {string} actorId
+ * @returns {{ battered?: boolean, cursed?: boolean }}
+ */
+function shipImpactsFromSheet(actorId) {
+  const debility = game.actors?.get?.(actorId)?.system?.debility;
+  const out = {};
+  if (typeof debility?.battered === 'boolean') out.battered = debility.battered;
+  if (typeof debility?.cursed === 'boolean')   out.cursed   = debility.cursed;
+  return out;
 }
 
 // ---------------------------------------------------------------------------

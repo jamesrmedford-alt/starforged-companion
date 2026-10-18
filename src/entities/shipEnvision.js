@@ -415,8 +415,10 @@ export function parseShipHistoryCommand(text, campaignState) {
 /**
  * Handle `!ship envision`. Rolls oracles, generates prose, posts a chat card,
  * appends a labeled section to system.notes. Any player may invoke; the chat
- * routing (src/index.js, RUN_ON.CANONICAL_GM) runs it once, on the canonical
- * GM — the Claude key lives there and the notes write needs GM permissions.
+ * routing (src/index.js, RUN_ON.CLAUDE) runs it once — on the keyed canonical
+ * GM when one is connected (it holds the key and can write the notes), else on
+ * the author's client (the notes write is then skipped, logged by
+ * canWriteNotes).
  * Before that routing every keyed client made its own Claude call and every
  * unkeyed client posted a "key not configured" fallback card.
  */
@@ -628,8 +630,9 @@ function readCampaignState() {
   catch { return {}; }
 }
 
-// The routed command runs on the canonical GM, so this is normally true; a
-// direct non-GM call still posts the card but skips the notes write — say so.
+// True on the keyed canonical GM (the normal RUN_ON.CLAUDE runner). When no
+// keyed GM is connected the author's client runs the command: the card still
+// posts but the notes write is skipped — say so.
 function canWriteNotes(label) {
   let ok = false;
   try { ok = !!globalThis.game?.user?.isGM; } catch { ok = false; }
