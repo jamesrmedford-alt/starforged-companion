@@ -164,8 +164,8 @@ function labelForOutcome(outcome) {
  * @param {Object} hooks      — narrator + persist injections so this module
  *                              can re-narrate and re-persist after a burn
  *                              without pulling in the full pipeline graph.
- * @param {Function} hooks.narrate    async (resolution, nullPacket, state, opts) => void
- * @param {Function} hooks.persist    async (resolution, state) => void
+ * @param {Function} hooks.narrate    async (resolution, state, { speakerActorId }) => void
+ * @param {Function} hooks.persist    async (resolution, state, speakerActorId) => void
  */
 export function registerBurnMomentumHook({ narrate, persist } = {}) {
   _deps = { narrate: narrate ?? null, persist: persist ?? null };
@@ -498,13 +498,18 @@ async function renarrate({ burn, burnResult, newConsequences, narrate, persist }
   // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
   // narrateResolution never read it, and the old `if (!packet) return`
   // guard silently ABORTED this re-narration when the dead assembly failed.
-  await narrate(synthResolution, null, campaignState, {});
+  // narrateResolution(resolution, campaignState, options) — the old
+  // `(resolution, null, campaignState, {})` call still carried the retired
+  // packet slot, so the narrator got null for campaignState. The burning PC is
+  // the card's actor, not the first PC (credit the roller).
+  const speakerActorId = burn.actorId ?? null;
+  await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
     // Don't double-persist meters — applyBurnMeterDeltas above already did
     // that. Just append the upgraded resolution to the session log via a
     // minimal resolution that carries no consequences.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };
-    await persist(logOnly, campaignState).catch(err =>
+    await persist(logOnly, campaignState, speakerActorId).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: session-log persist failed:`, err));
   }
 }

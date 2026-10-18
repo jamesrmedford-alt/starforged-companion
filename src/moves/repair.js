@@ -22,9 +22,10 @@
  * This module is the follow-up affordance to the normal Repair move:
  * once a player has rolled Repair and seen the result, they invoke
  * `!repair` to allocate points. The integrity / battered spends mutate the
- * command vehicle's canonical ship record (src/entities/ship.js —
- * clearBattered / repairIntegrity, which mirror battered onto the native
- * debility and clamp integrity to integrityMax); the supply trade debits
+ * command vehicle through src/entities/ship.js — battered is read from the
+ * canonical native system.debility.battered (isShipBattered) and cleared on
+ * both stores (clearBattered); integrity lives on the ship flag record
+ * (repairIntegrity clamps to integrityMax); the supply trade debits
  * the repairing player's PC. Companion health, "broken module" and "other
  * device" rows record the spend on the chat card only (no schema yet).
  *
@@ -36,7 +37,7 @@
  */
 
 import { applyMeterChanges, getActor, readCharacterSnapshot } from "../character/actorBridge.js";
-import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity } from "../entities/ship.js";
+import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity, isShipBattered } from "../entities/ship.js";
 import { requestGmAction }         from "../multiplayer/gmRelay.js";
 import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
 import { requesterOwnsActor }      from "./burnMomentum.js";
@@ -335,10 +336,12 @@ async function applySupplyTrade(actorId, extra, ctx) {
 }
 
 /**
- * Apply the clear-battered and integrity spends to the command vehicle's
- * canonical ship record (flags.<module>.ship, mirrored onto
- * system.debility.battered by updateShip). Clear-battered first: a battered
- * vehicle cannot gain integrity.
+ * Apply the clear-battered and integrity spends to the command vehicle.
+ * Battered is read from the native system.debility.battered (canonical — the
+ * starship sheet's toggle writes only it) and cleared on the native field and
+ * the flag mirror together (clearBattered → updateShip); integrity is on the
+ * ship flag record. Clear-battered first: a battered vehicle cannot gain
+ * integrity.
  *
  * @returns {Promise<string[]>} card lines
  */
@@ -354,7 +357,9 @@ async function applyVehicleSpends(spends) {
     return out;
   }
   const name = `<strong>${escapeHtml(ship.name ?? "the command vehicle")}</strong>`;
-  let battered = !!ship.battered;
+  // The native system.debility.battered is canonical (the starship sheet's
+  // toggle writes only it) — never the flag mirror alone.
+  let battered = isShipBattered(vehicleId);
 
   if (spends.clear_battered > 0) {
     if (!battered) {

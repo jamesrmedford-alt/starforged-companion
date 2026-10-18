@@ -187,11 +187,44 @@ async function safeArchiveSceneTruth(truth, campaignState) {
   }
 }
 
+/** campaignState fields the scene lifecycle owns (written by startScene / endScene). */
+const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight']);
+
 async function persistCampaignState(campaignState, label) {
+  await persistCampaignStateFields(campaignState, SCENE_FIELDS, label);
+}
+
+/**
+ * Persist only `fields` of `campaignState`, merged onto the LATEST stored
+ * campaignState rather than writing the caller's whole object. Callers such as
+ * the move pipeline hold a snapshot read before long awaits (confirm dialog,
+ * Claude calls); writing that snapshot back would revert anything written in
+ * the meantime — a relayed X-Card, Take a Break, safety flags, Private Lines
+ * (decisions.md → "Long-running pipeline writes merge relay-owned fields").
+ * When the caller's object IS the stored one, it is written as-is.
+ *
+ * @param {Object}   campaignState — the caller's working copy (source of `fields`)
+ * @param {string[]} fields        — top-level keys this write owns
+ * @param {string}   label         — for the failure log
+ * @returns {Promise<void>}
+ */
+export async function persistCampaignStateFields(campaignState, fields, label) {
   try {
-    if (typeof game !== 'undefined' && game?.settings?.set) {
-      await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    if (typeof game === 'undefined' || !game?.settings?.set) return;
+    let latest = null;
+    try {
+      latest = game.settings.get(MODULE_ID, 'campaignState');
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed (${label}); writing the caller's copy:`, err?.message ?? err);
     }
+    let target = campaignState;
+    if (latest && typeof latest === 'object' && latest !== campaignState) {
+      target = { ...latest };
+      for (const key of fields) {
+        if (Object.prototype.hasOwnProperty.call(campaignState, key)) target[key] = campaignState[key];
+      }
+    }
+    await game.settings.set(MODULE_ID, 'campaignState', target);
   } catch (err) {
     // Player clients can't write world settings; tolerate.
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);

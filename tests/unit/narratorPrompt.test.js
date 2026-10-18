@@ -976,6 +976,19 @@ describe('buildShipPositionLine()', () => {
     expect(line).toContain('integrity 5/5');
   });
 
+  it('reports battered from the starship sheet (native field), not the stale flag mirror', () => {
+    const ship = makeTestActor({
+      id: 'cvb', type: 'starship', name: 'Wanderer',
+      system: { debility: { battered: true, cursed: false } },
+      flags: { [MID]: { ship: {
+        _id: 's9', name: 'Wanderer', isCommandVehicle: true,
+        integrity: 3, integrityMax: 5, battered: false, cursed: false, position: {},
+      } } },
+    });
+    game.actors._set('cvb', ship);
+    expect(buildShipPositionLine({ shipIds: ['cvb'] })).toContain('integrity 3/5 [battered]');
+  });
+
   it('falls back to the sole tracked starship when none is flagged', () => {
     const ship = makeTestActor({
       id: 'lone', type: 'starship', name: 'Drifter',

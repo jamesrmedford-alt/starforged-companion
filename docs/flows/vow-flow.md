@@ -1,9 +1,17 @@
 # Vow flow — as implemented
 
 A stage-by-stage map of the vow lifecycle as the code actually implements it,
-verified against source (post-PR #257). File references name the owning
+verified against source (post-PR #257; multiplayer attribution and the GM
+relay updated for the 2026-10 audit). File references name the owning
 function; line numbers drift, so search by symbol. Sibling docs:
 `combat-flow.md`, `connection-flow.md`, `exploration-flow.md`.
+
+Multiplayer, up front: vow Item writes are GM-only, so every vow write runs
+on the **canonical GM** — the move pipeline (gated on `isCanonicalGM()`), or a
+card click relayed through `requestGmAction` (`src/multiplayer/gmRelay.js`).
+Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
+resolved from the message, first PC only as a fallback (decisions.md →
+"Multiplayer attribution").
 
 Terminology up front, because it drives every gap below:
 
@@ -18,7 +26,10 @@ Terminology up front, because it drives every gap below:
   on the **`vowId` flag**; fulfilment completion and payoff resolve through
   `resolveVowItemCopies` — a name ladder (exact → substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
-  matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.)
+  matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
+  sole-open rung is only for a name that matches nothing: it never applies
+  when the name exactly names a vow that is already completed (fulfilling A
+  used to resolve the one other open vow B and pay B's payoff).
 
 ## 1. Creation
 
@@ -55,21 +66,37 @@ the roll shapes momentum and the narration.
 All real progress lands on **item ticks** (`system.current`) via
 `markVowProgress`:
 
-- **Reach a Milestone** (no-roll): pipeline branch → `applyReachMilestone` —
-  sole open vow auto-marks, several → picker card (note: the picker buttons
-  write directly and are GM-gated; on a player client they no-op).
+- **Reach a Milestone** (no-roll): pipeline branch →
+  `applyReachMilestone(rollerActor, moveTarget)` on the **roller's** vows —
+  a named or sole open vow auto-marks (`postReachMilestoneCard`,
+  `src/moves/milestonePicker.js`); several → a picker card whose
+  `flags.choices` record the offered (vowId, actorId) pairs. Any user's click
+  relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
+  checks the pick is one of the card's choices and that the requester owns
+  that PC (or is a GM), marks the vow, and stamps the card `resolved`
+  (idempotent, in-flight guarded). A click with no GM connected, a refusal,
+  or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
+  buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
+  "⚑ Reach a Milestone" suggestion button posts a forced
+  `reach_a_milestone` move instead.
 - **Move-card suggestion buttons** ("⚑ Mark Progress on Vow" / "🏁 Attempt to
   Fulfill Vow") on eligible adventure/exploration hits — these post forced
   moves so the GM-side pipeline does the work.
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
-  fight's rank, ticks-per-mark by the vow's rank.
+  fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
+  **holder** — the card's roller (`actorId`) when they hold the vow, else
+  whichever PC does (`resolveVowHolderActor`) — once per card (relayed
+  `fightVow.markMilestone`).
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
   to sibling copies by `vowId` — `["current","clockTicks","completed"]`
   (`SHARED_VOW_SYNC_FIELDS`; `completed` joined in the VOW-FULFIL-SIBLINGS
   fix, so a native-sheet fulfil closes every crewmate's copy). `rank` is
   still deliberately unsynced (see gaps).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
-  Price ("⏳ The clock turns" card); burn-momentum undo reverts via
+  Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
+  (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
+  the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
+  so the clocks advance once, on the GM. Burn-momentum undo reverts via
   `revertVowClocksForBurn`.
 
 ## 3. Narrator awareness
@@ -93,12 +120,20 @@ come from module data".
 **Pipeline path** (typed, victory-card button, or suggestion button):
 `finishVow` closes the journal twin if one exists; `completeVowItemByName`
 closes **every open item copy** across PCs; payoff via `payFulfilledVowNative`
-with `skipLegacy:true` (quests legacy is paid on the pipeline's own
-campaignState object so its single persist can't be clobbered) — connection
+with `skipLegacy:true` and `actorId` = the roller (quests legacy is paid on
+the pipeline's own campaignState object, which `persistResolution` merges
+onto the stored state keeping the higher tick count) — connection
 deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
-No journal track and no item matched → `console.warn`, nothing completes.
+Because the copies are already completed when the payoff runs,
+`payFulfilledVowNative` falls back to searching **all** copies with the same
+exact → substring ladder, preferring the roller's, then collects **every**
+PC's copy (by `vowId`, else name) — so the reward lands on the **roller's
+copy** when they hold one, else on the PC holding the promised reward (it
+used to collect only the first PC's copy, so a shared vow's reward went to
+the first PC). No journal track and no item matched → `console.warn`,
+nothing completes.
 
 **Native-sheet path**: the roller's client narrates the vendor progress-roll
 card (`registerNativeProgressRollHook`); the canonical GM applies consequences
@@ -146,3 +181,20 @@ summary lives in the `known-issues.md` table and the code.
   noteIfAbsent`) when the reward-choice card was never answered.
 - ~~Dead `vow.swearShared` socket branch / stale assembler comment~~ —
   **removed / corrected**.
+
+## Multiplayer gaps — resolved in the 2026-10 audit
+
+- ~~A player's click on the Reach a Milestone picker did nothing~~ (the vow
+  write was GM-gated) — **relayed** (`milestone.pick` →
+  `applyMilestonePick`, one-shot per card, validated against the card's
+  choices and the requester's ownership).
+- ~~Reach a Milestone and the won-fight milestone marked the first PC~~ —
+  the roller's vows / the vow holder (`rollerActor`,
+  `resolveVowHolderActor`).
+- ~~The pipeline fulfil payoff never granted the promised reward~~ (the
+  copies were already completed, and the reward lookup searched open vows
+  only) — `grantLinkedVowReward` now takes the already-resolved copies; and
+  ~~a shared vow's reward went to the first PC~~ — every PC's copy is
+  collected, so the roller's copy is found.
+- ~~Fulfilling vow A with exactly one other open vow B paid B~~ — the
+  sole-open rung no longer applies to a name that names a completed vow.

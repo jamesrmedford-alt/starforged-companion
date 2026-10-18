@@ -194,8 +194,9 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
-import { registerGmRelaySocket, requestGmAction, hasActiveGM } from "./multiplayer/gmRelay.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { registerGmRelaySocket, announceGmRelayReady, requestGmAction, hasActiveGM } from "./multiplayer/gmRelay.js";
+import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { takeNextMoveAdd, clearPersistedNextMoveAdd } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
@@ -574,11 +575,24 @@ export function isNewSessionStart(campaignState, gapHours) {
  *                   game.user.isGM, which on the authoring client IS the
  *                   author's role. World writes a player needs go through the
  *                   canonical-GM relay (src/multiplayer/gmRelay.js).
- *   CANONICAL_GM  — only the canonical GM (gmGate.js isCanonicalGM — prefers a
- *                   GM whose browser holds a Claude key): commands that call
- *                   Claude and/or write world state on anyone's behalf.
+ *   CANONICAL_GM  — only the canonical GM (gmGate.js isCanonicalGM): commands
+ *                   that write world state on anyone's behalf and need no
+ *                   Claude key. When no GM is connected the author is warned.
+ *   CLAUDE        — commands whose job is a Claude call (and that may also
+ *                   write world state: scene start, notes, premise canon). The
+ *                   Claude key is per browser (issue #209), so:
+ *                     • a keyed GM is connected (gmGate.js hasKeyedActiveGM) →
+ *                       the canonical GM runs it. It is keyed by construction
+ *                       (isCanonicalGM prefers keyed GMs), so the call succeeds
+ *                       AND its world writes / narrator side-data apply;
+ *                     • otherwise → the AUTHOR runs it with their own key (a
+ *                       keyed player at a keyless-GM table), or gets the usual
+ *                       "Claude API key not configured" fallback when keyless.
+ *                       GM-only writes are then skipped (debug-logged).
+ *                   Every client reads the same world setting and user list, so
+ *                   all agree on the runner and the command runs exactly once.
  */
-const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm" });
+const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm", CLAUDE: "claude" });
 
 /**
  * Ordered command routes — first match wins, exactly the order the old
@@ -586,7 +600,7 @@ const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm" })
  * `run` receives the ChatMessage.
  */
 const CHAT_COMMAND_ROUTES = [
-  { name: "@scene",            match: isSceneQuery,              runOn: RUN_ON.CANONICAL_GM, run: handleSceneQueryCommand },
+  { name: "@scene",            match: isSceneQuery,              runOn: RUN_ON.CLAUDE,       run: handleSceneQueryCommand },
   { name: "!sector",           match: isSectorCommand,           runOn: RUN_ON.AUTHOR,       run: handleSectorCommand },
   { name: "!x",                match: isXCardCommand,            runOn: RUN_ON.CANONICAL_GM, run: handleXCardCommand },
   { name: "!at",               match: isAtCommand,               runOn: RUN_ON.AUTHOR,       run: handleAtCommand },
@@ -600,7 +614,7 @@ const CHAT_COMMAND_ROUTES = [
   { name: "!truths",           match: isTruthsCommand,           runOn: RUN_ON.AUTHOR,       run: handleTruthsCommand },
   { name: "!lore",             match: isLoreCommand,             runOn: RUN_ON.AUTHOR,       run: handleLoreCommand },
   { name: "!sfc encounter",    match: isEncounterCommand,        runOn: RUN_ON.AUTHOR,       run: handleEncounterCommand },
-  { name: "!recap",            match: isRecapCommand,            runOn: RUN_ON.CANONICAL_GM, run: handleRecapCommand },
+  { name: "!recap",            match: isRecapCommand,            runOn: RUN_ON.CLAUDE,       run: handleRecapCommand },
   { name: "!recap (GM-only)",  match: isDeniedRecapCommand,      runOn: RUN_ON.AUTHOR,       run: handleDeniedRecapCommand },
   { name: "!pace",             match: isPaceCommand,             runOn: RUN_ON.AUTHOR,       run: handlePaceCommand },
   { name: "!migrate-entities", match: isMigrateEntitiesCommand,  runOn: RUN_ON.AUTHOR,       run: handleMigrateEntitiesCommand },
@@ -615,15 +629,15 @@ const CHAT_COMMAND_ROUTES = [
   { name: "!break",            match: isBreakCommand,            runOn: RUN_ON.AUTHOR,       run: () => openTakeABreakDialog() },
   { name: "!begin-session",    match: isBeginSessionCommand,     runOn: RUN_ON.AUTHOR,       run: () => openBeginSessionDialog() },
   { name: "!end-session",      match: isEndSessionCommand,       runOn: RUN_ON.AUTHOR,       run: () => openEndSessionDialog() },
-  { name: "!incite",           match: isIncitingIncidentCommand, runOn: RUN_ON.AUTHOR,       run: handleIncitingIncidentCommand },
+  { name: "!incite",           match: isIncitingIncidentCommand, runOn: RUN_ON.CLAUDE,       run: handleIncitingIncidentCommand },
   { name: "!reveal-site",      match: isRevealSiteCommand,       runOn: RUN_ON.AUTHOR,       run: handleRevealSiteCommand },
   { name: "!clear-site",       match: isClearSiteCommand,        runOn: RUN_ON.AUTHOR,       run: handleClearSiteCommand },
   { name: "!clock",            match: isClockCommand,            runOn: RUN_ON.AUTHOR,       run: handleClockCommand },
   { name: "!repair",           match: isRepairCommand,           runOn: RUN_ON.AUTHOR,       run: handleRepairCommand },
   { name: "!stations",         match: isBattleStationsCommand,   runOn: RUN_ON.AUTHOR,       run: handleBattleStationsCommand },
   { name: "!shipmap",          match: isShipMapCommand,          runOn: RUN_ON.AUTHOR,       run: handleShipMapCommand },
-  { name: "!ship envision",    match: isShipEnvisionCommand,     runOn: RUN_ON.CANONICAL_GM, run: handleShipEnvisionCommand },
-  { name: "!ship history",     match: isShipHistoryCommand,      runOn: RUN_ON.CANONICAL_GM, run: handleShipHistoryCommand },
+  { name: "!ship envision",    match: isShipEnvisionCommand,     runOn: RUN_ON.CLAUDE,       run: handleShipEnvisionCommand },
+  { name: "!ship history",     match: isShipHistoryCommand,      runOn: RUN_ON.CLAUDE,       run: handleShipHistoryCommand },
   { name: "!oracle-add",       match: isOracleAddCommand,        runOn: RUN_ON.AUTHOR,       run: handleOracleAddCommand },
   { name: "!roll",             match: isRollCommand,             runOn: RUN_ON.AUTHOR,       run: handleRollCommand },
 ];
@@ -659,6 +673,19 @@ async function dispatchChatCommand(message) {
  * @returns {boolean}
  */
 function shouldRunCommandHere(message, route) {
+  if (route.runOn === RUN_ON.CLAUDE) {
+    if (hasKeyedActiveGM()) {
+      if (isCanonicalGM()) return true;
+      console.debug(`${MODULE_ID} | ${route.name}: a keyed GM is connected — runs on the canonical GM; standing down on this client.`);
+      return false;
+    }
+    if (isAuthoringClient(message)) {
+      console.debug(`${MODULE_ID} | ${route.name}: no keyed GM is connected — running on the author's client (its own Claude key, if any).`);
+      return true;
+    }
+    console.debug(`${MODULE_ID} | ${route.name}: no keyed GM — runs on the author's client (${messageAuthorId(message)}); standing down.`);
+    return false;
+  }
   if (route.runOn === RUN_ON.CANONICAL_GM) {
     if (isCanonicalGM()) return true;
     if (isAuthoringClient(message) && !hasActiveGM()) {
@@ -679,8 +706,10 @@ function shouldRunCommandHere(message, route) {
 /**
  * @scene — scene interrogation. Starts a new scene moment in the fiction, so
  * reset the recent move-density window so the pacing classifier doesn't carry
- * over the previous scene's run of MOVE decisions. Canonical GM only: it calls
- * Claude and writes campaignState (startScene).
+ * over the previous scene's run of MOVE decisions. RUN_ON.CLAUDE: it calls
+ * Claude and writes campaignState (startScene) — on the keyed canonical GM
+ * when one is connected; otherwise on the author's client, where startScene's
+ * persist is GM-only and the narrator side-data is not applied.
  */
 async function handleSceneQueryCommand(message) {
   const text     = message.content?.trim() ?? "";
@@ -735,7 +764,7 @@ async function handleEncounterCommand(message) {
   );
 }
 
-/** !recap [session [N] | campaign] — post a recap (canonical GM: Claude call). */
+/** !recap [session [N] | campaign] — post a recap (RUN_ON.CLAUDE: Claude call). */
 async function handleRecapCommand(message) {
   const text = message.content?.trim() ?? "";
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
@@ -1746,18 +1775,64 @@ function registerActorHook() {
     // Skip if this is our own write — actorBridge already handled the cache
     if (userId === game.user.id) return;
 
-    // The momentum-bounds recalc is an actor write: one emitter (the canonical
-    // GM), not every other connected client — players lack permission on each
-    // other's PCs and two GMs would double-write.
-    if (!isCanonicalGM()) return;
-
-    // If condition debilities changed, recalculate momentum bounds
-    if (foundry.utils.hasProperty(changes, "system.debility")) {
-      recalculateMomentumBounds(actor).catch(err => {
-        console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
-      });
-    }
+    // If condition debilities changed, recalculate momentum bounds — on
+    // exactly one client (momentumRecalcRunsHere).
+    if (!foundry.utils.hasProperty(changes, "system.debility")) return;
+    if (!momentumRecalcRunsHere(actor, userId)) return;
+    recalculateMomentumBounds(actor).catch(err => {
+      console.error(`${MODULE_ID} | updateActor: momentum recalc failed`, err);
+    });
   });
+}
+
+/**
+ * Which client re-derives momentum max/reset (and clamps momentum) after
+ * ANOTHER user changed a PC's debilities directly — e.g. on the vendor sheet,
+ * which bypasses actorBridge.setDebility. Exactly one client may run it:
+ * players lack permission on each other's PCs, and two runners would
+ * double-write.
+ *
+ *   - Edited by a player → the canonical GM runs it (the player's own client
+ *     skips its own write).
+ *   - Edited by a GM → the PC's owner runs it: the lowest-id active non-GM
+ *     user with OWNER permission. The editing GM's client skips its own write,
+ *     and the canonical GM must not also run it.
+ *   - Edited by a GM while no non-GM owner is connected → the canonical GM
+ *     runs it, unless it is the editor itself (an own write — skipped like
+ *     every own write; debug-logged).
+ *
+ * Exported for unit testing.
+ *
+ * @param {Actor} actor
+ * @param {string} updaterId  the userId the updateActor hook reported
+ * @returns {boolean}
+ */
+export function momentumRecalcRunsHere(actor, updaterId) {
+  const me = game.user;
+  if (!me || !updaterId || updaterId === me.id) return false;
+  const users   = Array.from(game.users ?? []);
+  const updater = game.users?.get?.(updaterId) ?? users.find(u => u?.id === updaterId) ?? null;
+
+  if (!updater?.isGM) return isCanonicalGM();
+
+  const owners = users.filter(u => u?.active && !u.isGM && userOwnsActor(actor, u));
+  if (owners.length) {
+    let runner = owners[0];
+    for (const u of owners) if (u.id < runner.id) runner = u;
+    return runner.id === me.id;
+  }
+  if (isCanonicalGM()) return true;
+  console.debug(`${MODULE_ID} | updateActor: ${actor?.name ?? "PC"} debilities changed by a GM with no owner connected — momentum recalc is the canonical GM's (skipped there if it made the edit itself).`);
+  return false;
+}
+
+// OWNER permission check that also works on test doubles without
+// testUserPermission (inspects the ownership map; 3 === OWNER).
+function userOwnsActor(actor, user) {
+  if (!actor || !user) return false;
+  if (typeof actor.testUserPermission === "function") return !!actor.testUserPermission(user, "OWNER");
+  const ownership = actor.ownership ?? {};
+  return ownership[user.id] === 3 || ownership.default === 3;
 }
 
 
@@ -2338,8 +2413,10 @@ export function isIncitingIncidentCommand(message) {
 
 /**
  * Roll the spark, ask the narrator to compose the inciting incident, and post
- * the card. Runs only on the authoring client (chat routing, RUN_ON.AUTHOR) —
- * it creates a shared chat document, so it must fire exactly once.
+ * the card. Runs exactly once (chat routing, RUN_ON.CLAUDE): on the keyed
+ * canonical GM when one is connected — so the premise canon, entity detection,
+ * tier update and narrator side-data all land — else on the author's client
+ * (its own key), where those GM-only writes are skipped and debug-logged.
  */
 async function handleIncitingIncidentCommand(_message) {
   try {
@@ -3354,8 +3431,9 @@ async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
 // GM-side: mark the linked vow `marks` times (scaled by the fight's rank), on
 // the PC that actually holds the vow — the card's roller when they hold it,
 // else whichever PC does (resolveVowHolderActor). Shared-vow copies on the
-// other PCs follow via the updateItem sync hook.
-async function markLinkedVowMilestone(vowName, marks, actorId = null) {
+// other PCs follow via the updateItem sync hook. Exported for the won-fight
+// card's relay handler (src/moves/cardActions.js applyFightVowMarkMilestone).
+export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
   await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks).catch(err =>
     console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err));
 }
@@ -3379,8 +3457,9 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 }
 
 // GM-side: deepen the connection a vow served, by `marks` rank-based marks on
-// its relationship track.
-async function deepenLinkedConnection(connectionName, marks) {
+// its relationship track. Exported for the won-fight card's relay handler
+// (src/moves/cardActions.js applyFightVowDeepenBond).
+export async function deepenLinkedConnection(connectionName, marks) {
   try {
     const conn = await import("./entities/connection.js");
     const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -3417,8 +3496,41 @@ async function postDeepenBondCard(name, marks) {
 // sole open vow; copies then collect by the shared vowId flag when present,
 // else by the resolved item's exact name.
 //
+// The sole-open-vow rung is for a name that matches NOTHING (a fully renamed
+// vow). It never applies when the name exactly names a vow that is already
+// completed: fulfilling vow A completes A first, and with exactly one other
+// open vow B the fallback used to resolve B — the payoff then stamped
+// fulfilPaid on B, deepened B's connection and granted B's reward.
+//
 // @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
 export function resolveVowItemCopies(vowName) {
+  const all  = collectPlayerVowItems();
+  const open = all.filter(e => e.item.system?.completed !== true);
+  const lo   = String(vowName ?? "").trim().toLowerCase();
+  let primary = null;
+  if (lo) {
+    primary = open.find(e => vowNameMatch(e, lo) === 2)
+      ?? open.find(e => vowNameMatch(e, lo) === 1)
+      ?? null;
+  }
+  const namesCompletedVow = !!lo && all.some(e =>
+    e.item.system?.completed === true && vowNameMatch(e, lo) > 0);
+  if (!primary && open.length === 1 && !namesCompletedVow) primary = open[0];
+  if (!primary) return { primary: null, copies: [] };
+  return { primary, copies: collectVowCopies(all, primary) };
+}
+
+// Name-ladder score of a vow entry against a lowercased target: 2 exact,
+// 1 substring (either way), 0 no match.
+function vowNameMatch(entry, lo) {
+  const n = (entry.item.name ?? "").trim().toLowerCase();
+  if (!n || !lo) return 0;
+  if (n === lo) return 2;
+  return (n.includes(lo) || lo.includes(n)) ? 1 : 0;
+}
+
+// Every PC's vow Items, as { actor, item } entries (completed ones included).
+function collectPlayerVowItems() {
   const all = [];
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
@@ -3426,27 +3538,18 @@ export function resolveVowItemCopies(vowName) {
       if (item?.type === "progress" && item.system?.subtype === "vow") all.push({ actor, item });
     }
   }
-  const open = all.filter(e => e.item.system?.completed !== true);
-  const lo   = String(vowName ?? "").trim().toLowerCase();
-  let primary = null;
-  if (lo) {
-    primary = open.find(e => (e.item.name ?? "").toLowerCase() === lo)
-      ?? open.find(e => {
-        const n = (e.item.name ?? "").toLowerCase();
-        return n && (n.includes(lo) || lo.includes(n));
-      })
-      ?? null;
-  }
-  if (!primary && open.length === 1) primary = open[0];
-  if (!primary) return { primary: null, copies: [] };
+  return all;
+}
 
+// Every copy of `primary`'s vow across PCs — by the shared vowId flag when
+// present, else by the item's exact name.
+function collectVowCopies(all, primary) {
   const vowId = primary.item.flags?.[MODULE_ID]?.vowId ?? null;
   const primaryName = (primary.item.name ?? "").toLowerCase();
-  const copies = all.filter(e =>
+  return all.filter(e =>
     vowId
       ? e.item.flags?.[MODULE_ID]?.vowId === vowId
       : (e.item.name ?? "").toLowerCase() === primaryName);
-  return { primary, copies };
 }
 
 // GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
@@ -3518,22 +3621,25 @@ async function postRewardGrantCard(reward, plan) {
 // (inciting / hand-made) are fulfilled on the foundry-ironsworn sheet, which
 // bypasses the journal-track fulfill branch AND never touches our legacy tracks,
 // so this also marks the Quests legacy. GM-side (world writes); idempotent per
-// vow via the fulfilPaid flag.
-async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false, actorId = null } = {}) {
+// vow via the fulfilPaid flag. Exported for unit testing.
+export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false, actorId = null } = {}) {
   // vowId-first resolution with a name ladder — a renamed vow or stale
   // linkedVowName snapshot still resolves (VOW-RENAME-PAYOFF). The completed
-  // filter is bypassed here: the vendor sheet may have already marked the
-  // rolled copy completed before this payoff runs, so fall back to searching
-  // ALL copies when no open one matches.
+  // filter is bypassed here: the vendor sheet — or the pipeline's
+  // completeVowItemByName — may have already marked the copies completed
+  // before this payoff runs, so fall back to searching ALL copies with the
+  // same name ladder (exact, then substring), preferring the roller's, and
+  // then collect EVERY PC's copy of that vow (by vowId, else name).
+  // Collecting only the first PC's copy made a shared vow's reward land on the
+  // first PC instead of the roller.
   let { primary, copies } = resolveVowItemCopies(vowName);
   if (!primary) {
-    for (const a of getPlayerActors()) {
-      const items = a.items?.contents ?? (Array.isArray(a.items) ? a.items : []);
-      const found = items.find(i =>
-        i.type === "progress" && i.system?.subtype === "vow"
-        && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase());
-      if (found) { primary = { actor: a, item: found }; copies = [primary]; break; }
-    }
+    const lo  = String(vowName ?? "").trim().toLowerCase();
+    const all = collectPlayerVowItems();
+    const exact = all.filter(e => vowNameMatch(e, lo) === 2);
+    const named = exact.length ? exact : all.filter(e => vowNameMatch(e, lo) === 1);
+    primary = (actorId ? named.find(e => e.actor?.id === actorId) : null) ?? named[0] ?? null;
+    copies  = primary ? collectVowCopies(all, primary) : [];
   }
   const item = primary?.item ?? null;
   if (!item) {
@@ -3682,64 +3788,74 @@ async function payForgedBondNative(connectionName) {
   }
 }
 
-// Wire the won-fight card's buttons. Mark/deepen are GM-gated world writes, so
-// non-canonical clients relay over the socket; Attempt to Fulfill posts the
-// existing fulfill_your_vow bridge (the pipeline handles it).
+// Wire the won-fight card's buttons (wireFightVowButtons) on every render.
 function registerFightVowMilestoneHook() {
   if (registerFightVowMilestoneHook._installed) return;
   registerFightVowMilestoneHook._installed = true;
-  onChatMessageRender((message, root) => {
-    const f = message?.flags?.[MODULE_ID];
-    if (!f?.fightVowCard) return;
-    const wire = (action, fn) => {
-      const btn = root.querySelector(`[data-action="${action}"]`);
-      if (!btn) return;
-      const fresh = btn.cloneNode(true);
-      btn.replaceWith(fresh);
-      fresh.addEventListener("click", async (event) => {
-        event.preventDefault(); event.stopPropagation();
-        fresh.disabled = true;
-        await fn().catch(err =>
-          console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
+  onChatMessageRender((message, root) => wireFightVowButtons(message, root));
+}
+
+/**
+ * Wire the won-fight card's buttons. "⚑ Mark milestone" and "🤝 Deepen your
+ * bond" are one-shot GM-gated world writes: a click relays to the canonical GM
+ * ("fightVow.markMilestone" / "fightVow.deepenBond" →
+ * src/moves/cardActions.js), which applies the card's own values once and
+ * stamps `resolvedActions.<action>`; an action already applied renders
+ * disabled, and a click that is not delivered (no GM) re-arms its button.
+ * "🏁 Attempt to Fulfill" posts the existing fulfill_your_vow bridge (the
+ * pipeline handles it).
+ *
+ * Exported for unit testing.
+ */
+export function wireFightVowButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.fightVowCard) return;
+
+  const wireRelay = (dataAction, kind, action) => {
+    const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
+    if (!btn) return;
+    if (f.resolvedActions?.[action]) {
+      btn.disabled = true;
+      return;
+    }
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      fresh.disabled = true;
+      await relayCardAction({
+        kind,
+        payload:    { messageId: message?.id ?? null },
+        isResolved: () => !!liveCardFlags(message)?.resolvedActions?.[action],
+        restore:    () => { fresh.disabled = false; },
       });
-    };
-    wire("sf-mark-milestone", async () => {
-      const actorId = f.actorId ?? null;
-      if (isCanonicalGM()) return markLinkedVowMilestone(f.vowName, f.marks, actorId);
-      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "vow.markMilestone", vowName: f.vowName, marks: f.marks, actorId });
     });
-    wire("sf-fulfill-vow", async () => {
+  };
+
+  wireRelay("sf-mark-milestone", "fightVow.markMilestone", "markMilestone");
+  wireRelay("sf-deepen-bond",    "fightVow.deepenBond",    "deepenBond");
+
+  const fulfilBtn = root?.querySelector?.('[data-action="sf-fulfill-vow"]');
+  if (fulfilBtn) {
+    const fresh = fulfilBtn.cloneNode(true);
+    fulfilBtn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      fresh.disabled = true;
       await ChatMessage.create({
         content: "Attempt to fulfill your vow.",
         flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null } },
-      });
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
     });
-    wire("sf-deepen-bond", async () => {
-      const marks = marksForSourceRank(f.vowRank);
-      if (isCanonicalGM()) return deepenLinkedConnection(f.connectionName, marks);
-      game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "connection.deepen", connectionName: f.connectionName, marks });
-    });
-  });
+  }
 }
 
-// GM-side socket for the won-fight card's relayed actions.
-function registerFightVowSocket() {
-  if (registerFightVowSocket._installed) return;
-  if (!game?.socket?.on) return;
-  registerFightVowSocket._installed = true;
-  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
-    try {
-      if (!payload || !isCanonicalGM()) return;
-      if (payload.kind === "vow.markMilestone") {
-        await markLinkedVowMilestone(payload.vowName, payload.marks,
-          typeof payload.actorId === "string" ? payload.actorId : null);
-      } else if (payload.kind === "connection.deepen") {
-        await deepenLinkedConnection(payload.connectionName, payload.marks);
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | fight-vow socket handler failed:`, err?.message ?? err);
-    }
-  });
+// The live module flags of a rendered card — the ChatMessage in game.messages
+// carries the latest update (e.g. a resolved stamp written by the GM).
+function liveCardFlags(message) {
+  const live = message?.id ? (game.messages?.get?.(message.id) ?? null) : null;
+  return (live ?? message)?.flags?.[MODULE_ID] ?? null;
 }
 
 async function postCombatTrackCard({ track, created }) {
@@ -3866,7 +3982,12 @@ async function postMilestonePickerCard(vows, actorId) {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
         `<p>Which vow advances?</p><div class="sf-milestone-picker">${rows}</div></div>`,
-      flags:   { [MODULE_ID]: { milestonePicker: true, resolved: false } },
+      // choices: what the GM-side "milestone.pick" handler validates a relayed
+      // click against (src/moves/milestonePicker.js applyMilestonePick).
+      flags:   { [MODULE_ID]: {
+        milestonePicker: true, resolved: false,
+        choices: (vows ?? []).map(v => ({ vowId: v.id ?? "", actorId: actorId ?? "" })),
+      } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postMilestonePickerCard: chat post failed:`, err?.message ?? err);
@@ -3895,7 +4016,12 @@ async function postConnectionPickerCard(connections, action) {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>${label}</strong>` +
         `<p>Which connection?</p><div class="sf-milestone-picker">${rows}</div></div>`,
-      flags: { [MODULE_ID]: { connectionPicker: true, pickAction: action, resolved: false } },
+      // choices: what the GM-side "connection.pick" handler validates a
+      // relayed click against (src/moves/cardActions.js).
+      flags: { [MODULE_ID]: {
+        connectionPicker: true, pickAction: action, resolved: false,
+        choices: eligible.map(c => ({ hostId: c.__hostId ?? "", name: c.name ?? "" })),
+      } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postConnectionPickerCard: chat post failed:`, err?.message ?? err);
@@ -4977,6 +5103,11 @@ Hooks.once("ready", () => {
   }
 
   registerGmRelaySocket();   // canonical-GM action relay (player-invoked world writes)
+  // Relays emitted while this GM's client was still loading reached no
+  // listener and were dropped; tell players the relay is live so they can
+  // re-send state (onGmRelayReady — e.g. their Private Lines). Canonical GM
+  // only; a debug no-op elsewhere.
+  announceGmRelayReady();
   registerChatHook();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
@@ -5014,9 +5145,9 @@ Hooks.once("ready", () => {
   registerRecommitHook();
   registerRecommitSocket();
   // Won-fight vow milestone (#241) — Mark milestone / Fulfill / Deepen bond on a
-  // won linked fight; mark + deepen are GM-gated and relayed for other clients.
+  // won linked fight; mark + deepen relay to the canonical GM through gmRelay
+  // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
   registerFightVowMilestoneHook();
-  registerFightVowSocket();
   registerSettingsHooks();
   registerBurnMomentumHook({
     narrate:  narrateResolution,
@@ -5323,20 +5454,19 @@ export function wireMilestonePickerButtons(message, root) {
       event.stopPropagation();
       const all = root.querySelectorAll('[data-action="sf-milestone-pick"]');
       for (const b of all) b.disabled = true;
-      let ok = false;
-      try {
-        const res = await requestGmAction("milestone.pick", {
+      // Not delivered (no GM connected — requestGmAction already told the
+      // user), refused, or never resolved → re-arm the buttons so the pick
+      // can be retried.
+      await relayCardAction({
+        kind:    "milestone.pick",
+        payload: {
           messageId: message?.id ?? null,
           actorId:   fresh.dataset.actorId || null,
           vowId:     fresh.dataset.vowId || null,
-        });
-        ok = res?.ok === true;
-      } catch (err) {
-        console.error(`${MODULE_ID} | Milestone picker click failed:`, err);
-      }
-      // Not delivered (no GM connected — requestGmAction already told the
-      // user — or a failure) → re-arm the buttons so the pick can be retried.
-      if (!ok) for (const b of all) b.disabled = false;
+        },
+        isResolved: () => !!liveCardFlags(message)?.resolved,
+        restore:    () => { for (const b of all) b.disabled = false; },
+      });
     });
   }
 }
@@ -5454,8 +5584,13 @@ onChatMessageRender((message, root) => wireConnectionSuggestionButtons(message, 
 
 /**
  * Wire the per-connection buttons on a connection picker card. Clicking one
- * posts a forced move message (develop_your_relationship or forge_a_bond) with
- * the connection name embedded so the interpreter can resolve the target.
+ * relays the pick to the canonical GM ("connection.pick" →
+ * src/moves/cardActions.js applyConnectionPick), which posts the forced move
+ * (develop_your_relationship or forge_a_bond) ONCE — speaking as the clicker's
+ * PC so the pipeline credits the roller — and stamps the card resolved. The
+ * picker is often authored by someone other than the clicker, so the clicker's
+ * own client could not stamp it, and a second click re-rolled the move. A
+ * click that is not delivered (no GM connected) re-arms the buttons.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
@@ -5473,34 +5608,43 @@ export function wireConnectionPickerButtons(message, root) {
     fresh.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      for (const b of root.querySelectorAll('[data-action="sf-connection-pick"]')) b.disabled = true;
-      // No GM gate: the click only posts a forced-move chat message (any user
-      // may), which the canonical GM's pipeline resolves. The old isGM gate
-      // made a player's pick — on a picker card the player's own click had
-      // just posted — silently do nothing.
-      try {
-        const pickAction = fresh.dataset.pickAction;
-        const name = fresh.dataset.connectionName || "connection";
-        const moveId = pickAction === "develop" ? "develop_your_relationship" : "forge_a_bond";
-        const content = pickAction === "develop"
-          ? `Develop my relationship with ${name}.`
-          : `Forge a bond with ${name}.`;
-        await ChatMessage.create({
-          content,
-          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId } },
-        });
-        if (message.isOwner === false) {
-          // Only the card's author (or a GM) may stamp it resolved.
-          console.debug(`${MODULE_ID} | connection picker: card owned by another user — resolved flag not set (buttons disabled locally).`);
-        } else {
-          await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-            .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
-        }
-      } catch (err) {
-        console.error(`${MODULE_ID} | Connection picker click failed:`, err);
-      }
+      const all = root.querySelectorAll('[data-action="sf-connection-pick"]');
+      for (const b of all) b.disabled = true;
+      await relayCardAction({
+        kind:    "connection.pick",
+        payload: {
+          messageId:      message?.id ?? null,
+          hostId:         fresh.dataset.hostId || null,
+          connectionName: fresh.dataset.connectionName || null,
+          actorId:        clickerActorId(),
+        },
+        isResolved: () => !!liveCardFlags(message)?.resolved,
+        restore:    () => { for (const b of all) b.disabled = false; },
+      });
     });
   }
+}
+
+// The PC a card-button click on THIS client acts for — the same ladder as a
+// typed message (selected token → bound character → owned PC → first PC).
+// A player who owns none of those (an observer) sends null rather than the
+// first PC, which the GM-side handler would refuse as not theirs.
+function clickerActorId() {
+  let speakerActor = null;
+  try {
+    speakerActor = ChatMessage.getSpeaker?.()?.actor ?? null;
+  } catch (err) {
+    console.debug(`${MODULE_ID} | card click: ChatMessage.getSpeaker failed — using the user's PC:`, err?.message ?? err);
+  }
+  const actorId = resolveSpeakerActorId(
+    { author: game.user ?? null, speaker: { actor: speakerActor } },
+    game.settings.get(MODULE_ID, "campaignState"),
+  );
+  if (!actorId || game.user?.isGM) return actorId;
+  const actor = game.actors?.get?.(actorId) ?? null;
+  if (userOwnsActor(actor, game.user)) return actorId;
+  console.debug(`${MODULE_ID} | card click: this user owns no player character — the GM resolves the speaker.`);
+  return null;
 }
 onChatMessageRender((message, root) => wireConnectionPickerButtons(message, root));
 

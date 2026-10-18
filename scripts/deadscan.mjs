@@ -27,9 +27,16 @@
  *                        string constants are resolved — a constant map
  *                        (`const SETTING = { KEY: "value" }` →
  *                        register(MODULE_ID, SETTING.KEY, …)) or a bare
- *                        `const KEY = "value"` — and every `SETTING.KEY` /
- *                        `KEY` reference counts as a use alongside the raw
- *                        "value" string.
+ *                        `const KEY = "value"`, defined in the registering
+ *                        file or imported into it. Every raw "value" string
+ *                        counts as a use; a `SETTING.KEY` / `KEY` reference
+ *                        counts only where the identifier resolves to that
+ *                        same constant — its defining file, or a file that
+ *                        imports it from there (named, aliased, namespace,
+ *                        dynamic or re-exported). A same-named constant in an
+ *                        unrelated file is not a use, and a register() key
+ *                        the file neither defines nor imports is reported as
+ *                        unresolved rather than guessed.
  *   QUENCH-ONLY        — exports / settings whose only consumers are the
  *                        Quench suite (src/integration/**): dead in production.
  *   TEST-ONLY exports  — referenced only from tests/: dead in production.
@@ -229,6 +236,28 @@ const IMPORT_SPECS = [
 ];
 const OPAQUE_IMPORT = /\bimport\(\s*(?!["'])/;
 
+// Binding clauses, parsed per file to resolve which module a constant
+// reference comes from (settings). Their spans are blanked before counting
+// references — an import / export specifier is not a use.
+const STATIC_IMPORT       = /\bimport\s+([\w$\s,{}*]*?)\s*\bfrom\s*(["'])([^"']+)\2/g;
+const DYNAMIC_IMPORT      = /\bimport\(\s*(["'])([^"']+)\1\s*\)/g;
+const DYNAMIC_DESTRUCTURE = /\{([\w$\s,:]*)\}\s*=\s*(?:await\s+)?import\(\s*(["'])([^"']+)\2\s*\)/g;
+const EXPORT_LIST         = /\bexport\s*\{([^{}]*)\}(?:\s*from\s*(["'])([^"']+)\2)?/g;
+const EXPORT_STAR         = /\bexport\s*\*\s*from\s*(["'])([^"']+)\1/g;
+
+// A relative import specifier → the repo-relative path it names.
+function resolveSpec(file, spec) {
+  return spec.startsWith(".") ? posix.normalize(posix.join(posix.dirname(file), spec)) : undefined;
+}
+// "a, b as c" (sep = / as /) or "a, b: c" (sep = ":") → [[a, a], [b, c]]
+function specList(list, sep) {
+  return list.split(",").map((p) => p.trim()).filter(Boolean).map((p) => {
+    const [first, second] = p.split(sep).map((s) => s.trim());
+    return [first, second || first];
+  });
+}
+const blank = (s) => s.replace(/[^\n]/g, " ");
+
 // ── the scan ─────────────────────────────────────────────────────────────────
 
 /**
@@ -327,50 +356,164 @@ export function scan({ files, entries = ["src/index.js"] }) {
     for (const m of text.matchAll(BARE_DEF)) bares.set(m[1], m[3]);
     bareConsts.set(file, bares);
   }
-  // `MAP.KEY` / `NAME` → its string value: same file first, then a unique
-  // match anywhere in production (constant maps are often imported).
-  const resolveConst = (file, name, key) => {
-    const lookup = (f) =>
-      key === undefined ? bareConsts.get(f)?.get(name) : constMaps.get(f)?.get(name)?.get(key);
-    const local = lookup(file);
-    if (local !== undefined) return local;
-    const found = new Set();
-    for (const f of prodFiles) {
-      const v = lookup(f);
-      if (v !== undefined) found.add(v);
+  // Per-file binding clauses: what each local name is imported as, which
+  // modules are imported whole (namespace / non-destructured dynamic), what
+  // the file re-exports, and its text with every specifier blanked.
+  const moduleInfos = new Map();
+  const moduleInfo = (file) => {
+    if (moduleInfos.has(file)) return moduleInfos.get(file);
+    const text = stripped.get(file) ?? "";
+    const mi = {
+      named: new Map(),      // local → { from, name }
+      whole: new Set(),      // modules imported as a namespace object
+      exportAs: new Map(),   // exported → local (`export { local as exported }`)
+      reexport: new Map(),   // exported → { from, name }
+      star: [],              // `export * from` targets
+      refText: text,
+    };
+    const spans = [];
+    for (const m of text.matchAll(STATIC_IMPORT)) {
+      spans.push([m.index, m.index + m[0].length]);
+      const from = resolveSpec(file, m[3]);
+      if (!from) continue;
+      if (/\*\s*as\s+[\w$]+/.test(m[1])) mi.whole.add(from);
+      const braces = /\{([^{}]*)\}/.exec(m[1]);
+      if (braces) {
+        for (const [name, local] of specList(braces[1], /\s+as\s+/)) mi.named.set(local, { from, name });
+      }
     }
-    return found.size === 1 ? [...found][0] : undefined;
+    const destructured = new Set();   // offsets of import( calls bound by destructuring
+    for (const m of text.matchAll(DYNAMIC_DESTRUCTURE)) {
+      spans.push([m.index, m.index + m[1].length + 2]);   // the `{…}` pattern only
+      destructured.add(m.index + m[0].lastIndexOf("import("));
+      const from = resolveSpec(file, m[3]);
+      if (!from) continue;
+      for (const [name, local] of specList(m[1], ":")) mi.named.set(local, { from, name });
+    }
+    for (const m of text.matchAll(DYNAMIC_IMPORT)) {
+      const from = resolveSpec(file, m[2]);
+      if (from && !destructured.has(m.index)) mi.whole.add(from);
+    }
+    for (const m of text.matchAll(EXPORT_LIST)) {
+      spans.push([m.index, m.index + m[0].length]);
+      const from = m[3] === undefined ? undefined : resolveSpec(file, m[3]);
+      for (const [local, exported] of specList(m[1], /\s+as\s+/)) {
+        if (m[3] === undefined) mi.exportAs.set(exported, local);
+        else if (from) mi.reexport.set(exported, { from, name: local });
+      }
+    }
+    for (const m of text.matchAll(EXPORT_STAR)) {
+      const from = resolveSpec(file, m[2]);
+      if (from) mi.star.push(from);
+    }
+    for (const [s, e] of spans) {
+      mi.refText = mi.refText.slice(0, s) + blank(mi.refText.slice(s, e)) + mi.refText.slice(e);
+    }
+    moduleInfos.set(file, mi);
+    return mi;
   };
 
-  const registered = new Map();   // key → { count, via: Set("MAP.KEY" | "NAME") }
+  // Which constant definition ({ file, name }) does an identifier denote?
+  // localOrigin: a name in scope in `file`; exportOrigin: a name `file`
+  // exports — following import-then-export, `export { a as b }`, named
+  // re-exports and `export *`. Undefined when the trail leaves the tree or
+  // ends somewhere that does not define a string constant of that name.
+  const definesConst = (file, name) =>
+    Boolean(bareConsts.get(file)?.has(name) || constMaps.get(file)?.has(name));
+  const localOrigin = (file, local, seen = new Set()) => {
+    if (definesConst(file, local)) return { file, name: local };
+    const imp = moduleInfo(file).named.get(local);
+    return imp ? exportOrigin(imp.from, imp.name, seen) : undefined;
+  };
+  const exportOrigin = (file, name, seen = new Set()) => {
+    const tag = `${file}#${name}`;
+    if (seen.has(tag) || !stripped.has(file)) return undefined;
+    seen.add(tag);
+    const mi = moduleInfo(file);
+    if (mi.exportAs.has(name)) return localOrigin(file, mi.exportAs.get(name), seen);
+    const re = mi.reexport.get(name);
+    if (re) return exportOrigin(re.from, re.name, seen);
+    const local = localOrigin(file, name, seen);
+    if (local) return local;
+    for (const from of mi.star) {
+      const o = exportOrigin(from, name, seen);
+      if (o) return o;
+    }
+    return undefined;
+  };
+  const originCache = new Map();
+  const originOf = (file, name) => {
+    const tag = `${file}#${name}`;
+    if (!originCache.has(tag)) originCache.set(tag, exportOrigin(file, name));
+    return originCache.get(tag);
+  };
+  const sameDef = (o, b) => o !== undefined && o.file === b.file && o.name === b.name;
+
+  // `MAP.KEY` / `NAME` in a register() call → its string value and the
+  // constant it resolves to, by the registering file's own scope only.
+  const lookupConst = (file, name, key) =>
+    key === undefined ? bareConsts.get(file)?.get(name) : constMaps.get(file)?.get(name)?.get(key);
+  const resolveConst = (file, name, key) => {
+    const origin = localOrigin(file, name);
+    const value = origin && lookupConst(origin.file, origin.name, key);
+    return value === undefined ? undefined : { value, origin };
+  };
+
+  // key → { count, via: Map(tag → { file, name, member }) } — `via` holds the
+  // constant definitions the register() calls went through.
+  const registered = new Map();
   const unresolvedSettings = [];
   for (const file of prodFiles) {
     for (const m of stripped.get(file).matchAll(REG)) {
-      const key = m[2] ?? resolveConst(file, m[3], m[4]);
-      const ref = m[4] ? `${m[3]}.${m[4]}` : m[3];
+      const resolved = m[2] === undefined ? resolveConst(file, m[3], m[4]) : undefined;
+      const key = m[2] ?? resolved?.value;
       if (key === undefined) {
-        unresolvedSettings.push(`${ref} (${file})`);
+        unresolvedSettings.push(`${m[4] ? `${m[3]}.${m[4]}` : m[3]} (${file})`);
         continue;
       }
-      const rec = registered.get(key) ?? { count: 0, via: new Set() };
+      const rec = registered.get(key) ?? { count: 0, via: new Map() };
       rec.count += 1;
-      if (!m[2]) rec.via.add(ref);
+      if (resolved) {
+        const { file: defFile, name } = resolved.origin;
+        rec.via.set(`${defFile}#${name}.${m[4] ?? ""}`, { file: defFile, name, member: m[4] });
+      }
       registered.set(key, rec);
     }
   }
+
+  // References to one constant definition across `list`: in its defining
+  // file by its own name, elsewhere only through a local that is imported
+  // from it — never a same-named constant in an unrelated file. A map is
+  // counted as `LOCAL.MEMBER`; a bare constant's declaration is not a use.
+  const constRefs = (b, list) => {
+    let n = 0;
+    for (const f of list) {
+      const mi = moduleInfo(f);
+      const locals = new Set();
+      if (f === b.file) locals.add(b.name);
+      for (const [local, imp] of mi.named) {
+        if (sameDef(originOf(imp.from, imp.name), b)) locals.add(local);
+      }
+      // `ns.NAME` / `(await import(…)).NAME` — counted by the exported name.
+      for (const from of mi.whole) if (sameDef(originOf(from, b.name), b)) locals.add(b.name);
+      for (const local of locals) {
+        n += countOcc(b.member === undefined ? local : `${local}.${b.member}`, mi.refText);
+      }
+      if (f === b.file && b.member === undefined) {
+        n -= (mi.refText.match(new RegExp(`\\b(?:const|let|var)\\s+${esc(b.name)}\\s*=`, "g")) ?? []).length;
+      }
+    }
+    return n;
+  };
 
   // Production uses beyond the register() calls: every quoted "value" (a
   // mirror of the key in another lookup table counts — e.g. a
   // `{ lore: "loreSalienceThreshold" }` map read dynamically) plus every
   // reference to the constant the register() call went through, minus that
-  // constant's own definition and the register() calls themselves.
+  // constant's own "value" definition and the register() calls themselves.
   const settingUses = (key, rec) => {
     let uses = countLiteral(`"${key}"`, prodAll) + countLiteral(`'${key}'`, prodAll);
-    for (const ref of rec.via) {
-      uses -= 1;                                  // the constant's `"value"` definition
-      uses += countOcc(ref, prodAll);
-      if (!ref.includes(".")) uses -= 1;          // a bare constant's own declaration
-    }
+    for (const b of rec.via.values()) uses += constRefs(b, prodFiles) - 1;
     return uses - rec.count;
   };
 
@@ -379,7 +522,8 @@ export function scan({ files, entries = ["src/index.js"] }) {
   for (const [key, rec] of [...registered].sort(([a], [b]) => a.localeCompare(b))) {
     if (settingUses(key, rec) > 0) continue;
     const inQuench =
-      countLiteral(`"${key}"`, quenchAll) + countLiteral(`'${key}'`, quenchAll) > 0;
+      countLiteral(`"${key}"`, quenchAll) + countLiteral(`'${key}'`, quenchAll) > 0 ||
+      [...rec.via.values()].some((b) => constRefs(b, quenchFiles) > 0);
     (inQuench ? quenchOnlySettings : deadSettings).push(key);
   }
 
@@ -389,8 +533,8 @@ export function scan({ files, entries = ["src/index.js"] }) {
     const out = new Set();
     for (const pat of IMPORT_SPECS) {
       for (const m of (stripped.get(file) ?? "").matchAll(pat)) {
-        if (!m[2].startsWith(".")) continue;
-        out.add(posix.normalize(posix.join(posix.dirname(file), m[2])));
+        const dep = resolveSpec(file, m[2]);
+        if (dep) out.add(dep);
       }
     }
     return out;

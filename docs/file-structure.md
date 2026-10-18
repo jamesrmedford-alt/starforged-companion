@@ -30,10 +30,10 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `index.js` | Module entry point: registers all settings + hooks, the `createChatMessage` dispatcher (every `!`/`@scene`/`\` command), the two-hook toolbar buttons, and the move/narration pipeline. |
+| `index.js` | Module entry point: registers all settings + hooks, the `createChatMessage` dispatcher (every `!`/`@scene`/`\` command), the two-hook toolbar buttons, and the move/narration pipeline. Chat commands route through the ordered `CHAT_COMMAND_ROUTES` table (`dispatchChatCommand` / `shouldRunCommandHere`): each command carries a run-on policy — `AUTHOR` (the typist's client only), `CANONICAL_GM` (warns the author when no GM is connected), or `CLAUDE` (the keyed canonical GM when `hasKeyedActiveGM()`, else the author's client) — so a command runs exactly once, not once per connected client. Also exports, for the relay handlers and tests: `resolveVowHolderActor`, `markLinkedVowMilestone` / `deepenLinkedConnection` (won-fight relay handlers in `moves/cardActions.js`), `payFulfilledVowNative`, `momentumRecalcRunsHere` (which client re-derives momentum bounds after another user's sheet edit), `wireFightVowButtons`, `isDeniedRecapCommand`. |
 | `api-proxy.js` | `apiPost()` — direct browser fetch to the Anthropic API with the `anthropic-dangerous-direct-browser-access` header and BYOK key injection. **All Claude calls route through here.** |
 | `net/fetchWithTimeout.js` | `fetchWithTimeout()` + `DEFAULT_TIMEOUT_MS` (120s) — `fetch` bounded by an `AbortController` so a stalled request rejects instead of hanging forever. Used by `api-proxy.js` and `art/openRouterImage.js`; added after the v1.7.23 sector-creator silent hang (unbounded portrait fetch stalled, Scene never built, nothing logged). |
-| `schemas.js` | Core data schemas and enums: `CampaignStateSchema`, `MOVES`, `STATS`, `CHALLENGE_RANKS`, entity record shapes. |
+| `schemas.js` | Core data schemas and enums: `STATS`, `RANKS` / `RANK_TICKS` / `rankTicks` / `rankName`, `MOVES`, `NARRATOR_CLASSES` (the MOVES contract-test anchor), `ORACLE_ODDS`, `ConnectionSchema`, `CampaignStateSchema` (incl. `questFocus` / `connectionFocus`). `MoveResolutionSchema` survives only as a documentation `@typedef` (JSDoc references still resolve). The zero-consumer `CharacterSchema`, `SessionSchema`, `ArtAssetSchema`, the `MoveResolutionSchema` object, `MISCHIEF_LEVELS`, `RELATIONSHIP_TYPES`, `ART_BACKENDS`, `IMPACTS`, `TRACK_TYPES` exports and `CampaignStateSchema.progressTrackIds` were deleted in the 2026-10 audit. |
 
 ### `art/` — entity portrait generation
 
@@ -67,21 +67,22 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `clocks.js` | `!clock` commands (`new`/`advance`/`fill`/`reset`/`remove`/`list`) + ApplicationV2 panel + advance-on-oracle odds. |
+| `clocks.js` | `!clock` commands (`new`/`advance`/`fill`/`reset`/`remove`/`list`) + ApplicationV2 panel + advance-on-oracle odds. `advanceTensionClocksForPayThePrice` / `revertTensionClocksForBurn`, `advanceCampaignClocksForBeginSession`. A clock that is already full only posts an "already triggered" notice (no second vignette); the panel's ↻ / + buttons share the `!clock` card logic. |
+| `payThePriceClocks.js` | `advanceClocksOnPayThePrice` (tension clocks + each PC's vow countdown clocks, one segment per Pay the Price; GM-only — called directly by the move pipeline, which keeps the return for the burn reversal) and `advanceClocksForPayThePriceRelay` (gmRelay `payThePrice.advanceClocks`, so a player-typed `!ptp` advances the clocks once, on the canonical GM). |
 
 ### `context/` — narrator context assembly
 
 | File | Purpose |
 |------|---------|
 | `relevanceResolver.js` | Resolves entity matches + hybrid move classification for injection; exports `collectAllEntities` (full roster for sidecar subject resolution). Lexical on the paced/@scene paths (`moveId: null`). |
-| `safety.js` | Safety-config formatting — always injected first into the system prompt. |
+| `safety.js` | Safety-config formatting (`formatSafetyContext`) — always injected first into the system prompt; Private Lines come from `campaignState.safety.privateLines` (players' lines relayed by `ui/settingsPanel.js`). X-Card: `suppressScene` (gmRelay `xcard.activate` — sets `xCardActive`), `clearXCard`, `playXCard` (typed `!x` → relay + card), `postXCardCard` (says when the pause could not be recorded), `resumeNarrationAfterXCard` (GM-only resume, `!x clear`), `bindXCardCard` + `XCARD_RESUME_ACTION` (the card's GM-only "Resume narration" button). |
 
 ### `entities/` — entity records & discovery
 
 | File | Purpose |
 |------|---------|
 | `registry.js` | Host-document dispatch: routes reads/writes to Actor vs JournalEntry storage. |
-| `connection.js`, `ship.js`, `settlement.js`, `planet.js`, `location.js`, `faction.js`, `creature.js` | Per-type entity record CRUD (ships/settlements/planets/locations on Actors; others on JournalEntry pages). |
+| `connection.js`, `ship.js`, `settlement.js`, `planet.js`, `location.js`, `faction.js`, `creature.js` | Per-type entity record CRUD (ships/settlements/planets/locations on Actors; others on JournalEntry pages). The art pipeline links portraits through the registry (`art/generator.js` → `writeEntityFlag`); the zero-consumer per-type `setPortraitId` / `setPortraitSourceDescription` / `isReadyForArtGeneration` helpers and `creature.updateCreature` were deleted in the 2026-10 audit. `ship.js`: `repairIntegrity` / `clearBattered` are live (`!repair`); `isShipBattered` reads the canonical native `system.debility.battered` (the starship sheet's toggle and the suffer dialog use only that field — the flag's `battered` is a write-through mirror kept by `updateShip`); `sufferDamage` is still `// UNWIRED: #216 Phase D`. |
 | `shipEnvision.js` | On-demand ✦ Envision / 📜 History for ships. Rolls supplementary oracles beyond the seed (captain, crew, agenda, initial contact) + Action+Theme backstory beats; narrator-prose composer; chat-command predicates + handlers (`!ship envision` / `!ship history`); idempotent dated-subsection notes append. |
 | `entityExtractor.js` | Combined detection pass: extracts entities from narrator output + World Journal routing rule; renders draft Confirm/Dismiss cards. `appendGenerativeTierUpdates` records a matched entity's significant new developments to its card, salience-gated (`TIER_SALIENCE_FLOOR`, fail-open) and biased toward actions over trivia. |
 | `folder.js` | Entity folder helpers (Entities root, per-sector subfolders). |
@@ -94,7 +95,8 @@ developer-only and excluded from the release.
 | `sidecarParser.js` | Parses the narrator's fenced JSON sidecar (`newTruths`, `stateChanges`, `sceneFrame`). |
 | `ledgers.js` | Active-scene ledgers (`sceneTruths`, `sceneState.bySubject`) + `applySceneFrame` (scene-frame snapshot). See `docs/narrator/narrator-memory-architecture.md`. |
 | `sceneLifecycle.js` | Scene start/end: migrates entity truths to generative tiers; archives scene truths to WJ Lore; clears the scene frame. |
-| `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (+ `!truth`/`!state` backing). |
+| `correctionDialog.js` | Per-card "Correct a fact" DialogV2 (`openCorrectionDialog`). |
+| `chatCommands.js` | `!truth` / `!state` correction commands. `parseFactContinuityCommand` (pure syntax check); `handleFactContinuityCommand` runs on the typist's client (toggle + syntax checked there, usage warnings stay local) and relays the raw text via gmRelay `factContinuity.command`; `applyFactContinuityCommand` runs on the canonical GM, resolves subjects against the full entity roster, takes permissions from the requester (`ctx.requesterIsGM` — a player cannot strike a GM-asserted truth), persists and posts the result card. |
 | `consistencyCheck.js` | Optional Haiku consistency audit → GM review card. |
 | `shipPosition.js` | §20 ship positioning: `inferShipPosition` (tolerant seed matching — possessives, article-wrapped multiword names; registry-backed document-first entity resolution, `options.entities` injection), `formatShipPositionLine`, `matchSeedAgainstIndex`. Provenance sources include `expedition` (finish_an_expedition arrivals) and `scene_token` (token-derived positions). |
 
@@ -120,7 +122,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `interpreter.js` | Claude call: narration → move identification + stat injection. |
+| `interpreter.js` | Claude call: narration → move identification + stat injection. `buildContextSummary` tells the interpreter the open vows (vow Items on the PCs, owner-tagged with >1 PC) and the open non-vow tracks in the Progress Tracks journal (it once read `campaignState.progressTrackIds`, which nothing wrote); `buildCombatPositionDirective` / `constrainMoveToPosition`, `buildCanonicalMoveBlock`, `interpretMove`. |
 | `resolver.js` | Dice rolling, outcome calc, and the `CONSEQUENCE_MAP` (arrow-function handlers per play-kit tables). |
 | `expedition.js` | Exploration lifecycle (audit 3.18–3.21): `applyExpeditionProgress` (resolve-or-create the shared expedition track + mark a rank-step), `selectExpeditionTrack`, `finishExpedition` + `legacyRewardTicks`, `normalizeExpeditionRank`. Dependency-injected over the live `progressTracks.js` store; Foundry-free + unit-tested. Wired via GM-gated handlers in `index.js`. |
 | `vow.js` | Vow lifecycle (audit 3.11 Fulfill Your Vow): `selectVowTrack`, `finishVow` (close the open vow track + report quests-legacy ticks, weak hit one rank lower). Reuses `legacyRewardTicks` from `expedition.js`; dependency-injected, Foundry-free + unit-tested; wired via the GM-gated `fulfillVow` handler in `index.js`. |
@@ -130,20 +132,25 @@ developer-only and excluded from the release.
 | `shipMapVision.js` | Vision-based deck-feature placement. `resolveStationCoordsFromImage` (Claude vision via `api-proxy.js` → normalized per-feature coords for stations + galley + modules), `parseJsonObject` + `validateVisionCoords` (pure; required stations gate, optional galley/modules → fixed-layout fallback). Consumed by `shipMapScene.generateShipMapForActor`. |
 | `statEnrichment.js` | Fills `interpretation.statValue` from the actor's sheet. |
 | `abilityScanner.js` | Detects asset abilities applying to the chosen move; extracts `+N` adds, stat substitution, and (v1.7.11 finding G) post-roll result-improvement (`extractResultImprovement`) + the ability's own clock fields. |
-| `burnMomentum.js` | Burn-momentum chat-card affordance (post-roll outcome upgrade). |
-| `improveResult.js` | Post-roll "improve the result" affordance (v1.7.11 finding G) — e.g. Fugitive's improve-to-strong-hit. `buildImproveState` / `renderImproveButtonHtml` / `registerImproveResultHook`; upgrades the outcome, re-narrates, advances the asset ability's clock as the cost. Modelled on burnMomentum.js. |
+| `burnMomentum.js` | Burn-momentum chat-card affordance (post-roll outcome upgrade). A click relays to the canonical GM (`relayCardButtonClick` → gmRelay `move.burnMomentum` → `applyBurnFromRelay`, idempotent per card; only the PC's owner or a GM — `requesterOwnsActor`); the button re-arms after `RELAY_RECOVERY_MS` (15 s) if the card is still unused. Re-narration describes the burning PC (`speakerActorId` = the card's actor). Also `buildBurnState`, `renderBurnButtonHtml`, `registerBurnMomentumHook`, `supersedeOriginalNarration`, `buildSupersededNarrationContent`. |
+| `improveResult.js` | Post-roll "improve the result" affordance (v1.7.11 finding G) — e.g. Fugitive's improve-to-strong-hit. `buildImproveState` / `renderImproveButtonHtml` / `registerImproveResultHook`; upgrades the outcome, re-narrates (as the card's PC), advances the asset ability's clock as the cost. Clicks relay like burnMomentum.js (gmRelay `move.improveResult` → `applyImproveFromRelay`). |
+| `bondCommand.js` | `!bond [rank] [name]` (bonded Develop Your Relationship). `handleBondCommand` runs on the typist's client: resolves the named or sole bonded connection (its rank drives the adds), rolls, posts the card, and relays the lasting effect via gmRelay `bond.apply`. `applyBondEffects` (canonical GM) clamps the payload to a legal roll result (2 bonds-legacy ticks **or** +2 momentum), raises the rank only one step up from the connection's current rank (+ the bond-Item mirror via `setBondItemRank`), routes ticks through `addLegacyTicks`, and gives momentum to the roller's PC only when the requester owns it (or is a GM). |
+| `milestonePicker.js` | Reach a Milestone cards. `postReachMilestoneCard` (the "⚑ Milestone reached" card); `applyMilestonePick` — gmRelay `milestone.pick` handler for the several-open-vows picker: checks the (vowId, actorId) pair is one of the card's own choices (`flags.choices`, else the buttons' data attributes) and that the requester owns that PC, marks the vow, stamps the card `resolved`; idempotent behind an in-flight guard. |
+| `cardActions.js` | One-shot chat-card buttons applied on the canonical GM. `relayCardAction` (client side: relay a click, re-arm the button when it is not delivered, refused, or still unresolved after `RELAY_RECOVERY_MS`); `parseCardButtons` (a pre-`choices` card's button data attributes). Handlers: `applyConnectionPick` (gmRelay `connection.pick` — validates the pick against the card's choices, posts the forced Develop / Forge move once speaking as the clicker's PC, stamps `resolved`), `applyFightVowMarkMilestone` / `applyFightVowDeepenBond` (gmRelay `fightVow.markMilestone` / `fightVow.deepenBond` — take every value from the GM-authored won-fight card, stamp `resolvedActions.<action>`). Render binders live in `index.js` (`wireConnectionPickerButtons`, `wireFightVowButtons`). |
+| `nextMoveAdd.js` | Take a Break "Move on" +1. `isActionRollMove`; `takeNextMoveAdd` (the pipeline consumes `campaignState.nextMoveAdd` on the next action roll — not progress or no-roll moves) and `clearPersistedNextMoveAdd` (drops it from the stored campaignState). |
 | `consequenceRiders.js` | Auto-apply asset resource effects from a move's outcome (v1.7.12) — momentum/health/spirit/supply/integrity/progress. Haiku extraction (`extractRiders`) → `collectFiringRiders` (condition match) → `partitionRiders` (auto vs prompt) → `applyMeterRiders`. Conservative + validated; never applies a guess. See `issue #217 (Consequence Riders)`. |
 | `riderDialog.js` | Prompt for optional / "choose one" / ambiguous-progress consequence riders (`promptRiders` / `groupPromptedRiders`). |
-| `mischief.js` | Mischief dial framing (`normalizeDial()` bridge). |
-| `persistResolution.js` | Persists outcomes to Actor state + WJ (GM-gated — see PERSIST-001). |
-| `repair.js` | `!repair` point-spend dialog (integrity/modules/health). |
+| `mischief.js` | Mischief dial framing: `buildMischiefFraming`, `buildMischiefAside` (internal `normalizeDial()` bridge). |
+| `persistResolution.js` | `persistResolution(resolution, campaignState, speakerActorId)` — runs on the canonical GM's move pipeline: meters + impacts on the roller's Actor (`speakerActorId`, else the first PC — never `game.user.character`), the suffer-choice card, and the session-log entry. Progress is **not** marked here (the dead `progressTrackId` / `progressMarked` steps were deleted in the 2026-10 audit; the pipeline in `index.js` marks vows, legacy and tracks). The campaignState write merges the pipeline's working copy onto a fresh read of the store (`mergeWithLatestState`: store-owned fields such as `xCardActive` / `safety` / `nextMoveAdd` / `clocks` take the stored value, entity id lists union, legacy ticks take the higher count, scene ledgers merge by scene) so world writes that landed mid-move are not reverted. |
+| `repair.js` | `!repair` point-spend dialog (integrity / battered / modules / health / supply trade). `handleRepairCommand` / `openRepairDialog` run on the typist's client (`resolveRepairActorId` picks the repairing PC there); Apply relays via gmRelay `repair.apply` → `applyRepairSpends` (canonical GM): re-validates the allocation (`normaliseAllocation`), clears battered first (read from the canonical native field via `ship.isShipBattered`), then raises integrity capped at `integrityMax`, and debits supply only from a PC the requester owns. The card states what actually happened. |
 
 ### `multiplayer/` — multi-client coordination
 
 | File | Purpose |
 |------|---------|
-| `gmGate.js` | `isCanonicalGM()` single-emitter pipeline gate (prevents duplicate move resolution across clients). |
-| `speaker.js` | Resolves the speaking PC for a chat message: `message.speaker.actor` (token selection, PC-validated) → author's bound character → ownership scan → campaignState fallback. NPC cards and non-character actors are never speakers. |
+| `gmGate.js` | `isCanonicalGM()` single-emitter pipeline gate (prevents duplicate move resolution across clients) — the lowest-id active GM that advertised a Claude key, else the lowest-id active GM. `advertiseClaudeKeyPresence()` records this GM's key presence in the world setting `keyedGmUserIds` (ids only, never the key). `hasKeyedActiveGM()` — true when any active GM is keyed; the basis of `RUN_ON.CLAUDE` command routing and `requestOracleNarration`. |
+| `gmRelay.js` | Canonical-GM action relay — the one path for player-invoked world writes. `requestGmAction(kind, payload)` runs a `GM_ACTIONS` handler locally on the canonical GM, emits it over `GM_RELAY_SOCKET` (`gmRelay.`-prefixed kinds) elsewhere, and warns + returns `{ok:false, reason:"no-gm"}` when no GM is connected. `runGmAction` serialises every action through one promise queue on the canonical GM (released in a `finally`; a hung handler is waited on for at most `GM_ACTION_TIMEOUT_MS`), so handlers' campaignState read-modify-writes never interleave. Handlers are `(payload, ctx)` with `ctx = { requesterId, requester, requesterIsGM, local }` — `requesterId` is client-asserted (the module socket does not identify the sender), so permission checks protect honest clients and handlers clamp payload values. `registerGmRelaySocket` (every client, `ready`), `announceGmRelayReady` / `onGmRelayReady` + `GM_RELAY_READY_KIND` (the canonical GM broadcasts once its listener is up; players re-send state — pull, not push), `hasActiveGM`, `GM_RELAY_KIND_PREFIX`, `_resetGmRelayForTests`. Older ad-hoc socket relays (`expedition.recommit`, `combat.enterFray`, `vow.setReward`, `vow.linkConnection`) still share the channel outside this table. |
+| `speaker.js` | Resolves the speaking PC for a chat message (`resolveSpeakerActorId`): `message.speaker.actor` (token selection, PC-validated) → author's bound character → ownership scan → campaignState fallback. NPC cards and non-character actors are never speakers. `messageAuthorId` / `isAuthoringClient` — who typed a message, for `AUTHOR` command routing and the native progress-roll hook. |
 
 ### `narration/` — the narrative engine
 
@@ -156,8 +163,9 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `roller.js` | Roll any oracle table; inject results. Backs `!oracle`. |
-| `customOracles.js` | User-registered custom oracle tables (`!oracle-add`). |
+| `roller.js` | Roll any oracle table; inject results. Backs `!oracle` (incl. `!oracle <tableId> [question]` — any built-in or custom table, id matched case-insensitively). `rollOracle` returns the `die` it rolled: built-in tables roll d100, custom tables (`CUSTOM_ORACLE_CATEGORY`) roll 1..their highest entry (`dieSizeForTable`). Also `ORACLE_TABLES`, `registerOracleTable` / `unregisterOracleTable` (built-in ids can never be overwritten or unregistered), `rollPaired`, `rollYesNo`. |
+| `customOracles.js` | User-registered custom oracle tables (`!oracle-add`, Custom Oracles panel). `validateCustomOracleEntries` (entries must run contiguously from 1 — the message names the gap or overlap), `parseEntries`, `saveCustomOracle` (re-using a custom id overwrites it), `removeCustomOracle`, `postCustomOracleRoll` (card shows the die, carries `oracleMemory` flags). `campaignState.customOracles` is canonical; each client's `ORACLE_TABLES` custom entries are a mirror kept in sync by `syncCustomOraclesFromState` / `registerCustomOracleSyncHook` (installed by `rehydrateCustomOracles`). `_resetCustomOracleSyncHookForTests`. |
+| `oracleFollowup.js` | The narrator follow-up after a raw oracle card (`!oracle`, `!oracle <tableId>`, `!ptp`). `requestOracleNarration` runs it exactly once: a keyed GM is connected (`hasKeyedActiveGM`) → gmRelay `oracle.narrate` on the keyed canonical GM (`narrateOracleFollowupOnGm`), which applies the narrator side-data; else the author's own key (side-data not applied there — debug-logged); else skipped. |
 | `tables/*.js` | Canonical Starforged oracle tables: `core`, `planets`, `space`, `themes`, `creatures`, `settlements`, `starships`, `factions`, `characters`, `derelicts`, `vaults`, `sufferAndCombat`, `discoveryAndChaos`, `payThePrice`, `sessionVignette`, `misc`. |
 
 ### `pacing/` — pre-classifier
@@ -172,8 +180,8 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `sessionDialogs.js` | Set a Flag / Change Your Fate / Take a Break dialogs. |
-| `sessionLifecycleDialogs.js` | Begin/End Session dialogs — own the `sessionActive` flips and fire the vignettes. |
+| `sessionDialogs.js` | Set a Flag / Change Your Fate / Take a Break dialogs (on the invoking client). World writes relay to the canonical GM: `applySafetyFlag` (gmRelay `safety.setFlag` → `campaignState.safetyFlags`) and `applyTakeBreak` (`session.takeBreak` → the single-use `campaignState.nextMoveAdd`, consumed by `moves/nextMoveAdd.js`). Cards say when the write could not be recorded (no GM). |
+| `sessionLifecycleDialogs.js` | Begin/End Session dialogs (on the invoking client). Begin surfaces last session's quest / connection focus. The world writes run in the canonical-GM relay handlers `applyBeginSession` (`session.begin`: Spotlight momentum, `sessionActive` on + clear the foci, campaign clocks, galley vignette) and `applyEndSession` (`session.end`: save the foci, `sessionActive` off, scene close, rolling-summary finalise, Session Log, +1 momentum, closing vignette). |
 
 ### `sectors/` — sector creator
 
@@ -220,7 +228,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `settingsPanel.js` | Companion Settings panel (tone/model/keys + ~40 world/client settings). Hosts `syncSafetyToCampaignState()`. |
+| `settingsPanel.js` | Companion Settings panel (tone/model/keys + ~40 world/client settings). Hosts `syncSafetyToCampaignState()` (a GM writes the global Lines/Veils and its own Private Lines; a player relays theirs via gmRelay `safety.syncPrivateLines` → `applyPrivateLinesSync`, keyed on the relay requester, and re-sends when the canonical GM announces its relay is ready — `onGmRelayReady`). `registerSettingsHooks()` also installs the X-Card `chatMessage` hook (typed `!x` → `playXCard`, `!x clear` → GM resume — cancelled before the message is created) and the card binder; a programmatic `!x` that reaches `createChatMessage` is routed by `index.js` (`isXCardCommand`, canonical GM). The five unread settings `activeCharacterId`, `chronicleContextCount`, `characterContextEnabled`, `worldJournalEnabled`, `worldJournalAutoDetect` and `getSafetyConfig` were deleted in the 2026-10 audit. |
 | `entityPanel.js` | Entity panel (generative tiers, links, current-location card). |
 | `progressTracks.js` | Progress-track panel (vows/expeditions/combats/connections/legacy). |
 | `sessionPanel.js` | Session moves panel — Begin/End/Flag/Fate/Break (v1.6.0). |
@@ -248,7 +256,7 @@ developer-only and excluded from the release.
 | `lang/en.json` | Localisation strings. |
 | `packs/help/` | LevelDB pack dir (legacy; help is created programmatically — see PACKS-001). |
 | `scripts/build-help-site.mjs` | Renders the help pages to a static HTML site. |
-| `scripts/deadscan.mjs` | Mechanical reachability scan (`node scripts/deadscan.mjs`, `--strict` for a CI-suitable non-zero exit): flags zero-consumer exports, test-only-in-production exports, and registered-but-unread settings. The detection half of `rules/reachability.md`. |
+| `scripts/deadscan.mjs` | Mechanical reachability scan (`node scripts/deadscan.mjs`, `--strict` exits non-zero on DEAD exports/settings): flags zero-consumer exports, registered-but-unread settings (incl. keys registered through a constant — a `SETTING.KEY` / bare `KEY` reference counts only in the defining file or a file that imports that constant), QUENCH-ONLY exports/settings (`src/integration/` is test code, not a production consumer), TEST-ONLY exports, TEST-SEAM names, and UNREACHABLE modules (no import path from a `module.json` entry point). Comments are stripped before counting, so a comment mention is not a consumer. `scan` / `stripComments` are exported for `tests/unit/deadscan.test.js`. The detection half of `rules/reachability.md`. |
 | `vendor/foundry-ironsworn/` | Pinned system submodule (read-only reference; never edit without instruction). |
 
 ---

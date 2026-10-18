@@ -19,7 +19,7 @@ import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene }         from '../factContinuity/sceneLifecycle.js';
+import { startScene, persistCampaignStateFields } from '../factContinuity/sceneLifecycle.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -62,6 +62,29 @@ const LOCATION_GETTERS = {
 };
 
 const MODULE_ID      = 'starforged-companion';
+
+/** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
+const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
+
+/**
+ * True when the X-Card is active. Checks the caller's campaignState AND the
+ * live stored setting: the move pipeline narrates from a snapshot read before
+ * its confirm dialog and Claude calls, so an X-Card played meanwhile (relayed
+ * to the GM) is only visible in the store. Errs toward suppressing.
+ *
+ * @param {Object|null} campaignState
+ * @returns {boolean}
+ */
+function isXCardActive(campaignState) {
+  if (campaignState?.xCardActive) return true;
+  try {
+    return !!game.settings.get(MODULE_ID, 'campaignState')?.xCardActive;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: live X-Card read failed; using the caller's state:`, err?.message ?? err);
+    return false;
+  }
+}
+
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
 
@@ -292,6 +315,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
 export async function narrateResolution(resolution, campaignState, options = {}) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
+
+  // X-Card: the move still resolves (its result card is already posted), but
+  // the narrator stays silent until a GM resumes. This gate lived in the
+  // retired context assembler (ASSEMBLER-003) and was lost with it.
+  if (isXCardActive(campaignState)) {
+    console.debug(`${MODULE_ID} | narrateResolution: X-Card active — narration paused.`);
+    await postNarrationPausedCard(resolution, campaignState);
+    return null;
+  }
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -1018,7 +1050,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     return null;
   }
 
-  if (campaignState?.xCardActive) {
+  if (isXCardActive(campaignState)) {
     await postSceneFallbackCard(question, 'Scene paused — X-Card is active.', sessionId);
     return null;
   }
@@ -1153,7 +1185,7 @@ export async function narrateOracleFollowup({
     return null;
   }
 
-  if (campaignState?.xCardActive) {
+  if (isXCardActive(campaignState)) {
     console.debug(`${MODULE_ID} | narrateOracleFollowup: X-Card active — skipped.`);
     return null;
   }
@@ -1288,7 +1320,7 @@ function escapeHtml(s) {
 export async function narrateSessionVignette({ userMessage, campaignState }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
-  if (campaignState?.xCardActive)  return null;
+  if (isXCardActive(campaignState))  return null;
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
@@ -1340,7 +1372,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
 export async function narrateClockAdvancement({ clock, campaignState }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
-  if (campaignState?.xCardActive)  return null;
+  if (isXCardActive(campaignState))  return null;
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
@@ -1428,7 +1460,7 @@ export async function narrateVowSwearing({ vow, campaignState }) {
   try { vowSceneOn = game.settings.get(MODULE_ID, 'vowSwearingNarration') !== false; }
   catch (err) { console.debug?.(`${MODULE_ID} | vowSwearingNarration read failed:`, err?.message ?? err); }
   if (!vowSceneOn) return null;
-  if (campaignState?.xCardActive) return null;
+  if (isXCardActive(campaignState)) return null;
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
@@ -1514,7 +1546,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState }) {
 export async function narrateIncitingIncident({ userMessage, campaignState }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
-  if (campaignState?.xCardActive)  return null;
+  if (isXCardActive(campaignState))  return null;
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
@@ -1578,7 +1610,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
 
-  if (campaignState?.xCardActive) {
+  if (isXCardActive(campaignState)) {
     // Don't run the narrator while the scene is paused.
     return null;
   }
@@ -2303,6 +2335,34 @@ async function postSceneFallbackCard(question, reason, sessionId) {
   });
 }
 
+/**
+ * Short notice posted instead of move narration while the X-Card is active.
+ * Deliberately NOT flagged as a narrator card, so it never enters the
+ * recent-narration ring, the rolling summary or the chronicle.
+ */
+async function postNarrationPausedCard(resolution, campaignState = null) {
+  const moveInfo = resolution?.moveName && resolution?.outcomeLabel
+    ? `${resolution.moveName}: ${resolution.outcomeLabel}`
+    : 'Move resolved.';
+  return ChatMessage.create({
+    content: `
+      <div class="sf-narration-card sf-narration-fallback">
+        <div class="sf-narration-label">◈ Narrator</div>
+        <div class="sf-narration-prose">${moveInfo}</div>
+        <div class="sf-narration-error">Narration paused — the X-Card is active. A GM can resume it from the X-Card card or with <code>!x clear</code>.</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        narrationPaused: true,
+        sessionId:       campaignState?.currentSessionId ?? null,
+        moveId:          resolution?.moveId ?? null,
+        resolutionId:    resolution?._id ?? '',
+      },
+    },
+  });
+}
+
 async function postFallbackCard(resolution, campaignState = null) {
   const moveInfo = resolution?.moveName && resolution?.outcomeLabel
     ? `${resolution.moveName}: ${resolution.outcomeLabel}`
@@ -2411,10 +2471,20 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // world-scoped Setting) and may update the ship Actor. Players lack
   // permission for world writes, so gate the whole apply-and-persist block on
   // the canonical GM. The clean prose is extracted above and still returned
-  // below, so a non-GM caller (should one ever reach here) gets correct text
-  // with no failed server write. In production only the canonical GM runs the
-  // narration pipeline, so this never changes behaviour there.
-  if (sidecar && campaignState && isCanonicalGM()) {
+  // below, so a non-canonical caller gets correct text with no failed server
+  // write. The move pipeline runs only on the canonical GM, but some narration
+  // legitimately runs elsewhere: an oracle follow-up or a RUN_ON.CLAUDE
+  // command (@scene, !recap, !incite, …) runs on the author's keyed client
+  // when no keyed GM is connected (src/oracles/oracleFollowup.js,
+  // src/index.js chat routing). There the side-data is dropped — logged below.
+  const applySidecarHere = isCanonicalGM();
+  if (sidecar && campaignState && !applySidecarHere) {
+    console.debug?.(
+      `${MODULE_ID} | factContinuity: not the canonical GM — narrator side-data ` +
+      `(truths, state changes, scene frame) not applied on this client.`,
+    );
+  }
+  if (sidecar && campaignState && applySidecarHere) {
     // Fact-continuity §20 — the "ship" subject is special-cased. A
     // stateChange with subject === "ship" and attribute === "position"
     // is routed to the command vehicle's persistent position field,
@@ -2470,7 +2540,11 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
         applySceneFrame(sidecar.sceneFrame, campaignState);
       }
 
-      game.settings.set(MODULE_ID, 'campaignState', campaignState).catch(err =>
+      // Persist only the ledger fields the sidecar wrote, merged onto the
+      // latest stored campaignState: the caller's object may be the move
+      // pipeline's pre-narration snapshot, and writing it whole would revert
+      // a relayed X-Card / Take a Break / safety flag that landed meanwhile.
+      persistCampaignStateFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
         console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
       );
     } catch (err) {

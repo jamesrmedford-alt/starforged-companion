@@ -126,6 +126,138 @@ describe("scan — settings registered via constants", () => {
   });
 });
 
+describe("scan — constant references count only where they resolve to the same constant", () => {
+  // The tree's real shape: combatTracker.js and apiTransactionLog.js each
+  // declare an unrelated `const SETTING_KEY`. Before the fix the identifier
+  // was counted across all of production, so apiTransactionLog's reads kept
+  // a combatTrackerEnabled with no reads of its own scoring live.
+  const tracker = (reads = "") => `
+    const MODULE_ID = "m";
+    const SETTING_KEY = 'combatTrackerEnabled';
+    export function registerTracker() { game.settings.register(MODULE_ID, SETTING_KEY, {}); }
+    ${reads}
+  `;
+  const txLog = `
+    const MODULE_ID = "m";
+    const SETTING_KEY = "apiTransactionLog.enabled";
+    export const enabled = () => game.settings.get(MODULE_ID, SETTING_KEY) ?? true;
+    export const again = () => SETTING_KEY;
+  `;
+
+  it("a same-named bare constant in an unrelated file does not mask a dead setting", () => {
+    const r = scan({ files: tree({
+      "src/index.js":  "import './tracker.js'; import './txLog.js';",
+      "src/tracker.js": tracker(),
+      "src/txLog.js":   txLog,
+    }) });
+    expect(r.deadSettings).toEqual(["combatTrackerEnabled"]);
+  });
+
+  it("…even when that file imports something else from the defining module", () => {
+    const r = scan({ files: tree({
+      "src/index.js":   "import './tracker.js'; import './other.js';",
+      "src/tracker.js": tracker(),
+      "src/other.js":   "import { registerTracker } from './tracker.js'; registerTracker();\n" + txLog,
+    }) });
+    expect(r.deadSettings).toEqual(["combatTrackerEnabled"]);
+  });
+
+  it("the constant read in its own defining file is a use", () => {
+    const r = scan({ files: tree({
+      "src/index.js":   "import './tracker.js'; import './txLog.js';",
+      "src/tracker.js": tracker("export const on = () => game.settings.get(MODULE_ID, SETTING_KEY);"),
+      "src/txLog.js":   txLog,
+    }) });
+    expect(r.deadSettings).toEqual([]);
+  });
+
+  it("a same-named constant map in an unrelated file does not mask a dead MAP.KEY setting", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "import './panel.js'; import './other.js';",
+      "src/panel.js": `const MODULE_ID = "m";
+        const SETTING = { A: "aKey" };
+        game.settings.register(MODULE_ID, SETTING.A, {});`,
+      "src/other.js": `const SETTING = { A: "somethingElse" };
+        export const f = () => game.settings.get("m", SETTING.A);`,
+    }) });
+    expect(r.deadSettings).toEqual(["aKey"]);
+  });
+
+  const keys = `
+    const MODULE_ID = "m";
+    export const KEY = "importedKey";
+    game.settings.register(MODULE_ID, KEY, {});
+  `;
+  it.each([
+    ["a named import",           "import { KEY } from './keys.js'; export const f = () => game.settings.get('m', KEY);"],
+    ["an aliased import",        "import { KEY as K } from './keys.js'; export const f = () => game.settings.get('m', K);"],
+    ["a namespace import",       "import * as keys from './keys.js'; export const f = () => game.settings.get('m', keys.KEY);"],
+    ["a destructured dynamic import",
+      "export async function f() { const { KEY: k } = await import('./keys.js'); return game.settings.get('m', k); }"],
+    ["a whole-module dynamic import",
+      "export async function f() { return game.settings.get('m', (await import('./keys.js')).KEY); }"],
+    ["a re-export barrel",       "import { KEY } from './barrel.js'; export const f = () => game.settings.get('m', KEY);"],
+  ])("a bare constant read through %s is a use", (_label, reader) => {
+    const r = scan({ files: tree({
+      "src/index.js":  "import './keys.js'; import './reader.js';",
+      "src/keys.js":   keys,
+      "src/barrel.js": "export { KEY } from './keys.js';",
+      "src/reader.js": reader,
+    }) });
+    expect(r.deadSettings).toEqual([]);
+  });
+
+  it("an import specifier or re-export alone is not a use", () => {
+    const r = scan({ files: tree({
+      "src/index.js":  "import './keys.js'; import './reader.js';",
+      "src/keys.js":   keys,
+      "src/barrel.js": "export { KEY } from './keys.js';",
+      "src/reader.js": "import { KEY } from './keys.js';\nconst { KEY: k } = await import('./barrel.js');",
+    }) });
+    expect(r.deadSettings).toEqual(["importedKey"]);
+  });
+
+  it("resolves a register() key imported into the registering file; MAP.KEY uses count only via that map", () => {
+    const r = scan({ files: tree({
+      "src/index.js":  "import './panel.js';",
+      "src/keys.js":   "export const SETTING = { A: 'aKey', B: 'bKey', C: 'cKey' };",
+      "src/panel.js":  `import { SETTING as S } from './keys.js';
+        const MODULE_ID = "m";
+        game.settings.register(MODULE_ID, S.A, {});
+        game.settings.register(MODULE_ID, S.B, {});
+        game.settings.register(MODULE_ID, S.C, {});
+        export const a = () => game.settings.get(MODULE_ID, S.A);`,
+      "src/reader.js": `import { SETTING } from './keys.js';
+        export const b = () => game.settings.get('m', SETTING.B);`,
+      "src/other.js":  `const SETTING = { C: 'unrelated' };
+        export const c = () => SETTING.C;`,
+    }) });
+    expect(r.unresolvedSettings).toEqual([]);
+    expect(r.counts.settings).toBe(3);
+    expect(r.deadSettings).toEqual(["cKey"]);
+  });
+
+  it("a constant the registering file neither defines nor imports is unresolved, not borrowed", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "import './a.js';",
+      "src/a.js":     'game.settings.register(MODULE_ID, ORPHAN_KEY, {});',
+      "src/b.js":     'const ORPHAN_KEY = "somebodyElsesKey"; export const f = () => ORPHAN_KEY;',
+    }) });
+    expect(r.unresolvedSettings).toEqual(["ORPHAN_KEY (src/a.js)"]);
+    expect(r.counts.settings).toBe(0);
+  });
+
+  it("a setting read only by Quench through the imported constant is QUENCH-ONLY", () => {
+    const r = scan({ files: tree({
+      "src/index.js":              "import './keys.js';",
+      "src/keys.js":               keys,
+      "src/integration/quench.js": "import { KEY } from '../keys.js'; game.settings.get('m', KEY);",
+    }), entries: ["src/index.js", "src/integration/quench.js"] });
+    expect(r.quenchOnlySettings).toEqual(["importedKey"]);
+    expect(r.deadSettings).toEqual([]);
+  });
+});
+
 describe("scan — module reachability", () => {
   it("reports modules no production entry reaches (static, dynamic, re-export)", () => {
     const r = scan({ files: tree({

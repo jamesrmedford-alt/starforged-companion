@@ -516,6 +516,20 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
     expect(campaignState.incitingIncident).toBeUndefined();
     expect(game.settings._store.get(`${MODULE_ID}.campaignState`)).toBeUndefined();
   });
+
+  it("debug-logs both skipped GM-only branches on a non-GM client (no silent skip)", async () => {
+    vi.mocked(narrateIncitingIncident).mockResolvedValue(MOCK_TEXT);
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const restore = asPlayer();
+    try {
+      await runIncitingIncident({ currentSessionId: "ssn-7" });
+    } finally {
+      restore();
+    }
+    const lines = debug.mock.calls.map(c => String(c[0]));
+    expect(lines.some(l => /not a GM client — premise not saved/.test(l))).toBe(true);
+    expect(lines.some(l => /not a GM client — entity detection, tier update and lore entry skipped/.test(l))).toBe(true);
+  });
 });
 
 describe("postIncitingIncidentCard — incitingMeta flags (Cluster B)", () => {

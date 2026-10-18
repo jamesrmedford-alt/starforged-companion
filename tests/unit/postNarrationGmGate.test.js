@@ -132,4 +132,18 @@ describe('applyNarratorSidecar — canonical-GM gate on campaignState persist', 
     const wroteCampaign = game.settings.set.mock.calls.some(c => c[1] === 'campaignState');
     expect(wroteCampaign).toBe(false);
   });
+
+  it('debug-logs that the side-data was not applied off the canonical GM (no silent drop)', () => {
+    vi.mocked(isCanonicalGM).mockReturnValue(false);
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    applyNarratorSidecar(raw, baseCampaign(), {});
+    expect(debug.mock.calls.some(c => /not the canonical GM — narrator side-data .* not applied/.test(String(c[0])))).toBe(true);
+  });
+
+  it('logs nothing about skipped side-data on the canonical GM', () => {
+    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    applyNarratorSidecar(raw, baseCampaign(), {});
+    expect(debug.mock.calls.some(c => /not the canonical GM/.test(String(c[0])))).toBe(false);
+  });
 });

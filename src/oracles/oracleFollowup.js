@@ -8,44 +8,60 @@
  * (narrateOracleFollowup in src/narration/narrator.js, `oracle_followup`
  * mode).
  *
- * The narration must run exactly once, on a client that holds a Claude key.
- * The key is client-scoped (issue #209) and the commands now run only on the
- * authoring client (src/index.js chat routing), so:
- *   - the authoring client holds a key → narrate locally;
- *   - it doesn't → relay to the canonical GM (which prefers a keyed GM — see
- *     gmGate.js) via requestGmAction("oracle.narrate", args), served by
- *     narrateOracleFollowupOnGm() below.
- * Both paths run the same runOracleFollowup() — one implementation.
+ * The narration must run exactly once, on a client that holds a Claude key —
+ * and preferably on the canonical GM, because the narrator's side-data (scene
+ * truths, state changes, the scene-frame update) is applied and persisted only
+ * there (narrator.js applyNarratorSidecar). The key is client-scoped
+ * (issue #209) and the commands run only on the authoring client
+ * (src/index.js chat routing), so:
+ *   - a keyed GM is connected (gmGate.js hasKeyedActiveGM) → the canonical GM
+ *     is keyed by construction: requestGmAction("oracle.narrate", args) runs
+ *     it there (locally when this client IS that GM), served by
+ *     narrateOracleFollowupOnGm() below — narration AND side-data;
+ *   - no keyed GM, but this client holds a key → narrate locally (a player's
+ *     own key, or a keyless-GM table). The side-data cannot be applied off the
+ *     canonical GM, which is logged (debug) rather than silently dropped;
+ *   - neither → debug-log and skip (the raw card already carries the result).
+ * Every path runs the same runOracleFollowup() — one implementation.
  */
 
-import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 
 /**
  * Queue the narration follow-up for an oracle result, once, where a Claude
  * key lives. Fire-and-forget: the caller has already posted the raw card.
+ * Every path starts in a fresh macrotask so the raw oracle-result card has
+ * landed and its chat-render hook has fired before the narrator call starts —
+ * chat order is `<raw card> → <narration card>`.
  *
  * @param {{ kind: string, oracleName: string, question?: string,
  *           rolledLine: string, speakerActorId?: string|null }} args
  *   plain data only — it may cross the socket to the GM.
  */
 export function requestOracleNarration(args) {
+  if (hasKeyedActiveGM()) {
+    setTimeout(() => {
+      requestGmAction("oracle.narrate", { ...args }).catch(err =>
+        console.warn(`${MODULE_ID} | oracle follow-up: relay to the GM failed:`, err?.message ?? err));
+    }, 0);
+    return;
+  }
   if (hasLocalClaudeKey()) {
-    // Fresh macrotask so the raw oracle-result card has already landed and
-    // the chat-render hook has fired before the narrator call starts —
-    // chat order is `<raw card> → <narration card>`.
+    if (!isCanonicalGM()) {
+      console.debug(
+        `${MODULE_ID} | oracle follow-up: no keyed GM is connected — narrating with this client's key; ` +
+        `the narrator side-data (truths, state changes, scene frame) can only be applied on the canonical GM and is not saved.`,
+      );
+    }
     setTimeout(() => { void runOracleFollowup(args); }, 0);
     return;
   }
-  if (!hasActiveGM()) {
-    // Narration is a garnish — the raw card already carries the result — so
-    // no toast; just say why nothing follows.
-    console.debug(`${MODULE_ID} | oracle follow-up: no Claude key on this client and no GM connected — narration skipped.`);
-    return;
-  }
-  requestGmAction("oracle.narrate", { ...args }).catch(err =>
-    console.warn(`${MODULE_ID} | oracle follow-up: relay to the GM failed:`, err?.message ?? err));
+  // Narration is a garnish — the raw card already carries the result — so
+  // no toast; just say why nothing follows.
+  console.debug(`${MODULE_ID} | oracle follow-up: no Claude key on this client and no keyed GM connected — narration skipped.`);
 }
 
 /**

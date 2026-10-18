@@ -89,6 +89,33 @@ export function isCanonicalGM() {
 }
 
 /**
+ * True when at least one ACTIVE GM has advertised a Claude key (its user id is
+ * in the world-scoped keyedGmUserIds registry). When this holds, the canonical
+ * GM is keyed by construction — isCanonicalGM() picks from keyed active GMs
+ * first — so Claude-calling work routed there gets a real answer AND its world
+ * writes (narrator sidecar, notes, campaignState) apply.
+ *
+ * Every client reads the same world setting and the same user list, so all of
+ * them reach the same answer — the basis of RUN_ON.CLAUDE (src/index.js) and
+ * requestOracleNarration (src/oracles/oracleFollowup.js) running exactly once.
+ *
+ * @returns {boolean}
+ */
+export function hasKeyedActiveGM() {
+  const game = globalThis.game;
+  let keyed;
+  try {
+    keyed = game?.settings?.get(MODULE_ID, "keyedGmUserIds");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | hasKeyedActiveGM: keyed-GM registry read failed:`, err?.message ?? err);
+    return false;
+  }
+  if (!Array.isArray(keyed) || !keyed.length) return false;
+  const keyedSet = new Set(keyed);
+  return Array.from(game?.users ?? []).some(u => u?.isGM && u?.active && keyedSet.has(u.id));
+}
+
+/**
  * Record (or clear) THIS client's Claude-key presence in the world-scoped
  * keyed-GM registry, so isCanonicalGM() can route the single-emitter pipeline
  * to a GM that actually holds a key.

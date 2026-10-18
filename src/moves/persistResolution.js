@@ -11,7 +11,10 @@
 //   2. Apply meter changes to the rolling player's Actor via actorBridge.applyMeterChanges
 //   3. Apply impact (debility) state changes from suffer moves via actorBridge.setDebility
 //   4. Post the suffer-choice card when the outcome needs a player choice
-//   5. Persist the updated campaign state to game.settings
+//   5. Persist the updated campaign state to game.settings — merged onto a
+//      fresh read of the store, so world writes that landed while the move
+//      resolved (X-Card, Take a Break, relays…) are not reverted by the
+//      pipeline's stale working copy (mergeWithLatestState)
 //
 // Progress is NOT marked here. Vow progress (Reach a Milestone → markVowProgress),
 // legacy ticks (addLegacyTicks), combat/expedition/connection tracks and combat
@@ -46,12 +49,6 @@ const MODULE_ID  = 'starforged-companion';
  * @returns {Promise<{ actor: Actor|null, campaignState: Object }>}
  */
 export async function persistResolution(resolution, campaignState, speakerActorId = null) {
-  const updated = foundry.utils.deepClone(campaignState);
-  updated.updatedAt = new Date().toISOString();
-
-  // 1. Append to session move log
-  appendToSessionLog(resolution, updated);
-
   // 2–4: Apply mechanical consequences to the rolling player's Actor.
   //
   // Prefer `speakerActorId` — the actor whose roll this was, resolved upstream
@@ -88,10 +85,222 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     }
   }
 
-  // 5. Persist campaign state
+  // 1 + 5. Persist campaign state. `campaignState` is the pipeline's working
+  // copy, read before the confirm dialog and the narrator call — seconds or
+  // minutes ago. Writing it back wholesale reverted every world write that
+  // landed meanwhile (a relayed X-Card, Take a Break, Set a Flag, Private
+  // Lines, `!bond` ticks, `!truth` corrections, oracle memory, clocks…).
+  // Re-read the store right before the write (no await in between) and merge
+  // — see mergeWithLatestState for the per-field policy. The session-log
+  // append goes onto the merged object so it lands in the live session.
+  const updated = mergeWithLatestState(
+    foundry.utils.deepClone(campaignState ?? {}),
+    game.settings.get(MODULE_ID, 'campaignState'),
+  );
+  updated.updatedAt = new Date().toISOString();
+  appendToSessionLog(resolution, updated);
   await game.settings.set(MODULE_ID, 'campaignState', updated);
 
   return { actor, campaignState: updated };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stale-snapshot merge (review finding #16)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Field policy for the write-back. The working copy has no baseline, so a
+// field is classified by who writes it:
+//
+//   STORE_OWNED_FIELDS — the pipeline never changes these on its working copy
+//     (anything it does change there is written straight to the store), so the
+//     store's latest value always wins. Writers:
+//       xCardActive                 safety.js suppressScene / clearXCard (`!x`, X-Card relay)
+//       safety                      settingsPanel safety sync + "safety.syncPrivateLines" relay
+//       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
+//       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
+//                                   on the store via clearPersistedNextMoveAdd
+//       questFocus, connectionFocus Begin / End a Session relays
+//       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
+//       currentSessionId, sessionNumber, lastSessionTimestamp   index.js session-id lifecycle
+//       customOracles               oracles/customOracles.js
+//       recentOracles               oracles/oracleMemory.js capture hook
+//       clocks                      clocks.js panel / `!clock` / Pay-the-Price clock relay
+//                                   (incl. Face Defeat's PtP inside this pipeline)
+//       pacing                      pacing/router.js (`!pace`, `!roll`) — the pipeline reads
+//                                   pacing from its separate pre-lock snapshot
+//       campaignRecapCache          narrator getCampaignRecap (store-only write)
+//       dismissedEntities           entity panel / extractor dismiss
+//       pendingMove                 the concurrency lock, claimed and released on the store
+//       activeSectorId              `!sector`
+//       incitingIncident            session/incitingIncident.js
+//       worldTruths, worldTruthsSet, worldTruthsJournalId, worldTruthsPageId   truths flows
+//
+//   ENTITY_ID_LISTS — both sides append (the narrator's auto-created
+//     connections land on the working copy; a GM confirming an entity draft
+//     card writes the store): ordered union, store first.
+//   sessionLogs — the store's logs; this resolution's entry is appended after.
+//   sessionSummary — whichever record has the newer updatedAt.
+//   legacyTracks — both sides add ticks (pipeline addLegacyTicks; `!bond`, the
+//     native-sheet vow hook): per track the higher tick count, `cleared` if
+//     either is. Ticks only ever increase, so no writer's ticks are reverted;
+//     two simultaneous adds to the SAME track keep the larger one only.
+//   Scene ledgers (currentSceneId, sceneTruths, sceneState, sceneFrame,
+//     spotlight) — if the store is on a different scene (a `!scene`, End a
+//     Session or other lifecycle write landed mid-pipeline) the store's scene
+//     wins wholesale. Same scene: sceneTruths is unioned by id (the store's
+//     entries, a retraction on either side sticks, the pipeline's new truths
+//     appended); sceneState / sceneFrame / spotlight keep the working copy
+//     (the narrator sidecar rewrites them there; their supersede / delete
+//     semantics cannot be merged without a baseline).
+//   Every other field keeps the working copy — the pipeline writes it there
+//   (currentLocationId/Type on arrival, sectors on a site reveal, …).
+
+const STORE_OWNED_FIELDS = Object.freeze([
+  'xCardActive',
+  'safety',
+  'safetyFlags',
+  'nextMoveAdd',
+  'questFocus',
+  'connectionFocus',
+  'sessionActive',
+  'sessionActiveStartedAt',
+  'currentSessionId',
+  'sessionNumber',
+  'lastSessionTimestamp',
+  'customOracles',
+  'recentOracles',
+  'clocks',
+  'pacing',
+  'campaignRecapCache',
+  'dismissedEntities',
+  'pendingMove',
+  'activeSectorId',
+  'incitingIncident',
+  'worldTruths',
+  'worldTruthsSet',
+  'worldTruthsJournalId',
+  'worldTruthsPageId',
+]);
+
+const ENTITY_ID_LISTS = Object.freeze([
+  'characterIds',
+  'connectionIds',
+  'settlementIds',
+  'locationIds',
+  'creatureIds',
+  'clockIds',
+  'oracleResultIds',
+  'shipIds',
+  'planetIds',
+  'factionIds',
+  'artAssetIds',
+  'progressTrackIds',
+]);
+
+/**
+ * Merge the latest stored campaignState into the pipeline's (already cloned)
+ * working copy, per the field policy above. Mutates and returns `working`.
+ *
+ * @param {Object} working  deep clone of the pipeline's campaignState
+ * @param {Object|null|undefined} latestRaw  game.settings.get(…, 'campaignState')
+ * @returns {Object}
+ */
+function mergeWithLatestState(working, latestRaw) {
+  if (!latestRaw || typeof latestRaw !== 'object') return working;
+  const latest = foundry.utils.deepClone(latestRaw);
+
+  for (const key of STORE_OWNED_FIELDS) {
+    if (key in latest) working[key] = latest[key];
+    else delete working[key];
+  }
+
+  for (const key of ENTITY_ID_LISTS) {
+    const merged = unionList(latest[key], working[key]);
+    if (merged) working[key] = merged;
+  }
+
+  if (latest.sessionLogs && typeof latest.sessionLogs === 'object') {
+    working.sessionLogs = latest.sessionLogs;
+  }
+
+  if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
+    working.sessionSummary = latest.sessionSummary;
+  }
+
+  const legacy = mergeLegacyTracks(latest.legacyTracks, working.legacyTracks);
+  if (legacy) working.legacyTracks = legacy;
+
+  mergeSceneLedgers(working, latest);
+  return working;
+}
+
+/** Ordered union of two id lists (store order first). null when neither is a list. */
+function unionList(storeList, workingList) {
+  const a = Array.isArray(storeList)   ? storeList   : null;
+  const b = Array.isArray(workingList) ? workingList : null;
+  if (!a && !b) return null;
+  const out = [...(a ?? [])];
+  for (const id of b ?? []) if (!out.includes(id)) out.push(id);
+  return out;
+}
+
+function isNewerRecord(storeRec, workingRec) {
+  if (!storeRec) return false;
+  if (!workingRec) return true;
+  return String(storeRec.updatedAt ?? '') > String(workingRec.updatedAt ?? '');
+}
+
+function mergeLegacyTracks(store, working) {
+  const s = (store   && typeof store   === 'object') ? store   : null;
+  const w = (working && typeof working === 'object') ? working : null;
+  if (!s && !w) return null;
+  const out = {};
+  for (const key of new Set([...Object.keys(s ?? {}), ...Object.keys(w ?? {})])) {
+    const a = s?.[key];
+    const b = w?.[key];
+    if (!a || !b) { out[key] = a ?? b; continue; }
+    out[key] = {
+      ...a,
+      ...b,
+      ticks:   Math.max(Number(a.ticks ?? 0), Number(b.ticks ?? 0)),
+      cleared: !!(a.cleared || b.cleared),
+    };
+  }
+  return out;
+}
+
+const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight']);
+
+function mergeSceneLedgers(working, latest) {
+  if ((latest.currentSceneId ?? null) !== (working.currentSceneId ?? null)) {
+    console.debug(`${MODULE_ID} | persistResolution: the scene changed while the move resolved — keeping the stored scene ledgers.`);
+    for (const key of SCENE_FIELDS) {
+      if (key in latest) working[key] = latest[key];
+      else delete working[key];
+    }
+    return;
+  }
+
+  const storeTruths   = Array.isArray(latest.sceneTruths)  ? latest.sceneTruths  : null;
+  const workingTruths = Array.isArray(working.sceneTruths) ? working.sceneTruths : null;
+  if (!storeTruths) return;                       // nothing stored — keep the working copy
+  if (!workingTruths) { working.sceneTruths = storeTruths; return; }
+
+  const truthKey = (t) => t?.id ?? JSON.stringify(t);
+  const mine = new Map(workingTruths.map(t => [truthKey(t), t]));
+  const seen = new Set();
+  const merged = storeTruths.map((t) => {
+    const k = truthKey(t);
+    seen.add(k);
+    const w = mine.get(k);
+    // A retraction (narrator contradiction or `!truth` correction) is one-way.
+    return (w?.retracted && !t?.retracted) ? w : t;
+  });
+  for (const t of workingTruths) {
+    if (!seen.has(truthKey(t))) merged.push(t);
+  }
+  working.sceneTruths = merged;
 }
 
 
