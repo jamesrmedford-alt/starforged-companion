@@ -11,11 +11,18 @@
  *   - endScene(campaignState, { reason }) — migrate entity-scoped truths to
  *       entity generative tiers, archive free-text and scene-scoped truths
  *       to the WJ Lore journal, then discard active ledgers.
+ *   - mergeOwnedFields / persistCampaignStateFields — write only the fields a
+ *       caller owns onto the latest stored campaignState (stale-snapshot
+ *       writers: scene lifecycle, End a Session).
+ *   - mergeSceneLedgers / persistSceneLedgerFields — the scene-ledger merge
+ *       (scene-id check + truth union) for persistResolution and the narrator
+ *       sidecar persist.
  *
- * Both functions mutate campaignState in place AND attempt to persist via
- * game.settings.set. Persist failures are tolerated so player clients
- * (which cannot write world settings) do not abort the in-memory state
- * change. The same pattern as src/narration/narrator.js applyNarratorSidecar.
+ * startScene / endScene mutate campaignState in place AND persist their scene
+ * fields, merged onto the latest stored campaignState. They are world writes,
+ * so their narration and `@scene` callers run them on the canonical GM only (a
+ * player's client cannot write world settings); a persist failure is logged,
+ * never thrown.
  */
 
 import { archiveSceneTruth }          from '../world/worldJournal.js';
@@ -195,13 +202,37 @@ async function persistCampaignState(campaignState, label) {
 }
 
 /**
+ * The latest stored campaignState with only `fields` taken from the caller's
+ * copy — what a caller holding a snapshot across long awaits writes instead of
+ * its whole object, which would revert anything written in the meantime (a
+ * relayed X-Card, Take a Break, safety flags, Private Lines, a move's persist —
+ * decisions.md → "Long-running pipeline writes merge relay-owned fields").
+ * Returns the caller's own object when it IS the stored one, or when the store
+ * cannot be read.
+ *
+ * @param {Object}   campaignState — the caller's working copy (source of `fields`)
+ * @param {string[]} fields        — top-level keys this write owns
+ * @param {string}   label         — for the read-failure log
+ * @returns {Object} the object to write
+ */
+export function mergeOwnedFields(campaignState, fields, label) {
+  let latest = null;
+  try {
+    latest = game.settings.get(MODULE_ID, 'campaignState');
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed (${label}); writing the caller's copy:`, err?.message ?? err);
+  }
+  if (!latest || typeof latest !== 'object' || latest === campaignState) return campaignState;
+  const target = { ...latest };
+  for (const key of fields) {
+    if (Object.prototype.hasOwnProperty.call(campaignState, key)) target[key] = campaignState[key];
+  }
+  return target;
+}
+
+/**
  * Persist only `fields` of `campaignState`, merged onto the LATEST stored
- * campaignState rather than writing the caller's whole object. Callers such as
- * the move pipeline hold a snapshot read before long awaits (confirm dialog,
- * Claude calls); writing that snapshot back would revert anything written in
- * the meantime — a relayed X-Card, Take a Break, safety flags, Private Lines
- * (decisions.md → "Long-running pipeline writes merge relay-owned fields").
- * When the caller's object IS the stored one, it is written as-is.
+ * campaignState (mergeOwnedFields). Failures are logged, never thrown.
  *
  * @param {Object}   campaignState — the caller's working copy (source of `fields`)
  * @param {string[]} fields        — top-level keys this write owns
@@ -211,6 +242,79 @@ async function persistCampaignState(campaignState, label) {
 export async function persistCampaignStateFields(campaignState, fields, label) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return;
+    await game.settings.set(MODULE_ID, 'campaignState', mergeOwnedFields(campaignState, fields, label));
+  } catch (err) {
+    // Player clients can't write world settings; tolerate.
+    console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
+  }
+}
+
+/**
+ * Scene-ledger merge for a writer holding a campaignState snapshot across long
+ * awaits — the move pipeline's persistResolution and the narrator-sidecar
+ * persist (persistSceneLedgerFields). Mutates `working`'s scene fields:
+ *   - the store on a different scene (a `!scene`, End a Session or other
+ *     lifecycle write landed meanwhile) → the store's scene wins wholesale;
+ *   - same scene → sceneTruths unioned by id (the store's entries, a
+ *     retraction on either side sticks, the working copy's new truths
+ *     appended); sceneState / sceneFrame / spotlight keep the working copy
+ *     (their supersede / delete semantics cannot be merged without a
+ *     baseline).
+ *
+ * @param {Object} working — the writer's copy (mutated)
+ * @param {Object} latest  — the latest stored campaignState (not mutated)
+ * @returns {boolean} false when the store had moved to another scene
+ */
+export function mergeSceneLedgers(working, latest) {
+  if ((latest.currentSceneId ?? null) !== (working.currentSceneId ?? null)) {
+    for (const key of SCENE_FIELDS) {
+      if (key in latest) working[key] = latest[key];
+      else delete working[key];
+    }
+    return false;
+  }
+
+  const storeTruths   = Array.isArray(latest.sceneTruths)  ? latest.sceneTruths  : null;
+  const workingTruths = Array.isArray(working.sceneTruths) ? working.sceneTruths : null;
+  if (!storeTruths) return true;                  // nothing stored — keep the working copy
+  if (!workingTruths) { working.sceneTruths = storeTruths; return true; }
+
+  const truthKey = (t) => t?.id ?? JSON.stringify(t);
+  const mine = new Map(workingTruths.map(t => [truthKey(t), t]));
+  const seen = new Set();
+  const merged = storeTruths.map((t) => {
+    const k = truthKey(t);
+    seen.add(k);
+    const w = mine.get(k);
+    // A retraction (narrator contradiction or `!truth` correction) is one-way.
+    return (w?.retracted && !t?.retracted) ? w : t;
+  });
+  for (const t of workingTruths) {
+    if (!seen.has(truthKey(t))) merged.push(t);
+  }
+  working.sceneTruths = merged;
+  return true;
+}
+
+/**
+ * Persist a long-running caller's scene-ledger `fields` (the narrator
+ * sidecar's sceneTruths / sceneState / sceneFrame — the move pipeline narrates
+ * from a snapshot read before its confirm dialog and Claude calls) onto the
+ * LATEST stored campaignState, with the mergeSceneLedgers policy: nothing is
+ * written when the store has moved to another scene meanwhile (End a Session
+ * or `!scene` closed this one and archived its truths), and sceneTruths are
+ * unioned by id otherwise, so a `!truth` correction or an oracle follow-up's
+ * truth that landed during the narration survives. When the caller's object
+ * IS the stored one it is written as-is. Failures are logged, never thrown.
+ *
+ * @param {Object}   campaignState — the caller's working copy
+ * @param {string[]} fields        — the scene-ledger keys this write owns
+ * @param {string}   label         — for the logs
+ * @returns {Promise<boolean>} true when written
+ */
+export async function persistSceneLedgerFields(campaignState, fields, label) {
+  try {
+    if (typeof game === 'undefined' || !game?.settings?.set) return false;
     let latest = null;
     try {
       latest = game.settings.get(MODULE_ID, 'campaignState');
@@ -219,14 +323,23 @@ export async function persistCampaignStateFields(campaignState, fields, label) {
     }
     let target = campaignState;
     if (latest && typeof latest === 'object' && latest !== campaignState) {
+      const ledgers = {};
+      for (const key of SCENE_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(campaignState, key)) ledgers[key] = campaignState[key];
+      }
+      if (!mergeSceneLedgers(ledgers, latest)) {
+        console.debug(`${MODULE_ID} | sceneLifecycle: the scene changed meanwhile — ${label} not persisted (the stored scene's ledgers stand).`);
+        return false;
+      }
       target = { ...latest };
       for (const key of fields) {
-        if (Object.prototype.hasOwnProperty.call(campaignState, key)) target[key] = campaignState[key];
+        if (Object.prototype.hasOwnProperty.call(ledgers, key)) target[key] = ledgers[key];
       }
     }
     await game.settings.set(MODULE_ID, 'campaignState', target);
+    return true;
   } catch (err) {
-    // Player clients can't write world settings; tolerate.
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
+    return false;
   }
 }

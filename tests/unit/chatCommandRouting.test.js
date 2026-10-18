@@ -257,6 +257,35 @@ describe('CLAUDE policy — keyed canonical GM when one is connected, else the a
     game.actors._reset();
   });
 
+  // Second review round: on the author fallback a player's client ran
+  // startScene — campaignState / WJ Lore / entity-tier writes a player cannot
+  // make (permission errors, and the scene never started).
+  it('no keyed GM: a player-run @scene narrates but leaves the scene boundary to the GM (no world write)', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      ...state(), currentSceneId: 'sc-old', sceneTruths: [{ id: 't1', fact: 'The hatch is sealed.' }],
+    });
+    setUsers([GM, P1], 'pl-1');
+    const set = vi.spyOn(game.settings, 'set');
+    await fire(cmd('@scene what is behind the hatch?', 'pl-1'));
+    expect(interrogateScene).toHaveBeenCalledTimes(1);
+    expect(set.mock.calls.filter(c => c[1] === 'campaignState')).toHaveLength(0);
+    expect(state().currentSceneId).toBe('sc-old');
+    expect(state().sceneTruths).toHaveLength(1);
+    expect(debug.mock.calls.some(c => /@scene: not the canonical GM — the scene boundary is left to the GM/.test(String(c[0])))).toBe(true);
+    set.mockRestore();
+  });
+
+  it('a keyed canonical GM running @scene starts the new scene', async () => {
+    keyGms('gm-1');
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { ...state(), currentSceneId: 'sc-old', sceneTruths: [] });
+    setUsers([GM, P1], 'gm-1');
+    await fire(cmd('@scene what is behind the hatch?', 'pl-1'));
+    expect(interrogateScene).toHaveBeenCalledTimes(1);
+    expect(state().currentSceneId).toMatch(/^sc-/);
+    expect(state().currentSceneId).not.toBe('sc-old');
+  });
+
   it('no keyed GM: a keyless author still runs it (the handler posts its own key-not-configured fallback)', async () => {
     const ran = await runOn(['gm-1', 'pl-1'], [GM, P1], cmd('!ship history', 'pl-1'), handleShipHistoryCommand);
     expect(ran).toEqual(['pl-1']);

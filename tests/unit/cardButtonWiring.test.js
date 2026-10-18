@@ -311,6 +311,29 @@ describe('resolveVowItemCopies — sole-open-vow rung', () => {
     expect(resolveVowItemCopies('Original name').primary?.item.id).toBe('v-1');
   });
 
+  // Second review round: the substring rung still ran against OPEN vows, so a
+  // completed "Find the ship" resolved the open "Find the ship's captain".
+  it('an exact name for a completed vow is not resolved to an open vow it is a substring of', () => {
+    pcB.items.contents.push(
+      makeVow('v-done', 'Find the ship', { completed: true }),
+      makeVow('v-open', "Find the ship's captain"),
+    );
+    expect(resolveVowItemCopies('Find the ship').primary).toBeNull();
+    // A fragment that names no completed vow exactly still resolves by substring.
+    expect(resolveVowItemCopies('captain').primary?.item.id).toBe('v-open');
+  });
+
+  it('fulfilling it pays the completed vow, not the open vow whose name contains it', async () => {
+    setUsers([GM, P1], 'gm-1');
+    const reward = { status: 'promised', description: 'Fuel', form: 'supply' };
+    const done  = makeVow('v-done', 'Find the ship', { completed: true, flags: { vowId: 'vid-a' } });
+    const other = makeVow('v-other', "Find the ship's captain", { flags: { vowId: 'vid-b', reward } });
+    pcB.items.contents.push(done, other);
+    await payFulfilledVowNative('Find the ship', 'strong_hit', { skipLegacy: true, actorId: 'pc-b' });
+    expect(done.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(other.flags[MODULE_ID].fulfilPaid).toBeUndefined();
+  });
+
   it('does not resolve a different vow when the name names a completed vow (exact or fragment)', () => {
     pcB.items.contents.push(makeVow('v-done', 'Find the Archive', { completed: true }), makeVow('v-open', 'Avenge Kade'));
     expect(resolveVowItemCopies('Find the Archive').primary).toBeNull();

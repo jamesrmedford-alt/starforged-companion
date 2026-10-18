@@ -707,9 +707,11 @@ function shouldRunCommandHere(message, route) {
  * @scene — scene interrogation. Starts a new scene moment in the fiction, so
  * reset the recent move-density window so the pacing classifier doesn't carry
  * over the previous scene's run of MOVE decisions. RUN_ON.CLAUDE: it calls
- * Claude and writes campaignState (startScene) — on the keyed canonical GM
- * when one is connected; otherwise on the author's client, where startScene's
- * persist is GM-only and the narrator side-data is not applied.
+ * Claude and starts a new scene (startScene — campaignState, WJ Lore and
+ * entity-tier writes) on the keyed canonical GM when one is connected;
+ * otherwise it runs on the author's client, which only narrates — the scene
+ * boundary is skipped (debug-logged) and the narrator side-data is not
+ * applied there.
  */
 async function handleSceneQueryCommand(message) {
   const text     = message.content?.trim() ?? "";
@@ -724,7 +726,11 @@ async function handleSceneQueryCommand(message) {
   // unended prior scene and assign a fresh scene ID before narration.
   // See issue #227 (Fact Continuity) §9.1.
   if (factContinuityEnabledFromSettings()) {
-    await startScene(campaignState, { reason: "@scene_intercept" });
+    if (isCanonicalGM()) {
+      await startScene(campaignState, { reason: "@scene_intercept" });
+    } else {
+      console.debug(`${MODULE_ID} | @scene: not the canonical GM — the scene boundary is left to the GM (world write).`);
+    }
   }
   // Full speaker resolution (token selection → bound character →
   // ownership → fallback) — the bound-character-only read this
@@ -3496,11 +3502,13 @@ async function postDeepenBondCard(name, marks) {
 // sole open vow; copies then collect by the shared vowId flag when present,
 // else by the resolved item's exact name.
 //
-// The sole-open-vow rung is for a name that matches NOTHING (a fully renamed
-// vow). It never applies when the name exactly names a vow that is already
-// completed: fulfilling vow A completes A first, and with exactly one other
-// open vow B the fallback used to resolve B — the payoff then stamped
-// fulfilPaid on B, deepened B's connection and granted B's reward.
+// The fallback rungs never resolve a DIFFERENT open vow for a name that
+// matches a vow already completed: fulfilling vow A completes A first, and
+// the later rungs used to resolve another open vow B — the payoff then
+// stamped fulfilPaid on B, deepened B's connection and granted B's reward.
+// So an exact match on a completed vow skips the substring rung, and any
+// match on a completed vow skips the sole-open-vow rung (which is for a name
+// that matches NOTHING — a fully renamed vow).
 //
 // @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
 export function resolveVowItemCopies(vowName) {
@@ -3508,14 +3516,20 @@ export function resolveVowItemCopies(vowName) {
   const open = all.filter(e => e.item.system?.completed !== true);
   const lo   = String(vowName ?? "").trim().toLowerCase();
   let primary = null;
+  const completedMatch = (score) => !!lo && all.some(e =>
+    e.item.system?.completed === true && vowNameMatch(e, lo) >= score);
   if (lo) {
-    primary = open.find(e => vowNameMatch(e, lo) === 2)
-      ?? open.find(e => vowNameMatch(e, lo) === 1)
-      ?? null;
+    primary = open.find(e => vowNameMatch(e, lo) === 2) ?? null;
+    // An exact name for a vow that is already completed outranks a substring
+    // match on another open vow: fulfilling "Find the ship" completes it
+    // first, and the substring rung used to resolve the open "Find the ship's
+    // captain" instead (payFulfilledVowNative's all-copies fallback then
+    // finds the completed vow by its exact name).
+    if (!primary && !completedMatch(2)) {
+      primary = open.find(e => vowNameMatch(e, lo) === 1) ?? null;
+    }
   }
-  const namesCompletedVow = !!lo && all.some(e =>
-    e.item.system?.completed === true && vowNameMatch(e, lo) > 0);
-  if (!primary && open.length === 1 && !namesCompletedVow) primary = open[0];
+  if (!primary && open.length === 1 && !completedMatch(1)) primary = open[0];
   if (!primary) return { primary: null, copies: [] };
   return { primary, copies: collectVowCopies(all, primary) };
 }

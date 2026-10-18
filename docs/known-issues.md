@@ -84,6 +84,16 @@ lives in the matching `docs/flows/*-flow.md` maps.
 |---|---|---|---|
 | SAFETY-PRIVATE-LINES-SHARED | SAFETY | Shared narration (moves, paced turns, `@scene`, oracle follow-ups, vignettes, the inciting incident) carried no Private Line at all — not even the GM's: `buildNarratorSystemPrompt` called `formatSafetyContext(campaignState)` with no user id, and `resolvePrivateLines` returns `[]` without one. A player's personal hard limit constrained only their Private Channel. Pre-existing; the relay fix (SAFETY-PRIVATE-LINES-PLAYER) only got the lines stored | `formatNarratorSafetyContext` (`src/context/safety.js`): a GM's client carries every player's lines (deduplicated); a player's client — narrating only with no keyed GM online — carries that player's own, read from their client setting, never another player's. The heading tells the narrator never to mention or hint at them (decisions.md → "Private Lines in shared narration") |
 
+**Second review round (fixed in the v1.7.31 cycle):**
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| SIDECAR-LEDGER-CLOBBER | LOSE-STATE | The narrator-sidecar persist merged only its own fields onto the latest store, but wrote those ledgers whole from the move pipeline's snapshot: a `!truth` strike or an oracle follow-up's truth that landed during the narration was dropped (`persistResolution`'s union then had nothing left to keep), and a scene End a Session closed mid-move came back — and was archived a second time at the next scene start | `persistSceneLedgerFields` (`sceneLifecycle.js`): nothing written when the store moved to another scene; otherwise `sceneTruths` unioned by id via `mergeSceneLedgers`, now shared with `persistResolution` |
+| XCARD-QUEUED | SAFETY | The serialised GM queue held `xcard.activate` behind Claude-calling handlers (oracle follow-up, Burn / Improve re-narration, End a Session's summary) for up to 60 s while the unqueued move pipeline narrated through it; the GM's own `!x` card waited too, and a resume clicked meanwhile was undone when the activation landed | `xcard.activate` runs unqueued (`gmRelay.js` `UNQUEUED_ACTIONS`) — safe once no handler writes back a snapshot held across an await (END-SESSION-CLOBBER) |
+| END-SESSION-CLOBBER | LOSE-STATE | `applyEndSession` wrote back the campaignState it read before `endScene` and the summary's Claude call, reverting a move persisted meanwhile (its session-log entry, legacy ticks, entity ids) and resurrecting its released `pendingMove` lock — every later move was then refused until a reload. Pre-existing | Merges only End's fields (`questFocus`, `connectionFocus`, `sessionActive`, `sessionActiveStartedAt`) onto the latest store (`mergeOwnedFields`); the Session Log gets that merged object; a failed write still fails the card honestly |
+| SCENE-START-OFF-GM | GM-GATE | With no keyed GM online, `RUN_ON.CLAUDE` runs `@scene` / `!incite` on the author: a player's client ran `startScene` / `endScene` — campaignState, WJ Lore and entity-tier writes a player can't make (permission errors; the scene never started) | `@scene` and `ensureSceneStarted` start a scene on the canonical GM only (debug-logged elsewhere); the author's client just narrates |
+| FULFIL-SUBSTRING-RUNG | ATTRIBUTION | The FULFIL-REWARD-FIRST-PC fix blocked only the sole-open-vow rung: once "Find the ship" was completed, the substring rung still resolved the open "Find the ship's captain", which got the payoff (and its own later fulfilment was skipped as already paid) | An exact name for a completed vow skips the substring rung too; `payFulfilledVowNative`'s all-copies fallback then finds the completed vow |
+
 **Accepted limitations** (recorded, not defects):
 
 - **Relay requester ids are client-asserted** (review #3). Foundry's module
@@ -99,8 +109,8 @@ lives in the matching `docs/flows/*-flow.md` maps.
   played in that window says "Scene paused" without being recorded. Relayed
   card buttons re-arm after 15 s if the card isn't marked used.
 - **One serialised GM queue.** A long handler (an oracle follow-up's Claude
-  call, the session vignettes) delays later relays — the X-Card included —
-  until it settles or 60 s pass.
+  call, End a Session's summary) delays later relays until it settles or 60 s
+  pass. The X-Card is exempt — it runs the moment it reaches the GM.
 - **Session vignettes need a keyed GM.** The Begin / End a Session galley and
   closing vignettes run inside the canonical-GM relay handlers, so at a
   keyless-GM table they are skipped (a player's key isn't used).

@@ -19,7 +19,7 @@ import { extractSidecar }     from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, persistCampaignStateFields } from '../factContinuity/sceneLifecycle.js';
+import { startScene, persistSceneLedgerFields } from '../factContinuity/sceneLifecycle.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -2418,8 +2418,8 @@ async function postFallbackCard(resolution, campaignState = null) {
 /**
  * Ensure an active fact-continuity scene exists before a narrator call.
  * If `currentSceneId` is null, assigns one by calling startScene with the
- * given reason. Tolerates failure (player clients can't write world
- * settings; the in-memory mutation still happens).
+ * given reason — on the canonical GM only (a world write); elsewhere it
+ * debug-logs and returns. A persist failure is logged, never thrown.
  *
  * @param {Object} campaignState
  * @param {string} reason — diagnostic only ("first_narration", "paced_narrative", …)
@@ -2434,6 +2434,14 @@ async function ensureSceneStarted(campaignState, reason) {
   }
   if (!enabled) return;
   if (campaignState.currentSceneId) return;
+  // A scene boundary is a world write (campaignState, WJ Lore pages, entity
+  // tiers) — single-emitter, like the sidecar apply. A RUN_ON.CLAUDE command
+  // or oracle follow-up narrating on a keyed author's client (no keyed GM
+  // online) leaves it to the GM's next narration.
+  if (!isCanonicalGM()) {
+    console.debug?.(`${MODULE_ID} | ensureSceneStarted (${reason}): not the canonical GM — scene start left to the GM.`);
+    return;
+  }
   await startScene(campaignState, { reason });
 }
 
@@ -2542,9 +2550,12 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
 
       // Persist only the ledger fields the sidecar wrote, merged onto the
       // latest stored campaignState: the caller's object may be the move
-      // pipeline's pre-narration snapshot, and writing it whole would revert
-      // a relayed X-Card / Take a Break / safety flag that landed meanwhile.
-      persistCampaignStateFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
+      // pipeline's pre-narration snapshot. Writing it whole reverted a relayed
+      // X-Card / Take a Break / safety flag that landed meanwhile; writing its
+      // ledgers whole dropped a mid-narration `!truth` correction or oracle
+      // truth and resurrected a scene End a Session had just closed — so the
+      // ledgers are unioned by id, and skipped when the scene changed.
+      persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
         console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
       );
     } catch (err) {

@@ -77,7 +77,13 @@ and performed by a handler on the canonical GM:
   `finally`; a predecessor that never settles is waited on for at most
   `GM_ACTION_TIMEOUT_MS` (60 s, warned). Handlers' campaignState
   read-modify-writes therefore never interleave. A handler must not call
-  `requestGmAction` itself — it would queue behind its own caller.
+  `requestGmAction` itself — it would queue behind its own caller. **The
+  X-Card is the exception:** `xcard.activate` runs the moment it arrives —
+  queued behind a Claude-calling handler (an oracle follow-up, a burn
+  re-narration, End a Session's summary) it waited up to 60 s while the
+  unqueued move pipeline narrated through it (XCARD-QUEUED). That is safe
+  because `suppressScene` reads and writes the store with no await between,
+  and no handler writes back a snapshot held across an await (next entry).
 - Relays are fire-and-forget (no ack). Once its listener is installed, the
   canonical GM broadcasts `gmRelay.ready` (`announceGmRelayReady`); state a
   player must hand the GM is **pulled** on that signal (`onGmRelayReady` —
@@ -141,11 +147,20 @@ never writes the whole snapshot back.
   unioned by id (a retraction on either side sticks) and `sceneState` /
   `sceneFrame` / `spotlight` keep the working copy. Every other field keeps the
   working copy (the pipeline's own writes: arrival location, site reveals …).
-- Scene start / end and the narrator-sidecar persist write only the fields
-  they own onto the latest stored state (`persistCampaignStateFields`,
-  `src/factContinuity/sceneLifecycle.js`): the scene lifecycle
-  `currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`;
-  the sidecar `sceneTruths`, `sceneState`, `sceneFrame`.
+- Scene start / end write only the fields they own onto the latest stored
+  state (`persistCampaignStateFields` / `mergeOwnedFields`,
+  `src/factContinuity/sceneLifecycle.js`): `currentSceneId`, `sceneTruths`,
+  `sceneState`, `sceneFrame`, `spotlight`. So does End a Session —
+  `questFocus`, `connectionFocus`, `sessionActive`, `sessionActiveStartedAt` —
+  which holds its snapshot across `endScene` and the summary's Claude call
+  (END-SESSION-CLOBBER: it reverted a move persisted meanwhile, even its
+  released `pendingMove` lock).
+- The narrator-sidecar persist (`persistSceneLedgerFields`) writes
+  `sceneTruths`, `sceneState`, `sceneFrame` with the same scene-ledger policy
+  as `persistResolution` (`mergeSceneLedgers`, shared): nothing when the store
+  has moved to another scene, `sceneTruths` unioned by id otherwise
+  (SIDECAR-LEDGER-CLOBBER: replacing them dropped a mid-narration `!truth`
+  strike or oracle truth and resurrected a scene End a Session had closed).
 - Single-field consumers re-read the store: Take a Break's +1 is cleared on
   the store (`clearPersistedNextMoveAdd`), and every narrator X-Card gate reads
   the live setting as well as the caller's snapshot.
@@ -187,10 +202,11 @@ be recorded and carries no resume button. Only a GM resumes: the card's
 is warned), or `game.modules.get("starforged-companion").api.clearXCard()`.
 Resuming clears the flag, marks every open X-Card card resolved and posts an
 "X-Card cleared" card. While the flag is set every narrator entry point stands
-down — checking the live setting as well as the caller's snapshot — and a move
-resolved meanwhile posts its result card plus a short "narration paused"
-notice (not a narrator card, so it stays out of the recent-narration ring and
-the rolling summary).
+down — checking the live setting as well as the caller's snapshot; the relayed
+activation runs the moment it reaches the GM, never queued behind other relayed
+actions — and a move resolved meanwhile posts its result card plus a short
+"narration paused" notice (not a narrator card, so it stays out of the
+recent-narration ring and the rolling summary).
 
 **Reason:** the X-Card is the safety tool a player reaches for without
 explanation, and for players it recorded nothing (XCARD-PLAYER-NOOP); move
@@ -277,8 +293,10 @@ and exactly one runs it:
   first), so the call succeeds **and** its world writes and narrator
   side-data apply;
 - otherwise → the author's client runs it with its own key (a keyed player at
-  a keyless-GM table). GM-only writes are then skipped and debug-logged; a
-  keyless author gets the usual "Claude API key not configured" fallback.
+  a keyless-GM table). GM-only writes are then skipped and debug-logged — the
+  scene boundary included: `@scene` and the narrators' `ensureSceneStarted`
+  start a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
+  author gets the usual "Claude API key not configured" fallback.
 
 This is `RUN_ON.CLAUDE` for `@scene`, `!recap`, `!ship envision` / `history`
 and `!incite`, and the same ladder in `requestOracleNarration`
@@ -710,7 +728,9 @@ a still-promised reward to `lost`.
 *(2026-10 refinement: the sole-open-vow rung is for a name that matches
 nothing — it never fires when the name matches a vow that is already
 completed (exact or substring), because fulfilling vow A completes A first and
-the rung then paid the one other open vow B. After completion the fulfil
+the rung then paid the one other open vow B. Likewise an exact name for a
+completed vow skips the substring rung, which otherwise resolved an open vow
+whose name contains A's (FULFIL-SUBSTRING-RUNG). After completion the fulfil
 payoff collects every PC's copy and prefers the roller's, so a shared vow's
 reward reaches the player who fulfilled it — known-issues FULFIL-REWARD-NEVER,
 FULFIL-REWARD-FIRST-PC. The rung is kept, not dropped: renamed vows still pay

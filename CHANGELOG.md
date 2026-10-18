@@ -9,6 +9,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **"Descriptor + Focus" oracle rows now roll real words.** Fifteen tables (space sightings, settlement/starship first looks, vault/derelict looks, theme perils, story clues …) carry rows that chain into the Descriptor and Focus oracles — those rolls returned the literal text "Descriptor + Focus" instead of rolling it. Both the `!oracle` roller and sector generation now resolve the chain (the Action + Theme chain always did).
 - Fixed: **The X-Card works for players.** A player's `!x` now actually pauses the narrator. Before, the pause was never recorded, though the card said "Scene paused". If no GM is connected, the card says the pause could not be recorded.
 - Added: **Resume after an X-Card.** X-Card cards carry a GM-only **Resume narration** button, a GM can type `!x clear`, and macros can call `game.modules.get("starforged-companion").api.clearXCard()`. The browser-console snippet is no longer needed.
+- Fixed: **Moves respect the X-Card.** While the X-Card is active, a move still posts its result card, followed by a short "narration paused" notice instead of narration. Before, move narration ignored the X-Card, even when it was played while the move was resolving.
 - Fixed: **Chat commands run once, no matter how many people are connected.** Every `!` command used to run once per connected browser. That posted duplicate `!oracle`, `!ptp`, `!bond`, `!stations` and `!clock list` cards with different dice, made one narrator call per player for `@scene` and `!ship envision`, and opened dialogs such as `!flag` and `!begin-session` on every screen.
   - Commands now run on the typist's client.
   - `@scene`, `!recap`, `!ship envision` and `!ship history` run on the GM's client.
@@ -24,6 +25,8 @@ All notable changes to Starforged Companion are documented here.
   - `!bond` momentum
   - vow rewards
 - Fixed: **A fulfilled vow grants its promised reward.** The reward chosen when the vow was sworn was never delivered when it was fulfilled.
+- Fixed: **Fulfilling a vow pays that vow.** When another open vow had a similar name ("Find the ship" and "Find the ship's captain"), or exactly one other vow was open, the reward, the connection's bond and the legacy could go to the other vow instead.
+- Fixed: **Changes made while a move resolves are kept.** Resolving a move takes a while (the confirm dialog, then the narrator). An X-Card, Take a Break, Set a Flag, `!bond`, or a `!truth` / `!state` correction made in that time used to be undone when the move saved. Ending the session while a move resolved could also undo that move and then refuse every move with "A move is already being resolved" until a reload.
 - Fixed: **Take a Break's +1 is applied.** "Move on" now adds +1 to the next action roll automatically. Progress moves leave it waiting for the next roll.
 - Fixed: **`!repair` repairs the command vehicle properly.**
   - Clearing *battered* actually clears it.

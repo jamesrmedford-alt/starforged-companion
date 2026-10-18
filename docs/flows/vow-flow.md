@@ -35,7 +35,9 @@ Terminology up front, because it drives every gap below:
   sole-open rung is only for a name that matches nothing: it never applies
   when the name matches (exactly or by substring) a vow that is already
   completed (fulfilling A used to resolve the one other open vow B and pay
-  B's payoff).
+  B's payoff). Likewise an exact name for a completed vow skips the substring
+  rung, so fulfilling "Find the ship" can't resolve the open "Find the ship's
+  captain".
 
 ## 1. Creation
 
@@ -203,7 +205,9 @@ summary lives in the `known-issues.md` table and the code.
   ~~a shared vow's reward went to the first PC~~ — every PC's copy is
   collected, so the roller's copy is found.
 - ~~Fulfilling vow A with exactly one other open vow B paid B~~ — the
-  sole-open rung no longer applies to a name that matches a completed vow.
+  sole-open rung no longer applies to a name that matches a completed vow;
+  ~~nor could an open vow whose name contains A's~~ — an exact name for a
+  completed vow skips the substring rung (FULFIL-SUBSTRING-RUNG).
 - ~~The won-fight "Mark milestone" button could apply twice (raw socket
   relay, no resolved stamp) and silently did nothing with no GM~~ — relayed
   `fightVow.markMilestone`, one-shot via `resolvedActions.markMilestone`

@@ -135,10 +135,14 @@ for the ring. Off the canonical GM the sidecar is still stripped from the
 prose but nothing is applied and no audit runs (debug-logged — see "Where each
 call runs"). The ledger persist writes **only** the sidecar's fields
 (`sceneTruths`, `sceneState`, `sceneFrame`) onto a fresh read of the stored
-campaignState (`persistCampaignStateFields`, `sceneLifecycle.js`): the
+campaignState (`persistSceneLedgerFields`, `sceneLifecycle.js`): the
 caller's object may be the move pipeline's pre-narration snapshot, and writing
 it whole used to revert a relayed X-Card, Take a Break or safety flag that
-landed meanwhile. The pipeline's own end-of-move write
+landed meanwhile. The ledgers themselves merge like `persistResolution`'s
+(`mergeSceneLedgers`, shared): nothing is written when the store has moved to
+another scene (End a Session or `!scene` closed this one mid-narration), and
+otherwise `sceneTruths` is unioned by id, so a `!truth` correction or an oracle
+follow-up's truth that landed during the narration survives. The pipeline's own end-of-move write
 (`persistResolution`) merges the same way (`mergeWithLatestState` —
 relay-owned fields such as `xCardActive`, `safety`, `safetyFlags`,
 `nextMoveAdd`, `clocks`, `recentOracles` take the stored value; same-scene
@@ -159,7 +163,10 @@ went with the module, 2026-07 — issue #271).
 `!scene start`, an `@scene` intercept, `ensureSceneStarted` on the first
 move/@scene/paced narration, **or the inciting incident** (so the premise
 sidecar writes into a real scene the first move then *continues* — the
-opening NPC state and frame survive). `startScene` implicitly ends a prior
+opening NPC state and frame survive). The `@scene` intercept and
+`ensureSceneStarted` start a scene on the **canonical GM only** — a scene
+boundary is a world write, so a keyed player's client narrating `@scene` /
+`!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands), text/scene truths → WJ Lore, then

@@ -214,16 +214,24 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
 
 - Re-read the store **immediately** before the write (no `await` between the
   read and the `set`) and write only the fields this path owns
-  (`persistCampaignStateFields(campaignState, fields, label)`,
-  `src/factContinuity/sceneLifecycle.js`) — or, when the path owns a wide
-  slice, merge per a documented field policy (`persistResolution`'s
-  `mergeWithLatestState`: relay-owned fields take the stored value, id lists
-  union, legacy ticks take the higher count, same-scene truths union by id).
+  (`persistCampaignStateFields(campaignState, fields, label)` /
+  `mergeOwnedFields`, `src/factContinuity/sceneLifecycle.js`) — or, when the
+  path owns a wide slice, merge per a documented field policy
+  (`persistResolution`'s `mergeWithLatestState`: relay-owned fields take the
+  stored value, id lists union, legacy ticks take the higher count, scene
+  ledgers via `mergeSceneLedgers`). Owning a field is not enough when others
+  write it too: the narrator sidecar owns the scene ledgers but a `!truth`
+  relay writes them, so its persist merges them (`persistSceneLedgerFields`)
+  instead of replacing them. End a Session held its snapshot across a Claude
+  call and wrote it whole — reverting a move and resurrecting its released
+  `pendingMove` lock.
 - A safety-critical flag is read **live** at the point of use, not from the
   snapshot (the narrator's `isXCardActive` checks the stored setting too).
 - Writers that must not interleave run through one queue (the `gmRelay`
   handler queue on the canonical GM); a merge is still needed for the
-  pipeline, which runs outside it.
+  pipeline, which runs outside it. A safety action must not wait in that
+  queue behind a slow handler: the X-Card runs unqueued, which is safe only
+  because no handler writes back a snapshot held across an `await`.
 
 ## Detection — the mechanical sweep
 
