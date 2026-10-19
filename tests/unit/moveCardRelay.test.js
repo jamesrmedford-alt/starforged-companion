@@ -13,15 +13,58 @@
  *   - relayCardButtonClick restores the button when the request fails, no GM
  *     is connected, a local run leaves the card unconsumed, or a relayed run
  *     is not acknowledged within RELAY_RECOVERY_MS.
+ *
+ * "across a booted table" runs it end to end on the multi-client harness
+ * (tests/helpers/multiClient.js, issue #282): a player's narration goes
+ * through the GM's real move pipeline, the GM posts the move card, and the
+ * player clicks Burn / Improve on their own client — where Foundry refuses a
+ * player's update of a GM-authored card, which is what the old click path
+ * did and why its second click re-applied.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 
-vi.mock("../../src/multiplayer/gmRelay.js", () => ({
-  requestGmAction: vi.fn(),
+// The move pipeline, for the multi-client section at the end: a scripted
+// interpretation (Face Danger +iron), no pacing call, the confirm dialog
+// accepted, and three scripted dice inside the REAL resolveMove — challenge
+// 7 and 3, action die 4 → a weak hit that burning 8 momentum turns strong.
+// Every mock spreads the real module, so src/index.js boots on every client.
+const pipeline = vi.hoisted(() => ({ abilities: [] }));
+vi.mock("../../src/pacing/router.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  routePacedInput: vi.fn(async () => ({ runMove: true, decision: "MOVE", suggestedMove: null })),
 }));
+vi.mock("../../src/moves/interpreter.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  interpretMove: vi.fn(async () => ({
+    moveId: "face_danger", moveName: "Face Danger", statUsed: "iron", adds: 0, rationale: "test", mischiefApplied: false,
+  })),
+}));
+vi.mock("../../src/moves/abilityScanner.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  scanForApplicableAbilities: vi.fn(async () => pipeline.abilities),
+}));
+vi.mock("../../src/ui/settingsPanel.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  confirmInterpretation: vi.fn(async () => true),
+}));
+vi.mock("../../src/moves/resolver.js", async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    resolveMove: vi.fn((...args) => {
+      const dice = vi.spyOn(Math, "random")
+        .mockReturnValueOnce(0.65)    // challenge die 7
+        .mockReturnValueOnce(0.2)     // challenge die 3
+        .mockReturnValueOnce(0.5);    // action die 4 (+ iron 3 = 7)
+      try { return original.resolveMove(...args); } finally { dice.mockRestore(); }
+    }),
+  };
+});
 
-import { requestGmAction } from "../../src/multiplayer/gmRelay.js";
+import * as gmRelay from "../../src/multiplayer/gmRelay.js";
+import { simulateTable, USERS } from "../helpers/multiClient.js";
+import { CampaignStateSchema } from "../../src/schemas.js";
 import {
   applyBurnFromRelay,
   relayCardButtonClick,
@@ -109,7 +152,6 @@ beforeEach(() => {
   ChatMessage._reset();
   narrate.mockClear();
   persist.mockClear();
-  requestGmAction.mockReset();
   registerBurnMomentumHook({ narrate, persist });
   registerImproveResultHook({ narrate, persist });
 });
@@ -249,6 +291,8 @@ describe("applyImproveFromRelay", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("relayCardButtonClick", () => {
+  let requestGmAction;
+  beforeEach(() => { requestGmAction = vi.spyOn(gmRelay, "requestGmAction"); });
   afterEach(() => { vi.useRealTimers(); });
 
   function args(over = {}) {
@@ -316,5 +360,123 @@ describe("relayCardButtonClick", () => {
     await relayCardButtonClick(a);
     expect(requestGmAction).not.toHaveBeenCalled();
     expect(a.restore).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Across a booted table — the multi-client harness (issue #282)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("across a booted table", () => {
+  let table;
+  let pc;
+
+  beforeAll(async () => {
+    table = await simulateTable({ users: [USERS.GM, USERS.P1, USERS.P2] });
+  }, 30_000);
+  afterAll(() => table?.teardown());
+
+  /** Pat (pl-1) narrates a Face Danger; the GM's pipeline posts the move card. */
+  async function rollWeakHit() {
+    await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema, sessionActive: true } } } });
+    await table.setClaudeKey("gm-1", "sk-ant-gina");
+    pc = table.addActor({
+      id: "pc-pat", name: "Kira", ownership: { "pl-1": 3 },
+      system: { momentum: { value: 8, max: 10, min: -6, resetValue: 2 } },
+    });
+    await table.client("pl-1").chat("I brace against the hull and push through the breach.", { speaker: { actor: "pc-pat" } });
+    await table.settle();
+    const cards = table.cards(f => f.moveResolution);
+    expect(cards.map(c => c.author)).toEqual(["gm-1"]);
+    return cards[0];
+  }
+
+  const flagsOf = (id) => table.world.message(id).flags[MODULE_ID];
+  const momentumWrites = () => pc._updateHistory.filter(u => "system.momentum.value" in u);
+
+  describe("Burn Momentum", () => {
+    beforeEach(() => { pipeline.abilities = []; });
+
+    it("the GM's card offers the burn the roll earned", async () => {
+      const card = await rollWeakHit();
+      expect(flagsOf(card._id).burn).toMatchObject({
+        canBurn: true, originalOutcome: "weak_hit", previewOutcome: "strong_hit", originalApplied: true, actorId: "pc-pat",
+      });
+    });
+
+    it("a player's click applies once, on the GM — the card is consumed on every client", async () => {
+      const card = await rollWeakHit();
+      const narrationsBefore = table.claude.calls.length;
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+
+      expect(momentumWrites()).toHaveLength(1);
+      expect(pc.system.momentum.value).toBe(3);   // reset to 2, then +1 for the strong hit
+      for (const c of table.clients) expect(c.message(card._id).flags[MODULE_ID].burn.consumed, c.id).toBe(true);
+      const renarrations = table.claude.calls.slice(narrationsBefore);
+      expect(renarrations.length).toBeGreaterThan(0);
+      expect(renarrations.every(c => c.client === "gm-1")).toBe(true);
+    });
+
+    it("after the card re-renders, the button stays spent — a second click applies nothing", async () => {
+      const card = await rollWeakHit();
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+      const root = table.client("pl-1").render(card._id);   // a fresh render, as after any update
+      const btn = root.querySelector('[data-action="sf-burn-momentum"]');
+      expect(btn.disabled).toBe(true);
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+      expect(momentumWrites()).toHaveLength(1);
+    });
+
+    it("the owner and the GM clicking at once still apply it once", async () => {
+      const card = await rollWeakHit();
+      const narrations = () => table.cards(f => f.narratorCard).length;
+      const before = narrations();
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      table.client("gm-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+      expect(momentumWrites()).toHaveLength(1);   // momentum is reset to a target, so a second burn writes nothing —
+      expect(narrations() - before).toBe(1);      // but it re-narrates: the burned outcome is narrated once
+      expect(flagsOf(card._id).burn.consumed).toBe(true);
+    });
+
+    it("a player who does not own the PC cannot burn its momentum", async () => {
+      const card = await rollWeakHit();
+      table.client("pl-2").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+      expect(momentumWrites()).toEqual([]);
+      expect(flagsOf(card._id).burn.consumed).toBeFalsy();
+      expect(getCapturedWarns().some(w => /does not own Kira — burn refused/.test(w))).toBe(true);
+    });
+  });
+
+  describe("Improve Result", () => {
+    beforeEach(() => {
+      pipeline.abilities = [{
+        assetId: null, abilityIndex: null, assetName: "Fugitive", abilityName: "Slip away",
+        text: "improve the result to a strong hit", resultImprovement: { improveTo: "strong_hit" }, hasClock: false,
+      }];
+    });
+    afterAll(() => { pipeline.abilities = []; });
+
+    it("a player's click improves the result once, on the GM — the card is consumed everywhere", async () => {
+      const card = await rollWeakHit();
+      expect(flagsOf(card._id).improve).toMatchObject({ canImprove: true, originalApplied: true, actorId: "pc-pat" });
+      table.client("pl-1").click(card._id, '[data-action="sf-improve-result"]');
+      table.client("pl-1").click(card._id, '[data-action="sf-improve-result"]');   // a double click
+      await table.settle();
+      for (const c of table.clients) expect(c.message(card._id).flags[MODULE_ID].improve.consumed, c.id).toBe(true);
+      expect(table.client("pl-1").render(card._id).querySelector('[data-action="sf-improve-result"]').disabled).toBe(true);
+    });
+
+    it("a player who does not own the PC cannot improve its result", async () => {
+      const card = await rollWeakHit();
+      table.client("pl-2").click(card._id, '[data-action="sf-improve-result"]');
+      await table.settle();
+      expect(flagsOf(card._id).improve.consumed).toBe(false);
+    });
   });
 });

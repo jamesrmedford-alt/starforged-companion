@@ -6,9 +6,15 @@
  * local execution on the canonical GM, socket relay from a player, the
  * no-GM warning, the listener's stand-down / unknown-kind paths, and the
  * wiring contract — every declared action resolves to a real handler export.
+ *
+ * The cross-client behaviour — a player's relay reaching exactly one GM, the
+ * GM-ready broadcast, a relay sent while the GM's client is still loading,
+ * the X-Card played by a player — runs on the multi-client harness
+ * (tests/helpers/multiClient.js, issue #282) at the end of this file: real
+ * sockets between booted clients instead of a hand-fed listener.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import {
   GM_ACTIONS,
   GM_RELAY_SOCKET,
@@ -25,6 +31,8 @@ import {
 } from '../../src/multiplayer/gmRelay.js';
 import * as safety from '../../src/context/safety.js';
 import * as sessionDialogs from '../../src/safety/sessionDialogs.js';
+import { simulateTable, USERS } from '../helpers/multiClient.js';
+import { CampaignStateSchema } from '../../src/schemas.js';
 
 function setUsers(users, currentUserId) {
   global.game.users = Object.assign([...users], {
@@ -132,25 +140,6 @@ describe('registerGmRelaySocket', () => {
     registerGmRelaySocket();
     registerGmRelaySocket();
     expect(game.socket._handlers.get(GM_RELAY_SOCKET)).toHaveLength(1);
-  });
-
-  it('runs a relayed action on the canonical GM', async () => {
-    setUsers([GM, PLAYER], 'gm-1');
-    const spy = vi.spyOn(safety, 'suppressScene').mockResolvedValue(undefined);
-    registerGmRelaySocket();
-    await handler()({ kind: `${GM_RELAY_KIND_PREFIX}xcard.activate`, payload: {}, requesterId: 'pl-1' });
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][1]).toMatchObject({ requesterId: 'pl-1', requesterIsGM: false, local: false });
-    spy.mockRestore();
-  });
-
-  it('stands down on a non-canonical client', async () => {
-    setUsers([GM, PLAYER], 'pl-1');
-    const spy = vi.spyOn(safety, 'suppressScene').mockResolvedValue(undefined);
-    registerGmRelaySocket();
-    await handler()({ kind: `${GM_RELAY_KIND_PREFIX}xcard.activate`, payload: {}, requesterId: 'pl-1' });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
   });
 
   it('ignores other module relays sharing the channel', async () => {
@@ -338,14 +327,6 @@ describe('announceGmRelayReady / onGmRelayReady', () => {
     expect(game.socket._emitted).toEqual([{ event: GM_RELAY_SOCKET, payload: { kind: GM_RELAY_READY_KIND } }]);
   });
 
-  it('a player or non-canonical GM does not broadcast', () => {
-    setUsers([GM, { id: 'gm-2', isGM: true, active: true }, PLAYER], 'pl-1');
-    expect(announceGmRelayReady()).toBe(false);
-    setUsers([GM, { id: 'gm-2', isGM: true, active: true }, PLAYER], 'gm-2');
-    expect(announceGmRelayReady()).toBe(false);
-    expect(game.socket._emitted ?? []).toHaveLength(0);
-  });
-
   it('runs every registered callback on a player client, through one listener', () => {
     setUsers([GM, PLAYER], 'pl-1');
     const a = vi.fn(), b = vi.fn();
@@ -383,5 +364,157 @@ describe('announceGmRelayReady / onGmRelayReady', () => {
 
   it('rejects a non-function callback', () => {
     expect(() => onGmRelayReady('nope')).toThrow(TypeError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Across a table — the multi-client harness (issue #282)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('across a booted table', () => {
+  const MODULE_ID = 'starforged-companion';
+  let table;
+
+  beforeAll(async () => {
+    table = await simulateTable({ users: [USERS.GM, USERS.GM2, USERS.P1, USERS.P2] });
+  }, 30_000);
+  afterAll(() => table?.teardown());
+  beforeEach(() => table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema } } } }));
+
+  /** requestGmAction on a client's own copy of gmRelay.js. */
+  async function request(userId, kind, payload) {
+    const c = table.client(userId);
+    const relay = await c.import('../../src/multiplayer/gmRelay.js');
+    const res = await c.run(() => relay.requestGmAction(kind, payload));
+    await table.settle();
+    return res;
+  }
+
+  /** Which client wrote campaignState (the updateSetting hook's userId). */
+  function campaignStateWriters() {
+    const writers = [];
+    table.client('pl-2').listen('updateSetting', (setting, _changes, _options, userId) => {
+      if (setting.key === `${MODULE_ID}.campaignState`) writers.push(userId);
+    });
+    return writers;
+  }
+
+  it('a player\'s relay runs once — on the canonical GM, credited to the requester', async () => {
+    const writers = campaignStateWriters();
+    const res = await request('pl-1', 'safety.setFlag', { text: 'spiders', visibility: 'public' });
+    expect(res).toEqual({ ok: true, relayed: true });
+    expect(table.world.campaignState().safetyFlags).toMatchObject([{ text: 'spiders', createdBy: 'Pat' }]);
+    expect(writers).toEqual(['gm-1']);   // the second GM stood down
+    expect(table.socketLog.filter(e => e.payload?.kind === 'gmRelay.safety.setFlag').map(e => e.from)).toEqual(['pl-1']);
+  });
+
+  it('the keyed second GM is canonical when the lowest-id GM is keyless — the relay runs there', async () => {
+    await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema }, keyedGmUserIds: ['gm-2'] } } });
+    const writers = campaignStateWriters();
+    await request('pl-1', 'session.takeBreak', {});
+    expect(table.world.campaignState().nextMoveAdd).toMatchObject({ value: 1, source: 'take_a_break' });
+    expect(writers).toEqual(['gm-2']);
+  });
+
+  it('on the canonical GM the action runs locally — no socket round trip', async () => {
+    const res = await request('gm-1', 'safety.setFlag', { text: 'heights' });
+    expect(res).toMatchObject({ ok: true, relayed: false });
+    expect(table.socketLog.filter(e => e.payload?.kind?.startsWith('gmRelay.safety'))).toEqual([]);
+    expect(table.world.campaignState().safetyFlags[0]).toMatchObject({ text: 'heights', createdBy: 'Gina' });
+  });
+
+  it('with no GM connected the requester is warned, gets no-gm, and nothing is written', async () => {
+    silenceConsoleErrors();
+    await table.leave('gm-1');
+    await table.leave('gm-2');
+    const res = await request('pl-1', 'safety.setFlag', { text: 'spiders' });
+    expect(res).toEqual({ ok: false, reason: 'no-gm' });
+    expect(table.client('pl-1').notifications.some(n => n.level === 'warn' && /no GM is connected/.test(n.message))).toBe(true);
+    expect(table.world.campaignState().safetyFlags).toBeUndefined();
+  });
+
+  it('only the canonical GM announces its relay is ready', () => {
+    // Boot traffic was cleared by reset(); boot again is not possible, so read
+    // the announcement off a fresh broadcast from each GM client's own copy.
+    return Promise.all(['gm-1', 'gm-2', 'pl-1'].map(async (id) => {
+      const c = table.client(id);
+      const relay = await c.import('../../src/multiplayer/gmRelay.js');
+      return [id, c.run(() => relay.announceGmRelayReady())];
+    })).then(results => {
+      expect(Object.fromEntries(results)).toEqual({ 'gm-1': true, 'gm-2': false, 'pl-1': false });
+      expect(table.socketLog.filter(e => e.payload?.kind === GM_RELAY_READY_KIND).map(e => e.from)).toEqual(['gm-1']);
+    });
+  });
+
+  // RELAY-LOAD-WINDOW: a player's Private Lines relayed while the GM's client
+  // was still loading reached no listener and were lost. Players now answer
+  // the canonical GM's relay-ready broadcast (onGmRelayReady), a pull.
+  it('players\' Private Lines reach campaignState when the GM joins after them', async () => {
+    const late = await simulateTable({
+      users: [{ ...USERS.GM, active: false }, USERS.P1, USERS.P2],
+      clientSettings: { 'pl-1': { privateLines: ['spiders'] }, 'pl-2': { privateLines: ['drowning'] } },
+    });
+    try {
+      expect(late.world.campaignState()).toBeUndefined();   // nobody could write it yet
+      await late.join('gm-1');
+      await late.settle();
+      const lines = late.world.campaignState().safety.privateLines;
+      expect(lines).toEqual(expect.arrayContaining([
+        { playerId: 'pl-1', lines: ['spiders'] },
+        { playerId: 'pl-2', lines: ['drowning'] },
+      ]));
+      expect(lines).toHaveLength(2);
+    } finally {
+      await late.teardown();
+    }
+  }, 30_000);
+
+  // XCARD-PLAYER-NOOP: a player's X-Card wrote campaignState on their own
+  // client, which Foundry refuses — the card claimed a pause that never
+  // happened. Now: relayed to the canonical GM; only a GM resumes.
+  describe('the X-Card', () => {
+    const xcardCards = () => table.cards(f => f.xcardCard);
+
+    it('a player plays it: the pause is recorded on the GM and one card says so', async () => {
+      await table.client('pl-1').chat('!x');
+      await table.settle();
+      expect(table.world.messages().filter(m => m.content === '!x')).toEqual([]);   // intercepted before creation
+      expect(table.world.campaignState().xCardActive).toBe(true);
+      expect(xcardCards().map(c => [c.author, c.flags[MODULE_ID].xcardRecorded])).toEqual([['pl-1', true]]);
+    });
+
+    it('the resume button is the GM\'s alone — a GM click resumes and resolves the card everywhere', async () => {
+      await table.client('pl-2').chat('!x');
+      await table.settle();
+      const card = xcardCards()[0];
+      expect(table.client('pl-2').render(card._id).querySelector('[data-action="sf-xcard-resume"]')).toBeNull();
+      expect(table.client('gm-2').render(card._id).querySelector('[data-action="sf-xcard-resume"]')).not.toBeNull();
+
+      table.client('gm-1').click(card._id, '[data-action="sf-xcard-resume"]');
+      await table.settle();
+      expect(table.world.campaignState().xCardActive).toBe(false);
+      for (const c of table.clients) expect(c.message(card._id).flags[MODULE_ID].xcardResolved, c.id).toBe(true);
+      expect(table.cards(f => f.xcardClearedCard).map(c => c.author)).toEqual(['gm-1']);
+    });
+
+    it('a player\'s "!x clear" is refused — the pause holds', async () => {
+      await table.client('pl-1').chat('!x');
+      await table.settle();
+      await table.client('pl-2').chat('!x clear');
+      await table.settle();
+      expect(table.world.campaignState().xCardActive).toBe(true);
+      expect(table.client('pl-2').notifications.some(n => /Only a GM can clear the X-Card/.test(n.message))).toBe(true);
+    });
+
+    it('with no GM connected the card says the pause could not be recorded', async () => {
+      silenceConsoleErrors();
+      await table.leave('gm-1');
+      await table.leave('gm-2');
+      await table.client('pl-1').chat('!x');
+      await table.settle();
+      expect(table.world.campaignState().xCardActive).toBeFalsy();
+      expect(xcardCards().map(c => c.flags[MODULE_ID].xcardRecorded)).toEqual([false]);
+      expect(xcardCards()[0].content).toMatch(/could not be recorded — no GM is connected/);
+    });
   });
 });

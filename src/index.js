@@ -591,15 +591,19 @@ export function isNewSessionStart(campaignState, gapHours) {
  *                       GM-only writes are then skipped (debug-logged).
  *                   Every client reads the same world setting and user list, so
  *                   all agree on the runner and the command runs exactly once.
+ *
+ * RUN_ON and CHAT_COMMAND_ROUTES are exported for the routing matrix
+ * (tests/unit/multiplayerRouting.test.js), which runs every route under every
+ * table shape on the multi-client harness.
  */
-const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm", CLAUDE: "claude" });
+export const RUN_ON = Object.freeze({ AUTHOR: "author", CANONICAL_GM: "canonical-gm", CLAUDE: "claude" });
 
 /**
  * Ordered command routes — first match wins, exactly the order the old
  * if-chain checked predicates in (some predicates overlap textually).
  * `run` receives the ChatMessage.
  */
-const CHAT_COMMAND_ROUTES = [
+export const CHAT_COMMAND_ROUTES = [
   { name: "@scene",            match: isSceneQuery,              runOn: RUN_ON.CLAUDE,       run: handleSceneQueryCommand },
   { name: "!sector",           match: isSectorCommand,           runOn: RUN_ON.AUTHOR,       run: handleSectorCommand },
   { name: "!x",                match: isXCardCommand,            runOn: RUN_ON.CANONICAL_GM, run: handleXCardCommand },
