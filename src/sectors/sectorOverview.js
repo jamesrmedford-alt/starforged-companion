@@ -31,6 +31,8 @@
  * Design rationale: see issue #228 (Entity → Actor Migration) §3.6.
  */
 
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+
 const MODULE_ID = "starforged-companion";
 const RERENDER_DEBOUNCE_MS = 500;
 
@@ -215,6 +217,9 @@ export function registerSectorOverviewSync() {
     try {
       if (!actor || actor.type !== "location") return;
       if (!diffTouchesOverview(changes)) return;
+      // updateActor fires on every connected client; the overview page is a
+      // shared document, so one client rewrites it — the canonical GM.
+      if (!isCanonicalGM()) return;
       const sectorId = actorSectorId(actor);
       if (sectorId) scheduleRewrite(sectorId);
     } catch (err) {

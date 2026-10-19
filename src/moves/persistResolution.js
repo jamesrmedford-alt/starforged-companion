@@ -135,7 +135,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       pendingMove                 the concurrency lock, claimed and released on the store
 //       activeSectorId              `!sector`
 //       incitingIncident            session/incitingIncident.js
-//       worldTruths, worldTruthsSet, worldTruthsJournalId, worldTruthsPageId   truths flows
+//       worldTruths, worldTruthsSet, worldTruthsJournalId   truths flows
 //
 //   ENTITY_ID_LISTS — both sides append (the narrator's auto-created
 //     connections land on the working copy; a GM confirming an entity draft
@@ -181,7 +181,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'worldTruths',
   'worldTruthsSet',
   'worldTruthsJournalId',
-  'worldTruthsPageId',
 ]);
 
 const ENTITY_ID_LISTS = Object.freeze([
@@ -190,13 +189,10 @@ const ENTITY_ID_LISTS = Object.freeze([
   'settlementIds',
   'locationIds',
   'creatureIds',
-  'clockIds',
-  'oracleResultIds',
   'shipIds',
   'planetIds',
   'factionIds',
   'artAssetIds',
-  'progressTrackIds',
 ]);
 
 /**

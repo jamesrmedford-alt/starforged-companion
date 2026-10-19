@@ -341,10 +341,6 @@ export const ConnectionSchema = {
  * v13 note: registered via game.settings.register() in src/index.js on the "init" hook.
  */
 export const CampaignStateSchema = {
-  _id: "",
-  title: "",
-  version: "0.1.0",             // Module version that created this record
-
   // All 14 World Truths with full roll provenance
   // Sub-rolls are null for categories without sub-tables
   worldTruths: {
@@ -403,8 +399,6 @@ export const CampaignStateSchema = {
   settlementIds:    [],
   locationIds:      [],         // JournalEntry IDs for location records
   creatureIds:      [],         // JournalEntry IDs for creature records
-  clockIds:         [],
-  oracleResultIds:  [],         // Recent results for context injection
 
   // Current scene location — set via !at command. Populates the current
   // location card in narrator context.
@@ -429,7 +423,8 @@ export const CampaignStateSchema = {
   // would race on campaignState writes. Cleared on ready if left stuck.
   pendingMove: false,
 
-  // Claude API configuration
+  // Claude API configuration — read by the move interpreter (which falls back
+  // to its own constants); nothing writes it, so it stays at these defaults.
   api: {
     // Primary model for move interpretation and oracle calls
     model: "claude-haiku-4-5-20251001",
@@ -439,37 +434,16 @@ export const CampaignStateSchema = {
     fallbackModel: "claude-sonnet-4-6",
   },
 
-  // Art generation — external API only
-  art: {
-    // "openrouter" (the only image provider — src/art/openRouterImage.js)
-    // null until first generation records a value
-    backend: null,
-    // API key stored in Foundry's client settings (not here — never serialise credentials)
-    enabled: false,
-  },
-
-  // Speech input (push-to-talk via Web Speech API)
-  // Supported in Chromium-based browsers. Firefox support inconsistent.
-  speechInput: {
-    enabled: false,
-    // Auto-inject transcription directly to chat on recognition end — no review step.
-    // Chat input remains available as fallback for corrections.
-    autoInject: true,
-    language: "en-US",          // BCP 47 language tag passed to Web Speech API
-  },
-
   // World Truths state
   worldTruthsSet:       false,  // true once truths established via any method
   // Foundry document references
   // v13 note: world truths journal uses JournalEntryPage documents inside a parent JournalEntry
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
-  worldTruthsPageId: null,      // JournalEntryPage Foundry ID
   loreRecap:          "",       // last generated lore recap text (for context injection)
 
   currentSessionId:     "",    // managed by initSessionId() on ready hook
   sessionNumber:        0,     // increments each new session
   lastSessionTimestamp: null,  // ISO string, updated on ready and closeWorld
-  sessionCount:         0,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin
@@ -532,9 +506,6 @@ export const CampaignStateSchema = {
   // capture hook (src/index.js) via src/oracles/oracleMemory.js; capped at
   // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at }.
   recentOracles:  [],
-
-  createdAt: null,
-  updatedAt: null,
 };
 
 

@@ -13,7 +13,7 @@ import {
   loadCurrentSessionTranscript,
   _resetBuffers,
 } from "../../src/private-channel/transcript.js";
-import { getActiveCharacter, getRecentNarrationContext } from "../../src/narration/narrator.js";
+import { getActiveCharacter, getRecentNarrationContext, currentLocationName } from "../../src/narration/narrator.js";
 import { buildPrivateContext } from "../../src/private-channel/context.js";
 import { publishToMainChat } from "../../src/private-channel/publish.js";
 import { requestPrivateNarration } from "../../src/private-channel/narrate.js";
@@ -34,6 +34,7 @@ vi.mock("../../src/system/campaignTruths.js", () => ({
 vi.mock("../../src/narration/narrator.js", () => ({
   getActiveCharacter:        vi.fn(),
   getRecentNarrationContext: vi.fn(() => ""),
+  currentLocationName:       vi.fn(() => null),
 }));
 vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 
@@ -306,6 +307,19 @@ describe("buildPrivateContext", () => {
     // The volatile content must NOT be inside the cached prefix.
     expect(system).not.toContain("CURRENT SCENE CONTEXT");
     expect(cacheBreakpoint).toBe(system.length);
+  });
+
+  it("names the current location in the scene context — resolved from !at's currentLocationId", async () => {
+    currentLocationName.mockReturnValueOnce("Bleakhold");
+    const campaignState = { currentSessionId: "s1", currentLocationId: "act-1", currentLocationType: "settlement" };
+    const { user } = await buildPrivateContext({ campaignState, userId: "u1", playerMessage: "where?" });
+    expect(currentLocationName).toHaveBeenCalledWith(campaignState);
+    expect(user).toContain("Location: Bleakhold");
+  });
+
+  it("omits the location line when no current location resolves", async () => {
+    const { user } = await buildPrivateContext({ campaignState: { currentSessionId: "s1" }, userId: "u1", playerMessage: "x" });
+    expect(user).not.toContain("Location:");
   });
 
   it("omits the transcript block when there are no prior turns", async () => {

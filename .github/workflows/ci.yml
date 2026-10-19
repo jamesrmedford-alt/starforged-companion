@@ -40,6 +40,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Reachability gate (issue #282 item 5): fails on any DEAD export or
+      # setting — a producer with no consumer (rules/reachability.md). The
+      # campaignState field and hook-gate invariants run inside the unit
+      # suite (tests/unit/campaignStateFields.test.js, hookGates.test.js).
+      - name: Reachability scan (deadscan --strict)
+        run: node scripts/deadscan.mjs --strict
+
       - name: Unit tests with coverage
         run: npm run test:coverage
         # Coverage thresholds enforced in vitest.config.js:

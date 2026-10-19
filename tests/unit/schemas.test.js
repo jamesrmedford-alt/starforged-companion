@@ -208,10 +208,15 @@ describe("CampaignStateSchema entity-discovery additions", () => {
     expect(CampaignStateSchema.connectionFocus).toBe("");
   });
 
-  it("no longer carries the dead fields removed in the 2026-10 audit", () => {
+  it("no longer carries the dead fields removed in the 2026-10 audit and by issue #282", () => {
     // No live writer or reader: re-adding one without wiring it is a
-    // produced-but-dead regression (rules/reachability.md).
-    for (const field of ["progressTrackIds", "loreRecapSessionId", "pendingClarification"]) {
+    // produced-but-dead regression (rules/reachability.md). The general check
+    // is tests/unit/campaignStateFields.test.js.
+    for (const field of [
+      "progressTrackIds", "loreRecapSessionId", "pendingClarification",
+      "_id", "title", "version", "art", "speechInput", "sessionCount",
+      "clockIds", "oracleResultIds", "worldTruthsPageId", "createdAt", "updatedAt",
+    ]) {
       expect(CampaignStateSchema, field).not.toHaveProperty(field);
     }
   });

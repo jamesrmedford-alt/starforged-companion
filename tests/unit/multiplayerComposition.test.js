@@ -161,6 +161,31 @@ describe('what a player establishes reaches the GM\'s next move narration', () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Into a player's Private Channel
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the GM\'s !at → a player\'s Private Channel scene context', () => {
+  it('names the location the GM set — the Private Channel used to read fields nothing writes', async () => {
+    const gm = table.client('gm-1');
+    const { createSettlement } = await gm.import('../../src/entities/settlement.js');
+    await gm.run(async () => {
+      const cs = game.settings.get(MODULE_ID, 'campaignState');
+      await createSettlement({ name: 'Bleakhold' }, cs);
+      await game.settings.set(MODULE_ID, 'campaignState', cs);
+    });
+    await type('gm-1', '!at Bleakhold');
+    expect(world().currentLocationType).toBe('settlement');
+
+    const player = table.client('pl-1');
+    const { buildPrivateContext } = await player.import('../../src/private-channel/context.js');
+    const { user } = await player.run(() => buildPrivateContext({
+      campaignState: game.settings.get(MODULE_ID, 'campaignState'), userId: 'pl-1', playerMessage: 'Where are we, exactly?',
+    }));
+    expect(user).toMatch(/## CURRENT SCENE CONTEXT\nLocation: Bleakhold\n/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Into the GM's move pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -542,7 +542,6 @@ function readState() {
 }
 
 async function writeState(state) {
-  state.updatedAt = new Date().toISOString();
   await game.settings.set(MODULE_ID, "campaignState", state);
 }
 
