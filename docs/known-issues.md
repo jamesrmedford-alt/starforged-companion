@@ -46,12 +46,13 @@ Items 5–7 (approved 2026-10-19):
   GM and a player browser after Quench (`rules/ci-e2e.md` → "Second
   client").
 
-The two new checks' first run found:
+The two new checks' first run found the first three of these; the panel copy was found while verifying the Private Lines E2E scenario:
 
 | Code | Class | Finding | Fix |
 |---|---|---|---|
 | SECTOR-OVERVIEW-EVERY-CLIENT | DUPLICATE-EMIT | `registerSectorOverviewSync`'s `updateActor` handler rewrote the sector-record overview page on every connected client. A player's client had its update refused; two GMs both wrote | Gated on `isCanonicalGM()` |
 | PRIVCHAN-LOCATION-DEAD | PRODUCED-BUT-DEAD | The Private Channel's scene context read `campaignState.currentLocationName ?? currentLocation.name`, which nothing writes. `!at` writes `currentLocationId` / `currentLocationType`, so the "Location:" line never appeared | Resolved through the narrator's `currentLocationName` (the same lookup as the location card). A harness test runs the GM's `!at`, then the player's Private Channel context |
+| PRIVATE-LINES-PANEL-COPY | SAFETY | The Companion Settings panel told players their Private Lines were "Stored on this client. Never shared with GM or other players." That has been untrue since SAFETY-PRIVATE-LINES-PLAYER / -SHARED: the lines are relayed to the canonical GM and stored in `campaignState` (decisions.md → "Private Lines in shared narration"). The copy misstated where a safety tool's data goes. The help journal's Settings Reference and `lang/en.json` carried the same claim | The panel, `lang/en.json` and the Settings Reference now say the lines go to the GM's client so all narration respects them, are not shown to other players, and are never mentioned by the narrator |
 | CAMPAIGNSTATE-DEAD-FIELDS | DEAD-CODE | Eleven `CampaignStateSchema` fields nothing read or wrote: `_id`, `title`, `version`, `art`, `speechInput`, `sessionCount`, `clockIds`, `oracleResultIds`, `worldTruthsPageId`, `createdAt`, `updatedAt`. `updatedAt` was written only by a `clocks.js` stamp. `persistResolution`'s merge lists still named four dead fields, including `progressTrackIds` | Removed |
 
 Open follow-ups:
@@ -66,12 +67,6 @@ Open follow-ups:
   wiring still live in `src/index.js`. Both lean on many index-local helpers.
   Measuring `index.js` already counts them toward the floor; moving them into
   modules would let them carry a bar of their own.
-- **PRIVATE-LINES-PANEL-COPY.** The Companion Settings panel tells players
-  their Private Lines are "Stored on this client. Never shared with GM or
-  other players." That has been untrue since SAFETY-PRIVATE-LINES-PLAYER /
-  -SHARED. The lines are relayed to the canonical GM and stored in
-  `campaignState` (decisions.md → "Private Lines in shared narration"). The
-  copy misstates where a safety tool's data goes.
 
 ### 2026-10 repo audit — all fixed in the v1.7.31 cycle
 

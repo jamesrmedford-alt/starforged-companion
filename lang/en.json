@@ -157,8 +157,8 @@
           "Placeholder": "Children as plot-significant characters…"
         },
         "PrivateLines": {
-          "Label": "Private Lines — Visible only to you",
-          "Description": "Stored on this client. Never shared with GM or other players.",
+          "Label": "Private Lines — Your personal hard limits",
+          "Description": "Sent to the GM's client so every narration respects them. Not shown to other players, and the narrator never mentions them.",
           "Placeholder": "My personal hard limit…"
         },
         "EmptyList": "None set.",

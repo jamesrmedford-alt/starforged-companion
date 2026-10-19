@@ -1095,8 +1095,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         ${renderList(
           ctx.privateLines, 'removePrivateLine', 'addPrivateLine', 'newPrivateLine',
           'My personal hard limit…',
-          'Private Lines — Visible only to you',
-          'Stored on this client. Never shared with GM or other players.',
+          'Private Lines — Your personal hard limits',
+          "Sent to the GM's client so every narration respects them. Not shown to other players, and the narrator never mentions them.",
         )}
         <div class="safety-xcard-note">
           <strong>X-Card:</strong> Type <code>!x</code> in chat at any time to immediately suppress the current scene.
