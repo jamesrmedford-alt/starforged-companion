@@ -31,3 +31,23 @@ services:
       # Surface Foundry's container hostname so the spec can wait on it
       # explicitly if needed.
       FOUNDRY_HOSTNAME: starforged-ci-host
+
+  # Second-client suite (issue #282 item 6): a GM and a player in two real
+  # browsers against the world the Cypress run left live. Quench runs as a
+  # single GM, so this is the only check against real Foundry permissions and
+  # socket delivery. The image ships the browsers; `npm ci` installs the
+  # matching playwright package (keep playwright/package.json in step with
+  # this tag).
+  players:
+    image: mcr.microsoft.com/playwright:v1.56.1-noble
+    profiles: ["e2e"]
+    depends_on:
+      - foundry
+    working_dir: /pw
+    entrypoint: ["bash", "-c"]
+    command: ["npm ci --no-audit --no-fund --loglevel=error && node multiplayer.mjs"]
+    volumes:
+      - ./playwright:/pw
+    environment:
+      BASE_URL: http://foundry:30000
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"

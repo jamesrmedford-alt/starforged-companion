@@ -1,0 +1,12 @@
+{
+  "name": "starforged-companion-e2e-multiplayer",
+  "private": true,
+  "description": "Second-client E2E (issue #282): a GM and a player in real browsers. Runs in mcr.microsoft.com/playwright:v1.56.1-noble — keep the playwright version in step with that image tag.",
+  "type": "module",
+  "scripts": {
+    "start": "node multiplayer.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

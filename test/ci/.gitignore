@@ -8,3 +8,8 @@ data/
 
 # Cypress artifacts — screenshots / videos from failed e2e runs.
 cypress/artifacts/
+
+# Second-client suite: its npm install (inside the Playwright container) and
+# its failure screenshots.
+playwright/node_modules/
+playwright/artifacts/
