@@ -7,6 +7,8 @@ All notable changes to Starforged Companion are documented here.
 ## [Unreleased]
 
 - Fixed: **`!recap session` notes a match.** The session recap has a line for a match rolled during the session, but it never appeared: narrator cards didn't record the match.
+- Fixed: **The Private Channel knows where you are.** Its scene context names the location the GM set with `!at`. It used to read a field nothing wrote, so the location never appeared.
+- Fixed: **Renaming a settlement updates its sector overview once.** Every connected browser used to rewrite the overview journal page: players' attempts were refused, and with two GMs it was written twice. Now only the GM's client does it.
 - Internal: multiplayer test infrastructure (issue #282, items 1–4).
   - The unit-test Foundry stubs now enforce Foundry's permissions: world settings are GM-only, chat messages can be edited by their author or a GM, and actor updates need OWNER.
   - A simulated multi-client table (`tests/helpers/multiClient.js`) boots the module once per client over a shared world.
@@ -14,6 +16,11 @@ All notable changes to Starforged Companion are documented here.
   - Concurrency tests cover writes relayed while a move resolves and the GM relay queue (serialisation and timeout release).
   - Composition tests run each feature's real producer on one client and check what another client reads.
   - With the 2026-10 audit's fixes reverted, these tests fail on the player X-Card, per-client `!oracle`, Burn double-apply and stale-snapshot bugs.
+- Internal: issue #282, items 5–7.
+  - CI runs the reachability scan (`deadscan --strict`).
+  - Two new tests: every campaign-state field must have a writer and a reader, and every document-hook handler must run its shared writes on one client. Their first run removed eleven dead campaign-state fields and found the two fixes above.
+  - A second-client end-to-end suite runs a GM and a player in real browsers after the Quench run: the X-Card, `!oracle`, Begin a Session, Burn Momentum and Private Lines.
+  - `src/index.js` is now measured for coverage. The chat-command routing policy moved to its own module, held to the core coverage bar.
 
 ## [1.7.33] — 2026-10-18
 

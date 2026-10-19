@@ -282,7 +282,27 @@ consumer. It reports:
 - **UNREACHABLE modules** — no static or literal dynamic import path from a
   production entry point (`module.json` `esmodules`, minus the Quench entry).
 
-`--strict` exits 1 on any DEAD export or setting. Known blind spot: a *live*
+`--strict` exits 1 on any DEAD export or setting, and CI runs it that way
+after lint (issue #282 item 5). Two unit tests sweep for what the scan can't
+see:
+
+- `tests/unit/campaignStateFields.test.js`: every campaignState field (the
+  schema keys, plus every field seen on a name that only holds campaignState)
+  has a writer **and** a reader in `src/`, and the merge-policy field lists
+  name only live fields. A schema default is not a producer. This is the
+  2026-10 audit's one-off grep (`progressTrackIds`, `pendingClarification`,
+  the End-Session foci) made permanent. Its first run removed eleven dead
+  schema fields, re-pointed the Private Channel's location line at the field
+  `!at` actually writes, and marked `canonicalTruthSlugs` UNWIRED.
+- `tests/unit/hookGates.test.js`: every `create*` / `update*` / `delete*`
+  document hook handler (these fire on every client) carries an
+  `isCanonicalGM()` or author check, in its body or a same-file helper it
+  calls. Handlers that only re-render or mirror into their own client are
+  listed as local-only, with the reason, and may contain no shared write.
+  Its first run gated the sector-overview rewrite, which ran on every
+  client.
+
+Known blind spot: a *live*
 same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid
 behind the truths module's live `formatForContext`), and the scan cannot see
 dead internal functions, dead campaignState fields or a GM-gated write a
@@ -313,6 +333,9 @@ suite the means to look — use them:
 - A stale-snapshot write (§9) is tested by holding the pipeline on a
   deferred promise while relayed writes land, then releasing it
   (`multiplayerConcurrency.test.js`).
+- Real Foundry permissions and socket delivery are checked by the
+  second-client E2E suite (`test/ci/playwright/multiplayer.mjs`, run by
+  `e2e.sh` after Quench): a GM and a player in two real browsers.
 
 A **flow
 trace** — following a value from source until it reaches a sink (or dangles),

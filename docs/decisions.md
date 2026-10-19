@@ -31,8 +31,9 @@ infrastructure"). Without the permission stubs, the reverted X-Card passes.
   GM-gated write would pass by accident. The checks are on;
   `withoutPermissionChecks(fn)` is only for seeding fixtures.
 - *A second browser in E2E as the only multi-client coverage.* It is slow
-  and runs only in CI. A second-client E2E run is still issue item 6,
-  deferred until approved.
+  and runs only in CI. It is the complement instead: the second-client
+  suite (`test/ci/playwright/multiplayer.mjs`, issue item 6) checks five
+  scenarios against real Foundry permissions and sockets after Quench.
 - *Mocking module boundaries per client.* `vi.mock` factories run once per
   file and are shared by every client. Instead, each client gets its own
   module graph (vitest's module cache, routed per client through
@@ -522,6 +523,17 @@ reachability rules, the flow docs, and Quench/e2e.
 **Recalibration protocol:** when real coverage rises, raise the floor toward
 it (keep ~2 pts of headroom) in a dedicated commit. Never lower a threshold to
 make a feature land — that is the regression the gate exists to catch.
+
+**Amended 2026-10 (issue #282 item 7):** `src/index.js` is no longer
+excluded. The multi-client harness boots it on every simulated client, so its
+coverage is now real execution (62% lines at inclusion), not import-only
+inflation. It counts toward the floor with no per-file bar; including it
+moved the totals from 86.8 / 73.9 / 85.8 to 84.1 / 73.0 / 83.2, still far
+above the floor. Logic that deserves a bar moves out of `index.js` into a
+module: the chat-command run-on policy now lives in
+`src/multiplayer/commandRouting.js`, at 100% and on the core bar. The move
+pipeline and the chat-card button wiring are the next candidates. `src/ui/**`
+stays excluded: the harness renders chat cards, not ApplicationV2 panels.
 
 ## Location background art never shipped its consumer — surface removed (2026-07-07)
 

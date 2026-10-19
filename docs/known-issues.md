@@ -33,9 +33,45 @@ consumer:
 `schemas.js`; every reader falls back). The new harness suites no longer seed
 it.
 
-Items 5–7 of the issue are deferred until approved: `deadscan --strict` and
-static invariant checks in CI, a second-client E2E run, and `src/index.js`
-coverage (`vitest.config.js`).
+Items 5–7 (approved 2026-10-19):
+
+- **Static checks (item 5).** CI runs `deadscan --strict`.
+  `tests/unit/campaignStateFields.test.js` requires a writer and a reader
+  for every campaignState field. `tests/unit/hookGates.test.js` requires an
+  author or canonical-GM gate on every document-hook handler.
+- **Coverage (item 7).** `src/index.js` is measured (62% lines). The
+  chat-command run-on policy moved to `src/multiplayer/commandRouting.js`,
+  which is on the core bar.
+- **Second-client E2E (item 6).** `test/ci/playwright/multiplayer.mjs` runs a
+  GM and a player browser after Quench (`rules/ci-e2e.md` → "Second
+  client").
+
+The two new checks' first run found:
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| SECTOR-OVERVIEW-EVERY-CLIENT | DUPLICATE-EMIT | `registerSectorOverviewSync`'s `updateActor` handler rewrote the sector-record overview page on every connected client. A player's client had its update refused; two GMs both wrote | Gated on `isCanonicalGM()` |
+| PRIVCHAN-LOCATION-DEAD | PRODUCED-BUT-DEAD | The Private Channel's scene context read `campaignState.currentLocationName ?? currentLocation.name`, which nothing writes. `!at` writes `currentLocationId` / `currentLocationType`, so the "Location:" line never appeared | Resolved through the narrator's `currentLocationName` (the same lookup as the location card). A harness test runs the GM's `!at`, then the player's Private Channel context |
+| CAMPAIGNSTATE-DEAD-FIELDS | DEAD-CODE | Eleven `CampaignStateSchema` fields nothing read or wrote: `_id`, `title`, `version`, `art`, `speechInput`, `sessionCount`, `clockIds`, `oracleResultIds`, `worldTruthsPageId`, `createdAt`, `updatedAt`. `updatedAt` was written only by a `clocks.js` stamp. `persistResolution`'s merge lists still named four dead fields, including `progressTrackIds` | Removed |
+
+Open follow-ups:
+
+- **CAMPAIGN-TRUTHS-UNWIRED.** `buildCampaignTruthsBlock` (narrator and
+  Private Channel) reads `campaignState.canonicalTruthSlugs`, but nothing
+  writes it: no UI selects canonical truth slugs. So the `<campaign_truths>`
+  block never renders. It is marked `UNWIRED`. Wire a selection UI or retire
+  the block.
+- **INDEX-EXTRACTION** (the rest of item 7). The move pipeline (the inline
+  `createChatMessage` handler, about 1,000 lines) and the chat-card button
+  wiring still live in `src/index.js`. Both lean on many index-local helpers.
+  Measuring `index.js` already counts them toward the floor; moving them into
+  modules would let them carry a bar of their own.
+- **PRIVATE-LINES-PANEL-COPY.** The Companion Settings panel tells players
+  their Private Lines are "Stored on this client. Never shared with GM or
+  other players." That has been untrue since SAFETY-PRIVATE-LINES-PLAYER /
+  -SHARED. The lines are relayed to the canonical GM and stored in
+  `campaignState` (decisions.md → "Private Lines in shared narration"). The
+  copy misstates where a safety tool's data goes.
 
 ### 2026-10 repo audit — all fixed in the v1.7.31 cycle
 
