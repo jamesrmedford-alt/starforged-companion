@@ -614,6 +614,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         sessionNumber:    campaignState?.sessionNumber     ?? null,
         moveId:           resolution?.moveId               ?? null,
         outcome:          resolution?.outcome              ?? null,
+        // Read by postSessionRecap's "A match was rolled" line, which had no
+        // producer until the 2026-10 test-infrastructure audit (#282).
+        isMatch:          resolution?.isMatch === true,
         resolutionId:     resolution?._id                  ?? '',
         matchedEntityIds,
         timestamp:        new Date().toISOString(),
