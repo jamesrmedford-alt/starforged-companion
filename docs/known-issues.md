@@ -11,6 +11,32 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Multiplayer test infrastructure (issue #282) — fixed in the v1.7.34 cycle
+
+Issue #282 gave the unit suite the means to see the 2026-10 audit's bug
+classes: permission-faithful stubs (`tests/setup.js`,
+`tests/helpers/foundryPermissions.js`), a multi-client table harness
+(`tests/helpers/multiClient.js`), concurrency tests of the move pipeline and
+the GM relay queue, and producer → consumer composition tests
+(`rules/reachability.md` §3 and "The through-line"). With each fix reverted
+locally, the harness fails on XCARD-PLAYER-NOOP (7 tests), CMD-PER-CLIENT
+(one `!oracle` card per client — four), BURN-IMPROVE-DOUBLE (4) and
+STALE-SNAPSHOT-CLOBBER (3). Without the permission stubs, the reverted X-Card
+passes. Re-pointing hand-set fixtures at their real producers found one dead
+consumer:
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| RECAP-MATCH-DEAD | PRODUCED-BUT-DEAD | `!recap session`'s "A match was rolled" line read an `isMatch` flag on narrator cards that `postNarrationCard` never wrote, so the line never appeared. Its unit test hand-set the flag | `postNarrationCard` stores `isMatch` from the resolution. The recap tests create cards through it, and `multiplayerComposition.test.js` covers move pipeline → `!recap session` |
+
+`campaignState.characterIds` is still never written (documented in
+`schemas.js`; every reader falls back). The new harness suites no longer seed
+it.
+
+Items 5–7 of the issue are deferred until approved: `deadscan --strict` and
+static invariant checks in CI, a second-client E2E run, and `src/index.js`
+coverage (`vitest.config.js`).
+
 ### 2026-10 repo audit — all fixed in the v1.7.31 cycle
 
 A whole-repo audit (PR #281, commits 87cb96d + d5d434e) traced **where each

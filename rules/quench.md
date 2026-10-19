@@ -106,3 +106,11 @@ Rules:
   before extending the mock's behaviour.
 - A passing unit suite plus a live-Foundry failure usually means a mock-shape
   divergence — diff the mock against the v13 API before debugging the code.
+- Permissions are part of the shape (issue #282): the stubs reject a non-GM's
+  world-setting write, a non-author's `ChatMessage#update` / `#delete`, and an
+  `Actor#update` without OWNER, with Foundry's wording
+  (`tests/helpers/foundryPermissions.js`; setting scopes come from a static
+  scan of `src/`, `tests/helpers/settingScopes.js`). Behaviour that spans
+  clients — who runs a command, what a relay writes, what every client sees —
+  is tested on the multi-client harness (`tests/helpers/multiClient.js`),
+  not by hand-simulating a second user.

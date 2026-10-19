@@ -6,6 +6,43 @@ rejected.
 
 ---
 
+## Tests run on Foundry's permission model and a simulated multi-client table (2026-10)
+
+**Decision:** (issue #282) By default, the unit suite's Foundry stubs enforce
+Foundry's permission model. A non-GM's world-setting write, a non-author's
+`ChatMessage` update or delete, and an `Actor` update without OWNER all
+reject, with Foundry's wording. Behaviour that depends on which client runs
+it is tested on `simulateTable` (`tests/helpers/multiClient.js`), which boots
+`src/index.js` once per client over a shared world. That covers command
+routing, GM relays, card buttons clicked on another client, and writes that
+land while the move pipeline runs. Where a real producer exists, fixture
+state comes from it (`rules/reachability.md` §3).
+
+**Why:** every defect the 2026-10 audit found passed a green suite. The stubs
+let any user write anything, and each unit test fired a hook once, as one
+user (usually a GM). So the suite could not see a player's refused write, a
+command running once per client, or a relayed write reverted by the
+pipeline's stale snapshot. With each fix reverted locally, the harness now
+fails on the four bugs the issue names (known-issues.md → "Multiplayer test
+infrastructure"). Without the permission stubs, the reverted X-Card passes.
+
+**Rejected:**
+- *Opt-in permission checks.* The default user would stay a GM, and the next
+  GM-gated write would pass by accident. The checks are on;
+  `withoutPermissionChecks(fn)` is only for seeding fixtures.
+- *A second browser in E2E as the only multi-client coverage.* It is slow
+  and runs only in CI. A second-client E2E run is still issue item 6,
+  deferred until approved.
+- *Mocking module boundaries per client.* `vi.mock` factories run once per
+  file and are shared by every client. Instead, each client gets its own
+  module graph (vitest's module cache, routed per client through
+  AsyncLocalStorage), and the network boundary is stubbed (`table.claude`).
+
+**Cost:** the harness depends on a vitest internal
+(`__vitest_worker__.moduleCache`, vitest 3's vite-node runner).
+`simulateTable()` throws a clear error if it is missing, so a vitest upgrade
+that changes it fails loudly. The remaining limits are in the harness header.
+
 ## Chat commands run once: author / canonical-GM / keyed-runner routing (2026-10)
 
 **Decision:** Every chat command is declared in `CHAT_COMMAND_ROUTES`

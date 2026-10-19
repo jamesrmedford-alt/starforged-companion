@@ -251,6 +251,11 @@ developer-only and excluded from the release.
 |------|---------|
 | `tests/unit/*.test.js` | Vitest unit suites (one per module area). |
 | `tests/fixtures/`, `tests/helpers/`, `tests/setup.js` | Shared fixtures, helpers, and the Foundry global stubs. Do not edit fixtures without discussing impact. |
+| `tests/helpers/multiClient.js` | Multi-client table simulation (issue #282): `simulateTable({ users })` boots `src/index.js` once per client (each with its own `game` / `Hooks` / `ui` and module copies) over a shared world — settings, chat messages, actors, socket bus. Chat-message hooks and setting `onChange` fire on every client, the socket reaches every other client, Claude calls are answered and recorded per client (`table.claude`), dialogs record which client opened them, and `table.settle()` waits until the table is quiet. Used by the routing matrix, relay, concurrency and composition suites. |
+| `tests/helpers/foundryPermissions.js` | Foundry's permission rules for the stubs: world-scoped `game.settings.set` rejects for non-GMs, `ChatMessage#update` / `#delete` for non-authors (GMs exempt), `Actor#update` / `#setFlag` without OWNER. On by default; `withoutPermissionChecks(fn)` for fixture seeding. |
+| `tests/helpers/settingScopes.js` | Static scan of `src/` for `settings.register` scopes, so a setting the stubs never saw registered is still checked with its real scope. |
+| `tests/helpers/documentStubs.js` | ChatMessage document stubs (ids, dotted-key `update`, flags, `author`) shared by `tests/setup.js` and the harness. |
+| `tests/helpers/cardDom.js` | Minimal DOM (HTML parser, selectors, events) the harness renders chat cards with, so a test can click a card's button on a given client. |
 | `test/ci/` | CI-only harness assets. |
 | `styles/starforged-companion.css` | Bundled stylesheet. |
 | `lang/en.json` | Localisation strings. |

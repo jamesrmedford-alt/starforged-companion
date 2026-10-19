@@ -6,6 +6,17 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Fixed: **`!recap session` notes a match.** The session recap has a line for a match rolled during the session, but it never appeared: narrator cards didn't record the match.
+- Internal: multiplayer test infrastructure (issue #282, items 1–4).
+  - The unit-test Foundry stubs now enforce Foundry's permissions: world settings are GM-only, chat messages can be edited by their author or a GM, and actor updates need OWNER.
+  - A simulated multi-client table (`tests/helpers/multiClient.js`) boots the module once per client over a shared world.
+  - Every chat-command route is tested under five table shapes.
+  - Concurrency tests cover writes relayed while a move resolves and the GM relay queue (serialisation and timeout release).
+  - Composition tests run each feature's real producer on one client and check what another client reads.
+  - With the 2026-10 audit's fixes reverted, these tests fail on the player X-Card, per-client `!oracle`, Burn double-apply and stale-snapshot bugs.
+
+## [1.7.33] — 2026-10-18
+
 - Fixed: **"Descriptor + Focus" oracle rows now roll real words.** Fifteen tables (space sightings, settlement/starship first looks, vault/derelict looks, theme perils, story clues …) carry rows that chain into the Descriptor and Focus oracles — those rolls returned the literal text "Descriptor + Focus" instead of rolling it. Both the `!oracle` roller and sector generation now resolve the chain (the Action + Theme chain always did).
 - Fixed: **The X-Card works for players.** A player's `!x` now actually pauses the narrator. Before, the pause was never recorded, though the card said "Scene paused". If no GM is connected, the card says the pause could not be recorded.
 - Added: **Resume after an X-Card.** X-Card cards carry a GM-only **Resume narration** button, a GM can type `!x clear`, and macros can call `game.modules.get("starforged-companion").api.clearXCard()`. The browser-console snippet is no longer needed.
