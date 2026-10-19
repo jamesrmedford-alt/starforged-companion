@@ -246,8 +246,6 @@ export function buildFullCampaignState(overrides = {}) {
     safety: { lines: [], veils: [], privateLines: [] },
     worldTruths: {},
     sectors:    [],
-    clockIds:        [],
-    oracleResultIds: [],
 
     ...overrides,
   };

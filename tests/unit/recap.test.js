@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { isNewSessionStart, isRecapCommand } from '../../src/index.js';
-import { postSessionRecap, getCampaignRecap } from '../../src/narration/narrator.js';
+import { postSessionRecap, getCampaignRecap, postNarrationCard } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -206,16 +206,31 @@ describe('postSessionRecap()', () => {
     expect(card.content).toContain('3 moves resolved');
   });
 
-  it('notes match rolls when present', async () => {
-    global.game.messages = {
-      contents: [
-        makeNarratorCard({ outcome: 'strong_hit', moveId: 'face_danger', isMatch: true }),
-      ],
-    };
+  // The match line reads the narrator card's `isMatch` flag. Its old test
+  // hand-set that flag on a fixture card while postNarrationCard never wrote
+  // it, so the line never appeared in play (found by the issue-#282 audit of
+  // hand-set fixture state). The cards here come from the real producer.
+  it('notes a match rolled in the session — from the narrator card the narration posted', async () => {
     const state = makeCampaignState();
+    await postNarrationCard('You slip past the guards.',
+      { moveId: 'face_danger', outcome: 'strong_hit', isMatch: true, _id: 'r1' }, state);
+    await postNarrationCard('The door holds.',
+      { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
+    global.game.messages = { contents: ChatMessage._created.slice() };
+    ChatMessage._reset();
+
     await postSessionRecap(state);
-    const card = ChatMessage._created[0];
-    expect(card.content).toContain('match');
+    expect(ChatMessage._created[0].content).toContain('A match was rolled — Face Danger.');
+  });
+
+  it('says nothing about a match when none was rolled', async () => {
+    const state = makeCampaignState();
+    await postNarrationCard('The door holds.', { moveId: 'clash', outcome: 'miss', isMatch: false, _id: 'r2' }, state);
+    global.game.messages = { contents: ChatMessage._created.slice() };
+    ChatMessage._reset();
+
+    await postSessionRecap(state);
+    expect(ChatMessage._created[0].content).not.toContain('match');
   });
 
   it('filters by sessionId when provided', async () => {

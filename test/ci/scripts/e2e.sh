@@ -4,7 +4,9 @@
 # Runs the full Quench suite against a fresh Foundry world inside Docker,
 # driven by a Cypress container that walks the manual first-launch
 # ritual (EULA → admin key → launch world → enable modules → run Quench
-# → assert no failures).
+# → assert no failures). Then runs the second-client suite against the
+# same world: a GM and a player in two Playwright browsers
+# (playwright/multiplayer.mjs, issue #282).
 #
 # What "fresh world" means here:
 #   - ./data/ (the Foundry userData bind-mount) is wiped except for
@@ -145,6 +147,25 @@ docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull cypress
 cy_exit=$?
 set -e
 
+# ---- run the second-client suite -------------------------------------------
+# A GM and a player in two real browsers (playwright/multiplayer.mjs, issue
+# #282 item 6), against the world Cypress just left live. Runs whatever
+# Cypress's result — a Quench failure doesn't make the world unusable, and the
+# suite fails fast with a clear message when the module isn't enabled.
+
+mkdir -p "${CI_DIR}/playwright/artifacts"
+
+log "pre-pulling playwright image (quietly)"
+docker compose "${COMPOSE_FILES[@]}" --profile e2e pull --quiet players 2>&1 \
+  | grep -vE "^(Pulling|Pulled |Waiting|Downloading|Verifying|Extracting|Pull complete|Status|Digest|[a-f0-9]{12} )" \
+  || true
+
+log "running the multiplayer suite (Playwright: a GM and a player browser)"
+set +e
+docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull players
+mp_exit=$?
+set -e
+
 # ---- teardown -------------------------------------------------------------
 
 if (( keep )); then
@@ -155,11 +176,12 @@ else
   docker compose "${COMPOSE_FILES[@]}" down >/dev/null 2>&1 || true
 fi
 
-if (( cy_exit == 0 )); then
-  log "PASSED"
+if (( cy_exit == 0 && mp_exit == 0 )); then
+  log "PASSED (Quench + multiplayer)"
 else
-  warn "FAILED (cypress exit ${cy_exit})"
-  warn "artifacts: cypress/artifacts/screenshots/ and cypress/artifacts/videos/"
+  (( cy_exit == 0 )) || warn "Quench FAILED (cypress exit ${cy_exit}) — artifacts: cypress/artifacts/screenshots/ and cypress/artifacts/videos/"
+  (( mp_exit == 0 )) || warn "multiplayer FAILED (exit ${mp_exit}) — artifacts: playwright/artifacts/"
 fi
 
-exit "${cy_exit}"
+if (( cy_exit != 0 )); then exit "${cy_exit}"; fi
+exit "${mp_exit}"

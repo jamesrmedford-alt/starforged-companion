@@ -8,38 +8,55 @@
  * applyEndSession), invoked through requestGmAction — locally on the canonical
  * GM, relayed over the socket from anyone else. Also covers the End → Begin
  * focus round trip and the Session Panel's campaignState refresh hook.
+ *
+ * Who-runs-what across clients — the dialog on the typist's screen, the write
+ * on the canonical GM, one card, the no-GM wording — runs on the multi-client
+ * harness (tests/helpers/multiClient.js, issue #282): "across a booted table"
+ * below. The mocks spread the real modules so src/index.js can boot on the
+ * simulated clients; their recorders also note which user ran them.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 
 const calls = [];
+const ranOn = [];   // `${userId} ${what}` — which simulated client ran a mocked step
 
-vi.mock("../../src/factContinuity/sceneLifecycle.js", async () => ({
-  ...(await vi.importActual("../../src/factContinuity/sceneLifecycle.js")),
+vi.mock("../../src/factContinuity/sceneLifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   endScene: vi.fn(async () => { calls.push("endScene"); }),
 }));
-vi.mock("../../src/narration/narrator.js", () => ({
+vi.mock("../../src/narration/narrator.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getRollingSessionSummary: vi.fn(async () => { calls.push("summary"); }),
   narrateSessionVignette:   vi.fn(async () => null),
   narrateClockAdvancement:  vi.fn(async () => null),
 }));
-vi.mock("../../src/world/worldJournal.js", () => ({
+vi.mock("../../src/world/worldJournal.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   writeSessionLog: vi.fn(async () => { calls.push("sessionLog"); }),
 }));
-vi.mock("../../src/clocks/clocks.js", () => ({
-  advanceCampaignClocksForBeginSession: vi.fn(async () => { calls.push("clocks"); return []; }),
+vi.mock("../../src/clocks/clocks.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  advanceCampaignClocksForBeginSession: vi.fn(async () => {
+    calls.push("clocks");
+    ranOn.push(`${globalThis.game?.user?.id} clocks`);
+    return [];
+  }),
 }));
-vi.mock("../../src/character/actorBridge.js", () => ({
+vi.mock("../../src/character/actorBridge.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getPlayerActors:   vi.fn(() => [{ id: "a1", name: "Kira" }, { id: "a2", name: "Ren" }]),
-  applyMeterChanges: vi.fn(async (actor, changes) => { calls.push(`momentum:${actor.id}:${changes.momentum}`); }),
+  applyMeterChanges: vi.fn(async (actor, changes) => {
+    calls.push(`momentum:${actor.id}:${changes.momentum}`);
+    ranOn.push(`${globalThis.game?.user?.id} momentum:${actor.id}`);
+  }),
 }));
-vi.mock("../../src/oracles/roller.js", () => ({
+vi.mock("../../src/oracles/roller.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   rollOracle: vi.fn(() => ({ result: "A quiet moment on the bridge" })),
 }));
 
 import {
-  openSetFlagDialog,
-  openTakeABreakDialog,
   applySafetyFlag,
   applyTakeBreak,
 } from "../../src/safety/sessionDialogs.js";
@@ -53,6 +70,7 @@ import { SessionPanelApp } from "../../src/ui/sessionPanel.js";
 import { applyMeterChanges } from "../../src/character/actorBridge.js";
 import { getRollingSessionSummary } from "../../src/narration/narrator.js";
 import { writeSessionLog } from "../../src/world/worldJournal.js";
+import { simulateTable, USERS } from "../helpers/multiClient.js";
 
 const MODULE_ID = "starforged-companion";
 const GM     = { id: "gm-1", name: "Gina", isGM: true,  active: true };
@@ -97,6 +115,7 @@ function installDialog({ form = null, waitChoice = null } = {}) {
 
 beforeEach(() => {
   calls.length = 0;
+  ranOn.length = 0;
   savedUsers = game.users;
   savedUser  = game.user;
   game.socket._reset();
@@ -112,7 +131,9 @@ afterEach(() => {
   game.users = savedUsers;
   game.user  = savedUser;
   delete Hooks.callAll;
-  delete foundry.applications.api.DialogV2;
+  // Assign, never delete: while a harness table is alive DialogV2 is a routed
+  // accessor on foundry.applications.api, and deleting it would remove it.
+  foundry.applications.api.DialogV2 = undefined;
   game.settings._store.delete(`${MODULE_ID}.campaignState`);
   game.settings._store.delete(`${MODULE_ID}.sessionLogAutoWrite`);
   vi.clearAllMocks();
@@ -123,43 +144,6 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Set a Flag", () => {
-  const form = fakeForm({
-    'textarea[name="text"]':      "  spiders  ",
-    'select[name="visibility"]':  "public",
-  });
-
-  it("player: relays safety.setFlag (no local write) and posts the card", async () => {
-    setUsers([GM, PLAYER], "pl-1");
-    installDialog({ form });
-    await openSetFlagDialog();
-    expect(game.socket._emitted).toHaveLength(1);
-    expect(game.socket._emitted[0].payload).toMatchObject({
-      kind: "gmRelay.safety.setFlag",
-      payload: { text: "spiders", visibility: "public" },
-      requesterId: "pl-1",
-    });
-    expect(state().safetyFlags).toBeUndefined();
-    expect(ChatMessage._created).toHaveLength(1);
-    expect(ChatMessage._created[0].content).toContain("spiders");
-    expect(ChatMessage._created[0].content).not.toContain("sf-not-recorded");
-  });
-
-  it("canonical GM: records the flag locally, credited to the GM", async () => {
-    setUsers([GM, PLAYER], "gm-1");
-    installDialog({ form });
-    await openSetFlagDialog();
-    expect(game.socket._emitted ?? []).toHaveLength(0);
-    expect(state().safetyFlags).toHaveLength(1);
-    expect(state().safetyFlags[0]).toMatchObject({ text: "spiders", visibility: "public", createdBy: "Gina" });
-  });
-
-  it("no GM connected: the card says the flag was not saved", async () => {
-    setUsers([PLAYER], "pl-1");
-    installDialog({ form });
-    await openSetFlagDialog();
-    expect(ChatMessage._created[0].content).toMatch(/The flag was not saved — no GM is connected/);
-  });
-
   it("applySafetyFlag credits the requester and sanitises the payload", async () => {
     setUsers([GM, PLAYER], "gm-1");
     await expect(applySafetyFlag({ text: " x ", visibility: "weird" }, { requester: PLAYER })).resolves.toBe(true);
@@ -178,22 +162,6 @@ describe("Set a Flag", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Take a Break — move on", () => {
-  it("player: relays session.takeBreak and posts the card", async () => {
-    setUsers([GM, PLAYER], "pl-1");
-    installDialog({ waitChoice: "move_on" });
-    await openTakeABreakDialog();
-    expect(game.socket._emitted[0].payload.kind).toBe("gmRelay.session.takeBreak");
-    expect(state().nextMoveAdd).toBeUndefined();
-    expect(ChatMessage._created[0].flags[MODULE_ID].takeBreakCard).toBe(true);
-  });
-
-  it("canonical GM: records nextMoveAdd locally", async () => {
-    setUsers([GM], "gm-1");
-    installDialog({ waitChoice: "move_on" });
-    await openTakeABreakDialog();
-    expect(state().nextMoveAdd).toMatchObject({ value: 1, source: "take_a_break" });
-  });
-
   it("applyTakeBreak writes the single-use grant", async () => {
     await applyTakeBreak({}, {});
     expect(state().nextMoveAdd.value).toBe(1);
@@ -210,21 +178,6 @@ describe("Begin a Session", () => {
     'input[name="galleyVignette"]': false,
   });
 
-  it("player: posts the card, then relays session.begin (no local writes)", async () => {
-    setUsers([GM, PLAYER], "pl-1");
-    installDialog({ form });
-    await openBeginSessionDialog();
-    expect(ChatMessage._created).toHaveLength(1);
-    expect(ChatMessage._created[0].content).toContain("A quiet moment on the bridge");
-    expect(game.socket._emitted).toHaveLength(1);
-    expect(game.socket._emitted[0].payload).toMatchObject({
-      kind: "gmRelay.session.begin",
-      payload: { vignetteRolled: true, includeGalley: false },
-    });
-    expect(state().sessionActive).toBe(false);
-    expect(applyMeterChanges).not.toHaveBeenCalled();
-  });
-
   it("canonical GM: momentum → flip → clocks run locally, in order", async () => {
     setUsers([GM, PLAYER], "gm-1");
     installDialog({ form });
@@ -234,13 +187,6 @@ describe("Begin a Session", () => {
     expect(Hooks.callAll).toHaveBeenCalledWith(`${MODULE_ID}.sessionStateChanged`, { active: true });
     // Galley unchecked → no vignette scheduled.
     expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("no GM connected: the card says the session was not started", async () => {
-    setUsers([PLAYER], "pl-1");
-    installDialog({ form });
-    await openBeginSessionDialog();
-    expect(ChatMessage._created[0].content).toMatch(/No GM is connected — the session was not started and no momentum was applied/);
   });
 
   it("applyBeginSession schedules the galley vignette when included", async () => {
@@ -258,20 +204,6 @@ describe("End a Session", () => {
   const form = fakeForm({
     'input[name="questFocus"]':      " Find the beacon ",
     'input[name="connectionFocus"]': "Mara",
-  });
-
-  it("player: relays session.end with the foci (no local writes), then posts the card", async () => {
-    setUsers([GM, PLAYER], "pl-1");
-    game.settings._store.set(`${MODULE_ID}.campaignState`, { sessionActive: true });
-    installDialog({ form });
-    await openEndSessionDialog();
-    expect(game.socket._emitted[0].payload).toMatchObject({
-      kind: "gmRelay.session.end",
-      payload: { questFocus: "Find the beacon", connectionFocus: "Mara" },
-    });
-    expect(state().sessionActive).toBe(true);
-    expect(ChatMessage._created[0].content).toContain("Find the beacon");
-    expect(ChatMessage._created[0].content).not.toContain("sf-not-recorded");
   });
 
   it("canonical GM: every sub-step runs in the original order", async () => {
@@ -334,13 +266,6 @@ describe("End a Session", () => {
     expect(applyMeterChanges).not.toHaveBeenCalled();
   });
 
-  it("no GM connected: the card says nothing was recorded", async () => {
-    setUsers([PLAYER], "pl-1");
-    installDialog({ form });
-    await openEndSessionDialog();
-    expect(ChatMessage._created[0].content).toMatch(/No GM is connected — the session was not ended/);
-  });
-
   it("a handler error on the canonical GM is surfaced and the card stays honest", async () => {
     setUsers([GM], "gm-1");
     vi.spyOn(game.settings, "set").mockRejectedValue(new Error("db down"));
@@ -400,5 +325,153 @@ describe("SessionPanelApp.onSettingChanged", () => {
     SessionPanelApp.onSettingChanged({ key: `${MODULE_ID}.mischiefDial` });
     SessionPanelApp.onSettingChanged(null);
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Across a booted table — the multi-client harness (issue #282)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("across a booted table", () => {
+  let table;
+  const cs = () => table.world.campaignState();
+  const sessionCards = () => table.cards(f => f.sessionLifecycleCard);
+
+  async function type(userId, text) {
+    await table.client(userId).chat(text);
+    await table.settle();
+  }
+
+  async function noGm() {
+    await table.leave("gm-1");
+    await table.leave("gm-2");
+  }
+
+  beforeAll(async () => {
+    table = await simulateTable({ users: [USERS.GM, USERS.GM2, USERS.P1, USERS.P2] });
+  }, 30_000);
+  afterAll(() => table?.teardown());
+  beforeEach(async () => {
+    await table.reset({ world: { settings: { campaignState: { sessionActive: false } } } });
+    calls.length = 0;
+    ranOn.length = 0;
+  });
+
+  describe("Set a Flag", () => {
+    const values = { 'textarea[name="text"]': "  spiders  ", 'select[name="visibility"]': "public" };
+
+    it("a player's flag: the dialog opens on their screen, the GM records it, one card from the player", async () => {
+      table.client("pl-1").answerDialogs(d => d.submit(values));
+      await type("pl-1", "!flag");
+      expect(table.dialogs.map(d => [d.client, d.title])).toEqual([["pl-1", "Set a Flag"]]);
+      expect(cs().safetyFlags).toMatchObject([{ text: "spiders", visibility: "public", createdBy: "Pat" }]);
+      const cards = table.cards(f => f.safetyFlagCard);
+      expect(cards.map(c => c.author)).toEqual(["pl-1"]);
+      expect(cards[0].content).toContain("spiders");
+      expect(cards[0].content).not.toContain("sf-not-recorded");
+    });
+
+    it("the canonical GM's flag is recorded locally — no relay — credited to the GM", async () => {
+      table.client("gm-1").answerDialogs(d => d.submit(values));
+      await type("gm-1", "!flag");
+      expect(cs().safetyFlags).toMatchObject([{ text: "spiders", createdBy: "Gina" }]);
+      expect(table.socketLog.filter(e => e.payload?.kind === "gmRelay.safety.setFlag")).toEqual([]);
+    });
+
+    it("a private flag's card is whispered to the GMs", async () => {
+      table.client("pl-2").answerDialogs(d => d.submit({ ...values, 'select[name="visibility"]': "private" }));
+      await type("pl-2", "!flag");
+      expect(table.cards(f => f.safetyFlagCard)[0].whisper.sort()).toEqual(["gm-1", "gm-2"]);
+      expect(cs().safetyFlags[0].visibility).toBe("private");
+    });
+
+    it("no GM connected: nothing is written and the card says the flag was not saved", async () => {
+      silenceConsoleErrors();
+      await noGm();
+      table.client("pl-1").answerDialogs(d => d.submit(values));
+      await type("pl-1", "!flag");
+      expect(cs().safetyFlags).toBeUndefined();
+      expect(table.cards(f => f.safetyFlagCard)[0].content).toMatch(/The flag was not saved — no GM is connected/);
+    });
+  });
+
+  describe("Take a Break — move on", () => {
+    it("a player moves on: the GM records the single-use +1, one card from the player", async () => {
+      table.client("pl-2").answerDialogs(d => d.choose("move_on"));
+      await type("pl-2", "!break");
+      expect(table.dialogs.map(d => d.client)).toEqual(["pl-2"]);
+      expect(cs().nextMoveAdd).toMatchObject({ value: 1, source: "take_a_break" });
+      expect(table.cards(f => f.takeBreakCard).map(c => c.author)).toEqual(["pl-2"]);
+    });
+
+    it("cancelling writes nothing and posts nothing", async () => {
+      table.client("pl-2").answerDialogs(d => d.choose("cancel"));
+      await type("pl-2", "!break");
+      expect(cs().nextMoveAdd).toBeUndefined();
+      expect(table.cards(f => f.takeBreakCard)).toEqual([]);
+    });
+  });
+
+  describe("Begin a Session", () => {
+    const values = { 'input[name="vignette"]': true, 'input[name="galleyVignette"]': false };
+
+    it("a player begins: their card first, then the GM starts the session and pays the momentum — on the GM", async () => {
+      table.client("pl-1").answerDialogs(d => d.submit(values));
+      await type("pl-1", "!begin-session");
+      const cards = sessionCards();
+      expect(cards.map(c => c.author)).toEqual(["pl-1"]);
+      expect(cards[0].content).toContain("A quiet moment on the bridge");
+      expect(cs().sessionActive).toBe(true);
+      expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2", "gm-1 clocks"]);
+    });
+
+    it("no GM connected: nothing is started and the card says so", async () => {
+      silenceConsoleErrors();
+      await noGm();
+      table.client("pl-1").answerDialogs(d => d.submit(values));
+      await type("pl-1", "!begin-session");
+      expect(cs().sessionActive).toBe(false);
+      expect(ranOn).toEqual([]);
+      expect(sessionCards()[0].content)
+        .toMatch(/No GM is connected — the session was not started and no momentum was applied/);
+    });
+  });
+
+  describe("End a Session", () => {
+    const values = { 'input[name="questFocus"]': " Find the beacon ", 'input[name="connectionFocus"]': "Mara" };
+
+    beforeEach(() => table.world.setSetting("campaignState", { sessionActive: true }));
+
+    it("a player ends it with foci: the GM closes the session, stores the foci and pays the momentum", async () => {
+      table.client("pl-2").answerDialogs(d => d.submit(values));
+      await type("pl-2", "!end-session");
+      expect(cs()).toMatchObject({ sessionActive: false, questFocus: "Find the beacon", connectionFocus: "Mara" });
+      expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2"]);
+      const cards = sessionCards();
+      expect(cards.map(c => c.author)).toEqual(["pl-2"]);
+      expect(cards[0].content).toContain("Find the beacon");
+      expect(cards[0].content).not.toContain("sf-not-recorded");
+    });
+
+    it("no GM connected: nothing is recorded and the card says so", async () => {
+      silenceConsoleErrors();
+      await noGm();
+      table.client("pl-2").answerDialogs(d => d.submit(values));
+      await type("pl-2", "!end-session");
+      expect(cs().sessionActive).toBe(true);
+      expect(sessionCards()[0].content).toMatch(/No GM is connected — the session was not ended/);
+    });
+
+    it("one player's End-Session foci greet the next player's Begin, which clears them", async () => {
+      table.client("pl-2").answerDialogs(d => d.submit(values));
+      await type("pl-2", "!end-session");
+      table.client("pl-1").answerDialogs(d => d.submit({ 'input[name="vignette"]': false, 'input[name="galleyVignette"]': false }));
+      await type("pl-1", "!begin-session");
+      const begin = table.dialogs.find(d => d.client === "pl-1" && d.title === "Begin a Session");
+      expect(begin.content).toContain("Focus from last session");
+      expect(begin.content).toContain("Find the beacon");
+      expect(sessionCards().at(-1).content).toContain("Find the beacon");
+      expect(cs()).toMatchObject({ sessionActive: true, questFocus: "", connectionFocus: "" });
+    });
   });
 });

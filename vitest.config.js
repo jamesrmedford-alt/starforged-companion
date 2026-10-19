@@ -29,13 +29,17 @@ export default defineConfig({
       // instrument. Do NOT re-add exclusions for modules that merely LOOK
       // Foundry-bound — entities/, moves/, narration/ all test fine through
       // the tests/setup.js stubs.
+      //
+      // src/index.js (the entry point: hooks, settings, chat dispatch, card
+      // wiring) is measured since issue #282 item 7: the multi-client harness
+      // boots it on every simulated client, so its coverage is real (62.6%
+      // lines at inclusion). It counts toward the floor below with no per-file
+      // bar of its own — logic that needs one moves out into a module
+      // (src/multiplayer/commandRouting.js was the first).
       include: ['src/**/*.js'],
       exclude: [
         // Quench integration suite — runs only inside live Foundry.
         'src/integration/**',
-        // Entry point: hooks, settings registration, chat dispatch, UI wiring.
-        // Protected by the Quench batches + the Cypress e2e stack.
-        'src/index.js',
         // ApplicationV2 panels / DialogV2 dialogs — need live Foundry
         // rendering; under units they are import-only (function coverage ~14%
         // proved the statement numbers were inflation, not protection).
@@ -72,7 +76,9 @@ export default defineConfig({
 
         // Core bar — the pure-logic spine, held at 95-class. These files are
         // at 97-100% lines today; the bar makes that a promise, not a fact.
-        'src/{schemas.js,moves/resolver.js,moves/mischief.js,narration/narratorPrompt.js,character/chronicle.js,context/safety.js,truths/tables.js}': {
+        // multiplayer/commandRouting.js — the chat-command run-on policy,
+        // extracted from src/index.js (issue #282 item 7) — joined at 100%.
+        'src/{schemas.js,moves/resolver.js,moves/mischief.js,narration/narratorPrompt.js,character/chronicle.js,context/safety.js,truths/tables.js,multiplayer/commandRouting.js}': {
           lines:     95,
           functions: 95,
           branches:  80,

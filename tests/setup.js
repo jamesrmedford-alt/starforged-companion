@@ -12,8 +12,26 @@
 // findings (see plan on branch claude/audit-silent-failures-LABiI) so that a
 // swallowed error in production code causes the corresponding test to fail
 // loudly rather than passing with a default-shaped result.
+//
+// Permission-faithful stubs (issue #282): the stubs enforce Foundry's write
+// rules against the CURRENT game.user — a world-scoped game.settings.set
+// rejects for a non-GM, ChatMessage#update / #delete reject for anyone but a
+// GM or the author, and Actor#update / #setFlag reject without OWNER
+// (makeTestActor's `ownership`, default none). Seed fixtures through
+// game.settings._store / fixture fields; for the few tests that need raw API
+// access use withoutPermissionChecks(fn) or disablePermissionChecks(). Rules
+// and wording: tests/helpers/foundryPermissions.js.
 
 import { vi, beforeEach, afterEach } from 'vitest';
+import {
+  assertCanSetSetting,
+  assertCanUpdateActor,
+  disablePermissionChecks,
+  resetPermissionChecks,
+  withoutPermissionChecks,
+} from './helpers/foundryPermissions.js';
+import { staticSettingScope } from './helpers/settingScopes.js';
+import { makeChatMessageDoc } from './helpers/documentStubs.js';
 
 // ---------------------------------------------------------------------------
 // game.*
@@ -22,11 +40,24 @@ import { vi, beforeEach, afterEach } from 'vitest';
 global.game = {
   settings: (() => {
     const store = new Map();
+    // Configs passed to register() in this test file. A setting's scope comes
+    // from here first, then from the static scan of src/'s register() calls
+    // (tests/helpers/settingScopes.js) — so a world-scoped write is refused to
+    // a player even when the test never registered the setting.
+    const registry = new Map();
+    const scopeOf = (mod, key) =>
+      registry.get(`${mod}.${key}`)?.scope ?? staticSettingScope(mod, key);
     return {
-      register: () => {},
+      register: (mod, key, config = {}) => { registry.set(`${mod}.${key}`, { ...config }); },
       get: (mod, key) => store.get(`${mod}.${key}`),
-      set: async (mod, key, val) => { store.set(`${mod}.${key}`, val); return val; },
-      _store: store,   // test access
+      set: async (mod, key, val) => {
+        assertCanSetSetting(mod, key, scopeOf(mod, key));
+        store.set(`${mod}.${key}`, val);
+        return val;
+      },
+      _store: store,        // test access — raw, no permission check
+      _registry: registry,  // test access
+      _scopeOf: scopeOf,
     };
   })(),
   user: { isGM: true, id: 'test-user-gm' },
@@ -217,11 +248,28 @@ global.Dialog = {
 // ChatMessage
 // ---------------------------------------------------------------------------
 
+// create() returns the data object itself, turned into a permission-faithful
+// document (tests/helpers/documentStubs.js): same fields, plus id, the author
+// (the creating user unless data.author names one) and update / delete /
+// getFlag / setFlag / unsetFlag — update and delete refuse anyone but a GM or
+// the author, as Foundry does. It does not fire createChatMessage (tests call
+// the hook directly; the multi-client harness replaces ChatMessage wholesale).
 global.ChatMessage = {
   _created: [],
-  create: async (data) => { ChatMessage._created.push(data); return data; },
+  create: async (data) => {
+    const doc = makeChatMessageDoc(data);
+    ChatMessage._created.push(doc);
+    return doc;
+  },
   _reset: () => { ChatMessage._created = []; },
 };
+
+// makeTestMessage — a stub-created message with an explicit author, for unit
+// tests that need a card authored by someone other than the current user
+// (e.g. a GM-authored move card clicked on a player's client).
+//   const card = makeTestMessage({ flags: { … } }, { author: 'gm-1' });
+global.makeTestMessage = (data = {}, { author = null } = {}) =>
+  makeChatMessageDoc({ content: '', flags: {}, ...data }, { authorId: author });
 
 // ---------------------------------------------------------------------------
 // JournalEntry stub (created via JournalEntry.create)
@@ -325,6 +373,14 @@ global.withUser = (overrides = {}) => {
 global.asPlayer = () => global.withUser({ isGM: false, id: 'test-user-player' });
 
 // ---------------------------------------------------------------------------
+// Permission opt-out (issue #282) — see the header and
+// tests/helpers/foundryPermissions.js. Checks are re-enabled before each test.
+// ---------------------------------------------------------------------------
+
+global.withoutPermissionChecks = withoutPermissionChecks;
+global.disablePermissionChecks = disablePermissionChecks;
+
+// ---------------------------------------------------------------------------
 // makeTestActor — factory for mock Ironsworn Actor documents
 //
 // Usage in tests:
@@ -368,6 +424,7 @@ const _formatArgs = (args) => args.map(a => {
 }).join(' ');
 
 beforeEach(() => {
+  resetPermissionChecks();
   _expectedErrorPatterns = null;
   _silenceConsoleErrors  = false;
   _capturedErrors.length = 0;
@@ -469,6 +526,10 @@ global.makeTestActor = (overrides = {}) => {
     img: overrides.img ?? null,
     folder: overrides.folder ?? null,
     hasPlayerOwner: overrides.hasPlayerOwner ?? (type === 'character'),
+    // Foundry's ownership map ({ userId: level, default: level }, 3 = OWNER).
+    // update / setFlag need OWNER (or a GM) — read live, so a test may assign
+    // actor.ownership after creation.
+    ownership: { default: 0, ...(overrides.ownership ?? {}) },
     system: defaultSystem,
     flags,
     items: (() => {
@@ -486,6 +547,7 @@ global.makeTestActor = (overrides = {}) => {
       };
     })(),
     update: async (changes) => {
+      assertCanUpdateActor('update', actor);
       updateHistory.push(changes);
       // Apply flat dot-notation changes to the actor for test assertions.
       // Auto-create intermediate objects so callers writing to e.g.
@@ -516,6 +578,7 @@ global.makeTestActor = (overrides = {}) => {
       return cur;
     },
     setFlag: async (mod, key, val) => {
+      assertCanUpdateActor('update', actor);
       if (!flags[mod]) flags[mod] = {};
       const parts = key.split('.');
       let cur = flags[mod];
@@ -547,6 +610,7 @@ global.Actor = {
       folder: data?.folder ?? null,
       flags:  data?.flags  ?? {},
       system: data?.system ?? {},
+      ownership: data?.ownership ?? {},
     });
     global.game.actors._set(actor.id, actor);
     return actor;

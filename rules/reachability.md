@@ -89,6 +89,19 @@ narrows, at least one test must exercise the **live composition** — the real
   had thorough unit tests fed hand-built full objects. The starving happened in
   the seam nothing exercised. A green unit test proves "this unit works in
   isolation" — it is structurally blind to whether the unit is wired.
+- **Fixture state comes from the real producer** (issue #282). A test that
+  hand-sets the field its consumer reads proves the consumer, not the hop —
+  and when no production code writes that field, it proves a dead feature
+  works. Each producer (setting, flag, `campaignState` field, card flag) gets
+  at least one test that runs the real writer — on the client that writes it —
+  and asserts at the real reader: `tests/unit/multiplayerComposition.test.js`
+  on the multi-client harness (Private Lines, oracle results and `!truth` →
+  the GM's narration prompt; Take a Break → the next roll; the narrator card →
+  `!recap session`; a Claude key → command routing), or
+  `pipelineNextMoveAdd.test.js` for a single-client hop. `RECAP-MATCH-DEAD`:
+  the session recap's "A match was rolled" line read a narrator-card `isMatch`
+  flag that no code ever wrote, behind a unit test that hand-set it. Pointing
+  the test at the real `postNarrationCard` exposed it.
 
 ## 4. No speculative API surface
 
@@ -269,7 +282,27 @@ consumer. It reports:
 - **UNREACHABLE modules** — no static or literal dynamic import path from a
   production entry point (`module.json` `esmodules`, minus the Quench entry).
 
-`--strict` exits 1 on any DEAD export or setting. Known blind spot: a *live*
+`--strict` exits 1 on any DEAD export or setting, and CI runs it that way
+after lint (issue #282 item 5). Two unit tests sweep for what the scan can't
+see:
+
+- `tests/unit/campaignStateFields.test.js`: every campaignState field (the
+  schema keys, plus every field seen on a name that only holds campaignState)
+  has a writer **and** a reader in `src/`, and the merge-policy field lists
+  name only live fields. A schema default is not a producer. This is the
+  2026-10 audit's one-off grep (`progressTrackIds`, `pendingClarification`,
+  the End-Session foci) made permanent. Its first run removed eleven dead
+  schema fields, re-pointed the Private Channel's location line at the field
+  `!at` actually writes, and marked `canonicalTruthSlugs` UNWIRED.
+- `tests/unit/hookGates.test.js`: every `create*` / `update*` / `delete*`
+  document hook handler (these fire on every client) carries an
+  `isCanonicalGM()` or author check, in its body or a same-file helper it
+  calls. Handlers that only re-render or mirror into their own client are
+  listed as local-only, with the reason, and may contain no shared write.
+  Its first run gated the sector-overview rewrite, which ran on every
+  client.
+
+Known blind spot: a *live*
 same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid
 behind the truths module's live `formatForContext`), and the scan cannot see
 dead internal functions, dead campaignState fields or a GM-gated write a
@@ -282,8 +315,29 @@ after any refactor that retires a path.
 `npm test` and `npm run lint` both signal "done" and both are blind to
 reachability, mirror drift, identity resolution, reload survival, player-side
 GM-gated writes and stale-snapshot overwrites — every rule here guards a
-property the gate cannot see (the unit-test stub user is a GM unless a test
-opts into `asPlayer()`, and no test writes concurrently by default). A **flow
+property the gate cannot see unless a test is written to look (the unit-test
+stub user is a GM unless a test opts into `asPlayer()`, and a single-client
+test never sees a second client or a concurrent write). Issue #282 gave the
+suite the means to look — use them:
+
+- The `tests/setup.js` stubs enforce Foundry's permission model: a player's
+  world-setting write, a non-author's chat-message edit and an actor update
+  without OWNER all reject. Seed fixtures with `withoutPermissionChecks(fn)`
+  (or `game.settings._store`), never by turning the checks off around the
+  code under test.
+- A player-invokable path (§8) is tested on `simulateTable`
+  (`tests/helpers/multiClient.js`): type it on a player's client, then
+  assert where it ran, what reached `table.world`, and what each client saw.
+  Every `CHAT_COMMAND_ROUTES` entry runs under every table shape in
+  `multiplayerRouting.test.js`; a new route without a sample there fails.
+- A stale-snapshot write (§9) is tested by holding the pipeline on a
+  deferred promise while relayed writes land, then releasing it
+  (`multiplayerConcurrency.test.js`).
+- Real Foundry permissions and socket delivery are checked by the
+  second-client E2E suite (`test/ci/playwright/multiplayer.mjs`, run by
+  `e2e.sh` after Quench): a GM and a player in two real browsers.
+
+A **flow
 trace** — following a value from source until it reaches a sink (or dangles),
 and following a fact's writes to every store (or misses one) — is the one
 verification act that catches this class, which is why the

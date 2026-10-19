@@ -11,6 +11,63 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Multiplayer test infrastructure (issue #282) — fixed in the v1.7.34 cycle
+
+Issue #282 gave the unit suite the means to see the 2026-10 audit's bug
+classes: permission-faithful stubs (`tests/setup.js`,
+`tests/helpers/foundryPermissions.js`), a multi-client table harness
+(`tests/helpers/multiClient.js`), concurrency tests of the move pipeline and
+the GM relay queue, and producer → consumer composition tests
+(`rules/reachability.md` §3 and "The through-line"). With each fix reverted
+locally, the harness fails on XCARD-PLAYER-NOOP (7 tests), CMD-PER-CLIENT
+(one `!oracle` card per client — four), BURN-IMPROVE-DOUBLE (4) and
+STALE-SNAPSHOT-CLOBBER (3). Without the permission stubs, the reverted X-Card
+passes. Re-pointing hand-set fixtures at their real producers found one dead
+consumer:
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| RECAP-MATCH-DEAD | PRODUCED-BUT-DEAD | `!recap session`'s "A match was rolled" line read an `isMatch` flag on narrator cards that `postNarrationCard` never wrote, so the line never appeared. Its unit test hand-set the flag | `postNarrationCard` stores `isMatch` from the resolution. The recap tests create cards through it, and `multiplayerComposition.test.js` covers move pipeline → `!recap session` |
+
+`campaignState.characterIds` is still never written (documented in
+`schemas.js`; every reader falls back). The new harness suites no longer seed
+it.
+
+Items 5–7 (approved 2026-10-19):
+
+- **Static checks (item 5).** CI runs `deadscan --strict`.
+  `tests/unit/campaignStateFields.test.js` requires a writer and a reader
+  for every campaignState field. `tests/unit/hookGates.test.js` requires an
+  author or canonical-GM gate on every document-hook handler.
+- **Coverage (item 7).** `src/index.js` is measured (62% lines). The
+  chat-command run-on policy moved to `src/multiplayer/commandRouting.js`,
+  which is on the core bar.
+- **Second-client E2E (item 6).** `test/ci/playwright/multiplayer.mjs` runs a
+  GM and a player browser after Quench (`rules/ci-e2e.md` → "Second
+  client").
+
+The two new checks' first run found the first three of these; the panel copy was found while verifying the Private Lines E2E scenario:
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| SECTOR-OVERVIEW-EVERY-CLIENT | DUPLICATE-EMIT | `registerSectorOverviewSync`'s `updateActor` handler rewrote the sector-record overview page on every connected client. A player's client had its update refused; two GMs both wrote | Gated on `isCanonicalGM()` |
+| PRIVCHAN-LOCATION-DEAD | PRODUCED-BUT-DEAD | The Private Channel's scene context read `campaignState.currentLocationName ?? currentLocation.name`, which nothing writes. `!at` writes `currentLocationId` / `currentLocationType`, so the "Location:" line never appeared | Resolved through the narrator's `currentLocationName` (the same lookup as the location card). A harness test runs the GM's `!at`, then the player's Private Channel context |
+| PRIVATE-LINES-PANEL-COPY | SAFETY | The Companion Settings panel told players their Private Lines were "Stored on this client. Never shared with GM or other players." That has been untrue since SAFETY-PRIVATE-LINES-PLAYER / -SHARED: the lines are relayed to the canonical GM and stored in `campaignState` (decisions.md → "Private Lines in shared narration"). The copy misstated where a safety tool's data goes. The help journal's Settings Reference and `lang/en.json` carried the same claim | The panel, `lang/en.json` and the Settings Reference now say the lines go to the GM's client so all narration respects them, are not shown to other players, and are never mentioned by the narrator |
+| CAMPAIGNSTATE-DEAD-FIELDS | DEAD-CODE | Eleven `CampaignStateSchema` fields nothing read or wrote: `_id`, `title`, `version`, `art`, `speechInput`, `sessionCount`, `clockIds`, `oracleResultIds`, `worldTruthsPageId`, `createdAt`, `updatedAt`. `updatedAt` was written only by a `clocks.js` stamp. `persistResolution`'s merge lists still named four dead fields, including `progressTrackIds` | Removed |
+
+Open follow-ups:
+
+- **CAMPAIGN-TRUTHS-UNWIRED.** `buildCampaignTruthsBlock` (narrator and
+  Private Channel) reads `campaignState.canonicalTruthSlugs`, but nothing
+  writes it: no UI selects canonical truth slugs. So the `<campaign_truths>`
+  block never renders. It is marked `UNWIRED`. Wire a selection UI or retire
+  the block.
+- **INDEX-EXTRACTION** (the rest of item 7). The move pipeline (the inline
+  `createChatMessage` handler, about 1,000 lines) and the chat-card button
+  wiring still live in `src/index.js`. Both lean on many index-local helpers.
+  Measuring `index.js` already counts them toward the floor; moving them into
+  modules would let them carry a bar of their own.
+
 ### 2026-10 repo audit — all fixed in the v1.7.31 cycle
 
 A whole-repo audit (PR #281, commits 87cb96d + d5d434e) traced **where each

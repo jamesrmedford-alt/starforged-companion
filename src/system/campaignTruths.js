@@ -53,6 +53,9 @@ export function formatCampaignTruthsBlock(entries) {
  * @returns {Promise<string>}
  */
 export async function buildCampaignTruthsBlock(campaignState) {
+  // UNWIRED: nothing writes campaignState.canonicalTruthSlugs — no UI selects
+  // canonical truth slugs yet, so this block is always empty (known-issues.md
+  // → CAMPAIGN-TRUTHS-UNWIRED; tests/unit/campaignStateFields.test.js).
   const slugs = Array.isArray(campaignState?.canonicalTruthSlugs)
     ? campaignState.canonicalTruthSlugs.filter(s => typeof s === "string" && s.length)
     : [];

@@ -71,14 +71,14 @@ beforeEach(() => {
   global.game.actors._reset();
   global.game.folders._reset();
   _resetFolderCache();
+  global.game.user.isGM = true;
   global.game.settings._store.clear();
-  global.game.settings.set(MODULE_ID, 'claudeApiKey', 'sk-ant-test');
-  global.game.settings.set(MODULE_ID, 'narrationModel', 'claude-sonnet-4-5-20250929');
-  global.game.settings.set(MODULE_ID, 'narrationTone', 'wry');
+  global.game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
+  global.game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-4-5-20250929');
+  global.game.settings._store.set(`${MODULE_ID}.narrationTone`, 'wry');
   apiPost.mockClear();
   rollOracle.mockClear();
   ChatMessage._reset?.();
-  global.game.user.isGM = true;
 });
 
 
@@ -575,7 +575,8 @@ describe('handleShipEnvisionCommand', () => {
   it('skips the notes write for non-GM clients but still posts the card', async () => {
     global.game.user.isGM = false;
     const actor = makeShipActor({ name: 'Ironfold', shipFlag: { _id: 'a', isCommandVehicle: true } });
-    await global.game.settings.set(MODULE_ID, 'campaignState', { shipIds: [actor.id] });
+    // Seeded raw: a player's client cannot write the world-scoped campaignState.
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, { shipIds: [actor.id] });
 
     await handleShipEnvisionCommand({ content: '!ship envision' });
 

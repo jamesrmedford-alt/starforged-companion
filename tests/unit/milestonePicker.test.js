@@ -7,12 +7,42 @@
  * write is GM-gated). It now relays "milestone.pick" to the canonical GM,
  * where applyMilestonePick (src/moves/milestonePicker.js) marks the vow, posts
  * the result card and resolves the picker — idempotently.
+ *
+ * The click across clients — the GM's pipeline posting the picker, a player
+ * picking on their own client, a second pick, a non-owner, no GM connected —
+ * runs on the multi-client harness (tests/helpers/multiClient.js, issue #282):
+ * "across a booted table" below.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
+
+// The move pipeline, for the multi-client section: a scripted Reach a
+// Milestone with no named vow, no pacing call, the confirm dialog accepted.
+// Each mock spreads the real module, so src/index.js boots on every client.
+vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  routePacedInput: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
+}));
+vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  interpretMove: vi.fn(async () => ({
+    moveId: 'reach_a_milestone', moveName: 'Reach a Milestone', statUsed: null, adds: 0,
+    moveTarget: null, rationale: 'test', mischiefApplied: false,
+  })),
+}));
+vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  scanForApplicableAbilities: vi.fn(async () => []),
+}));
+vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  confirmInterpretation: vi.fn(async () => true),
+}));
+
 import { applyMilestonePick, postReachMilestoneCard } from '../../src/moves/milestonePicker.js';
 import { wireMilestonePickerButtons } from '../../src/index.js';
-import { GM_RELAY_SOCKET } from '../../src/multiplayer/gmRelay.js';
+import { simulateTable, USERS } from '../helpers/multiClient.js';
+import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
 const GM = { id: 'gm-1', isGM: true,  active: true };
@@ -71,7 +101,6 @@ function makeRoot(buttonData) {
   root.querySelectorAll = () => [...root.buttons];
   return root;
 }
-const click = (btn) => btn.listeners.click({ preventDefault() {}, stopPropagation() {} });
 
 let pcA, pcB, vowB1, vowB2, picker;
 
@@ -183,46 +212,90 @@ describe('postReachMilestoneCard', () => {
   });
 });
 
-describe('wireMilestonePickerButtons — clicks relay to the GM', () => {
-  it('a player click relays milestone.pick with plain ids (no local write)', async () => {
-    setUsers([GM, P1], 'pl-1');
-    const root = makeRoot([{ actorId: 'pc-b', vowId: 'v-b1' }, { actorId: 'pc-b', vowId: 'v-b2' }]);
-    wireMilestonePickerButtons(picker, root);
-    await click(root.buttons[0]);
-
-    expect(game.socket._emitted).toEqual([{
-      event:   GM_RELAY_SOCKET,
-      payload: {
-        kind:        'gmRelay.milestone.pick',
-        payload:     { messageId: 'msg-1', actorId: 'pc-b', vowId: 'v-b1' },
-        requesterId: 'pl-1',
-      },
-    }]);
-    expect(vowB1.system.current).toBe(0);
-    expect(root.buttons.every(b => b.disabled)).toBe(true);
-  });
-
-  it('the canonical GM\'s click applies locally', async () => {
-    setUsers([GM, P1], 'gm-1');
-    const root = makeRoot([{ actorId: 'pc-b', vowId: 'v-b2' }]);
-    wireMilestonePickerButtons(picker, root);
-    await click(root.buttons[0]);
-    expect(vowB2.system.current).toBe(8);
-    expect(picker.flags[MODULE_ID].resolved).toBe(true);
-  });
-
-  it('re-arms the buttons when no GM is connected', async () => {
-    setUsers([P1], 'pl-1');
-    silenceConsoleErrors();
-    const root = makeRoot([{ actorId: 'pc-b', vowId: 'v-b1' }]);
-    wireMilestonePickerButtons(picker, root);
-    await click(root.buttons[0]);
-    expect(root.buttons[0].disabled).toBe(false);
-  });
-
+describe('wireMilestonePickerButtons', () => {
   it('a resolved card renders disabled', () => {
     const root = makeRoot([{ actorId: 'pc-b', vowId: 'v-b1' }]);
     wireMilestonePickerButtons(makePickerMessage('msg-2', true), root);
     expect(root.buttons[0].disabled).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Across a booted table — the multi-client harness (issue #282)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('across a booted table', () => {
+  let table, archive, kade;
+
+  beforeAll(async () => {
+    table = await simulateTable({ users: [USERS.GM, USERS.P1, USERS.P2] });
+  }, 30_000);
+  afterAll(() => table?.teardown());
+
+  /** Pat (pl-1, owns Bex) narrates a Reach a Milestone; the GM's pipeline posts the picker. */
+  async function pickerFromPipeline() {
+    await table.reset({ world: { settings: {
+      campaignState: { ...CampaignStateSchema, sessionActive: true },
+    } } });
+    archive = makeVow('v-b1', 'Find the Archive', 'formidable');   // 4 ticks
+    kade    = makeVow('v-b2', 'Avenge Kade', 'dangerous');         // 8 ticks
+    table.addActor({ id: 'pc-b', name: 'Bex', ownership: { 'pl-1': 3 }, items: { contents: [archive, kade] } });
+    await table.client('pl-1').chat('Another step closer to the truth of it.', { speaker: { actor: 'pc-b' } });
+    await table.settle();
+    const pickers = table.cards(f => f.milestonePicker);
+    expect(pickers.map(c => c.author)).toEqual(['gm-1']);
+    return pickers[0];
+  }
+
+  const pick = (userId, card, vowId) =>
+    table.client(userId).click(card._id, `[data-action="sf-milestone-pick"][data-vow-id="${vowId}"]`);
+
+  it('the GM\'s pipeline posts the picker, offering exactly the open vows', async () => {
+    const card = await pickerFromPipeline();
+    expect(card.flags[MODULE_ID].choices).toEqual([
+      { vowId: 'v-b1', actorId: 'pc-b' },
+      { vowId: 'v-b2', actorId: 'pc-b' },
+    ]);
+  });
+
+  it('a player picks on their own client: the GM marks that vow once, posts the result, resolves the picker everywhere', async () => {
+    const card = await pickerFromPipeline();
+    pick('pl-1', card, 'v-b1');
+    await table.settle();
+    expect(archive.system.current).toBe(4);
+    expect(kade.system.current).toBe(0);
+    expect(table.cards(f => f.reachMilestoneCard).map(c => c.author)).toEqual(['gm-1']);
+    for (const c of table.clients) expect(c.message(card._id).flags[MODULE_ID].resolved, c.id).toBe(true);
+    const others = table.client('pl-2').render(card._id).querySelectorAll('[data-action="sf-milestone-pick"]');
+    expect(others.every(b => b.disabled)).toBe(true);
+  });
+
+  it('a second pick after the first landed marks nothing', async () => {
+    const card = await pickerFromPipeline();
+    pick('pl-1', card, 'v-b1');
+    await table.settle();
+    pick('gm-1', card, 'v-b2');   // the GM's re-rendered buttons are disabled too
+    await table.settle();
+    expect(kade.system.current).toBe(0);
+    expect(table.cards(f => f.reachMilestoneCard)).toHaveLength(1);
+  });
+
+  it('a player who does not own the PC is refused — and the picker stays open', async () => {
+    const card = await pickerFromPipeline();
+    pick('pl-2', card, 'v-b2');
+    await table.settle();
+    expect(kade.system.current).toBe(0);
+    expect(table.world.message(card._id).flags[MODULE_ID].resolved).toBe(false);
+  });
+
+  it('with no GM connected the pick is not lost silently — the buttons re-arm and nothing is marked', async () => {
+    silenceConsoleErrors();
+    const card = await pickerFromPipeline();
+    await table.leave('gm-1');
+    const btn = pick('pl-1', card, 'v-b1');
+    await table.settle();
+    expect(archive.system.current).toBe(0);
+    expect(btn.disabled).toBe(false);
+    expect(table.client('pl-1').notifications.some(n => /no GM is connected/.test(n.message))).toBe(true);
   });
 });

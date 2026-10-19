@@ -614,6 +614,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         sessionNumber:    campaignState?.sessionNumber     ?? null,
         moveId:           resolution?.moveId               ?? null,
         outcome:          resolution?.outcome              ?? null,
+        // Read by postSessionRecap's "A match was rolled" line, which had no
+        // producer until the 2026-10 test-infrastructure audit (#282).
+        isMatch:          resolution?.isMatch === true,
         resolutionId:     resolution?._id                  ?? '',
         matchedEntityIds,
         timestamp:        new Date().toISOString(),
@@ -2060,25 +2063,41 @@ function collectEntityNamesById(ids, types) {
 }
 
 /**
+ * The current location's entity record (`!at` writes currentLocationId /
+ * currentLocationType), or null when none is set or it cannot be loaded.
+ */
+function loadCurrentLocation(campaignState) {
+  const id   = campaignState?.currentLocationId;
+  const type = campaignState?.currentLocationType;
+  if (!id || !type) return null;
+  const getter = LOCATION_GETTERS[type];
+  if (!getter) return null;
+  try {
+    return getter(id) ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: load currentLocation (${type} ${id}) failed:`, err);
+    return null;
+  }
+}
+
+/**
  * Build the current-location card from campaignState.currentLocationId.
  * Returns empty string when no current location is set or the record cannot
  * be resolved.
  */
 function formatCurrentLocation(campaignState) {
-  const id   = campaignState?.currentLocationId;
-  const type = campaignState?.currentLocationType;
-  if (!id || !type) return '';
-  const getter = LOCATION_GETTERS[type];
-  if (!getter) return '';
-  let entity = null;
-  try {
-    entity = getter(id);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | narrator: load currentLocation (${type} ${id}) failed:`, err);
-    return '';
-  }
-  if (!entity) return '';
-  return formatEntityCard(entity, type);
+  const entity = loadCurrentLocation(campaignState);
+  return entity ? formatEntityCard(entity, campaignState.currentLocationType) : '';
+}
+
+/**
+ * Display name of the current location, or null — for the Private Channel's
+ * scene context, which used to read `currentLocationName` / `currentLocation`,
+ * fields nothing writes (issue #282's campaignState field check).
+ */
+export function currentLocationName(campaignState) {
+  const name = loadCurrentLocation(campaignState)?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
 
 /**

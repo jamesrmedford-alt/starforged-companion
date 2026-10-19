@@ -5,7 +5,9 @@
 # Actions Ubuntu runner. Boots Foundry via Docker, drives a Cypress
 # container through the first-launch ritual, runs every
 # starforged-companion.* Quench batch, asserts the Mocha report has
-# zero failures.
+# zero failures. Then a Playwright container drives a GM and a player
+# browser through the multiplayer scenarios (test/ci/playwright/,
+# issue #282 item 6) against the same world.
 #
 # Per-PR cadence (not per-commit). Triggers on PR open, every push to
 # the PR branch, and PR reopen. In-progress runs are cancelled when a
@@ -278,6 +280,7 @@ jobs:
             test/ci/cypress/artifacts/screenshots/
             test/ci/cypress/artifacts/videos/
             test/ci/cypress/artifacts/e2e-run.log
+            test/ci/playwright/artifacts/
           if-no-files-found: ignore
           # retention-days omitted on purpose — repo settings cap it to
           # 1 day right now; passing 14 emits a warning and is silently

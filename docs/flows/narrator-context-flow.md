@@ -36,7 +36,7 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `src/multiplayer/gmGate.js`).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
-  `src/index.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the
+  `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the
   author's client with its own key (a keyed player at a keyless-GM table;
   keyless → the usual "key not configured" fallback). Every client reads the
   same setting and user list, so they agree on the runner.

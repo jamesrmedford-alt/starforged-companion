@@ -12,12 +12,13 @@
  *
  * Reuses the shared builders rather than re-deriving: formatSafetyContext
  * (src/context/safety.js), buildCampaignTruthsBlock (src/system/campaignTruths.js),
- * getActiveCharacter + getRecentNarrationContext (src/narration/narrator.js).
+ * getActiveCharacter + getRecentNarrationContext + currentLocationName
+ * (src/narration/narrator.js).
  */
 
 import { formatSafetyContext } from "../context/safety.js";
 import { buildCampaignTruthsBlock } from "../system/campaignTruths.js";
-import { getActiveCharacter, getRecentNarrationContext } from "../narration/narrator.js";
+import { getActiveCharacter, getRecentNarrationContext, currentLocationName } from "../narration/narrator.js";
 
 const ROLE = [
   "## ROLE",
@@ -56,9 +57,7 @@ function formatCharacterBlock(character) {
 function formatSceneContext(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? "";
   const beats     = getRecentNarrationContext(sessionId, 3);
-  const loc       = campaignState?.currentLocationName
-                 ?? campaignState?.currentLocation?.name
-                 ?? null;
+  const loc       = currentLocationName(campaignState);
   const lines = ["## CURRENT SCENE CONTEXT"];
   if (loc) lines.push(`Location: ${loc}`);
   lines.push("", "Recent narration:", beats || "(none yet this session)");

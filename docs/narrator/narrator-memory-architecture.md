@@ -102,7 +102,7 @@ should remember* must carry all three flags:
 
 | Card | Flags since | Notes |
 |---|---|---|
-| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede) |
+| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` / `isMatch` (session recap) |
 | paced narration (`postPacedNarrativeCard`) | always | |
 | @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions |
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
@@ -117,7 +117,9 @@ CLAUDE.md "audit consumers" rule):
 - rolling session summary (`sessionNarratorCards` → `getRollingSessionSummary`)
   — shares the ring's source reader + defensive excludes; reads the full feed,
   not the last N
-- session recap (`postSessionRecap`) — inclusion intended
+- session recap (`postSessionRecap`) — inclusion intended; its move lines and
+  "A match was rolled" read move narration's `moveId` / `outcome` / `isMatch`
+  (`isMatch` had no writer until RECAP-MATCH-DEAD, issue #282)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button

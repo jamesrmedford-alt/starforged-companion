@@ -118,6 +118,13 @@ That runs `test/ci/scripts/e2e.sh`, which:
    world launch → enable modules → reload) and invokes
    `quench.runBatches("starforged-companion.**", { json: true })`.
 5. Asserts `stats.failures === 0` on the resulting Mocha-shape report.
+6. Runs the second-client suite in a Playwright container
+   (`mcr.microsoft.com/playwright:v1.56.1-noble`): `playwright/multiplayer.mjs`
+   joins the same world as the GM and as a player it creates, and checks
+   the multiplayer paths Quench (a single GM) can't — the X-Card, `!oracle`
+   posting one card, a player's Begin a Session, Burn Momentum applying once,
+   Private Lines reaching the GM. Failure screenshots land in
+   `playwright/artifacts/`. See `rules/ci-e2e.md` → "Second client".
 6. Tears down the container (use `--keep` to leave it running).
 
 Runtime: ~3–5 minutes (Foundry boot ~30 s + Quench suite ~130 s +

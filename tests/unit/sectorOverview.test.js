@@ -313,6 +313,42 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
     expect(overviewPage.text.content).not.toContain("Old Name");
   });
 
+  it("leaves the overview to the canonical GM — a player's or second GM's client does not rewrite it", async () => {
+    restore = installRichJournalMock();
+    const sectorId   = "sec-gate";
+    const sectorName = "Gated Reach";
+    const initialContent = `<h3>Settlements</h3>
+<!-- sf:settlements-list --><ul><li>@UUID[Actor.actor-G]{Old Name}</li></ul><!-- /sf:settlements-list -->`;
+    const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, initialContent);
+    global.game.journal._add(journal);
+    const actor = global.makeTestActor({
+      id: "actor-G", type: "location", name: "New Name",
+      flags: { [MODULE]: { settlement: { name: "New Name", sectorId } } },
+    });
+    global.game.actors._set("actor-G", actor);
+    global.game.settings.get = () => ({
+      sectors: [{
+        id: sectorId, name: sectorName,
+        settlements: [{ id: "g-g", name: "New Name", locationType: "orbital", population: "Few", authority: "None" }],
+        entityJournalIds: { "g-g": "actor-G" },
+      }],
+    });
+    registerSectorOverviewSync();
+
+    for (const user of [{ id: "pl-1", isGM: false }, { id: "gm-2", isGM: true }]) {
+      global.game.users._set([{ id: "gm-1", isGM: true, active: true }, { ...user, active: true }]);
+      const undo = withUser(user);
+      try {
+        registeredHandler(actor, { name: "New Name" });
+        await _flushPendingRewrites();
+      } finally {
+        undo();
+      }
+      expect(overviewPage.text.content, user.id).toContain("{Old Name}");
+    }
+    global.game.users._set([{ id: "test-user-gm", isGM: true, active: true }]);
+  });
+
   it("ignores updates that don't touch a rendered field (e.g. flag changes elsewhere)", async () => {
     restore = installRichJournalMock();
     const sectorId   = "sec-ignore";

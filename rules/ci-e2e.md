@@ -6,7 +6,7 @@ Docker scaffolding.
 
 **Phases:**
 1. Local Docker stack (`test/ci/`) — Foundry + foundry-ironsworn + Quench + module under test, driven manually via browser.
-2. Cypress spec (`test/ci/cypress/`) — automates the manual ritual + invokes `quench.runBatches()`.
+2. Cypress spec (`test/ci/cypress/`) — automates the manual ritual + invokes `quench.runBatches()`; then the second-client suite (`test/ci/playwright/`) runs a GM and a player browser against the same world.
 3. GitHub Actions (`.github/workflows/e2e.yml`) — runs the same orchestrator on every PR open/sync.
 
 ## Cypress: Foundry v13 first-launch ritual
@@ -89,6 +89,55 @@ suite. Three layered guards in `cypress/e2e/quench.cy.js`:
 If the suite shrinks below ~100 active tests in the future, the absolute backstop needs revisiting — but loosening it should be a deliberate, visible change, not silent drift.
 
 **Out of code's reach:** the workflow must be a required status check on `main` (see Repo settings prerequisites above), otherwise none of this matters at merge time.
+
+## Second client: the multiplayer suite (Playwright)
+
+Quench runs as a single GM, so it cannot see the multiplayer bug families:
+a player's world write that Foundry refuses, a command that runs once per
+connected client, a card button that applies twice. After the Cypress run,
+`e2e.sh` runs `test/ci/playwright/multiplayer.mjs` (issue #282 item 6)
+against the same live world. It is the only check against real Foundry
+permissions and real socket delivery; the unit-level equivalent is the
+multi-client harness (`tests/helpers/multiClient.js`).
+
+- **Shape.** One Node process drives two browsers: the GM (`Gamemaster`)
+  and a player user it creates (`E2E Player`, who owns a fresh PC). The
+  player types commands (`ui.chat.processMessage`, the same path typing
+  takes, so the X-Card's `chatMessage` interception fires) and clicks card
+  buttons. The GM's page waits on its own `game` state for the result. One
+  process keeps every step in a known order, with no cross-process
+  synchronisation. Cypress can't drive a second browser, so this is not a
+  Cypress spec.
+- **Scenarios:** the X-Card; `!oracle` producing exactly one card (and one
+  recorded result); a player's Begin a Session persisting (and its dialog
+  opening on the player's screen only); Burn Momentum applying once (player
+  and GM both click, then the player clicks the spent button); a player's
+  Private Lines reaching `campaignState.safety`. Add a scenario as one
+  more `await scenario(...)` block. Assert on GM-side state, and wait with
+  `page.waitForFunction`, never a fixed sleep (`SETTLE_MS` is only the
+  window for a duplicate to show up).
+- **Fixtures.** The suite resets the campaign flags it asserts on
+  (`xCardActive`, `sessionActive`, the player's Private Lines entry),
+  because Quench leaves state behind. It uses only what the module itself
+  provides (`/modules/starforged-companion/src/...` dynamic imports,
+  `ChatMessage.create`). CI has no Claude key, so pick scenarios that need
+  none (session vignettes are unchecked).
+- **Container.** `mcr.microsoft.com/playwright:v1.56.1-noble` (the
+  `players` service, `docker-compose.e2e.yml`) ships the browsers; `npm ci`
+  installs `playwright@1.56.1` from `test/ci/playwright/package-lock.json`.
+  **Bump the image tag and the package together**: a mismatched package
+  can't find its browser.
+- **Result.** The suite runs whatever Cypress's result (a Quench failure
+  doesn't make the world unusable), and `e2e.sh` fails if either part
+  failed. The orchestrator log carries `[multiplayer] PASS / FAIL` lines,
+  the page console errors on failure, and a final `summary` JSON line.
+  Failure screenshots land in `test/ci/playwright/artifacts/` and upload
+  with the Cypress artifacts.
+- **Validating on a branch without a PR.** `e2e.yml` has a
+  `workflow_dispatch` trigger (`mcp__github__actions_run_trigger`,
+  `method=run_workflow`, `ref=<branch>`). There is no PR, so there is no
+  sticky comment: poll the run's status (the public API is enough for a
+  public repo) and read the log with `mcp__github__get_job_logs`.
 
 ## Quench batch coupling — shared defaults and hooks
 
