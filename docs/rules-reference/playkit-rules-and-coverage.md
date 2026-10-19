@@ -324,7 +324,8 @@ to find each move's resolver branch.
 ### 2.8 Chat commands & toolbar (UI surface inventory)
 
 Chat commands (all routed from the `createChatMessage` hook through the ordered
-`CHAT_COMMAND_ROUTES` table in `src/index.js` — `dispatchChatCommand`; each
+`CHAT_COMMAND_ROUTES` table in `src/index.js` — `dispatchChatCommand` in
+`src/multiplayer/commandRouting.js`; each
 command runs once, on the typist's client (`RUN_ON.AUTHOR`), the canonical GM
 (`RUN_ON.CANONICAL_GM`, `!x`), or the keyed canonical GM else the author
 (`RUN_ON.CLAUDE`: `@scene`, `!recap`, `!ship envision/history`, `!incite`).

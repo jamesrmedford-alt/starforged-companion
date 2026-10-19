@@ -46,8 +46,8 @@ that changes it fails loudly. The remaining limits are in the harness header.
 ## Chat commands run once: author / canonical-GM / keyed-runner routing (2026-10)
 
 **Decision:** Every chat command is declared in `CHAT_COMMAND_ROUTES`
-(`src/index.js`) with a run-on policy; `dispatchChatCommand` /
-`shouldRunCommandHere` enforce it. Every client *recognises* every command (so
+(`src/index.js`) with a run-on policy; `dispatchChatCommand`
+(`src/multiplayer/commandRouting.js`) enforces it. Every client *recognises* every command (so
 a command never falls through into the move pipeline), but exactly one client
 *executes* it:
 

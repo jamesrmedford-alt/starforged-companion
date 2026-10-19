@@ -7,7 +7,8 @@
  * `!command` ran once per client (duplicate cards, independent dice, one
  * Claude call per keyed client, GM-only commands executed by the GM's client
  * for a player). Routing now runs each command exactly where its run-on
- * policy says (src/index.js CHAT_COMMAND_ROUTES).
+ * policy says (the CHAT_COMMAND_ROUTES table in src/index.js, the policy in
+ * src/multiplayer/commandRouting.js).
  *
  * Every route × every table shape: the command is posted on a booted
  * four-client table (tests/helpers/multiClient.js) and must execute on
@@ -18,7 +19,7 @@
  * sample here fails the first test.
  *
  * The expected runner is re-derived from the policy below — not by calling
- * shouldRunCommandHere — so the matrix checks the implementation against the
+ * the routing module — so the matrix checks the implementation against the
  * decision record (decisions.md → "Chat commands run once").
  */
 
@@ -145,8 +146,10 @@ describe('CHAT_COMMAND_ROUTES coverage', () => {
     }
   });
 
-  it('every route declares a known policy', () => {
-    const { RUN_ON, CHAT_COMMAND_ROUTES } = table.client('gm-1').index;
+  it('every route declares a known policy', async () => {
+    const gm = table.client('gm-1');
+    const { RUN_ON } = await gm.import('../../src/multiplayer/commandRouting.js');
+    const { CHAT_COMMAND_ROUTES } = gm.index;
     for (const route of CHAT_COMMAND_ROUTES) {
       expect(Object.values(RUN_ON), route.name).toContain(route.runOn);
     }
