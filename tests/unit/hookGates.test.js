@@ -63,6 +63,9 @@ const LOCAL_ONLY = {
   'src/ui/entityPanel.js createJournalEntryPage inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js deleteJournalEntry inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/progressTracks.js updateJournalEntry inline#1': 're-renders this client\'s Progress Tracks panel',
+  'src/index.js createItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
+  'src/index.js updateItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
+  'src/index.js deleteItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);

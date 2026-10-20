@@ -123,7 +123,12 @@ pays 2 XP/box, 1 once the track is cleared; `!bond` routes through it too).
 
 Live surfaces: **entity cards** ("ENTITIES IN SCENE" — the record via
 `getConnection`, matched by the relevance resolver) and **CHARACTER STATE**
-(the PC's bond *Items* via `readConnections` — the stale mirror). The legacy
+(the PC's bond *Items* via `readConnections` — the mirror). Since issue #286
+(C5) the card shows the rolled `goal` beside the `motivation`, a lost
+(`active:false`) or forged (`bonded`) bond, and the last three `history`
+events (`forgeBond`, `loseConnection`); CHARACTER STATE shows each bond's
+progress. `background` and `secrets` have no production writer, so neither
+renders. The legacy
 "ACTIVE CONNECTIONS" assembler section still reads `game.journal.get(id)` and
 finds nothing for actor-hosted connections (kept for backwards
 compatibility); `buildConnectionsSummary` emits only a count.

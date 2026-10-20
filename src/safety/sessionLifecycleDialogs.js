@@ -118,7 +118,7 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
 }
 
 /** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
-const BEGIN_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionActive", "sessionActiveStartedAt"]);
+const BEGIN_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionFocus", "sessionActive", "sessionActiveStartedAt"]);
 
 /**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
@@ -145,8 +145,9 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
   // id, so the ring, summary and oracles ran on). Then flip the
   // session-active gate ON: from this point forward, plain typed narration
   // runs through the move pipeline / paced narrator again. The foci captured
-  // at the last End a Session have now been surfaced (dialog + card), so
-  // clear them for the next End. The roll can await a Claude call, so only
+  // at the last End a Session have now been surfaced (dialog + card) and go
+  // on to the narrator as this session's focus, so clear them for the next
+  // End. The roll can await a Claude call, so only
   // Begin's own fields are merged onto the latest store.
   try {
     const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
@@ -154,6 +155,10 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
     await rollSessionIfDue(cs);
     beginSession(cs);
+    // The foci go on to the narrator for this session (issue #286 C5).
+    const quest      = cleanFocus(cs.questFocus);
+    const connection = cleanFocus(cs.connectionFocus);
+    if (quest || connection) cs.sessionFocus = { sessionId: cs.currentSessionId ?? null, quest, connection };
     cs.questFocus      = "";
     cs.connectionFocus = "";
     await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session"));

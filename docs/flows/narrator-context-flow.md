@@ -98,14 +98,20 @@ faction landscape · [4f] established lore** (chosen per turn since issue
 entries sharing the most words with the player text, the frame and the
 entities in play, then the most recent, 8 in all; it was the 5 most recent)
 (World Journal state — rode the
-dead assembler packet until 2026-07; see `faction-flow.md`) · [5] current
+dead assembler packet until 2026-07; see `faction-flow.md`) · **[4h] clocks**
+(`campaignState.clocks`, active campaign / tension clocks, read from the
+store — issue #286 C5) · **[4i] the table's focus this session** (the End
+Session foci, kept as `sessionFocus` at Begin Session — C5) · [5] current
 location card · [5b]
-active-sector anchor · [6] matched entity cards · [6.5] active-scene ledger
+active-sector anchor · [6] matched entity cards (a connection's card also
+shows its goal, a lost or forged bond and its last three `history` events —
+C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
 never dropped) · [7] legacy connections summary (count only) · [8]
-CHARACTER STATE · [8b] party roster · [8c] spotlight nudge · [9] sidecar
+CHARACTER STATE (vows and bonds with progress, granted rewards — C5) · [8b]
+party roster · [8c] spotlight nudge · [9] sidecar
 instruction (last; includes the record-anchors-once and never-re-assert-
 CORRECTED rules) · [10] audio markup.
 

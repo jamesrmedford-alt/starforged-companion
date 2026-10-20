@@ -716,7 +716,8 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['secondRole',       'Also'],
     ['rank',             'Rank'],
     ['relationshipType', 'Disposition'],
-    ['motivation',       'Goal'],
+    ['goal',             'Goal'],
+    ['motivation',       'Motivation'],
     ['description',      'Description'],
     ['notes',            'Notes'],
   ],
@@ -840,6 +841,27 @@ function selectCardTierEntries(tier) {
  * @param {string} entityType — "connection" | "ship" | "settlement" | "faction" | "planet" | "location" | "creature"
  * @returns {string}
  */
+/**
+ * Where a connection's relationship stands (issue #286 C5): lost or bonded,
+ * then its last few relationship events (`history`, written by forgeBond /
+ * loseConnection) — none of which reached the narrator, so a severed
+ * connection could be written as a friend.
+ *
+ * @param {Object} connection — the connection record
+ * @returns {string[]} card lines
+ */
+function formatConnectionStanding(connection) {
+  const lines = [];
+  if (connection.active === false) lines.push('  Status: connection lost');
+  else if (connection.bonded === true) lines.push('  Bond: forged');
+  const events = (Array.isArray(connection.history) ? connection.history : [])
+    .map(h => (typeof h === 'string' ? h : h?.entry))
+    .filter(e => typeof e === 'string' && e.trim())
+    .slice(-3);
+  if (events.length) lines.push('', 'HISTORY (oldest first):', ...events.map(e => `  - ${e.trim()}`));
+  return lines;
+}
+
 export function formatEntityCard(entity, entityType) {
   if (!entity) return '';
   const typeLabel = ENTITY_TYPE_LABELS[entityType] ?? 'Entity';
@@ -852,16 +874,16 @@ export function formatEntityCard(entity, entityType) {
   lines.push('', canonicalIntro);
 
   const fields = CANONICAL_FIELDS_BY_TYPE[entityType] ?? [['description', 'Description']];
+  const shown  = new Set();   // a value two fields share (a goal also stored as the motivation) shows once
   for (const [key, label] of fields) {
     const value = entity[key];
     if (value === undefined || value === null || value === '') continue;
-    if (Array.isArray(value)) {
-      if (!value.length) continue;
-      lines.push(`  ${label}: ${value.join(', ')}`);
-    } else {
-      lines.push(`  ${label}: ${value}`);
-    }
+    const text = Array.isArray(value) ? value.join(', ') : String(value);
+    if (!text || shown.has(text)) continue;
+    shown.add(text);
+    lines.push(`  ${label}: ${text}`);
   }
+  if (entityType === 'connection') lines.push(...formatConnectionStanding(entity));
 
   // Last known whereabouts from earlier scenes (issue #286 C1) — kept by
   // endScene; the active scene's CURRENT STATE supersedes them.
@@ -1214,6 +1236,8 @@ export function buildNarratorSystemPrompt(
     confirmedLore        = [],
     loreRecap            = '',
     previousSessionSummary = null,
+    clocks               = [],
+    sessionFocus         = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1364,6 +1388,12 @@ export function buildNarratorSystemPrompt(
     if (loreBlock) parts.push(loreBlock);
     const recapBlock = formatWorldLoreRecapBlock(loreRecap);
     if (recapBlock) parts.push(recapBlock);
+    // [4h] Clocks and [4i] the session's focus (issue #286 C5) — neither
+    //      reached any prompt.
+    const clocksBlock = formatClocksBlock(clocks);
+    if (clocksBlock) parts.push(clocksBlock);
+    const focusBlock = formatSessionFocusBlock(sessionFocus);
+    if (focusBlock) parts.push(focusBlock);
   }
 
   // [5] Current location card — always injected when set
@@ -1552,6 +1582,58 @@ export function formatEstablishedLoreBlock(lore) {
     lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * [4h] The table's campaign and tension clocks (`campaignState.clocks`,
+ * src/clocks/clocks.js). Active clocks, at most eight; a full one is marked
+ * TRIGGERED. The narrator is told to let them show as pressure in the
+ * fiction, never as numbers. '' when there are none.
+ *
+ * @param {Array<{ name: string, type: string, segments: number, filled: number, active?: boolean }>} clocks
+ * @returns {string}
+ */
+function formatClocksBlock(clocks) {
+  const list = (Array.isArray(clocks) ? clocks : [])
+    .filter(c => c?.active !== false && typeof c?.name === 'string' && c.name.trim())
+    .slice(0, 8);
+  if (!list.length) return '';
+  const lines = list.map(c => {
+    const segments = Number(c.segments) || 0;
+    const filled   = Math.min(Number(c.filled) || 0, segments);
+    const kind     = c.type === 'campaign' ? 'Campaign' : 'Tension';
+    return `- ${kind}: ${c.name.trim()} — ${filled}/${segments}${segments && filled >= segments ? ' (TRIGGERED)' : ''}`;
+  });
+  return (
+    `## CLOCKS\n\n` +
+    `The threats and projects the table is tracking. Let an advancing clock show ` +
+    `in the fiction as pressure, and treat a triggered one as having happened — ` +
+    `never mention the clock or its count.\n\n` +
+    lines.join('\n')
+  );
+}
+
+/**
+ * [4i] The quest and connection the table chose to focus on at the last End
+ * a Session, carried for this session (`campaignState.sessionFocus`, written
+ * at Begin a Session). '' when none was chosen.
+ *
+ * @param {{ quest?: string, connection?: string }|null} focus
+ * @returns {string}
+ */
+function formatSessionFocusBlock(focus) {
+  const quest      = typeof focus?.quest === 'string' ? focus.quest.trim() : '';
+  const connection = typeof focus?.connection === 'string' ? focus.connection.trim() : '';
+  if (!quest && !connection) return '';
+  const lines = [];
+  if (quest)      lines.push(`- Quest: ${quest}`);
+  if (connection) lines.push(`- Connection: ${connection}`);
+  return (
+    `## THE TABLE'S FOCUS THIS SESSION\n\n` +
+    `At the end of the last session the table chose these threads to focus on. ` +
+    `Give them room when the fiction allows; never force them.\n\n` +
+    lines.join('\n')
+  );
 }
 
 /**
@@ -1960,22 +2042,41 @@ function buildCharacterBlock(character) {
     }
   }
 
-  // Vows — spotlight the background (founding) vow, then active others.
+  // Vows — spotlight the background (founding) vow, then active others —
+  // with their progress and any countdown clock (issue #286 C5: the narrator
+  // could not tell a vow nearly fulfilled from one just sworn).
   const vows = Array.isArray(character.vows) ? character.vows : [];
   if (vows.length) {
     const bg     = vows.find(v => v.isBackground);
     const others = vows.filter(v => !v.isBackground && !v.completed);
-    if (bg)            lines.push(`Background vow: ${bg.name} (${bg.rank})`);
-    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${v.rank})`).join('; ')}`);
+    if (bg)            lines.push(`Background vow: ${bg.name} (${formatTrackDetail(bg)})`);
+    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${formatTrackDetail(v)})`).join('; ')}`);
   }
 
   // Connections (bonds) the character holds.
   const connections = Array.isArray(character.connections) ? character.connections : [];
   if (connections.length) {
-    lines.push(`Connections: ${connections.map(c => `${c.name} (${c.rank})`).join('; ')}`);
+    lines.push(`Connections: ${connections.map(c => `${c.name} (${formatTrackDetail(c)})`).join('; ')}`);
+  }
+
+  // Rewards the character was granted — gear, contacts, knowledge (#241;
+  // recordGrantedReward). Recorded on the sheet, never shown to the narrator
+  // until issue #286 C5. The most recent eight.
+  const rewards = Array.isArray(character.grantedRewards) ? character.grantedRewards : [];
+  if (rewards.length) {
+    lines.push(`Rewards received: ${rewards.slice(-8).map(r => `${r.description} (${r.form ?? 'gear'})`).join('; ')}`);
   }
 
   return lines.join('\n');
+}
+
+/** A vow's or bond's rank, progress boxes, countdown clock and fulfilment, for the CHARACTER block. */
+function formatTrackDetail(track) {
+  const bits = [track.rank];
+  if (Number.isFinite(track.progress)) bits.push(`progress ${track.progress}/10`);
+  if (Number(track.clock?.max) > 0)    bits.push(`clock ${Number(track.clock.ticks) || 0}/${track.clock.max}`);
+  if (track.completed === true)        bits.push('fulfilled');
+  return bits.filter(Boolean).join(', ');
 }
 
 // ---------------------------------------------------------------------------

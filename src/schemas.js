@@ -473,6 +473,11 @@ export const CampaignStateSchema = {
   // and cleared at the next Begin a Session (src/safety/sessionLifecycleDialogs.js).
   questFocus:           "",
   connectionFocus:      "",
+  // Those foci, carried into the session Begin a Session opens (issue #286
+  // C5) — the narrator's THE TABLE'S FOCUS THIS SESSION block. Written by
+  // applyBeginSession, read by buildNarratorExtras while sessionId matches.
+  //   { sessionId, quest, connection }
+  sessionFocus:         null,
 
   campaignRecapCache: {
     text:            "",

@@ -1582,3 +1582,63 @@ describe('World Journal narrator blocks ([4d]-[4f])', () => {
     expect(meta).not.toMatch(/## WORLD LORE/);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What reached no prompt (issue #286 C5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('clocks, vow progress, rewards, connection standing and the session focus reach the prompt (issue #286 C5)', () => {
+  const live = (extras, character = null) =>
+    buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), character, '', { mode: 'paced_narrative', ...extras });
+
+  it('CHARACTER carries vow progress and countdown clocks, bond progress and granted rewards', () => {
+    const prompt = live({}, {
+      name: 'Kira',
+      vows: [
+        { name: 'Avenge my sister', rank: 'extreme', progress: 3, isBackground: true, clock: { ticks: 2, max: 6 } },
+        { name: 'Find the relay',   rank: 'dangerous', progress: 8, isBackground: false, completed: false, clock: null },
+      ],
+      connections:    [{ name: 'Dr Chen', rank: 'dangerous', progress: 4 }],
+      grantedRewards: [{ description: 'a Hegemony access key', form: 'gear' }, { description: 'the dockmaster owes us', form: 'contact' }],
+    });
+    expect(prompt).toContain('Background vow: Avenge my sister (extreme, progress 3/10, clock 2/6)');
+    expect(prompt).toContain('Other vows: Find the relay (dangerous, progress 8/10)');
+    expect(prompt).toContain('Connections: Dr Chen (dangerous, progress 4/10)');
+    expect(prompt).toContain('Rewards received: a Hegemony access key (gear); the dockmaster owes us (contact)');
+  });
+
+  it('a connection card shows its goal, a lost or forged bond, and its last three relationship events', () => {
+    const card = formatEntityCard({
+      name: 'Mara', role: 'Pilot', goal: 'Pay off the debt', motivation: 'Pay off the debt', active: false, bonded: true,
+      history: [
+        { entry: 'Met at the Forge.' }, { entry: 'Saved the crew.' }, { entry: 'Bond forged.' }, { entry: 'Connection lost: Severed (!sever).' },
+      ],
+    }, 'connection');
+    expect(card).toContain('  Goal: Pay off the debt');
+    expect(card).not.toContain('Motivation: Pay off the debt');   // the same text shows once
+    expect(card).toContain('  Status: connection lost');
+    expect(card).not.toContain('Bond: forged');                    // lost wins
+    expect(card).toMatch(/HISTORY \(oldest first\):\n {2}- Saved the crew\.\n {2}- Bond forged\.\n {2}- Connection lost: Severed \(!sever\)\./);
+    expect(card).not.toContain('Met at the Forge');
+  });
+
+  it('CLOCKS lists the active clocks, marks a full one triggered, and asks for no numbers in the prose', () => {
+    const prompt = live({ clocks: [
+      { name: 'Hegemony fleet arrives', type: 'campaign', segments: 8, filled: 3, active: true },
+      { name: 'Reactor overload',       type: 'tension',  segments: 4, filled: 4, active: true },
+      { name: 'Old business',           type: 'tension',  segments: 4, filled: 1, active: false },
+    ] });
+    expect(prompt).toMatch(/## CLOCKS\n\n[^\n]*never mention the clock or its count\.\n\n- Campaign: Hegemony fleet arrives — 3\/8\n- Tension: Reactor overload — 4\/4 \(TRIGGERED\)/);
+    expect(prompt).not.toContain('Old business');
+    expect(buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '',
+      { mode: 'campaign_recap', clocks: [{ name: 'X', type: 'tension', segments: 4, filled: 1 }] })).not.toContain('## CLOCKS');
+  });
+
+  it('the focus the table chose at End a Session is on every call of the session', () => {
+    const prompt = live({ sessionFocus: { sessionId: 's2', quest: 'Find the beacon', connection: 'Mara' } });
+    expect(prompt).toContain("## THE TABLE'S FOCUS THIS SESSION");
+    expect(prompt).toContain('- Quest: Find the beacon\n- Connection: Mara');
+    expect(live({ sessionFocus: null })).not.toContain('FOCUS THIS SESSION');
+  });
+});

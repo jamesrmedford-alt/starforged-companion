@@ -493,3 +493,46 @@ describe('a session carries into the next one (C3, C4)', () => {
     expect(world().lastSessionTimestamp).toBe(idle);
   });
 });
+
+describe('what reached no prompt now does (C5)', () => {
+  beforeEach(() => {
+    table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: new Date().toISOString() });
+  });
+
+  it('the focus the table chose at End a Session is on the next session\'s narrations', async () => {
+    table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="questFocus"]': 'Find the beacon', 'input[name="connectionFocus"]': 'Mara' }));
+    await type('gm-1', '!end-session');
+    table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="vignette"]': false, 'input[name="galleyVignette"]': false }));
+    await type('gm-1', '!begin-session');
+    expect(world()).toMatchObject({
+      questFocus: '', connectionFocus: '',
+      sessionFocus: { sessionId: world().currentSessionId, quest: 'Find the beacon', connection: 'Mara' },
+    });
+
+    const call = await narrateMove('I check the nav console.');
+    expect(call.system).toContain("## THE TABLE'S FOCUS THIS SESSION");
+    expect(call.system).toContain('- Quest: Find the beacon\n- Connection: Mara');
+  });
+
+  it('a clock the GM starts is in the next narration', async () => {
+    await type('gm-1', '!clock new "Reactor overload" 4 tension');
+    const call = await narrateMove('I try to vent the coolant.');
+    expect(call.system).toMatch(/## CLOCKS\n\n[^\n]*\n\n- Tension: Reactor overload — 0\/4/);
+  });
+
+  it('vow progress marked on the sheet reaches the next narration — the cached snapshot is dropped', async () => {
+    const vow = { id: 'vow-1', name: 'Find the relay', type: 'progress', system: { subtype: 'vow', rank: 'dangerous', progress: 4 } };
+    const pc = table.actors.get('pc-pat');
+    vow.parent = pc;
+    pc.items.contents.push(vow);
+
+    const before = await narrateMove('I study the relay schematics.');
+    expect(before.system).toContain('Find the relay (dangerous, progress 1/10)');
+
+    vow.system.progress = 20;   // the player marks progress on the native sheet
+    table.fireDocumentHook('pl-1', 'updateItem', vow, {});
+    await table.settle();
+    const after = await narrateMove('I push on toward the relay.');
+    expect(after.system).toContain('Find the relay (dangerous, progress 5/10)');
+  });
+});

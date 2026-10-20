@@ -121,7 +121,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
 //       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
 //                                   on the store via clearPersistedNextMoveAdd
-//       questFocus, connectionFocus Begin / End a Session relays
+//       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
 //       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
 //       currentSessionId, sessionNumber, lastSessionTimestamp,
 //       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
@@ -168,6 +168,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'nextMoveAdd',
   'questFocus',
   'connectionFocus',
+  'sessionFocus',
   'sessionActive',
   'sessionActiveStartedAt',
   'currentSessionId',

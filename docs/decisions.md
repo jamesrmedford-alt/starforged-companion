@@ -6,6 +6,29 @@ rejected.
 
 ---
 
+## Clocks, vow progress, rewards, connection standing and the session focus reach the narrator (2026-10)
+
+**Decision:** (issue #286 C5) each was in no prompt, and each now renders
+compactly on every prose call:
+- **[4h] CLOCKS** — the active campaign and tension clocks, at most eight,
+  read from the store (a move narrates from a snapshot taken before its own
+  Pay the Price advanced one). The narrator is told to show them as pressure
+  in the fiction and never mention a clock or its count.
+- **CHARACTER [8]** — each vow and bond with its progress (and a vow's
+  countdown clock), and the rewards `recordGrantedReward` keeps on the sheet
+  (`grantedRewards`, which nothing read). The cached actor snapshot is now
+  dropped when one of the actor's Items changes, so progress marked on the
+  native sheet reaches the next narration.
+- **Connection cards** — the rolled `goal` beside the `motivation` (the card
+  showed only the motivation, labelled "Goal"), a lost or forged bond, and the
+  last three `history` events.
+- **[4i] THE TABLE'S FOCUS THIS SESSION** — the End a Session foci, kept as
+  `sessionFocus` when Begin a Session surfaces and clears them.
+
+**Rejected:** rendering a connection's `background` and `secrets` — no
+production code writes either (known-issues.md); cards for everything in the
+sector roster (the relevance and frame-cast rules choose cards, unchanged).
+
 ## A session ends at End Session or after four idle hours; the next is told about the last (2026-10)
 
 **Decision:** (issue #286 C3, C4)

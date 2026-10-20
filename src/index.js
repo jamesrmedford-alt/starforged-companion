@@ -1660,6 +1660,12 @@ export async function releasePendingMoveLock() {
   );
 }
 
+/** Drop the owning actor's cached snapshot when one of its Items changes — this client's cache only. */
+function invalidateItemOwnerSnapshot(item) {
+  const ownerId = item?.parent?.id;
+  if (ownerId) invalidateActorCache(ownerId);
+}
+
 /**
  * Register the updateActor hook.
  * Fires when any Actor document is updated — including by other clients.
@@ -1674,6 +1680,14 @@ export async function releasePendingMoveLock() {
  * actorBridge already invalidates the cache after its own writes.
  */
 function registerActorHook() {
+  // A PC's vows, bonds and assets are embedded Items, changed on the native
+  // sheet without an updateActor — the cached snapshot behind the narrator's
+  // CHARACTER block kept the old progress until something else touched the
+  // actor (issue #286 C5).
+  Hooks.on("createItem", invalidateItemOwnerSnapshot);
+  Hooks.on("updateItem", invalidateItemOwnerSnapshot);
+  Hooks.on("deleteItem", invalidateItemOwnerSnapshot);
+
   Hooks.on("updateActor", (actor, changes, _options, userId) => {
     if (!actor.hasPlayerOwner) return;
 

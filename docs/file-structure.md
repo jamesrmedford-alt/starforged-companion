@@ -58,7 +58,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `actorBridge.js` | **The only** interface for foundry-ironsworn Actor reads/writes (health, spirit, supply, momentum, impacts, XP, legacies). |
+| `actorBridge.js` | **The only** interface for foundry-ironsworn Actor reads/writes (health, spirit, supply, momentum, impacts, XP, legacies). `readCharacterSnapshot` (cached per actor; dropped on `updateActor` and on the actor's Item changes) also carries the `grantedRewards` the narrator's CHARACTER block lists (issue #286 C5). |
 | `chronicle.js` | Character chronicle schema + CRUD. |
 | `chronicleWriter.js` | Claude call writing chronicle entries from move resolutions. |
 | `chroniclePanel.js` | Chronicle UI panel (ApplicationV2). |
@@ -67,7 +67,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `clocks.js` | `!clock` commands (`new`/`advance`/`fill`/`reset`/`remove`/`list`) + ApplicationV2 panel + advance-on-oracle odds. `advanceTensionClocksForPayThePrice` / `revertTensionClocksForBurn`, `advanceCampaignClocksForBeginSession`. A clock that is already full only posts an "already triggered" notice (no second vignette); the panel's ↻ / + buttons share the `!clock` card logic. |
+| `clocks.js` | `!clock` commands (`new`/`advance`/`fill`/`reset`/`remove`/`list`) + ApplicationV2 panel + advance-on-oracle odds. `advanceTensionClocksForPayThePrice` / `revertTensionClocksForBurn`, `advanceCampaignClocksForBeginSession`. A clock that is already full only posts an "already triggered" notice (no second vignette); the panel's ↻ / + buttons share the `!clock` card logic. Active clocks reach every prose narration as the [4h] CLOCKS block (issue #286 C5). |
 | `payThePriceClocks.js` | `advanceClocksOnPayThePrice` (tension clocks + each PC's vow countdown clocks, one segment per Pay the Price; GM-only — called directly by the move pipeline, which keeps the return for the burn reversal) and `advanceClocksForPayThePriceRelay` (gmRelay `payThePrice.advanceClocks`, so a player-typed `!ptp` advances the clocks once, on the canonical GM). |
 
 ### `context/` — narrator context assembly

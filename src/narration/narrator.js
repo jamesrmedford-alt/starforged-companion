@@ -237,6 +237,17 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     extras.campaignRecap          = await sessionStartRecap(campaignState);
   }
 
+  // Clocks and the session's focus (issue #286 C5) — in no prompt before.
+  // Read from the store: a move narrates from a snapshot taken before its own
+  // Pay the Price advanced a tension clock.
+  if (mode !== 'campaign_recap') {
+    const stored = storedCampaignState() ?? campaignState;
+    extras.clocks       = Array.isArray(stored?.clocks) ? stored.clocks : [];
+    extras.sessionFocus = (stored?.sessionFocus?.sessionId && stored.sessionFocus.sessionId === campaignState?.currentSessionId)
+      ? stored.sessionFocus
+      : null;
+  }
+
   // Recent oracle results (narrator-context audit 2026-07) — the raw
   // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
   // never contradicts a roll the table just made. Rendered as [3b]; the
@@ -319,6 +330,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/** The stored campaignState, or null when it cannot be read. */
+function storedCampaignState() {
+  try { return game.settings.get(MODULE_ID, 'campaignState') ?? null; }
+  catch { return null; }
 }
 
 /**
