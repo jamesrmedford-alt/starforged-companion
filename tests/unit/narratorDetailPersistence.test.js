@@ -347,3 +347,43 @@ describe('the rolling summary regenerates after a card posts, not inside a narra
     expect(after.system).toContain('Kira bargained with the dockmaster for a berth.');
   });
 });
+
+describe('a struck fact stays struck — on the card, after the scene, in the summary (B6)', () => {
+  it('a player\'s !truth strike drops the tier copy; CORRECTED and the summary\'s leave-out list outlive the scene', async () => {
+    table.world.setSetting('narratorContextCards', 2);   // debounce K = 3 cards
+    const kael = await recordNpc('Kael Dros');
+    replies.push(reply('Kael\'s jaw is a map of old scars.', {
+      newTruths: [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw' }], stateChanges: [],
+    }));
+    await narrateMove('I study Kael Dros across the table.');
+    // The tier pass caught the same prose (its real writer, this session).
+    const gm = table.client('gm-1');
+    const { appendGenerativeTierUpdates } = await gm.import('../../src/entities/entityExtractor.js');
+    table.claude.respond((call) => {
+      if (call.userText.includes('SIGNIFICANT new development')) {
+        return JSON.stringify({ updates: [{ entityId: kael, detail: 'Kael has a scar along his jaw.', salience: 'notable' }] });
+      }
+      if (call.system.includes('continuity scribe')) return 'Kira met Kael in the cargo office.';
+      return call.model === NARRATION_MODEL ? reply('The station hums.') : '{}';
+    });
+    await gm.run(() => appendGenerativeTierUpdates('Kael\'s jaw is scarred.', [{ journalId: kael, type: 'connection' }], 'sess-1', 3));
+    expect(tier(kael).map(e => e.detail)).toEqual(['Kael has a scar along his jaw.']);
+
+    const truthId = world().sceneTruths[0].id;
+    await type('pl-1', `!truth strike ${truthId.slice(0, 8)}`);
+    expect(world().sceneTruths[0]).toMatchObject({ retracted: true, retractedBy: 'player' });
+    expect(tier(kael)).toEqual([]);
+
+    await type('gm-1', '!scene end');
+    expect(world().sessionRetractions).toMatchObject({
+      sessionId: 'sess-1', facts: [{ label: 'Kael Dros', fact: 'has a ragged scar along his jaw' }],
+    });
+
+    const next = await narrateMove('I walk the empty docking ring.');   // a new scene
+    expect(next.system).toMatch(/CORRECTED[^\n]*\n[^\n]*\n {2}Kael Dros — has a ragged scar along his jaw/);
+
+    await narrateMove('I wait for the next shuttle.');   // the 3rd card: the summary regen is due
+    const summary = table.claude.calls.find(c => c.system.includes('continuity scribe'));
+    expect(summary.userText).toContain('## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n- Kael Dros — has a ragged scar along his jaw');
+  });
+});

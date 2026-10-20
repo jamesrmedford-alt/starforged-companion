@@ -23,6 +23,7 @@ import {
   subjectFromStateKey,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
+import { propagateRetraction } from './retractions.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -172,14 +173,17 @@ function attachRowHandlers(root, campaignState, matchedIds, ctx, rerender) {
 async function handleRowAction(button, campaignState, matchedIds, ctx) {
   const action = button.dataset.action;
   switch (action) {
-    case 'strike-truth':
-      strikeTruth(button.dataset.truthId, campaignState, ctx);
+    case 'strike-truth': {
+      const struck = strikeTruth(button.dataset.truthId, campaignState, ctx);
+      if (struck) await propagateRetraction(struck, campaignState);   // issue #286 B6
       return;
+    }
     case 'replace-truth': {
       const truth = (campaignState.sceneTruths ?? []).find(t => t?.id === button.dataset.truthId);
       const next  = await promptForText(`Replacement fact for "${truth?.fact ?? ''}"`, truth?.fact ?? '');
       if (!next) return;
-      replaceTruth(truth.id, { fact: next }, campaignState, ctx);
+      const replaced = replaceTruth(truth.id, { fact: next }, campaignState, ctx);
+      if (replaced) await propagateRetraction(replaced.struck, campaignState);
       return;
     }
     case 'strike-state':

@@ -214,6 +214,16 @@ scene truths into the next session's empty ring.
   the 5 most recent, never dropped under budget; Replace-corrections are
   exempt — the replacement truth stands). The write layer refuses narrator
   re-assertions of retracted facts; GM `!truth set` bypasses (GM authority).
+- **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
+  correction dialog's Strike / Replace call `propagateRetraction` — the
+  subject entity's same-session tier details that state the fact are dropped,
+  matching same-session lore goes `retracted` + unconfirmed (out of [4f] and
+  the pending queue; the detection pass cannot re-confirm it), and the
+  rolling summary regenerates on the next refresh with a "RETRACTED BY THE
+  TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
+  `campaignState.sessionRetractions`, so CORRECTED and that list hold for the
+  rest of the session — the ring and the summary's source prose still state
+  the fact after the scene closes.
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's

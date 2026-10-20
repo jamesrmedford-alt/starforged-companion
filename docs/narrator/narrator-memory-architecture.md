@@ -320,7 +320,7 @@ truths alone; backlog §8.8 keeps the elide option if playtests show it.
 | Established entity facts not surfacing | entity records + scoping | is the entity confirmed? are its truths entity-keyed (not text)? did relevance match it? |
 | Prompt too large / cost creep | budgets | lower `narratorContextCards` / `maxLedgerTokens`; frame is ~30–60 tokens and not the culprit |
 | Contradiction slipped through anyway | consistency check | confirm `factContinuity.consistencyCheck` is on (default since 2026-07); it audits frame/truths/retractions/state/ship — it can only defend what the ledger holds, so fix emission first |
-| Wrong fact got ledgered (canon inversion) | corrections | Correct-a-fact dialog / `!truth` — a bare Strike renders as a CORRECTED do-not-re-assert line, the write layer blocks narrator re-assertion, and the consistency check audits retractions (2026-07) |
+| Wrong fact got ledgered (canon inversion) | corrections | Correct-a-fact dialog / `!truth` — a bare Strike renders as a CORRECTED do-not-re-assert line (for the rest of the session since #286), the write layer blocks narrator re-assertion, the consistency check audits retractions (2026-07), and the strike reaches the tier, lore and summary copies of the fact (`propagateRetraction`, #286 B6) |
 
 **Live inspection one-liners** (browser console, GM):
 

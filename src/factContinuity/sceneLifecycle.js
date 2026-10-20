@@ -27,6 +27,7 @@
 
 import { archiveSceneTruth }          from '../world/worldJournal.js';
 import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
+import { rememberSessionRetractions } from './retractions.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -115,6 +116,11 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
     }
   }
 
+  // The scene's strikes outlive it for the rest of the session (issue #286
+  // B6): the CORRECTED block and the summary prompt keep naming them, because
+  // the ring and the summary's source prose still say them.
+  rememberSessionRetractions(campaignState);
+
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
   // active scene is closed.
@@ -124,7 +130,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.currentSceneId = null;
   campaignState.spotlight = { lastActorId: null, sceneId: null }; // #232 — clear rotation with the scene
 
-  await persistCampaignState(campaignState, `endScene (${reason})`);
+  await persistCampaignStateFields(campaignState, [...SCENE_FIELDS, 'sessionRetractions'], `endScene (${reason})`);
 
   return { migrated, archived, skipped };
 }

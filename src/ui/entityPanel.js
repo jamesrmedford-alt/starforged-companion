@@ -587,11 +587,11 @@ export class EntityPanelApp extends ApplicationV2 {
         </details>`;
     }
 
-    const sorted = visible.slice().sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return (b.sessionNum ?? 0) - (a.sessionNum ?? 0);
-    });
+    // Pinned first, then newest first — the order the narrator's entity card
+    // uses (append order is recency; migrated truths carry no older
+    // sessionNum to sort by — issue #286 A7).
+    const sorted = visible.slice().reverse()
+      .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
     const rows = sorted.map((e, idx) => {
       const sessionTag = e.sessionNum

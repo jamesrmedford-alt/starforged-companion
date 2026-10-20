@@ -6,6 +6,38 @@ rejected.
 
 ---
 
+## A strike reaches every copy of the fact (2026-10)
+
+**Decision:** (issue #286 B6) `!truth strike` and the correction dialog's
+Strike / Replace call `propagateRetraction` (`src/factContinuity/retractions.js`):
+
+- the subject entity's tier details from the **same session** that state the
+  fact are removed (word-overlap match, `factsOverlap`; pinned details stay);
+- the session's World Journal lore that states it goes `retracted` and
+  unconfirmed — kept for history, out of ESTABLISHED LORE and the pending
+  queue; the detection pass's "lore confirmed" transition cannot re-confirm
+  it, and `!journal lore "<title>" confirmed` restores it;
+- the rolling summary regenerates on its next refresh, with a leave-out list.
+
+`endScene` keeps the scene's bare strikes on `campaignState.sessionRetractions`
+(cap 20, session-keyed), so the CORRECTED block (still capped at 5) and the
+summary's leave-out list hold for the rest of the session.
+
+**Why:** the prose that made a truth also fed the tier pass, the auto-confirmed
+lore and the summary. A Strike marked only the scene ledger, and CORRECTED
+ended with the scene, so a struck fact came back from those afterwards — the
+mirror-drift family (rules/reachability.md §5).
+
+**Rejected:**
+- *Deleting matching lore pages.* A retraction is a ruling, not an erasure;
+  the GM can restore one.
+- *Matching across sessions.* An earlier session's detail is not this prose's
+  copy.
+- *Scene-scoped CORRECTED only.* The ring and the summary's source outlive
+  the scene.
+- *Propagating into the chronicle.* Its lines feed only the campaign recap;
+  left for a follow-up (known-issues.md).
+
 ## What every narration is told about the turn before (2026-10)
 
 **Decision:** (issue #286 B1–B5, B7)

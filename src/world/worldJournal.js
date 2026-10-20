@@ -408,6 +408,13 @@ export async function promoteLoreToConfirmed(title, _campaignState) {
 
   const existing = page.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
   if (!existing) return null;
+  // A struck fact's entry (retractSessionLore) stays out of canon: the
+  // detection pass "confirming" it is the narrator re-asserting it. A GM
+  // restores one with `!journal lore "<title>" confirmed`.
+  if (existing.retracted) {
+    console.debug(`${MODULE_ID} | worldJournal: lore "${title}" was retracted by the table — not re-confirmed.`);
+    return null;
+  }
 
   const updated = {
     ...existing,
@@ -417,6 +424,38 @@ export async function promoteLoreToConfirmed(title, _campaignState) {
   };
   await page.setFlag(MODULE_ID, FLAG_KEYS.lore, updated);
   return updated;
+}
+
+/**
+ * Take this session's lore entries that state a struck fact out of confirmed
+ * canon (issue #286 B6: the detection pass auto-confirms lore from the same
+ * prose a struck truth came from, and a Strike never reached it). The entry
+ * is kept, marked `retracted` and unconfirmed, so the narrator's ESTABLISHED
+ * LORE and the pending queue both drop it and the history stays readable.
+ *
+ * @param {string}   sessionId
+ * @param {Function} matches — (loreEntry) => boolean
+ * @returns {Promise<number>} entries retracted
+ */
+export async function retractSessionLore(sessionId, matches) {
+  if (!sessionId || typeof matches !== "function") return 0;
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  let count = 0;
+  for (const page of journal?.pages?.contents ?? []) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (!entry || entry.retracted || entry.sessionId !== sessionId) continue;
+    if (!matches(entry)) continue;
+    const now = new Date().toISOString();
+    await page.setFlag(MODULE_ID, FLAG_KEYS.lore, {
+      ...entry,
+      confirmed:   false,
+      retracted:   true,
+      retractedAt: now,
+      updatedAt:   now,
+    });
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -668,23 +707,25 @@ export async function writeSessionLog(campaignState) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Confirmed lore entries — never dropped from narrator context.
- * Sorted most-recent first by session number, falling back to updatedAt.
+ * Confirmed lore entries, retracted ones excluded, most recently updated
+ * first (updatedAt, falling back to createdAt). The narrator's ESTABLISHED
+ * LORE section shows a few of them (buildNarratorExtras).
  */
 export function getConfirmedLore(_campaignState) {
   const journal = findJournal(JOURNAL_NAMES.lore);
   return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.confirmed === true)
+    .filter(e => e.confirmed === true && e.retracted !== true)
     .sort(byRecency);
 }
 
 /**
- * Narrator-asserted but not yet confirmed lore.
+ * Narrator-asserted but not yet confirmed lore. A struck fact's entry
+ * (retractSessionLore) is not pending review — the table already ruled.
  */
 export function getNarratorAssertedLore(_campaignState) {
   const journal = findJournal(JOURNAL_NAMES.lore);
   return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.narratorAsserted === true && e.confirmed !== true)
+    .filter(e => e.narratorAsserted === true && e.confirmed !== true && e.retracted !== true)
     .sort(byRecency);
 }
 

@@ -58,7 +58,13 @@ layers. This file is the never-break list.
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
    `!truth set` bypasses). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
-   ignores instructions vs. model re-emits the fact).
+   ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
+   a Strike also reaches the stores that copied the fact
+   (`propagateRetraction`, `src/factContinuity/retractions.js` — same-session
+   tier details on the subject, same-session auto-confirmed lore, a summary
+   regen), and the scene's strikes outlive it for the session
+   (`campaignState.sessionRetractions` → CORRECTED + the summary's leave-out
+   list). Any new correction path calls `propagateRetraction`.
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so

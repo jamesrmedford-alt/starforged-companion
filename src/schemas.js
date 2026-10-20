@@ -492,6 +492,13 @@ export const CampaignStateSchema = {
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },
 
+  // Bare strikes of this session's ended scenes (issue #286 B6), so the
+  // CORRECTED block and the rolling-summary prompt keep naming them after
+  // their scene closes. Written by endScene (rememberSessionRetractions);
+  // read by sessionRetractedFacts (src/factContinuity/retractions.js).
+  //   { sessionId, facts: [{ label, fact, sceneId, at }] }  (cap 20)
+  sessionRetractions: { sessionId: null, facts: [] },
+
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
   // naming the PC the narrator last drew into an open prompting beat, so the
   // next beat rotates to another player. Reset on scene start/end.

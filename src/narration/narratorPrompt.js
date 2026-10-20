@@ -7,6 +7,7 @@
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey } from '../factContinuity/ledgers.js';
+import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById } from '../entities/registry.js';
 
 // ---------------------------------------------------------------------------
@@ -290,15 +291,16 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // prose stays in the recent-narration ring and the rolling summary, so the
   // narrator could freely re-assert a fact the GM corrected. Render bare
   // strikes (no `correctedTo` — replacements already carry the corrected
-  // fact as a live truth) as explicit do-not-re-assert lines. Not scope-
-  // filtered: retractions are rare, load-bearing, and must hold even on
-  // turns that don't name the subject. Capped at the most recent few to
-  // bound tokens; never dropped under budget pressure (truths tier).
+  // fact as a live truth) as explicit do-not-re-assert lines: this scene's,
+  // and since issue #286 B6 the session's earlier scenes' too — the ring and
+  // the summary's source outlive the scene. Not scope-filtered: retractions
+  // are rare, load-bearing, and must hold even on turns that don't name the
+  // subject. Capped at the most recent few to bound tokens; never dropped
+  // under budget pressure (truths tier).
   const MAX_CORRECTION_LINES = 5;
-  const correctionLines = truths
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim())
+  const correctionLines = sessionRetractedFacts(campaignState)
     .slice(-MAX_CORRECTION_LINES)
-    .map(t => `  ${formatSubjectLabel(t.subject, nameLookup)} — ${String(t.fact).trim()}`);
+    .map(f => `  ${f.label} — ${f.fact}`);
 
   // ── Filter state ─────────────────────────────────────────────────────────
   const stateEntries = [];

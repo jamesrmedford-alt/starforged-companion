@@ -36,7 +36,8 @@ prose is unaudited. See `narrator-context-flow.md` → "Where each call runs".
 The audit prompt (`buildAuditPrompt`) compares prose against the FULL
 ledger block (`buildLedgerBlock` at `maxTokens: Infinity`) — SCENE FRAME,
 RECORDED IDENTITIES (PC + matched-NPC pronouns, 2026-07), TRUTHS, RETRACTED
-FACTS, STATE, SHIP POSITION — via one Haiku call (`claude-haiku-4-5`,
+FACTS (this scene's strikes and, since issue #286 B6, the session's earlier
+scenes'), STATE, SHIP POSITION — via one Haiku call (`claude-haiku-4-5`,
 `max_tokens: 1000` since 2026-07, with a `stop_reason` truncation warning,
 through `api-proxy.js`). Response kinds: `truth | state
 | frame | ship | retraction | identity`, each with confidence high/medium/

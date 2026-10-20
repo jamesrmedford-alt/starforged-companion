@@ -21,6 +21,7 @@ import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields } from '../factContinuity/sceneLifecycle.js';
+import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
   runCombinedDetectionPass,
@@ -1032,13 +1033,19 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     .filter(Boolean)
     .join('\n\n---\n\n');
   if (!sourceProse.trim()) return cachedText;
+  // The source prose still states what the table struck (issue #286 B6).
+  const struck = sessionRetractedFacts(campaignState);
+  const leaveOut = struck.length
+    ? `\n\n## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n` +
+      struck.map(f => `- ${f.label} — ${f.fact}`).join('\n')
+    : '';
 
   let text;
   try {
     text = await callNarratorAPI({
       apiKey,
       systemPrompt: ROLLING_SUMMARY_SYSTEM_PROMPT,
-      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}`,
+      userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}`,
       model:        ROLLING_SUMMARY_MODEL,
       maxTokens:    ROLLING_SUMMARY_MAX_TOK,
     });
