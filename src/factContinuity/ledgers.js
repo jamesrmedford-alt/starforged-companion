@@ -244,6 +244,16 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   return rewritten;
 }
 
+/**
+ * State attributes that say where a character is and what shape they are in —
+ * the stateChanges the sidecar instruction REQUIRES. The ledger block keeps
+ * them longest under its token cap (A6), and scene end keeps a recorded
+ * entity's on its card as its last known whereabouts (C1) — issue #286.
+ */
+export const WHEREABOUTS_ATTRIBUTES = Object.freeze([
+  'location', 'vessel', 'aboard', 'whereabouts', 'condition', 'health', 'injuries', 'wounds',
+]);
+
 /** Prefix that marks a state-ledger key as an entity's (see subjectKey). */
 const ENTITY_KEY_PREFIX = 'entity:';
 

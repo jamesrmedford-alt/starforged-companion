@@ -775,6 +775,20 @@ describe('formatEntityCard', () => {
     expect(card).not.toContain('NARRATOR-ADDED');
   });
 
+  // Issue #286 C1: scene end keeps a character's whereabouts on the record.
+  it('renders LAST KNOWN whereabouts, ordered location → condition, dated by session', () => {
+    const card = formatEntityCard(makeConnection({
+      lastKnown: {
+        condition: { value: 'bleeding from the shoulder', sessionNum: 4 },
+        location:  { value: 'the cargo office', sessionNum: 4 },
+        mood:      { value: 'not a whereabouts attribute' },
+      },
+    }), 'connection');
+    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — this scene's CURRENT STATE wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
+    expect(card).not.toContain('not a whereabouts attribute');
+    expect(formatEntityCard(makeConnection(), 'connection')).not.toContain('LAST KNOWN');
+  });
+
   it('omits promoted entries from the visible generative tier', () => {
     const card = formatEntityCard(makeConnection({
       generativeTier: [
@@ -1532,7 +1546,7 @@ describe('World Journal narrator blocks ([4d]-[4f])', () => {
     const block = formatEstablishedLoreBlock([
       { title: 'The Forge', text: 'x'.repeat(200) },
     ]);
-    expect(block).toMatch(/## ESTABLISHED LORE \(recent\)/);
+    expect(block).toMatch(/^## ESTABLISHED LORE\n/);
     expect(block).toMatch(/…/);
     expect(block.length).toBeLessThan(260);
     expect(formatEstablishedLoreBlock([])).toBe('');

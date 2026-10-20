@@ -49,7 +49,11 @@ layers. This file is the never-break list.
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
-   migration, not in a lifecycle exemption. Scenes close at their fiction's
+   migration, not in a lifecycle exemption. Since issue #286 that migration
+   also files scene-subject truths on the scene's recorded place
+   (`resolveScenePlace`) and keeps each recorded character's whereabouts —
+   location / vessel / condition — on their record as `lastKnown` (rendered
+   on the card as LAST KNOWN). Scenes close at their fiction's
    boundaries (2026-07): End Session (`session_close`), the ready-hook's
    stale-scene close before a 4h-gap re-mint (`session_gap_remint`), and
    `closeWorld` — do not add a session boundary that leaves a scene open.

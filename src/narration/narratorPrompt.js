@@ -6,7 +6,7 @@
 
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
-import { subjectFromStateKey } from '../factContinuity/ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById } from '../entities/registry.js';
 
@@ -198,14 +198,11 @@ export function appendSidecarInstruction(options = {}) {
 }
 
 /**
- * State attributes the ledger block keeps longest under its token cap: where
- * a character is and what shape they are in — the stateChanges the sidecar
- * instruction REQUIRES. Everything else (posture, mood, lighting, doors…)
- * sheds first.
+ * State attributes the ledger block keeps longest under its token cap
+ * (WHEREABOUTS_ATTRIBUTES). Everything else (posture, mood, lighting,
+ * doors…) sheds first.
  */
-const STATE_KEPT_LONGEST = new Set([
-  'location', 'vessel', 'aboard', 'whereabouts', 'condition', 'health', 'injuries', 'wounds',
-]);
+const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
 
 /**
  * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6.
@@ -773,6 +770,26 @@ const CANONICAL_FIELDS_BY_TYPE = {
   ],
 };
 
+/**
+ * The LAST KNOWN lines for an entity card: one per whereabouts attribute the
+ * record holds, in WHEREABOUTS_ATTRIBUTES order — "location: the docking ring
+ * (Session 3)".
+ *
+ * @param {Object|undefined} lastKnown — { [attribute]: { value, sessionNum, at } }
+ * @returns {string[]}
+ */
+function formatLastKnown(lastKnown) {
+  if (!lastKnown || typeof lastKnown !== 'object') return [];
+  const out = [];
+  for (const attr of WHEREABOUTS_ATTRIBUTES) {
+    const entry = lastKnown[attr];
+    const value = String(entry?.value ?? '').trim();
+    if (!value) continue;
+    out.push(`  ${attr}: ${value}${entry.sessionNum ? ` (Session ${entry.sessionNum})` : ''}`);
+  }
+  return out;
+}
+
 /** Generative-tier lines an entity card shows, and how many of them are held for traits. */
 const CARD_TIER_LINES  = 10;
 const CARD_TRAIT_SLOTS = 4;
@@ -844,6 +861,13 @@ export function formatEntityCard(entity, entityType) {
     } else {
       lines.push(`  ${label}: ${value}`);
     }
+  }
+
+  // Last known whereabouts from earlier scenes (issue #286 C1) — kept by
+  // endScene; the active scene's CURRENT STATE supersedes them.
+  const lastKnown = formatLastKnown(entity.lastKnown);
+  if (lastKnown.length) {
+    lines.push('', 'LAST KNOWN (from earlier scenes — this scene\'s CURRENT STATE wins):', ...lastKnown);
   }
 
   // Generative tier — pinned first, then the newest, with slots held for
@@ -1473,9 +1497,10 @@ export function formatFactionLandscapeBlock(entries) {
 }
 
 /**
- * Format the ESTABLISHED LORE block ([4f]) from confirmed WJ lore entries
- * ({ title, text }). Text is clipped to keep the block bounded. Returns ''
- * when empty. Exported for unit testing.
+ * Format the ESTABLISHED LORE block ([4f]) from the World Journal entries
+ * ({ title, text }) buildNarratorExtras picked for this turn
+ * (selectLoreForContext — relevant first, then recent). Text is clipped to
+ * keep the block bounded. Returns '' when empty. Exported for unit testing.
  */
 export function formatEstablishedLoreBlock(lore) {
   const list = Array.isArray(lore) ? lore.filter(l => l && (l.title || l.text)) : [];
@@ -1484,7 +1509,7 @@ export function formatEstablishedLoreBlock(lore) {
     const v = String(t ?? '').trim();
     return v.length > 160 ? `${v.slice(0, 157)}…` : v;
   };
-  const lines = ['## ESTABLISHED LORE (recent)', ''];
+  const lines = ['## ESTABLISHED LORE', ''];
   for (const l of list) {
     const text = clip(l.text);
     lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);

@@ -91,7 +91,11 @@ truths · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] rolling
 session summary (prefixed with a **ledger-wins caveat** — the
 summary is texture, not a fact store) · **[4d] active threats · [4e]
-faction landscape · [4f] established lore** (World Journal state — rode the
+faction landscape · [4f] established lore** (chosen per turn since issue
+#286 C2 — `selectLoreForContext`: up to 5 confirmed lore / recorded-location
+entries sharing the most words with the player text, the frame and the
+entities in play, then the most recent, 8 in all; it was the 5 most recent)
+(World Journal state — rode the
 dead assembler packet until 2026-07; see `faction-flow.md`) · [5] current
 location card · [5b]
 active-sector anchor · [6] matched entity cards · [6.5] active-scene ledger
@@ -197,8 +201,15 @@ boundary is a world write, so a keyed player's client narrating `@scene` /
 `!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
-migration no longer double-lands), text/scene truths → WJ Lore, then
-discards state and clears the frame. Both persist only their scene fields
+migration no longer double-lands); scene-kind truths → the tier of the
+scene's recorded place (issue #286 C2, `resolveScenePlace`: the frame's
+location when it names or mentions exactly one recorded place, else the
+current location when the frame names no place); text truths and place-less
+scene truths → WJ Lore (titled with the frame's location, not the scene id).
+It keeps each recorded character's location / vessel / condition on their
+record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
+scene's strikes for the session (B6), then discards state and clears the
+frame. Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
 onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the

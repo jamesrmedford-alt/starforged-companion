@@ -27,7 +27,10 @@
 
 import { archiveSceneTruth }          from '../world/worldJournal.js';
 import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
+import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
+import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -66,9 +69,12 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
  * Migrate the active-scene truths and discard the active ledgers.
  *
  * Order (per scope §9.2):
- *   1. Migrate entity-kind truths to entity generative tiers
- *   2. Archive free-text and scene-kind truths to WJ Lore
- *   3. Discard sceneState
+ *   1. Migrate entity-kind truths to entity generative tiers, and scene-kind
+ *      truths to the tier of the place the scene happened at, when that place
+ *      is recorded (issue #286 C2)
+ *   2. Archive free-text (and place-less scene-kind) truths to WJ Lore
+ *   3. Keep each recorded entity's whereabouts on its card (C1), then
+ *      discard sceneState
  *   4. Discard sceneTruths
  *   5. Clear currentSceneId
  *
@@ -86,6 +92,8 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   let skipped  = 0;
 
   const truths = Array.isArray(campaignState.sceneTruths) ? campaignState.sceneTruths : [];
+  // Where this scene happened, for its scene-subject truths (resolved once).
+  let place;
 
   for (const truth of truths) {
     if (!truth || truth.retracted || truth.migratedTo) {
@@ -106,7 +114,20 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
       continue;
     }
 
-    // scene-kind or text-kind → WJ Lore archive
+    // Scene-kind → the recorded place the scene happened at (issue #286 C2:
+    // "the bar is called the Rusty Lantern" became place-less lore titled
+    // "Scene sc-…"). Place-less scene truths and text-kind truths → WJ Lore.
+    if (subject.kind === 'scene') {
+      if (place === undefined) place = resolveScenePlace(campaignState);
+      if (place) {
+        const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
+        if (ok) {
+          truth.migratedTo = { kind: 'entityGenerativeTier', entityId: place.id };
+          migrated += 1;
+          continue;
+        }
+      }
+    }
     const result = await safeArchiveSceneTruth(truth, campaignState);
     if (result?.pageId) {
       truth.migratedTo = { kind: 'worldJournalLore', loreEntryId: result.pageId };
@@ -120,6 +141,10 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // B6): the CORRECTED block and the summary prompt keep naming them, because
   // the ring and the summary's source prose still say them.
   rememberSessionRetractions(campaignState);
+
+  // Where each recorded character was and what shape they were in outlives
+  // the scene on their card (issue #286 C1) — scene state is discarded next.
+  await keepLastKnownWhereabouts(campaignState);
 
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
@@ -194,11 +219,108 @@ async function safeMigrateToEntityTier(truth, subject) {
 
 async function safeArchiveSceneTruth(truth, campaignState) {
   try {
-    return await archiveSceneTruth(truth, campaignState);
+    return await archiveSceneTruth(truth, campaignState, {
+      placeLabel: String(campaignState.sceneFrame?.location ?? '').trim() || null,
+    });
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: archive scene truth failed:`, err);
     return null;
   }
+}
+
+/** Entity types a scene can happen at — the ones with a place on the map, and the ship. */
+const PLACE_TYPES = new Set(['settlement', 'planet', 'location', 'ship']);
+
+/**
+ * The recorded place this scene happened at, for its scene-subject truths
+ * (issue #286 C2), or null. A ladder that stops before guessing, since a
+ * detail filed on the wrong place is worse than one archived as lore:
+ *   1. the scene frame's location names a recorded place outright
+ *      (resolveEntityName — "Bleakhold", "the Pioneer's Pride");
+ *   2. it mentions exactly one recorded place by full name ("Bleakhold's
+ *      docking ring");
+ *   3. there is no frame location and the current location (`!at`, travel)
+ *      is recorded.
+ * A frame that names an unrecorded place ("the derelict's spine corridor")
+ * is not the current location, so it gets none.
+ *
+ * @param {Object} campaignState
+ * @returns {{ id: string, type: string }|null}
+ */
+function resolveScenePlace(campaignState) {
+  try {
+    const where = String(campaignState.sceneFrame?.location ?? '').trim();
+    if (where) {
+      const places = collectAllEntities(campaignState).filter(e => PLACE_TYPES.has(e.entityType));
+      const named  = resolveEntityName(where, places, campaignState.dismissedEntities ?? []);
+      if (named) return { id: named.journalId ?? named._id, type: named.entityType };
+      const lower  = where.toLowerCase();
+      const within = places.filter(e => {
+        const name = String(e.name ?? '').trim().toLowerCase();
+        return name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, 'u').test(lower);
+      });
+      const ids = new Set(within.map(e => e.journalId ?? e._id));
+      if (ids.size === 1) return { id: [...ids][0], type: within[0].entityType };
+      return null;
+    }
+    const id   = campaignState.currentLocationId ?? null;
+    const type = campaignState.currentLocationType ?? null;
+    return id && PLACE_TYPES.has(type) ? { id, type } : null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: scene place lookup failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Keep each recorded entity's whereabouts from the closing scene on its record
+ * as `lastKnown` (issue #286 C1): where they were, what they were aboard, what
+ * shape they were in — the REQUIRED stateChanges, which scene end used to
+ * discard with the rest of the scene state. Each attribute supersedes its
+ * previous value; one this scene did not mention keeps it. Rendered on the
+ * entity card as LAST KNOWN. Fail-open per entity.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<number>} entities updated
+ */
+async function keepLastKnownWhereabouts(campaignState) {
+  const bySubject = campaignState.sceneState?.bySubject;
+  if (!bySubject || typeof bySubject !== 'object') return 0;
+  const sessionNum = Number(campaignState.sessionNumber) > 0 ? Number(campaignState.sessionNumber) : null;
+  let updated = 0;
+  for (const [key, entries] of Object.entries(bySubject)) {
+    const subject = subjectFromStateKey(key);
+    if (subject.kind !== 'entity' || !Array.isArray(entries)) continue;
+    const kept = entries.filter(e =>
+      WHEREABOUTS_ATTRIBUTES.includes(String(e?.attribute ?? '').trim().toLowerCase())
+      && String(e?.value ?? '').trim());
+    if (!kept.length) continue;
+    try {
+      const resolved = resolveEntityById(subject.entityId);
+      if (!resolved) continue;
+      const lastKnown = { ...(resolved.data.lastKnown ?? {}) };
+      for (const e of kept) {
+        lastKnown[String(e.attribute).trim().toLowerCase()] = {
+          value: String(e.value).trim(),
+          sessionNum,
+          at:    Number(e.updatedAt) || Date.now(),
+        };
+      }
+      await writeEntityFlag(resolved.typeKey, resolved.document, {
+        ...resolved.data,
+        lastKnown,
+        updatedAt: new Date().toISOString(),
+      });
+      updated += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sceneLifecycle: keeping ${subject.entityId}'s last known whereabouts failed:`, err?.message ?? err);
+    }
+  }
+  return updated;
 }
 
 /** campaignState fields the scene lifecycle owns (written by startScene / endScene). */

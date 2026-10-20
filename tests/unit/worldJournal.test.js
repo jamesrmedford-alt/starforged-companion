@@ -25,6 +25,9 @@ import {
   getNarratorAssertedLore,
   getActiveThreats,
   getFactionLandscape,
+  getRecordedLocations,
+  selectLoreForContext,
+  archiveSceneTruth,
   JOURNAL_NAMES,
 } from "../../src/world/worldJournal.js";
 
@@ -773,5 +776,62 @@ describe("postContradictionNotification — kind-aware remedies (NARRCHK-REMEDY-
       expect(card.content).not.toMatch(/openCorrectionDialog/);
       expect(card.content).toMatch(hint);
     }
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #286 C2 — place details reach the narrator
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("selectLoreForContext (issue #286 C2)", () => {
+  const lore = (title, text) => ({ title, text });
+  const newestFirst = [
+    lore("Market riots", "The Ironway market burned last cycle."),
+    lore("Syndicate tithe", "The Khatri Syndicate taxes every berth."),
+    lore("Weather", "Storms batter the northern spires."),
+    lore("Old debt", "Kael Dros owes the Covenant three months of fees."),
+    lore("Station law", "Bleakhold bans sidearms on the concourse."),
+    lore("Rumour", "Someone saw lights on the derelict."),
+    lore("Founding", "Bleakhold was founded by exiles."),
+    lore("Ration", "Water is rationed on the lower decks."),
+    lore("The Rusty Lantern", "The bar on Bleakhold's docking ring is called the Rusty Lantern."),
+  ];
+
+  it("puts what this turn is about first, then fills with the most recent", () => {
+    const picked = selectLoreForContext(newestFirst, "I head into the Rusty Lantern on the docking ring at Bleakhold");
+    expect(picked.slice(0, 3).map(l => l.title)).toEqual(["The Rusty Lantern", "Station law", "Founding"]);
+    expect(picked).toHaveLength(8);
+    expect(picked.map(l => l.title)).toContain("Market riots");   // recent fill
+  });
+
+  it("keeps an old entry the scene is about — it used to be the five most recent only", () => {
+    const picked = selectLoreForContext(newestFirst, "Kael Dros asks about the Covenant fees");
+    expect(picked[0].title).toBe("Old debt");
+  });
+
+  it("is the recency order when nothing matches, capped", () => {
+    expect(selectLoreForContext(newestFirst, "").map(l => l.title)).toEqual(newestFirst.slice(0, 8).map(l => l.title));
+    expect(selectLoreForContext(newestFirst, "", 3)).toHaveLength(3);
+    expect(selectLoreForContext([], "anything")).toEqual([]);
+  });
+});
+
+describe("getRecordedLocations (issue #286 C2)", () => {
+  it("returns the Locations journal's places as lore-shaped entries", async () => {
+    await recordLocation("The Spine Corridor", { description: "A flooded maintenance spine.", type: "derelict" }, campaign());
+    expect(getRecordedLocations(campaign())).toEqual([
+      { title: "The Spine Corridor", text: "A flooded maintenance spine.", updatedAt: expect.any(String) },
+    ]);
+  });
+});
+
+describe("archiveSceneTruth — place label (issue #286 C2)", () => {
+  it("titles a scene truth with the frame's place, not the scene id", async () => {
+    const truth = { id: "tr-1", subject: { kind: "scene", sceneId: "sc-9" }, fact: "the hatch is welded shut", sceneId: "sc-9", sessionId: "s1" };
+    const withPlace = await archiveSceneTruth(truth, campaign(), { placeLabel: "the derelict's spine corridor" });
+    expect(withPlace.title).toBe("the derelict's spine corridor: the hatch is welded shut");
+    const without = await archiveSceneTruth({ ...truth, fact: "the lights are dead" }, campaign());
+    expect(without.title).toBe("Scene sc-9: the lights are dead");
   });
 });

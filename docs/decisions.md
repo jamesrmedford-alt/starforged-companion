@@ -6,6 +6,39 @@ rejected.
 
 ---
 
+## Scene end keeps whereabouts and place details; lore is chosen per turn (2026-10)
+
+**Decision:** (issue #286 C1, C2)
+
+- **Last known whereabouts.** `endScene` keeps each recorded character's
+  location / vessel / condition (`WHEREABOUTS_ATTRIBUTES`) on their record as
+  `lastKnown`, attribute by attribute (a value this scene did not mention
+  keeps its old one). The card renders it as LAST KNOWN; the active scene's
+  CURRENT STATE wins over it.
+- **Place details go to the place.** A scene-subject truth migrates to the
+  scene's recorded place: the frame's location when it names, or mentions by
+  full name, exactly one recorded settlement / planet / location / ship; else
+  the current location when the frame names no place. Otherwise it is WJ
+  lore titled with the frame's location.
+- **Lore per turn.** ESTABLISHED LORE holds up to 5 entries that share the
+  most words with the player text, the frame and the entities in play, then
+  the most recent, 8 in all; the Locations journal's places join the pool.
+  Lexical, no API call.
+
+**Why:** scene state — including the REQUIRED NPC location and condition —
+was discarded at scene end with no afterlife. Place details became lore
+titled "Scene sc-…", tied to no place, and the narrator saw only the five
+most recently updated lore entries, so one busy scene end pushed out
+everything older.
+
+**Rejected:**
+- *Writing `lastKnown` on every state change.* The ledger is authoritative
+  inside the scene; one write per entity at scene end is enough.
+- *Falling back to the current location when the frame names an unrecorded
+  place.* The scene may be somewhere else ("the derelict's spine corridor"
+  while docked at Bleakhold); a wrong card is worse than lore.
+- *Haiku-ranked lore.* Non-move relevance stays lexical (invariant 5).
+
 ## A strike reaches every copy of the fact (2026-10)
 
 **Decision:** (issue #286 B6) `!truth strike` and the correction dialog's

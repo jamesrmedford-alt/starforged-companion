@@ -524,13 +524,27 @@ export class EntityPanelApp extends ApplicationV2 {
          </div>`
       : '';
 
+    // History entries are { timestamp, sessionId, entry } (addHistoryEntry);
+    // the list used to render each one as "[object Object]".
     const historyHtml = entity.typeKey === 'connection' && entity.data.history?.length
       ? `<details class="detail-history">
            <summary>History (${entity.data.history.length})</summary>
            <ul class="history-list">
-             ${entity.data.history.map(h => `<li class="history-item">${h}</li>`).join('')}
+             ${entity.data.history.map(h => `<li class="history-item">${escapeHtml(typeof h === 'string' ? h : (h?.entry ?? ''))}</li>`).join('')}
            </ul>
          </details>`
+      : '';
+
+    // Last known whereabouts kept at scene end (issue #286 C1) — what the
+    // narrator's card says about where this character was.
+    const lastKnownRows = Object.entries(entity.data.lastKnown ?? {})
+      .filter(([, e]) => String(e?.value ?? '').trim())
+      .map(([attr, e]) => `<li>${escapeHtml(attr)}: ${escapeHtml(String(e.value))}${e.sessionNum ? ` <span class="detail-session">(Session ${escapeHtml(String(e.sessionNum))})</span>` : ''}</li>`);
+    const lastKnownHtml = lastKnownRows.length
+      ? `<div class="detail-last-known">
+           <span class="detail-label">Last known</span>
+           <ul class="last-known-list">${lastKnownRows.join('')}</ul>
+         </div>`
       : '';
 
     const tierHtml = this.#renderGenerativeTier(entity);
@@ -561,6 +575,7 @@ export class EntityPanelApp extends ApplicationV2 {
           ${fieldsHtml}
           ${progressHtml}
         </dl>
+        ${lastKnownHtml}
         ${tierHtml}
         ${historyHtml}
       </div>`;

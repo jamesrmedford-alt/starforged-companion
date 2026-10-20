@@ -142,10 +142,14 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
 
 /**
  * Archive a scene-end fact-continuity truth (free-text or scene-scoped) to
- * the WJ Lore journal. See issue #227 (Fact Continuity) §9.2 step 2.
+ * the WJ Lore journal. See issue #227 (Fact Continuity) §9.2 step 2. A
+ * scene-subject truth reaches here only when the scene's place is not a
+ * recorded entity (endScene files it on the place's card otherwise).
  *
  * Composes a synthetic page title:
- *   - scene subjects → "Scene <sceneId>: <fact>"
+ *   - scene subjects → "<place>: <fact>" with the scene frame's location,
+ *     else "Scene <sceneId>: <fact>" (issue #286 C2: the scene id names no
+ *     place the narrator could ever match)
  *   - text  subjects → "<subject>: <fact>"
  *
  * Returns the recordLoreDiscovery result, or null if the truth has no fact
@@ -153,9 +157,11 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
  *
  * @param {Object} truth — sceneTruths entry from campaignState
  * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {string|null} [options.placeLabel] — where the scene happened (the frame's location)
  * @returns {Promise<Object|null>}
  */
-export async function archiveSceneTruth(truth, campaignState) {
+export async function archiveSceneTruth(truth, campaignState, options = {}) {
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return null;
   const subject = truth?.subject;
@@ -164,7 +170,8 @@ export async function archiveSceneTruth(truth, campaignState) {
   let subjectLabel = '';
   let subjectKey   = '';
   if (subject.kind === 'scene') {
-    subjectLabel = `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
+    const place  = typeof options.placeLabel === 'string' ? options.placeLabel.trim() : '';
+    subjectLabel = place || `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
     subjectKey   = 'scene';
   } else if (subject.kind === 'text') {
     subjectLabel = String(subject.text ?? '').trim();
@@ -716,6 +723,78 @@ export function getConfirmedLore(_campaignState) {
   return readEntries(journal, FLAG_KEYS.lore)
     .filter(e => e.confirmed === true && e.retracted !== true)
     .sort(byRecency);
+}
+
+/**
+ * Places the detection pass recorded with no entity record of their own (the
+ * Locations journal), as `{ title, text }` like a lore entry — so a place
+ * detail can be picked for the narrator's context (selectLoreForContext).
+ * Most recently updated first.
+ */
+export function getRecordedLocations(_campaignState) {
+  const journal = findJournal(JOURNAL_NAMES.locations);
+  return readEntries(journal, FLAG_KEYS.locations)
+    .filter(e => e.locationName)
+    .sort(byRecency)
+    .map(e => ({
+      title:     e.locationName,
+      text:      e.description ?? "",
+      updatedAt: e.updatedAt ?? null,
+    }));
+}
+
+const CONTEXT_STOPWORDS = new Set([
+  "that", "this", "with", "from", "into", "onto", "upon", "have", "they", "them",
+  "their", "there", "what", "when", "where", "which", "while", "your", "about",
+  "been", "were", "will", "would", "could", "should", "then", "than", "just",
+]);
+
+function contextWords(text) {
+  return new Set(
+    String(text ?? "")
+      .toLowerCase()
+      .replace(/[’']s\b/gu, "")
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(w => w.length >= 4 && !CONTEXT_STOPWORDS.has(w)),
+  );
+}
+
+/** How many lore entries the narrator's ESTABLISHED LORE section holds, and how many of those may be picked for relevance. */
+const LORE_CONTEXT_CAP  = 8;
+const LORE_RELEVANT_CAP = 5;
+
+/**
+ * The lore entries for this turn's narrator context (issue #286 C2): up to
+ * LORE_RELEVANT_CAP that share the most words with what the scene is about —
+ * the player's text, the scene frame, the entities in play — then the most
+ * recent to fill LORE_CONTEXT_CAP. It used to be the five most recently
+ * updated entries, so a place detail fell out as soon as five newer facts
+ * landed anywhere. Lexical, no API call (the non-move relevance rule).
+ *
+ * @param {Array<{ title?: string, text?: string }>} entries — most recent first
+ * @param {string} queryText
+ * @param {number} [cap]
+ * @returns {Array} relevant first (most shared words, then most recent), then recent
+ */
+export function selectLoreForContext(entries, queryText, cap = LORE_CONTEXT_CAP) {
+  const list  = Array.isArray(entries) ? entries.filter(e => e && (e.title || e.text)) : [];
+  const query = contextWords(queryText);
+  const scored = list.map((entry, order) => {
+    let score = 0;
+    if (query.size) {
+      for (const w of contextWords(`${entry.title ?? ""} ${entry.text ?? ""}`)) if (query.has(w)) score += 1;
+    }
+    return { entry, order, score };
+  });
+  const picked = scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => (b.score - a.score) || (a.order - b.order))
+    .slice(0, Math.min(LORE_RELEVANT_CAP, cap));
+  for (const s of scored) {
+    if (picked.length >= cap) break;
+    if (!picked.includes(s)) picked.push(s);
+  }
+  return picked.map(s => s.entry);
 }
 
 /**

@@ -387,3 +387,45 @@ describe('a struck fact stays struck — on the card, after the scene, in the su
     expect(summary.userText).toContain('## RETRACTED BY THE TABLE — these did not happen; leave them out\n\n- Kael Dros — has a ragged scar along his jaw');
   });
 });
+
+describe('what scene end keeps reaches the next scene (C1, C2)', () => {
+  it('a character\'s last location and condition are on their card in the next scene', async () => {
+    await recordNpc('Kael Dros');
+    replies.push(reply('Kael limps back to the cargo office.', {
+      newTruths: [],
+      stateChanges: [
+        { subject: 'Kael Dros', attribute: 'location',  value: 'the cargo office' },
+        { subject: 'Kael Dros', attribute: 'condition', value: 'limping on a twisted ankle' },
+      ],
+    }));
+    await narrateMove('I watch Kael Dros go.');
+    await type('gm-1', '!scene end');
+    expect(world().sceneState.bySubject).toEqual({});
+
+    const next = await narrateMove('Later, I go looking for Kael.');   // a new scene
+    expect(next.system).toMatch(
+      /## KAEL DROS — Connection[\s\S]*LAST KNOWN[^\n]*\n {2}location: the cargo office \(Session 3\)\n {2}condition: limping on a twisted ankle \(Session 3\)/,
+    );
+  });
+
+  it('a place detail lands on the place\'s card and is there on the next visit', async () => {
+    const gm = table.client('gm-1');
+    const { createSettlement } = await gm.import('../../src/entities/settlement.js');
+    await gm.run(async () => {
+      const cs = game.settings.get(MODULE_ID, 'campaignState');
+      await createSettlement({ name: 'Bleakhold' }, cs);
+      await game.settings.set(MODULE_ID, 'campaignState', cs);
+    });
+    await type('gm-1', '!at Bleakhold');
+    replies.push(reply('Neon flickers over a bar wedged between two cargo locks.', {
+      newTruths:  [{ subject: 'scene', fact: 'the bar on the docking ring is called the Rusty Lantern' }],
+      stateChanges: [],
+      sceneFrame: { location: 'Bleakhold docking ring', present: [], situation: 'Looking for a drink' },
+    }));
+    await narrateMove('I find somewhere to drink on the docking ring.');
+    await type('gm-1', '!scene end');
+
+    const next = await narrateMove('I head back to that bar.');
+    expect(next.system).toMatch(/## CURRENT LOCATION\n\n## BLEAKHOLD — Settlement[\s\S]*NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}Session 3: the bar on the docking ring is called the Rusty Lantern/);
+  });
+});

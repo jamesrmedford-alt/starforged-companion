@@ -33,7 +33,13 @@ import {
   PACED_NARRATIVE_OUTCOME,
 } from '../entities/entityExtractor.js';
 import { getConnection, listConnections }  from '../entities/connection.js';
-import { getActiveThreats, getFactionLandscape, getConfirmedLore } from '../world/worldJournal.js';
+import {
+  getActiveThreats,
+  getFactionLandscape,
+  getConfirmedLore,
+  getRecordedLocations,
+  selectLoreForContext,
+} from '../world/worldJournal.js';
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
 import { getShip }        from '../entities/ship.js';
@@ -246,9 +252,6 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
         getFactionLandscape(campaignState),
       ), 'factions')
     : [];
-  extras.confirmedLore    = wjSectionEnabled('loreInContext')
-    ? safeWjRead(() => getConfirmedLore(campaignState).slice(0, 5), 'lore')
-    : [];
 
   // World-lore recap (LORERECAP-INJECT-ORPHANED fix, 2026-07): `!lore`
   // persists its narrator recap to campaignState.loreRecap "for context
@@ -296,7 +299,33 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
 
   addSceneFrameCast(extras, campaignState);
 
+  // Established lore, picked for what this turn is about (issue #286 C2):
+  // the player's text, the scene frame and the entities now in play. It was
+  // the five most recently updated entries. Place details the detection pass
+  // recorded for unrecorded places (the Locations journal) are in the pool.
+  extras.confirmedLore = wjSectionEnabled('loreInContext')
+    ? safeWjRead(() => selectLoreForContext(
+        [...getConfirmedLore(campaignState), ...getRecordedLocations(campaignState)]
+          .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))),
+        loreQueryText(playerNarration, campaignState, extras),
+      ), 'lore')
+    : [];
+
   return extras;
+}
+
+/** What this turn is about, as text for lore selection: player text, scene frame, entity names, current location. */
+function loreQueryText(playerNarration, campaignState, extras) {
+  const frame = campaignState?.sceneFrame ?? {};
+  const names = extras.entityNamesById instanceof Map ? [...extras.entityNamesById.values()] : [];
+  return [
+    playerNarration,
+    frame.location,
+    ...(Array.isArray(frame.present) ? frame.present : []),
+    frame.situation,
+    ...names,
+    currentLocationName(campaignState),
+  ].filter(v => typeof v === 'string' && v.trim()).join(' \n ');
 }
 
 /**
