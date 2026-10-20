@@ -536,3 +536,44 @@ describe('what reached no prompt now does (C5)', () => {
     expect(after.system).toContain('Find the relay (dangerous, progress 5/10)');
   });
 });
+
+describe('a keyless-GM table keeps what a player\'s narration records (D2)', () => {
+  it('@scene on the player\'s own key: the truth it records reaches the ledger through the GM', async () => {
+    await table.setClaudeKey('gm-1', '');
+    await table.setClaudeKey('pl-1', 'sk-ant-pat');
+    replies.push(reply('The hatch is welded shut, the seam still warm.', {
+      newTruths: [{ subject: 'scene', fact: 'the hatch is welded shut' }], stateChanges: [],
+    }));
+    const from = table.claude.calls.length;
+    await type('pl-1', '@scene What about the hatch?');
+    expect(table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL).map(c => c.client)).toEqual(['pl-1']);
+    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(table.errors).toEqual([]);
+  });
+});
+
+describe('Confirm on a draft card keeps what the narration said about them (D3)', () => {
+  it('the role and goal the detection pass read from the prose win over the oracle; no rolled first look over a narrated one', async () => {
+    const gm = table.client('gm-1');
+    const { parseDetectionResponse, routeEntityDrafts } = await gm.import('../../src/entities/entityExtractor.js');
+    await gm.run(() => {
+      const cs = game.settings.get(MODULE_ID, 'campaignState');
+      const detected = parseDetectionResponse(JSON.stringify({ entities: [{
+        type: 'connection', name: 'Mira Sol', description: 'a stocky woman with a burned hand',
+        pronouns: 'she/her', role: 'quartermaster', goal: 'clear her debt to the Syndicate', confidence: 'high',
+      }] }), cs);
+      return routeEntityDrafts(detected.entities, cs, {});
+    });
+    await table.settle();
+    const draft = table.cards(f => f.draftEntityCard)[0];
+    gm.click(draft._id, '[data-action="sf-draft-confirm"]');
+    await table.settle();
+
+    const mira = world().connectionIds.find(id => table.actors.get(id)?.name === 'Mira Sol');
+    const record = table.actors.get(mira).flags[MODULE_ID].connection;
+    expect(record).toMatchObject({
+      role: 'quartermaster', motivation: 'clear her debt to the Syndicate', pronouns: 'she/her',
+      description: 'a stocky woman with a burned hand',
+    });
+  });
+});

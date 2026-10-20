@@ -532,6 +532,23 @@ describe("routeWorldJournalResults", () => {
     fixture.restore();
   });
 
+  // Issue #286 D4: the lore floor (default "significant") ran before entity
+  // routing, so a "notable" NPC fact went to the Session Log, never the card.
+  it("routes a notable entity fact to the card — the card's own floor, not the world-lore one", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      lore: [
+        { title: "Sable: owes the Syndicate", text: "Sable owes the Syndicate a debt.", entityName: "Sable", salience: "notable" },
+        { title: "Sable: smiles", text: "Sable smiles.", entityName: "Sable", salience: "scene" },
+      ],
+    }, fixture.campaignState);
+    const actor = game.actors.get(fixture.refs.sable.journalId);
+    const tierDetails = (actor?.getFlag("starforged-companion", "connection")?.generativeTier ?? []).map(e => e.detail);
+    expect(tierDetails).toEqual(["Sable owes the Syndicate a debt."]);
+    expect(spies.recordLoreDiscovery).not.toHaveBeenCalled();
+    fixture.restore();
+  });
+
   it("falls back to WJ lore when entityName is set but entity is not known", async () => {
     const fixture = buildFullCampaignState();
     await routeWorldJournalResults({

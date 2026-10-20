@@ -52,8 +52,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   skipped.
 
 When a call runs off the canonical GM (the author fallbacks above), its prose
-posts normally but its side-data is not applied — `applyNarratorSidecar`
-debug-logs the skip rather than dropping it silently.
+posts normally and `applyNarratorSidecar` relays its side-data to the canonical
+GM (GM relay `narrator.sidecar` → `applyRelayedNarratorSidecar`, issue #286
+D2), tagged with the scene it was written in: the GM drops it if that scene
+has ended and starts one if none is active. It used to be discarded. With no
+GM connected nothing can be recorded (debug-logged).
 
 **Safety [1] and the X-Card.** [1] renders `campaignState.safety` global
 Lines / Veils. Each player's Private Lines now reach
@@ -186,8 +189,20 @@ keys are `entity:<id>`; issue #286 A1), ship
 full-replacement snapshot, the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`)
 for the ring. Off the canonical GM the sidecar is still stripped from the
-prose but nothing is applied and no audit runs (debug-logged — see "Where each
-call runs"). The ledger persist writes **only** the sidecar's fields
+prose and no audit runs; the side-data is relayed to the canonical GM
+(`narrator.sidecar`, issue #286 D2 — see "Where each call runs").
+
+**Post-narration capture** (the combined detection pass — World Journal lore,
+threats, new-entity drafts — and the generative-tier pass): discovery-class
+moves run detection (make_a_connection auto-creates on a hit); interaction-
+class moves run the tier pass and, since issue #286 D4, detection too, as
+paced narration (the same class) always has; embellishment moves run
+neither. Oracle follow-ups run detection and the tier pass; session
+vignettes and vow scenes run the tier pass for the recorded entities they
+name (`scheduleNarrationCapture`). New entities from any of these queue on
+the GM's draft card — only make_a_connection auto-creates. Lore about a
+recorded entity goes to its card at the tier floor (`notable`) before the
+world-lore floor is applied (D4). The ledger persist writes **only** the sidecar's fields
 (`sceneTruths`, `sceneState`, `sceneFrame`) onto a fresh read of the stored
 campaignState (`persistSceneLedgerFields`, `sceneLifecycle.js`): the
 caller's object may be the move pipeline's pre-narration snapshot, and writing

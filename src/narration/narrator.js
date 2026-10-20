@@ -16,7 +16,7 @@ import { resolveRelevance, collectAllEntities, resolveEntityName } from '../cont
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { extractSidecar }     from '../factContinuity/sidecarParser.js';
+import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
@@ -699,7 +699,16 @@ export function runPostNarrationPasses(
     return Promise.resolve();
   }
 
-  // Interaction class — generative tier update only
+  // Interaction class — the generative tier update, and (issue #286 D4) the
+  // detection pass paced narration runs for the same class: world lore and
+  // threats recorded, new entities queued for the GM's review (never
+  // auto-created).
+  if (cls === 'interaction') {
+    setTimeout(() => {
+      runDiscoveryDetection(narrationText, resolution, campaignState, {})
+        .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
+    }, ASYNC_DETECTION_DELAY_MS);
+  }
   if (cls === 'interaction' && Array.isArray(relevance.entityIds) && relevance.entityIds.length) {
     setTimeout(() => {
       const refs = relevance.entityIds.map((id, i) => ({
@@ -1504,6 +1513,8 @@ export async function narrateOracleFollowup({
     if (!text?.trim()) return null;
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+    // The narration of a roll the table made — discovery by nature (#286 D4).
+    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup' });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -1517,6 +1528,7 @@ export async function narrateOracleFollowup({
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup' });
           return text;
         }
       } catch (retryErr) {
@@ -1620,7 +1632,9 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
-    return (text && text.trim()) ? text : null;
+    if (!text?.trim()) return null;
+    scheduleNarrationCapture(text, campaignState);   // its NPCs' developments → their cards (#286 D4)
+    return text;
   } catch (err) {
     if (isRateLimit(err)) {
       try {
@@ -1631,7 +1645,9 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
           maxTokens: maxTokensWithSidecar(16000),
         });
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
-        return (text && text.trim()) ? text : null;
+        if (!text?.trim()) return null;
+        scheduleNarrationCapture(text, campaignState);
+        return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);
       }
@@ -1810,6 +1826,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState }) {
   } catch (err) {
     console.warn(`${MODULE_ID} | narrateAndPostVowSwearing: card post failed:`, err?.message ?? err);
   }
+  scheduleNarrationCapture(text, campaignState);   // the oath scene's NPCs → their cards (#286 D4)
   return text;
 }
 
@@ -2038,6 +2055,7 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  *
  * @param {string} narrationText
  * @param {Object} campaignState
+ * @param {{ skipLore?: boolean, source?: string }} [options] — `source` labels the draft card (default "paced_narrative")
  * @returns {Promise<void>}
  */
 export async function runPacedDetection(narrationText, campaignState, options = {}) {
@@ -2062,11 +2080,33 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
       sessionId:            campaignState?.currentSessionId ?? '',
-      source:               'paced_narrative',
+      source:               options.source ?? 'paced_narrative',
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runPacedDetection failed:`, err);
   }
+}
+
+/**
+ * Capture what a narration outside the move and paced paths established
+ * (issue #286 D4 — the passes ran only after moves, paced narration, `@scene`
+ * and the inciting incident): developments of the recorded entities it names
+ * go to their cards (runNarrationTierUpdate), and with `detect` the detection
+ * pass records world lore and threats and queues new entities on the GM's
+ * review card. Canonical GM only (world writes); after the same short delay
+ * as the paced passes, so the card settles first. Both passes catch their own
+ * errors.
+ *
+ * @param {string} narrationText
+ * @param {Object} campaignState
+ * @param {{ detect?: boolean, source?: string }} [opts]
+ */
+function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source } = {}) {
+  if (!narrationText?.trim() || !isCanonicalGM()) return;
+  setTimeout(() => {
+    if (detect) runPacedDetection(narrationText, campaignState, { source });
+    runNarrationTierUpdate(narrationText, campaignState);
+  }, ASYNC_DETECTION_DELAY_MS);
 }
 
 /**
@@ -2784,89 +2824,15 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // legitimately runs elsewhere: an oracle follow-up or a RUN_ON.CLAUDE
   // command (@scene, !recap, !incite, …) runs on the author's keyed client
   // when no keyed GM is connected (src/oracles/oracleFollowup.js,
-  // src/index.js chat routing). There the side-data is dropped — logged below.
+  // src/index.js chat routing). There the side-data is relayed to the
+  // canonical GM (issue #286 D2: it was dropped, so a keyless-GM table's
+  // narrated facts never reached the ledger).
   const applySidecarHere = isCanonicalGM();
   if (sidecar && campaignState && !applySidecarHere) {
-    console.debug?.(
-      `${MODULE_ID} | factContinuity: not the canonical GM — narrator side-data ` +
-      `(truths, state changes, scene frame) not applied on this client.`,
-    );
+    relayNarratorSidecar(sidecar, campaignState, ctx);
   }
   if (sidecar && campaignState && applySidecarHere) {
-    // Fact-continuity §20 — the "ship" subject is special-cased. A
-    // stateChange with subject === "ship" and attribute === "position"
-    // is routed to the command vehicle's persistent position field,
-    // NOT to sceneState. We pull those entries out before applySidecar
-    // sees them so the ledger stays clean and the assembler reads the
-    // new position from the Ship Actor on the next turn.
-    const shipPositionChanges = [];
-    const otherChanges = [];
-    for (const c of sidecar.stateChanges ?? []) {
-      const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
-      const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
-      if (subject === 'ship' && attribute === 'position') {
-        shipPositionChanges.push(c);
-      } else {
-        otherChanges.push(c);
-      }
-    }
-    const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
-
-    try {
-      // Narrator-memory A2 — resolve sidecar subjects against the full
-      // entity roster so a confirmed NPC's truths/state land entity-keyed
-      // (not as text subjects). Without this, entity-scoped ledger
-      // filtering never matches and entries are only found by name
-      // mention. Tolerant: an empty roster degrades to text subjects.
-      let entities = [];
-      try {
-        entities = collectAllEntities(campaignState);
-      } catch (err) {
-        console.debug?.(`${MODULE_ID} | factContinuity: entity roster collect failed:`, err?.message ?? err);
-      }
-
-      applySidecar(filteredSidecar, {
-        campaignState,
-        sessionId: campaignState.currentSessionId ?? null,
-        sceneId:   campaignState.currentSceneId   ?? null,
-        moveId:    ctx.moveId ?? null,
-        asserter:  'narrator',
-        entities,
-      });
-
-      // Narrator-memory A4 — merge the scene-frame snapshot (full
-      // replacement; omitted frame keeps the previous one). Gated on its
-      // own setting so the frame can be disabled independently.
-      let frameEnabled = true;
-      try {
-        frameEnabled = game.settings.get(MODULE_ID, 'factContinuity.sceneFrame') ?? true;
-      } catch (err) {
-        // Unregistered (unit tests, early init) — default on.
-        console.debug?.(`${MODULE_ID} | factContinuity: sceneFrame setting read failed:`, err?.message ?? err);
-      }
-      if (frameEnabled && sidecar.sceneFrame) {
-        applySceneFrame(sidecar.sceneFrame, campaignState);
-      }
-
-      // Persist only the ledger fields the sidecar wrote, merged onto the
-      // latest stored campaignState: the caller's object may be the move
-      // pipeline's pre-narration snapshot. Writing it whole reverted a relayed
-      // X-Card / Take a Break / safety flag that landed meanwhile; writing its
-      // ledgers whole dropped a mid-narration `!truth` correction or oracle
-      // truth and resurrected a scene End a Session had just closed — so the
-      // ledgers are unioned by id, and skipped when the scene changed.
-      persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
-        console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
-      );
-    } catch (err) {
-      console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
-    }
-
-    if (shipPositionChanges.length) {
-      applyShipPositionChanges(shipPositionChanges, campaignState).catch(err =>
-        console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
-      );
-    }
+    applySidecarSideData(sidecar, campaignState, ctx);
   }
 
   // Phase E — optional Haiku audit of the prose against the active-scene
@@ -2884,6 +2850,145 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   }
 
   return prose ?? rawText;
+}
+
+/**
+ * Send a narration's side-data to the canonical GM (GM relay
+ * `"narrator.sidecar"`), from a client that narrated on its own key. Tagged
+ * with the scene it was written in, so the GM drops it if that scene has
+ * ended. Fire-and-forget; with no GM connected nothing can be recorded.
+ */
+function relayNarratorSidecar(sidecar, campaignState, ctx) {
+  import('../multiplayer/gmRelay.js').then(({ requestGmAction, hasActiveGM }) => {
+    if (!hasActiveGM()) {
+      console.debug?.(`${MODULE_ID} | factContinuity: no GM connected — narrator side-data (truths, state changes, scene frame) not recorded.`);
+      return null;
+    }
+    return requestGmAction('narrator.sidecar', {
+      sidecar,
+      sceneId:          campaignState.currentSceneId ?? null,
+      moveId:           ctx.moveId ?? null,
+      matchedEntityIds: Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : [],
+    });
+  }).catch(err =>
+    console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
+}
+
+/** Truths and state changes taken from one relayed sidecar, at most (a response emits a handful). */
+const RELAYED_SIDECAR_MAX_ENTRIES = 20;
+
+/**
+ * GM-relay handler for `"narrator.sidecar"` (GM_ACTIONS in
+ * src/multiplayer/gmRelay.js): apply side-data a player's client narrated on
+ * its own key, onto the latest stored campaignState. Dropped when the scene it
+ * was written in has ended; when no scene is active yet, one starts first (the
+ * player's client could not start it). Like any narration on a player's key,
+ * the content is the player's client's — the same trust as its prose.
+ *
+ * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<void>}
+ */
+export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
+  // Re-normalised and bounded: it crossed the socket from a client.
+  const sidecar = normaliseSidecar(payload?.sidecar);
+  if (!sidecar) return;
+  sidecar.newTruths    = sidecar.newTruths.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
+  sidecar.stateChanges = sidecar.stateChanges.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
+  const campaignState = game.settings.get(MODULE_ID, 'campaignState');
+  if (!campaignState) return;
+  if (payload.sceneId && payload.sceneId !== (campaignState.currentSceneId ?? null)) {
+    console.debug?.(`${MODULE_ID} | factContinuity: relayed narrator side-data belongs to a scene that has ended — dropped.`);
+    return;
+  }
+  await ensureSceneStarted(campaignState, 'relayed_narration');
+  await applySidecarSideData(sidecar, campaignState, { moveId: payload.moveId ?? null });
+}
+
+/**
+ * Apply a parsed sidecar on the canonical GM: ship position to the command
+ * vehicle, truths and state through applySidecar, the scene frame, then a
+ * persist of the ledger fields onto the latest store.
+ *
+ * @returns {Promise<void>} settles when the ledger persist has (never rejects)
+ */
+function applySidecarSideData(sidecar, campaignState, ctx = {}) {
+  let persisted = Promise.resolve();
+  // Fact-continuity §20 — the "ship" subject is special-cased. A
+  // stateChange with subject === "ship" and attribute === "position"
+  // is routed to the command vehicle's persistent position field,
+  // NOT to sceneState. We pull those entries out before applySidecar
+  // sees them so the ledger stays clean and the assembler reads the
+  // new position from the Ship Actor on the next turn.
+  const shipPositionChanges = [];
+  const otherChanges = [];
+  for (const c of sidecar.stateChanges ?? []) {
+    const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
+    const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
+    if (subject === 'ship' && attribute === 'position') {
+      shipPositionChanges.push(c);
+    } else {
+      otherChanges.push(c);
+    }
+  }
+  const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
+
+  try {
+    // Narrator-memory A2 — resolve sidecar subjects against the full
+    // entity roster so a confirmed NPC's truths/state land entity-keyed
+    // (not as text subjects). Without this, entity-scoped ledger
+    // filtering never matches and entries are only found by name
+    // mention. Tolerant: an empty roster degrades to text subjects.
+    let entities = [];
+    try {
+      entities = collectAllEntities(campaignState);
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | factContinuity: entity roster collect failed:`, err?.message ?? err);
+    }
+
+    applySidecar(filteredSidecar, {
+      campaignState,
+      sessionId: campaignState.currentSessionId ?? null,
+      sceneId:   campaignState.currentSceneId   ?? null,
+      moveId:    ctx.moveId ?? null,
+      asserter:  'narrator',
+      entities,
+    });
+
+    // Narrator-memory A4 — merge the scene-frame snapshot (full
+    // replacement; omitted frame keeps the previous one). Gated on its
+    // own setting so the frame can be disabled independently.
+    let frameEnabled = true;
+    try {
+      frameEnabled = game.settings.get(MODULE_ID, 'factContinuity.sceneFrame') ?? true;
+    } catch (err) {
+      // Unregistered (unit tests, early init) — default on.
+      console.debug?.(`${MODULE_ID} | factContinuity: sceneFrame setting read failed:`, err?.message ?? err);
+    }
+    if (frameEnabled && sidecar.sceneFrame) {
+      applySceneFrame(sidecar.sceneFrame, campaignState);
+    }
+
+    // Persist only the ledger fields the sidecar wrote, merged onto the
+    // latest stored campaignState: the caller's object may be the move
+    // pipeline's pre-narration snapshot. Writing it whole reverted a relayed
+    // X-Card / Take a Break / safety flag that landed meanwhile; writing its
+    // ledgers whole dropped a mid-narration `!truth` correction or oracle
+    // truth and resurrected a scene End a Session had just closed — so the
+    // ledgers are unioned by id, and skipped when the scene changed.
+    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
+  }
+
+  if (shipPositionChanges.length) {
+    applyShipPositionChanges(shipPositionChanges, campaignState).catch(err =>
+      console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
+    );
+  }
+  return persisted;
 }
 
 /**

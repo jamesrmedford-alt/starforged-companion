@@ -59,7 +59,7 @@ import {
   getFactionLandscape,
   getFactionEntry,
 } from "../world/worldJournal.js";
-import { passesSalience, getSalienceThreshold } from "../world/salience.js";
+import { passesSalience, getSalienceThreshold, SALIENCE_ORDER } from "../world/salience.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -257,7 +257,9 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `For a connection, set "pronouns" to the pronoun set the narration`,
     `established for that person ("she/her", "he/him", "they/them"), or null`,
     `when the prose never gendered them. Report what the text used — do not`,
-    `guess from the name.`,
+    `guess from the name. Likewise set "role" to the role or occupation the`,
+    `narration gave them ("dockmaster", "smuggler") and "goal" to what it says`,
+    `they want — each null when the prose did not say.`,
     ``,
     `ESTABLISHED ENTITIES (do not return these as new entities):`,
     established.length ? established.join(", ") : "(none)",
@@ -290,7 +292,8 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     `{`,
     `  "entities": [`,
     `    { "type": string, "name": string, "description": string,`,
-    `      "pronouns": string|null, "confidence": "high"|"medium"|"low" }`,
+    `      "pronouns": string|null, "role": string|null, "goal": string|null,`,
+    `      "confidence": "high"|"medium"|"low" }`,
     `  ],`,
     `  "renames": [`,
     `    { "from": string, "to": string }`,
@@ -446,8 +449,14 @@ export function parseDetectionResponse(text, campaignState) {
     .filter(e => !renameTargets.has(normalizeEntityName(e.name)))
     // Sanitize detected pronouns (CHAR-NPC-PRONOUN-ROLL-BLIND): keep only
     // pronoun-shaped values ("she/her", "ze/zir", up to three tokens);
-    // anything else — prose, guesses, junk — drops to "".
-    .map(e => ({ ...e, pronouns: normalisePronounSet(e.pronouns) }));
+    // anything else — prose, guesses, junk — drops to "". The role and goal
+    // the narration gave a connection (issue #286 D3) are short strings.
+    .map(e => ({
+      ...e,
+      pronouns: normalisePronounSet(e.pronouns),
+      role:     detectedPhrase(e.role),
+      goal:     detectedPhrase(e.goal),
+    }));
 
   return {
     entities: filteredEntities,
@@ -668,7 +677,7 @@ async function postRenameNoticeCard(applied) {
  * Re-uses the rolls made by buildOracleSeeds() when a fresh seed is
  * not provided (e.g. confirm-from-draft path).
  *
- * @param {Object} draft           — { name, description }
+ * @param {Object} draft           — { name, description, pronouns?, role?, goal? } (detected)
  * @param {Object|null} seed       — { role, goal, firstLook, givenName }
  * @returns {{ name, description, role, motivation, portraitSource }}
  */
@@ -687,17 +696,26 @@ export function buildConnectionSeedData(draft, seed) {
   if (draft?.description && draft.description.trim()) portraitParts.push(draft.description.trim());
   if (s.firstLook) portraitParts.push(s.firstLook);
   if (s.role)      portraitParts.push(`role: ${s.role}`);
+  // What the narration said wins over an oracle roll (issue #286 D3): the
+  // confirm path rolls AFTER the narration, and a rolled role or goal the
+  // card then lists as ESTABLISHED FACTS could contradict it.
   return {
     name,
     description,
-    role:           s.role  ?? "",
-    motivation:     s.goal  ?? "",
+    role:           draft?.role || (s.role ?? ""),
+    motivation:     draft?.goal || (s.goal ?? ""),
     // Pronouns the narration established (detector capture) — with these on
     // the record, seedConnectionActor keeps them instead of rolling a random
     // set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
     pronouns:       normalisePronounSet(draft?.pronouns),
     portraitSource: portraitParts.join(". "),
   };
+}
+
+/** A detected role / goal: a trimmed string of at most 120 characters, else "". */
+function detectedPhrase(value) {
+  const v = typeof value === "string" ? value.trim() : "";
+  return v && v.length <= 120 && !/^(null|none|unknown|n\/a)$/i.test(v) ? v : "";
 }
 
 /**
@@ -919,6 +937,11 @@ function findEntityForLoreRouting(entityName, campaignState) {
  * @param {Object} campaignState
  * @returns {Promise<void>}
  */
+/** The less durable of two salience tiers. */
+function lowerSalience(a, b) {
+  return (SALIENCE_ORDER[a] ?? Infinity) <= (SALIENCE_ORDER[b] ?? Infinity) ? a : b;
+}
+
 export async function routeWorldJournalResults(wj, campaignState) {
   if (!wj) return;
 
@@ -927,34 +950,36 @@ export async function routeWorldJournalResults(wj, campaignState) {
   // Fail-open items (unrated salience) clear the gate and are recorded as
   // durable, never rerouted.
   const loreThreshold = getSalienceThreshold("lore");
+  // A fact about one recorded entity is card material at the tier pass's own
+  // floor, lower than the world-lore one (issue #286 D4: the lore floor ran
+  // first, so a "notable" NPC fact went to the Session Log, never the card).
+  const entityLoreThreshold = lowerSalience(loreThreshold, TIER_SALIENCE_FLOOR);
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
-    if (!passesSalience(lore.salience, loreThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
-      continue;
-    }
     // Entity-specific lore (Task D): if the detector flagged this as a fact
     // about a specific known entity, migrate it to that entity's generative
     // tier instead of the WJ lore journal. Keeps per-entity detail on the
     // entity record where the narrator can use it, not as world-level canon.
-    if (lore.entityName) {
-      const entityRef = findEntityForLoreRouting(lore.entityName, campaignState);
-      if (entityRef) {
-        await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
-          sessionId:  campaignState?.currentSessionId ?? "",
-          sessionNum: campaignState?.sessionNumber ?? null,
-          detail:     lore.text ?? lore.title,
-          source:     "wj_lore_entity_route",
-          pinned:     false,
-          promoted:   false,
-          promotedAt: null,
-          createdAt:  Date.now(),
-        }).catch(err =>
-          console.warn(`${MODULE_ID} | routeWorldJournalResults: entity-lore migration failed:`, err),
-        );
-        continue;
-      }
-      // Entity not found (no record yet) — fall through to WJ lore as usual.
+    // Entity not found (no record yet) — the lore gate and WJ lore as usual.
+    const entityRef = lore.entityName ? findEntityForLoreRouting(lore.entityName, campaignState) : null;
+    if (entityRef && passesSalience(lore.salience, entityLoreThreshold)) {
+      await appendMigratedTruthToTier(entityRef.journalId, entityRef.type, {
+        sessionId:  campaignState?.currentSessionId ?? "",
+        sessionNum: campaignState?.sessionNumber ?? null,
+        detail:     lore.text ?? lore.title,
+        source:     "wj_lore_entity_route",
+        pinned:     false,
+        promoted:   false,
+        promotedAt: null,
+        createdAt:  Date.now(),
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | routeWorldJournalResults: entity-lore migration failed:`, err),
+      );
+      continue;
+    }
+    if (!passesSalience(lore.salience, loreThreshold)) {
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
+      continue;
     }
     // Auto-confirm (Task C): narrator-detected lore goes straight to confirmed
     // state; promotedAt is set by recordLoreDiscovery when confirmed === true.
@@ -1606,11 +1631,16 @@ async function handleDraftConfirm(message, draftIndex) {
   let record = null;
   try {
     if (draft.type === "connection") {
+      // These rolls come after the narration (issue #286 D3): a rolled first
+      // look is added only when the narration did not describe them, and the
+      // role and goal it gave them win (buildConnectionSeedData).
+      const rolled = rollFreshConnectionSeed();
       const seedData = buildConnectionSeedData(
-        // `pronouns` rode the draft card from the detection pass
-        // (postDraftEntityCard spreads the whole entity into the flag).
-        { name: draft.name, description: draft.description ?? "", pronouns: draft.pronouns ?? "" },
-        rollFreshConnectionSeed(),
+        // `pronouns`, `role` and `goal` rode the draft card from the detection
+        // pass (postDraftEntityCard spreads the whole entity into the flag).
+        { name: draft.name, description: draft.description ?? "", pronouns: draft.pronouns ?? "",
+          role: draft.role ?? "", goal: draft.goal ?? "" },
+        draft.description?.trim() ? { ...rolled, firstLook: "" } : rolled,
       );
       record = await creator({
         name:                      seedData.name,

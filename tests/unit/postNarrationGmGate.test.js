@@ -42,6 +42,7 @@ vi.mock('../../src/factContinuity/consistencyCheck.js', () => ({
 import {
   runPostNarrationPasses,
   applyNarratorSidecar,
+  applyRelayedNarratorSidecar,
 } from '../../src/narration/narrator.js';
 import { isCanonicalGM }            from '../../src/multiplayer/gmGate.js';
 import { runCombinedDetectionPass } from '../../src/entities/entityExtractor.js';
@@ -78,6 +79,26 @@ describe('runPostNarrationPasses — canonical-GM gate', () => {
     vi.mocked(isCanonicalGM).mockReturnValue(false);
     await runPostNarrationPasses('Some prose.', resolution, relevance, { currentSessionId: 's' });
     expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+  });
+
+  // Issue #286 D4: interaction-class moves ran only the tier pass; paced
+  // narration, the same class, ran detection too.
+  it('runs the detection pass after an interaction-class move, like paced narration', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(isCanonicalGM).mockReturnValue(true);
+      await runPostNarrationPasses(
+        'Some prose.',
+        { moveId: 'compel', outcome: 'strong_hit', _id: 'r3' },
+        { resolvedClass: 'interaction', entityIds: [], entityTypes: [] },
+        { currentSessionId: 's' },
+      );
+      expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+      await vi.runAllTimersAsync();
+      expect(runCombinedDetectionPass).toHaveBeenCalledWith('Some prose.', 'compel', 'strong_hit', { currentSessionId: 's' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('still no-ops for a non-GM even on an interaction-class narration', async () => {
@@ -133,11 +154,29 @@ describe('applyNarratorSidecar — canonical-GM gate on campaignState persist', 
     expect(wroteCampaign).toBe(false);
   });
 
-  it('debug-logs that the side-data was not applied off the canonical GM (no silent drop)', () => {
+  // Issue #286 D2: off the canonical GM the side-data used to be dropped (a
+  // debug line said so). It is relayed to the GM, tagged with its scene.
+  it('relays the side-data to the canonical GM off it — and says so when no GM is connected', async () => {
     vi.mocked(isCanonicalGM).mockReturnValue(false);
-    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    applyNarratorSidecar(raw, baseCampaign(), {});
-    expect(debug.mock.calls.some(c => /not the canonical GM — narrator side-data .* not applied/.test(String(c[0])))).toBe(true);
+    // Earlier tests here relay too (fire-and-forget) — count this test's own.
+    const relayed = (moveId) => (game.socket._emitted ?? []).filter(e => e.payload?.payload?.moveId === moveId);
+    applyNarratorSidecar(raw, baseCampaign(), { moveId: 'face_danger' });
+    await vi.waitFor(() => expect(relayed('face_danger')).toHaveLength(1));
+    expect(relayed('face_danger')[0].payload).toMatchObject({
+      kind:    'gmRelay.narrator.sidecar',
+      payload: { sceneId: 'sc', moveId: 'face_danger', sidecar: { newTruths: [], stateChanges: [] } },
+    });
+
+    const users = [...game.users];
+    game.users._set([]);
+    try {
+      const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      applyNarratorSidecar(raw, baseCampaign(), { moveId: 'no_gm' });
+      await vi.waitFor(() => expect(debug.mock.calls.some(c => /no GM connected — narrator side-data .* not recorded/.test(String(c[0])))).toBe(true));
+      expect(relayed('no_gm')).toEqual([]);
+    } finally {
+      game.users._set(users);
+    }
   });
 
   it('logs nothing about skipped side-data on the canonical GM', () => {
@@ -145,5 +184,44 @@ describe('applyNarratorSidecar — canonical-GM gate on campaignState persist', 
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     applyNarratorSidecar(raw, baseCampaign(), {});
     expect(debug.mock.calls.some(c => /not the canonical GM/.test(String(c[0])))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRelayedNarratorSidecar — side-data a player's client narrated on its
+// own key, applied on the canonical GM (issue #286 D2)
+// ---------------------------------------------------------------------------
+
+describe('applyRelayedNarratorSidecar', () => {
+  let origSet;
+  const stored = () => game.settings._store.get(`${MODULE_ID}.campaignState`);
+  const truth = (fact) => ({ subject: 'scene', fact });
+
+  beforeEach(() => {
+    origSet = game.settings.set;
+    game.settings.set = vi.fn(async (mod, key, value) => { game.settings._store.set(`${mod}.${key}`, value); return value; });
+    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      currentSessionId: 's', currentSceneId: 'sc', sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc' },
+    });
+  });
+  afterEach(() => { game.settings.set = origSet; });
+
+  it('applies to the scene it was written in, onto the stored campaignState', async () => {
+    await applyRelayedNarratorSidecar({ sceneId: 'sc', sidecar: { newTruths: [truth('the hatch is welded shut')], stateChanges: [] } });
+    expect(stored().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', sceneId: 'sc', asserter: 'narrator' }]);
+  });
+
+  it('drops side-data for a scene that has ended, and a malformed payload', async () => {
+    await applyRelayedNarratorSidecar({ sceneId: 'sc-old', sidecar: { newTruths: [truth('stale')] } });
+    await applyRelayedNarratorSidecar({ sceneId: 'sc', sidecar: 'not an object' });
+    await applyRelayedNarratorSidecar({ sceneId: 'sc', sidecar: { newTruths: 'nor this' } });
+    expect(stored().sceneTruths).toEqual([]);
+  });
+
+  it('takes at most 20 truths from one relay', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => truth(`fact number ${i}`));
+    await applyRelayedNarratorSidecar({ sceneId: 'sc', sidecar: { newTruths: many, stateChanges: [] } });
+    expect(stored().sceneTruths).toHaveLength(20);
   });
 });

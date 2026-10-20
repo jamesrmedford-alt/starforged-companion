@@ -616,8 +616,8 @@ export const CHAT_COMMAND_ROUTES = [
  * @scene — scene interrogation. Resets the recent move-density window so the
  * pacing classifier doesn't carry over a run of MOVE decisions. RUN_ON.CLAUDE:
  * it calls Claude on the keyed canonical GM when one is connected; otherwise
- * on the author's client, which only narrates — the narrator side-data is not
- * applied there.
+ * on the author's client, which narrates and relays the narrator side-data to
+ * the canonical GM (issue #286 D2).
  *
  * It asks about the scene in progress, so it continues that scene (issue #286
  * A4): interrogateScene starts one only when none is active (on the canonical

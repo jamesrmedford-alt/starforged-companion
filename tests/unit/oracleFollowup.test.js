@@ -101,7 +101,7 @@ describe('requestOracleNarration', () => {
     expect(relayed()).toHaveLength(1);
   });
 
-  it('no keyed GM, keyed author: narrates locally (after the raw card) and logs that side-data is not saved', async () => {
+  it('no keyed GM, keyed author: narrates locally (after the raw card) and logs that its side-data goes to the GM', async () => {
     setUsers([GM, P1], 'pl-1');
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
@@ -110,7 +110,7 @@ describe('requestOracleNarration', () => {
     await vi.runAllTimersAsync();
     expect(narrateOracleFollowup).toHaveBeenCalledTimes(1);
     expect(game.socket._emitted ?? []).toHaveLength(0);
-    expect(debug.mock.calls.some(c => /side-data .* can only be applied on the canonical GM/.test(String(c[0])))).toBe(true);
+    expect(debug.mock.calls.some(c => /side-data .* is relayed to the canonical GM/.test(String(c[0])))).toBe(true);
   });
 
   it('no keyed GM, keyless author: skips quietly (debug, no toast, no relay)', async () => {

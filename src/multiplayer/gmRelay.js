@@ -138,6 +138,8 @@ export const GM_ACTIONS = Object.freeze({
   "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm" },
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
+  // Narration on a player's own key (no keyed GM online)
+  "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay" },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay" },

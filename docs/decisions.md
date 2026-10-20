@@ -6,6 +6,36 @@ rejected.
 
 ---
 
+## Narrator side-data, draft confirm and detection: nothing the narration said is lost or contradicted (2026-10)
+
+**Decision:** (issue #286 D2–D4)
+- **D2.** Narration that runs on a player's own key (no keyed GM online)
+  relays its side-data to the canonical GM — GM relay `narrator.sidecar` →
+  `applyRelayedNarratorSidecar` — tagged with the scene it was written in.
+  The GM drops it if that scene has ended, and starts a scene when none is
+  active. It used to be discarded. The content is the player's client's, the
+  same trust as its prose.
+- **D3.** The detection pass reads the role and goal the prose gave a new
+  connection. Confirm on a draft card uses them over its oracle rolls, and adds
+  a rolled first look only when the narration did not describe them: the
+  rolls come after the narration, and the card lists them as ESTABLISHED
+  FACTS.
+- **D4.** Lore about a recorded entity goes to its card at the tier pass's
+  floor (`notable`) before the world-lore floor applies, which used to send a
+  notable NPC fact to the Session Log. Interaction-class moves run the
+  detection pass, as paced narration (the same class) always has. Oracle
+  follow-ups run detection and the tier pass. Session vignettes and vow scenes
+  run the tier pass for the recorded entities they name. New entities still
+  go to the GM's draft card; only make_a_connection auto-creates.
+
+**Rejected:**
+- *Detection after embellishment moves.* That class adds texture, not facts.
+- *Running detection after vignettes and vow scenes.* They run under
+  embellishment and introduce no one new: the vow target is created by Swear
+  an Iron Vow.
+- *Keeping oracle rolls over narrated values on a draft.* The narration is
+  what the table read.
+
 ## Clocks, vow progress, rewards, connection standing and the session focus reach the narrator (2026-10)
 
 **Decision:** (issue #286 C5) each was in no prompt, and each now renders
@@ -561,7 +591,10 @@ and exactly one runs it:
   a keyless-GM table). GM-only writes are then skipped and debug-logged — the
   scene start included: the narrators' `ensureSceneStarted` (which `@scene`
   goes through) starts a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
-  author gets the usual "Claude API key not configured" fallback.
+  author gets the usual "Claude API key not configured" fallback. Since issue
+  #286 D2 the narrator side-data is the exception: it is relayed to the
+  canonical GM, which starts a scene to hold it (see "Narrator side-data,
+  draft confirm and detection").
 
 This is `RUN_ON.CLAUDE` for `@scene`, `!recap`, `!ship envision` / `history`
 and `!incite`, and the same ladder in `requestOracleNarration`
