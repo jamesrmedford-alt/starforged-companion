@@ -6,6 +6,45 @@ rejected.
 
 ---
 
+## What every narration is told about the turn before (2026-10)
+
+**Decision:** (issue #286 B1–B5, B7)
+
+- **Concrete specifics are REQUIRED** in the sidecar (B2): an object handed
+  over, a price or debt, a code, a count, a deal or promise, a name said in
+  passing, a mark or injury — at most five per response, so the sidecar does
+  not grow. The rolling-summary prompt keeps the same specifics exact.
+- **Move narration reads the ring** (B1): the last `MOVE_RING_CARDS` (4)
+  entries, bounded by `narratorContextCards`. No new setting.
+- **A ring entry is the player's line, then the prose** (B5): move and paced
+  cards store `playerText` / `playerName`, @scene answers
+  `sceneQuestion` / `playerName`. The rolling summary reads the same entries.
+- **The scene frame's recorded cast joins the matched set on every path**
+  (B3, `addSceneFrameCast`): cards, ledger scope, consistency-check context.
+  It runs after relevance resolves, so a move's permission class and its tier
+  pass still come from the player's text alone (architecture §8.2).
+- **Free-text ledger subjects are always in scope** (B4). The ledger holds
+  only the current scene, so its unrecorded figures and places are
+  scene-local by construction.
+- **The rolling summary regenerates after a card posts** (B7,
+  `registerRollingSummaryRefreshHook`, canonical GM, single-flight). Prompts
+  read the cached text.
+
+**Why:** in the first 30 cards of a session a move was narrated with no
+earlier prose at all; what a player wrote survived only if the narrator
+repeated it; "I convince him" lost the partner's card and facts; "dock
+master" or "her" lost "the dockmaster"; and a due summary regen — a Haiku
+call over the whole session — ran inside the narration it delayed.
+
+**Rejected:**
+- *The full paced ring on moves.* Uncached input every move pays for; four
+  entries carry the immediate scene. Section F of the issue proposes a cached
+  scene transcript instead.
+- *Frame-unioning the move path's relevance call.* It would move the hybrid
+  permission class (§8.2).
+- *Fuzzy matching for text subjects* ("dock master" ~ "dockmaster"). Every
+  text subject is this scene's, so scope is unconditional.
+
 ## Ledger state sheds by priority; entity cards show the newest details (2026-10)
 
 **Decision:** (issue #286 A6 / A7)

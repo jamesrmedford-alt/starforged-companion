@@ -119,6 +119,13 @@ export function appendSidecarInstruction(options = {}) {
     '  what they want, or what is at stake — especially anything with a',
     '  deadline or a cost for failure — you MUST emit a newTruth recording',
     '  it. Stakes that are not recorded will be lost.',
+    '- REQUIRED: when your prose establishes a concrete specific the table may',
+    '  bring up later — an object handed over or taken, a price or a debt, a',
+    '  code or password, a count, a deal or a promise, a name said in passing,',
+    '  a mark or injury — you MUST emit a newTruth recording it exactly (the',
+    '  item, the number, the words), e.g. { "subject": "Kael Dros", "fact":',
+    '  "gave the PC the brass key to cargo locker 7" }. At most five of these',
+    '  per response: the ones most likely to matter later.',
     '- Name sparingly. Give a proper name only to a character who will matter',
     '  beyond this moment. Leave one-off functionaries generic and unnamed — "a',
     '  dock worker", "the comms officer", "a guard" — so they stay light and',
@@ -221,15 +228,19 @@ const STATE_KEPT_LONGEST = new Set([
  * Filtering (fact-continuity scope §6 — "Filtering"). A subject is in scope
  * for this turn if any of:
  *   - the scene itself (`subject.kind === "scene"`)               — always
+ *   - a free-text subject (an unrecorded figure or place)         — always
  *   - the entity ID appears in `options.matchedEntityIds`         — always
  *   - the entity ID equals `options.currentLocationId`            — always
- *   - the free-text subject is mentioned in `options.playerNarration`
+ * The ledger holds only the current scene's entries, so a free-text subject is
+ * scene-local by construction. It used to need its exact phrase in the
+ * player's text or the frame's present list, so "dock master" or "her" lost
+ * "the dockmaster" (issue #286 B4). Recorded entities stay scoped by match:
+ * relevance, the current location, and the frame's cast (buildNarratorExtras).
  *
  * @param {Object} campaignState     — CampaignStateSchema
  * @param {Object} [options]
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
- * @param {string} [options.playerNarration]
  * @param {number} [options.maxTokens] — soft cap; state lines shed when exceeded
  *   (location / vessel / condition last)
  * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
@@ -246,17 +257,14 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const matchedIds        = new Set(options?.matchedEntityIds ?? []);
   const currentLocationId = options?.currentLocationId ?? null;
   if (currentLocationId) matchedIds.add(currentLocationId);
-  // Sanitize the narration before substring-matching free-text subjects so
-  // stray HTML from chat enrichment never produces false matches (see PR #94).
-  const narration         = sanitizePlayerText(options?.playerNarration ?? '').toLowerCase();
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
 
   // ── Scene frame (Cluster A4) ─────────────────────────────────────────────
-  // The narrator-maintained snapshot of the active scene. Subjects named in
-  // the frame's `present` list are treated as mentioned this turn, so their
-  // ledger entries stay in scope even when the player's message doesn't name
-  // them (the conversation-partner case — see narrator-memory architecture).
+  // The narrator-maintained snapshot of the active scene. The recorded
+  // entities its `present` list names join matchedEntityIds upstream
+  // (buildNarratorExtras), so their ledger entries stay in scope even when
+  // the player's message doesn't name them (the conversation-partner case).
   const sceneFrameEnabled = options?.sceneFrameEnabled !== false;
   const frame = sceneFrameEnabled && campaignState?.sceneFrame
     && typeof campaignState.sceneFrame === 'object'
@@ -265,15 +273,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const presentNames = Array.isArray(frame?.present)
     ? frame.present.filter(p => typeof p === 'string' && p.trim())
     : [];
-  const scopeText = presentNames.length
-    ? `${narration} ${presentNames.join(' ').toLowerCase()}`
-    : narration;
 
   // ── Filter truths ────────────────────────────────────────────────────────
   const truthLines = [];
   for (const t of truths) {
     if (!t || t.retracted) continue;
-    if (!isSubjectInScope(t.subject, matchedIds, scopeText)) continue;
+    if (!isSubjectInScope(t.subject, matchedIds)) continue;
     const label = formatSubjectLabel(t.subject, nameLookup);
     const fact  = String(t.fact ?? '').trim();
     if (!fact) continue;
@@ -300,7 +305,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
-    if (!isSubjectInScope(subjectForKey, matchedIds, scopeText)) continue;
+    if (!isSubjectInScope(subjectForKey, matchedIds)) continue;
     const label = formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
@@ -565,15 +570,11 @@ function normaliseNameLookup(input) {
   return new Map();
 }
 
-function isSubjectInScope(subject, matchedIds, lowerCaseNarration) {
+function isSubjectInScope(subject, matchedIds) {
   if (!subject || typeof subject !== 'object') return false;
   if (subject.kind === 'scene') return true;
   if (subject.kind === 'entity') return matchedIds.has(subject.entityId);
-  if (subject.kind === 'text') {
-    const text = String(subject.text ?? '').trim().toLowerCase();
-    if (!text) return false;
-    return lowerCaseNarration.includes(text);
-  }
+  if (subject.kind === 'text') return String(subject.text ?? '').trim() !== '';
   return false;
 }
 
@@ -1150,7 +1151,6 @@ export function buildNarratorSystemPrompt(
     campaignTruthsBlock  = '',
     mode                 = 'move_resolution',
     matchedEntityIds     = [],
-    playerNarration      = '',
     entityNamesById      = null,
     party                = null,
     rollingSummary       = '',
@@ -1331,7 +1331,6 @@ export function buildNarratorSystemPrompt(
     const ledger = buildLedgerBlock(campaignState, {
       matchedEntityIds,
       currentLocationId: campaignState?.currentLocationId ?? null,
-      playerNarration,
       maxTokens:         factContinuityMaxLedgerTokens,
       entityNamesById,
       sceneFrameEnabled: factContinuitySceneFrame,
@@ -1683,10 +1682,19 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {Object} resolution       — MoveResolutionSchema
  * @param {string} playerNarration  — raw player input
  * @param {number} sentenceTarget   — how many sentences to produce
+ * @param {string|null} [speakerName]
+ * @param {string} [recentContext]  — the last few ring entries (may be empty)
  * @returns {string}
  */
-export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null) {
+export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '') {
   const parts = [];
+
+  // What just happened (issue #286 B1): a move used to be narrated with no
+  // earlier prose at all until the rolling summary appeared, 30 cards in.
+  const cleanedRecent = stripHtml(recentContext).trim();
+  if (cleanedRecent) {
+    parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
+  }
 
   const moveOutcome = resolution?.loremasterContext ?? '';
   if (moveOutcome) {

@@ -27,8 +27,10 @@ vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  interpretMove: vi.fn(async () => ({
+  // The real interpreter's shape, playerNarration included.
+  interpretMove: vi.fn(async (narration) => ({
     moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'test', mischiefApplied: false,
+    playerNarration: narration, inputMethod: 'chat',
   })),
 }));
 vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
@@ -262,5 +264,86 @@ describe('@scene asks about the scene in progress (A4)', () => {
     expect(world().currentSceneId).toBe('sc-1');
     expect(world().sceneTruths.map(t => t.fact)).toEqual(['the hatch is welded shut']);
     expect(world().sceneFrame?.location).toBe('the derelict\'s spine corridor');
+  });
+});
+
+describe('what a player writes is kept with the prose it prompted (B1, B5)', () => {
+  it('the next move narration is told the last turns — the player\'s line, then the narrator\'s prose', async () => {
+    replies.push(reply('The old man turns the compass over, thumb on the cracked glass.'));
+    await narrateMove('I give him my father\'s compass.');
+    expect(table.cards(f => f.narratorCard && f.moveId)[0].flags[MODULE_ID]).toMatchObject({
+      playerText: 'I give him my father\'s compass.', playerName: 'Kira',
+    });
+
+    const next = await narrateMove('I wait for his answer.');
+    expect(next.userText).toMatch(
+      /^## RECENT SCENE\n\nPLAYER — Kira wrote: "I give him my father's compass\."\nThe old man turns the compass over, thumb on the cracked glass\./,
+    );
+    expect(next.userText).toContain('Kira: "I wait for his answer."');
+  });
+
+  it('carries at most four recent turns into a move', async () => {
+    for (let i = 1; i <= 6; i += 1) {
+      replies.push(reply(`Beat ${i} of the chase.`));
+      await narrateMove(`I push the engines harder, round ${i}.`);
+    }
+    const next = await narrateMove('One more push.');
+    const recent = next.userText.split('## MOVE OUTCOME')[0];
+    expect(recent).not.toContain('Beat 2 of the chase.');
+    for (const i of [3, 4, 5, 6]) expect(recent).toContain(`Beat ${i} of the chase.`);
+  });
+});
+
+describe('the scene frame\'s cast keeps their card and facts on a move turn (B3)', () => {
+  it('"I try to convince him" — the partner the frame lists is in the prompt with his truths and state', async () => {
+    await recordNpc('Kael Dros');
+    replies.push(reply('Kael folds his arms, unimpressed.', {
+      newTruths:    [{ subject: 'Kael Dros', fact: 'wants the PC off Bleakhold by dawn' }],
+      stateChanges: [{ subject: 'Kael Dros', attribute: 'location', value: 'the cargo office' }],
+      sceneFrame:   { location: 'the cargo office', present: ['Captain Kael Dros'], situation: 'Haggling over the manifest' },
+    }));
+    await narrateMove('I tell Kael Dros the manifest is clean.');
+
+    const next = await narrateMove('I lean in and try to convince him.');
+    expect(next.system).toContain('## KAEL DROS — Connection');
+    expect(next.system).toMatch(/TRUTHS:\n {2}Kael Dros — wants the PC off Bleakhold by dawn/);
+    expect(next.system).toMatch(/Kael Dros — location: the cargo office/);
+    // The permission class still comes from the player's text alone (§8.2):
+    // no name in it, so this hybrid move resolves as discovery.
+    expect(next.system).toContain('NARRATOR PERMISSIONS — DISCOVERY MODE');
+  });
+});
+
+describe('the rolling summary regenerates after a card posts, not inside a narration (B7)', () => {
+  it('a due regen no longer holds up the next narration — and the summary reaches the turn after', async () => {
+    table.world.setSetting('narratorContextCards', 2);   // debounce K = round(1.5 × 2) = 3 cards
+    let release;
+    const held = new Promise((r) => { release = r; });
+    const summaryCalls = [];
+    table.claude.respond((call) => {
+      if (call.system.includes('continuity scribe')) {
+        summaryCalls.push(call.client);
+        return held.then(() => 'Kira bargained with the dockmaster for a berth.');
+      }
+      if (call.model === NARRATION_MODEL) return reply('The deck shudders underfoot.');
+      return '{}';
+    });
+
+    await narrateMove('I check the docking clamps one by one.');
+    await narrateMove('I wave down the dockmaster for a berth.');
+    expect(summaryCalls).toEqual([]);
+    await narrateMove('I offer the dockmaster half our fuel.');   // the 3rd card: the regen is due
+    expect(summaryCalls).toEqual(['gm-1']);
+
+    // The regen is still waiting on Haiku; the next narration goes out anyway.
+    const next = await narrateMove('I sign the berth papers.');
+    expect(next.system).not.toContain('STORY SO FAR');
+
+    release();
+    await table.settle();
+    expect(world().sessionSummary).toMatchObject({ text: 'Kira bargained with the dockmaster for a berth.', sessionId: 'sess-1' });
+    const after = await narrateMove('I head for the berth.');
+    expect(after.system).toContain('## STORY SO FAR (THIS SESSION)');
+    expect(after.system).toContain('Kira bargained with the dockmaster for a berth.');
   });
 });

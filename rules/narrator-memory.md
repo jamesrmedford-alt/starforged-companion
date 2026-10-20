@@ -41,7 +41,10 @@ layers. This file is the never-break list.
    (paced/@scene) must never reach an API call — `resolveRelevance` with
    `moveId: null` guarantees this today. The move path's relevance call is
    not frame-unioned on purpose (hybrid permission classification); see
-   architecture doc §8.2 before changing.
+   architecture doc §8.2 before changing. The frame's recorded cast joins the
+   matched set after relevance resolves (`addSceneFrameCast`, every path —
+   issue #286 B3), which brings back their cards and facts without moving the
+   permission class.
 
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
@@ -77,7 +80,10 @@ layers. This file is the never-break list.
    at the expense of any §6.5 ledger tier or the never-dropped facts (frame /
    binding truths / ship position) — those defend load-bearing facts; the
    summary only carries narrative texture. Keep it GM-gated + fail-open: a
-   summary error returns the prior text and never blocks a narration. Full drop
+   summary error returns the prior text and never blocks a narration. Regen
+   runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
+   never inside `buildNarratorExtras`, which only reads the cached text — a
+   regen is a Haiku call over the whole session (issue #286 B7). Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 ## Tuning knobs (don't add new ones before using these)

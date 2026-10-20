@@ -109,9 +109,30 @@ dismissed-list filtered; since issue #286 a name part is never an article,
 title or other noise word, never a word two entities share, and never
 shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the
-move path deliberately does not (architecture §8.2, reaffirmed 2026-07). A
-match miss means no entity card for that entity — mitigated on paced/@scene
-by the frame union.
+move path's relevance call deliberately does not (architecture §8.2,
+reaffirmed 2026-07). Since issue #286 (B3) every path then adds the frame's
+recorded cast to the matched set (`addSceneFrameCast`, `buildNarratorExtras`
+— `resolveEntityName` per present name): their cards, ledger scope, the
+consistency check's context and the narrator card's `matchedEntityIds`. The
+permission class and the move's tier pass still follow the relevance call. A
+match miss means no entity card for that entity.
+
+**Recent prose.** The user message of paced, oracle follow-up and @scene
+calls carries the ring (`getRecentNarrationContext`); since issue #286 (B1)
+move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
+`narratorContextCards`). Each entry leads with the player's line that
+prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
+`playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`.
+The rolling summary reads the same entries (`ringEntryText`), so what a
+player wrote reaches it too. Its regen runs after a narrator card posts, on
+the canonical GM (`registerRollingSummaryRefreshHook`, B7); prompts read the
+cached text.
+
+**Ledger scope** ([6.5]): scene subjects and free-text subjects (unrecorded
+figures and places — the ledger holds only this scene) are always in scope
+(B4: they used to need their exact phrase in the player text or the frame);
+recorded entities are in scope when matched, at the current location, or in
+the frame's cast.
 
 **Budgets.** `SIDECAR_TOKEN_HEADROOM = 500`; move/paced use
 `narrationMaxTokens + 500`; every other mode passes

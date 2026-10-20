@@ -178,25 +178,26 @@ describe('buildLedgerBlock — filtering', () => {
     expect(out.combined).not.toMatch(/Tora/);
   });
 
-  it('includes text-subject truths only when the subject string appears in playerNarration', () => {
+  // Issue #286 B4: a text subject needed its exact phrase in the player's
+  // text, so "dock master" or "her" lost "the dockmaster". The ledger holds
+  // only this scene, so its unrecorded figures and places are always in scope.
+  it('keeps every text-subject truth of the scene in scope — no exact phrase needed', () => {
     const cs = seed(makeCampaignState(), {
       truths: [
-        { subject: 'Covenant officer', fact: 'Speaks with a Bleakhold accent' },
+        { subject: 'the dockmaster',   fact: 'Owes the Covenant three months of fees' },
         { subject: 'Bartender',        fact: 'Watches the door' },
       ],
     });
-    const out = buildLedgerBlock(cs, {
-      playerNarration: 'The Covenant officer slides me a drink.',
-    });
-    expect(out.combined).toMatch(/Covenant officer — Speaks with a Bleakhold accent/);
-    expect(out.combined).not.toMatch(/Bartender/);
+    const out = buildLedgerBlock(cs, {});
+    expect(out.combined).toMatch(/the dockmaster — Owes the Covenant three months of fees/);
+    expect(out.combined).toMatch(/Bartender — Watches the door/);
   });
 
-  it('always includes scene-kind subjects regardless of matchedEntityIds / playerNarration', () => {
+  it('always includes scene-kind subjects regardless of matchedEntityIds', () => {
     const cs = seed(makeCampaignState(), {
       truths: [{ subject: 'scene', fact: 'The wind has died' }],
     });
-    const out = buildLedgerBlock(cs, { matchedEntityIds: [], playerNarration: '' });
+    const out = buildLedgerBlock(cs, { matchedEntityIds: [] });
     expect(out.combined).toMatch(/scene — The wind has died/);
   });
 
@@ -281,16 +282,14 @@ describe('buildLedgerBlock — maxTokens', () => {
       { subject: 'Vance', attribute: 'location',  value: 'aboard his shuttle' },
       { subject: 'Vance', attribute: 'condition', value: 'bleeding from the shoulder' },
     ];
-    const budget = total(buildLedgerBlock(seed(makeCampaignState(), { truths, stateChanges: required }), {
-      playerNarration: 'Vance',
-    }));
+    const budget = total(buildLedgerBlock(seed(makeCampaignState(), { truths, stateChanges: required }), {}));
     const cs = seed(makeCampaignState(), { truths, stateChanges: [
       required[0],
       { subject: 'Vance', attribute: 'mood', value: 'guarded and sour' },
       required[1],
       { subject: 'scene', attribute: 'lighting', value: 'flickering red emergency strips' },
     ] });
-    const out = buildLedgerBlock(cs, { playerNarration: 'Vance', maxTokens: budget });
+    const out = buildLedgerBlock(cs, { maxTokens: budget });
     // (A text subject's state key is lowercased, so is its label.)
     expect(out.state).toContain('vance — location: aboard his shuttle');
     expect(out.state).toContain('vance — condition: bleeding from the shoulder');
@@ -397,29 +396,30 @@ describe('buildLedgerBlock — scene frame', () => {
       truths:       [{ subject: 'Vance', fact: 'Life support failing' }],
       stateChanges: [{ subject: 'Vance', attribute: 'location', value: 'aboard his shuttle' }],
     });
-    // Player message does NOT name Vance — the frame keeps him in scope.
-    const out = buildLedgerBlock(cs, { playerNarration: 'What does that even mean?' });
+    // Player message does NOT name Vance — a text subject of this scene stays in scope.
+    const out = buildLedgerBlock(cs, {});
     expect(out.truths).toContain('Life support failing');
     expect(out.state).toContain('aboard his shuttle');
   });
 
-  it('drops out-of-scope subjects when the frame is absent and nothing mentions them', () => {
+  it('keeps an unmatched recorded entity\'s entries out of scope', () => {
     const cs = makeCampaignState();
-    seed(cs, { truths: [{ subject: 'Vance', fact: 'Life support failing' }] });
-    const out = buildLedgerBlock(cs, { playerNarration: 'What does that even mean?' });
-    expect(out.truths).not.toContain('Life support failing');
+    applySidecar(
+      { newTruths: [{ subject: 'Vance', fact: 'Life support failing' }], stateChanges: [] },
+      { campaignState: cs, entities: [{ _id: 'rec-v', journalId: 'act-v', entityType: 'connection', name: 'Vance' }] },
+    );
+    expect(buildLedgerBlock(cs, {}).truths).not.toContain('Life support failing');
+    expect(buildLedgerBlock(cs, { matchedEntityIds: ['act-v'] }).truths).toContain('Life support failing');
   });
 
-  it('omits the frame when sceneFrameEnabled is false (scoping reverts too)', () => {
+  it('omits the frame when sceneFrameEnabled is false', () => {
     const cs = frameState();
     seed(cs, { truths: [{ subject: 'Vance', fact: 'Life support failing' }] });
-    const out = buildLedgerBlock(cs, {
-      playerNarration:   'What does that even mean?',
-      sceneFrameEnabled: false,
-    });
+    const out = buildLedgerBlock(cs, { sceneFrameEnabled: false });
     expect(out.frame).toBe('');
     expect(out.combined).not.toContain('SCENE FRAME');
-    expect(out.truths).not.toContain('Life support failing');
+    // A text subject of this scene renders without the frame (B4).
+    expect(out.truths).toContain('Life support failing');
   });
 
   it('never drops the frame under budget pressure (state drops first)', () => {

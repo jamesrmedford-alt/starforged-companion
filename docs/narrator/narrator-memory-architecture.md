@@ -25,11 +25,11 @@ durability, capacity, and write discipline:
 
 | Surface | Durability | Written by | Read by | Capacity |
 |---|---|---|---|---|
-| **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags | paced, @scene, oracle follow-ups, session recap | last N cards (`narratorContextCards`, default 3) |
+| **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers) | permanent | entity confirm flow, scene-end truth migration, tier updates | relevance resolver → ENTITIES IN SCENE cards | per-entity |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed, debounced at ~1.5×N | every non-meta narrator call (system prompt §[4c], ledger-wins caveat) | ~≤320 tokens (Haiku-capped) |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7) | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) | ~≤320 tokens (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
 
 Durable campaign context (world truths, sector, current location, character
@@ -95,16 +95,23 @@ narrator API call → prose + fenced JSON sidecar
 `getRecentNarrationContext(sessionId, limit)` (`src/narration/narrator.js`)
 selects chat messages by **`flags[MODULE].narratorCard === true`** and
 matching **`sessionId`**, reads **`flags[MODULE].narrationText`**, joins the
-last N with blank lines into the user message.
+last N with blank lines into the user message. Since issue #286 (B5) each
+entry leads with the line the player wrote that prompted it — `PLAYER — Kira
+wrote: "…"` (`playerText` + `playerName` on move and paced cards;
+`sceneQuestion` + `playerName` on @scene answers; `ringEntryText`) — so a
+detail only the player stated ("I give him my father's compass") survives.
+Burn / Improve re-narrations store no player line (their input is a marker).
+Move narration reads the last `MOVE_RING_CARDS` (4, bounded by
+`narratorContextCards`) entries (B1); it used to read none.
 
 **The flag-family contract.** Any card whose prose is *fiction the narrator
 should remember* must carry all three flags:
 
 | Card | Flags since | Notes |
 |---|---|---|
-| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` / `isMatch` (session recap) |
-| paced narration (`postPacedNarrativeCard`) | always | |
-| @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions |
+| move narration (`postNarrationCard`) | always | also `resolutionId` (burn-supersede); `moveId` / `outcome` / `isMatch` (session recap); `playerText` / `playerName` (ring, #286) |
+| paced narration (`postPacedNarrativeCard`) | always | `playerText` (also the NWMA Roll button's re-post) / `playerName` |
+| @scene answers (`postSceneCard`) | Cluster A1 | keeps `sceneResponse` for chat-hook exclusions; `sceneQuestion` / `playerName` (ring, #286) |
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
@@ -117,6 +124,9 @@ CLAUDE.md "audit consumers" rule):
 - rolling session summary (`sessionNarratorCards` → `getRollingSessionSummary`)
   — shares the ring's source reader + defensive excludes; reads the full feed,
   not the last N
+- rolling-summary refresh hook (`registerRollingSummaryRefreshHook`, issue
+  #286 B7) — on the canonical GM, a new `narratorCard` with `narrationText`
+  triggers the debounced regen after the card posts
 - session recap (`postSessionRecap`) — inclusion intended; its move lines and
   "A match was rolled" read move narration's `moveId` / `outcome` / `isMatch`
   (`isMatch` had no writer until RECAP-MATCH-DEAD, issue #282)
@@ -129,7 +139,7 @@ CLAUDE.md "audit consumers" rule):
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 
-**Knob:** `narratorContextCards` (world, 1–10, default 3; Narrator pane).
+**Knob:** `narratorContextCards` (world, 1–50, default 20; Narrator pane).
 @scene keeps its own `sceneContextCards`.
 
 ---
@@ -173,10 +183,15 @@ draft Confirm, on the make_a_connection auto-create and on the inciting
 vow-target create.
 
 **Scoping.** A ledger entry surfaces this turn when its subject is: the scene
-itself; in `matchedEntityIds`; the current location; **or** name-mentioned in
-the player text **or the scene frame's `present` list** (Cluster A4). The
-frame is what keeps the active conversation partner in scope on turns like
-*"What does that even mean?"*
+itself; a free-text subject (an unrecorded figure or place — the ledger holds
+only this scene, so these are always in scope since issue #286 B4; they used
+to need their exact phrase in the player text or the frame, so "dock master"
+missed "the dockmaster"); or a recorded entity in `matchedEntityIds` or the
+current location. `matchedEntityIds` includes the recorded entities the scene
+frame's `present` list names, on **every** path (`addSceneFrameCast` in
+`buildNarratorExtras`, B3) — that is what keeps the active conversation
+partner's card and facts in scope on turns like *"What does that even mean?"*
+or *"I convince him"*.
 
 **Drop order under budget pressure:** state, line by line — every other
 attribute before a character's location / vessel / condition, the oldest
@@ -221,9 +236,12 @@ classifier only fires for hybrid *moves*) — zero API cost, single name-index
 pass. Matched entities yield cards (section [6]) and `matchedEntityIds`
 (ledger scoping + consistency-check context + sidecar entity resolution).
 
-The **move path is unchanged** this round: its relevance call doesn't union
-frame names (changing it would alter narrator-permission class selection for
-hybrid moves). See §8.
+The move path's relevance **call** still doesn't union frame names (that
+would alter narrator-permission class selection for hybrid moves; see §8).
+Since issue #286 (B3) the scene frame's recorded cast joins the matched set
+*after* relevance resolves, at the seam (`addSceneFrameCast`), on every path:
+their cards and entity-keyed facts are in the prompt, the permission class and
+the move's tier pass still follow the player's text alone.
 
 **Write side (2026-06-15).** Paced narration now also *writes* to the entity
 generative tier, not just reads cards from it. `narratePacedInput` schedules
@@ -329,21 +347,21 @@ regressions, all are known scope cuts:
    fiction card now carries the family — see decisions.md → "Narrator
    context: the ledger actively defends".
 2. **Move-path relevance doesn't union frame names.** Deliberate (it would
-   change hybrid-move permission classification). If move narration shows the
-   partner-forgotten symptom, extend `narrateResolution`'s internal
-   `resolveRelevance` call with the same union, but audit the hybrid
-   `interaction`-vs-Phase-2 implications first.
+   change hybrid-move permission classification). The partner-forgotten
+   symptom on moves is fixed without it (issue #286 B3): the frame's cast
+   joins the matched set after classification (`addSceneFrameCast`), so
+   cards and facts come back and the class does not move.
 3. **Frame staleness — mitigation shipped (2026-07).** An omitted
    `sceneFrame` keeps the previous snapshot by design (idempotence,
    reaffirmed in decisions.md). The sketched mitigation is now live: the
    consistency check audits prose against the frame (plus retractions and
    ship position). The "confirm or update" user-message re-render stays a
    fallback idea if frame drift is still observed.
-4. **Frame names → entity ids inside `buildLedgerBlock`.** Present-name
-   scoping is text-based at render time; entity-keyed entries for present
-   NPCs are covered via the relevance union instead. If a case appears where
-   an entity-keyed entry has no card match and no mention, bridge by
-   reverse-resolving frame names against the roster inside the block builder.
+4. **Frame names → entity ids. ✅ done (issue #286 B3)**, at the seam rather
+   than inside `buildLedgerBlock`: `addSceneFrameCast` resolves each present
+   name with `resolveEntityName` and adds the entity to `matchedEntityIds`,
+   so the card, the ledger scope, the consistency check and the sidecar
+   context all see it.
 5. **Cluster C shipped (2026-06-10); completed by the v1.7.10 F5 fixes
    (2026-06-12).** Ship-position sidecar emission is REQUIRED on ship
    movement, and every fiction-side position write moves the sector-scene

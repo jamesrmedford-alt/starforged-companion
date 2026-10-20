@@ -75,6 +75,7 @@ import {
   postSessionRecap,
   postCampaignRecap,
   narrateAndPostVowSwearing,
+  registerRollingSummaryRefreshHook,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
@@ -5034,6 +5035,7 @@ Hooks.once("ready", () => {
   registerNativeProgressRollHook();
   registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
+  registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

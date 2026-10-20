@@ -153,6 +153,22 @@ describe('getRollingSessionSummary — gating', () => {
     expect(state.sessionSummary.sessionId).toBe('sess-1');
   });
 
+  // Issue #286 B5: what the players wrote was never in the summary's source.
+  it('summarises each player line with the prose it prompted', async () => {
+    const calls = stubFetch('Kira gave the old man her father\'s compass.');
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    global.game.messages = { contents: [
+      makeCard('The old man turns the compass over.', 'sess-1', { playerText: "I give him my father's compass.", playerName: 'Kira' }),
+      makeCard('Rain needles the canopy.', 'sess-1', { sceneResponse: true, sceneQuestion: 'is it raining?', playerName: 'Ren' }),
+      makeCard('Beat 3.'), makeCard('Beat 4.'), makeCard('Beat 5.'),
+    ] };
+    await getRollingSessionSummary(makeState());
+    const userMsg = calls[0].messages.at(-1).content;
+    expect(userMsg).toContain('PLAYER — Kira wrote: "I give him my father\'s compass."\nThe old man turns the compass over.');
+    expect(userMsg).toContain('PLAYER — Ren asked: "is it raining?"\nRain needles the canopy.');
+    expect(calls[0].system[0].text).toContain('What the players did and said counts as much as the prose.');
+  });
+
   it('GM persists the summary to world settings', async () => {
     stubFetch('Persisted summary.');
     game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');

@@ -1113,6 +1113,16 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     expect(out).toMatch(/deadline/);
   });
 
+  // Issue #286 B2: objects, prices, codes, deals and promises were optional.
+  it('requires concrete specifics — bounded so the sidecar does not grow', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes a concrete specific/);
+    for (const kind of ['object handed over', 'price or a debt', 'code or password', 'deal or a promise']) {
+      expect(out).toContain(kind);
+    }
+    expect(out).toMatch(/At most five of these/);
+  });
+
   it('includes the sceneFrame key and rule by default', () => {
     const out = appendSidecarInstruction();
     expect(out).toContain('"sceneFrame"');
