@@ -143,6 +143,75 @@ export async function logConsistencyDecision(entry) {
   }
 }
 
+/** Usage-page writes, one at a time — two narrator calls finishing together would otherwise drop an entry. */
+let _usageWrites = Promise.resolve();
+
+/**
+ * Append one narrator call's token usage and elapsed time to the "Narrator
+ * Usage" page on the Pacing Telemetry journal (issue #286 F6 step 1: measure
+ * before changing the prompt layout — the cache-read share shows whether the
+ * prompt cache ever hits). GM-gated and best-effort like the other pages;
+ * writes are serialised.
+ *
+ * @param {Object} entry
+ * @param {string|null} entry.label  — the narrator function that made the call
+ * @param {string} entry.model
+ * @param {Object|null} entry.usage  — the API response's `usage`
+ * @param {number} entry.elapsedMs
+ * @param {string|null} [entry.sessionId]
+ * @returns {Promise<void>}
+ */
+export function logNarratorUsage(entry) {
+  _usageWrites = _usageWrites.then(() => writeNarratorUsage(entry));
+  return _usageWrites;
+}
+
+async function writeNarratorUsage(entry) {
+  if (!globalThis.game?.user?.isGM) return;
+  if (!globalThis.JournalEntry) return;
+
+  try {
+    const journal = await getOrCreateJournal();
+    if (!journal) return;
+
+    const pageName = "Narrator Usage";
+    const existing = journal.pages?.contents?.find(p => p.name === pageName) ?? null;
+    const usage    = entry.usage ?? {};
+    const count    = (v) => (Number.isFinite(v) ? v : null);
+
+    const record = {
+      ts:                  new Date().toISOString(),
+      label:               entry.label ?? null,
+      model:               entry.model ?? null,
+      inputTokens:         count(usage.input_tokens),
+      cacheReadTokens:     count(usage.cache_read_input_tokens),
+      cacheCreationTokens: count(usage.cache_creation_input_tokens),
+      outputTokens:        count(usage.output_tokens),
+      elapsedMs:           count(entry.elapsedMs),
+      sessionId:           entry.sessionId ?? null,
+    };
+
+    if (existing) {
+      const prev    = existing.getFlag(MODULE_ID, "narratorUsageTelemetry") ?? { entries: [] };
+      const entries = Array.isArray(prev.entries) ? prev.entries : [];
+      entries.push(record);
+      while (entries.length > MAX_ENTRIES_PER_SESSION) entries.shift();
+      await existing.setFlag(MODULE_ID, "narratorUsageTelemetry", { entries });
+      await existing.update({ "text.content": renderUsageHtml(entries) }).catch(() => {});
+    } else {
+      const entries = [record];
+      await journal.createEmbeddedDocuments("JournalEntryPage", [{
+        name:  pageName,
+        type:  "text",
+        text:  { content: renderUsageHtml(entries), format: 1 },
+        flags: { [MODULE_ID]: { narratorUsageTelemetry: { entries } } },
+      }]);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator usage telemetry: write failed:`, err);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,6 +282,28 @@ function renderConsistencyHtml(entries) {
     `<h2>Consistency Check Telemetry</h2>`,
     `<p>Most recent ${Math.min(50, entries.length)} of ${entries.length} audit passes.</p>`,
     `<table><thead><tr><th>Time</th><th>Scene</th><th>Contradictions</th><th>Routed</th><th>Prose excerpt</th></tr></thead>`,
+    `<tbody>${rows}</tbody></table>`,
+  ].join("");
+}
+
+function renderUsageHtml(entries) {
+  const sum = (key) => entries.reduce((n, e) => n + (Number.isFinite(e[key]) ? e[key] : 0), 0);
+  // Total prompt tokens = uncached input + cache reads + cache writes.
+  const prompt = sum("inputTokens") + sum("cacheReadTokens") + sum("cacheCreationTokens");
+  const readShare = prompt ? Math.round((sum("cacheReadTokens") / prompt) * 100) : 0;
+  const timed = entries.map(e => e.elapsedMs).filter(Number.isFinite).sort((a, b) => a - b);
+  const median = timed.length ? timed[Math.floor(timed.length / 2)] : null;
+  const cell = (v) => (Number.isFinite(v) ? String(v) : "—");
+  const rows = entries.slice(-50).reverse().map(e => {
+    const time = e.ts ? new Date(e.ts).toLocaleTimeString() : "—";
+    return `<tr><td>${time}</td><td>${escapeHtml(e.label ?? "—")}</td><td>${escapeHtml(e.model ?? "—")}</td>` +
+      `<td>${cell(e.inputTokens)}</td><td>${cell(e.cacheReadTokens)}</td><td>${cell(e.cacheCreationTokens)}</td>` +
+      `<td>${cell(e.outputTokens)}</td><td>${cell(e.elapsedMs)}</td></tr>`;
+  }).join("");
+  return [
+    `<h2>Narrator Usage</h2>`,
+    `<p>${entries.length} calls: ${readShare}% of prompt tokens read from the cache; median ${median ?? "—"} ms per call. Most recent ${Math.min(50, entries.length)} below.</p>`,
+    `<table><thead><tr><th>Time</th><th>Call</th><th>Model</th><th>Input</th><th>Cache read</th><th>Cache write</th><th>Output</th><th>ms</th></tr></thead>`,
     `<tbody>${rows}</tbody></table>`,
   ].join("");
 }

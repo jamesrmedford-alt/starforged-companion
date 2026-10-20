@@ -261,7 +261,7 @@ reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
 
 | Setting | Default | Pane | Effect |
 |---|---|---|---|
-| `narratorContextCards` | 3 (1–10) | Narrator | ring depth for paced + oracle follow-ups; also sets the rolling-summary debounce K = round(1.5 × N) |
+| `narratorContextCards` | 20 (1–50) | Narrator | ring depth for paced + oracle follow-ups (move narration takes the last 4, bounded by it — issue #286 B1); also sets the rolling-summary debounce K = round(1.5 × N) |
 | `sceneContextCards` | (existing) | Narrator | ring depth for @scene answers |
 | `narratorSessionSummary` | true | Narrator | maintain + render the rolling session summary (surface 5); archived to the Session Log at End Session |
 | `factContinuity.enabled` | true | Fact Continuity | master switch: sidecar instruction + parse + ledger |
@@ -299,6 +299,15 @@ matched card (typically 1–3 cards via frame-present union) — the largest
 add, ≈ +100–450 input tokens ≈ $0.001–0.003/call at Sonnet rates; ring at
 default 3 unchanged (each step toward 10 adds ~100–200). Total system
 prompt typically grows ~5–15%; nowhere near any context-window concern.
+
+**Measure before re-layout** (issue #286 F6 step 1). `callNarratorAPI` logs
+every call's usage — uncached input, cache reads, cache writes, output — and
+elapsed time to the Pacing Telemetry journal's "Narrator Usage" page, labelled
+with the narrator function that made it; the page leads with the cache-read
+share of prompt tokens and the median time per call. The whole system prompt
+is one cached block that changes every turn, so the expectation is a share
+near zero: that measurement is what the proposed tier layout (cached campaign
+canon and memory first, per-turn data last — issue #286 §F) is judged against.
 
 Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
 (400) only sheds *state*; truths/frame/corrections/ship render regardless.

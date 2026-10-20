@@ -6,6 +6,25 @@ rejected.
 
 ---
 
+## Narrator latency: measure first; thinking-off by exact model id (2026-10)
+
+**Decision:** (issue #286 F6 step 1, F7)
+- Every narrator call logs its token usage — uncached input, cache reads,
+  cache writes, output — and elapsed time to the Pacing Telemetry journal's
+  "Narrator Usage" page, labelled with the narrator function that made it
+  (`logNarratorUsage`). The proposed re-layout of the request into cached
+  tiers (issue #286 §F2–F5) waits for these numbers and a playtest. Moving
+  mode instructions out of the top of the system prompt may shift the
+  narrator's voice, so it needs that playtest.
+- `narrationDisablesThinking` matches exact model ids (optionally
+  date-stamped), not prefixes. The prefix `claude-sonnet-5` also matched
+  `claude-sonnet-5-5`, which rejects `thinking: {type: "disabled"}` with a
+  400; its thinking-off form is `between_tools`. Neither it nor the Fable
+  tier or Opus 5.5 (which also reject "disabled") is offered for narration.
+
+**Rejected:** a byte-stability test for the cached tiers now. It belongs with
+the layout split, since today's prompt changes on every turn by design.
+
 ## Narrator side-data, draft confirm and detection: nothing the narration said is lost or contradicted (2026-10)
 
 **Decision:** (issue #286 D2–D4)
@@ -2013,8 +2032,8 @@ get defended; facts without homes get rewritten.
 **Where:** invariants in `rules/narrator-memory.md`; full architecture,
 tuning guide (symptom → knob), and refinement backlog in
 `docs/narrator/narrator-memory-architecture.md`. Settings:
-`narratorContextCards` (ring depth 1–10, default 3) and
-`factContinuity.sceneFrame` (default on).
+`narratorContextCards` (ring depth — 1–10, default 3 when this was written;
+now 1–50, default 20) and `factContinuity.sceneFrame` (default on).
 
 ---
 

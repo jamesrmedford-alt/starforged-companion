@@ -176,7 +176,7 @@ developer-only and excluded from the release.
 |------|---------|
 | `classifier.js` | Haiku pre-classifier → `MOVE` / `NARRATIVE` / `NARRATIVE_WITH_MOVE_AVAILABLE`. |
 | `router.js` | Routes paced input per the classifier decision. |
-| `telemetry.js` | Pacing decision log journal (dial tuning). |
+| `telemetry.js` | Pacing decision log journal (dial tuning). Also the "Consistency Check" page and, since issue #286 F6, the "Narrator Usage" page (`logNarratorUsage`): every narrator call's uncached input, cache reads, cache writes, output tokens and elapsed time, labelled with the narrator function, plus the cache-read share and median time. |
 
 ### `safety/` — session-move dialogs
 

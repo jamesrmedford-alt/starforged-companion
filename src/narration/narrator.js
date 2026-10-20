@@ -19,6 +19,7 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
+import { logNarratorUsage } from '../pacing/telemetry.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
@@ -566,6 +567,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
 
   try {
     const raw = await callNarratorAPI({
+      label: 'narrateResolution',
       apiKey,
       systemPrompt,
       userMessage,
@@ -599,6 +601,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'narrateResolution',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
@@ -1013,6 +1016,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
 
   try {
     const text = await callNarratorAPI({
+      label: 'getCampaignRecap',
       apiKey,
       systemPrompt,
       userMessage,
@@ -1143,6 +1147,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   let text;
   try {
     text = await callNarratorAPI({
+      label: 'getRollingSessionSummary',
       apiKey,
       systemPrompt: ROLLING_SUMMARY_SYSTEM_PROMPT,
       userMessage:  `## SESSION NARRATION (oldest first)\n\n${sourceProse}${leaveOut}`,
@@ -1380,6 +1385,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
 
   try {
     const raw = await callNarratorAPI({
+      label: 'interrogateScene',
       apiKey,
       systemPrompt,
       userMessage,
@@ -1410,6 +1416,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'interrogateScene',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
@@ -1504,6 +1511,7 @@ export async function narrateOracleFollowup({
 
   try {
     const raw = await callNarratorAPI({
+      label: 'narrateOracleFollowup',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
@@ -1521,6 +1529,7 @@ export async function narrateOracleFollowup({
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'narrateOracleFollowup',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
@@ -1627,6 +1636,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
 
   try {
     const raw = await callNarratorAPI({
+      label: 'narrateSessionVignette',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
@@ -1640,6 +1650,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'narrateSessionVignette',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
@@ -1690,6 +1701,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
 
   try {
     const raw = await callNarratorAPI({
+      label: 'narrateClockAdvancement',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
@@ -1701,6 +1713,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'narrateClockAdvancement',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
@@ -1771,6 +1784,7 @@ export async function narrateVowSwearing({ vow, campaignState }) {
 
   const call = async () => {
     const raw  = await callNarratorAPI({
+      label: 'narrateVowSwearing',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
@@ -1866,6 +1880,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
 
   const run = async () => {
     const raw = await callNarratorAPI({
+      label: 'narrateIncitingIncident',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
@@ -1948,6 +1963,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
   try {
     const raw = await callNarratorAPI({
+      label: 'narratePacedInput',
       apiKey, systemPrompt, userMessage,
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
@@ -1973,6 +1989,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       try {
         await delay(RETRY_DELAY_MS);
         const raw = await callNarratorAPI({
+      label: 'narratePacedInput',
           apiKey, systemPrompt, userMessage,
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
@@ -2992,24 +3009,30 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
 }
 
 /**
- * Whether to disable extended thinking for a narration call on `model`. The
- * 5-tier and Opus 4.7/4.8 models run ADAPTIVE THINKING BY DEFAULT when the
- * `thinking` param is omitted — for short narration that only adds latency and
- * lets thinking consume the max_tokens cap, truncating the prose + memory
- * sidecar. So we disable it for those. The older offered models (Sonnet 4.5,
- * Haiku 4.5) already default to thinking-off, so we leave their request
- * untouched. (Fable-tier rejects "disabled" outright and isn't offered as a
- * narration model.) Pure — exported for tests.
+ * Whether to disable extended thinking for a narration call on `model`. Sonnet
+ * 5 runs ADAPTIVE THINKING BY DEFAULT when the `thinking` param is omitted —
+ * for short narration that only adds latency and lets thinking consume the
+ * max_tokens cap, truncating the prose + memory sidecar. So we disable it
+ * there; Opus 4.7/4.8 accept "disabled" too (they already default to off).
+ * The older offered models (Sonnet 4.5, Haiku 4.5) default to thinking-off,
+ * so we leave their request untouched.
+ *
+ * Exact ids, never a prefix (issue #286 F7): "claude-sonnet-5" also prefixes
+ * "claude-sonnet-5-5", which rejects "disabled" with a 400 (its thinking-off
+ * form is "between_tools"), as do the Fable tier and Opus 5.5. None of those
+ * is offered as a narration model. Pure — exported for tests.
  *
  * @param {string} model
  * @returns {boolean}
  */
 export function narrationDisablesThinking(model) {
-  const m = String(model ?? '');
-  return ['claude-sonnet-5', 'claude-opus-4-7', 'claude-opus-4-8'].some(id => m.startsWith(id));
+  return THINKING_DISABLED_MODELS.test(String(model ?? ''));
 }
 
-async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens }) {
+/** The models narration sends `thinking: {type: "disabled"}` to — an id, optionally date-stamped. */
+const THINKING_DISABLED_MODELS = /^claude-(?:sonnet-5|opus-4-7|opus-4-8)(?:-\d{8})?$/;
+
+async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
   const body = {
     model,
     max_tokens: maxTokens ?? 16000,
@@ -3018,9 +3041,9 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     ],
     messages: [{ role: 'user', content: userMessage }],
   };
-  // Keep narration fast and un-truncated on thinking-by-default models (Sonnet 5,
-  // Opus 4.7/4.8): no extended thinking eating the max_tokens cap. No-op for the
-  // older offered models, which already default to thinking-off (#latency).
+  // Keep narration fast and un-truncated on a thinking-by-default model (Sonnet
+  // 5): no extended thinking eating the max_tokens cap. No-op for the older
+  // offered models, which already default to thinking-off (#latency).
   if (narrationDisablesThinking(model)) {
     body.thinking = { type: 'disabled' };
   }
@@ -3032,7 +3055,15 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     'anthropic-beta':    'prompt-caching-2024-07-31',
   };
 
+  const started = Date.now();
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+  // Token usage and time per call (issue #286 F6 step 1) — fire-and-forget.
+  logNarratorUsage({
+    label, model,
+    usage:     data?.usage ?? null,
+    elapsedMs: Date.now() - started,
+    sessionId: storedCampaignState()?.currentSessionId ?? null,
+  }).catch(() => {});
 
   // NARR-SIDECAR-SILENT (narrator-context audit 2026-07): a response cut off
   // by max_tokens BEFORE the sidecar fence opens parses as clean prose with

@@ -278,7 +278,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, {
     name:    'Narrator Context Cards',
-    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context. Higher values give the narrator a longer memory horizon. Range 1–50, default 20. Scene questions use their own Scene Context Cards setting.',
+    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context (a move narration takes the last 4). Higher values give the narrator a longer memory horizon. Range 1–50, default 20. Scene questions use their own Scene Context Cards setting.',
     scope:   'world',
     config:  false,
     type:    Number,
