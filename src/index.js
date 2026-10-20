@@ -74,6 +74,7 @@ import {
   interrogateScene,
   postSessionRecap,
   postCampaignRecap,
+  getCampaignRecap,
   narrateAndPostVowSwearing,
   registerRollingSummaryRefreshHook,
 } from "./narration/narrator.js";
@@ -160,7 +161,8 @@ import {
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
-import { startScene, endScene } from "./factContinuity/sceneLifecycle.js";
+import { startScene, endScene, mergeOwnedFields } from "./factContinuity/sceneLifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS } from "./session/lifecycle.js";
 import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -506,31 +508,27 @@ export function logArtBackendStatus() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate or restore a session ID on world load.
- * Reuses the existing ID when the last session was < 4 hours ago (handles
- * page reloads mid-session). Otherwise starts a new session, incrementing
- * sessionNumber and recording the start timestamp.
+ * Resume the session in progress on world load, or close it out and start a
+ * new one when it is over — End a Session marked it, or nothing was posted to
+ * chat for SESSION_IDLE_HOURS (rollSessionIfDue, src/session/lifecycle.js).
+ * A reload mid-session resumes it however long the session has run; it used
+ * to re-mint any reload four hours after the mint (issue #286 C4).
  *
- * Exported for unit testing; called from the ready hook (GM only).
+ * Mutates campaignState; the caller persists SESSION_MINT_FIELDS. Exported
+ * for unit testing; called from the ready hook (canonical GM).
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<Object>} the same campaignState
  */
-export function initSessionId(campaignState) {
-  const last   = campaignState.lastSessionTimestamp;
-  const recent = last && (Date.now() - new Date(last)) < 4 * 3_600_000;
-
-  if (campaignState.currentSessionId && recent) {
+export async function initSessionId(campaignState) {
+  if (!(await rollSessionIfDue(campaignState))) {
     console.log(`${MODULE_ID} | Resuming session: ${campaignState.currentSessionId}`);
     return campaignState;
   }
-
-  campaignState.currentSessionId    = foundry.utils.randomID();
-  campaignState.sessionNumber       = (campaignState.sessionNumber ?? 0) + 1;
-  campaignState.lastSessionTimestamp = new Date().toISOString();
-
   console.log(
     `${MODULE_ID} | New session: ${campaignState.currentSessionId} ` +
     `(#${campaignState.sessionNumber})`
   );
-
   return campaignState;
 }
 
@@ -4856,37 +4854,32 @@ Hooks.once("ready", () => {
 
     const wasNewSession = isNewSessionStart(prevState);
     const priorSessionId = prevState.currentSessionId ?? null;
-    const updated = initSessionId(prevState);
 
-    // NARR-SESSION-SCENE (narrator-context audit 2026-07): a re-minted
-    // session id means the previous session never cleanly ended (End Session
-    // now closes the scene itself). Without this, the new session started
-    // with an empty ring and empty summary while the PREVIOUS session's
-    // scene truths kept rendering — mixed memory. End the stale scene so its
-    // truths migrate to their durable homes. endScene persists internally;
-    // the set below persists the re-minted ids either way.
-    const staleScene = updated.currentSessionId !== priorSessionId
-      && (updated.currentSceneId
-          || (updated.sceneTruths?.length ?? 0) > 0
-          || Object.keys(updated.sceneState?.bySubject ?? {}).length > 0);
-    const endStaleScene = staleScene
-      ? endScene(updated, { reason: "session_gap_remint" }).catch(err =>
-          console.warn(`${MODULE_ID} | ready: stale-scene close failed:`, err?.message ?? err))
-      : Promise.resolve();
-
-    endStaleScene.then(() =>
-      game.settings.set(MODULE_ID, "campaignState", updated),
+    // NARR-SESSION-SCENE (narrator-context audit 2026-07): when the session
+    // is over, its scene closes before the new one is minted, so its truths
+    // migrate to their durable homes instead of rendering into the next
+    // session's mixed memory; a session nobody ended first gets its rolling
+    // summary brought up to date (rollSessionIfDue). Both await, so only the
+    // fields this writes are merged onto the store — endScene persists the
+    // scene fields itself.
+    initSessionId(prevState).then(updated =>
+      game.settings.set(MODULE_ID, "campaignState",
+        mergeOwnedFields(updated, ["pendingMove", ...SESSION_MINT_FIELDS], "session start")),
     ).then(async () => {
+      const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: post campaign recap when a new session is detected
       if (wasNewSession && getAutoRecapEnabled()) {
-        const freshState = game.settings.get(MODULE_ID, "campaignState");
         await postCampaignRecap(freshState, { silent: false }).catch(err => {
           console.error(`${MODULE_ID} | Auto-recap failed:`, err);
         });
+      } else if (freshState.currentSessionId !== priorSessionId) {
+        // A new session's first narration carries the campaign recap from
+        // its cache (buildNarratorExtras) — refresh it now, off that path.
+        getCampaignRecap(freshState).catch(err =>
+          console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err));
       }
 
       // Notify GM if no World Truths have been established yet
-      const freshState = game.settings.get(MODULE_ID, "campaignState");
       if (!freshState.worldTruthsSet) {
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
@@ -5036,6 +5029,7 @@ Hooks.once("ready", () => {
   registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
+  registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

@@ -1115,6 +1115,30 @@ export function resolveNarrationPerspective(setting) {
 // ---------------------------------------------------------------------------
 
 /**
+ * [4c] LAST SESSION — the summary of the session before this one
+ * (buildNarratorExtras → previousSessionSummaryFor), with the STORY SO FAR
+ * caveat: narrative texture, never a fact store. Headed by its session number,
+ * and not called the last session when sessions between them left no summary.
+ *
+ * @param {{ text: string, sessionNumber: number|null, isLast: boolean }|null} summary
+ * @returns {string} '' when there is none
+ */
+function formatPreviousSessionBlock(summary) {
+  const text = typeof summary?.text === 'string' ? summary.text.trim() : '';
+  if (!text) return '';
+  const number  = Number.isFinite(summary.sessionNumber) ? summary.sessionNumber : null;
+  const heading = summary.isLast === false && number !== null
+    ? `SESSION ${number} (THE LATEST SESSION SUMMARISED)`
+    : (number !== null ? `LAST SESSION (SESSION ${number})` : 'LAST SESSION');
+  return (
+    `## ${heading}\n\n` +
+    `(Narrative texture only — where this summary conflicts with the ` +
+    `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
+    text
+  );
+}
+
+/**
  * Build the full narrator system prompt.
  *
  * Injection order (narrator-entity-discovery scope §8):
@@ -1134,8 +1158,10 @@ export function resolveNarrationPerspective(setting) {
  * @param {Object} campaignState      — CampaignStateSchema
  * @param {Object} narratorSettings   — narrator game.settings values
  * @param {Object|null} character     — CharacterSchema (active character, may be null)
- * @param {string} [campaignRecap]    — injected at session start only (first narration)
+ * @param {string} [campaignRecap]    — overrides extras.campaignRecap when non-empty
  * @param {Object} [extras]
+ * @param {string} [extras.campaignRecap]      — the campaign recap, on a session's first narration ([0b])
+ * @param {Object} [extras.previousSessionSummary] — `{ text, sessionNumber, isLast }`, rendered as LAST SESSION ([4c])
  * @param {string} [extras.narratorClass]      — "discovery" | "interaction" | "embellishment"
  * @param {Array}  [extras.entityCards]        — Pre-formatted entity card strings (from formatEntityCard)
  * @param {string} [extras.currentLocationCard]— Pre-formatted current location card
@@ -1187,6 +1213,7 @@ export function buildNarratorSystemPrompt(
     factionLandscape     = [],
     confirmedLore        = [],
     loreRecap            = '',
+    previousSessionSummary = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1235,9 +1262,12 @@ export function buildNarratorSystemPrompt(
     `narrator or OTHER characters say about someone, never for that person's own speech.`
   );
 
-  // [0b] Campaign recap — injected at session start only
-  if (campaignRecap?.trim()) {
-    parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${campaignRecap.trim()}`);
+  // [0b] Campaign recap — on a session's first narration, in any prose mode
+  //      (buildNarratorExtras sets extras.campaignRecap; a recap passed as the
+  //      positional argument wins).
+  const recapText = campaignRecap?.trim() ? campaignRecap : (extras?.campaignRecap ?? '');
+  if (typeof recapText === 'string' && recapText.trim()) {
+    parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${recapText.trim()}`);
   }
 
   // [1] Safety configuration — with Private Lines scoped to this client: every
@@ -1303,6 +1333,13 @@ export function buildNarratorSystemPrompt(
   //      model itself: the summary re-summarises raw prose (including narration
   //      whose facts were later retracted), so where it conflicts with the
   //      ledger, the ledger wins.
+  //      The summary of the session before this one comes first (issue #286
+  //      C3) — the ring, this session's summary and recent oracles all reset
+  //      when a session is minted — under the same caveat.
+  if (!isMetaMode) {
+    const lastSessionBlock = formatPreviousSessionBlock(previousSessionSummary);
+    if (lastSessionBlock) parts.push(lastSessionBlock);
+  }
   if (!isMetaMode && typeof rollingSummary === 'string' && rollingSummary.trim()) {
     parts.push(
       `## STORY SO FAR (THIS SESSION)\n\n` +

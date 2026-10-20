@@ -441,9 +441,19 @@ export const CampaignStateSchema = {
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
   loreRecap:          "",       // last generated lore recap text (for context injection)
 
-  currentSessionId:     "",    // managed by initSessionId() on ready hook
+  currentSessionId:     "",    // minted by mintSession() (src/session/lifecycle.js)
   sessionNumber:        0,     // increments each new session
-  lastSessionTimestamp: null,  // ISO string, updated on ready and closeWorld
+  lastSessionTimestamp: null,  // ISO string: when the session was last seen live — at mint,
+                               // on chat activity (at most every 10 minutes) and at closeWorld
+  // The session End a Session closed (issue #286 C4). The next world load or
+  // Begin a Session mints a new session while this equals currentSessionId.
+  sessionEndedId:       null,
+  // The rolling summary of the session before this one, kept when the new
+  // session is minted (issue #286 C3) and shown to the narrator as LAST
+  // SESSION. Written only by mintSession (src/session/lifecycle.js), from
+  // sessionSummary — the canonical, live record.
+  //   { sessionId, sessionNumber, text, updatedAt }
+  previousSessionSummary: null,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin

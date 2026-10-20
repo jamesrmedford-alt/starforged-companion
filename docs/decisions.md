@@ -6,6 +6,46 @@ rejected.
 
 ---
 
+## A session ends at End Session or after four idle hours; the next is told about the last (2026-10)
+
+**Decision:** (issue #286 C3, C4)
+- A session is over once End a Session marks it (`sessionEndedId`) or after
+  four hours with no chat message. The canonical GM refreshes
+  `lastSessionTimestamp` on chat activity, at most every 10 minutes, and never
+  for a session that is already over. The next world load or Begin a Session,
+  whichever comes first, starts the new one (`rollSessionIfDue`,
+  `src/session/lifecycle.js`): a session nobody ended first gets its rolling
+  summary brought up to date, its scene closes under its own id, then the mint.
+- The mint keeps the closing session's rolling summary as
+  `previousSessionSummary`. Every prose mode renders it as LAST SESSION in
+  [4c], before STORY SO FAR and under the same ledger-wins caveat. The
+  canonical record stays `sessionSummary`; nothing else writes the copy.
+- The campaign recap reaches a session's first narration in any prose mode.
+  "First" means no narrator card of the session exists yet, so a reload does
+  not repeat it. It is read from `campaignRecapCache`, which the closing work
+  after End a Session and a new session's world load refresh; the narration
+  generates one only when none was ever made.
+
+**Why:** the session boundary was any reload four hours after the mint. A
+reload in hour five of a long session re-minted mid-play: the ring, summary
+and oracles reset, and the scene closed. End → Begin without a reload kept the
+same session. The only prose that crossed sessions was the recap, on the
+first move narration per page load, after a fresh Claude call whenever the
+chronicle had grown; paced narration, `@scene` and vignettes never saw it,
+and the summary End a Session archives to the Session Log had no reader.
+
+**Rejected:**
+- *Read the Session Log's archived summary.* Only End a Session writes it,
+  and only with `sessionLogAutoWrite` on; a session that ends by going idle
+  has none.
+- *Mint at End a Session.* The closing vignette posts after End, under the
+  session it closes; whatever the table says before Begin stays there too.
+- *Re-mint on the first message after an idle gap.* That would mint inside a
+  move pipeline run; the next world load or Begin does it.
+- *The last two or three sessions' summaries* (F3). That waits for the F
+  layout, where they are cached input; until then each is uncached on every
+  call.
+
 ## Scene end keeps whereabouts and place details; lore is chosen per turn (2026-10)
 
 **Decision:** (issue #286 C1, C2)
@@ -149,8 +189,9 @@ three scenes ago would otherwise hide behind any five newer developments.
 continues that scene. The intercept no longer calls `startScene`;
 `interrogateScene`'s `ensureSceneStarted` starts a scene only when none is
 active, on the canonical GM. Scenes end at `!scene end`, End Session
-(`session_close`), the ready hook's stale-scene close before a 4-hour re-mint
-(`session_gap_remint`) and `closeWorld`. Pacing's move-density window still
+(`session_close`), the close-out before a new session is minted
+(`session_gap_remint` — see "A session ends at End Session or after four idle
+hours") and `closeWorld`. Pacing's move-density window still
 resets on `@scene`: that is a pacing heuristic, not a scene boundary.
 
 **Why:** scope #227 §2.3 / §9.1 made every `@scene` a scene boundary when it

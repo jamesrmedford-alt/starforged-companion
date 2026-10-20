@@ -54,9 +54,14 @@ layers. This file is the never-break list.
    (`resolveScenePlace`) and keeps each recorded character's whereabouts —
    location / vessel / condition — on their record as `lastKnown` (rendered
    on the card as LAST KNOWN). Scenes close at their fiction's
-   boundaries (2026-07): End Session (`session_close`), the ready-hook's
-   stale-scene close before a 4h-gap re-mint (`session_gap_remint`), and
-   `closeWorld` — do not add a session boundary that leaves a scene open.
+   boundaries (2026-07): End Session (`session_close`), the close-out before
+   a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
+   session that went idle), and `closeWorld` — do not add a session boundary
+   that leaves a scene open. A session is over at End Session or after four
+   hours without a chat message (issue #286 C4); only world load and Begin a
+   Session mint, and the mint keeps the closing session's summary as
+   `previousSessionSummary` (LAST SESSION) — the one prose surface that
+   crosses sessions besides the campaign recap.
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM

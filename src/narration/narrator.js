@@ -126,10 +126,6 @@ function maxTokensWithSidecar(baseMaxTokens) {
   return fcEnabled ? (baseMaxTokens ?? 0) + SIDECAR_TOKEN_HEADROOM : baseMaxTokens;
 }
 
-// Tracks whether a campaign recap has been injected into the narrator prompt
-// for the current session. Reset when the session ID changes.
-let _lastRecapInjectedSessionId = null;
-
 // ---------------------------------------------------------------------------
 // Unified narrator context assembly
 // ---------------------------------------------------------------------------
@@ -230,6 +226,17 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     ? ''
     : cachedRollingSessionSummary(campaignState);
 
+  // Earlier sessions (issue #286 C3). The ring, the summary above and recent
+  // oracles are all session-scoped, so a session used to start from one
+  // campaign recap, on its first move narration per page load. Every prose
+  // mode now gets the summary of the session before this one (LAST SESSION,
+  // kept when this session was minted), and the session's first narration
+  // gets the campaign recap.
+  if (mode !== 'campaign_recap') {
+    extras.previousSessionSummary = previousSessionSummaryFor(campaignState);
+    extras.campaignRecap          = await sessionStartRecap(campaignState);
+  }
+
   // Recent oracle results (narrator-context audit 2026-07) — the raw
   // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
   // never contradicts a roll the table just made. Rendered as [3b]; the
@@ -312,6 +319,52 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/**
+ * The summary of the session before this one (mintSession keeps it), as
+ * `{ text, sessionNumber, isLast }` — `isLast` false when sessions between
+ * them left no summary. Null when there is none, or when the rolling summary
+ * is turned off.
+ */
+function previousSessionSummaryFor(campaignState) {
+  if (!rollingSummaryEnabled()) return null;
+  const prev = campaignState?.previousSessionSummary;
+  if (typeof prev?.text !== 'string' || !prev.text.trim()) return null;
+  if (prev.sessionId && prev.sessionId === campaignState?.currentSessionId) return null;
+  const number  = Number.isFinite(prev.sessionNumber) ? prev.sessionNumber : null;
+  const current = Number(campaignState?.sessionNumber);
+  return {
+    text:          prev.text.trim(),
+    sessionNumber: number,
+    isLast:        number === null || !Number.isFinite(current) || number === current - 1,
+  };
+}
+
+/**
+ * The campaign recap for the session's first narration, in any prose mode —
+ * no narrator card of this session exists yet — else ''. It came only with
+ * the first move narration per page load, after a fresh Claude call whenever
+ * the chronicle had grown (issue #286 C3). It is read from the cache, which
+ * End a Session and a new session's world load refresh; generated here only
+ * when none was ever made, and only on a GM — the client that keeps it.
+ */
+async function sessionStartRecap(campaignState) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  if (!sessionId) return '';
+  try {
+    if (sessionNarratorCards(sessionId).length) return '';
+  } catch {
+    return '';
+  }
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState')?.campaignRecapCache ?? null; }
+  catch { stored = null; }
+  for (const cache of [stored, campaignState?.campaignRecapCache]) {
+    if (typeof cache?.text === 'string' && cache.text.trim()) return cache.text;
+  }
+  if (!game.user?.isGM) return '';
+  return getCampaignRecap(campaignState).catch(() => '');
 }
 
 /** What this turn is about, as text for lore selection: player text, scene frame, entity names, current location. */
@@ -432,12 +485,6 @@ export async function narrateResolution(resolution, campaignState, options = {})
   // See issue #227 (Fact Continuity) §9.1.
   await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
 
-  // Inject campaign recap into the system prompt for the first narration of a session
-  let recapContext = '';
-  if (shouldInjectRecapThisCall(campaignState)) {
-    recapContext = await getCampaignRecap(campaignState).catch(() => '');
-  }
-
   // Phase 2 — relevance resolver runs before the narrator call:
   //   - Picks the narrator-permission block (discovery / interaction / embellishment)
   //   - Identifies which entity records to inject as cards
@@ -480,7 +527,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, recapContext, extras,
+    campaignState, settings, character, '', extras,
   );
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -518,7 +565,6 @@ export async function narrateResolution(resolution, campaignState, options = {})
       return null;
     }
 
-    if (recapContext) markRecapInjected(campaignState?.currentSessionId);
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
     await runPostNarrationPasses(narration, resolution, relevance, campaignState);
     scheduleChronicleEntry({
@@ -545,7 +591,6 @@ export async function narrateResolution(resolution, campaignState, options = {})
           matchedEntityIds: extras.matchedEntityIds ?? [],
         });
         if (narration?.trim()) {
-          if (recapContext) markRecapInjected(campaignState?.currentSessionId);
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
           await runPostNarrationPasses(narration, resolution, relevance, campaignState);
           scheduleChronicleEntry({
@@ -1149,6 +1194,31 @@ export function registerRollingSummaryRefreshHook() {
   });
 }
 
+/**
+ * Bring the session's rolling summary up to date before the session closes
+ * without End a Session (rollSessionIfDue, src/session/lifecycle.js), so the
+ * summary carried into the next session covers all of it: the debounce can
+ * leave up to K cards out, and a short session never reaches K. Makes no call
+ * when the summary already covers every card. Updates campaignState's
+ * `sessionSummary`; fail-open.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+export async function finalizeSessionSummary(campaignState) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  if (!sessionId || !rollingSummaryEnabled()) return;
+  if (_summaryRefresh) await _summaryRefresh;
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState')?.sessionSummary ?? null; }
+  catch { stored = null; }
+  const covered = (summary) => (summary?.sessionId === sessionId ? Number(summary.coveredCount) || 0 : -1);
+  if (covered(stored) > covered(campaignState.sessionSummary)) campaignState.sessionSummary = stored;
+  const total = sessionNarratorCards(sessionId).length;
+  if (!total || covered(campaignState.sessionSummary) >= total) return;
+  await getRollingSessionSummary(campaignState, { forceRefresh: true });
+}
+
 function refreshRollingSessionSummary() {
   if (_summaryRefresh) {
     _summaryRefreshAgain = true;
@@ -1224,30 +1294,6 @@ export async function postCampaignRecap(campaignState, options = {}) {
   }
 
   return text;
-}
-
-/**
- * Return whether the campaign recap should be injected into the narrator prompt
- * for this narration call (first call of a new session only).
- *
- * @param {Object} campaignState
- * @returns {boolean}
- */
-export function shouldInjectRecapThisCall(campaignState) {
-  const sessionId = campaignState?.currentSessionId;
-  if (!sessionId) return false;
-  if (_lastRecapInjectedSessionId === sessionId) return false;
-  return true;
-}
-
-/**
- * Mark the campaign recap as injected for the current session.
- * Called after the first narration of a session succeeds.
- *
- * @param {string} sessionId
- */
-export function markRecapInjected(sessionId) {
-  _lastRecapInjectedSessionId = sessionId;
 }
 
 /**

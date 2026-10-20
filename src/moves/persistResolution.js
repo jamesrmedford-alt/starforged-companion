@@ -123,7 +123,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //                                   on the store via clearPersistedNextMoveAdd
 //       questFocus, connectionFocus Begin / End a Session relays
 //       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
-//       currentSessionId, sessionNumber, lastSessionTimestamp   index.js session-id lifecycle
+//       currentSessionId, sessionNumber, lastSessionTimestamp,
+//       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
+//                                   (world load, Begin / End relays, the chat-activity stamp)
 //       customOracles               oracles/customOracles.js
 //       recentOracles               oracles/oracleMemory.js capture hook
 //       sessionRetractions          sceneLifecycle.js endScene (persists it with
@@ -171,6 +173,8 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'currentSessionId',
   'sessionNumber',
   'lastSessionTimestamp',
+  'sessionEndedId',
+  'previousSessionSummary',
   'customOracles',
   'recentOracles',
   'sessionRetractions',

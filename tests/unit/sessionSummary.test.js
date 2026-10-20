@@ -11,12 +11,16 @@
  *   getRollingSummaryText(state) — pure read of the cached summary
  *   getRollingSessionSummary()   — debounce / regen / GM-gate / fail-open
  *   buildNarratorSystemPrompt()  — renders the §[4c] block (non-meta only)
+ *   earlier sessions (#286 C3)   — LAST SESSION, the session-start recap,
+ *                                  finalizeSessionSummary
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   rollingSummaryThreshold,
   getRollingSessionSummary,
+  finalizeSessionSummary,
+  buildNarratorExtras,
 } from '../../src/narration/narrator.js';
 import { buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
 
@@ -277,5 +281,63 @@ describe('STORY SO FAR block rendering', () => {
       { mode: 'campaign_recap', rollingSummary: 'Should not appear in a recap.' },
     );
     expect(prompt).not.toContain('STORY SO FAR');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Earlier sessions (issue #286 C3) — LAST SESSION, the session-start recap,
+//    and finalizeSessionSummary
+// ---------------------------------------------------------------------------
+
+describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
+  const SETTINGS = { narrationTone: 'wry', narrationPerspective: 'second_person', narrationLength: 3 };
+  const PREV = { sessionId: 'sess-0', sessionNumber: 2, text: 'The crew paid Vex 300 credits.', updatedAt: null };
+
+  it('LAST SESSION renders before STORY SO FAR, with the texture-only caveat', async () => {
+    const extras = await buildNarratorExtras('paced_narrative', makeState({ sessionNumber: 3, previousSessionSummary: PREV }));
+    expect(extras.previousSessionSummary).toEqual({ text: PREV.text, sessionNumber: 2, isLast: true });
+    const prompt = buildNarratorSystemPrompt(makeState(), SETTINGS, null, '',
+      { ...extras, rollingSummary: 'This session so far.' });
+    expect(prompt).toMatch(/## LAST SESSION \(SESSION 2\)\n\n\(Narrative texture only[^\n]*\n\nThe crew paid Vex 300 credits\.\n\n---\n\n## STORY SO FAR/);
+  });
+
+  it('is not called the last session when sessions between them left no summary', async () => {
+    const extras = await buildNarratorExtras('scene_interrogation', makeState({ sessionNumber: 5, previousSessionSummary: PREV }));
+    const prompt = buildNarratorSystemPrompt(makeState(), SETTINGS, null, '', extras);
+    expect(prompt).toContain('## SESSION 2 (THE LATEST SESSION SUMMARISED)');
+    expect(prompt).not.toContain('## LAST SESSION');
+  });
+
+  it('is off with the rolling summary, and never in a recap', async () => {
+    const recap = await buildNarratorExtras('campaign_recap', makeState({ previousSessionSummary: PREV }));
+    expect(recap.previousSessionSummary).toBeUndefined();
+    game.settings._store.set(`${MODULE_ID}.narratorSessionSummary`, false);
+    const off = await buildNarratorExtras('paced_narrative', makeState({ previousSessionSummary: PREV }));
+    expect(off.previousSessionSummary).toBeNull();
+  });
+
+  it('the campaign recap comes from its cache on the session\'s first narration only, in any mode', async () => {
+    const state = makeState({ campaignRecapCache: { text: 'The campaign so far.', chronicleLength: 99 } });
+    const first = await buildNarratorExtras('session_vignette', state);
+    expect(first.campaignRecap).toBe('The campaign so far.');
+    expect(buildNarratorSystemPrompt(state, SETTINGS, null, '', first))
+      .toContain('## CAMPAIGN RECAP — SESSION START CONTEXT\n\nThe campaign so far.');
+
+    setCards(1);   // a narrator card of this session exists
+    expect((await buildNarratorExtras('paced_narrative', state)).campaignRecap).toBe('');
+  });
+
+  it('finalizeSessionSummary makes no call when the summary covers every card, and catches up when it does not', async () => {
+    const calls = stubFetch('The whole session.');
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    setCards(2);
+    const covered = makeState({ sessionSummary: { sessionId: 'sess-1', text: 'All of it.', coveredCount: 2 } });
+    await finalizeSessionSummary(covered);
+    expect(calls).toHaveLength(0);
+
+    const behind = makeState({ sessionSummary: { sessionId: 'sess-1', text: 'Part of it.', coveredCount: 1 } });
+    await finalizeSessionSummary(behind);
+    expect(calls).toHaveLength(1);
+    expect(behind.sessionSummary).toMatchObject({ sessionId: 'sess-1', text: 'The whole session.', coveredCount: 2 });
   });
 });

@@ -29,7 +29,7 @@ durability, capacity, and write discipline:
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
 | **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the scene's recorded place — #286 C2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
-| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7) | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) | ~≤320 tokens (Haiku-capped) |
+| **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
 
 Durable campaign context (world truths, sector, current location, character
@@ -416,8 +416,11 @@ regressions, all are known scope cuts:
       (which continues the scene instead of implicitly ending it). Recap
       card includes the incident.
 - [ ] End Session closes the scene (truths migrated, `currentSceneId`
-      null); a 4h-gap reload re-mints the session AND closes any stale
-      scene (`session_gap_remint` in the console).
+      null) and marks the session ended; the next Begin Session mints a new
+      one, and its first narration shows LAST SESSION and the CAMPAIGN
+      RECAP. A reload after four idle hours re-mints the session AND closes
+      any stale scene (`session_gap_remint` in the console); a reload mid-play
+      resumes it, however long the session has run.
 - [ ] `!oracle yes` → the answer renders under RECENT ORACLE RESULTS on the
       next narrator call; the narration does not contradict it.
 - [ ] Strike a truth → it renders under CORRECTED and the narrator does not

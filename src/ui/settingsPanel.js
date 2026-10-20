@@ -1494,7 +1494,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
       : 'not started';
 
-    const sessionStarted = ctx.lastSessionTimestamp
+    // When the session was last seen live — the mint, then chat activity
+    // (src/session/lifecycle.js).
+    const sessionLastActive = ctx.lastSessionTimestamp
       ? new Date(ctx.lastSessionTimestamp).toLocaleString()
       : '—';
 
@@ -1510,8 +1512,8 @@ export class SettingsPanelApp extends ApplicationV2 {
             <dd>${sessionLabel}</dd>
           </div>
           <div class="about-field">
-            <dt>Session started</dt>
-            <dd>${sessionStarted}</dd>
+            <dt>Session last active</dt>
+            <dd>${sessionLastActive}</dd>
           </div>
           <div class="about-field">
             <dt>Move AI</dt>

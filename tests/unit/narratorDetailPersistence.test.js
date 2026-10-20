@@ -429,3 +429,67 @@ describe('what scene end keeps reaches the next scene (C1, C2)', () => {
     expect(next.system).toMatch(/## CURRENT LOCATION\n\n## BLEAKHOLD — Settlement[\s\S]*NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}Session 3: the bar on the docking ring is called the Rusty Lantern/);
   });
 });
+
+describe('a session carries into the next one (C3, C4)', () => {
+  const SUMMARY = 'The crew paid Vex 300 credits for the beacon code, 7-Delta-9.';
+  const RECAP   = 'RECAP: the crew still owes Vex a favour.';
+
+  beforeEach(() => {
+    table.claude.respond((call) => {
+      if (call.system?.includes('continuity scribe')) return SUMMARY;
+      if (call.userText?.includes('## CAMPAIGN CHRONICLE')) return RECAP;
+      if (call.model === NARRATION_MODEL) return replies.shift() ?? reply('The station hums. Nothing moves.');
+      return '{}';
+    });
+    table.world.setSetting('campaignState', {
+      ...world(),
+      lastSessionTimestamp: new Date().toISOString(),
+      campaignRecapCache:   { text: RECAP, generatedAt: null, chronicleLength: 0 },
+    });
+  });
+
+  it('End a Session, then Begin: a new session, told what happened last session', async () => {
+    await narrateMove('I pay Vex for the beacon code.');
+    table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="questFocus"]': '', 'input[name="connectionFocus"]': '' }));
+    await type('gm-1', '!end-session');
+    expect(world()).toMatchObject({ sessionEndedId: 'sess-1', sessionSummary: { sessionId: 'sess-1', text: SUMMARY } });
+
+    table.client('gm-1').answerDialogs(d => d.submit({ 'input[name="vignette"]': false, 'input[name="galleyVignette"]': false }));
+    await type('gm-1', '!begin-session');
+    expect(world().currentSessionId).not.toBe('sess-1');
+    expect(world()).toMatchObject({
+      sessionActive: true, sessionNumber: 4, sessionEndedId: null,
+      previousSessionSummary: { sessionId: 'sess-1', sessionNumber: 3, text: SUMMARY },
+    });
+
+    // The new session's first narration — a scene question, which never got
+    // the recap — carries both; the ring is the new session's own.
+    const from = table.claude.calls.length;
+    await type('pl-1', '@scene What is the beacon doing?');
+    const question = table.claude.calls.slice(from).find(c => c.model === NARRATION_MODEL);
+    expect(question.system).toContain(`## LAST SESSION (SESSION 3)\n\n(Narrative texture only`);
+    expect(question.system).toContain(SUMMARY);
+    expect(question.system).toContain(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${RECAP}`);
+    expect(question.userText).not.toContain('I pay Vex');
+
+    const move = await narrateMove('I tune the beacon.');
+    expect(move.system).toContain(SUMMARY);
+    expect(move.system).not.toContain('CAMPAIGN RECAP');
+  });
+
+  it('chat activity keeps a long session alive; once idle past four hours it is not revived', async () => {
+    table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: new Date(Date.now() - 20 * 60_000).toISOString() });
+    await narrateMove('I keep watch.');
+    expect(Date.now() - Date.parse(world().lastSessionTimestamp)).toBeLessThan(60_000);
+
+    // A reload now resumes the session, however long ago it began.
+    const gm = table.client('gm-1');
+    const { initSessionId } = await gm.import('../../src/index.js');
+    expect((await gm.run(() => initSessionId(game.settings.get(MODULE_ID, 'campaignState')))).currentSessionId).toBe('sess-1');
+
+    const idle = new Date(Date.now() - 5 * 3_600_000).toISOString();
+    table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: idle });
+    await narrateMove('I wake up.');
+    expect(world().lastSessionTimestamp).toBe(idle);
+  });
+});

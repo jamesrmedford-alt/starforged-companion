@@ -82,15 +82,17 @@ move-path gate had been lost with the retired assembler (ASSEMBLER-003).
 
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
-session-start recap · [1] safety · [2] permission-class latitude · [2.5]
+campaign recap (a session's first narration in any prose mode, from
+`campaignRecapCache` — issue #286 C3) · [1] safety · [2] permission-class latitude · [2.5]
 Battle Stations · [3] oracle seeds (move-provided only) · **[3b] recent
 oracle results** (`campaignState.recentOracles` — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
 session, "the dice established these"; skipped for meta modes) · [4] world
 truths · [4a] campaign truths digest · [4b] campaign premise
-(`campaignState.incitingIncident` — durable canon, every call) · [4c] rolling
-session summary (prefixed with a **ledger-wins caveat** — the
-summary is texture, not a fact store) · **[4d] active threats · [4e]
+(`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
+SESSION (`previousSessionSummary`, kept at the mint — issue #286 C3), then the
+rolling session summary, each prefixed with a **ledger-wins caveat** — a
+summary is texture, not a fact store · **[4d] active threats · [4e]
 faction landscape · [4f] established lore** (chosen per turn since issue
 #286 C2 — `selectLoreForContext`: up to 5 confirmed lore / recorded-location
 entries sharing the most words with the player text, the frame and the
@@ -131,6 +133,22 @@ The rolling summary reads the same entries (`ringEntryText`), so what a
 player wrote reaches it too. Its regen runs after a narrator card posts, on
 the canonical GM (`registerRollingSummaryRefreshHook`, B7); prompts read the
 cached text.
+
+**Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
+the rolling summary and recent oracles are scoped to `currentSessionId`. A
+session is over once End a Session marks it (`sessionEndedId`) or after four
+hours with no chat message — the canonical GM refreshes `lastSessionTimestamp`
+on chat activity, at most every 10 minutes, and never for a session already
+over (`registerSessionActivityHook`). The next world load (`initSessionId`,
+ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
+an unended session's summary is brought up to date
+(`finalizeSessionSummary`), its scene closes under its own id, then
+`mintSession` keeps that summary as `previousSessionSummary` and mints the next
+id. What carries over to the new session's prompts: LAST SESSION ([4c], every
+prose mode), the campaign recap ([0b], the session's first narration — no
+narrator card of the session yet — read from its cache, which End a Session
+and a new session's world load refresh), entity cards with their tiers and
+LAST KNOWN, established lore and the campaign premise.
 
 **Ledger scope** ([6.5]): scene subjects and free-text subjects (unrecorded
 figures and places — the ledger holds only this scene) are always in scope
@@ -215,9 +233,10 @@ onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. Triggers for `endScene`: the two
 commands, the implicit path, `closeWorld`, **End Session**
-(`session_close`), and the ready-hook's stale-scene close before a 4h-gap
-session re-mint (`session_gap_remint`) — session boundaries no longer leak
-scene truths into the next session's empty ring.
+(`session_close`), and the close-out before a new session is minted
+(`rollSessionIfDue`: `session_gap_remint` for a session that went idle) —
+session boundaries no longer leak scene truths into the next session's empty
+ring, and the closing scene's truths keep the closing session's number.
 
 **Corrections & defenses:**
 - The ledger block's binding wording, plus the **CORRECTED block**: a bare
