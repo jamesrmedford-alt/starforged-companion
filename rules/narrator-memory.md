@@ -54,10 +54,19 @@ layers. This file is the never-break list.
    defense and the write defense cover different failure paths (model
    ignores instructions vs. model re-emits the fact).
 
-7. **Sidecar subjects resolve against the full roster.**
+7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so
    confirmed NPCs ledger entity-keyed. Don't remove that argument; text
-   subjects are the fallback, not the norm.
+   subjects are the fallback, not the norm. Pass the roster through
+   unchanged: an entity subject's `entityId` is the roster's `journalId`
+   (the HOST document id — an Actor id for an NPC), the id relevance
+   matches, entity cards and scene-end migration use. Never re-map it into
+   another shape or promote with a record's own `_id` (issue #286 A1/A3 —
+   both silently dropped every recorded entity's facts). Names resolve
+   through `resolveEntityName`'s bounded ladder, which never files a fact
+   under an entity on an article, a title, a shared name part or a
+   lowercase common noun. Entity state keys are `entity:<id>`
+   (`subjectKey` / `subjectFromStateKey`).
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),

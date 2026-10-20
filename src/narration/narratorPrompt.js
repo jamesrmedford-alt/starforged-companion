@@ -6,6 +6,8 @@
 
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
+import { subjectFromStateKey } from '../factContinuity/ledgers.js';
+import { resolveEntityById } from '../entities/registry.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -491,7 +493,8 @@ function estimateTokens(s) {
 
 /**
  * Render a ledger subject as the human-readable prefix used in the block.
- *   entity → display name from the lookup, or the entity ID as fallback.
+ *   entity → display name from the lookup, else the record's own name, else
+ *            the entity ID.
  *   scene  → "scene"
  *   text   → the original text
  */
@@ -501,11 +504,27 @@ function formatSubjectLabel(subject, nameLookup) {
     case 'entity': {
       const id = subject.entityId ?? '';
       const fromMap = nameLookup?.get?.(id);
-      return fromMap || id || 'entity';
+      return fromMap || entityNameById(id) || id || 'entity';
     }
     case 'scene': return 'scene';
     case 'text':  return String(subject.text ?? '').trim() || 'unknown';
     default:      return 'unknown';
+  }
+}
+
+/**
+ * An entity record's name by its host document id, or '' — for ledger labels
+ * the caller's lookup does not cover (the consistency check passes none; an
+ * entity can be in scope through the scene frame without a card match). The
+ * auditor and the narrator need "Kael Dros", not an Actor id.
+ */
+function entityNameById(id) {
+  if (!id) return '';
+  try {
+    const name = resolveEntityById(id)?.data?.name;
+    return typeof name === 'string' ? name.trim() : '';
+  } catch {
+    return '';
   }
 }
 
@@ -530,16 +549,6 @@ function isSubjectInScope(subject, matchedIds, lowerCaseNarration) {
     return lowerCaseNarration.includes(text);
   }
   return false;
-}
-
-function subjectFromStateKey(key) {
-  if (key === 'scene') return { kind: 'scene' };
-  // Heuristic: a key that looks like a Foundry ID (no spaces, mixed-case)
-  // is an entity. Anything else is a free-text key.
-  if (/^[A-Za-z0-9._-]+$/u.test(key) && key !== key.toLowerCase()) {
-    return { kind: 'entity', entityId: key };
-  }
-  return { kind: 'text', text: key };
 }
 
 // ---------------------------------------------------------------------------

@@ -1070,6 +1070,36 @@ describe("appendDetailToTier", () => {
 
     const ok = await appendDetailToTier(ref, "Speaks in clipped sentences.", "ses-1", 1);
     expect(ok).toBe(true);
+    // Saved on the NPC-card Actor, not just on the in-memory record (issue
+    // #286 A2: the write looked in game.journal only and returned silently).
+    const stored = global.game.actors.get(ref.journalId).flags[MODULE_ID].connection;
+    expect(stored.generativeTier).toEqual([
+      expect.objectContaining({ detail: "Speaks in clipped sentences.", sessionNum: 1, createdAt: expect.any(Number) }),
+    ]);
+    expect(stored.name).toBe("Kael");
+    installed.restore();
+  });
+
+  it("reports false — not success — when the record has no host document", async () => {
+    const ref = { journalId: "actor-gone", type: "connection", record: { name: "Ghost", generativeTier: [] } };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ok = await appendDetailToTier(ref, "Never saved.", "ses-1", 1);
+    expect(ok).toBe(false);
+    expect(ref.record.generativeTier).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("generative-tier detail not saved"));
+  });
+
+  it("keeps a tier entry another writer stored after the record was read", async () => {
+    const installed = installJournalMock();
+    const r = addConnectionEntity(installed.journals, { name: "Kael" });
+    const ref = { ...r, type: "connection", record: { ...global.game.actors.get(r.journalId).flags[MODULE_ID].connection } };
+    // A scene-end migration lands while the tier pass waits on Haiku.
+    global.game.actors.get(r.journalId).flags[MODULE_ID].connection.generativeTier = [
+      { detail: "Migrated at scene end.", source: "scene_truth_migration" },
+    ];
+    await appendDetailToTier(ref, "Fresh development.", "ses-1", 1);
+    const stored = global.game.actors.get(r.journalId).flags[MODULE_ID].connection.generativeTier;
+    expect(stored.map(e => e.detail)).toEqual(["Migrated at scene end.", "Fresh development."]);
     installed.restore();
   });
 
@@ -1125,6 +1155,8 @@ describe("appendGenerativeTierUpdates", () => {
     expect(receivedPrompt).toContain("Kael");
     expect(applied).toHaveLength(1);
     expect(applied[0].detail).toBe("Has a steady hand.");
+    expect(global.game.actors.get(ref.journalId).flags[MODULE_ID].connection.generativeTier
+      .map(e => e.detail)).toEqual(["Has a steady hand."]);
     installed.restore();
   });
 

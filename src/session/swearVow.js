@@ -24,7 +24,7 @@
 
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection } from "../character/actorBridge.js";
-import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter }
+import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
@@ -232,6 +232,9 @@ export async function swearSharedVowForAll(message) {
         console.warn(`${MODULE_ID} | swearVow: connection enrichment failed:`, err));
       await registerConnectionOnActiveCharacter(connection).catch(err =>
         console.warn(`${MODULE_ID} | swearVow: bond item registration failed:`, err));
+      // The opening scene recorded who they are and what is at stake under
+      // their name, before this card existed (issue #286 A3).
+      await promoteNewEntityLedgerSubjects(meta.target.name, "connection", connection, campaignState);
     } catch (err) {
       console.error(`${MODULE_ID} | swearVow: vow-target connection create failed:`, err);
       ui?.notifications?.warn(

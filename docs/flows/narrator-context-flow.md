@@ -104,7 +104,9 @@ CORRECTED rules) · [10] audio markup.
 
 **Relevance** (`src/context/relevanceResolver.js`): Phase 1 is a lexical name
 index (full name + first/last word of multi-word names, lowercased,
-dismissed-list filtered); Phase 2 (Haiku) fires only for hybrid *moves*.
+dismissed-list filtered; since issue #286 a name part is never an article,
+title or other noise word, never a word two entities share, and never
+shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the
 move path deliberately does not (architecture §8.2, reaffirmed 2026-07). A
 match miss means no entity card for that entity — mitigated on paced/@scene
@@ -127,7 +129,9 @@ mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
 `applyNarratorSidecar` (canonical-GM only): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute
-(`ledgers.js`), subjects resolved against `collectAllEntities`, ship
+(`ledgers.js`), subjects resolved against `collectAllEntities` (passed
+through in its own shape — `entityId` is the host document id; entity state
+keys are `entity:<id>`; issue #286 A1), ship
 `position` stateChanges routed to the §20 ship record, `applySceneFrame`
 full-replacement snapshot, the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`)

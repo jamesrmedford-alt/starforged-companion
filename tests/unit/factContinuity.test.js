@@ -15,6 +15,7 @@ import {
   resolveSubject,
   promoteTextSubject,
   subjectKey,
+  subjectFromStateKey,
   findEquivalentTruth,
 } from '../../src/factContinuity/ledgers.js';
 
@@ -252,7 +253,7 @@ describe('applySidecar', () => {
 
   it('resolves entity subjects when entities are provided', () => {
     const entities = [
-      { entityId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JournalEntry.x7-rec', journalId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance' },
     ];
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'Carries a sidearm' }], stateChanges: [] },
@@ -296,7 +297,7 @@ describe('resolveSubject', () => {
   it('resolves a known entity name to entity-kind', () => {
     const cs = makeCampaignState();
     const entities = [
-      { entityId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance Eustacia' },
+      { _id: 'JournalEntry.x7-rec', journalId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance Eustacia' },
     ];
     expect(resolveSubject('Vance Eustacia', cs, entities)).toEqual({
       kind: 'entity', entityId: 'JournalEntry.x7', entityType: 'connection',
@@ -319,7 +320,7 @@ describe('resolveSubject', () => {
   it('respects dismissedEntities — names there do not resolve to entities', () => {
     const cs = makeCampaignState({ dismissedEntities: ['Vance'] });
     const entities = [
-      { entityId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JournalEntry.x7-rec', journalId: 'JournalEntry.x7', entityType: 'connection', name: 'Vance' },
     ];
     expect(resolveSubject('Vance', cs, entities)).toEqual({ kind: 'text', text: 'Vance' });
   });
@@ -331,9 +332,21 @@ describe('resolveSubject', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('subjectKey', () => {
-  it('returns entityId for entity subjects', () => {
+  it('returns an entity:-prefixed key for entity subjects', () => {
     expect(subjectKey({ kind: 'entity', entityId: 'JE.42', entityType: 'connection' }))
-      .toBe('JE.42');
+      .toBe('entity:JE.42');
+  });
+
+  it('has no key for an entity subject without an id (issue #286 A1)', () => {
+    expect(subjectKey({ kind: 'entity', entityType: 'connection' })).toBe('');
+  });
+
+  it('round-trips through subjectFromStateKey — an all-lowercase id stays an entity', () => {
+    expect(subjectFromStateKey(subjectKey({ kind: 'entity', entityId: 'sact000000000001' })))
+      .toEqual({ kind: 'entity', entityId: 'sact000000000001' });
+    expect(subjectFromStateKey('scene')).toEqual({ kind: 'scene' });
+    expect(subjectFromStateKey('cargo bay')).toEqual({ kind: 'text', text: 'cargo bay' });
+    expect(subjectFromStateKey('entity:')).toEqual({ kind: 'text', text: 'entity:' });
   });
 
   it('returns "scene" for scene subjects', () => {
@@ -387,7 +400,7 @@ describe('promoteTextSubject', () => {
     expect(sceneEntries).toHaveLength(1);
 
     // State entries migrated to the new entity key.
-    expect(cs.sceneState.bySubject['JournalEntry.cov1'])
+    expect(cs.sceneState.bySubject['entity:JournalEntry.cov1'])
       .toEqual([{ attribute: 'posture', value: 'leaning', updatedAt: expect.any(Number) }]);
     expect(cs.sceneState.bySubject['covenant officer']).toBeUndefined();
   });
@@ -409,7 +422,7 @@ describe('promoteTextSubject', () => {
 
   it('merges state entries by attribute, preferring the newer (text) value', () => {
     const cs = makeCampaignState();
-    cs.sceneState.bySubject['JournalEntry.v1'] = [
+    cs.sceneState.bySubject['entity:JournalEntry.v1'] = [
       { attribute: 'posture', value: 'standing', updatedAt: 1 },
     ];
     cs.sceneState.bySubject.vance = [
@@ -417,7 +430,7 @@ describe('promoteTextSubject', () => {
       { attribute: 'mood',    value: 'guarded',  updatedAt: 2 },
     ];
     promoteTextSubject('Vance', { entityId: 'JournalEntry.v1', entityType: 'connection' }, cs);
-    const merged = cs.sceneState.bySubject['JournalEntry.v1'];
+    const merged = cs.sceneState.bySubject['entity:JournalEntry.v1'];
     const posture = merged.find(e => e.attribute === 'posture');
     const mood    = merged.find(e => e.attribute === 'mood');
     expect(posture.value).toBe('sitting');

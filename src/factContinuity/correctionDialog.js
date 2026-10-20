@@ -20,7 +20,9 @@ import {
   strikeStateValue,
   setStateValue,
   subjectKey,
+  subjectFromStateKey,
 } from './ledgers.js';
+import { resolveEntityById } from '../entities/registry.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -254,21 +256,24 @@ function collectInScopeState(campaignState, matchedIds) {
   return rows;
 }
 
-function subjectFromStateKey(key) {
-  if (key === 'scene') return { kind: 'scene' };
-  if (/^[A-Za-z0-9._-]+$/u.test(key) && key !== key.toLowerCase()) {
-    return { kind: 'entity', entityId: key };
-  }
-  return { kind: 'text', text: key };
-}
-
 function formatSubjectLabel(subject) {
   if (!subject || typeof subject !== 'object') return 'unknown';
   switch (subject.kind) {
-    case 'entity': return subject.entityId ?? 'entity';
+    case 'entity': return entityName(subject.entityId) || subject.entityId || 'entity';
     case 'scene':  return 'scene';
     case 'text':   return String(subject.text ?? '').trim() || 'unknown';
     default:       return 'unknown';
+  }
+}
+
+/** The entity record's name for its host document id, or '' — so a row reads "Kael Dros", not an Actor id. */
+function entityName(id) {
+  if (!id) return '';
+  try {
+    const name = resolveEntityById(id)?.data?.name;
+    return typeof name === 'string' ? name.trim() : '';
+  } catch {
+    return '';
   }
 }
 

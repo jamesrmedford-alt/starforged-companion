@@ -157,8 +157,8 @@ describe('buildLedgerBlock — retraction defense', () => {
 describe('buildLedgerBlock — filtering', () => {
   it('includes entity truths only for matched entity IDs', () => {
     const entities = [
-      { entityId: 'JE.x7', entityType: 'connection', name: 'Vance' },
-      { entityId: 'JE.y9', entityType: 'connection', name: 'Tora'  },
+      { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JE.y9-rec', journalId: 'JE.y9', entityType: 'connection', name: 'Tora' },
     ];
     const cs = makeCampaignState();
     applySidecar(
@@ -202,7 +202,7 @@ describe('buildLedgerBlock — filtering', () => {
 
   it('treats currentLocationId as an implicit matched entity', () => {
     const entities = [
-      { entityId: 'JE.loc1', entityType: 'settlement', name: 'Bleakhold' },
+      { _id: 'JE.loc1-rec', journalId: 'JE.loc1', entityType: 'settlement', name: 'Bleakhold' },
     ];
     const cs = makeCampaignState();
     applySidecar(
@@ -217,7 +217,7 @@ describe('buildLedgerBlock — filtering', () => {
   });
 
   it('renders entity labels from entityNamesById, falling back to entity ID', () => {
-    const entities = [{ entityId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
+    const entities = [{ _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
     const cs = makeCampaignState();
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'a' }], stateChanges: [] },

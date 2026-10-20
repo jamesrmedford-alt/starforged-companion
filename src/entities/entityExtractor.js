@@ -43,6 +43,7 @@ import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
+import { HONORIFIC_PREFIXES }              from "../context/relevanceResolver.js";
 
 import {
   recordLoreDiscovery,
@@ -84,20 +85,12 @@ const ENTITY_ID_FIELDS = {
   creature:   "creatureIds",
 };
 
-// Honorifics that the detector may strip when extracting a name from prose.
-// We strip the same set so "Dr. Chen" stored as a connection matches a "Chen"
-// detection on the next narration, instead of being treated as a new NPC.
-const HONORIFIC_PREFIXES = new Set([
-  "dr", "mr", "mrs", "ms", "mx", "miss",
-  "cmdr", "commander", "captain", "capt", "cap", "cpt",
-  "lt", "lieutenant", "sgt", "sergeant",
-  "gen", "general", "col", "colonel", "maj", "major",
-  "prof", "professor", "rev", "reverend",
-  "sir", "dame", "lord", "lady",
-]);
-
 /**
  * Reduce an entity name to a canonical form for dedup comparisons.
+ * The detector may strip an honorific when it extracts a name from prose, so
+ * we strip the same set (HONORIFIC_PREFIXES, shared with the name index): "Dr.
+ * Chen" stored as a connection matches a "Chen" detection on the next
+ * narration, instead of being treated as a new NPC.
  * Lowercases, trims, collapses interior whitespace, and strips a single
  * leading honorific (with optional trailing period). Returns `""` for
  * non-string / empty input.
@@ -530,6 +523,9 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         await postCreationEnrichment("connection", record, campaignState);
         await registerConnectionOnActiveCharacter(record).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+        // The narration that introduced them recorded their identity anchor
+        // under their name, before the card existed.
+        await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -803,6 +799,56 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
     await generatePortrait(hostId, typeKey, record, campaignState ?? {});
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
+  }
+}
+
+/**
+ * Re-key the scene ledgers' truths and state recorded under a new entity's
+ * name to that entity, once its record exists (issue #286 A3). Facts the
+ * narrator records before an NPC has a card land as text subjects; promoting
+ * them makes them render with the card and migrate to it at scene end.
+ *
+ * Keyed by the HOST document id (an Actor id for a connection), the id the
+ * roster, relevance matches and scene-end migration resolve. The record's own
+ * `_id` resolves nowhere, so promoting with it hid the facts instead.
+ *
+ * Promotes the caller's copy too: the move pipeline holds one across its
+ * awaits and writes its scene ledgers back at the end of the move. The write
+ * is the stored campaignState, read just before it, with only the two ledger
+ * fields changed. Fail-open; never throws.
+ *
+ * @param {string} name     — the name the facts were recorded under
+ * @param {string} typeKey  — the entity type
+ * @param {Object} record   — the new entity record (its `_id` finds the host document)
+ * @param {Object} [campaignState] — the caller's working copy
+ * @returns {Promise<void>}
+ */
+export async function promoteNewEntityLedgerSubjects(name, typeKey, record, campaignState) {
+  const text = String(name ?? "").trim();
+  if (!text || !record?._id) return;
+  try {
+    const hostId = findHostDocumentId(typeKey, record._id, campaignState)
+      ?? findHostDocumentId(typeKey, record._id, globalThis.game?.settings?.get(MODULE_ID, "campaignState"));
+    if (!hostId) {
+      console.debug?.(`${MODULE_ID} | promote ledger subjects: no ${typeKey} host document for "${text}" yet.`);
+      return;
+    }
+    const { promoteTextSubject, subjectKey } = await import("../factContinuity/ledgers.js");
+    const ref     = { entityId: hostId, entityType: typeKey };
+    const textKey = subjectKey({ kind: "text", text });
+    const promote = (cs) => {
+      if (!cs || typeof cs !== "object") return false;
+      const hadState = !!cs.sceneState?.bySubject?.[textKey];
+      return promoteTextSubject(text, ref, cs) > 0 || hadState;
+    };
+
+    const callerChanged = promote(campaignState);
+    const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+    if (!latest) return;
+    const changed = latest === campaignState ? callerChanged : promote(latest);
+    if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | promote ledger subjects for "${text}" failed:`, err?.message ?? err);
   }
 }
 
@@ -1203,24 +1249,13 @@ export async function appendGenerativeTierUpdates(
 }
 
 /**
- * Append a generative-tier detail to an entity record. Returns true on
- * success, false when the detail was deduplicated.
+ * Append a generative-tier detail to an entity record and save it on the
+ * record's host document. Returns true when the detail was saved, false when
+ * it was deduplicated or could not be saved.
  */
 export async function appendDetailToTier(entityRef, detail, sessionId, sessionNum) {
   const cleanDetail = detail?.trim();
   if (!cleanDetail || !entityRef?.record || !entityRef?.journalId) return false;
-
-  const tier = Array.isArray(entityRef.record.generativeTier)
-    ? entityRef.record.generativeTier
-    : [];
-
-  const lc = cleanDetail.toLowerCase();
-  const seen = tier.some(e => {
-    const existing = (e?.detail ?? "").toLowerCase();
-    if (!existing) return false;
-    return existing === lc || existing.includes(lc) || lc.includes(existing);
-  });
-  if (seen) return false;
 
   const newEntry = {
     sessionId:  sessionId ?? "",
@@ -1230,12 +1265,24 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
     pinned:     false,
     promoted:   false,
     promotedAt: null,
+    createdAt:  Date.now(),
   };
 
-  const updated = [...tier, newEntry];
-  await persistGenerativeTier(entityRef, updated);
+  const updated = await persistGenerativeTier(entityRef, newEntry);
+  if (!updated) return false;
   entityRef.record.generativeTier = updated; // keep ref consistent for return value
   return true;
+}
+
+/** Same detail already in the tier — the containment check both tier writers use. */
+function tierHasDetail(tier, detail) {
+  const lc = String(detail ?? "").trim().toLowerCase();
+  if (!lc) return false;
+  return tier.some(e => {
+    const existing = String(e?.detail ?? "").toLowerCase();
+    if (!existing) return false;
+    return existing === lc || existing.includes(lc) || lc.includes(existing);
+  });
 }
 
 function buildTierUpdatePrompt(narrationText, records) {
@@ -1289,20 +1336,38 @@ export function parseTierUpdateResponse(text) {
   }
 }
 
-async function persistGenerativeTier(entityRef, tier) {
+/**
+ * Append `entry` to the entity's stored generative tier, through the registry
+ * (issue #286 A2: this used to look the record up in game.journal only, so for
+ * the Actor-hosted types — connections, ships, settlements, planets, locations
+ * — it found no page and returned silently while the caller reported success).
+ * Reads the stored tier immediately before the write, so a pin, a scene-end
+ * migration or another tier pass that landed during the Haiku call is kept.
+ *
+ * @param {{ journalId: string, type: string }} entityRef
+ * @param {Object} entry — a fully-formed generative-tier entry
+ * @returns {Promise<Array|null>} the saved tier; null when deduplicated or not saved
+ */
+async function persistGenerativeTier(entityRef, entry) {
   try {
-    const entry = game.journal?.get(entityRef.journalId);
-    const page  = entry?.pages?.contents?.[0];
-    if (!page) return;
-    const existingFlags = page.flags?.[MODULE_ID]?.[entityRef.type] ?? {};
-    const updated = {
+    const document = getEntityDocument(entityRef.type, entityRef.journalId);
+    if (!document) {
+      console.warn(`${MODULE_ID} | entityExtractor: no ${entityRef.type} record for ${entityRef.journalId} — generative-tier detail not saved.`);
+      return null;
+    }
+    const existingFlags = readEntityFlag(entityRef.type, document) ?? {};
+    const tier = Array.isArray(existingFlags.generativeTier) ? existingFlags.generativeTier : [];
+    if (tierHasDetail(tier, entry.detail)) return null;
+    const updated = [...tier, entry];
+    await writeEntityFlag(entityRef.type, document, {
       ...existingFlags,
-      generativeTier: tier,
+      generativeTier: updated,
       updatedAt:      new Date().toISOString(),
-    };
-    await page.setFlag(MODULE_ID, entityRef.type, updated);
+    });
+    return updated;
   } catch (err) {
     console.error(`${MODULE_ID} | entityExtractor: persistGenerativeTier failed:`, err);
+    return null;
   }
 }
 
@@ -1340,15 +1405,7 @@ export async function appendMigratedTruthToTier(journalId, type, entry) {
       ? existingFlags.generativeTier
       : [];
 
-    const lc = String(entry.detail ?? "").trim().toLowerCase();
-    if (lc) {
-      const seen = tier.some(e => {
-        const existing = String(e?.detail ?? "").toLowerCase();
-        if (!existing) return false;
-        return existing === lc || existing.includes(lc) || lc.includes(existing);
-      });
-      if (seen) return true;
-    }
+    if (tierHasDetail(tier, entry.detail)) return true;
 
     const updated = {
       ...existingFlags,
@@ -1645,21 +1702,9 @@ async function handleDraftConfirm(message, draftIndex) {
     // captured against this name into entity-scoped entries pointing at
     // the new record. Without this rewrite, truths captured before the
     // entity existed stay text-bound forever and never migrate at scene
-    // end. Idempotent — promoteTextSubject is a no-op when no matching
-    // text subjects exist. (Priority 6 of the behaviour-coverage audit.)
-    try {
-      const { promoteTextSubject } = await import("../factContinuity/ledgers.js");
-      const rewritten = promoteTextSubject(
-        draft.name,
-        { entityId: record._id, entityType: draft.type },
-        campaignState,
-      );
-      if (rewritten > 0) {
-        await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | draft confirm: promoteTextSubject failed:`, err?.message ?? err);
-    }
+    // end. Idempotent — a no-op when no matching text subjects exist.
+    // (Priority 6 of the behaviour-coverage audit; host id since #286 A3.)
+    await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
   }
 
   drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });

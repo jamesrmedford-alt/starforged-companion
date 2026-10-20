@@ -53,9 +53,97 @@ const HAIKU_MODEL   = "claude-haiku-4-5-20251001";
  */
 
 /**
- * Build a lookup index from entity records to JournalEntry IDs.
- * Indexes by lowercased full name, first word, and last word.
- * Single-word names appear once (full / first / last collapse).
+ * Honorifics and titles. A leading one is stripped when two entity names are
+ * compared for dedup (normalizeEntityName, entityExtractor.js), and none is
+ * ever a name key on its own (buildNameIndex).
+ */
+export const HONORIFIC_PREFIXES = new Set([
+  "dr", "mr", "mrs", "ms", "mx", "miss",
+  "cmdr", "commander", "captain", "capt", "cap", "cpt",
+  "lt", "lieutenant", "sgt", "sergeant",
+  "gen", "general", "col", "colonel", "maj", "major",
+  "prof", "professor", "rev", "reverend",
+  "sir", "dame", "lord", "lady",
+]);
+
+/**
+ * Words that never stand for an entity on their own: the honorifics, a few
+ * more titles, and articles, prepositions and determiners. The first or last
+ * word of a multi-word name is not indexed when it is one of these (issue
+ * #286 A5): "The Covenant" claimed every "the" in the fiction, and "Captain
+ * Mora" claimed "Captain Vance". The full name is still indexed.
+ */
+const NAME_NOISE_WORDS = new Set([
+  ...HONORIFIC_PREFIXES,
+  "doctor", "admiral", "chief", "elder", "old", "young",
+  "a", "an", "the", "of", "in", "on", "at", "to", "for", "from", "by", "with",
+  "and", "or", "but", "nor", "into", "onto", "upon",
+  "this", "that", "these", "those", "his", "her", "its", "their", "our", "my", "your",
+]);
+
+function isNameNoiseWord(word) {
+  return NAME_NOISE_WORDS.has(String(word ?? "").toLowerCase().replace(/[.,]+$/u, ""));
+}
+
+/** Lowercased full name with whitespace collapsed — the full-name key. */
+function fullNameKey(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** The same entity, whichever id space a roster entry carries. */
+function sameEntity(a, b) {
+  if (a === b) return true;
+  const idA = a?.journalId ?? a?._id;
+  const idB = b?.journalId ?? b?._id;
+  if (idA && idA === idB) return true;
+  return !!(a?._id && a._id === b?._id);
+}
+
+/**
+ * The two halves of the name index. `full`: every entity's full name. `parts`:
+ * the first and last word of each multi-word name — except noise words, a word
+ * that is some entity's full name, and a word two entities share (no guessing
+ * which one is meant).
+ */
+function indexNames(entities, dismissedEntities) {
+  const dismissed = new Set(
+    (dismissedEntities ?? [])
+      .filter(n => typeof n === "string")
+      .map(n => n.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const live = (entities ?? []).filter(e => {
+    const key = fullNameKey(e?.name);
+    return key && !dismissed.has(key);
+  });
+
+  const full = new Map();
+  for (const entity of live) {
+    const key = fullNameKey(entity.name);
+    if (!full.has(key)) full.set(key, entity);
+  }
+
+  const claims = new Map();   // name part → entity, or null when shared
+  for (const entity of live) {
+    const words = entity.name.trim().split(/\s+/).filter(Boolean);
+    if (words.length < 2) continue;
+    for (const word of [words[0], words[words.length - 1]]) {
+      const key = word.toLowerCase();
+      if (isNameNoiseWord(key) || full.has(key)) continue;
+      if (!claims.has(key)) claims.set(key, entity);
+      else if (claims.get(key) && !sameEntity(claims.get(key), entity)) claims.set(key, null);
+    }
+  }
+  const parts = new Map();
+  for (const [key, entity] of claims) if (entity) parts.set(key, entity);
+  return { full, parts };
+}
+
+/**
+ * Build a lookup index from entity records to their host document IDs. Keys:
+ * every lowercased full name, then the first and last word of multi-word
+ * names — not articles, titles or other noise words, and not a word two
+ * entities share. A full name always wins over another entity's name part.
  *
  * Dismissed names are excluded so misclicked entities don't keep returning.
  *
@@ -64,31 +152,64 @@ const HAIKU_MODEL   = "claude-haiku-4-5-20251001";
  * @returns {Map<string, EntityRef>}
  */
 export function buildNameIndex(entities, dismissedEntities = []) {
-  const dismissed = new Set(
-    (dismissedEntities ?? [])
-      .filter(n => typeof n === "string")
-      .map(n => n.trim().toLowerCase())
-      .filter(Boolean),
-  );
-
-  const index = new Map();
-  for (const entity of entities ?? []) {
-    const raw = entity?.name?.trim();
-    if (!raw) continue;
-    if (dismissed.has(raw.toLowerCase())) continue;
-
-    const full = raw.toLowerCase();
-    if (!index.has(full)) index.set(full, entity);
-
-    const words = raw.split(/\s+/).filter(Boolean);
-    if (words.length > 1) {
-      const first = words[0].toLowerCase();
-      const last  = words[words.length - 1].toLowerCase();
-      if (!index.has(first)) index.set(first, entity);
-      if (!index.has(last))  index.set(last,  entity);
-    }
-  }
+  const { full, parts } = indexNames(entities, dismissedEntities);
+  const index = new Map(full);
+  for (const [key, entity] of parts) index.set(key, entity);
   return index;
+}
+
+/**
+ * Resolve one name as the fiction writes it ("Kael", "Captain Vance",
+ * "Dockmaster Kael Dros") to the entity it names. For writes that file a fact
+ * under an entity: sidecar subjects, `!truth` / `!state`, the scene frame's
+ * present list. A bounded ladder that stops before guessing
+ * (rules/reachability.md §6), because a fact filed under the wrong entity is
+ * worse than one kept as text:
+ *
+ *   1. the full name, any case ("kael dros");
+ *   2. the full name once leading titles and articles are dropped
+ *      ("Captain Mora" → "Mora");
+ *   3. a multi-word full name after one or two leading title words
+ *      ("Dockmaster Kael Dros");
+ *   4. one capitalised first or last name that a single entity has ("Kael";
+ *      "Captain Vance" → "Vance"). A lowercase word ("the station") never
+ *      matches a name part.
+ *
+ * A trailing possessive is dropped first ("Kael's" → "Kael").
+ *
+ * @param {string}      name
+ * @param {EntityRef[]} entities — the roster (collectAllEntities)
+ * @param {string[]}    [dismissedEntities]
+ * @returns {EntityRef|null}
+ */
+export function resolveEntityName(name, entities, dismissedEntities = []) {
+  const raw = String(name ?? "").trim().replace(/\s+/g, " ").replace(/[’']s$/u, "");
+  if (!raw || !Array.isArray(entities) || !entities.length) return null;
+  const { full, parts } = indexNames(entities, dismissedEntities);
+
+  const exact = full.get(raw.toLowerCase());
+  if (exact) return exact;
+
+  const words = raw.split(" ");
+  let lead = 0;
+  while (lead < words.length - 1 && isNameNoiseWord(words[lead])) lead += 1;
+  const rest = words.slice(lead);
+  if (lead > 0) {
+    const stripped = full.get(rest.join(" ").toLowerCase());
+    if (stripped) return stripped;
+  }
+
+  for (let k = 1; k <= 2 && words.length - k >= 2; k += 1) {
+    const titled = words.slice(0, k).every(w => isNameNoiseWord(w) || /^\p{Lu}/u.test(w));
+    if (!titled) break;
+    const hit = full.get(words.slice(k).join(" ").toLowerCase());
+    if (hit) return hit;
+  }
+
+  if (rest.length === 1 && /^\p{Lu}/u.test(rest[0])) {
+    return parts.get(rest[0].toLowerCase()) ?? null;
+  }
+  return null;
 }
 
 /**
@@ -217,11 +338,16 @@ export async function resolveRelevance(
  * Collect all entity records from the campaign state and return a flat array
  * of { _id, journalId, name, entityType } refs. Per scope §6, all connection
  * entities (and any other named entity record) are eligible for matching.
+ * `journalId` is the HOST document id (an Actor id for connections, ships,
+ * settlements, planets and locations; a JournalEntry id for factions and
+ * creatures) — the id every relevance match, ledger subject and scene-end
+ * migration uses. `_id` is the record's own id, kept for back-references.
  *
- * Exported so the sidecar apply path (narrator.js) can resolve sidecar
- * subjects against the full entity roster — without this, every NPC subject
- * lands in the ledger as a text subject and entity-scoped filtering never
- * matches (narrator-memory architecture, Cluster A2).
+ * This is the one roster shape. The sidecar apply path, `!truth` / `!state`
+ * and the scene-frame resolution all pass it to resolveSubject /
+ * resolveEntityName unchanged (issue #286 A1: a second `{ entityId }` shape
+ * dropped every recorded entity's id, so their truths and state never
+ * rendered).
  */
 export function collectAllEntities(campaignState) {
   if (!campaignState) return [];

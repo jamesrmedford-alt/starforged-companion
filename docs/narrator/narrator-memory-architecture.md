@@ -153,11 +153,24 @@ discretion — for:
 identity + history, location + condition, the deadline). This is what makes
 the opening premise survivable.
 
-**Subject resolution (Cluster A2).** `applyNarratorSidecar` passes the full
-entity roster (`collectAllEntities`, `src/context/relevanceResolver.js`) into
-`applySidecar`, so "Vance" resolves to an entity-keyed subject the moment
-Vance is a confirmed entity. Unconfirmed names land as text subjects;
-`promoteTextSubject` rewrites them on entity promotion.
+**Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
+passes the full entity roster (`collectAllEntities`,
+`src/context/relevanceResolver.js`) into `applySidecar`, so "Vance" resolves
+to an entity-keyed subject the moment Vance is a confirmed entity. Until
+issue #286 this never happened in production: `resolveSubject` re-mapped the
+roster from a `{ entityId }` shape it never received, so every entity subject
+carried `entityId: undefined` and every entity's state shared the key `""`.
+The roster now passes through unchanged and the subject's `entityId` is the
+host document id. Names resolve through `resolveEntityName` — exact full name
+→ full name after leading titles/articles → a multi-word full name after a
+role title → one capitalised first/last name a single entity has — and
+nothing else: an article ("The Covenant" ← "the dockmaster"), a title
+("Captain Mora" ← "Captain Vance"), a shared name part or a lowercase common
+noun never files a fact under an entity. Entity state keys are
+`entity:<id>`. Unconfirmed names land as text subjects;
+`promoteNewEntityLedgerSubjects` re-keys them to the new card's host id on
+draft Confirm, on the make_a_connection auto-create and on the inciting
+vow-target create.
 
 **Scoping.** A ledger entry surfaces this turn when its subject is: the scene
 itself; in `matchedEntityIds`; the current location; **or** name-mentioned in

@@ -14,9 +14,10 @@
  *   - resolveSubject       Map a free-text subject ref to { kind, ... }.
  *   - promoteTextSubject   Rewrite text-subject ledger entries to entity-subject.
  *   - subjectKey           Stable key for indexing state-ledger entries.
+ *   - subjectFromStateKey  The subject a state-ledger key stands for.
  */
 
-import { buildNameIndex } from '../context/relevanceResolver.js';
+import { resolveEntityName } from '../context/relevanceResolver.js';
 
 /**
  * Apply a parsed sidecar to the active-scene ledgers. Mutates campaignState
@@ -32,7 +33,8 @@ import { buildNameIndex } from '../context/relevanceResolver.js';
  * @param {string|null} [ctx.moveId]
  * @param {"narrator"|"gm"|"player"} [ctx.asserter="narrator"]
  * @param {"narrator_sidecar"|"manual_truth_cmd"|"promoted_state"} [ctx.source="narrator_sidecar"]
- * @param {Array} [ctx.entities] — [{ entityId, entityType, name }] for subject resolution
+ * @param {Array} [ctx.entities] — the entity roster (collectAllEntities:
+ *   [{ _id, journalId, name, entityType }]) for subject resolution
  * @returns {{ truthIds: string[], stateUpdates: Array<{ key: string, attribute: string }> }}
  */
 export function applySidecar(sidecar, ctx) {
@@ -164,9 +166,13 @@ export function applySceneFrame(frame, campaignState) {
  *   "Vance"           → { kind: "entity", entityId, entityType }  if entity matched
  *   "Covenant officer"→ { kind: "text",   text }      fallback
  *
+ * Entity matching is resolveEntityName's bounded ladder (full name → title-
+ * stripped full name → unique capitalised first / last name). `entityId` is
+ * the host document id, the id relevance matches and scene-end migration use.
+ *
  * @param {string} subjectRef
  * @param {Object} campaignState
- * @param {Array}  [entities] — [{ entityId, entityType, name }]
+ * @param {Array}  [entities] — the roster (collectAllEntities)
  * @returns {Object}
  */
 export function resolveSubject(subjectRef, campaignState, entities = []) {
@@ -174,31 +180,14 @@ export function resolveSubject(subjectRef, campaignState, entities = []) {
   if (!ref) return { kind: 'text', text: '' };
 
   // Scene-scoped: "scene" or "scene.<attribute>"
-  if (ref === 'scene' || /^scene\./i.test(ref)) {
+  if (/^scene(\.|$)/i.test(ref)) {
     return { kind: 'scene', sceneId: campaignState?.currentSceneId ?? null };
   }
 
-  // Entity match — reuse the relevance resolver's name index machinery so the
-  // matching rules (full-name, first-word, last-word, case-insensitive) stay
-  // consistent across the module.
-  if (Array.isArray(entities) && entities.length) {
-    const index = buildNameIndex(
-      entities.map(e => ({
-        _id:        e.entityId,
-        journalId:  e.entityId,
-        name:       e.name,
-        entityType: e.entityType,
-      })),
-      campaignState?.dismissedEntities ?? [],
-    );
-    const hit = index.get(ref.toLowerCase()) ?? index.get(firstWord(ref));
-    if (hit) {
-      return {
-        kind:       'entity',
-        entityId:   hit.journalId ?? hit._id,
-        entityType: hit.entityType,
-      };
-    }
+  const hit = resolveEntityName(ref, entities, campaignState?.dismissedEntities ?? []);
+  const entityId = hit?.journalId ?? hit?._id;
+  if (entityId) {
+    return { kind: 'entity', entityId, entityType: hit.entityType ?? null };
   }
 
   return { kind: 'text', text: ref };
@@ -239,7 +228,7 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
 
   // Reindex sceneState entries keyed by the old text subject.
   const oldKey = subjectKey({ kind: 'text', text });
-  const newKey = entityRef.entityId;
+  const newKey = subjectKey({ kind: 'entity', entityId: entityRef.entityId });
   if (oldKey !== newKey && campaignState.sceneState.bySubject[oldKey]) {
     const merged = campaignState.sceneState.bySubject[newKey] ?? [];
     for (const e of campaignState.sceneState.bySubject[oldKey]) {
@@ -253,13 +242,20 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   return rewritten;
 }
 
+/** Prefix that marks a state-ledger key as an entity's (see subjectKey). */
+const ENTITY_KEY_PREFIX = 'entity:';
+
 /**
  * Stable string key for a resolved subject. Used as the lookup key in
  * campaignState.sceneState.bySubject and as the dedupe key for state updates.
  *
- *   entity → entityId
+ *   entity → "entity:<entityId>"
  *   scene  → "scene"
  *   text   → lowercased text
+ *
+ * The entity prefix makes a key say what it is (issue #286): bare ids were told
+ * apart from text by a mixed-case heuristic, which filed an all-lowercase id as
+ * text. An entity subject with no id has no key.
  *
  * @param {Object} subject
  * @returns {string}
@@ -267,11 +263,27 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
 export function subjectKey(subject) {
   if (!subject || typeof subject !== 'object') return '';
   switch (subject.kind) {
-    case 'entity': return String(subject.entityId ?? '');
+    case 'entity': return subject.entityId ? `${ENTITY_KEY_PREFIX}${subject.entityId}` : '';
     case 'scene':  return 'scene';
     case 'text':   return String(subject.text ?? '').trim().toLowerCase();
     default:       return '';
   }
+}
+
+/**
+ * The subject a state-ledger key stands for — the inverse of subjectKey, for
+ * the ledger block, the correction dialog and the scene-end state rollup.
+ *
+ * @param {string} key
+ * @returns {{ kind: "scene" } | { kind: "entity", entityId: string } | { kind: "text", text: string }}
+ */
+export function subjectFromStateKey(key) {
+  const k = String(key ?? '');
+  if (k === 'scene') return { kind: 'scene' };
+  if (k.startsWith(ENTITY_KEY_PREFIX) && k.length > ENTITY_KEY_PREFIX.length) {
+    return { kind: 'entity', entityId: k.slice(ENTITY_KEY_PREFIX.length) };
+  }
+  return { kind: 'text', text: k };
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +405,7 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
  * Remove a single attribute from the state ledger for a subject. Returns
  * true if an entry was struck, false if nothing matched.
  *
- * @param {string} key — subjectKey (entityId, "scene", or lowercased text)
+ * @param {string} key — subjectKey ("entity:<id>", "scene", or lowercased text)
  * @param {string} attribute
  * @param {Object} campaignState
  * @returns {boolean}
@@ -519,10 +531,6 @@ function newTruthId() {
       : null;
   if (cryptoRef) return `tr-${cryptoRef.randomUUID().slice(0, 8)}`;
   return `tr-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function firstWord(s) {
-  return s.split(/\s+/)[0]?.toLowerCase() ?? '';
 }
 
 function entryRefType(ref) {

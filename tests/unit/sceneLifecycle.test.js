@@ -108,7 +108,7 @@ describe('endScene', () => {
   it('migrates entity-kind truths to the entity generative tier', async () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     const entities = [
-      { entityId: 'JE.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
     ];
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }], stateChanges: [] },
@@ -195,7 +195,7 @@ describe('endScene', () => {
   it('marks each migrated/archived truth with migratedTo before discarding', async () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     const entities = [
-      { entityId: 'JE.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
     ];
     applySidecar(
       { newTruths: [
@@ -228,7 +228,7 @@ describe('endScene', () => {
     archiveSceneTruth.mockResolvedValueOnce(null);              // simulate failure
     appendMigratedTruthToTier.mockResolvedValueOnce(false);     // simulate failure
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
-    const entities = [{ entityId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
+    const entities = [{ _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
     applySidecar(
       { newTruths: [
           { subject: 'Vance', fact: 'Limp' },
