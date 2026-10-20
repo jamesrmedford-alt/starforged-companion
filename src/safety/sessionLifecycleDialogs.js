@@ -117,12 +117,16 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
   await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false });
 }
 
+/** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
+const BEGIN_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionFocus", "sessionActive", "sessionActiveStartedAt"]);
+
 /**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
- * order: Spotlight Vignette momentum → session-active flip (+ clear last
- * session's foci, now surfaced) → campaign clock advance (+ clock card and
- * clock vignettes) → opening galley vignette.
+ * order: Spotlight Vignette momentum → a new session when the last one is
+ * over → session-active flip (+ clear last session's foci, now surfaced) →
+ * campaign clock advance (+ clock card and clock vignettes) → opening galley
+ * vignette.
  *
  * @param {{ vignetteRolled?: boolean, includeGalley?: boolean }} payload
  * @param {Object} [_ctx]
@@ -136,17 +140,28 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
     await applyMomentumToAllPlayers(1);
   }
 
-  // Flip the session-active gate ON. From this point forward, plain
-  // typed narration runs through the move pipeline / paced narrator
-  // again. The foci captured at the last End a Session have now been
-  // surfaced (dialog + card), so clear them for the next End.
+  // Start a new session when the last one is over — End a Session closed it,
+  // or it went idle (issue #286 C4: End → Begin used to keep the same session
+  // id, so the ring, summary and oracles ran on). Then flip the
+  // session-active gate ON: from this point forward, plain typed narration
+  // runs through the move pipeline / paced narrator again. The foci captured
+  // at the last End a Session have now been surfaced (dialog + card) and go
+  // on to the narrator as this session's focus, so clear them for the next
+  // End. The roll can await a Claude call, so only
+  // Begin's own fields are merged onto the latest store.
   try {
-    const { beginSession } = await import("../session/lifecycle.js");
+    const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
+    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    await rollSessionIfDue(cs);
     beginSession(cs);
+    // The foci go on to the narrator for this session (issue #286 C5).
+    const quest      = cleanFocus(cs.questFocus);
+    const connection = cleanFocus(cs.connectionFocus);
+    if (quest || connection) cs.sessionFocus = { sessionId: cs.currentSessionId ?? null, quest, connection };
     cs.questFocus      = "";
     cs.connectionFocus = "";
-    await game.settings.set(MODULE_ID, "campaignState", cs);
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session"));
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | beginSession state flip failed:`, err?.message ?? err);
@@ -298,15 +313,16 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
 }
 
 /** campaignState fields applyEndSession writes (the rest is merged from the store). */
-const END_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionActive", "sessionActiveStartedAt"]);
+const END_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionActive", "sessionActiveStartedAt", "sessionEndedId"]);
 
 /**
  * GM-relay handler for `"session.end"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
- * order: persist foci → session-active flip OFF → close the active scene →
- * finalise the rolling session summary → persist End's own fields onto the
- * latest campaignState (+ sessionStateChanged) → Session Log write → +1
- * momentum to all players when a focus was set → closing NPC vignette.
+ * order: persist foci → session-active flip OFF and mark the session ended →
+ * close the active scene → finalise the rolling session summary → persist
+ * End's own fields onto the latest campaignState (+ sessionStateChanged) →
+ * Session Log write → +1 momentum to all players when a focus was set →
+ * closing NPC vignette, then a campaign-recap refresh.
  *
  * @param {{ questFocus?: string, connectionFocus?: string }} payload
  * @param {Object} [_ctx]
@@ -329,6 +345,9 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
   } catch (err) {
     console.warn(`${MODULE_ID} | endSession state flip failed:`, err?.message ?? err);
   }
+  // The session is over: the next world load or Begin a Session starts a new
+  // one (rollSessionIfDue, issue #286 C4).
+  state.sessionEndedId = state.currentSessionId ?? null;
 
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
@@ -399,6 +418,15 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);
+    }
+    // The session's chronicle is complete: refresh the campaign recap now, so
+    // the next session's first narration carries a current one from the cache
+    // (buildNarratorExtras) without waiting on it. Fail-open.
+    try {
+      const { getCampaignRecap } = await import("../narration/narrator.js");
+      await getCampaignRecap(game.settings.get(MODULE_ID, "campaignState") ?? {});
+    } catch (err) {
+      console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err);
     }
   }, 0);
 }

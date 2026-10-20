@@ -4127,7 +4127,7 @@ function registerSessionTests(quench) {
           state.currentSessionId = "session-existing";
           state.lastSessionTimestamp = new Date().toISOString();
           state.sessionNumber = state.sessionNumber ?? 1;
-          const updated = idx.initSessionId(state);
+          const updated = await idx.initSessionId(state);
           assert.equal(updated.currentSessionId, "session-existing",
             "recent session should be reused");
         });
@@ -4140,8 +4140,13 @@ function registerSessionTests(quench) {
           state.currentSessionId = "session-old";
           state.lastSessionTimestamp = new Date(Date.now() - 5 * 3600 * 1000).toISOString();
           state.sessionNumber = state.sessionNumber ?? 1;
+          // No scene on the copy: a session that is over closes its scene
+          // before the mint (rollSessionIfDue), which writes to the world.
+          state.currentSceneId = null;
+          state.sceneTruths    = [];
+          state.sceneState     = { bySubject: {}, sceneId: null };
           const beforeNum = state.sessionNumber;
-          const updated = idx.initSessionId(state);
+          const updated = await idx.initSessionId(state);
           assert.notEqual(updated.currentSessionId, "session-old",
             "new sessionId should be issued");
           assert.equal(updated.sessionNumber, beforeNum + 1,

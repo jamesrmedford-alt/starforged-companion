@@ -167,13 +167,20 @@ describe('CLAUDE policy — the keyed canonical GM when one is connected, else t
   const sceneCards = () => table.cards(f => f.sceneResponse);
   const callers = () => [...new Set(table.claude.calls.map(c => `${c.client}:${c.apiKey}`))];
 
-  it('keyed GM connected: a keyed player\'s @scene runs once — on the GM, on the GM\'s key — and starts the scene there', async () => {
+  it('keyed GM connected: a keyed player\'s @scene runs once — on the GM, on the GM\'s key — and continues the scene in progress', async () => {
     await setKeys('gm-1', 'pl-1');
     await type('pl-1', '@scene what does the hangar smell like?');
     expect(callers()).toEqual(['gm-1:sk-ant-gina']);
     expect(sceneCards().map(c => c.author)).toEqual(['gm-1']);
+    expect(state().currentSceneId).toBe('sc-old');
+  });
+
+  it('keyed GM connected, no scene in progress: the GM starts one for the @scene', async () => {
+    table.world.setSetting('campaignState', { ...state(), currentSceneId: null });
+    await setKeys('gm-1', 'pl-1');
+    await type('pl-1', '@scene what does the hangar smell like?');
+    expect(callers()).toEqual(['gm-1:sk-ant-gina']);
     expect(state().currentSceneId).toMatch(/^sc-/);
-    expect(state().currentSceneId).not.toBe('sc-old');
   });
 
   it('only the keyed second GM runs it when the lowest-id GM is keyless', async () => {
@@ -183,12 +190,15 @@ describe('CLAUDE policy — the keyed canonical GM when one is connected, else t
     expect(sceneCards().map(c => c.author)).toEqual(['gm-2']);
   });
 
-  it('no keyed GM: the keyed author runs it on their own key — and leaves the scene boundary (a world write) to the GM', async () => {
+  // The world writes stay the GM's: the author's client relays the answer's
+  // side-data, and the GM starts the scene it lands in (issue #286 D2).
+  it('no keyed GM: the keyed author runs it on their own key — and relays the scene start and side-data (world writes) to the GM', async () => {
+    table.world.setSetting('campaignState', { ...state(), currentSceneId: null });
     await setKeys('pl-1');
     await type('pl-1', '@scene what is behind the hatch?');
     expect(callers()).toEqual(['pl-1:sk-ant-pat']);
     expect(sceneCards().map(c => c.author)).toEqual(['pl-1']);
-    expect(state().currentSceneId).toBe('sc-old');
+    expect(state().currentSceneId).toMatch(/^sc-/);
     expect(table.errors).toEqual([]);
   });
 

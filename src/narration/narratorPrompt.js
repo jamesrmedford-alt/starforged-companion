@@ -6,6 +6,9 @@
 
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
+import { sessionRetractedFacts } from '../factContinuity/retractions.js';
+import { resolveEntityById } from '../entities/registry.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -117,6 +120,13 @@ export function appendSidecarInstruction(options = {}) {
     '  what they want, or what is at stake — especially anything with a',
     '  deadline or a cost for failure — you MUST emit a newTruth recording',
     '  it. Stakes that are not recorded will be lost.',
+    '- REQUIRED: when your prose establishes a concrete specific the table may',
+    '  bring up later — an object handed over or taken, a price or a debt, a',
+    '  code or password, a count, a deal or a promise, a name said in passing,',
+    '  a mark or injury — you MUST emit a newTruth recording it exactly (the',
+    '  item, the number, the words), e.g. { "subject": "Kael Dros", "fact":',
+    '  "gave the PC the brass key to cargo locker 7" }. At most five of these',
+    '  per response: the ones most likely to matter later.',
     '- Name sparingly. Give a proper name only to a character who will matter',
     '  beyond this moment. Leave one-off functionaries generic and unnamed — "a',
     '  dock worker", "the comms officer", "a guard" — so they stay light and',
@@ -188,6 +198,13 @@ export function appendSidecarInstruction(options = {}) {
 }
 
 /**
+ * State attributes the ledger block keeps longest under its token cap
+ * (WHEREABOUTS_ATTRIBUTES). Everything else (posture, mood, lighting,
+ * doors…) sheds first.
+ */
+const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
+
+/**
  * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6.
  *
  * Returns an object with separately budgetable sub-blocks so the assembler
@@ -209,16 +226,21 @@ export function appendSidecarInstruction(options = {}) {
  * Filtering (fact-continuity scope §6 — "Filtering"). A subject is in scope
  * for this turn if any of:
  *   - the scene itself (`subject.kind === "scene"`)               — always
+ *   - a free-text subject (an unrecorded figure or place)         — always
  *   - the entity ID appears in `options.matchedEntityIds`         — always
  *   - the entity ID equals `options.currentLocationId`            — always
- *   - the free-text subject is mentioned in `options.playerNarration`
+ * The ledger holds only the current scene's entries, so a free-text subject is
+ * scene-local by construction. It used to need its exact phrase in the
+ * player's text or the frame's present list, so "dock master" or "her" lost
+ * "the dockmaster" (issue #286 B4). Recorded entities stay scoped by match:
+ * relevance, the current location, and the frame's cast (buildNarratorExtras).
  *
  * @param {Object} campaignState     — CampaignStateSchema
  * @param {Object} [options]
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
- * @param {string} [options.playerNarration]
- * @param {number} [options.maxTokens] — soft cap; state drops first when exceeded
+ * @param {number} [options.maxTokens] — soft cap; state lines shed when exceeded
+ *   (location / vessel / condition last)
  * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
  * @returns {{ header: string, truths: string, state: string,
  *             shipPosition: string, combined: string,
@@ -233,17 +255,14 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const matchedIds        = new Set(options?.matchedEntityIds ?? []);
   const currentLocationId = options?.currentLocationId ?? null;
   if (currentLocationId) matchedIds.add(currentLocationId);
-  // Sanitize the narration before substring-matching free-text subjects so
-  // stray HTML from chat enrichment never produces false matches (see PR #94).
-  const narration         = sanitizePlayerText(options?.playerNarration ?? '').toLowerCase();
   const maxTokens         = Number.isFinite(options?.maxTokens) ? options.maxTokens : Infinity;
   const nameLookup        = normaliseNameLookup(options?.entityNamesById);
 
   // ── Scene frame (Cluster A4) ─────────────────────────────────────────────
-  // The narrator-maintained snapshot of the active scene. Subjects named in
-  // the frame's `present` list are treated as mentioned this turn, so their
-  // ledger entries stay in scope even when the player's message doesn't name
-  // them (the conversation-partner case — see narrator-memory architecture).
+  // The narrator-maintained snapshot of the active scene. The recorded
+  // entities its `present` list names join matchedEntityIds upstream
+  // (buildNarratorExtras), so their ledger entries stay in scope even when
+  // the player's message doesn't name them (the conversation-partner case).
   const sceneFrameEnabled = options?.sceneFrameEnabled !== false;
   const frame = sceneFrameEnabled && campaignState?.sceneFrame
     && typeof campaignState.sceneFrame === 'object'
@@ -252,15 +271,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const presentNames = Array.isArray(frame?.present)
     ? frame.present.filter(p => typeof p === 'string' && p.trim())
     : [];
-  const scopeText = presentNames.length
-    ? `${narration} ${presentNames.join(' ').toLowerCase()}`
-    : narration;
 
   // ── Filter truths ────────────────────────────────────────────────────────
   const truthLines = [];
   for (const t of truths) {
     if (!t || t.retracted) continue;
-    if (!isSubjectInScope(t.subject, matchedIds, scopeText)) continue;
+    if (!isSubjectInScope(t.subject, matchedIds)) continue;
     const label = formatSubjectLabel(t.subject, nameLookup);
     const fact  = String(t.fact ?? '').trim();
     if (!fact) continue;
@@ -272,30 +288,37 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // prose stays in the recent-narration ring and the rolling summary, so the
   // narrator could freely re-assert a fact the GM corrected. Render bare
   // strikes (no `correctedTo` — replacements already carry the corrected
-  // fact as a live truth) as explicit do-not-re-assert lines. Not scope-
-  // filtered: retractions are rare, load-bearing, and must hold even on
-  // turns that don't name the subject. Capped at the most recent few to
-  // bound tokens; never dropped under budget pressure (truths tier).
+  // fact as a live truth) as explicit do-not-re-assert lines: this scene's,
+  // and since issue #286 B6 the session's earlier scenes' too — the ring and
+  // the summary's source outlive the scene. Not scope-filtered: retractions
+  // are rare, load-bearing, and must hold even on turns that don't name the
+  // subject. Capped at the most recent few to bound tokens; never dropped
+  // under budget pressure (truths tier).
   const MAX_CORRECTION_LINES = 5;
-  const correctionLines = truths
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim())
+  const correctionLines = sessionRetractedFacts(campaignState)
     .slice(-MAX_CORRECTION_LINES)
-    .map(t => `  ${formatSubjectLabel(t.subject, nameLookup)} — ${String(t.fact).trim()}`);
+    .map(f => `  ${f.label} — ${f.fact}`);
 
   // ── Filter state ─────────────────────────────────────────────────────────
-  const stateLines = [];
+  const stateEntries = [];
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
-    if (!isSubjectInScope(subjectForKey, matchedIds, scopeText)) continue;
+    if (!isSubjectInScope(subjectForKey, matchedIds)) continue;
     const label = formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
       const value = e?.value;
       if (!attr || value === undefined || value === null || value === '') continue;
-      stateLines.push(`  ${label} — ${attr}: ${value}`);
+      stateEntries.push({
+        line:      `  ${label} — ${attr}: ${value}`,
+        keep:      STATE_KEPT_LONGEST.has(attr.toLowerCase()),
+        updatedAt: Number(e?.updatedAt) || 0,
+        order:     stateEntries.length,
+      });
     }
   }
+  const stateLines = stateEntries.map(s => s.line);
 
   // ── Render the frame block ───────────────────────────────────────────────
   // Confirmed-lore tier: never dropped under budget pressure (like the ship
@@ -353,15 +376,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
       ].join('\n')
     : '';
 
-  let stateBlock = stateLines.length
-    ? ['CURRENT STATE (right now in this scene):', ...stateLines].join('\n')
-    : '';
+  const renderState = (entries) => (entries.length
+    ? ['CURRENT STATE (right now in this scene):', ...entries.map(s => s.line)].join('\n')
+    : '');
+  let stateBlock = renderState(stateEntries);
 
-  // ── Soft-cap enforcement: drop state when over budget ────────────────────
+  // ── Soft-cap enforcement: shed state when over budget ────────────────────
   // Ship position and the scene frame count toward the budget for telemetry
   // but are never dropped — both are confirmed-lore tier (scope §20.5;
-  // narrator-memory architecture A4). State drops first when the cap is
-  // exceeded.
+  // narrator-memory architecture A4). Only state sheds, one line at a time:
+  // every other attribute before a character's location, vessel and
+  // condition (the REQUIRED emissions), the oldest first within each (issue
+  // #286 A6 — the whole block used to drop at once, REQUIRED facts included,
+  // and stayed dropped for the rest of the scene because truths only grow).
   const tokenEstimates = {
     header:      estimateTokens(header),
     frame:       estimateTokens(frameBlock),
@@ -370,13 +397,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
     state:       estimateTokens(stateBlock),
     ship:        estimateTokens(shipPositionLine),
   };
-  let total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-            + tokenEstimates.corrections + tokenEstimates.state + tokenEstimates.ship;
-  if (total > maxTokens && stateBlock) {
-    stateBlock = '';
-    tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-          + tokenEstimates.corrections + tokenEstimates.ship;
+  const fixedTokens = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
+                    + tokenEstimates.corrections + tokenEstimates.ship;
+  if (fixedTokens + tokenEstimates.state > maxTokens && stateEntries.length) {
+    const sheddingOrder = stateEntries.slice().sort((a, b) =>
+      (a.keep - b.keep) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
+    const kept = new Set(stateEntries);
+    for (const victim of sheddingOrder) {
+      kept.delete(victim);
+      stateBlock = renderState(stateEntries.filter(s => kept.has(s)));
+      if (fixedTokens + estimateTokens(stateBlock) <= maxTokens) break;
+    }
+    tokenEstimates.state = estimateTokens(stateBlock);
   }
 
   const combined = [header, frameBlock, truthsBlock, correctionsBlock, stateBlock, shipPositionLine]
@@ -491,7 +523,8 @@ function estimateTokens(s) {
 
 /**
  * Render a ledger subject as the human-readable prefix used in the block.
- *   entity → display name from the lookup, or the entity ID as fallback.
+ *   entity → display name from the lookup, else the record's own name, else
+ *            the entity ID.
  *   scene  → "scene"
  *   text   → the original text
  */
@@ -501,11 +534,27 @@ function formatSubjectLabel(subject, nameLookup) {
     case 'entity': {
       const id = subject.entityId ?? '';
       const fromMap = nameLookup?.get?.(id);
-      return fromMap || id || 'entity';
+      return fromMap || entityNameById(id) || id || 'entity';
     }
     case 'scene': return 'scene';
     case 'text':  return String(subject.text ?? '').trim() || 'unknown';
     default:      return 'unknown';
+  }
+}
+
+/**
+ * An entity record's name by its host document id, or '' — for ledger labels
+ * the caller's lookup does not cover (the consistency check passes none; an
+ * entity can be in scope through the scene frame without a card match). The
+ * auditor and the narrator need "Kael Dros", not an Actor id.
+ */
+function entityNameById(id) {
+  if (!id) return '';
+  try {
+    const name = resolveEntityById(id)?.data?.name;
+    return typeof name === 'string' ? name.trim() : '';
+  } catch {
+    return '';
   }
 }
 
@@ -520,26 +569,12 @@ function normaliseNameLookup(input) {
   return new Map();
 }
 
-function isSubjectInScope(subject, matchedIds, lowerCaseNarration) {
+function isSubjectInScope(subject, matchedIds) {
   if (!subject || typeof subject !== 'object') return false;
   if (subject.kind === 'scene') return true;
   if (subject.kind === 'entity') return matchedIds.has(subject.entityId);
-  if (subject.kind === 'text') {
-    const text = String(subject.text ?? '').trim().toLowerCase();
-    if (!text) return false;
-    return lowerCaseNarration.includes(text);
-  }
+  if (subject.kind === 'text') return String(subject.text ?? '').trim() !== '';
   return false;
-}
-
-function subjectFromStateKey(key) {
-  if (key === 'scene') return { kind: 'scene' };
-  // Heuristic: a key that looks like a Foundry ID (no spaces, mixed-case)
-  // is an entity. Anything else is a free-text key.
-  if (/^[A-Za-z0-9._-]+$/u.test(key) && key !== key.toLowerCase()) {
-    return { kind: 'entity', entityId: key };
-  }
-  return { kind: 'text', text: key };
 }
 
 // ---------------------------------------------------------------------------
@@ -681,7 +716,8 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['secondRole',       'Also'],
     ['rank',             'Rank'],
     ['relationshipType', 'Disposition'],
-    ['motivation',       'Goal'],
+    ['goal',             'Goal'],
+    ['motivation',       'Motivation'],
     ['description',      'Description'],
     ['notes',            'Notes'],
   ],
@@ -736,14 +772,96 @@ const CANONICAL_FIELDS_BY_TYPE = {
 };
 
 /**
+ * The LAST KNOWN lines for an entity card: one per whereabouts attribute the
+ * record holds, in WHEREABOUTS_ATTRIBUTES order — "location: the docking ring
+ * (Session 3)".
+ *
+ * @param {Object|undefined} lastKnown — { [attribute]: { value, sessionNum, at } }
+ * @returns {string[]}
+ */
+function formatLastKnown(lastKnown) {
+  if (!lastKnown || typeof lastKnown !== 'object') return [];
+  const out = [];
+  for (const attr of WHEREABOUTS_ATTRIBUTES) {
+    const entry = lastKnown[attr];
+    const value = String(entry?.value ?? '').trim();
+    if (!value) continue;
+    out.push(`  ${attr}: ${value}${entry.sessionNum ? ` (Session ${entry.sessionNum})` : ''}`);
+  }
+  return out;
+}
+
+/** Generative-tier lines an entity card shows, and how many of them are held for traits. */
+const CARD_TIER_LINES  = 10;
+const CARD_TRAIT_SLOTS = 4;
+
+/** Tier sources that carry binding traits (scene truths, entity-specific lore), not developments. */
+const TRAIT_TIER_SOURCES = new Set(['scene_truth_migration', 'wj_lore_entity_route']);
+
+/**
+ * The generative-tier entries an entity card shows, in display order: pinned
+ * first, then the newest. A tier is append-only, so a later entry is a newer
+ * one. Up to CARD_TRAIT_SLOTS of the lines go to the newest binding traits
+ * (a scar, a history, an allegiance migrated from the scene ledger) before
+ * newer developments fill the rest, so a trait recorded three scenes ago is
+ * not crowded out (issue #286 A7: the card sorted by sessionNum, which
+ * migrated truths never had, and its stable sort kept a session's OLDEST five).
+ *
+ * @param {Array} tier
+ * @returns {Array}
+ */
+function selectCardTierEntries(tier) {
+  const newestFirst = tier
+    .filter(e => e && !e.promoted && String(e.detail ?? '').trim())
+    .reverse();
+  const picked = new Set();
+  const take = (pred, limit) => {
+    for (const e of newestFirst) {
+      if (picked.size >= CARD_TIER_LINES || limit <= 0) return;
+      if (picked.has(e) || !pred(e)) continue;
+      picked.add(e);
+      limit -= 1;
+    }
+  };
+  take(e => e.pinned, CARD_TIER_LINES);
+  take(e => TRAIT_TIER_SOURCES.has(e.source), CARD_TRAIT_SLOTS);
+  take(() => true, CARD_TIER_LINES);
+  return newestFirst
+    .filter(e => picked.has(e))
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+}
+
+/**
  * Format a single entity record as a narrator-prompt card.
  * Includes the canonical tier (with a hard or soft instruction depending on
- * canonicalLocked) and up to 5 generative-tier entries (pinned first).
+ * canonicalLocked) and up to CARD_TIER_LINES generative-tier entries
+ * (selectCardTierEntries).
  *
  * @param {Object} entity     — entity record (any type)
  * @param {string} entityType — "connection" | "ship" | "settlement" | "faction" | "planet" | "location" | "creature"
  * @returns {string}
  */
+/**
+ * Where a connection's relationship stands (issue #286 C5): lost or bonded,
+ * then its last few relationship events (`history`, written by forgeBond /
+ * loseConnection) — none of which reached the narrator, so a severed
+ * connection could be written as a friend.
+ *
+ * @param {Object} connection — the connection record
+ * @returns {string[]} card lines
+ */
+function formatConnectionStanding(connection) {
+  const lines = [];
+  if (connection.active === false) lines.push('  Status: connection lost');
+  else if (connection.bonded === true) lines.push('  Bond: forged');
+  const events = (Array.isArray(connection.history) ? connection.history : [])
+    .map(h => (typeof h === 'string' ? h : h?.entry))
+    .filter(e => typeof e === 'string' && e.trim())
+    .slice(-3);
+  if (events.length) lines.push('', 'HISTORY (oldest first):', ...events.map(e => `  - ${e.trim()}`));
+  return lines;
+}
+
 export function formatEntityCard(entity, entityType) {
   if (!entity) return '';
   const typeLabel = ENTITY_TYPE_LABELS[entityType] ?? 'Entity';
@@ -756,28 +874,29 @@ export function formatEntityCard(entity, entityType) {
   lines.push('', canonicalIntro);
 
   const fields = CANONICAL_FIELDS_BY_TYPE[entityType] ?? [['description', 'Description']];
+  const shown  = new Set();   // a value two fields share (a goal also stored as the motivation) shows once
   for (const [key, label] of fields) {
     const value = entity[key];
     if (value === undefined || value === null || value === '') continue;
-    if (Array.isArray(value)) {
-      if (!value.length) continue;
-      lines.push(`  ${label}: ${value.join(', ')}`);
-    } else {
-      lines.push(`  ${label}: ${value}`);
-    }
+    const text = Array.isArray(value) ? value.join(', ') : String(value);
+    if (!text || shown.has(text)) continue;
+    shown.add(text);
+    lines.push(`  ${label}: ${text}`);
+  }
+  if (entityType === 'connection') lines.push(...formatConnectionStanding(entity));
+
+  // Last known whereabouts from earlier scenes (issue #286 C1) — kept by
+  // endScene; the active scene's CURRENT STATE supersedes them.
+  const lastKnown = formatLastKnown(entity.lastKnown);
+  if (lastKnown.length) {
+    lines.push('', 'LAST KNOWN (from earlier scenes — this scene\'s CURRENT STATE wins):', ...lastKnown);
   }
 
-  // Generative tier — pinned first, then by recency (sessionNum descending),
-  // capped at 5 displayed.
+  // Generative tier — pinned first, then the newest, with slots held for
+  // binding traits (selectCardTierEntries).
   const tier = Array.isArray(entity.generativeTier) ? entity.generativeTier : [];
-  const visible = tier.filter(e => !e.promoted);
-  if (visible.length) {
-    const sorted = visible.slice().sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return (b.sessionNum ?? 0) - (a.sessionNum ?? 0);
-    });
-    const top = sorted.slice(0, 5);
+  const top = selectCardTierEntries(tier);
+  if (top.length) {
     lines.push('', 'NARRATOR-ADDED (honour and build on these):');
     for (const e of top) {
       const marker = e.pinned ? '📌 ' : '';
@@ -1018,6 +1137,30 @@ export function resolveNarrationPerspective(setting) {
 // ---------------------------------------------------------------------------
 
 /**
+ * [4c] LAST SESSION — the summary of the session before this one
+ * (buildNarratorExtras → previousSessionSummaryFor), with the STORY SO FAR
+ * caveat: narrative texture, never a fact store. Headed by its session number,
+ * and not called the last session when sessions between them left no summary.
+ *
+ * @param {{ text: string, sessionNumber: number|null, isLast: boolean }|null} summary
+ * @returns {string} '' when there is none
+ */
+function formatPreviousSessionBlock(summary) {
+  const text = typeof summary?.text === 'string' ? summary.text.trim() : '';
+  if (!text) return '';
+  const number  = Number.isFinite(summary.sessionNumber) ? summary.sessionNumber : null;
+  const heading = summary.isLast === false && number !== null
+    ? `SESSION ${number} (THE LATEST SESSION SUMMARISED)`
+    : (number !== null ? `LAST SESSION (SESSION ${number})` : 'LAST SESSION');
+  return (
+    `## ${heading}\n\n` +
+    `(Narrative texture only — where this summary conflicts with the ` +
+    `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
+    text
+  );
+}
+
+/**
  * Build the full narrator system prompt.
  *
  * Injection order (narrator-entity-discovery scope §8):
@@ -1037,8 +1180,10 @@ export function resolveNarrationPerspective(setting) {
  * @param {Object} campaignState      — CampaignStateSchema
  * @param {Object} narratorSettings   — narrator game.settings values
  * @param {Object|null} character     — CharacterSchema (active character, may be null)
- * @param {string} [campaignRecap]    — injected at session start only (first narration)
+ * @param {string} [campaignRecap]    — overrides extras.campaignRecap when non-empty
  * @param {Object} [extras]
+ * @param {string} [extras.campaignRecap]      — the campaign recap, on a session's first narration ([0b])
+ * @param {Object} [extras.previousSessionSummary] — `{ text, sessionNumber, isLast }`, rendered as LAST SESSION ([4c])
  * @param {string} [extras.narratorClass]      — "discovery" | "interaction" | "embellishment"
  * @param {Array}  [extras.entityCards]        — Pre-formatted entity card strings (from formatEntityCard)
  * @param {string} [extras.currentLocationCard]— Pre-formatted current location card
@@ -1080,7 +1225,6 @@ export function buildNarratorSystemPrompt(
     campaignTruthsBlock  = '',
     mode                 = 'move_resolution',
     matchedEntityIds     = [],
-    playerNarration      = '',
     entityNamesById      = null,
     party                = null,
     rollingSummary       = '',
@@ -1091,6 +1235,9 @@ export function buildNarratorSystemPrompt(
     factionLandscape     = [],
     confirmedLore        = [],
     loreRecap            = '',
+    previousSessionSummary = null,
+    clocks               = [],
+    sessionFocus         = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1139,9 +1286,12 @@ export function buildNarratorSystemPrompt(
     `narrator or OTHER characters say about someone, never for that person's own speech.`
   );
 
-  // [0b] Campaign recap — injected at session start only
-  if (campaignRecap?.trim()) {
-    parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${campaignRecap.trim()}`);
+  // [0b] Campaign recap — on a session's first narration, in any prose mode
+  //      (buildNarratorExtras sets extras.campaignRecap; a recap passed as the
+  //      positional argument wins).
+  const recapText = campaignRecap?.trim() ? campaignRecap : (extras?.campaignRecap ?? '');
+  if (typeof recapText === 'string' && recapText.trim()) {
+    parts.push(`## CAMPAIGN RECAP — SESSION START CONTEXT\n\n${recapText.trim()}`);
   }
 
   // [1] Safety configuration — with Private Lines scoped to this client: every
@@ -1207,6 +1357,13 @@ export function buildNarratorSystemPrompt(
   //      model itself: the summary re-summarises raw prose (including narration
   //      whose facts were later retracted), so where it conflicts with the
   //      ledger, the ledger wins.
+  //      The summary of the session before this one comes first (issue #286
+  //      C3) — the ring, this session's summary and recent oracles all reset
+  //      when a session is minted — under the same caveat.
+  if (!isMetaMode) {
+    const lastSessionBlock = formatPreviousSessionBlock(previousSessionSummary);
+    if (lastSessionBlock) parts.push(lastSessionBlock);
+  }
   if (!isMetaMode && typeof rollingSummary === 'string' && rollingSummary.trim()) {
     parts.push(
       `## STORY SO FAR (THIS SESSION)\n\n` +
@@ -1231,6 +1388,12 @@ export function buildNarratorSystemPrompt(
     if (loreBlock) parts.push(loreBlock);
     const recapBlock = formatWorldLoreRecapBlock(loreRecap);
     if (recapBlock) parts.push(recapBlock);
+    // [4h] Clocks and [4i] the session's focus (issue #286 C5) — neither
+    //      reached any prompt.
+    const clocksBlock = formatClocksBlock(clocks);
+    if (clocksBlock) parts.push(clocksBlock);
+    const focusBlock = formatSessionFocusBlock(sessionFocus);
+    if (focusBlock) parts.push(focusBlock);
   }
 
   // [5] Current location card — always injected when set
@@ -1261,7 +1424,6 @@ export function buildNarratorSystemPrompt(
     const ledger = buildLedgerBlock(campaignState, {
       matchedEntityIds,
       currentLocationId: campaignState?.currentLocationId ?? null,
-      playerNarration,
       maxTokens:         factContinuityMaxLedgerTokens,
       entityNamesById,
       sceneFrameEnabled: factContinuitySceneFrame,
@@ -1402,9 +1564,10 @@ export function formatFactionLandscapeBlock(entries) {
 }
 
 /**
- * Format the ESTABLISHED LORE block ([4f]) from confirmed WJ lore entries
- * ({ title, text }). Text is clipped to keep the block bounded. Returns ''
- * when empty. Exported for unit testing.
+ * Format the ESTABLISHED LORE block ([4f]) from the World Journal entries
+ * ({ title, text }) buildNarratorExtras picked for this turn
+ * (selectLoreForContext — relevant first, then recent). Text is clipped to
+ * keep the block bounded. Returns '' when empty. Exported for unit testing.
  */
 export function formatEstablishedLoreBlock(lore) {
   const list = Array.isArray(lore) ? lore.filter(l => l && (l.title || l.text)) : [];
@@ -1413,12 +1576,64 @@ export function formatEstablishedLoreBlock(lore) {
     const v = String(t ?? '').trim();
     return v.length > 160 ? `${v.slice(0, 157)}…` : v;
   };
-  const lines = ['## ESTABLISHED LORE (recent)', ''];
+  const lines = ['## ESTABLISHED LORE', ''];
   for (const l of list) {
     const text = clip(l.text);
     lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * [4h] The table's campaign and tension clocks (`campaignState.clocks`,
+ * src/clocks/clocks.js). Active clocks, at most eight; a full one is marked
+ * TRIGGERED. The narrator is told to let them show as pressure in the
+ * fiction, never as numbers. '' when there are none.
+ *
+ * @param {Array<{ name: string, type: string, segments: number, filled: number, active?: boolean }>} clocks
+ * @returns {string}
+ */
+function formatClocksBlock(clocks) {
+  const list = (Array.isArray(clocks) ? clocks : [])
+    .filter(c => c?.active !== false && typeof c?.name === 'string' && c.name.trim())
+    .slice(0, 8);
+  if (!list.length) return '';
+  const lines = list.map(c => {
+    const segments = Number(c.segments) || 0;
+    const filled   = Math.min(Number(c.filled) || 0, segments);
+    const kind     = c.type === 'campaign' ? 'Campaign' : 'Tension';
+    return `- ${kind}: ${c.name.trim()} — ${filled}/${segments}${segments && filled >= segments ? ' (TRIGGERED)' : ''}`;
+  });
+  return (
+    `## CLOCKS\n\n` +
+    `The threats and projects the table is tracking. Let an advancing clock show ` +
+    `in the fiction as pressure, and treat a triggered one as having happened — ` +
+    `never mention the clock or its count.\n\n` +
+    lines.join('\n')
+  );
+}
+
+/**
+ * [4i] The quest and connection the table chose to focus on at the last End
+ * a Session, carried for this session (`campaignState.sessionFocus`, written
+ * at Begin a Session). '' when none was chosen.
+ *
+ * @param {{ quest?: string, connection?: string }|null} focus
+ * @returns {string}
+ */
+function formatSessionFocusBlock(focus) {
+  const quest      = typeof focus?.quest === 'string' ? focus.quest.trim() : '';
+  const connection = typeof focus?.connection === 'string' ? focus.connection.trim() : '';
+  if (!quest && !connection) return '';
+  const lines = [];
+  if (quest)      lines.push(`- Quest: ${quest}`);
+  if (connection) lines.push(`- Connection: ${connection}`);
+  return (
+    `## THE TABLE'S FOCUS THIS SESSION\n\n` +
+    `At the end of the last session the table chose these threads to focus on. ` +
+    `Give them room when the fiction allows; never force them.\n\n` +
+    lines.join('\n')
+  );
 }
 
 /**
@@ -1613,10 +1828,19 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {Object} resolution       — MoveResolutionSchema
  * @param {string} playerNarration  — raw player input
  * @param {number} sentenceTarget   — how many sentences to produce
+ * @param {string|null} [speakerName]
+ * @param {string} [recentContext]  — the last few ring entries (may be empty)
  * @returns {string}
  */
-export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null) {
+export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '') {
   const parts = [];
+
+  // What just happened (issue #286 B1): a move used to be narrated with no
+  // earlier prose at all until the rolling summary appeared, 30 cards in.
+  const cleanedRecent = stripHtml(recentContext).trim();
+  if (cleanedRecent) {
+    parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
+  }
 
   const moveOutcome = resolution?.loremasterContext ?? '';
   if (moveOutcome) {
@@ -1818,22 +2042,41 @@ function buildCharacterBlock(character) {
     }
   }
 
-  // Vows — spotlight the background (founding) vow, then active others.
+  // Vows — spotlight the background (founding) vow, then active others —
+  // with their progress and any countdown clock (issue #286 C5: the narrator
+  // could not tell a vow nearly fulfilled from one just sworn).
   const vows = Array.isArray(character.vows) ? character.vows : [];
   if (vows.length) {
     const bg     = vows.find(v => v.isBackground);
     const others = vows.filter(v => !v.isBackground && !v.completed);
-    if (bg)            lines.push(`Background vow: ${bg.name} (${bg.rank})`);
-    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${v.rank})`).join('; ')}`);
+    if (bg)            lines.push(`Background vow: ${bg.name} (${formatTrackDetail(bg)})`);
+    if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${formatTrackDetail(v)})`).join('; ')}`);
   }
 
   // Connections (bonds) the character holds.
   const connections = Array.isArray(character.connections) ? character.connections : [];
   if (connections.length) {
-    lines.push(`Connections: ${connections.map(c => `${c.name} (${c.rank})`).join('; ')}`);
+    lines.push(`Connections: ${connections.map(c => `${c.name} (${formatTrackDetail(c)})`).join('; ')}`);
+  }
+
+  // Rewards the character was granted — gear, contacts, knowledge (#241;
+  // recordGrantedReward). Recorded on the sheet, never shown to the narrator
+  // until issue #286 C5. The most recent eight.
+  const rewards = Array.isArray(character.grantedRewards) ? character.grantedRewards : [];
+  if (rewards.length) {
+    lines.push(`Rewards received: ${rewards.slice(-8).map(r => `${r.description} (${r.form ?? 'gear'})`).join('; ')}`);
   }
 
   return lines.join('\n');
+}
+
+/** A vow's or bond's rank, progress boxes, countdown clock and fulfilment, for the CHARACTER block. */
+function formatTrackDetail(track) {
+  const bits = [track.rank];
+  if (Number.isFinite(track.progress)) bits.push(`progress ${track.progress}/10`);
+  if (Number(track.clock?.max) > 0)    bits.push(`clock ${Number(track.clock.ticks) || 0}/${track.clock.max}`);
+  if (track.completed === true)        bits.push('fulfilled');
+  return bits.filter(Boolean).join(', ');
 }
 
 // ---------------------------------------------------------------------------

@@ -441,9 +441,19 @@ export const CampaignStateSchema = {
   worldTruthsJournalId: null,   // Parent JournalEntry Foundry ID (system-created or ours)
   loreRecap:          "",       // last generated lore recap text (for context injection)
 
-  currentSessionId:     "",    // managed by initSessionId() on ready hook
+  currentSessionId:     "",    // minted by mintSession() (src/session/lifecycle.js)
   sessionNumber:        0,     // increments each new session
-  lastSessionTimestamp: null,  // ISO string, updated on ready and closeWorld
+  lastSessionTimestamp: null,  // ISO string: when the session was last seen live — at mint,
+                               // on chat activity (at most every 10 minutes) and at closeWorld
+  // The session End a Session closed (issue #286 C4). The next world load or
+  // Begin a Session mints a new session while this equals currentSessionId.
+  sessionEndedId:       null,
+  // The rolling summary of the session before this one, kept when the new
+  // session is minted (issue #286 C3) and shown to the narrator as LAST
+  // SESSION. Written only by mintSession (src/session/lifecycle.js), from
+  // sessionSummary — the canonical, live record.
+  //   { sessionId, sessionNumber, text, updatedAt }
+  previousSessionSummary: null,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin
@@ -463,6 +473,11 @@ export const CampaignStateSchema = {
   // and cleared at the next Begin a Session (src/safety/sessionLifecycleDialogs.js).
   questFocus:           "",
   connectionFocus:      "",
+  // Those foci, carried into the session Begin a Session opens (issue #286
+  // C5) — the narrator's THE TABLE'S FOCUS THIS SESSION block. Written by
+  // applyBeginSession, read by buildNarratorExtras while sessionId matches.
+  //   { sessionId, quest, connection }
+  sessionFocus:         null,
 
   campaignRecapCache: {
     text:            "",
@@ -491,6 +506,13 @@ export const CampaignStateSchema = {
   currentSceneId: null,
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },
+
+  // Bare strikes of this session's ended scenes (issue #286 B6), so the
+  // CORRECTED block and the rolling-summary prompt keep naming them after
+  // their scene closes. Written by endScene (rememberSessionRetractions);
+  // read by sessionRetractedFacts (src/factContinuity/retractions.js).
+  //   { sessionId, facts: [{ label, fact, sceneId, at }] }  (cap 20)
+  sessionRetractions: { sessionId: null, facts: [] },
 
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
   // naming the PC the narrator last drew into an open prompting beat, so the

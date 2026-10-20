@@ -278,7 +278,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.NARRATOR_CONTEXT_CARDS, {
     name:    'Narrator Context Cards',
-    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context. Higher values give the narrator a longer memory horizon. Range 1–50, default 20. Scene questions use their own Scene Context Cards setting.',
+    hint:    'How many recent narrator cards feed each paced narration and oracle follow-up as fiction context (a move narration takes the last 4). Higher values give the narrator a longer memory horizon. Range 1–50, default 20. Scene questions use their own Scene Context Cards setting.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -1494,7 +1494,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       ? `#${ctx.sessionNumber} — ${ctx.currentSessionId ? ctx.currentSessionId.slice(0, 8) : 'not started'}`
       : 'not started';
 
-    const sessionStarted = ctx.lastSessionTimestamp
+    // When the session was last seen live — the mint, then chat activity
+    // (src/session/lifecycle.js).
+    const sessionLastActive = ctx.lastSessionTimestamp
       ? new Date(ctx.lastSessionTimestamp).toLocaleString()
       : '—';
 
@@ -1510,8 +1512,8 @@ export class SettingsPanelApp extends ApplicationV2 {
             <dd>${sessionLabel}</dd>
           </div>
           <div class="about-field">
-            <dt>Session started</dt>
-            <dd>${sessionStarted}</dd>
+            <dt>Session last active</dt>
+            <dd>${sessionLastActive}</dd>
           </div>
           <div class="about-field">
             <dt>Move AI</dt>

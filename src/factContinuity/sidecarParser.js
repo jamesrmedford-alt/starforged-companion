@@ -103,9 +103,10 @@ function stripFences(rawText, matches) {
 /**
  * Coerce a parsed sidecar object into the canonical shape. Missing arrays
  * become empty arrays; non-array fields are treated as empty. Non-object
- * input returns null so the caller treats it as a parse failure.
+ * input returns null so the caller treats it as a parse failure. Also run on
+ * side-data relayed from a player's client (applyRelayedNarratorSidecar).
  */
-function normaliseSidecar(parsed) {
+export function normaliseSidecar(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   return {
     newTruths:    Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],

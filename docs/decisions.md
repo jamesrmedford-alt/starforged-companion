@@ -6,6 +6,282 @@ rejected.
 
 ---
 
+## Narrator latency: measure first; thinking-off by exact model id (2026-10)
+
+**Decision:** (issue #286 F6 step 1, F7)
+- Every narrator call logs its token usage — uncached input, cache reads,
+  cache writes, output — and elapsed time to the Pacing Telemetry journal's
+  "Narrator Usage" page, labelled with the narrator function that made it
+  (`logNarratorUsage`). The proposed re-layout of the request into cached
+  tiers (issue #286 §F2–F5, carried to #287) waits for these numbers and a playtest. Moving
+  mode instructions out of the top of the system prompt may shift the
+  narrator's voice, so it needs that playtest.
+- `narrationDisablesThinking` matches exact model ids (optionally
+  date-stamped), not prefixes. The prefix `claude-sonnet-5` also matched
+  `claude-sonnet-5-5`, which rejects `thinking: {type: "disabled"}` with a
+  400; its thinking-off form is `between_tools`. Neither it nor the Fable
+  tier or Opus 5.5 (which also reject "disabled") is offered for narration.
+
+**Rejected:** a byte-stability test for the cached tiers now. It belongs with
+the layout split, since today's prompt changes on every turn by design.
+
+## Narrator side-data, draft confirm and detection: nothing the narration said is lost or contradicted (2026-10)
+
+**Decision:** (issue #286 D2–D4)
+- **D2.** Narration that runs on a player's own key (no keyed GM online)
+  relays its side-data to the canonical GM — GM relay `narrator.sidecar` →
+  `applyRelayedNarratorSidecar` — tagged with the scene it was written in.
+  The GM drops it if that scene has ended, and starts a scene when none is
+  active. It used to be discarded. The content is the player's client's, the
+  same trust as its prose.
+- **D3.** The detection pass reads the role and goal the prose gave a new
+  connection. Confirm on a draft card uses them over its oracle rolls, and adds
+  a rolled first look only when the narration did not describe them: the
+  rolls come after the narration, and the card lists them as ESTABLISHED
+  FACTS.
+- **D4.** Lore about a recorded entity goes to its card at the tier pass's
+  floor (`notable`) before the world-lore floor applies, which used to send a
+  notable NPC fact to the Session Log. Interaction-class moves run the
+  detection pass, as paced narration (the same class) always has. Oracle
+  follow-ups run detection and the tier pass. Session vignettes and vow scenes
+  run the tier pass for the recorded entities they name. New entities still
+  go to the GM's draft card; only make_a_connection auto-creates.
+
+**Rejected:**
+- *Detection after embellishment moves.* That class adds texture, not facts.
+- *Running detection after vignettes and vow scenes.* They run under
+  embellishment and introduce no one new: the vow target is created by Swear
+  an Iron Vow.
+- *Keeping oracle rolls over narrated values on a draft.* The narration is
+  what the table read.
+
+## Clocks, vow progress, rewards, connection standing and the session focus reach the narrator (2026-10)
+
+**Decision:** (issue #286 C5) each was in no prompt, and each now renders
+compactly on every prose call:
+- **[4h] CLOCKS** — the active campaign and tension clocks, at most eight,
+  read from the store (a move narrates from a snapshot taken before its own
+  Pay the Price advanced one). The narrator is told to show them as pressure
+  in the fiction and never mention a clock or its count.
+- **CHARACTER [8]** — each vow and bond with its progress (and a vow's
+  countdown clock), and the rewards `recordGrantedReward` keeps on the sheet
+  (`grantedRewards`, which nothing read). The cached actor snapshot is now
+  dropped when one of the actor's Items changes, so progress marked on the
+  native sheet reaches the next narration.
+- **Connection cards** — the rolled `goal` beside the `motivation` (the card
+  showed only the motivation, labelled "Goal"), a lost or forged bond, and the
+  last three `history` events.
+- **[4i] THE TABLE'S FOCUS THIS SESSION** — the End a Session foci, kept as
+  `sessionFocus` when Begin a Session surfaces and clears them.
+
+**Rejected:** rendering a connection's `background` and `secrets` — no
+production code writes either (known-issues.md); cards for everything in the
+sector roster (the relevance and frame-cast rules choose cards, unchanged).
+
+## A session ends at End Session or after four idle hours; the next is told about the last (2026-10)
+
+**Decision:** (issue #286 C3, C4)
+- A session is over once End a Session marks it (`sessionEndedId`) or after
+  four hours with no chat message. The canonical GM refreshes
+  `lastSessionTimestamp` on chat activity, at most every 10 minutes, and never
+  for a session that is already over. The next world load or Begin a Session,
+  whichever comes first, starts the new one (`rollSessionIfDue`,
+  `src/session/lifecycle.js`): a session nobody ended first gets its rolling
+  summary brought up to date, its scene closes under its own id, then the mint.
+- The mint keeps the closing session's rolling summary as
+  `previousSessionSummary`. Every prose mode renders it as LAST SESSION in
+  [4c], before STORY SO FAR and under the same ledger-wins caveat. The
+  canonical record stays `sessionSummary`; nothing else writes the copy.
+- The campaign recap reaches a session's first narration in any prose mode.
+  "First" means no narrator card of the session exists yet, so a reload does
+  not repeat it. It is read from `campaignRecapCache`, which the closing work
+  after End a Session and a new session's world load refresh; the narration
+  generates one only when none was ever made.
+
+**Why:** the session boundary was any reload four hours after the mint. A
+reload in hour five of a long session re-minted mid-play: the ring, summary
+and oracles reset, and the scene closed. End → Begin without a reload kept the
+same session. The only prose that crossed sessions was the recap, on the
+first move narration per page load, after a fresh Claude call whenever the
+chronicle had grown; paced narration, `@scene` and vignettes never saw it,
+and the summary End a Session archives to the Session Log had no reader.
+
+**Rejected:**
+- *Read the Session Log's archived summary.* Only End a Session writes it,
+  and only with `sessionLogAutoWrite` on; a session that ends by going idle
+  has none.
+- *Mint at End a Session.* The closing vignette posts after End, under the
+  session it closes; whatever the table says before Begin stays there too.
+- *Re-mint on the first message after an idle gap.* That would mint inside a
+  move pipeline run; the next world load or Begin does it.
+- *The last two or three sessions' summaries* (F3). That waits for the F
+  layout, where they are cached input; until then each is uncached on every
+  call.
+
+## Scene end keeps whereabouts and place details; lore is chosen per turn (2026-10)
+
+**Decision:** (issue #286 C1, C2)
+
+- **Last known whereabouts.** `endScene` keeps each recorded character's
+  location / vessel / condition (`WHEREABOUTS_ATTRIBUTES`) on their record as
+  `lastKnown`, attribute by attribute (a value this scene did not mention
+  keeps its old one). The card renders it as LAST KNOWN; the active scene's
+  CURRENT STATE wins over it.
+- **Place details go to the place.** A scene-subject truth migrates to the
+  scene's recorded place: the frame's location when it names, or mentions by
+  full name, exactly one recorded settlement / planet / location / ship; else
+  the current location when the frame names no place. Otherwise it is WJ
+  lore titled with the frame's location.
+- **Lore per turn.** ESTABLISHED LORE holds up to 5 entries that share the
+  most words with the player text, the frame and the entities in play, then
+  the most recent, 8 in all; the Locations journal's places join the pool.
+  Lexical, no API call.
+
+**Why:** scene state — including the REQUIRED NPC location and condition —
+was discarded at scene end with no afterlife. Place details became lore
+titled "Scene sc-…", tied to no place, and the narrator saw only the five
+most recently updated lore entries, so one busy scene end pushed out
+everything older.
+
+**Rejected:**
+- *Writing `lastKnown` on every state change.* The ledger is authoritative
+  inside the scene; one write per entity at scene end is enough.
+- *Falling back to the current location when the frame names an unrecorded
+  place.* The scene may be somewhere else ("the derelict's spine corridor"
+  while docked at Bleakhold); a wrong card is worse than lore.
+- *Haiku-ranked lore.* Non-move relevance stays lexical (invariant 5).
+
+## A strike reaches every copy of the fact (2026-10)
+
+**Decision:** (issue #286 B6) `!truth strike` and the correction dialog's
+Strike / Replace call `propagateRetraction` (`src/factContinuity/retractions.js`):
+
+- the subject entity's tier details from the **same session** that state the
+  fact are removed (word-overlap match, `factsOverlap`; pinned details stay);
+- the session's World Journal lore that states it goes `retracted` and
+  unconfirmed — kept for history, out of ESTABLISHED LORE and the pending
+  queue; the detection pass's "lore confirmed" transition cannot re-confirm
+  it, and `!journal lore "<title>" confirmed` restores it;
+- the rolling summary regenerates on its next refresh, with a leave-out list.
+
+`endScene` keeps the scene's bare strikes on `campaignState.sessionRetractions`
+(cap 20, session-keyed), so the CORRECTED block (still capped at 5) and the
+summary's leave-out list hold for the rest of the session.
+
+**Why:** the prose that made a truth also fed the tier pass, the auto-confirmed
+lore and the summary. A Strike marked only the scene ledger, and CORRECTED
+ended with the scene, so a struck fact came back from those afterwards — the
+mirror-drift family (rules/reachability.md §5).
+
+**Rejected:**
+- *Deleting matching lore pages.* A retraction is a ruling, not an erasure;
+  the GM can restore one.
+- *Matching across sessions.* An earlier session's detail is not this prose's
+  copy.
+- *Scene-scoped CORRECTED only.* The ring and the summary's source outlive
+  the scene.
+- *Propagating into the chronicle.* Its lines feed only the campaign recap;
+  left for a follow-up (known-issues.md).
+
+## What every narration is told about the turn before (2026-10)
+
+**Decision:** (issue #286 B1–B5, B7)
+
+- **Concrete specifics are REQUIRED** in the sidecar (B2): an object handed
+  over, a price or debt, a code, a count, a deal or promise, a name said in
+  passing, a mark or injury — at most five per response, so the sidecar does
+  not grow. The rolling-summary prompt keeps the same specifics exact.
+- **Move narration reads the ring** (B1): the last `MOVE_RING_CARDS` (4)
+  entries, bounded by `narratorContextCards`. No new setting.
+- **A ring entry is the player's line, then the prose** (B5): move and paced
+  cards store `playerText` / `playerName`, @scene answers
+  `sceneQuestion` / `playerName`. The rolling summary reads the same entries.
+- **The scene frame's recorded cast joins the matched set on every path**
+  (B3, `addSceneFrameCast`): cards, ledger scope, consistency-check context.
+  It runs after relevance resolves, so a move's permission class and its tier
+  pass still come from the player's text alone (architecture §8.2).
+- **Free-text ledger subjects are always in scope** (B4). The ledger holds
+  only the current scene, so its unrecorded figures and places are
+  scene-local by construction.
+- **The rolling summary regenerates after a card posts** (B7,
+  `registerRollingSummaryRefreshHook`, canonical GM, single-flight). Prompts
+  read the cached text.
+
+**Why:** in the first 30 cards of a session a move was narrated with no
+earlier prose at all; what a player wrote survived only if the narrator
+repeated it; "I convince him" lost the partner's card and facts; "dock
+master" or "her" lost "the dockmaster"; and a due summary regen — a Haiku
+call over the whole session — ran inside the narration it delayed.
+
+**Rejected:**
+- *The full paced ring on moves.* Uncached input every move pays for; four
+  entries carry the immediate scene. Section F of the issue proposes a cached
+  scene transcript instead.
+- *Frame-unioning the move path's relevance call.* It would move the hybrid
+  permission class (§8.2).
+- *Fuzzy matching for text subjects* ("dock master" ~ "dockmaster"). Every
+  text subject is this scene's, so scope is unconditional.
+
+## Ledger state sheds by priority; entity cards show the newest details (2026-10)
+
+**Decision:** (issue #286 A6 / A7)
+
+- **State sheds line by line.** When the §6.5 block is over
+  `factContinuity.maxLedgerTokens`, state lines drop one at a time: every
+  other attribute before a character's location / vessel / condition (the
+  REQUIRED emissions; `STATE_KEPT_LONGEST`, `narratorPrompt.js`), the oldest
+  first within each. The tier order is unchanged: frame, truths, CORRECTED
+  and ship position are never dropped.
+- **Truths carry `sessionNum`** (and keep `createdAt`), and the scene-end
+  migration copies both onto the tier entry, so a migrated truth reads
+  "Session N:" like every other tier detail.
+- **The entity card shows up to 10 tier details**: pinned first, then the
+  newest (a tier is append-only, so append order is recency). Up to 4 lines
+  go to the newest binding traits (`scene_truth_migration`,
+  `wj_lore_entity_route`) before newer developments fill the rest.
+
+**Why:** the whole state block used to drop at once. With a command vehicle
+on record it dropped at the 7th in-scope truth, REQUIRED NPC location and
+condition included, and stayed dropped for the rest of the scene because
+truths only grow. The card sorted by `sessionNum`, which migrated truths never
+had, so they sorted last, and its stable sort kept a session's oldest five
+details and cut the newest. Once entity truths migrate (A1), a scar recorded
+three scenes ago would otherwise hide behind any five newer developments.
+
+**Rejected:**
+- *Drop truths to keep state.* Truths are binding; state is "right now".
+- *A setting for the card window.* "Don't add knobs before using the existing
+  ones" (rules/narrator-memory.md); 10 lines is about 150–300 tokens a card.
+- *Sort by `createdAt`.* Older tier entries have none; append order is the
+  same ordering and needs no migration.
+
+## `@scene` continues the scene in progress (2026-10)
+
+**Decision:** (issue #286 A4) `@scene` asks about the scene in progress, so it
+continues that scene. The intercept no longer calls `startScene`;
+`interrogateScene`'s `ensureSceneStarted` starts a scene only when none is
+active, on the canonical GM. Scenes end at `!scene end`, End Session
+(`session_close`), the close-out before a new session is minted
+(`session_gap_remint` — see "A session ends at End Session or after four idle
+hours") and `closeWorld`. Pacing's move-density window still
+resets on `@scene`: that is a pacing heuristic, not a scene boundary.
+
+**Why:** scope #227 §2.3 / §9.1 made every `@scene` a scene boundary when it
+was the only boundary signal the module had. The scene frame and the REQUIRED
+NPC location and condition state (2026-06-10) arrived later, and both are
+scene-scoped. So `@scene` ended the scene it was asked about: `startScene`
+migrated the truths, discarded the state and cleared the frame on the same
+object `interrogateScene` then built its prompt from. The answer was written
+without the frame, truths, state or CORRECTED list, and the frame-present
+relevance union was empty.
+
+**Rejected:**
+- *Keep `@scene` as a boundary and carry only the frame across.* The truths
+  and state would still migrate out from under the question.
+- *A separate `@scene new` verb.* `!scene start` already exists.
+
+Supersedes scope #227 §2.3 / §9.1 ("every `@scene` begins a new scene").
+
 ## Tests run on Foundry's permission model and a simulated multi-client table (2026-10)
 
 **Decision:** (issue #282) By default, the unit suite's Foundry stubs enforce
@@ -332,9 +608,12 @@ and exactly one runs it:
   side-data apply;
 - otherwise → the author's client runs it with its own key (a keyed player at
   a keyless-GM table). GM-only writes are then skipped and debug-logged — the
-  scene boundary included: `@scene` and the narrators' `ensureSceneStarted`
-  start a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
-  author gets the usual "Claude API key not configured" fallback.
+  scene start included: the narrators' `ensureSceneStarted` (which `@scene`
+  goes through) starts a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
+  author gets the usual "Claude API key not configured" fallback. Since issue
+  #286 D2 the narrator side-data is the exception: it is relayed to the
+  canonical GM, which starts a scene to hold it (see "Narrator side-data,
+  draft confirm and detection").
 
 This is `RUN_ON.CLAUDE` for `@scene`, `!recap`, `!ship envision` / `history`
 and `!incite`, and the same ladder in `requestOracleNarration`
@@ -1753,8 +2032,8 @@ get defended; facts without homes get rewritten.
 **Where:** invariants in `rules/narrator-memory.md`; full architecture,
 tuning guide (symptom → knob), and refinement backlog in
 `docs/narrator/narrator-memory-architecture.md`. Settings:
-`narratorContextCards` (ring depth 1–10, default 3) and
-`factContinuity.sceneFrame` (default on).
+`narratorContextCards` (ring depth — 1–10, default 3 when this was written;
+now 1–50, default 20) and `factContinuity.sceneFrame` (default on).
 
 ---
 
@@ -1871,7 +2150,8 @@ small so improvisation drift is confined to genuinely disposable figures.
 - *Graded importance flag on named NPCs (minor vs central)* — replaced by the
   prose nudge in (3); revisit only if naming discipline proves insufficient.
 - *Appending to the user-facing `notes` field* (the original sketch) — the
-  generative tier is the right home: capped at 5 on the card, deduped, pinned,
+  generative tier is the right home: capped on the card (5; 10 with trait
+  slots since issue #286 — see "Ledger state sheds by priority…"), deduped, pinned,
   and auto-promoted to WJ Lore at scene end. `notes` would bloat unboundedly.
 - *A scene-end per-NPC rollup* (one summary entry per scene instead of per-turn
   details) — a clean follow-up, not built yet.

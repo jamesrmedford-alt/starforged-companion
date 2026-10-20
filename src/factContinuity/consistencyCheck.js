@@ -49,7 +49,6 @@ const MAX_TOKENS    = 1000;
  * @param {Object} [options]
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
- * @param {string} [options.playerNarration]
  * @returns {Promise<{ contradictions: Array<Object>, dispatched: boolean }>}
  */
 export async function runConsistencyCheck(prose, campaignState, options = {}) {
@@ -65,7 +64,6 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   const ledger = buildLedgerBlock(campaignState, {
     matchedEntityIds:  options.matchedEntityIds ?? [],
     currentLocationId: options.currentLocationId ?? campaignState.currentLocationId ?? null,
-    playerNarration:   options.playerNarration ?? '',
     maxTokens:         Infinity,
   });
 

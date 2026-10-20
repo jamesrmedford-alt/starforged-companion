@@ -12,6 +12,7 @@ import {
   resolveRelevance,
   buildNameIndex,
   matchNamesInNarration,
+  resolveEntityName,
   parseClassificationJson,
 } from "../../src/context/relevanceResolver.js";
 
@@ -72,6 +73,95 @@ describe("buildNameIndex", () => {
     );
     expect(index.has("sable")).toBe(false);
     expect(index.has("kael")).toBe(true);
+  });
+
+  // Issue #286 A5: name parts were indexed with no stopword or honorific filter.
+  it("never indexes an article or a title as a name part — the full name still is", () => {
+    const index = buildNameIndex([ent("The Covenant", "j1", "faction"), ent("Captain Mora", "j2"), ent("Dr. Chen", "j3")]);
+    expect(index.has("the")).toBe(false);
+    expect(index.has("captain")).toBe(false);
+    expect(index.has("dr.")).toBe(false);
+    expect(index.get("the covenant")?.journalId).toBe("j1");
+    expect(index.get("covenant")?.journalId).toBe("j1");
+    expect(index.get("captain mora")?.journalId).toBe("j2");
+    expect(index.get("mora")?.journalId).toBe("j2");
+    expect(index.get("chen")?.journalId).toBe("j3");
+  });
+
+  it("drops a name part two entities share instead of guessing", () => {
+    const index = buildNameIndex([ent("Kael Dros", "j1"), ent("Kael Varn", "j2")]);
+    expect(index.has("kael")).toBe(false);
+    expect(index.get("dros")?.journalId).toBe("j1");
+    expect(index.get("varn")?.journalId).toBe("j2");
+  });
+
+  it("lets a full name win over another entity's name part, whatever the order", () => {
+    const index = buildNameIndex([ent("Vance Eustacia", "j1"), ent("Vance", "j2")]);
+    expect(index.get("vance")?.journalId).toBe("j2");
+    expect(index.get("eustacia")?.journalId).toBe("j1");
+  });
+
+  it("player text with \"the\" no longer matches The Covenant", () => {
+    const index = buildNameIndex([ent("The Covenant", "j1", "faction"), ent("Captain Mora", "j2")]);
+    expect(matchNamesInNarration("I search the cargo bay and ask the dockmaster.", index).entities).toEqual([]);
+    expect(matchNamesInNarration("The captain waves us through.", index).entities).toEqual([]);
+    expect(matchNamesInNarration("The Covenant's patrol hails us.", index).matchedNames).toEqual(["The Covenant"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveEntityName — one name from the fiction → the entity it names
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveEntityName", () => {
+  const roster = [
+    ent("The Covenant", "j-cov", "faction"),
+    ent("Captain Mora", "j-mora"),
+    ent("Vance Eustacia", "j-vance"),
+    ent("Kael Dros", "j-kael"),
+    ent("Bleakhold Station", "j-bleak", "settlement"),
+  ];
+  const id = (name, entities = roster) => resolveEntityName(name, entities)?.journalId ?? null;
+
+  it("the issue #286 probe: no subject lands on the wrong entity", () => {
+    expect(id("the dockmaster")).toBeNull();
+    expect(id("The cargo bay")).toBeNull();
+    expect(id("Captain Vance")).toBe("j-vance");
+  });
+
+  it("matches a full name in any case, and a title-stripped full name", () => {
+    expect(id("kael dros")).toBe("j-kael");
+    expect(id("the Covenant")).toBe("j-cov");
+    expect(id("Commander Kael Dros")).toBe("j-kael");
+    expect(id("Captain Mora")).toBe("j-mora");
+    expect(id("Lieutenant Sable", [ent("Sable", "j-sable")])).toBe("j-sable");
+  });
+
+  it("matches a unique capitalised first or last name", () => {
+    expect(id("Kael")).toBe("j-kael");
+    expect(id("Dros")).toBe("j-kael");
+    expect(id("Mora")).toBe("j-mora");
+    expect(id("Kael's")).toBe("j-kael");
+  });
+
+  it("never matches a lowercase common noun to a name part", () => {
+    expect(id("the station")).toBeNull();
+    expect(id("station")).toBeNull();
+    expect(id("Station")).toBe("j-bleak");
+  });
+
+  it("matches a full name after a role title, but not a different person who shares a name part", () => {
+    expect(id("Dockmaster Kael Dros")).toBe("j-kael");
+    expect(id("Kael Varn")).toBeNull();
+    expect(id("Kael's ship")).toBeNull();
+    expect(id("the man who knew Kael Dros")).toBeNull();
+  });
+
+  it("returns null for a shared name part, a dismissed entity, or no roster", () => {
+    expect(id("Kael", [ent("Kael Dros", "j1"), ent("Kael Varn", "j2")])).toBeNull();
+    expect(resolveEntityName("Kael Dros", roster, ["kael dros"])).toBeNull();
+    expect(resolveEntityName("Kael", [])).toBeNull();
+    expect(resolveEntityName("", roster)).toBeNull();
   });
 });
 

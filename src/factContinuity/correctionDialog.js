@@ -20,7 +20,10 @@ import {
   strikeStateValue,
   setStateValue,
   subjectKey,
+  subjectFromStateKey,
 } from './ledgers.js';
+import { resolveEntityById } from '../entities/registry.js';
+import { propagateRetraction } from './retractions.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -170,14 +173,17 @@ function attachRowHandlers(root, campaignState, matchedIds, ctx, rerender) {
 async function handleRowAction(button, campaignState, matchedIds, ctx) {
   const action = button.dataset.action;
   switch (action) {
-    case 'strike-truth':
-      strikeTruth(button.dataset.truthId, campaignState, ctx);
+    case 'strike-truth': {
+      const struck = strikeTruth(button.dataset.truthId, campaignState, ctx);
+      if (struck) await propagateRetraction(struck, campaignState);   // issue #286 B6
       return;
+    }
     case 'replace-truth': {
       const truth = (campaignState.sceneTruths ?? []).find(t => t?.id === button.dataset.truthId);
       const next  = await promptForText(`Replacement fact for "${truth?.fact ?? ''}"`, truth?.fact ?? '');
       if (!next) return;
-      replaceTruth(truth.id, { fact: next }, campaignState, ctx);
+      const replaced = replaceTruth(truth.id, { fact: next }, campaignState, ctx);
+      if (replaced) await propagateRetraction(replaced.struck, campaignState);
       return;
     }
     case 'strike-state':
@@ -254,21 +260,24 @@ function collectInScopeState(campaignState, matchedIds) {
   return rows;
 }
 
-function subjectFromStateKey(key) {
-  if (key === 'scene') return { kind: 'scene' };
-  if (/^[A-Za-z0-9._-]+$/u.test(key) && key !== key.toLowerCase()) {
-    return { kind: 'entity', entityId: key };
-  }
-  return { kind: 'text', text: key };
-}
-
 function formatSubjectLabel(subject) {
   if (!subject || typeof subject !== 'object') return 'unknown';
   switch (subject.kind) {
-    case 'entity': return subject.entityId ?? 'entity';
+    case 'entity': return entityName(subject.entityId) || subject.entityId || 'entity';
     case 'scene':  return 'scene';
     case 'text':   return String(subject.text ?? '').trim() || 'unknown';
     default:       return 'unknown';
+  }
+}
+
+/** The entity record's name for its host document id, or '' — so a row reads "Kael Dros", not an Actor id. */
+function entityName(id) {
+  if (!id) return '';
+  try {
+    const name = resolveEntityById(id)?.data?.name;
+    return typeof name === 'string' ? name.trim() : '';
+  } catch {
+    return '';
   }
 }
 

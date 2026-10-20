@@ -6,6 +6,26 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Narrator continuity and detail persistence (issue #286):
+  - Fixed: **The narrator keeps what it says about your NPCs, ships and places.** A detail it gave a recorded character (a scar, where they are, how they're doing) was filed under no entity and lost, and Actor-hosted cards (NPCs, ships, settlements, planets, locations) never saved the narrator's additions. Both now reach the next turn and the card. Facts recorded before an NPC's card was confirmed follow them onto it.
+  - Fixed: **Names match the right character.** Articles, titles and a name part two entities share no longer tie a sentence to the wrong NPC or faction.
+  - Fixed: **`@scene` no longer ends the scene it asks about.** It answers about the scene in progress, with its frame, facts and state, and the scene carries on.
+  - Fixed: **A long scene no longer forgets where everyone is.** Over the ledger budget, state lines shed least important first, with location, vessel and condition last. NPC cards show their newest details, up to ten.
+  - Added: **Concrete details are recorded.** Objects handed over, prices, codes, counts, deals, promises and names said in passing (at most five per reply); the session summary keeps them exact.
+  - Added: **Move narration sees the last four turns**, each with the line the player wrote; the player's line is kept with the card and reaches the session summary.
+  - Fixed: **The characters the scene frame lists keep their cards on move turns**, and facts about unnamed figures stay in view all scene.
+  - Fixed: **The session summary regenerates in the background**, after a card posts, instead of inside the next narration.
+  - Fixed: **A struck fact stays struck**: it is removed from the card or World Journal Lore it was copied to, left out of the session summary, and listed as retracted for the rest of the session.
+  - Added: **Scene end keeps whereabouts and place details.** Each recorded character's last location and condition stays on their card as *Last known*; a place detail lands on the place's card. Lore in the narrator's prompt is chosen for the turn, not just the five newest entries.
+  - Changed: **When a session starts.** A session ends at End a Session or after four hours with no chat activity; the next Begin a Session or world load starts the new one. A reload mid-session continues it, and End then Begin starts a new one.
+  - Added: **The narrator knows what happened last session**: every narration gets the last session's summary, and a session's first narration of any kind gets the campaign recap from its cache.
+  - Added: **More reaches the narrator**: campaign and tension clocks, vow and bond progress, granted rewards, a connection's goal, bond and recent history, and the End-Session focus.
+  - Fixed: **Narration on a player's own key keeps its facts**: the side-data is relayed to the GM's client instead of dropped.
+  - Fixed: **Confirming a new NPC keeps what the narration said** about their role, goal and look.
+  - Fixed: **More of the story is captured**: detection runs after interaction moves and oracle follow-ups; vow scenes and session vignettes update the cards of the NPCs they feature; a notable NPC fact goes to their card, not the session log.
+  - Added: **Narrator usage telemetry**: a Narrator Usage page in the Pacing Telemetry journal logs tokens and time per narrator call.
+  - Fixed: the thinking-off check for narration matches exact model ids, so a later model with a similar id can't receive a parameter it rejects.
+  - Fixed: the Narrator Context Cards description and the docs give its real range (1–50, default 20).
 - Fixed: **`!recap session` notes a match.** The session recap has a line for a match rolled during the session, but it never appeared: narrator cards didn't record the match.
 - Fixed: **Companion Settings tells you where Private Lines go.** The panel said Private Lines were stored on your client and never shared with the GM. They are sent to the GM's client so every narration respects them. They are still not shown to other players, and the narrator never mentions them.
 - Fixed: **The Private Channel knows where you are.** Its scene context names the location the GM set with `!at`. It used to read a field nothing wrote, so the location never appeared.

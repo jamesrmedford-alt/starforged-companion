@@ -106,9 +106,9 @@ describe('endScene', () => {
   });
 
   it('migrates entity-kind truths to the entity generative tier', async () => {
-    const cs = makeCampaignState({ currentSceneId: 'sc-1' });
+    const cs = makeCampaignState({ currentSceneId: 'sc-1', sessionNumber: 6 });
     const entities = [
-      { entityId: 'JE.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
     ];
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }], stateChanges: [] },
@@ -127,6 +127,10 @@ describe('endScene', () => {
       source:   'scene_truth_migration',
       pinned:   false,
       promoted: false,
+      // Issue #286 A7: the session and time it was recorded, so the card
+      // renders "Session 6:" and orders it with the rest of the tier.
+      sessionNum: 6,
+      createdAt:  expect.any(Number),
     });
   });
 
@@ -195,7 +199,7 @@ describe('endScene', () => {
   it('marks each migrated/archived truth with migratedTo before discarding', async () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     const entities = [
-      { entityId: 'JE.x7', entityType: 'connection', name: 'Vance' },
+      { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
     ];
     applySidecar(
       { newTruths: [
@@ -228,7 +232,7 @@ describe('endScene', () => {
     archiveSceneTruth.mockResolvedValueOnce(null);              // simulate failure
     appendMigratedTruthToTier.mockResolvedValueOnce(false);     // simulate failure
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
-    const entities = [{ entityId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
+    const entities = [{ _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' }];
     applySidecar(
       { newTruths: [
           { subject: 'Vance', fact: 'Limp' },
@@ -293,5 +297,104 @@ describe('scene frame lifecycle', () => {
     await startScene(cs, { reason: 'scene_command' });
     expect(cs.sceneFrame).toBeNull();
     expect(cs.currentSceneId).toMatch(/^sc-/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #286 C1 / C2 — what scene end keeps
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('endScene — the scene\'s place and its characters\' whereabouts (issue #286 C1, C2)', () => {
+  const MODULE_ID = 'starforged-companion';
+
+  function addEntityActor(id, typeKey, name, data = {}) {
+    const actor = globalThis.makeTestActor({
+      id, name, type: typeKey === 'connection' ? 'character' : 'location',
+      flags: { [MODULE_ID]: { entityType: typeKey, [typeKey]: { _id: `rec-${id}`, name, ...data } } },
+    });
+    global.game.actors._set(id, actor);
+    return actor;
+  }
+
+  beforeEach(() => {
+    global.game.actors._reset();
+    archiveSceneTruth.mockClear();
+    appendMigratedTruthToTier.mockClear();
+  });
+
+  function sceneWith(frameLocation, overrides = {}) {
+    const cs = makeCampaignState({
+      currentSceneId: 'sc-1',
+      settlementIds:  ['act-bleak', 'act-iron'],
+      sceneFrame:     frameLocation ? { location: frameLocation, present: [], situation: '' } : null,
+      ...overrides,
+    });
+    addEntityActor('act-bleak', 'settlement', 'Bleakhold');
+    addEntityActor('act-iron',  'settlement', 'Ironway');
+    applySidecar(
+      { newTruths: [{ subject: 'scene', fact: 'the bar is called the Rusty Lantern' }], stateChanges: [] },
+      { campaignState: cs },
+    );
+    return cs;
+  }
+
+  it('files a scene truth on the recorded place the frame names', async () => {
+    const summary = await endScene(sceneWith('Bleakhold'), { reason: 'test' });
+    expect(summary).toMatchObject({ migrated: 1, archived: 0 });
+    expect(appendMigratedTruthToTier).toHaveBeenCalledWith('act-bleak', 'settlement',
+      expect.objectContaining({ detail: 'the bar is called the Rusty Lantern', source: 'scene_truth_migration' }));
+    expect(archiveSceneTruth).not.toHaveBeenCalled();
+  });
+
+  it('… or mentions by full name, once', async () => {
+    await endScene(sceneWith("Bleakhold's docking ring"), { reason: 'test' });
+    expect(appendMigratedTruthToTier.mock.calls[0].slice(0, 2)).toEqual(['act-bleak', 'settlement']);
+  });
+
+  it('archives it as lore, titled with the frame\'s place, when that place is not recorded — not on the current location', async () => {
+    const cs = sceneWith("the derelict's spine corridor", { currentLocationId: 'act-bleak', currentLocationType: 'settlement' });
+    await endScene(cs, { reason: 'test' });
+    expect(appendMigratedTruthToTier).not.toHaveBeenCalled();
+    expect(archiveSceneTruth).toHaveBeenCalledWith(
+      expect.objectContaining({ fact: 'the bar is called the Rusty Lantern' }), cs,
+      { placeLabel: "the derelict's spine corridor" },
+    );
+  });
+
+  it('does not guess between two places the frame mentions', async () => {
+    await endScene(sceneWith('the shuttle from Bleakhold to Ironway'), { reason: 'test' });
+    expect(appendMigratedTruthToTier).not.toHaveBeenCalled();
+    expect(archiveSceneTruth).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the current location when the frame names no place', async () => {
+    await endScene(sceneWith(null, { currentLocationId: 'act-iron', currentLocationType: 'settlement' }), { reason: 'test' });
+    expect(appendMigratedTruthToTier.mock.calls[0].slice(0, 2)).toEqual(['act-iron', 'settlement']);
+  });
+
+  it('keeps a recorded character\'s location and condition on their card — superseding, attribute by attribute', async () => {
+    addEntityActor('act-kael', 'connection', 'Kael Dros', {
+      lastKnown: {
+        location:  { value: 'Ironway', sessionNum: 1, at: 1 },
+        condition: { value: 'healthy', sessionNum: 1, at: 1 },
+      },
+    });
+    const cs = makeCampaignState({ currentSceneId: 'sc-2', sessionNumber: 4, connectionIds: ['act-kael'] });
+    applySidecar(
+      { newTruths: [], stateChanges: [
+        { subject: 'Kael Dros', attribute: 'location', value: 'the cargo office' },
+        { subject: 'Kael Dros', attribute: 'mood',     value: 'sour' },
+      ] },
+      { campaignState: cs, entities: [{ _id: 'rec-act-kael', journalId: 'act-kael', name: 'Kael Dros', entityType: 'connection' }] },
+    );
+
+    await endScene(cs, { reason: 'test' });
+    const lastKnown = global.game.actors.get('act-kael').flags[MODULE_ID].connection.lastKnown;
+    expect(lastKnown).toEqual({
+      location:  { value: 'the cargo office', sessionNum: 4, at: expect.any(Number) },
+      condition: { value: 'healthy', sessionNum: 1, at: 1 },   // not mentioned this scene — kept
+    });
+    expect(cs.sceneState.bySubject).toEqual({});
   });
 });

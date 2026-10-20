@@ -24,6 +24,14 @@ describe('narrationDisablesThinking', () => {
     expect(narrationDisablesThinking('claude-haiku-4-5-20251001')).toBe(false);
   });
 
+  // Issue #286 F7: a prefix match sent "disabled" to Sonnet 5.5, a 400.
+  it('matches exact ids only — not the later models a prefix would catch', () => {
+    expect(narrationDisablesThinking('claude-sonnet-5-5')).toBe(false);
+    expect(narrationDisablesThinking('claude-opus-4-8-20260101')).toBe(true);
+    expect(narrationDisablesThinking('claude-opus-5-5')).toBe(false);
+    expect(narrationDisablesThinking('claude-fable-5-1')).toBe(false);
+  });
+
   it('is safe on empty / nullish input', () => {
     expect(narrationDisablesThinking('')).toBe(false);
     expect(narrationDisablesThinking(undefined)).toBe(false);

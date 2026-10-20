@@ -704,25 +704,36 @@ describe('formatEntityCard', () => {
     expect(card).toContain('Description: Lean, calculating.');
   });
 
-  it('includes generative tier entries (up to 5)', () => {
+  it('includes generative tier entries (up to 10, newest first)', () => {
     const card = formatEntityCard(makeConnection({
-      generativeTier: [
-        { sessionNum: 1, detail: 'Detail one' },
-        { sessionNum: 2, detail: 'Detail two' },
-        { sessionNum: 3, detail: 'Detail three' },
-        { sessionNum: 4, detail: 'Detail four' },
-        { sessionNum: 5, detail: 'Detail five' },
-        { sessionNum: 6, detail: 'Detail six' },
-        { sessionNum: 7, detail: 'Detail seven' },
-      ],
+      generativeTier: Array.from({ length: 12 }, (_, i) => ({ sessionNum: i + 1, detail: `Detail ${i + 1}.` })),
     }), 'connection');
     expect(card).toContain('NARRATOR-ADDED');
-    // Five most-recent unpinned entries — sessions 7,6,5,4,3
-    expect(card).toContain('Detail seven');
-    expect(card).toContain('Detail three');
-    // Sessions 1 and 2 should be dropped
-    expect(card).not.toContain('Detail one');
-    expect(card).not.toContain('Detail two');
+    // The ten most recent — sessions 12 … 3, newest first
+    const shown = card.split('NARRATOR-ADDED')[1].trim().split('\n').slice(1).map(l => l.trim());
+    expect(shown).toEqual(Array.from({ length: 10 }, (_, i) => `Session ${12 - i}: Detail ${12 - i}.`));
+  });
+
+  // Issue #286 A7.
+  it('keeps the NEWEST details of one session, not the oldest', () => {
+    const card = formatEntityCard(makeConnection({
+      generativeTier: Array.from({ length: 12 }, (_, i) => ({ sessionNum: 3, detail: `Same-session ${i + 1}` })),
+    }), 'connection');
+    expect(card).toContain('Same-session 12');
+    expect(card).toContain('Same-session 3');
+    expect(card).not.toMatch(/Same-session 2$/m);
+    expect(card).not.toMatch(/Same-session 1$/m);
+  });
+
+  it('holds slots for migrated traits so newer developments do not crowd them out', () => {
+    const traits = Array.from({ length: 6 }, (_, i) => ({ detail: `Trait ${i + 1}`, source: 'scene_truth_migration' }));
+    const developments = Array.from({ length: 10 }, (_, i) => ({ sessionNum: 5, detail: `Development ${i + 1}`, source: 'narrator_extraction' }));
+    const card = formatEntityCard(makeConnection({ generativeTier: [...traits, ...developments] }), 'connection');
+    // The four newest traits, then the six newest developments.
+    for (const n of [3, 4, 5, 6])  expect(card).toContain(`Trait ${n}`);
+    for (const n of [1, 2])        expect(card).not.toMatch(new RegExp(`Trait ${n}$`, 'm'));
+    for (const n of [5, 6, 7, 8, 9, 10]) expect(card).toContain(`Development ${n}`);
+    expect(card).not.toMatch(/Development 4$/m);
   });
 
   it('orders pinned entries before unpinned (and pinned survives the cap)', () => {
@@ -762,6 +773,20 @@ describe('formatEntityCard', () => {
   it('omits the generative tier section when the array is empty', () => {
     const card = formatEntityCard(makeConnection({ generativeTier: [] }), 'connection');
     expect(card).not.toContain('NARRATOR-ADDED');
+  });
+
+  // Issue #286 C1: scene end keeps a character's whereabouts on the record.
+  it('renders LAST KNOWN whereabouts, ordered location → condition, dated by session', () => {
+    const card = formatEntityCard(makeConnection({
+      lastKnown: {
+        condition: { value: 'bleeding from the shoulder', sessionNum: 4 },
+        location:  { value: 'the cargo office', sessionNum: 4 },
+        mood:      { value: 'not a whereabouts attribute' },
+      },
+    }), 'connection');
+    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — this scene's CURRENT STATE wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
+    expect(card).not.toContain('not a whereabouts attribute');
+    expect(formatEntityCard(makeConnection(), 'connection')).not.toContain('LAST KNOWN');
   });
 
   it('omits promoted entries from the visible generative tier', () => {
@@ -1100,6 +1125,16 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     const out = appendSidecarInstruction();
     expect(out).toMatch(/REQUIRED: when your prose establishes WHY a character is somewhere/);
     expect(out).toMatch(/deadline/);
+  });
+
+  // Issue #286 B2: objects, prices, codes, deals and promises were optional.
+  it('requires concrete specifics — bounded so the sidecar does not grow', () => {
+    const out = appendSidecarInstruction();
+    expect(out).toMatch(/REQUIRED: when your prose establishes a concrete specific/);
+    for (const kind of ['object handed over', 'price or a debt', 'code or password', 'deal or a promise']) {
+      expect(out).toContain(kind);
+    }
+    expect(out).toMatch(/At most five of these/);
   });
 
   it('includes the sceneFrame key and rule by default', () => {
@@ -1511,7 +1546,7 @@ describe('World Journal narrator blocks ([4d]-[4f])', () => {
     const block = formatEstablishedLoreBlock([
       { title: 'The Forge', text: 'x'.repeat(200) },
     ]);
-    expect(block).toMatch(/## ESTABLISHED LORE \(recent\)/);
+    expect(block).toMatch(/^## ESTABLISHED LORE\n/);
     expect(block).toMatch(/…/);
     expect(block.length).toBeLessThan(260);
     expect(formatEstablishedLoreBlock([])).toBe('');
@@ -1545,5 +1580,65 @@ describe('World Journal narrator blocks ([4d]-[4f])', () => {
     expect(meta).not.toMatch(/ACTIVE THREATS/);
     expect(meta).not.toMatch(/FACTION LANDSCAPE/);
     expect(meta).not.toMatch(/## WORLD LORE/);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What reached no prompt (issue #286 C5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('clocks, vow progress, rewards, connection standing and the session focus reach the prompt (issue #286 C5)', () => {
+  const live = (extras, character = null) =>
+    buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), character, '', { mode: 'paced_narrative', ...extras });
+
+  it('CHARACTER carries vow progress and countdown clocks, bond progress and granted rewards', () => {
+    const prompt = live({}, {
+      name: 'Kira',
+      vows: [
+        { name: 'Avenge my sister', rank: 'extreme', progress: 3, isBackground: true, clock: { ticks: 2, max: 6 } },
+        { name: 'Find the relay',   rank: 'dangerous', progress: 8, isBackground: false, completed: false, clock: null },
+      ],
+      connections:    [{ name: 'Dr Chen', rank: 'dangerous', progress: 4 }],
+      grantedRewards: [{ description: 'a Hegemony access key', form: 'gear' }, { description: 'the dockmaster owes us', form: 'contact' }],
+    });
+    expect(prompt).toContain('Background vow: Avenge my sister (extreme, progress 3/10, clock 2/6)');
+    expect(prompt).toContain('Other vows: Find the relay (dangerous, progress 8/10)');
+    expect(prompt).toContain('Connections: Dr Chen (dangerous, progress 4/10)');
+    expect(prompt).toContain('Rewards received: a Hegemony access key (gear); the dockmaster owes us (contact)');
+  });
+
+  it('a connection card shows its goal, a lost or forged bond, and its last three relationship events', () => {
+    const card = formatEntityCard({
+      name: 'Mara', role: 'Pilot', goal: 'Pay off the debt', motivation: 'Pay off the debt', active: false, bonded: true,
+      history: [
+        { entry: 'Met at the Forge.' }, { entry: 'Saved the crew.' }, { entry: 'Bond forged.' }, { entry: 'Connection lost: Severed (!sever).' },
+      ],
+    }, 'connection');
+    expect(card).toContain('  Goal: Pay off the debt');
+    expect(card).not.toContain('Motivation: Pay off the debt');   // the same text shows once
+    expect(card).toContain('  Status: connection lost');
+    expect(card).not.toContain('Bond: forged');                    // lost wins
+    expect(card).toMatch(/HISTORY \(oldest first\):\n {2}- Saved the crew\.\n {2}- Bond forged\.\n {2}- Connection lost: Severed \(!sever\)\./);
+    expect(card).not.toContain('Met at the Forge');
+  });
+
+  it('CLOCKS lists the active clocks, marks a full one triggered, and asks for no numbers in the prose', () => {
+    const prompt = live({ clocks: [
+      { name: 'Hegemony fleet arrives', type: 'campaign', segments: 8, filled: 3, active: true },
+      { name: 'Reactor overload',       type: 'tension',  segments: 4, filled: 4, active: true },
+      { name: 'Old business',           type: 'tension',  segments: 4, filled: 1, active: false },
+    ] });
+    expect(prompt).toMatch(/## CLOCKS\n\n[^\n]*never mention the clock or its count\.\n\n- Campaign: Hegemony fleet arrives — 3\/8\n- Tension: Reactor overload — 4\/4 \(TRIGGERED\)/);
+    expect(prompt).not.toContain('Old business');
+    expect(buildNarratorSystemPrompt(makeCampaignState(), makeNarratorSettings(), null, '',
+      { mode: 'campaign_recap', clocks: [{ name: 'X', type: 'tension', segments: 4, filled: 1 }] })).not.toContain('## CLOCKS');
+  });
+
+  it('the focus the table chose at End a Session is on every call of the session', () => {
+    const prompt = live({ sessionFocus: { sessionId: 's2', quest: 'Find the beacon', connection: 'Mara' } });
+    expect(prompt).toContain("## THE TABLE'S FOCUS THIS SESSION");
+    expect(prompt).toContain('- Quest: Find the beacon\n- Connection: Mara');
+    expect(live({ sessionFocus: null })).not.toContain('FOCUS THIS SESSION');
   });
 });

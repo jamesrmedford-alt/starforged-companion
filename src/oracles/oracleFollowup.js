@@ -53,7 +53,7 @@ export function requestOracleNarration(args) {
     if (!isCanonicalGM()) {
       console.debug(
         `${MODULE_ID} | oracle follow-up: no keyed GM is connected — narrating with this client's key; ` +
-        `the narrator side-data (truths, state changes, scene frame) can only be applied on the canonical GM and is not saved.`,
+        `the narrator side-data (truths, state changes, scene frame) is relayed to the canonical GM.`,
       );
     }
     setTimeout(() => { void runOracleFollowup(args); }, 0);

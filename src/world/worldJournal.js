@@ -142,10 +142,14 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
 
 /**
  * Archive a scene-end fact-continuity truth (free-text or scene-scoped) to
- * the WJ Lore journal. See issue #227 (Fact Continuity) §9.2 step 2.
+ * the WJ Lore journal. See issue #227 (Fact Continuity) §9.2 step 2. A
+ * scene-subject truth reaches here only when the scene's place is not a
+ * recorded entity (endScene files it on the place's card otherwise).
  *
  * Composes a synthetic page title:
- *   - scene subjects → "Scene <sceneId>: <fact>"
+ *   - scene subjects → "<place>: <fact>" with the scene frame's location,
+ *     else "Scene <sceneId>: <fact>" (issue #286 C2: the scene id names no
+ *     place the narrator could ever match)
  *   - text  subjects → "<subject>: <fact>"
  *
  * Returns the recordLoreDiscovery result, or null if the truth has no fact
@@ -153,9 +157,11 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
  *
  * @param {Object} truth — sceneTruths entry from campaignState
  * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {string|null} [options.placeLabel] — where the scene happened (the frame's location)
  * @returns {Promise<Object|null>}
  */
-export async function archiveSceneTruth(truth, campaignState) {
+export async function archiveSceneTruth(truth, campaignState, options = {}) {
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return null;
   const subject = truth?.subject;
@@ -164,7 +170,8 @@ export async function archiveSceneTruth(truth, campaignState) {
   let subjectLabel = '';
   let subjectKey   = '';
   if (subject.kind === 'scene') {
-    subjectLabel = `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
+    const place  = typeof options.placeLabel === 'string' ? options.placeLabel.trim() : '';
+    subjectLabel = place || `Scene ${truth.sceneId ?? subject.sceneId ?? ''}`.trim();
     subjectKey   = 'scene';
   } else if (subject.kind === 'text') {
     subjectLabel = String(subject.text ?? '').trim();
@@ -408,6 +415,13 @@ export async function promoteLoreToConfirmed(title, _campaignState) {
 
   const existing = page.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
   if (!existing) return null;
+  // A struck fact's entry (retractSessionLore) stays out of canon: the
+  // detection pass "confirming" it is the narrator re-asserting it. A GM
+  // restores one with `!journal lore "<title>" confirmed`.
+  if (existing.retracted) {
+    console.debug(`${MODULE_ID} | worldJournal: lore "${title}" was retracted by the table — not re-confirmed.`);
+    return null;
+  }
 
   const updated = {
     ...existing,
@@ -417,6 +431,38 @@ export async function promoteLoreToConfirmed(title, _campaignState) {
   };
   await page.setFlag(MODULE_ID, FLAG_KEYS.lore, updated);
   return updated;
+}
+
+/**
+ * Take this session's lore entries that state a struck fact out of confirmed
+ * canon (issue #286 B6: the detection pass auto-confirms lore from the same
+ * prose a struck truth came from, and a Strike never reached it). The entry
+ * is kept, marked `retracted` and unconfirmed, so the narrator's ESTABLISHED
+ * LORE and the pending queue both drop it and the history stays readable.
+ *
+ * @param {string}   sessionId
+ * @param {Function} matches — (loreEntry) => boolean
+ * @returns {Promise<number>} entries retracted
+ */
+export async function retractSessionLore(sessionId, matches) {
+  if (!sessionId || typeof matches !== "function") return 0;
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  let count = 0;
+  for (const page of journal?.pages?.contents ?? []) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (!entry || entry.retracted || entry.sessionId !== sessionId) continue;
+    if (!matches(entry)) continue;
+    const now = new Date().toISOString();
+    await page.setFlag(MODULE_ID, FLAG_KEYS.lore, {
+      ...entry,
+      confirmed:   false,
+      retracted:   true,
+      retractedAt: now,
+      updatedAt:   now,
+    });
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -668,23 +714,97 @@ export async function writeSessionLog(campaignState) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Confirmed lore entries — never dropped from narrator context.
- * Sorted most-recent first by session number, falling back to updatedAt.
+ * Confirmed lore entries, retracted ones excluded, most recently updated
+ * first (updatedAt, falling back to createdAt). The narrator's ESTABLISHED
+ * LORE section shows a few of them (buildNarratorExtras).
  */
 export function getConfirmedLore(_campaignState) {
   const journal = findJournal(JOURNAL_NAMES.lore);
   return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.confirmed === true)
+    .filter(e => e.confirmed === true && e.retracted !== true)
     .sort(byRecency);
 }
 
 /**
- * Narrator-asserted but not yet confirmed lore.
+ * Places the detection pass recorded with no entity record of their own (the
+ * Locations journal), as `{ title, text }` like a lore entry — so a place
+ * detail can be picked for the narrator's context (selectLoreForContext).
+ * Most recently updated first.
+ */
+export function getRecordedLocations(_campaignState) {
+  const journal = findJournal(JOURNAL_NAMES.locations);
+  return readEntries(journal, FLAG_KEYS.locations)
+    .filter(e => e.locationName)
+    .sort(byRecency)
+    .map(e => ({
+      title:     e.locationName,
+      text:      e.description ?? "",
+      updatedAt: e.updatedAt ?? null,
+    }));
+}
+
+const CONTEXT_STOPWORDS = new Set([
+  "that", "this", "with", "from", "into", "onto", "upon", "have", "they", "them",
+  "their", "there", "what", "when", "where", "which", "while", "your", "about",
+  "been", "were", "will", "would", "could", "should", "then", "than", "just",
+]);
+
+function contextWords(text) {
+  return new Set(
+    String(text ?? "")
+      .toLowerCase()
+      .replace(/[’']s\b/gu, "")
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(w => w.length >= 4 && !CONTEXT_STOPWORDS.has(w)),
+  );
+}
+
+/** How many lore entries the narrator's ESTABLISHED LORE section holds, and how many of those may be picked for relevance. */
+const LORE_CONTEXT_CAP  = 8;
+const LORE_RELEVANT_CAP = 5;
+
+/**
+ * The lore entries for this turn's narrator context (issue #286 C2): up to
+ * LORE_RELEVANT_CAP that share the most words with what the scene is about —
+ * the player's text, the scene frame, the entities in play — then the most
+ * recent to fill LORE_CONTEXT_CAP. It used to be the five most recently
+ * updated entries, so a place detail fell out as soon as five newer facts
+ * landed anywhere. Lexical, no API call (the non-move relevance rule).
+ *
+ * @param {Array<{ title?: string, text?: string }>} entries — most recent first
+ * @param {string} queryText
+ * @param {number} [cap]
+ * @returns {Array} relevant first (most shared words, then most recent), then recent
+ */
+export function selectLoreForContext(entries, queryText, cap = LORE_CONTEXT_CAP) {
+  const list  = Array.isArray(entries) ? entries.filter(e => e && (e.title || e.text)) : [];
+  const query = contextWords(queryText);
+  const scored = list.map((entry, order) => {
+    let score = 0;
+    if (query.size) {
+      for (const w of contextWords(`${entry.title ?? ""} ${entry.text ?? ""}`)) if (query.has(w)) score += 1;
+    }
+    return { entry, order, score };
+  });
+  const picked = scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => (b.score - a.score) || (a.order - b.order))
+    .slice(0, Math.min(LORE_RELEVANT_CAP, cap));
+  for (const s of scored) {
+    if (picked.length >= cap) break;
+    if (!picked.includes(s)) picked.push(s);
+  }
+  return picked.map(s => s.entry);
+}
+
+/**
+ * Narrator-asserted but not yet confirmed lore. A struck fact's entry
+ * (retractSessionLore) is not pending review — the table already ruled.
  */
 export function getNarratorAssertedLore(_campaignState) {
   const journal = findJournal(JOURNAL_NAMES.lore);
   return readEntries(journal, FLAG_KEYS.lore)
-    .filter(e => e.narratorAsserted === true && e.confirmed !== true)
+    .filter(e => e.narratorAsserted === true && e.confirmed !== true && e.retracted !== true)
     .sort(byRecency);
 }
 

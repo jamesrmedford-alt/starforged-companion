@@ -32,32 +32,62 @@ layers. This file is the never-break list.
 
 4. **Never-dropped tiers.** Scene frame, binding truths, and ship position
    are never dropped from the ledger block under budget pressure; only
-   state truncates. Do not reorder the drop sequence without a decision.
+   state truncates — line by line, every other attribute before a
+   character's location / vessel / condition, the oldest first within each
+   (issue #286 A6; the block used to drop whole). Do not reorder the drop
+   sequence without a decision.
 
 5. **Non-move relevance stays lexical.** `resolvePathRelevance`
    (paced/@scene) must never reach an API call — `resolveRelevance` with
    `moveId: null` guarantees this today. The move path's relevance call is
    not frame-unioned on purpose (hybrid permission classification); see
-   architecture doc §8.2 before changing.
+   architecture doc §8.2 before changing. The frame's recorded cast joins the
+   matched set after relevance resolves (`addSceneFrameCast`, every path —
+   issue #286 B3), which brings back their cards and facts without moving the
+   permission class.
 
 6. **Scene-scoped lifetimes.** `sceneFrame`, `sceneTruths`, `sceneState`
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
-   migration, not in a lifecycle exemption. Scenes close at their fiction's
-   boundaries (2026-07): End Session (`session_close`), the ready-hook's
-   stale-scene close before a 4h-gap re-mint (`session_gap_remint`), and
-   `closeWorld` — do not add a session boundary that leaves a scene open.
+   migration, not in a lifecycle exemption. Since issue #286 that migration
+   also files scene-subject truths on the scene's recorded place
+   (`resolveScenePlace`) and keeps each recorded character's whereabouts —
+   location / vessel / condition — on their record as `lastKnown` (rendered
+   on the card as LAST KNOWN). Scenes close at their fiction's
+   boundaries (2026-07): End Session (`session_close`), the close-out before
+   a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
+   session that went idle), and `closeWorld` — do not add a session boundary
+   that leaves a scene open. A session is over at End Session or after four
+   hours without a chat message (issue #286 C4); only world load and Begin a
+   Session mint, and the mint keeps the closing session's summary as
+   `previousSessionSummary` (LAST SESSION) — the one prose surface that
+   crosses sessions besides the campaign recap.
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
    `!truth set` bypasses). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
-   ignores instructions vs. model re-emits the fact).
+   ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
+   a Strike also reaches the stores that copied the fact
+   (`propagateRetraction`, `src/factContinuity/retractions.js` — same-session
+   tier details on the subject, same-session auto-confirmed lore, a summary
+   regen), and the scene's strikes outlive it for the session
+   (`campaignState.sessionRetractions` → CORRECTED + the summary's leave-out
+   list). Any new correction path calls `propagateRetraction`.
 
-7. **Sidecar subjects resolve against the full roster.**
+7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so
    confirmed NPCs ledger entity-keyed. Don't remove that argument; text
-   subjects are the fallback, not the norm.
+   subjects are the fallback, not the norm. Pass the roster through
+   unchanged: an entity subject's `entityId` is the roster's `journalId`
+   (the HOST document id — an Actor id for an NPC), the id relevance
+   matches, entity cards and scene-end migration use. Never re-map it into
+   another shape or promote with a record's own `_id` (issue #286 A1/A3 —
+   both silently dropped every recorded entity's facts). Names resolve
+   through `resolveEntityName`'s bounded ladder, which never files a fact
+   under an entity on an article, a title, a shared name part or a
+   lowercase common noun. Entity state keys are `entity:<id>`
+   (`subjectKey` / `subjectFromStateKey`).
 
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),
@@ -65,7 +95,10 @@ layers. This file is the never-break list.
    at the expense of any §6.5 ledger tier or the never-dropped facts (frame /
    binding truths / ship position) — those defend load-bearing facts; the
    summary only carries narrative texture. Keep it GM-gated + fail-open: a
-   summary error returns the prior text and never blocks a narration. Full drop
+   summary error returns the prior text and never blocks a narration. Regen
+   runs after a narrator card posts (`registerRollingSummaryRefreshHook`),
+   never inside `buildNarratorExtras`, which only reads the cached text — a
+   regen is a Haiku call over the whole session (issue #286 B7). Full drop
    priority in `decisions.md` → "Rolling session summary".
 
 ## Tuning knobs (don't add new ones before using these)

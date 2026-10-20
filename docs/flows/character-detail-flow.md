@@ -34,7 +34,7 @@ same record.
 
 | Surface | PC pronouns | NPC pronouns | Notes |
 |---|---|---|---|
-| CHARACTER block [8] (`buildCharacterBlock`) | ✅ full snapshot since 2026-07 (`getActiveCharacter` passes everything the sheet holds: pronouns, callsign, biography, stats, impacts, assets, vows) | n/a | the starving narrowing was CHAR-PC-BLOCK-STARVED; a composition test now locks the live path |
+| CHARACTER block [8] (`buildCharacterBlock`) | ✅ full snapshot since 2026-07 (`getActiveCharacter` passes everything the sheet holds: pronouns, callsign, biography, stats, impacts, assets, vows) | n/a | the starving narrowing was CHAR-PC-BLOCK-STARVED; a composition test now locks the live path. Since issue #286 (C5) vows and bonds carry their progress (and a vow its countdown clock), and the rewards `recordGrantedReward` keeps on the sheet (`grantedRewards`) are listed. The snapshot cache is dropped when one of the actor's Items changes (`createItem` / `updateItem` / `deleteItem`), so progress marked on the native sheet reaches the next narration |
 | PARTY roster [8b] (`buildPartyBlock`) | ✅ per-member pronouns + callsigns since 2026-07, with a binding-pronouns rule | n/a | legacy names-only shape still renders |
 | ENTITIES IN SCENE [6] (`formatEntityCard`) | n/a | ✅ `Pronouns:` row when the record has them | |
 | NPC-profile guidance (interaction class + tier pass) | n/a | ✅ "keep pronouns, never reassign" | prompt-level defense exists |

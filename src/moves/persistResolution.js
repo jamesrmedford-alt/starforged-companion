@@ -121,11 +121,15 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
 //       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
 //                                   on the store via clearPersistedNextMoveAdd
-//       questFocus, connectionFocus Begin / End a Session relays
+//       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
 //       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
-//       currentSessionId, sessionNumber, lastSessionTimestamp   index.js session-id lifecycle
+//       currentSessionId, sessionNumber, lastSessionTimestamp,
+//       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
+//                                   (world load, Begin / End relays, the chat-activity stamp)
 //       customOracles               oracles/customOracles.js
 //       recentOracles               oracles/oracleMemory.js capture hook
+//       sessionRetractions          sceneLifecycle.js endScene (persists it with
+//                                   the scene fields, so the store has it)
 //       clocks                      clocks.js panel / `!clock` / Pay-the-Price clock relay
 //                                   (incl. Face Defeat's PtP inside this pipeline)
 //       pacing                      pacing/router.js (`!pace`, `!roll`) — the pipeline reads
@@ -164,13 +168,17 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'nextMoveAdd',
   'questFocus',
   'connectionFocus',
+  'sessionFocus',
   'sessionActive',
   'sessionActiveStartedAt',
   'currentSessionId',
   'sessionNumber',
   'lastSessionTimestamp',
+  'sessionEndedId',
+  'previousSessionSummary',
   'customOracles',
   'recentOracles',
+  'sessionRetractions',
   'clocks',
   'pacing',
   'campaignRecapCache',

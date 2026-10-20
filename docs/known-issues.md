@@ -11,6 +11,50 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Narrator continuity & detail persistence (issue #286) — fixed in the v1.7.34 cycle; follow-ups in #287
+
+The audit traced how small details (a scar, a bar's name, an object handed
+over, a promise) are stored, sent and kept. Harness composition tests in
+`tests/unit/narratorDetailPersistence.test.js` fail with each fix reverted.
+
+| Code | Class | Finding | Fix |
+|---|---|---|---|
+| A1 | PRODUCED-BUT-DEAD | Sidecar subjects resolved against `entityId`, a field the roster never has: recorded entities' truths had no id, and every entity's state shared the key `""` | One roster shape end to end; `subjectKey` → `entity:<id>` |
+| A2 | LOSE-PLOT | The live tier pass looked records up in `game.journal`: nothing saved for Actor-hosted entities | `persistGenerativeTier` writes through the registry |
+| A3 | LOSE-PLOT | Draft confirm re-keyed earlier truths to the record's internal id | `promoteNewEntityLedgerSubjects` uses the host document id (also the inciting vow target) |
+| A4 | LOSE-PLOT | `@scene` ended the scene it was asked about | It continues the scene (decision recorded) |
+| A5 | WRONG-DETAIL | Name index matched articles, titles and shared name parts | Noise-word filter, shared parts dropped, bounded `resolveEntityName` ladder |
+| A6 / A7 | LOSE-PLOT | All state dropped at once at the ledger cap; cards kept the oldest five details | State sheds by priority; cards show ten, newest first, with trait slots |
+| B1–B5, B7 | LOSE-PLOT | Moves saw no recent prose; no concrete-specifics rule; frame cast lost on moves; text subjects needed the exact phrase; player lines never stored; summary regen in the critical path | See decisions.md → "What every narration is told about the turn before" |
+| B6 | MIRROR-DRIFT | A strike stayed in the scene ledger | `propagateRetraction`: tier, lore, summary and session list |
+| C1 / C2 | LOSE-PLOT | Scene state had no afterlife; place details became place-less lore; lore picked by recency | `lastKnown` on cards; scene facts to the place's card; `selectLoreForContext` |
+| C3 / C4 | LOSE-PLOT | Session boundary = any reload 4 h after the mint; only the recap crossed sessions | End Session or four idle hours; `previousSessionSummary` as LAST SESSION; recap on any mode's first narration |
+| C5 | LOSE-PLOT | Clocks, vow progress, rewards, connection standing, End-Session foci in no prompt | All rendered; snapshot dropped on Item changes |
+| D2 | LOSE-PLOT | Narration on a player's key discarded its side-data | Relayed to the GM (`narrator.sidecar`) |
+| D3 | WRONG-DETAIL | Draft confirm rolled role / goal / look against the narration | Detected role and goal win; no rolled look over a narrated one |
+| D4 | LOSE-PLOT | Detection skipped interaction moves and oracle follow-ups; lore floor ran before entity routing | Wider capture; entity lore at the tier floor |
+| E | DOC-DRIFT | Help and docs described old defaults and behaviour | Corrected |
+| F7 | LATENT | Thinking-off matched the `claude-sonnet-5` prefix (would 400 on Sonnet 5.5) | Exact ids |
+
+**Open — moved to #287** (issue #286 is closed):
+- **D1** — whether a published Private Channel reflection becomes canon
+  (needs a decision).
+- **§F steps 2–6** — the tiered, cached request layout and larger budgets
+  wait on the Narrator Usage numbers and a playtest.
+- **SUMMARY-KEYLESS-GM** — the rolling summary regenerates on the canonical
+  GM (B7); at a table whose GM has no Claude key it is never generated.
+- **STRIKE-CHRONICLE** — a strike does not reach the chronicle (or the
+  campaign recap built from it).
+- **CHRONICLE-FIRST-PC** — chronicle entries are all written to the first PC
+  (`resolveActorId`, `chronicleWriter.js`).
+- **CONN-BACKGROUND-UNWRITTEN** — a connection's `background` and `secrets`
+  have no production writer, so neither renders.
+- **CREATE-PERSIST-WHOLE** — entity creators (e.g. `createConnection`'s
+  `persistCampaignState`) write the caller's campaignState whole, so the
+  make_a_connection auto-create writes the move pipeline's snapshot.
+- **TEXT-SUBJECT-LOWERCASE** — a text subject's CURRENT STATE label renders
+  lowercased.
+
 ### Multiplayer test infrastructure (issue #282) — fixed in the v1.7.34 cycle
 
 Issue #282 gave the unit suite the means to see the 2026-10 audit's bug

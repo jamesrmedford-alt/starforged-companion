@@ -37,6 +37,7 @@ import {
   subjectKey,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { propagateRetraction } from "./retractions.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -149,6 +150,9 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   try {
     if (parsed.domain === "truth" && parsed.verb === "strike") {
       const struck = strikeTruth(parsed.rest, campaignState, permCtx);
+      // The strike reaches the tier details, lore and summary that copied
+      // the fact (issue #286 B6).
+      if (struck) await propagateRetraction(struck, campaignState);
       resultLine = struck
         ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
         : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;

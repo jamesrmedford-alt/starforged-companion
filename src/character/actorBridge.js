@@ -126,6 +126,7 @@ export function readCharacterSnapshot(actor) {
     assets:      readAssets(actor),
     vows:        readVows(actor),
     connections: readConnections(actor),
+    grantedRewards: readGrantedRewards(actor),
     notes:       stripHtml(sys.notes ?? ''),
     biography:   stripHtml(sys.biography ?? ''),
     callsign:    String(sys.callsign ?? '').trim(),
@@ -168,6 +169,21 @@ export function readAssets(actor) {
 
 function stripHtml(s) {
   return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The concrete rewards recorded on the character (recordGrantedReward —
+ * gear, assets, contacts, knowledge), oldest first, for the narrator's
+ * CHARACTER block (issue #286 C5: written, never read).
+ *
+ * @param {Actor} actor
+ * @returns {Array<{ description: string, form: string }>}
+ */
+function readGrantedRewards(actor) {
+  const list = actor?.flags?.[MODULE_ID]?.grantedRewards;
+  return (Array.isArray(list) ? list : [])
+    .filter(r => typeof r?.description === 'string' && r.description.trim())
+    .map(r => ({ description: r.description.trim(), form: r.form ?? 'gear' }));
 }
 
 /**

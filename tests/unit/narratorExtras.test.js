@@ -66,7 +66,6 @@ describe("buildNarratorExtras — uniform context packet", () => {
         relevance: { resolvedClass: "discovery", entityIds: [], entityTypes: [] },
       });
       expect(extras.mode).toBe(mode);
-      expect(extras.playerNarration).toBe("x");
       // Campaign truths now reach every path — this used to be move-only.
       expect(extras.campaignTruthsBlock).toContain("stub-truths");
       expect(extras).toHaveProperty("currentLocationCard");
