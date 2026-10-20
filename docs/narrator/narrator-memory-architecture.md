@@ -178,7 +178,9 @@ the player text **or the scene frame's `present` list** (Cluster A4). The
 frame is what keeps the active conversation partner in scope on turns like
 *"What does that even mean?"*
 
-**Drop order under budget pressure:** state → (never) truths → (never) ship
+**Drop order under budget pressure:** state, line by line — every other
+attribute before a character's location / vessel / condition, the oldest
+first within each (issue #286 A6) → (never) truths → (never) ship
 position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
 
 ---
@@ -247,7 +249,7 @@ reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
 | `factContinuity.enabled` | true | Fact Continuity | master switch: sidecar instruction + parse + ledger |
 | `factContinuity.ledgerInContext` | true | Fact Continuity | §6.5 block injection |
 | `factContinuity.sceneFrame` | true | Fact Continuity | frame emission + block + scoping/relevance unions |
-| `factContinuity.maxLedgerTokens` | 400 | Fact Continuity | §6.5 soft cap (state drops first) |
+| `factContinuity.maxLedgerTokens` | 400 | Fact Continuity | §6.5 soft cap (state lines shed first; location / vessel / condition last) |
 | `factContinuity.consistencyCheck` | **true** (2026-07) | Fact Continuity | post-narration Haiku audit vs the full ledger block (frame, truths, retractions, state, ship) |
 
 ---

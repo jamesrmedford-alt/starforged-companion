@@ -106,7 +106,7 @@ describe('endScene', () => {
   });
 
   it('migrates entity-kind truths to the entity generative tier', async () => {
-    const cs = makeCampaignState({ currentSceneId: 'sc-1' });
+    const cs = makeCampaignState({ currentSceneId: 'sc-1', sessionNumber: 6 });
     const entities = [
       { _id: 'JE.x7-rec', journalId: 'JE.x7', entityType: 'connection', name: 'Vance' },
     ];
@@ -127,6 +127,10 @@ describe('endScene', () => {
       source:   'scene_truth_migration',
       pinned:   false,
       promoted: false,
+      // Issue #286 A7: the session and time it was recorded, so the card
+      // renders "Session 6:" and orders it with the rest of the tier.
+      sessionNum: 6,
+      createdAt:  expect.any(Number),
     });
   });
 

@@ -140,11 +140,11 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
 
     await type('gm-1', '!scene end');
     expect(tier(kael)).toEqual([
-      expect.objectContaining({ detail: 'has a ragged scar along his jaw', source: 'scene_truth_migration' }),
+      expect.objectContaining({ detail: 'has a ragged scar along his jaw', source: 'scene_truth_migration', sessionNum: 3 }),
     ]);
 
     const later = await narrateMove('Kael, a word.');
-    expect(later.system).toMatch(/NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}.*has a ragged scar along his jaw/);
+    expect(later.system).toMatch(/NARRATOR-ADDED[^\n]*\n(?: {2}.*\n)* {2}Session 3: has a ragged scar along his jaw/);
   });
 
   it('two NPCs\' state stays apart — it used to share one key', async () => {

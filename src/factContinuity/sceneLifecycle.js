@@ -177,6 +177,7 @@ async function safeMigrateToEntityTier(truth, subject) {
       pinned:     false,
       promoted:   false,
       promotedAt: null,
+      createdAt:  truth.createdAt ?? Date.now(),
     };
     return await appendMigratedTruthToTier(subject.entityId, subject.entityType, tierEntry);
   } catch (err) {

@@ -32,7 +32,10 @@ layers. This file is the never-break list.
 
 4. **Never-dropped tiers.** Scene frame, binding truths, and ship position
    are never dropped from the ledger block under budget pressure; only
-   state truncates. Do not reorder the drop sequence without a decision.
+   state truncates — line by line, every other attribute before a
+   character's location / vessel / condition, the oldest first within each
+   (issue #286 A6; the block used to drop whole). Do not reorder the drop
+   sequence without a decision.
 
 5. **Non-move relevance stays lexical.** `resolvePathRelevance`
    (paced/@scene) must never reach an API call — `resolveRelevance` with

@@ -948,6 +948,7 @@ export async function routeWorldJournalResults(wj, campaignState) {
           pinned:     false,
           promoted:   false,
           promotedAt: null,
+          createdAt:  Date.now(),
         }).catch(err =>
           console.warn(`${MODULE_ID} | routeWorldJournalResults: entity-lore migration failed:`, err),
         );

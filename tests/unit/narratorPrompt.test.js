@@ -704,25 +704,36 @@ describe('formatEntityCard', () => {
     expect(card).toContain('Description: Lean, calculating.');
   });
 
-  it('includes generative tier entries (up to 5)', () => {
+  it('includes generative tier entries (up to 10, newest first)', () => {
     const card = formatEntityCard(makeConnection({
-      generativeTier: [
-        { sessionNum: 1, detail: 'Detail one' },
-        { sessionNum: 2, detail: 'Detail two' },
-        { sessionNum: 3, detail: 'Detail three' },
-        { sessionNum: 4, detail: 'Detail four' },
-        { sessionNum: 5, detail: 'Detail five' },
-        { sessionNum: 6, detail: 'Detail six' },
-        { sessionNum: 7, detail: 'Detail seven' },
-      ],
+      generativeTier: Array.from({ length: 12 }, (_, i) => ({ sessionNum: i + 1, detail: `Detail ${i + 1}.` })),
     }), 'connection');
     expect(card).toContain('NARRATOR-ADDED');
-    // Five most-recent unpinned entries — sessions 7,6,5,4,3
-    expect(card).toContain('Detail seven');
-    expect(card).toContain('Detail three');
-    // Sessions 1 and 2 should be dropped
-    expect(card).not.toContain('Detail one');
-    expect(card).not.toContain('Detail two');
+    // The ten most recent — sessions 12 … 3, newest first
+    const shown = card.split('NARRATOR-ADDED')[1].trim().split('\n').slice(1).map(l => l.trim());
+    expect(shown).toEqual(Array.from({ length: 10 }, (_, i) => `Session ${12 - i}: Detail ${12 - i}.`));
+  });
+
+  // Issue #286 A7.
+  it('keeps the NEWEST details of one session, not the oldest', () => {
+    const card = formatEntityCard(makeConnection({
+      generativeTier: Array.from({ length: 12 }, (_, i) => ({ sessionNum: 3, detail: `Same-session ${i + 1}` })),
+    }), 'connection');
+    expect(card).toContain('Same-session 12');
+    expect(card).toContain('Same-session 3');
+    expect(card).not.toMatch(/Same-session 2$/m);
+    expect(card).not.toMatch(/Same-session 1$/m);
+  });
+
+  it('holds slots for migrated traits so newer developments do not crowd them out', () => {
+    const traits = Array.from({ length: 6 }, (_, i) => ({ detail: `Trait ${i + 1}`, source: 'scene_truth_migration' }));
+    const developments = Array.from({ length: 10 }, (_, i) => ({ sessionNum: 5, detail: `Development ${i + 1}`, source: 'narrator_extraction' }));
+    const card = formatEntityCard(makeConnection({ generativeTier: [...traits, ...developments] }), 'connection');
+    // The four newest traits, then the six newest developments.
+    for (const n of [3, 4, 5, 6])  expect(card).toContain(`Trait ${n}`);
+    for (const n of [1, 2])        expect(card).not.toMatch(new RegExp(`Trait ${n}$`, 'm'));
+    for (const n of [5, 6, 7, 8, 9, 10]) expect(card).toContain(`Development ${n}`);
+    expect(card).not.toMatch(/Development 4$/m);
   });
 
   it('orders pinned entries before unpinned (and pinned survives the cap)', () => {

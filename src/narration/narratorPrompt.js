@@ -190,6 +190,16 @@ export function appendSidecarInstruction(options = {}) {
 }
 
 /**
+ * State attributes the ledger block keeps longest under its token cap: where
+ * a character is and what shape they are in — the stateChanges the sidecar
+ * instruction REQUIRES. Everything else (posture, mood, lighting, doors…)
+ * sheds first.
+ */
+const STATE_KEPT_LONGEST = new Set([
+  'location', 'vessel', 'aboard', 'whereabouts', 'condition', 'health', 'injuries', 'wounds',
+]);
+
+/**
  * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6.
  *
  * Returns an object with separately budgetable sub-blocks so the assembler
@@ -220,7 +230,8 @@ export function appendSidecarInstruction(options = {}) {
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
  * @param {string} [options.playerNarration]
- * @param {number} [options.maxTokens] — soft cap; state drops first when exceeded
+ * @param {number} [options.maxTokens] — soft cap; state lines shed when exceeded
+ *   (location / vessel / condition last)
  * @param {Map<string,string>|Object} [options.entityNamesById] — entity ID → display name
  * @returns {{ header: string, truths: string, state: string,
  *             shipPosition: string, combined: string,
@@ -285,7 +296,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
     .map(t => `  ${formatSubjectLabel(t.subject, nameLookup)} — ${String(t.fact).trim()}`);
 
   // ── Filter state ─────────────────────────────────────────────────────────
-  const stateLines = [];
+  const stateEntries = [];
   for (const [key, entries] of Object.entries(stateBySubject)) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
@@ -295,9 +306,15 @@ export function buildLedgerBlock(campaignState, options = {}) {
       const attr  = String(e?.attribute ?? '').trim();
       const value = e?.value;
       if (!attr || value === undefined || value === null || value === '') continue;
-      stateLines.push(`  ${label} — ${attr}: ${value}`);
+      stateEntries.push({
+        line:      `  ${label} — ${attr}: ${value}`,
+        keep:      STATE_KEPT_LONGEST.has(attr.toLowerCase()),
+        updatedAt: Number(e?.updatedAt) || 0,
+        order:     stateEntries.length,
+      });
     }
   }
+  const stateLines = stateEntries.map(s => s.line);
 
   // ── Render the frame block ───────────────────────────────────────────────
   // Confirmed-lore tier: never dropped under budget pressure (like the ship
@@ -355,15 +372,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
       ].join('\n')
     : '';
 
-  let stateBlock = stateLines.length
-    ? ['CURRENT STATE (right now in this scene):', ...stateLines].join('\n')
-    : '';
+  const renderState = (entries) => (entries.length
+    ? ['CURRENT STATE (right now in this scene):', ...entries.map(s => s.line)].join('\n')
+    : '');
+  let stateBlock = renderState(stateEntries);
 
-  // ── Soft-cap enforcement: drop state when over budget ────────────────────
+  // ── Soft-cap enforcement: shed state when over budget ────────────────────
   // Ship position and the scene frame count toward the budget for telemetry
   // but are never dropped — both are confirmed-lore tier (scope §20.5;
-  // narrator-memory architecture A4). State drops first when the cap is
-  // exceeded.
+  // narrator-memory architecture A4). Only state sheds, one line at a time:
+  // every other attribute before a character's location, vessel and
+  // condition (the REQUIRED emissions), the oldest first within each (issue
+  // #286 A6 — the whole block used to drop at once, REQUIRED facts included,
+  // and stayed dropped for the rest of the scene because truths only grow).
   const tokenEstimates = {
     header:      estimateTokens(header),
     frame:       estimateTokens(frameBlock),
@@ -372,13 +393,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
     state:       estimateTokens(stateBlock),
     ship:        estimateTokens(shipPositionLine),
   };
-  let total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-            + tokenEstimates.corrections + tokenEstimates.state + tokenEstimates.ship;
-  if (total > maxTokens && stateBlock) {
-    stateBlock = '';
-    tokenEstimates.state = 0;
-    total = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-          + tokenEstimates.corrections + tokenEstimates.ship;
+  const fixedTokens = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
+                    + tokenEstimates.corrections + tokenEstimates.ship;
+  if (fixedTokens + tokenEstimates.state > maxTokens && stateEntries.length) {
+    const sheddingOrder = stateEntries.slice().sort((a, b) =>
+      (a.keep - b.keep) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
+    const kept = new Set(stateEntries);
+    for (const victim of sheddingOrder) {
+      kept.delete(victim);
+      stateBlock = renderState(stateEntries.filter(s => kept.has(s)));
+      if (fixedTokens + estimateTokens(stateBlock) <= maxTokens) break;
+    }
+    tokenEstimates.state = estimateTokens(stateBlock);
   }
 
   const combined = [header, frameBlock, truthsBlock, correctionsBlock, stateBlock, shipPositionLine]
@@ -744,10 +770,51 @@ const CANONICAL_FIELDS_BY_TYPE = {
   ],
 };
 
+/** Generative-tier lines an entity card shows, and how many of them are held for traits. */
+const CARD_TIER_LINES  = 10;
+const CARD_TRAIT_SLOTS = 4;
+
+/** Tier sources that carry binding traits (scene truths, entity-specific lore), not developments. */
+const TRAIT_TIER_SOURCES = new Set(['scene_truth_migration', 'wj_lore_entity_route']);
+
+/**
+ * The generative-tier entries an entity card shows, in display order: pinned
+ * first, then the newest. A tier is append-only, so a later entry is a newer
+ * one. Up to CARD_TRAIT_SLOTS of the lines go to the newest binding traits
+ * (a scar, a history, an allegiance migrated from the scene ledger) before
+ * newer developments fill the rest, so a trait recorded three scenes ago is
+ * not crowded out (issue #286 A7: the card sorted by sessionNum, which
+ * migrated truths never had, and its stable sort kept a session's OLDEST five).
+ *
+ * @param {Array} tier
+ * @returns {Array}
+ */
+function selectCardTierEntries(tier) {
+  const newestFirst = tier
+    .filter(e => e && !e.promoted && String(e.detail ?? '').trim())
+    .reverse();
+  const picked = new Set();
+  const take = (pred, limit) => {
+    for (const e of newestFirst) {
+      if (picked.size >= CARD_TIER_LINES || limit <= 0) return;
+      if (picked.has(e) || !pred(e)) continue;
+      picked.add(e);
+      limit -= 1;
+    }
+  };
+  take(e => e.pinned, CARD_TIER_LINES);
+  take(e => TRAIT_TIER_SOURCES.has(e.source), CARD_TRAIT_SLOTS);
+  take(() => true, CARD_TIER_LINES);
+  return newestFirst
+    .filter(e => picked.has(e))
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+}
+
 /**
  * Format a single entity record as a narrator-prompt card.
  * Includes the canonical tier (with a hard or soft instruction depending on
- * canonicalLocked) and up to 5 generative-tier entries (pinned first).
+ * canonicalLocked) and up to CARD_TIER_LINES generative-tier entries
+ * (selectCardTierEntries).
  *
  * @param {Object} entity     — entity record (any type)
  * @param {string} entityType — "connection" | "ship" | "settlement" | "faction" | "planet" | "location" | "creature"
@@ -776,17 +843,11 @@ export function formatEntityCard(entity, entityType) {
     }
   }
 
-  // Generative tier — pinned first, then by recency (sessionNum descending),
-  // capped at 5 displayed.
+  // Generative tier — pinned first, then the newest, with slots held for
+  // binding traits (selectCardTierEntries).
   const tier = Array.isArray(entity.generativeTier) ? entity.generativeTier : [];
-  const visible = tier.filter(e => !e.promoted);
-  if (visible.length) {
-    const sorted = visible.slice().sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return (b.sessionNum ?? 0) - (a.sessionNum ?? 0);
-    });
-    const top = sorted.slice(0, 5);
+  const top = selectCardTierEntries(tier);
+  if (top.length) {
     lines.push('', 'NARRATOR-ADDED (honour and build on these):');
     for (const e of top) {
       const marker = e.pinned ? '📌 ' : '';

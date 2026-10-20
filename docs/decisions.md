@@ -6,6 +6,39 @@ rejected.
 
 ---
 
+## Ledger state sheds by priority; entity cards show the newest details (2026-10)
+
+**Decision:** (issue #286 A6 / A7)
+
+- **State sheds line by line.** When the §6.5 block is over
+  `factContinuity.maxLedgerTokens`, state lines drop one at a time: every
+  other attribute before a character's location / vessel / condition (the
+  REQUIRED emissions; `STATE_KEPT_LONGEST`, `narratorPrompt.js`), the oldest
+  first within each. The tier order is unchanged: frame, truths, CORRECTED
+  and ship position are never dropped.
+- **Truths carry `sessionNum`** (and keep `createdAt`), and the scene-end
+  migration copies both onto the tier entry, so a migrated truth reads
+  "Session N:" like every other tier detail.
+- **The entity card shows up to 10 tier details**: pinned first, then the
+  newest (a tier is append-only, so append order is recency). Up to 4 lines
+  go to the newest binding traits (`scene_truth_migration`,
+  `wj_lore_entity_route`) before newer developments fill the rest.
+
+**Why:** the whole state block used to drop at once. With a command vehicle
+on record it dropped at the 7th in-scope truth, REQUIRED NPC location and
+condition included, and stayed dropped for the rest of the scene because
+truths only grow. The card sorted by `sessionNum`, which migrated truths never
+had, so they sorted last, and its stable sort kept a session's oldest five
+details and cut the newest. Once entity truths migrate (A1), a scar recorded
+three scenes ago would otherwise hide behind any five newer developments.
+
+**Rejected:**
+- *Drop truths to keep state.* Truths are binding; state is "right now".
+- *A setting for the card window.* "Don't add knobs before using the existing
+  ones" (rules/narrator-memory.md); 10 lines is about 150–300 tokens a card.
+- *Sort by `createdAt`.* Older tier entries have none; append order is the
+  same ordering and needs no migration.
+
 ## `@scene` continues the scene in progress (2026-10)
 
 **Decision:** (issue #286 A4) `@scene` asks about the scene in progress, so it
@@ -1897,7 +1930,8 @@ small so improvisation drift is confined to genuinely disposable figures.
 - *Graded importance flag on named NPCs (minor vs central)* — replaced by the
   prose nudge in (3); revisit only if naming discipline proves insufficient.
 - *Appending to the user-facing `notes` field* (the original sketch) — the
-  generative tier is the right home: capped at 5 on the card, deduped, pinned,
+  generative tier is the right home: capped on the card (5; 10 with trait
+  slots since issue #286 — see "Ledger state sheds by priority…"), deduped, pinned,
   and auto-promoted to WJ Lore at scene end. `notes` would bloat unboundedly.
 - *A scene-end per-NPC rollup* (one summary entry per scene instead of per-turn
   details) — a clean follow-up, not built yet.

@@ -46,6 +46,7 @@ export function applySidecar(sidecar, ctx) {
   ensureLedgerShape(campaignState);
 
   const sessionId = ctx.sessionId ?? campaignState.currentSessionId ?? null;
+  const sessionNum = sessionNumberOf(campaignState);
   const sceneId   = ctx.sceneId   ?? campaignState.currentSceneId   ?? null;
   const moveId    = ctx.moveId    ?? null;
   const asserter  = ctx.asserter  ?? 'narrator';
@@ -91,6 +92,7 @@ export function applySidecar(sidecar, ctx) {
       subject,
       fact,
       sessionId,
+      sessionNum,
       sceneId,
       moveId,
       source,
@@ -344,6 +346,7 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
     subject:     replacement.subject ?? entry.subject,
     fact,
     sessionId:   replacement.sessionId ?? entry.sessionId,
+    sessionNum:  replacement.sessionNum ?? entry.sessionNum ?? sessionNumberOf(campaignState),
     sceneId:     replacement.sceneId   ?? entry.sceneId,
     moveId:      replacement.moveId    ?? entry.moveId,
     source:      'manual_truth_cmd',
@@ -386,6 +389,7 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
     subject:     subjectRef,
     fact:        cleanFact,
     sessionId:   ctx.sessionId ?? campaignState.currentSessionId ?? null,
+    sessionNum:  sessionNumberOf(campaignState),
     sceneId:     ctx.sceneId   ?? campaignState.currentSceneId   ?? null,
     moveId:      ctx.moveId    ?? null,
     source:      ctx.source    ?? 'manual_truth_cmd',
@@ -531,6 +535,16 @@ function newTruthId() {
       : null;
   if (cryptoRef) return `tr-${cryptoRef.randomUUID().slice(0, 8)}`;
   return `tr-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * The campaign's session number, stamped on every truth so a migrated truth
+ * reads "Session N:" on the entity card and the World Journal (issue #286 A7:
+ * truths never carried one).
+ */
+function sessionNumberOf(campaignState) {
+  const n = Number(campaignState?.sessionNumber);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function entryRefType(ref) {

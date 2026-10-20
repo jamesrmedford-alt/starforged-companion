@@ -264,6 +264,12 @@ describe('applySidecar', () => {
     });
   });
 
+  it('stamps the campaign session number on each truth (issue #286 A7)', () => {
+    campaignState.sessionNumber = 4;
+    applySidecar({ newTruths: [{ subject: 'Vance', fact: 'Tall' }], stateChanges: [] }, { campaignState });
+    expect(campaignState.sceneTruths[0]).toMatchObject({ sessionNum: 4, createdAt: expect.any(Number) });
+  });
+
   it('returns IDs and update keys for the caller', () => {
     const { truthIds, stateUpdates } = applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'a' }],

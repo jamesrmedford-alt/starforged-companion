@@ -96,7 +96,8 @@ dead assembler packet until 2026-07; see `faction-flow.md`) · [5] current
 location card · [5b]
 active-sector anchor · [6] matched entity cards · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
-`maxLedgerTokens` sheds state only — frame/truths/corrections/ship are
+`maxLedgerTokens` sheds state only, line by line with location / vessel /
+condition last — frame/truths/corrections/ship are
 never dropped) · [7] legacy connections summary (count only) · [8]
 CHARACTER STATE · [8b] party roster · [8c] spotlight nudge · [9] sidecar
 instruction (last; includes the record-anchors-once and never-re-assert-

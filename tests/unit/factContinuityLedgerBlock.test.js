@@ -268,6 +268,50 @@ describe('buildLedgerBlock — maxTokens', () => {
     expect(out.truths).not.toBe('');
     expect(out.state).not.toBe('');
   });
+
+  // Issue #286 A6: the whole state block used to drop at once, REQUIRED
+  // location and condition included, as soon as truths filled the cap.
+  const truths = Array.from({ length: 7 }, (_, i) => ({
+    subject: 'scene', fact: `Established detail number ${i + 1} about the derelict's spine corridor`,
+  }));
+  const total = (out) => Object.values(out.tokenEstimates).reduce((a, b) => a + b, 0);
+
+  it('sheds other attributes before a character\'s location and condition', () => {
+    const required = [
+      { subject: 'Vance', attribute: 'location',  value: 'aboard his shuttle' },
+      { subject: 'Vance', attribute: 'condition', value: 'bleeding from the shoulder' },
+    ];
+    const budget = total(buildLedgerBlock(seed(makeCampaignState(), { truths, stateChanges: required }), {
+      playerNarration: 'Vance',
+    }));
+    const cs = seed(makeCampaignState(), { truths, stateChanges: [
+      required[0],
+      { subject: 'Vance', attribute: 'mood', value: 'guarded and sour' },
+      required[1],
+      { subject: 'scene', attribute: 'lighting', value: 'flickering red emergency strips' },
+    ] });
+    const out = buildLedgerBlock(cs, { playerNarration: 'Vance', maxTokens: budget });
+    // (A text subject's state key is lowercased, so is its label.)
+    expect(out.state).toContain('vance — location: aboard his shuttle');
+    expect(out.state).toContain('vance — condition: bleeding from the shoulder');
+    expect(out.state).not.toContain('mood');
+    expect(out.state).not.toContain('lighting');
+    expect(out.truths.split('\n')).toHaveLength(8);
+    expect(total(out)).toBeLessThanOrEqual(budget);
+  });
+
+  it('sheds the oldest line first among equals', () => {
+    const cs = seed(makeCampaignState(), { truths, stateChanges: [
+      { subject: 'scene', attribute: 'lighting', value: 'dim amber' },
+      { subject: 'scene', attribute: 'sound',    value: 'a slow metallic ticking' },
+    ] });
+    const lighting = cs.sceneState.bySubject.scene.find(e => e.attribute === 'lighting');
+    lighting.updatedAt -= 10_000;
+    const full = buildLedgerBlock(cs, { maxTokens: Infinity });
+    const out = buildLedgerBlock(cs, { maxTokens: total(full) - 3 });
+    expect(out.state).toContain('scene — sound: a slow metallic ticking');
+    expect(out.state).not.toContain('lighting');
+  });
 });
 
 
