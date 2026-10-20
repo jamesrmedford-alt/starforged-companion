@@ -241,3 +241,26 @@ describe('a new NPC: facts the narrator recorded before their card existed follo
     expect(tier(mira).map(e => e.detail)).toContain('quartermaster at Bleakhold (she/her); owes the PC a favour');
   });
 });
+
+describe('@scene asks about the scene in progress (A4)', () => {
+  it('its answer is written against the frame, truths and state — and the scene carries on', async () => {
+    replies.push(reply('Emergency strips bathe the corridor red; the hatch ahead is a seam of slag.', {
+      newTruths:    [{ subject: 'scene', fact: 'the hatch is welded shut' }],
+      stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'red emergency strips' }],
+      sceneFrame:   { location: 'the derelict\'s spine corridor', present: [], situation: 'Looking for a way past the welded hatch' },
+    }));
+    await narrateMove('I follow the corridor to the hatch.');
+
+    const from = table.claude.calls.length;
+    await type('pl-1', '@scene what does the hatch look like up close?');
+    const asked = table.claude.calls.slice(from).filter(c => c.model === NARRATION_MODEL);
+    expect(asked.map(c => c.client)).toEqual(['gm-1']);
+    expect(asked[0].system).toMatch(/SCENE FRAME[^\n]*\n {2}Where: {3}the derelict's spine corridor/);
+    expect(asked[0].system).toMatch(/TRUTHS:\n {2}scene — the hatch is welded shut/);
+    expect(asked[0].system).toMatch(/CURRENT STATE[^\n]*\n {2}scene — lighting: red emergency strips/);
+
+    expect(world().currentSceneId).toBe('sc-1');
+    expect(world().sceneTruths.map(t => t.fact)).toEqual(['the hatch is welded shut']);
+    expect(world().sceneFrame?.location).toBe('the derelict\'s spine corridor');
+  });
+});

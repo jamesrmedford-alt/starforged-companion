@@ -614,14 +614,17 @@ export const CHAT_COMMAND_ROUTES = [
 ];
 
 /**
- * @scene — scene interrogation. Starts a new scene moment in the fiction, so
- * reset the recent move-density window so the pacing classifier doesn't carry
- * over the previous scene's run of MOVE decisions. RUN_ON.CLAUDE: it calls
- * Claude and starts a new scene (startScene — campaignState, WJ Lore and
- * entity-tier writes) on the keyed canonical GM when one is connected;
- * otherwise it runs on the author's client, which only narrates — the scene
- * boundary is skipped (debug-logged) and the narrator side-data is not
+ * @scene — scene interrogation. Resets the recent move-density window so the
+ * pacing classifier doesn't carry over a run of MOVE decisions. RUN_ON.CLAUDE:
+ * it calls Claude on the keyed canonical GM when one is connected; otherwise
+ * on the author's client, which only narrates — the narrator side-data is not
  * applied there.
+ *
+ * It asks about the scene in progress, so it continues that scene (issue #286
+ * A4): interrogateScene starts one only when none is active (on the canonical
+ * GM). It used to end the scene first, so the answer was written without the
+ * frame, truths, state or CORRECTED list it was asked about. Scenes end at
+ * `!scene end`, End Session, the 4-hour re-mint and closeWorld.
  */
 async function handleSceneQueryCommand(message) {
   const text     = message.content?.trim() ?? "";
@@ -632,16 +635,6 @@ async function handleSceneQueryCommand(message) {
   }
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
   resetRecentDensity();
-  // Fact continuity: every @scene begins a new scene moment. Flush any
-  // unended prior scene and assign a fresh scene ID before narration.
-  // See issue #227 (Fact Continuity) §9.1.
-  if (factContinuityEnabledFromSettings()) {
-    if (isCanonicalGM()) {
-      await startScene(campaignState, { reason: "@scene_intercept" });
-    } else {
-      console.debug(`${MODULE_ID} | @scene: not the canonical GM — the scene boundary is left to the GM (world write).`);
-    }
-  }
   // Full speaker resolution (token selection → bound character →
   // ownership → fallback) — the bound-character-only read this
   // replaces attributed every @scene to the default PC in multiplayer.

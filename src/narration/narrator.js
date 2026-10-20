@@ -1071,8 +1071,9 @@ export async function interrogateScene(question, campaignState, options = {}) {
   // `actorId` is the legacy option name; both are honoured.
   const speakerActorId = options?.speakerActorId ?? options?.actorId ?? null;
   const character      = getActiveCharacter(campaignState, speakerActorId);
-  // The @scene intercept in index.js already calls startScene; this guard
-  // covers any direct interrogateScene callers that bypass the chat hook.
+  // @scene continues the scene in progress (issue #286 A4) — this starts one
+  // only when none is active, so the answer is written against the frame,
+  // truths, state and CORRECTED list it was asked about.
   await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
   const extras = await buildNarratorExtras('scene_interrogation', campaignState, {
     playerNarration: question,

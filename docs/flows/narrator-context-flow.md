@@ -164,11 +164,13 @@ cap 8) for section [3b] (the retired assembler's RECENT ORACLES section
 went with the module, 2026-07 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
-`!scene start`, an `@scene` intercept, `ensureSceneStarted` on the first
-move/@scene/paced narration, **or the inciting incident** (so the premise
-sidecar writes into a real scene the first move then *continues* — the
-opening NPC state and frame survive). The `@scene` intercept and
-`ensureSceneStarted` start a scene on the **canonical GM only** — a scene
+`!scene start`, `ensureSceneStarted` on the first move/@scene/paced
+narration, **or the inciting incident** (so the premise sidecar writes into a
+real scene the first move then *continues* — the opening NPC state and frame
+survive). `@scene` **continues** the scene in progress (issue #286 A4): it
+used to call `startScene`, which ended the scene it was asked about and wrote
+the answer without the frame, truths, state or CORRECTED list.
+`ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
 boundary is a world write, so a keyed player's client narrating `@scene` /
 `!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →

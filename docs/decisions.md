@@ -6,6 +6,32 @@ rejected.
 
 ---
 
+## `@scene` continues the scene in progress (2026-10)
+
+**Decision:** (issue #286 A4) `@scene` asks about the scene in progress, so it
+continues that scene. The intercept no longer calls `startScene`;
+`interrogateScene`'s `ensureSceneStarted` starts a scene only when none is
+active, on the canonical GM. Scenes end at `!scene end`, End Session
+(`session_close`), the ready hook's stale-scene close before a 4-hour re-mint
+(`session_gap_remint`) and `closeWorld`. Pacing's move-density window still
+resets on `@scene`: that is a pacing heuristic, not a scene boundary.
+
+**Why:** scope #227 §2.3 / §9.1 made every `@scene` a scene boundary when it
+was the only boundary signal the module had. The scene frame and the REQUIRED
+NPC location and condition state (2026-06-10) arrived later, and both are
+scene-scoped. So `@scene` ended the scene it was asked about: `startScene`
+migrated the truths, discarded the state and cleared the frame on the same
+object `interrogateScene` then built its prompt from. The answer was written
+without the frame, truths, state or CORRECTED list, and the frame-present
+relevance union was empty.
+
+**Rejected:**
+- *Keep `@scene` as a boundary and carry only the frame across.* The truths
+  and state would still migrate out from under the question.
+- *A separate `@scene new` verb.* `!scene start` already exists.
+
+Supersedes scope #227 §2.3 / §9.1 ("every `@scene` begins a new scene").
+
 ## Tests run on Foundry's permission model and a simulated multi-client table (2026-10)
 
 **Decision:** (issue #282) By default, the unit suite's Foundry stubs enforce
@@ -332,8 +358,8 @@ and exactly one runs it:
   side-data apply;
 - otherwise → the author's client runs it with its own key (a keyed player at
   a keyless-GM table). GM-only writes are then skipped and debug-logged — the
-  scene boundary included: `@scene` and the narrators' `ensureSceneStarted`
-  start a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
+  scene start included: the narrators' `ensureSceneStarted` (which `@scene`
+  goes through) starts a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
   author gets the usual "Claude API key not configured" fallback.
 
 This is `RUN_ON.CLAUDE` for `@scene`, `!recap`, `!ship envision` / `history`
