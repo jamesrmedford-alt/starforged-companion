@@ -307,7 +307,7 @@ with the narrator function that made it; the page leads with the cache-read
 share of prompt tokens and the median time per call. The whole system prompt
 is one cached block that changes every turn, so the expectation is a share
 near zero: that measurement is what the proposed tier layout (cached campaign
-canon and memory first, per-turn data last — issue #286 §F) is judged against.
+canon and memory first, per-turn data last — issue #287, from #286 §F) is judged against.
 
 Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
 (400) only sheds *state*; truths/frame/corrections/ship render regardless.

@@ -13,7 +13,7 @@ rejected.
   cache writes, output — and elapsed time to the Pacing Telemetry journal's
   "Narrator Usage" page, labelled with the narrator function that made it
   (`logNarratorUsage`). The proposed re-layout of the request into cached
-  tiers (issue #286 §F2–F5) waits for these numbers and a playtest. Moving
+  tiers (issue #286 §F2–F5, carried to #287) waits for these numbers and a playtest. Moving
   mode instructions out of the top of the system prompt may shift the
   narrator's voice, so it needs that playtest.
 - `narrationDisablesThinking` matches exact model ids (optionally

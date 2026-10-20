@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Narrator continuity & detail persistence (issue #286) — v1.7.34 cycle
+### Narrator continuity & detail persistence (issue #286) — fixed in the v1.7.34 cycle; follow-ups in #287
 
 The audit traced how small details (a scar, a bar's name, an object handed
 over, a promise) are stored, sent and kept. Harness composition tests in
@@ -36,15 +36,13 @@ over, a promise) are stored, sent and kept. Harness composition tests in
 | E | DOC-DRIFT | Help and docs described old defaults and behaviour | Corrected |
 | F7 | LATENT | Thinking-off matched the `claude-sonnet-5` prefix (would 400 on Sonnet 5.5) | Exact ids |
 
-**Open:**
-- **D1 — Private Channel and canon** (needs a decision): the Private
-  Channel carries no ledger, cards, summary or premise, and a published
-  reflection never enters the ring, summary or ledger. Whether a published
-  reflection becomes canon is the maintainer's call.
-- **F2–F6** — the tiered, cached request layout and larger budgets wait on
-  the Narrator Usage numbers (F6 step 1, shipped) and a playtest.
+**Open — moved to #287** (issue #286 is closed):
+- **D1** — whether a published Private Channel reflection becomes canon
+  (needs a decision).
+- **§F steps 2–6** — the tiered, cached request layout and larger budgets
+  wait on the Narrator Usage numbers and a playtest.
 - **SUMMARY-KEYLESS-GM** — the rolling summary regenerates on the canonical
-  GM (B7). At a table whose GM has no Claude key it is never generated.
+  GM (B7); at a table whose GM has no Claude key it is never generated.
 - **STRIKE-CHRONICLE** — a strike does not reach the chronicle (or the
   campaign recap built from it).
 - **CHRONICLE-FIRST-PC** — chronicle entries are all written to the first PC
