@@ -77,6 +77,7 @@ import {
   getCampaignRecap,
   narrateAndPostVowSwearing,
   registerRollingSummaryRefreshHook,
+  registerPublishedReflectionHook,
 } from "./narration/narrator.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
@@ -5044,6 +5045,7 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
+  registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

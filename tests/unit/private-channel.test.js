@@ -13,7 +13,7 @@ import {
   loadCurrentSessionTranscript,
   _resetBuffers,
 } from "../../src/private-channel/transcript.js";
-import { getActiveCharacter, getRecentNarrationContext, currentLocationName } from "../../src/narration/narrator.js";
+import { getActiveCharacter, getRecentNarrationContext, currentLocationName, buildPrivateChannelStory } from "../../src/narration/narrator.js";
 import { buildPrivateContext } from "../../src/private-channel/context.js";
 import { publishToMainChat } from "../../src/private-channel/publish.js";
 import { requestPrivateNarration } from "../../src/private-channel/narrate.js";
@@ -35,6 +35,7 @@ vi.mock("../../src/narration/narrator.js", () => ({
   getActiveCharacter:        vi.fn(),
   getRecentNarrationContext: vi.fn(() => ""),
   currentLocationName:       vi.fn(() => null),
+  buildPrivateChannelStory:  vi.fn(async () => ({ canon: "", scene: "" })),
 }));
 vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 
@@ -328,6 +329,21 @@ describe("buildPrivateContext", () => {
     expect(user).toContain("## PLAYER MESSAGE");
   });
 
+  // Issue #286 D1: the private narrator reads what the main narrator knows.
+  it("puts the shared canon in the cached prefix and the shared scene in the volatile block", async () => {
+    buildPrivateChannelStory.mockResolvedValueOnce({
+      canon: "## CAMPAIGN PREMISE\n\n(the inciting incident)",
+      scene: "## ACTIVE SCENE\n\n(frame, truths, state)",
+    });
+    const campaignState = { currentSessionId: "s1" };
+    const { system, user } = await buildPrivateContext({ campaignState, userId: "u1", playerMessage: "Is Kael still angry?" });
+    expect(buildPrivateChannelStory).toHaveBeenCalledWith(campaignState, "Is Kael still angry?");
+    expect(system).toContain("## CAMPAIGN PREMISE");
+    expect(system).toContain("Never contradict them.");
+    expect(system).not.toContain("ACTIVE SCENE");
+    expect(user).toMatch(/## CURRENT SCENE CONTEXT[\s\S]*## ACTIVE SCENE[\s\S]*## PLAYER MESSAGE/);
+  });
+
   it("throws when no active character can be resolved", async () => {
     getActiveCharacter.mockReturnValue(null);
     await expect(
@@ -357,6 +373,20 @@ describe("publishToMainChat", () => {
     expect(arg.flags[MODULE_ID].kind).toBe("published-reflection");
     expect(arg.flags[MODULE_ID].publishedReflection).toBe(true);
     expect(arg.content).toContain("I think I trust Vance now.");
+  });
+
+  // Issue #286 D1: a published reflection is canon — the narrator flag family
+  // brings it into the ring and the rolling summary.
+  it("carries the narrator flag family: the published text and the session", async () => {
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "sess-9" });
+    try {
+      await publishToMainChat({ userId: "u1", content: "  I think I trust Vance now.  " });
+    } finally {
+      game.settings._store.delete(`${MODULE_ID}.campaignState`);
+    }
+    expect(createSpy.mock.calls[0][0].flags[MODULE_ID]).toMatchObject({
+      narratorCard: true, narrationText: "I think I trust Vance now.", sessionId: "sess-9",
+    });
   });
 
   it("escapes HTML in the character-name attribution", async () => {

@@ -577,3 +577,59 @@ describe('Confirm on a draft card keeps what the narration said about them (D3)'
     });
   });
 });
+
+describe('the Private Channel reads the shared story; a published reflection is canon (D1)', () => {
+  const PRIVATE_MODEL = 'claude-haiku-4-5-20251001';
+
+  it('a private aside is told the premise, the NPC\'s card and what the scene established about them', async () => {
+    await recordNpc('Kael Dros');
+    replies.push(reply('Kael leans on the rail, rubbing the old scar on his jaw.', {
+      newTruths:  [{ subject: 'Kael Dros', fact: 'has a ragged scar along his jaw' }],
+      stateChanges: [],
+      sceneFrame: { location: 'Bleakhold docking ring', present: ['Kael Dros'], situation: 'Waiting for the shuttle' },
+    }));
+    await narrateMove('I hail Kael Dros across the docking ring.');
+    table.world.setSetting('campaignState', { ...world(), incitingIncident: { prose: 'The beacon at Bleakhold went dark.' } });
+    await table.setClaudeKey('pl-1', 'sk-ant-pat');
+
+    const pl = table.client('pl-1');
+    const { requestPrivateNarration } = await pl.import('../../src/private-channel/narrate.js');
+    const from = table.claude.calls.length;
+    const result = await pl.run(() => requestPrivateNarration({
+      campaignState: game.settings.get(MODULE_ID, 'campaignState'), userId: 'pl-1', actorId: 'pc-pat',
+      transcriptTurns: [], playerMessage: 'What do I remember about him?',
+    }));
+    expect(result.ok).toBe(true);
+
+    const aside = table.claude.calls.slice(from).find(c => c.model === PRIVATE_MODEL && c.client === 'pl-1');
+    expect(aside.system).toContain('## CAMPAIGN PREMISE');
+    expect(aside.system).toContain('The beacon at Bleakhold went dark.');
+    // "him" names no one: the scene frame's cast brings Kael's card and facts.
+    expect(aside.userText).toContain('## KAEL DROS — Connection');
+    expect(aside.userText).toContain('SCENE FRAME (the scene as it stands):');
+    expect(aside.userText).toMatch(/Kael Dros — has a ragged scar along his jaw/);
+  });
+
+  it('a published reflection reaches the next narration, and the NPC it names gets the tier pass', async () => {
+    await recordNpc('Kael Dros');
+    const REFLECTION = 'You realise Kael Dros never forgave the Hegemony for Bleakhold.';
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    try {
+      const pl = table.client('pl-1');
+      const { publishToMainChat } = await pl.import('../../src/private-channel/publish.js');
+      const from = table.claude.calls.length;
+      await pl.run(() => publishToMainChat({ userId: 'pl-1', content: REFLECTION }));
+      await table.settle();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await table.settle();
+      expect(table.cards(f => f.publishedReflection)).toHaveLength(1);
+      const tierPass = table.claude.calls.slice(from).filter(c => c.client === 'gm-1' && c.userText?.includes(REFLECTION));
+      expect(tierPass.length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const next = await narrateMove('I go and find Kael.');
+    expect(next.userText).toContain(REFLECTION);
+  });
+});

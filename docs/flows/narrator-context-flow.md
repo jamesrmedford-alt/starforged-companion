@@ -71,7 +71,19 @@ player's client — narrating only with no keyed GM online — that player's own
 read from their client setting, never another player's. Before 2026-10 the
 shared prompt passed no user id and carried no Private Line at all
 (SAFETY-PRIVATE-LINES-SHARED). The Private Channel passes its player's id
-(`src/private-channel/context.js` `buildPrivateContext`). The X-Card
+(`src/private-channel/context.js` `buildPrivateContext`).
+
+**The Private Channel** (issue #286 D1) builds its own Haiku prompt but reads
+what the main narrator knows, rendered by the same section formatters
+(`buildPrivateChannelStory` → `buildSharedStorySections`): world truths and the
+campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
+the recorded entities the message or the scene frame names (lexical, plus
+`addSceneFrameCast`) and the scene ledger in the per-turn message. It writes
+nothing during a conversation. A reflection the player publishes is canon:
+its card carries the flag family (ring, rolling summary), and the canonical
+GM runs the tier pass for the entities it names
+(`registerPublishedReflectionHook`). No ledger facts — the private narrator
+emits no sidecar. The X-Card
 (`xCardActive`, set by the `xcard.activate` relay) is checked by every
 narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
 clock vignettes, vow swearing, inciting incident — against the caller's

@@ -13,7 +13,8 @@ layers. This file is the never-break list.
    As of 2026-07 this covers move, paced, @scene, inciting, galley /
    end-session vignettes, vow-swearing scenes, all three clock-vignette post
    sites, and oracle follow-up narrations — "mood piece" is not an
-   exemption. When adding a new card type or co-marking an existing one,
+   exemption. Since issue #286 D1 a reflection a player publishes from the
+   Private Channel carries it too: published text is canon. When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
    recap, correction hook, audio hook, burn-supersede) in the same commit —
    the consumer list lives in architecture doc §2.

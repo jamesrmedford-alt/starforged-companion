@@ -1136,6 +1136,74 @@ export function resolveNarrationPerspective(setting) {
 // System prompt builder
 // ---------------------------------------------------------------------------
 
+/** [4c] STORY SO FAR — this session's rolling summary, under the ledger-wins caveat. '' when empty. */
+function formatStorySoFarBlock(rollingSummary) {
+  if (typeof rollingSummary !== 'string' || !rollingSummary.trim()) return '';
+  return (
+    `## STORY SO FAR (THIS SESSION)\n\n` +
+    `(Narrative texture only — where this summary conflicts with the ` +
+    `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
+    rollingSummary.trim()
+  );
+}
+
+/** [6] ENTITIES IN SCENE — the matched entity cards. '' when there are none. */
+function formatEntityCardsBlock(entityCards) {
+  const cards = (Array.isArray(entityCards) ? entityCards : [])
+    .filter(c => typeof c === 'string' && c.trim().length);
+  return cards.length ? ['## ENTITIES IN SCENE', ...cards].join('\n\n') : '';
+}
+
+/**
+ * [6.5] The active-scene ledger, when fact continuity and its in-context
+ * toggle are on. '' otherwise, or when nothing is in scope.
+ */
+function formatLedgerSection(campaignState, settings = {}, { matchedEntityIds = [], entityNamesById = null } = {}) {
+  const {
+    factContinuityEnabled         = true,
+    factContinuityLedgerInContext = true,
+    factContinuityMaxLedgerTokens = 400,
+    factContinuitySceneFrame      = true,
+  } = settings ?? {};
+  if (!factContinuityEnabled || !factContinuityLedgerInContext) return '';
+  return buildLedgerBlock(campaignState, {
+    matchedEntityIds,
+    currentLocationId: campaignState?.currentLocationId ?? null,
+    maxTokens:         factContinuityMaxLedgerTokens,
+    entityNamesById,
+    sceneFrameEnabled: factContinuitySceneFrame,
+  }).combined;
+}
+
+/**
+ * The shared story, for a narrator with a prompt of its own — the Private
+ * Channel (issue #286 D1, #287), so a private aside cannot contradict what
+ * the table established. Rendered as buildNarratorSystemPrompt renders the
+ * same sections, from the same extras:
+ *   - `canon` — world truths [4] and the campaign premise [4b]: stable within
+ *     a campaign, so they can sit in a cached prefix;
+ *   - `scene` — LAST SESSION and STORY SO FAR [4c], the matched entity cards
+ *     [6] and the active-scene ledger [6.5]: they change turn to turn.
+ *
+ * @param {Object} campaignState
+ * @param {Object} [narratorSettings] — the factContinuity* settings (getNarratorSettings)
+ * @param {Object} [extras] — rollingSummary, previousSessionSummary, entityCards,
+ *   matchedEntityIds, entityNamesById
+ * @returns {{ canon: string, scene: string }}
+ */
+export function buildSharedStorySections(campaignState, narratorSettings = {}, extras = {}) {
+  const join = (blocks) => blocks.filter(Boolean).join('\n\n---\n\n');
+  return {
+    canon: join([buildWorldTruthsBlock(campaignState), buildIncitingIncidentBlock(campaignState)]),
+    scene: join([
+      formatPreviousSessionBlock(extras.previousSessionSummary ?? null),
+      formatStorySoFarBlock(extras.rollingSummary ?? ''),
+      formatEntityCardsBlock(extras.entityCards),
+      formatLedgerSection(campaignState, narratorSettings, extras),
+    ]),
+  };
+}
+
 /**
  * [4c] LAST SESSION — the summary of the session before this one
  * (buildNarratorExtras → previousSessionSummaryFor), with the STORY SO FAR
@@ -1363,14 +1431,8 @@ export function buildNarratorSystemPrompt(
   if (!isMetaMode) {
     const lastSessionBlock = formatPreviousSessionBlock(previousSessionSummary);
     if (lastSessionBlock) parts.push(lastSessionBlock);
-  }
-  if (!isMetaMode && typeof rollingSummary === 'string' && rollingSummary.trim()) {
-    parts.push(
-      `## STORY SO FAR (THIS SESSION)\n\n` +
-      `(Narrative texture only — where this summary conflicts with the ` +
-      `ACTIVE SCENE block or CHARACTER STATE below, those win.)\n\n` +
-      rollingSummary.trim(),
-    );
+    const storyBlock = formatStorySoFarBlock(rollingSummary);
+    if (storyBlock) parts.push(storyBlock);
   }
 
   // [4d]-[4g] World Journal state (FACTION-PACKET-DEAD fix, 2026-07) —
@@ -1410,26 +1472,16 @@ export function buildNarratorSystemPrompt(
   }
 
   // [6] Matched entity cards — from relevance resolver
-  if (Array.isArray(entityCards) && entityCards.length) {
-    const cards = entityCards.filter(s => typeof s === 'string' && s.trim().length);
-    if (cards.length) {
-      parts.push(['## ENTITIES IN SCENE', ...cards].join('\n\n'));
-    }
-  }
+  const cardsBlock = formatEntityCardsBlock(entityCards);
+  if (cardsBlock) parts.push(cardsBlock);
 
   // [6.5] Active scene ledger — binding truths + current state for in-scope
   //       subjects. Gated by both the master fact-continuity toggle and the
   //       ledger-in-context sub-toggle (fact-continuity scope §6).
-  if (factContinuityEnabled && factContinuityLedgerInContext) {
-    const ledger = buildLedgerBlock(campaignState, {
-      matchedEntityIds,
-      currentLocationId: campaignState?.currentLocationId ?? null,
-      maxTokens:         factContinuityMaxLedgerTokens,
-      entityNamesById,
-      sceneFrameEnabled: factContinuitySceneFrame,
-    });
-    if (ledger.combined) parts.push(ledger.combined);
-  }
+  const ledgerBlock = formatLedgerSection(campaignState, {
+    factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
+  }, { matchedEntityIds, entityNamesById });
+  if (ledgerBlock) parts.push(ledgerBlock);
 
   // [7] Active connections summary (legacy — connection names/roles only)
   const connections = buildConnectionsSummary(campaignState);

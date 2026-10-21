@@ -117,6 +117,7 @@ should remember* must carry all three flags:
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
 | clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
+| published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`). No sidecar, so no ledger facts |
 
 **Audited consumers of `narratorCard`** (re-audit when adding a card type —
 CLAUDE.md "audit consumers" rule):
@@ -138,6 +139,8 @@ CLAUDE.md "audit consumers" rule):
   `resolutionId`, unaffected
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
+- the Private Channel's own scene context (`getRecentNarrationContext`, last
+  3) — a published reflection shows there too
 
 **Knob:** `narratorContextCards` (world, 1–50, default 20; Narrator pane).
 @scene keeps its own `sceneContextCards`.
