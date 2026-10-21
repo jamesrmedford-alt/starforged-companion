@@ -6,6 +6,13 @@
  * §7). Posts a styled card attributed to the character (alias resolved via
  * getActiveCharacter), flagged publishedReflection / kind="published-reflection".
  * Everything else in the private channel stays invisible to other players.
+ *
+ * A published reflection is canon (issue #286 D1, #287): the card carries the
+ * narrator flag family (narratorCard / narrationText / sessionId), so the main
+ * narrator remembers it — the recent-narration ring and the rolling summary —
+ * and the canonical GM runs the tier pass for the recorded entities it names
+ * (registerPublishedReflectionHook). Only the published text: the player's own
+ * private lines stay private.
  */
 
 import { getActiveCharacter } from "../narration/narrator.js";
@@ -34,9 +41,11 @@ export async function publishToMainChat({ userId, content }) {
   if (!text) return null;
 
   let characterName = "You";
+  let sessionId     = null;
   try {
     const cs      = game.settings?.get?.(MODULE_ID, "campaignState");
     const actorId = game.users?.get?.(userId)?.character?.id ?? null;
+    sessionId     = cs?.currentSessionId ?? null;
     characterName = getActiveCharacter(cs, actorId)?.name || characterName;
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: publish alias resolve failed:`, err?.message ?? err);
@@ -52,6 +61,14 @@ export async function publishToMainChat({ userId, content }) {
   return ChatMessage.create({
     content: card,
     speaker: { alias: characterName },
-    flags:   { [MODULE_ID]: { publishedReflection: true, kind: "published-reflection" } },
+    flags:   {
+      [MODULE_ID]: {
+        publishedReflection: true,
+        kind:                "published-reflection",
+        narratorCard:        true,
+        narrationText:       text,
+        sessionId,
+      },
+    },
   });
 }

@@ -6,6 +6,35 @@ rejected.
 
 ---
 
+## The Private Channel reads the shared story; a published reflection is canon (2026-10)
+
+**Decision:** (issue #286 D1, decided in #287 — the maintainer chose "read
+and write")
+- **Read.** The private narrator is told what the main narrator knows, rendered
+  by the same section formatters (`buildPrivateChannelStory` →
+  `buildSharedStorySections`): world truths and the campaign premise in its
+  cached prefix; last session's and this session's summaries, the cards of the
+  recorded entities the player's message or the scene frame names, and the
+  scene ledger in the per-turn message. It is told never to contradict them.
+- **Write.** A reflection the player publishes is canon. Its card carries the
+  narrator flag family, so the ring and the rolling summary hold it, and the
+  canonical GM runs the tier pass for the recorded entities it names
+  (`registerPublishedReflectionHook`), as for vow scenes and vignettes. Only
+  the published text: the player's own private lines are never published.
+- **No ledger facts.** The private narrator emits no sidecar; nothing said in
+  the private window is recorded until it is published.
+
+**Why:** the private narrator remembered only the open window's turns, the
+location and three ring cards, so a private aside could contradict the
+table's established facts; and a reflection the table saw was forgotten by the
+main narrator at once (its card had no flag family).
+
+**Rejected:**
+- *A sidecar on private turns* — the private conversation is exploratory;
+  only what the player publishes should bind the story.
+- *Publishing the player's prompting line with the reply* — the publish
+  dialog shows only the narrator's text, so that is all that goes out.
+
 ## Narrator latency: measure first; thinking-off by exact model id (2026-10)
 
 **Decision:** (issue #286 F6 step 1, F7)

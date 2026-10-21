@@ -8,6 +8,7 @@ import {
   buildNarratorUserMessage,
   buildSceneUserMessage,
   buildCampaignRecapUserMessage,
+  buildSharedStorySections,
   buildPacedNarrativeUserMessage,
   formatEntityCard,
   sanitizePlayerText,
@@ -383,6 +384,33 @@ async function sessionStartRecap(campaignState) {
   }
   if (!game.user?.isGM) return '';
   return getCampaignRecap(campaignState).catch(() => '');
+}
+
+/**
+ * The shared story a Private Channel turn reads (issue #286 D1, #287) — what
+ * the main narrator knows, so a private aside can't contradict the table:
+ * `canon` (world truths, the campaign premise) for its cached prefix, and
+ * `scene` (last and this session's summaries, the cards of the recorded
+ * entities the player's message or the scene frame names, the scene ledger).
+ * Relevance is lexical, as on every non-move path: no API call and no side
+ * effects (no spotlight advance, no recap generation).
+ *
+ * @param {Object} campaignState
+ * @param {string} playerMessage
+ * @returns {Promise<{ canon: string, scene: string }>}
+ */
+export async function buildPrivateChannelStory(campaignState, playerMessage) {
+  const lexical = await resolvePathRelevance(playerMessage, campaignState);
+  const extras = {
+    entityCards:            lexical.entityCards,
+    matchedEntityIds:       lexical.entityIds,
+    matchedEntityTypes:     lexical.entityTypes,
+    entityNamesById:        lexical.entityNamesById,
+    rollingSummary:         cachedRollingSessionSummary(campaignState),
+    previousSessionSummary: previousSessionSummaryFor(campaignState),
+  };
+  addSceneFrameCast(extras, campaignState);
+  return buildSharedStorySections(campaignState, getNarratorSettings(), extras);
 }
 
 /** What this turn is about, as text for lore selection: player text, scene frame, entity names, current location. */
@@ -1222,6 +1250,23 @@ export function registerRollingSummaryRefreshHook() {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
     refreshRollingSessionSummary();
+  });
+}
+
+/**
+ * A reflection a player publishes from the Private Channel is canon (issue
+ * #286 D1, #287). Its card carries the narrator flag family, so it reaches the
+ * ring and the rolling summary like any narration; here, on the canonical GM,
+ * the recorded entities it names get its developments on their cards — the
+ * tier pass vow scenes and vignettes run. It records no ledger facts: the
+ * private narrator writes no sidecar.
+ */
+export function registerPublishedReflectionHook() {
+  Hooks.on('createChatMessage', (message) => {
+    if (!isCanonicalGM()) return;
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.publishedReflection || !f.narrationText) return;
+    scheduleNarrationCapture(f.narrationText, game.settings.get(MODULE_ID, 'campaignState'));
   });
 }
 

@@ -36,9 +36,12 @@ over, a promise) are stored, sent and kept. Harness composition tests in
 | E | DOC-DRIFT | Help and docs described old defaults and behaviour | Corrected |
 | F7 | LATENT | Thinking-off matched the `claude-sonnet-5` prefix (would 400 on Sonnet 5.5) | Exact ids |
 
+**D1 — fixed in the v1.7.34 cycle** (decided in #287): the Private Channel
+reads the shared story, and a published reflection is canon (decisions.md →
+"The Private Channel reads the shared story; a published reflection is
+canon").
+
 **Open — moved to #287** (issue #286 is closed):
-- **D1** — whether a published Private Channel reflection becomes canon
-  (needs a decision).
 - **§F steps 2–6** — the tiered, cached request layout and larger budgets
   wait on the Narrator Usage numbers and a playtest.
 - **SUMMARY-KEYLESS-GM** — the rolling summary regenerates on the canonical

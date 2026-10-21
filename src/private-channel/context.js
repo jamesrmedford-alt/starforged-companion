@@ -4,21 +4,29 @@
  *
  * Mirrors the main narrator's prompt assembly, but for a private, no-move
  * conversation (issue #226 (Private Channel) §4). The cacheable prefix
- * (SAFETY + ROLE + WORLD TRUTHS + CHARACTER) is stable within a session; the
- * volatile tail (scene context + transcript + player message) changes every
- * turn. Returns { system, user, cacheBreakpoint } — `system` is the cacheable
- * block and `cacheBreakpoint` is its length, the boundary the API caller marks
- * with cache_control.
+ * (SAFETY + ROLE + CAMPAIGN TRUTHS + WORLD TRUTHS + PREMISE + CHARACTER) is
+ * stable within a session; the volatile tail (scene context + the shared
+ * story + transcript + player message) changes every turn. Returns
+ * { system, user, cacheBreakpoint } — `system` is the cacheable block and
+ * `cacheBreakpoint` is its length, the boundary the API caller marks with
+ * cache_control.
+ *
+ * The private narrator reads what the main narrator knows (issue #286 D1,
+ * #287): world truths and the campaign premise, last and this session's
+ * summaries, the cards of the recorded entities the message or the scene
+ * frame names, and the scene ledger — buildPrivateChannelStory, rendered as
+ * the main prompt renders them. It writes nothing back; a reflection the
+ * player publishes becomes canon through its chat card (publish.js).
  *
  * Reuses the shared builders rather than re-deriving: formatSafetyContext
  * (src/context/safety.js), buildCampaignTruthsBlock (src/system/campaignTruths.js),
- * getActiveCharacter + getRecentNarrationContext + currentLocationName
- * (src/narration/narrator.js).
+ * getActiveCharacter + getRecentNarrationContext + currentLocationName +
+ * buildPrivateChannelStory (src/narration/narrator.js).
  */
 
 import { formatSafetyContext } from "../context/safety.js";
 import { buildCampaignTruthsBlock } from "../system/campaignTruths.js";
-import { getActiveCharacter, getRecentNarrationContext, currentLocationName } from "../narration/narrator.js";
+import { getActiveCharacter, getRecentNarrationContext, currentLocationName, buildPrivateChannelStory } from "../narration/narrator.js";
 
 const ROLE = [
   "## ROLE",
@@ -27,6 +35,9 @@ const ROLE = [
   "stepped aside from main play to think, reflect, or ask you something",
   "privately. Respond conversationally. Do NOT narrate as if this is the main",
   "scene. Do NOT resolve moves or mechanical changes.",
+  "",
+  "The world truths, premise and shared story below are what the table has",
+  "established in play. Never contradict them.",
 ].join("\n");
 
 function formatCharacterBlock(character) {
@@ -89,13 +100,15 @@ export async function buildPrivateContext({ campaignState, userId, actorId, tran
 
   const safety = formatSafetyContext(campaignState, null, userId);
   const truths = await buildCampaignTruthsBlock(campaignState);
+  const story  = await buildPrivateChannelStory(campaignState, playerMessage ?? "");
 
-  const system = [safety, ROLE, truths, formatCharacterBlock(character)]
+  const system = [safety, ROLE, truths, story.canon, formatCharacterBlock(character)]
     .filter(Boolean)
     .join("\n\n");
 
   const user = [
     formatSceneContext(campaignState),
+    story.scene,
     formatTranscriptBlock(transcriptTurns),
     `## PLAYER MESSAGE\n\n${playerMessage ?? ""}`,
   ].filter(Boolean).join("\n\n");
