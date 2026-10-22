@@ -6,6 +6,41 @@ rejected.
 
 ---
 
+## Collaborative character creation: toolbar button, narrator model, Starforged sheet fields (2026-10)
+
+**Decision:** (issue #291, the maintainer's choices on 2026-10-22, before any
+code)
+- **It opens from the Companion toolbar.** A Create Character button that
+  players can use, shown whether or not the Private Channel is enabled. There
+  is no chat command.
+- **It runs on the world narrator model** (`narrationModel`), not the Private
+  Channel's fixed Haiku.
+- **The background vow is an ordinary vow.** `readVows` keeps labelling the
+  shared inciting vow "Background vow" in CHARACTER STATE. Until an inciting
+  vow exists, the first-vow fallback shows the character's own vow there.
+- **Text goes where the Starforged sheet puts it.** Look and manner go in the
+  header's Characteristics box (`system.biography`). The backstory and starting
+  gear go in the Notes tab (`system.notes`). The narrator already reads both.
+
+**Why:** players have to be able to start it themselves, and #226 §16 had
+already dropped chat commands for the Private Channel: duplicate windows across
+clients, deletion permissions, and the open event leaking to the table. The
+Private Channel uses Haiku because its exchanges are short and frequent. A
+character is made once, and its backstory feeds the whole campaign. Keeping the
+inciting vow as "Background vow" leaves `isBackground` and its readers as they
+are. The Starforged sheet has no gear section (checked against the vendored
+`sf-charactersheet.vue` and upstream main), so gear goes in a sheet field the
+player sees and the narrator already reads.
+
+**Rejected:**
+- *`!character new`*: the name #226 used. A chat trigger has the problems #226
+  §16 lists.
+- *Relabelling the creation vow as the background vow*: it would change what
+  `isBackground` means for every reader, for little gain.
+- *The Characteristics box for gear*: offered. The maintainer chose the Notes
+  tab, so the header holds look and manner only.
+- *The `grantedRewards` flag for gear*: it prints as "Rewards received".
+
 ## The Private Channel reads the shared story; a published reflection is canon (2026-10)
 
 **Decision:** (issue #286 D1, decided in #287 — the maintainer chose "read
