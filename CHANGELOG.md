@@ -31,6 +31,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Companion Settings tells you where Private Lines go.** The panel said Private Lines were stored on your client and never shared with the GM. They are sent to the GM's client so every narration respects them. They are still not shown to other players, and the narrator never mentions them.
 - Fixed: **The Private Channel knows where you are.** Its scene context names the location the GM set with `!at`. It used to read a field nothing wrote, so the location never appeared.
 - Fixed: **Renaming a settlement updates its sector overview once.** Every connected browser used to rewrite the overview journal page: players' attempts were refused, and with two GMs it was written twice. Now only the GM's client does it.
+- Fixed: **The narrator knows what your assets do.** It was told only their names. The abilities you've marked on your paths, companions, modules and other assets now reach it.
 - Internal: multiplayer test infrastructure (issue #282, items 1–4).
   - The unit-test Foundry stubs now enforce Foundry's permissions: world settings are GM-only, chat messages can be edited by their author or a GM, and actor updates need OWNER.
   - A simulated multi-client table (`tests/helpers/multiClient.js`) boots the module once per client over a shared world.

@@ -143,8 +143,11 @@ export function readCharacterSnapshot(actor) {
  * narrator context. Only enabled abilities are surfaced — disabled
  * abilities aren't yet "unlocked" and shouldn't inform the narrator.
  *
- * Strips HTML tags from ability text so the prompt stays clean — the
- * ironsworn schema stores rich text in HTMLField.
+ * Ability text lives in `abilities[].description` — the vendor
+ * AssetAbilityField has name / enabled / description / clock fields and no
+ * `text` (ASSET-ABILITY-TEXT). It is rich text (HTMLField) carrying
+ * `@Compendium[…]{Face Danger}` move links, so HTML is stripped and each
+ * link is reduced to its label to keep the prompt clean.
  *
  * @param {Actor} actor
  * @returns {Array<{ name: string, abilities: string[], description: string }>}
@@ -157,7 +160,7 @@ export function readAssets(actor) {
     .map(i => {
       const abilities = (i.system?.abilities ?? [])
         .filter(a => a?.enabled)
-        .map(a => stripHtml(a?.text ?? ''))
+        .map(a => stripHtml(linkLabels(a?.description ?? '')))
         .filter(Boolean);
       return {
         name:        i.name ?? '',
@@ -169,6 +172,11 @@ export function readAssets(actor) {
 
 function stripHtml(s) {
   return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Reduce Foundry document links (`@Compendium[…]{Face Danger}`, `@UUID[…]{…}`) to their labels. */
+function linkLabels(s) {
+  return String(s ?? '').replace(/@\w+\[[^\]]*\]\{([^}]*)\}/g, '$1');
 }
 
 /**

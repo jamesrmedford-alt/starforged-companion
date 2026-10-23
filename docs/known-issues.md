@@ -11,6 +11,14 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### ASSET-ABILITY-TEXT — the narrator never saw what a character's assets do — fixed in the v1.7.34 cycle
+
+Found while scoping collaborative character creation (#291).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| ASSET-ABILITY-TEXT | LOSE-PLOT | `readAssets` (`actorBridge.js`) read ability text from `abilities[].text`, a field the vendor `AssetAbilityField` doesn't have (the text is `description`, which `abilityScanner.js` already read). So the CHARACTER block listed assets by name only, on every narrator path. The unit and Quench fixtures used `text`, and the Quench test asserted only the asset name, so both passed → `readAssets` reads `description` and reduces `@Compendium[…]{Move}` links to their labels; the fixtures use the vendor field, and the Quench test asserts the ability text reaches the prompt |
+
 ### Narrator continuity & detail persistence (issue #286) — fixed in the v1.7.34 cycle; follow-ups in #287
 
 The audit traced how small details (a scar, a bar's name, an object handed
