@@ -490,8 +490,8 @@ describe('readAssets', () => {
             system: {
               description: '<p>Path of fire.</p>',
               abilities: [
-                { enabled: true,  text: '<p>Burn <em>everything</em>.</p>' },
-                { enabled: false, text: '<p>Locked ability.</p>' },
+                { enabled: true,  description: '<p>Burn <em>everything</em>.</p>' },
+                { enabled: false, description: '<p>Locked ability.</p>' },
               ],
             },
           },
@@ -514,7 +514,7 @@ describe('readAssets', () => {
         contents: [
           {
             type: 'asset', name: 'Scoundrel',
-            system: { abilities: [{ enabled: true, text: 'Bluff your way out.' }] },
+            system: { abilities: [{ enabled: true, description: 'Bluff your way out.' }] },
           },
         ],
       },
@@ -522,6 +522,33 @@ describe('readAssets', () => {
     const snap = readCharacterSnapshot(actor);
     expect(snap.assets).toHaveLength(1);
     expect(snap.assets[0].name).toBe('Scoundrel');
+    expect(snap.assets[0].abilities).toEqual(['Bluff your way out.']);
+  });
+
+  // ASSET-ABILITY-TEXT: the vendor AssetAbilityField keeps ability text in
+  // `description` (there is no `text`), and pack abilities link their moves.
+  it('reads pack-shaped ability text, reducing move links to their labels', () => {
+    const actor = freshActor({
+      items: {
+        contents: [
+          {
+            type: 'asset', name: 'Ace',
+            system: {
+              category: 'Path',
+              abilities: [{
+                enabled:     true,
+                description: '<p>When you @Compendium[foundry-ironsworn.starforgedmoves.e6ed148eff82c171]{Face Danger} '
+                  + 'or @Compendium[foundry-ironsworn.starforgedmoves.d9208f9b7d827aec]{React Under Fire} at the helm, add +1.</p>',
+                hasClock:    false,
+              }],
+            },
+          },
+        ],
+      },
+    });
+    expect(readAssets(actor)[0].abilities).toEqual([
+      'When you Face Danger or React Under Fire at the helm, add +1.',
+    ]);
   });
 
   it('returns empty array when no asset items present', () => {

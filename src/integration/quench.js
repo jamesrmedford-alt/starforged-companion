@@ -9245,7 +9245,9 @@ function registerNarratorCharacterContextTests(quench) {
                 category: "Path",
                 abilities: [{
                   enabled: true,
-                  text: "<p>When you Face Danger by guiding your vehicle, add +1.</p>",
+                  // The vendor AssetAbilityField's text field is `description`
+                  // (ASSET-ABILITY-TEXT); pack abilities link their moves.
+                  description: "<p>When you @Compendium[foundry-ironsworn.starforgedmoves.e6ed148eff82c171]{Face Danger} by guiding your vehicle, add +1.</p>",
                 }],
               },
             },
@@ -9288,6 +9290,8 @@ function registerNarratorCharacterContextTests(quench) {
           assert.include(prompt, "Edge 3",             "stats line should reach the prompt");
           assert.include(prompt, "wounded",            "marked impact should reach the prompt");
           assert.include(prompt, "Ace",                "path/asset name should reach the prompt");
+          assert.include(prompt, "When you Face Danger by guiding your vehicle",
+            "enabled ability text should reach the prompt, with the move link reduced to its label");
           assert.include(prompt, "Background vow:",    "background vow line should render");
           assert.include(prompt, "Avenge my sister",   "background-vow name should appear");
           assert.include(prompt, "Dr Chen",            "connection name should reach the prompt");
