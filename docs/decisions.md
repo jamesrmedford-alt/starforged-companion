@@ -13,9 +13,16 @@ before any code)
 - **It is an interview.** The narrator plays an interviewer in character,
   draws the backstory and paths out of the player, and proposes the whole
   character. The player can change any of it at the end, before Finish.
-- **The interviewer becomes the character's first connection.** It is an
-  existing sector NPC when one fits ("Reuse before you invent"), otherwise a
-  new NPC scoped to the sector.
+- **The interviewer becomes the character's first connection,** at
+  troublesome (the lowest rank), set automatically. It is an existing sector
+  NPC when one fits ("Reuse before you invent"), otherwise a new NPC scoped
+  to the sector.
+- **The interviewer asks gender, height and weight, and offers to take the
+  character's picture.** The existing portrait pipeline generates it on the
+  GM's OpenRouter key, with one retake ("Portrait generation: generate once,
+  one regeneration, then locked").
+- **Campaign Start doesn't use it.** Campaign Start stays the fast, random
+  setup; character creation is the player's route.
 - **The narrator's leanings show live** in the side panel, and the narrator
   answers the player's questions about what a path is or does.
 - **It runs on the GM's key only**, on the canonical GM's client, with the
@@ -27,8 +34,9 @@ before any code)
 - **The background vow is an ordinary vow.** `readVows` keeps labelling the
   shared inciting vow "Background vow" in CHARACTER STATE. Until an inciting
   vow exists, the first-vow fallback shows the character's own vow there.
-- **Text goes where the Starforged sheet puts it.** Look and manner go in the
-  header's Characteristics box (`system.biography`). The backstory and starting
+- **Text goes where the Starforged sheet puts it.** Look and manner, with
+  gender, height and weight, go in the header's Characteristics box
+  (`system.biography`). The backstory and starting
   gear go in the Notes tab (`system.notes`). The narrator already reads both.
 
 **Why:** most players don't know the 46 paths, so the narrator asks about the
@@ -53,6 +61,10 @@ player sees and the narrator already reads.
   key only.
 - *Keeping the leanings for the reveal*: the maintainer chose to show them
   live.
+- *Picking the first connection's rank at the review*: the maintainer chose
+  the lowest rank, set automatically.
+- *Character creation inside Campaign Start*: Campaign Start is for throwing a
+  world together fast.
 - *`!character new`*: the name #226 used. A chat trigger has the problems #226
   §16 lists.
 - *Relabelling the creation vow as the background vow*: it would change what
