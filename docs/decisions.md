@@ -23,6 +23,9 @@ before any code)
   one regeneration, then locked").
 - **Campaign Start doesn't use it.** Campaign Start stays the fast, random
   setup; character creation is the player's route.
+- **Finish offers an introduction card, and a posted one is canon,** as a
+  published reflection is (the entry below): the narrator flag family, the
+  GM's tier pass, no sidecar facts. The player can edit, post or skip it.
 - **The narrator's leanings show live** in the side panel, and the narrator
   answers the player's questions about what a path is or does.
 - **It runs on the GM's key only**, on the canonical GM's client, with the
