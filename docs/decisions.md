@@ -6,15 +6,24 @@ rejected.
 
 ---
 
-## Collaborative character creation: toolbar button, narrator model, Starforged sheet fields (2026-10)
+## Collaborative character creation: an in-character interview on the GM's key, filling the Starforged sheet (2026-10)
 
-**Decision:** (issue #291, the maintainer's choices on 2026-10-22, before any
-code)
+**Decision:** (issue #291, the maintainer's choices on 2026-10-22 and 23,
+before any code)
+- **It is an interview.** The narrator plays an interviewer in character,
+  draws the backstory and paths out of the player, and proposes the whole
+  character. The player can change any of it at the end, before Finish.
+- **The interviewer becomes the character's first connection.** It is an
+  existing sector NPC when one fits ("Reuse before you invent"), otherwise a
+  new NPC scoped to the sector.
+- **The narrator's leanings show live** in the side panel, and the narrator
+  answers the player's questions about what a path is or does.
+- **It runs on the GM's key only**, on the canonical GM's client, with the
+  world narrator model (`narrationModel`): never the player's key, and not
+  the Private Channel's fixed Haiku.
 - **It opens from the Companion toolbar.** A Create Character button that
   players can use, shown whether or not the Private Channel is enabled. There
   is no chat command.
-- **It runs on the world narrator model** (`narrationModel`), not the Private
-  Channel's fixed Haiku.
 - **The background vow is an ordinary vow.** `readVows` keeps labelling the
   shared inciting vow "Background vow" in CHARACTER STATE. Until an inciting
   vow exists, the first-vow fallback shows the character's own vow there.
@@ -22,7 +31,11 @@ code)
   header's Characteristics box (`system.biography`). The backstory and starting
   gear go in the Notes tab (`system.notes`). The narrator already reads both.
 
-**Why:** players have to be able to start it themselves, and #226 §16 had
+**Why:** most players don't know the 46 paths, so the narrator asks about the
+character and matches the paths to the answers, and the review at the end
+keeps the player in control. On the GM's key, a player needs no key of their
+own, and every turn runs on the client that writes the character at Finish.
+Players have to be able to start it themselves, and #226 §16 had
 already dropped chat commands for the Private Channel: duplicate windows across
 clients, deletion permissions, and the open event leaking to the table. The
 Private Channel uses Haiku because its exchanges are short and frequent. A
@@ -33,6 +46,13 @@ are. The Starforged sheet has no gear section (checked against the vendored
 player sees and the narrator already reads.
 
 **Rejected:**
+- *Choosing step by step*: the first draft. The maintainer chose the interview
+  with a review at the end.
+- *The "Claude calls run where a key lives" ladder*, which falls back to a
+  keyed player's own key when no keyed GM is on: the maintainer chose the GM's
+  key only.
+- *Keeping the leanings for the reveal*: the maintainer chose to show them
+  live.
 - *`!character new`*: the name #226 used. A chat trigger has the problems #226
   §16 lists.
 - *Relabelling the creation vow as the background vow*: it would change what
