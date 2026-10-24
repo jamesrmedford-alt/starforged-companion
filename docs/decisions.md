@@ -16,7 +16,8 @@ CSS media queries handle looks. `window.matchMedia` handles behaviour: folding
 the toolbar, full-screen windows, keeping the toolbar on screen after a
 rotation. A client-scoped setting (Automatic, Phone, Desktop) overrides the
 guess. Only the module's UI adapts; Foundry's own UI is out of reach. The
-phone user is the GM, in portrait and in landscape. A dedicated phone view
+phone user is the GM, debugging alone, in portrait and in landscape: no
+multiplayer session runs with the GM on a phone. A dedicated phone view
 comes only if the compact layout isn't enough, judged after a test pass on
 the phone.
 
@@ -31,6 +32,9 @@ covers a wrong guess.
   Chromium-only, so it is at most a hint.
 - *A manual switch only*: the maintainer asked for the layout to adapt by
   itself. The switch stays, as the override.
+- *A screen wake lock during sessions*: proposed while the GM's phone looked
+  like the table's engine. It isn't needed: only solo debug sessions run on a
+  phone, and Android's screen-timeout setting covers a long one.
 
 ## Collaborative character creation: an in-character interview on the GM's key, filling the Starforged sheet (2026-10)
 
