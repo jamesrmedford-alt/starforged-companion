@@ -4806,6 +4806,9 @@ function injectPushToTalkButton(html) {
   button.addEventListener("mouseup",    (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
   button.addEventListener("touchend",   (e) => { e.preventDefault(); window._sfSpeechInput?.stop(); });
   button.addEventListener("mouseleave", () => { window._sfSpeechInput?.stop(); });
+  // The system interrupts a touch (a notification, a gesture) with touchcancel,
+  // not touchend; without this, listening never stops (issue #293).
+  button.addEventListener("touchcancel", () => { window._sfSpeechInput?.stop(); });
 
   controls.prepend(button);
 }
