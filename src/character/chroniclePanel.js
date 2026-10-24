@@ -49,7 +49,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
   static DEFAULT_OPTIONS = {
     id:      'sf-chronicle-panel',
-    classes: ['starforged-companion', 'sf-chronicle'],
+    classes: ['starforged-companion', 'sf-chronicle', 'sf-window'],
     tag:     'div',
     window: {
       title:       'Chronicle',

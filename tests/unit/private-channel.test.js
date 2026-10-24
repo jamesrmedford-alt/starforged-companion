@@ -191,6 +191,39 @@ describe("transcript write/read", () => {
     expect(html).toContain("Remember this.");
   });
 
+  // Issue #293: a phone may suspend or discard a background tab before the
+  // 5 s debounce fires, so hiding or unloading the page flushes at once.
+  it("flushes pending turns when the page is hidden", async () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: "visible" });
+    globalThis.document = doc;
+    try {
+      appendToBuffer("player-1", { who: "player", name: "Kira", text: "Before the app switch." });
+      doc.dispatchEvent(new Event("visibilitychange"));   // still visible: no flush
+      expect(_journals.size).toBe(0);
+      doc.visibilityState = "hidden";
+      doc.dispatchEvent(new Event("visibilitychange"));
+      await vi.waitFor(async () => {
+        expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("Before the app switch.");
+      });
+    } finally {
+      delete globalThis.document;
+    }
+  });
+
+  it("flushes pending turns on pagehide", async () => {
+    const win = new EventTarget();
+    globalThis.window = win;
+    try {
+      appendToBuffer("player-1", { who: "player", name: "Kira", text: "Before the tab closed." });
+      win.dispatchEvent(new Event("pagehide"));
+      await vi.waitFor(async () => {
+        expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("Before the tab closed.");
+      });
+    } finally {
+      delete globalThis.window;
+    }
+  });
+
   it("a second flush appends to the same session page (one page per session)", async () => {
     appendToBuffer("player-1", { who: "player", name: "Kira", text: "First." });
     await flushNow("player-1");

@@ -4364,6 +4364,60 @@ function registerToolbarTests(quench) {
           }
         });
       });
+
+      // Issue #293: on a phone the layout adapts by itself. The CI browser is a
+      // desktop, so the Phone override stands in for a phone's measurements.
+      describe("adaptive layout — Phone (issue #293)", function () {
+        it("folds the toolbar behind one launcher and fits module windows to the screen's width", async function () {
+          this.timeout(15000);
+          const { CompanionToolbarApp } = await import(`${MODULE_PATH}/ui/companionToolbar.js`);
+          const { applyLayout, LAYOUT_SETTING } = await import(`${MODULE_PATH}/ui/layoutMode.js`);
+          const { openClocksPanel } = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const settle = () => new Promise(r => setTimeout(r, 150));
+
+          assert.isTrue(
+            game.settings.settings.has(`${MODULE_ID}.${LAYOUT_SETTING}`),
+            "the per-device Layout setting should be registered",
+          );
+          const before = game.settings.get(MODULE_ID, LAYOUT_SETTING);
+          const app = CompanionToolbarApp.open();
+          let panel = null;
+          try {
+            await game.settings.set(MODULE_ID, LAYOUT_SETTING, "phone");
+            await settle();
+            assert.isTrue(document.body.classList.contains("sf-compact"), "Phone sets sf-compact on <body>");
+            assert.isTrue(document.body.classList.contains("sf-touch"), "Phone sets sf-touch on <body>");
+
+            const root = app.element?.querySelector(".sf-companion-toolbar");
+            assert.isTrue(!!root?.classList.contains("is-compact"), "the toolbar re-renders compact");
+            const menu = root.querySelector(".sf-companion-toolbar__menu");
+            assert.isOk(menu, "the tools sit in a menu behind the launcher");
+            assert.isTrue(menu.hidden, "the menu starts closed");
+            const labels = Array.from(menu.querySelectorAll(".sf-companion-toolbar__label")).map(l => l.textContent);
+            assert.include(labels, "Session", "each tool is labelled (no hover tooltips on a touch screen)");
+
+            // A tap on the launcher (no movement) opens the menu, inside the viewport.
+            const grip = root.querySelector(".sf-companion-toolbar__grip");
+            grip.dispatchEvent(new globalThis.PointerEvent("pointerdown", { pointerId: 7, clientX: 20, clientY: 20, bubbles: true }));
+            window.dispatchEvent(new globalThis.PointerEvent("pointerup", { pointerId: 7, clientX: 20, clientY: 20, bubbles: true }));
+            assert.isFalse(menu.hidden, "a tap on the launcher opens the menu");
+            const box = app.element.getBoundingClientRect();
+            assert.isAtMost(box.bottom, window.innerHeight, "the opened toolbar stays inside the viewport");
+
+            panel = openClocksPanel();
+            await settle();
+            assert.approximately(
+              panel.element.getBoundingClientRect().width, window.innerWidth, 2,
+              "a module window spans the screen's width in the compact layout",
+            );
+          } finally {
+            if (panel) await panel.close();
+            await game.settings.set(MODULE_ID, LAYOUT_SETTING, before ?? "auto");
+            applyLayout();
+            await app.close();
+          }
+        });
+      });
     },
     { displayName: "STARFORGED: Toolbar Buttons" },
   );

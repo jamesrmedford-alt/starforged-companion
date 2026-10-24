@@ -42,7 +42,7 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
 
   static DEFAULT_OPTIONS = {
     id:      'sf-world-journal-panel',
-    classes: ['starforged-companion', 'sf-world-journal'],
+    classes: ['starforged-companion', 'sf-world-journal', 'sf-window'],
     tag:     'div',
     window: {
       title:       'World Journal',

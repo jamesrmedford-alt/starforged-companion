@@ -183,7 +183,7 @@ export class EntityPanelApp extends ApplicationV2 {
 
   static DEFAULT_OPTIONS = {
     id: `${MODULE_ID}-entity-panel`,
-    classes: [MODULE_ID, 'entity-panel'],
+    classes: [MODULE_ID, 'entity-panel', 'sf-window'],
     tag: 'div',
     window: {
       title: 'Entities',

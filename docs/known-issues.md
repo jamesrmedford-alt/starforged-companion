@@ -11,6 +11,15 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Phone play on The Forge (issue #293) — fixed in the v1.7.34 cycle
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| FORGE-ART-UPLOAD | WRONG-DETAIL | `uploadSectorImage` (`sectorArt.js`) and `uploadShipMapImage` (`shipMapArt.js`) discarded the `FilePicker.upload` response and returned the path they built. On The Forge the file lands in the Assets Library at an absolute `assets.forge-vtt.com` URL, so the scene pointed at a file that didn't exist (the AUDIO-002 bug). The scene builders also prefixed `/` onto any path → both return `response.path` (falling back to the built path), and `sceneBuilder.js` / `shipMapScene.js` leave absolute URLs as they are. `tests/unit/forgeArtUploads.test.js` and the two scene-builder tests fail with the fix reverted |
+| PC-TRANSCRIPT-HIDDEN | LOSE-PLOT | Private Channel turns were saved 5 s after the last one or on window close (`transcript.js`); a phone that switches apps or locks can suspend or discard the tab first → pending turns also flush on `visibilitychange` (hidden) and `pagehide`, registered on the first buffered turn. Two tests in `private-channel.test.js` fail with the fix reverted |
+| PHONE-LAYOUT | UX | On a Pixel (2026-10-23) the module's windows were too big for the screen, panning and zooming back out were finicky, and the toolbar's bottom tools were cut off: it was one column of 32 px buttons starting 96 px down, with no limit to the viewport → `layoutMode.js` sets `sf-compact` / `sf-touch` on `<body>` from the device (decisions.md → "Phone layout"); the toolbar is always clamped into the viewport (`clampToViewport`) and in the compact layout folds behind one launcher; windows marked `sf-window` span the screen; tap targets grow to 44–48 px. Unit tests in `layoutMode.test.js` / `companionToolbar.test.js`; a Quench test checks the live toolbar and window width under the Phone override. Not yet checked on a real phone |
+| PTT-TOUCHCANCEL | LATENT | The push-to-talk button stopped on `touchend` / `mouseup` / `mouseleave` but not `touchcancel`, which the system fires when it interrupts a touch, so listening could stay on → `injectPushToTalkButton` (`src/index.js`) stops on `touchcancel` too |
+
 ### ASSET-ABILITY-TEXT — the narrator never saw what a character's assets do — fixed in the v1.7.34 cycle
 
 Found while scoping collaborative character creation (#291).

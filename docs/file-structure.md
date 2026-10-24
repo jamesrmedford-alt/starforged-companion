@@ -245,8 +245,9 @@ developer-only and excluded from the release.
 | `entityPanel.js` | Entity panel (generative tiers, links, current-location card). A ship's Battered / Cursed fields show the starship sheet's native `system.debility` values (canonical) over the flag record's mirror. |
 | `progressTracks.js` | Progress-track panel (vows/expeditions/combats/connections/legacy). |
 | `sessionPanel.js` | Session moves panel — Begin/End/Flag/Fate/Break (v1.6.0). |
-| `companionToolbar.js` | Floating, draggable launcher (frameless `ApplicationV2`) for all Companion panels. Replaces the scene-controls group (v1.7.5); scene-independent so it works with no map open. Exports `openCompanionToolbar()` / `registerCompanionToolbarSettings()`. |
-| `companionToolbarTools.js` | Pure, import-free visibility/data for the launcher (`companionToolbarTools({isGM, privateChannelEnabled})`); unit-tested in isolation. |
+| `companionToolbar.js` | Floating, draggable launcher (frameless `ApplicationV2`) for all Companion panels. Replaces the scene-controls group (v1.7.5); scene-independent so it works with no map open. Always kept inside the viewport; in the compact layout it folds behind one launcher (tap for a labelled tool list, drag to move) and re-renders on a layout change (#293). Exports `openCompanionToolbar()` / `registerCompanionToolbarSettings()`. |
+| `companionToolbarTools.js` | Pure, import-free visibility/data for the launcher (`companionToolbarTools({isGM, privateChannelEnabled})`) and `clampToViewport(box, viewport)`; unit-tested in isolation. |
+| `layoutMode.js` | Adaptive layout for phones and touch screens (#293). `decideLayout()` (pure: compact from a viewport under 600 × 480 px or a touch screen under 600 px; touch from a coarse pointer), `applyLayout()` sets `sf-compact` / `sf-touch` on `<body>`, `onLayoutChange()` for floating UI, the client-scoped `layoutMode` setting (Automatic / Phone / Desktop) via `registerLayoutSettings()`, and `initLayoutMode()` (resize / pointer-change re-checks). Module windows carry the `sf-window` class the compact CSS keys on. |
 
 ### `world/` — World Journal
 

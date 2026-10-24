@@ -370,9 +370,10 @@ export async function createShipMapScene(shipActor, { backgroundPath = null, sta
   );
 
   // FilePicker.upload returns a relative path; Scene background.src wants a
-  // server-root path. (sceneBuilder.js note.)
+  // server-root path. An absolute URL (The Forge's Assets Library) is used as
+  // is. (sceneBuilder.js note.)
   const imgPath = backgroundPath
-    ? (backgroundPath.startsWith("/") ? backgroundPath : `/${backgroundPath}`)
+    ? (/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(backgroundPath) ? backgroundPath : `/${backgroundPath}`)
     : null;
 
   const scene = await Scene.create({

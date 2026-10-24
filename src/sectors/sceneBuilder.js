@@ -70,8 +70,9 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
 
   // Foundry v13 scene background.src requires a path from the server root.
   // FilePicker.upload returns a relative path (no leading slash); add one.
+  // An absolute URL (The Forge's Assets Library) is used as is.
   const imgPath = backgroundPath
-    ? (backgroundPath.startsWith("/") ? backgroundPath : `/${backgroundPath}`)
+    ? (/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(backgroundPath) ? backgroundPath : `/${backgroundPath}`)
     : null;
   console.log(`${MODULE_ID} | createSectorScene: backgroundPath = ${backgroundPath}, imgPath = ${imgPath}`);
 

@@ -9,9 +9,14 @@
  * normal state for theater-of-the-mind play) the whole group, and every button
  * in it, was inert. This toolbar is a frameless ApplicationV2 pinned to the
  * viewport, so it works with or without a scene loaded. See docs/decisions.md.
+ *
+ * It always stays inside the viewport (issue #293). In the compact layout
+ * (layoutMode.js) it folds behind one launcher button: tap it for a labelled
+ * tool list, drag it to move the toolbar.
  */
 
-import { companionToolbarTools } from "./companionToolbarTools.js";
+import { companionToolbarTools, clampToViewport } from "./companionToolbarTools.js";
+import { isCompactLayout, onLayoutChange } from "./layoutMode.js";
 import { openSessionPanel }      from "./sessionPanel.js";
 import { openProgressTracks }    from "./progressTracks.js";
 import { openEntityPanel }       from "./entityPanel.js";
@@ -28,6 +33,8 @@ const { ApplicationV2 } = foundry.applications.api;
 
 const MODULE_ID        = "starforged-companion";
 const POSITION_SETTING = "companionToolbarPosition";
+/** Movement under this many px on the grip is a tap, not a drag. */
+const DRAG_THRESHOLD_PX = 6;
 
 /** Maps a tool key (from companionToolbarTools) to the function that opens its panel. */
 const OPENERS = {
@@ -80,16 +87,37 @@ export class CompanionToolbarApp extends ApplicationV2 {
     return { tools: companionToolbarTools({ isGM, privateChannelEnabled }) };
   }
 
+  /** Whether the compact layout's tool list is open. */
+  #menuOpen = false;
+
   async _renderHTML(context, _options) {
+    const compact = isCompactLayout();
     const root = document.createElement("nav");
-    root.className = "sf-companion-toolbar";
+    root.className = compact ? "sf-companion-toolbar is-compact" : "sf-companion-toolbar";
     root.setAttribute("aria-label", "Starforged Companion");
 
-    const grip = document.createElement("div");
+    // The grip drags the toolbar. In the compact layout it is also the
+    // launcher: a tap (no drag) opens the labelled tool list.
+    const grip = document.createElement(compact ? "button" : "div");
     grip.className = "sf-companion-toolbar__grip";
-    grip.title     = "Starforged Companion — drag to move";
     grip.innerHTML = `<i class="fas fa-meteor"></i>`;
+    if (compact) {
+      grip.type  = "button";
+      grip.title = "Starforged Companion — tap for tools, drag to move";
+      grip.setAttribute("aria-label", "Starforged Companion tools");
+      grip.setAttribute("aria-expanded", String(this.#menuOpen));
+    } else {
+      grip.title = "Starforged Companion — drag to move";
+    }
     root.appendChild(grip);
+
+    let list = root;
+    if (compact) {
+      list = document.createElement("div");
+      list.className = "sf-companion-toolbar__menu";
+      list.hidden    = !this.#menuOpen;
+      root.appendChild(list);
+    }
 
     for (const tool of context.tools) {
       const btn = document.createElement("button");
@@ -99,15 +127,23 @@ export class CompanionToolbarApp extends ApplicationV2 {
       btn.title          = tool.title;
       btn.setAttribute("aria-label", tool.title);
       btn.innerHTML      = `<i class="${tool.icon}"></i>`;
+      if (compact) {
+        // A touch screen has no hover tooltips, so every tool is labelled.
+        const label = document.createElement("span");
+        label.className   = "sf-companion-toolbar__label";
+        label.textContent = tool.title;
+        btn.appendChild(label);
+      }
       btn.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (compact) this.#setMenuOpen(false);
         const open = OPENERS[tool.key];
         if (!open) return;
         try { open(); }
         catch (err) { console.error(`${MODULE_ID} | toolbar '${tool.key}' failed to open:`, err); }
       });
-      root.appendChild(btn);
+      list.appendChild(btn);
     }
 
     return root;
@@ -124,55 +160,131 @@ export class CompanionToolbarApp extends ApplicationV2 {
     this.#wireDrag();
   }
 
+  async close(options) {
+    this.#setMenuOpen(false);   // drops the outside-tap listener
+    return super.close(options);
+  }
+
+  /** Keep the toolbar inside the viewport, e.g. after a resize or rotation. */
+  refit() {
+    if (!this.rendered) return;
+    this.#placeWithinViewport(this.position.left, this.position.top);
+  }
+
   /** Place the toolbar at the saved per-user position, or a sensible default. */
   #restorePosition() {
     let saved = null;
     try { saved = globalThis.game?.settings?.get(MODULE_ID, POSITION_SETTING); }
     catch (err) { console.warn(`${MODULE_ID} | toolbar: could not read saved position:`, err); }
     if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
-      this.setPosition({ left: saved.left, top: saved.top });
+      this.#placeWithinViewport(saved.left, saved.top);
     } else {
-      this.setPosition({ left: 8, top: 96 });
+      this.#placeWithinViewport(8, 96);
     }
   }
 
-  /** Drag by the grip; persist the resting position on release. */
+  /** setPosition, kept inside the viewport (issue #293). */
+  #placeWithinViewport(left, top) {
+    const rect = this.element?.getBoundingClientRect?.();
+    const box  = { left, top, width: rect?.width ?? 0, height: rect?.height ?? 0 };
+    this.setPosition(clampToViewport(box, { width: window.innerWidth, height: window.innerHeight }));
+  }
+
+  /** Open or close the compact tool list, keeping the grown toolbar on screen. */
+  #setMenuOpen(open) {
+    if (this.#menuOpen === open) return;
+    this.#menuOpen = open;
+    const menu = this.element?.querySelector(".sf-companion-toolbar__menu");
+    if (menu) menu.hidden = !open;
+    this.element?.querySelector(".sf-companion-toolbar__grip")?.setAttribute("aria-expanded", String(open));
+    if (open) {
+      document.addEventListener("pointerdown", this.#onOutsidePointer, true);
+      this.refit();
+    } else {
+      document.removeEventListener("pointerdown", this.#onOutsidePointer, true);
+    }
+  }
+
+  /** A tap outside the toolbar closes the compact tool list. */
+  #onOutsidePointer = (ev) => {
+    if (this.element?.contains(ev.target)) return;
+    this.#setMenuOpen(false);
+  };
+
+  /**
+   * Drag by the grip and persist the resting position on release. On the
+   * compact launcher, a tap (moving less than DRAG_THRESHOLD_PX) toggles the
+   * tool list instead.
+   */
   #wireDrag() {
     const grip = this.element?.querySelector(".sf-companion-toolbar__grip");
     if (!grip || grip.dataset.dragWired) return;
     grip.dataset.dragWired = "1";
 
-    let startX = 0, startY = 0, startLeft = 0, startTop = 0, dragging = false;
+    let pointerId = null, startX = 0, startY = 0, startLeft = 0, startTop = 0, moved = false;
 
-    const onMove = (ev) => {
-      if (!dragging) return;
-      this.setPosition({ left: startLeft + (ev.clientX - startX), top: startTop + (ev.clientY - startY) });
-    };
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
+    const stop = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      pointerId = null;
+    };
+    const savePosition = () => {
       const { left, top } = this.position;
       try { globalThis.game?.settings?.set(MODULE_ID, POSITION_SETTING, { left, top }); }
       catch (err) { console.warn(`${MODULE_ID} | toolbar: could not save position:`, err); }
     };
+    const onMove = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      moved = true;
+      this.#placeWithinViewport(startLeft + dx, startTop + dy);
+    };
+    const onUp = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      stop();
+      if (moved) savePosition();
+      else if (isCompactLayout()) this.#setMenuOpen(!this.#menuOpen);
+    };
+    const onCancel = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      stop();
+      if (moved) savePosition();
+    };
 
     grip.addEventListener("pointerdown", (ev) => {
       ev.preventDefault();
-      dragging  = true;
+      pointerId = ev.pointerId;
+      moved     = false;
       startX    = ev.clientX;
       startY    = ev.clientY;
       startLeft = this.position.left;
       startTop  = this.position.top;
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+    });
+    // Keyboard activation (Enter / Space) clicks with no pointer events.
+    grip.addEventListener("click", (ev) => {
+      if (ev.detail === 0 && isCompactLayout()) this.#setMenuOpen(!this.#menuOpen);
     });
   }
 
   /** Open (or focus) the singleton toolbar. */
   static open() {
-    if (!CompanionToolbarApp.#instance) CompanionToolbarApp.#instance = new CompanionToolbarApp();
+    if (!CompanionToolbarApp.#instance) {
+      CompanionToolbarApp.#instance = new CompanionToolbarApp();
+      // Re-render on a change of layout; on any other resize or rotation,
+      // just keep the toolbar on screen.
+      onLayoutChange((_layout, changed) => {
+        const app = CompanionToolbarApp.#instance;
+        if (!app?.rendered) return;
+        if (changed) app.render();
+        else app.refit();
+      });
+    }
     CompanionToolbarApp.#instance.render({ force: true });
     return CompanionToolbarApp.#instance;
   }

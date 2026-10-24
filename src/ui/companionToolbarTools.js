@@ -37,3 +37,20 @@ export function companionToolbarTools({ isGM = false, privateChannelEnabled = fa
   ];
   return all.filter(t => t.visible).map(({ key, title, icon }) => ({ key, title, icon }));
 }
+
+/**
+ * Keep a floating box inside the viewport (issue #293): a saved position or a
+ * drag can otherwise leave the toolbar past an edge, e.g. after a phone
+ * rotates. A box larger than the viewport is pinned to the top-left margin.
+ *
+ * @param {{left: number, top: number, width: number, height: number}} box
+ * @param {{width: number, height: number}} viewport
+ * @param {number} [margin] — px kept clear of each edge
+ * @returns {{left: number, top: number}}
+ */
+export function clampToViewport(box, viewport, margin = 4) {
+  const maxLeft = Math.max(margin, viewport.width  - box.width  - margin);
+  const maxTop  = Math.max(margin, viewport.height - box.height - margin);
+  const clamp = (value, lo, hi) => Math.min(Math.max(Number.isFinite(value) ? value : lo, lo), hi);
+  return { left: clamp(box.left, margin, maxLeft), top: clamp(box.top, margin, maxTop) };
+}

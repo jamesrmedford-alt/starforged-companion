@@ -45,7 +45,7 @@ export class ClarificationDialog extends ApplicationV2 {
   // sticky #decided=true from the old close() and the next action becomes
   // a no-op, hanging the prompt promise. Same shape as MoveConfirmDialog.
   static DEFAULT_OPTIONS = {
-    classes: [MODULE_ID, 'sf-clarification-dialog'],
+    classes: [MODULE_ID, 'sf-clarification-dialog', 'sf-window'],
     tag:     'div',
     window: {
       title:       'Who are you interacting with?',

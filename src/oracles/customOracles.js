@@ -409,6 +409,7 @@ function getPanelClass() {
   _panelClass = class CustomOraclesPanelApp extends ApplicationV2 {
     static DEFAULT_OPTIONS = {
       id:  "sf-custom-oracles-panel",
+      classes: ["sf-window"],
       tag: "div",
       window: { title: "Custom Oracles", resizable: true, minimizable: true },
       position: { width: 520, height: "auto" },

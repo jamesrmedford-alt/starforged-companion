@@ -10,8 +10,9 @@
  *
  * Writes are debounced: turns accumulate in a module-scoped in-memory buffer
  * (never on campaignState) and flush 5 s after the last append, or immediately
- * on window close / session end. This avoids a Foundry document write per
- * message while keeping transcripts durable across unexpected disconnects.
+ * on window close / session end, or when the page is hidden or unloaded. This
+ * avoids a Foundry document write per message while keeping transcripts
+ * durable across unexpected disconnects.
  */
 
 const MODULE_ID   = "starforged-companion";
@@ -182,6 +183,7 @@ export async function loadCurrentSessionTranscript(userId, sessionId) {
  */
 export function appendToBuffer(userId, turn) {
   if (!userId || !turn?.text) return;
+  registerFlushOnHide();
   let entry = _buffers.get(userId);
   if (!entry) {
     entry = { turns: [], timerId: null, sessionId: currentSessionId() };
@@ -240,10 +242,33 @@ export async function flushNow(userId) {
   }
 }
 
+// A phone may suspend or discard a background tab before the debounce fires
+// (issue #293), so pending turns are also flushed when the page is hidden
+// (app switch, screen lock) or unloaded. Registered once, on the first
+// buffered turn, where a document or window exists.
+let _flushOnHideRegistered = false;
+
+function registerFlushOnHide() {
+  if (_flushOnHideRegistered) return;
+  const doc = globalThis.document;
+  const win = globalThis.window;
+  if (!doc && !win) return;
+  _flushOnHideRegistered = true;
+  doc?.addEventListener?.("visibilitychange", () => {
+    if (doc.visibilityState === "hidden") flushAllPending();
+  });
+  win?.addEventListener?.("pagehide", () => flushAllPending());
+}
+
+function flushAllPending() {
+  for (const userId of [..._buffers.keys()]) flushNow(userId).catch(() => {});
+}
+
 /** Test seam — clear all in-memory buffers (and any pending timers). */
 export function _resetBuffers() {
   for (const entry of _buffers.values()) {
     if (entry.timerId) clearTimeout(entry.timerId);
   }
   _buffers.clear();
+  _flushOnHideRegistered = false;
 }

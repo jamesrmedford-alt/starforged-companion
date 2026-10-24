@@ -73,7 +73,8 @@ const TROUBLE_VISUAL_MODIFIERS = {
  *
  * @param {SectorResult} sector
  * @param {Object} campaignState
- * @returns {Promise<string|null>} — Foundry data file path, or null on failure
+ * @returns {Promise<string|null>} — Foundry data file path (on The Forge, the
+ *   Assets Library URL), or null on failure
  */
 export async function generateSectorBackground(sector, _campaignState) {
   const { prompt } = buildSectorBackgroundPrompt(sector);
@@ -222,8 +223,12 @@ async function uploadSectorImage(b64, sectorId) {
   const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], filename, { type: "image/png" });
 
-  await foundry.applications.apps.FilePicker.implementation
+  // On The Forge, FilePicker.upload stores the file in the user's Assets
+  // Library and returns its absolute https://assets.forge-vtt.com/... URL in
+  // response.path; the constructed local path doesn't exist there (the
+  // AUDIO-002 bug). Prefer the response path.
+  const response = await foundry.applications.apps.FilePicker.implementation
     .upload("data", uploadDir, file, {}, { notify: false });
 
-  return `${uploadDir}/${filename}`;
+  return response?.path ?? `${uploadDir}/${filename}`;
 }
