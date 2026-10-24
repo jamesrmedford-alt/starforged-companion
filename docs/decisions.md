@@ -6,6 +6,36 @@ rejected.
 
 ---
 
+## Phone layout: adapt to what the device can do, with a per-device override (2026-10)
+
+**Decision:** (issue #293, the maintainer's choice on 2026-10-24, before any
+code) The module's UI switches to a compact, touch-friendly layout by itself,
+by detecting what the device can do: a coarse pointer (a finger), no hover, a
+small width or height. It doesn't try to decide whether the device is a phone.
+CSS media queries handle looks. `window.matchMedia` handles behaviour: folding
+the toolbar, full-screen windows, keeping the toolbar on screen after a
+rotation. A client-scoped setting (Automatic, Phone, Desktop) overrides the
+guess. Only the module's UI adapts; Foundry's own UI is out of reach. The
+phone user is the GM, debugging alone, in portrait and in landscape: no
+multiplayer session runs with the GM on a phone. A dedicated phone view
+comes only if the compact layout isn't enough, judged after a test pass on
+the phone.
+
+**Why:** on a Pixel joined to a Forge game (2026-10-23), the windows were too
+big for the screen, panning and zooming back out were finicky, and toolbar
+bottoms were cut off. Detecting capabilities also gives a small tablet or a
+narrow desktop window the right layout, and it follows rotation. The setting
+covers a wrong guess.
+
+**Rejected:**
+- *User-agent sniffing*: brittle. `navigator.userAgentData.mobile` is
+  Chromium-only, so it is at most a hint.
+- *A manual switch only*: the maintainer asked for the layout to adapt by
+  itself. The switch stays, as the override.
+- *A screen wake lock during sessions*: proposed while the GM's phone looked
+  like the table's engine. It isn't needed: only solo debug sessions run on a
+  phone, and Android's screen-timeout setting covers a long one.
+
 ## Collaborative character creation: an in-character interview on the GM's key, filling the Starforged sheet (2026-10)
 
 **Decision:** (issue #291, the maintainer's choices on 2026-10-22 and 23,
