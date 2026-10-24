@@ -15,7 +15,10 @@ small width or height. It doesn't try to decide whether the device is a phone.
 CSS media queries handle looks. `window.matchMedia` handles behaviour: folding
 the toolbar, full-screen windows, keeping the toolbar on screen after a
 rotation. A client-scoped setting (Automatic, Phone, Desktop) overrides the
-guess. Only the module's UI adapts; Foundry's own UI is out of reach.
+guess. Only the module's UI adapts; Foundry's own UI is out of reach. The
+phone user is the GM, in portrait and in landscape. A dedicated phone view
+comes only if the compact layout isn't enough, judged after a test pass on
+the phone.
 
 **Why:** on a Pixel joined to a Forge game (2026-10-23), the windows were too
 big for the screen, panning and zooming back out were finicky, and toolbar
