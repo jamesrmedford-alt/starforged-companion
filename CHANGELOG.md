@@ -6,6 +6,10 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **On a phone, two fingers pinch-zoom and pan the page over the map** (issue #293). Foundry's map took every touch, so a pinch that started on it drew an orange selection box instead of zooming. One finger still works the map. Tablets and desktops are unchanged.
+
+## [1.7.34] — 2026-10-24
+
 - Narrator continuity and detail persistence (issue #286):
   - Fixed: **The narrator keeps what it says about your NPCs, ships and places.** A detail it gave a recorded character (a scar, where they are, how they're doing) was filed under no entity and lost, and Actor-hosted cards (NPCs, ships, settlements, planets, locations) never saved the narrator's additions. Both now reach the next turn and the card. Facts recorded before an NPC's card was confirmed follow them onto it.
   - Fixed: **Names match the right character.** Articles, titles and a name part two entities share no longer tie a sentence to the wrong NPC or faction.
