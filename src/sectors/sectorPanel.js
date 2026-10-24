@@ -32,7 +32,7 @@ const { ApplicationV2 } = foundry.applications.api;
 export class SectorCreatorApp extends ApplicationV2 {
   static DEFAULT_OPTIONS = {
     id:      "sf-sector-creator",
-    classes: ["starforged-companion", "sf-sector-creator"],
+    classes: ["starforged-companion", "sf-sector-creator", "sf-window"],
     tag:     "div",
     window: {
       title:       "Sector Creator",

@@ -63,7 +63,7 @@ export async function openCorrectionDialog(message) {
 
   const dlg = new DialogV2({
     window:  { title: 'Correct Active Scene Facts' },
-    classes: ['sf-correct-dialog'],
+    classes: ['sf-correct-dialog', 'sf-window'],
     content: `<div class="sf-correct-body">${renderDialogContent(campaignState, matchedIds, ctx)}</div>`,
     buttons: [
       { action: 'close', label: 'Close', default: true, callback: () => true },

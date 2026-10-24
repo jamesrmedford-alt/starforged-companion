@@ -38,7 +38,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
   static #instances = new Map();
 
   static DEFAULT_OPTIONS = {
-    classes: ["sf-private-channel"],
+    classes: ["sf-private-channel", "sf-window"],
     tag:     "div",
     window:  { title: "Private Channel", resizable: true, minimizable: true },
     position:{ width: 480, height: 640 },

@@ -159,6 +159,7 @@ import {
   openCompanionToolbar,
   registerCompanionToolbarSettings,
 } from "./ui/companionToolbar.js";
+import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
@@ -4826,6 +4827,7 @@ Hooks.once("init", () => {
   registerUISettings();
   registerPrivateChannelSettings();
   registerCompanionToolbarSettings();
+  registerLayoutSettings();
 });
 
 Hooks.once("ready", () => {
@@ -4841,7 +4843,10 @@ Hooks.once("ready", () => {
   // Show the floating Companion launcher. It replaces the old scene-controls
   // group, which was inert whenever no scene was active (canvas.ready === false
   // — the normal state for theater-of-the-mind play). The toolbar is pinned to
-  // the viewport, so it works with or without a map loaded.
+  // the viewport, so it works with or without a map loaded. The layout is
+  // applied first, so a phone opens straight into the compact toolbar (#293).
+  try { initLayoutMode(); }
+  catch (err) { console.warn(`${MODULE_ID} | could not apply the layout:`, err); }
   try { openCompanionToolbar(); }
   catch (err) { console.warn(`${MODULE_ID} | could not open companion toolbar:`, err); }
 

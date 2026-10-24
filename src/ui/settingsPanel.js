@@ -883,7 +883,7 @@ export class SettingsPanelApp extends ApplicationV2 {
 
   static DEFAULT_OPTIONS = {
     id:      `${MODULE_ID}-settings`,
-    classes: [MODULE_ID, 'settings-panel'],
+    classes: [MODULE_ID, 'settings-panel', 'sf-window'],
     tag:     'div',
     window: {
       title:       'Starforged Companion — Settings',
@@ -1946,7 +1946,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
   // sticky #decided=true from the old close() and the next #onAccept
   // becomes a no-op, hanging the prompt promise.
   static DEFAULT_OPTIONS = {
-    classes: [MODULE_ID, 'move-confirm-dialog'],
+    classes: [MODULE_ID, 'move-confirm-dialog', 'sf-window'],
     tag:     'div',
     window: {
       title:       'Confirm Move Interpretation',

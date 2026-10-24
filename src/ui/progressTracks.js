@@ -261,7 +261,7 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   static DEFAULT_OPTIONS = {
     id: `${MODULE_ID}-progress-tracks`,
-    classes: [MODULE_ID, 'progress-tracks'],
+    classes: [MODULE_ID, 'progress-tracks', 'sf-window'],
     tag: 'div',
     window: {
       title: 'Progress Tracks',

@@ -44,6 +44,7 @@ function getPanelClass() {
   _panelClass = class ClocksPanelApp extends ApplicationV2 {
     static DEFAULT_OPTIONS = {
       id:  "sf-clocks-panel",
+      classes: ["sf-window"],
       tag: "div",
       window: { title: "Clocks", resizable: true, minimizable: true },
       position: { width: 480, height: "auto" },

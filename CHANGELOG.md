@@ -35,6 +35,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Sector and ship-map backgrounds show on The Forge** (issue #293). The Forge keeps uploaded images in its Assets Library, at a different address from the one the scene was given, so the background was missing.
 - Fixed: **The Private Channel saves your conversation when you switch apps** (issue #293). On a phone, switching apps or locking the screen could lose the last few seconds of messages; they're now saved as soon as the page is hidden.
 - Fixed: **Push-to-talk stops listening when the phone interrupts your touch** (issue #293), for example with a notification.
+- Added: **The Companion adapts to phones and touch screens** (issue #293). On a small screen the toolbar folds behind one button with a labelled list of tools, the Companion's windows span the screen, and buttons grow for a finger. The toolbar always stays on screen. A new per-device **Layout** setting (Automatic, Phone, Desktop) overrides the guess; its description shows what Automatic sees on this device. Foundry's own UI is unchanged.
 - Internal: multiplayer test infrastructure (issue #282, items 1–4).
   - The unit-test Foundry stubs now enforce Foundry's permissions: world settings are GM-only, chat messages can be edited by their author or a GM, and actor updates need OWNER.
   - A simulated multi-client table (`tests/helpers/multiClient.js`) boots the module once per client over a shared world.

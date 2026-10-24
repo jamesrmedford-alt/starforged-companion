@@ -46,7 +46,7 @@ export class SessionPanelApp extends ApplicationV2 {
 
   static DEFAULT_OPTIONS = {
     id:      `${MODULE_ID}-session-panel`,
-    classes: [MODULE_ID, "session-panel"],
+    classes: [MODULE_ID, "session-panel", "sf-window"],
     tag:     "div",
     window: {
       title:       "Session",

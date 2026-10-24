@@ -10,16 +10,34 @@ rejected.
 
 **Decision:** (issue #293, the maintainer's choice on 2026-10-24, before any
 code) The module's UI switches to a compact, touch-friendly layout by itself,
-by detecting what the device can do: a coarse pointer (a finger), no hover, a
-small width or height. It doesn't try to decide whether the device is a phone.
-CSS media queries handle looks. `window.matchMedia` handles behaviour: folding
-the toolbar, full-screen windows, keeping the toolbar on screen after a
-rotation. A client-scoped setting (Automatic, Phone, Desktop) overrides the
-guess. Only the module's UI adapts; Foundry's own UI is out of reach. The
+by detecting what the device can do: a coarse pointer (a finger), a small
+width or height. It doesn't try to decide whether the device is a phone. A
+client-scoped setting (Automatic, Phone, Desktop) overrides the guess. Only
+the module's UI adapts; Foundry's own UI is out of reach. The
 phone user is the GM, debugging alone, in portrait and in landscape: no
 multiplayer session runs with the GM on a phone. A dedicated phone view
 comes only if the compact layout isn't enough, judged after a test pass on
 the phone.
+
+**As built (v1.7.34 cycle, `src/ui/layoutMode.js`):**
+- **One decision, two readers.** JavaScript decides once, from
+  `matchMedia("(pointer: coarse)")`, the viewport, the screen size and the
+  setting, and mirrors the result as `sf-compact` and `sf-touch` on `<body>`.
+  The CSS keys on those classes rather than on raw media queries, so the
+  override changes the looks too. Resizes, rotations and pointer changes
+  re-check it.
+- **Compact** = a viewport under 600 × 480 px (Material's compact window size
+  classes), or a touch screen whose shorter side is under 600 px. The second
+  covers a phone drawing a desktop-width page: its viewport reports about
+  980 px, but its screen reports the phone's size. **Touch** = a coarse
+  pointer.
+- **The toolbar** is always kept inside the viewport. When compact, it folds
+  behind one launcher: a tap opens a labelled tool list, a drag moves it.
+- **Module windows** carry the `sf-window` class. When compact, the CSS pins
+  them to the top, at the screen's full width, no taller than the screen,
+  scrolling inside. Dragging and resizing are moot on a phone.
+- **Touch** grows tap targets: 48 px on the toolbar, 44 px for buttons in
+  module windows and module chat cards.
 
 **Why:** on a Pixel joined to a Forge game (2026-10-23), the windows were too
 big for the screen, panning and zooming back out were finicky, and toolbar
