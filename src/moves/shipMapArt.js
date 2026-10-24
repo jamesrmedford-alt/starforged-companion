@@ -185,8 +185,9 @@ async function uploadShipMapImage(b64, shipActorId) {
   const blob = new Blob([bytes], { type: "image/png" });
   const file = new File([blob], filename, { type: "image/png" });
 
-  await foundry.applications.apps.FilePicker.implementation
+  // The Forge returns its Assets Library URL in response.path (sectorArt.js).
+  const response = await foundry.applications.apps.FilePicker.implementation
     .upload("data", uploadDir, file, {}, { notify: false });
 
-  return `${uploadDir}/${filename}`;
+  return response?.path ?? `${uploadDir}/${filename}`;
 }

@@ -214,6 +214,12 @@ describe("createShipMapScene()", () => {
     expect(createArg.background.src).toBe("/worlds/w/scenes/ship-map-x.png");
   });
 
+  it("uses an absolute background URL (The Forge's Assets Library) as is", async () => {
+    const forgeUrl = "https://assets.forge-vtt.com/abc/worlds/w/scenes/ship-map-x.png";
+    await createShipMapScene(makeShipActor(), { backgroundPath: forgeUrl });
+    expect(global.Scene.create.mock.calls[0][0].background.src).toBe(forgeUrl);
+  });
+
   it("never sets entryId on station notes (would fail v13 NoteDocument validation)", async () => {
     await createShipMapScene(makeShipActor(), {});
     for (const note of createdNotes) {

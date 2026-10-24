@@ -11,6 +11,12 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Phone play on The Forge (issue #293) — fixed in the v1.7.34 cycle
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| FORGE-ART-UPLOAD | WRONG-DETAIL | `uploadSectorImage` (`sectorArt.js`) and `uploadShipMapImage` (`shipMapArt.js`) discarded the `FilePicker.upload` response and returned the path they built. On The Forge the file lands in the Assets Library at an absolute `assets.forge-vtt.com` URL, so the scene pointed at a file that didn't exist (the AUDIO-002 bug). The scene builders also prefixed `/` onto any path → both return `response.path` (falling back to the built path), and `sceneBuilder.js` / `shipMapScene.js` leave absolute URLs as they are. `tests/unit/forgeArtUploads.test.js` and the two scene-builder tests fail with the fix reverted |
+
 ### ASSET-ABILITY-TEXT — the narrator never saw what a character's assets do — fixed in the v1.7.34 cycle
 
 Found while scoping collaborative character creation (#291).

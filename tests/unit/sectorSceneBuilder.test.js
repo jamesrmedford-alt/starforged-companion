@@ -91,6 +91,19 @@ beforeEach(() => {
   };
 });
 
+describe('createSectorScene — background path', () => {
+  it('roots a relative data path with a leading slash', async () => {
+    await createSectorScene(makeSector(), 'worlds/w/scenes/sector-sec-1.png', makeEntityActors());
+    expect(global.Scene.create.mock.calls[0][0].background.src).toBe('/worlds/w/scenes/sector-sec-1.png');
+  });
+
+  it("uses an absolute URL (The Forge's Assets Library) as is", async () => {
+    const forgeUrl = 'https://assets.forge-vtt.com/abc/worlds/w/scenes/sector-sec-1.png';
+    await createSectorScene(makeSector(), forgeUrl, makeEntityActors());
+    expect(global.Scene.create.mock.calls[0][0].background.src).toBe(forgeUrl);
+  });
+});
+
 describe('createSectorScene — Phase 3 entryId regression', () => {
   it('never sets entryId on settlement notes (would fail v13 NoteDocument validation against game.journal)', async () => {
     await createSectorScene(makeSector(), null, makeEntityActors());
