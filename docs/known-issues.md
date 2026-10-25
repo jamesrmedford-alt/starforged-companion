@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Phone play on The Forge (issue #293) — fixed in the v1.7.34 cycle
+### Phone play on The Forge (issue #293) — fixed in the v1.7.34 and v1.7.35 cycles
 
 | Code | Class | Defect → fix |
 |---|---|---|
@@ -19,6 +19,7 @@ against source — full traces in `docs/flows/*.md`._
 | PC-TRANSCRIPT-HIDDEN | LOSE-PLOT | Private Channel turns were saved 5 s after the last one or on window close (`transcript.js`); a phone that switches apps or locks can suspend or discard the tab first → pending turns also flush on `visibilitychange` (hidden) and `pagehide`, registered on the first buffered turn. Two tests in `private-channel.test.js` fail with the fix reverted |
 | PHONE-LAYOUT | UX | On a Pixel (2026-10-23) the module's windows were too big for the screen, panning and zooming back out were finicky, and the toolbar's bottom tools were cut off: it was one column of 32 px buttons starting 96 px down, with no limit to the viewport → `layoutMode.js` sets `sf-compact` / `sf-touch` on `<body>` from the device (decisions.md → "Phone layout"); the toolbar is always clamped into the viewport (`clampToViewport`) and in the compact layout folds behind one launcher; windows marked `sf-window` span the screen; tap targets grow to 44–48 px. Unit tests in `layoutMode.test.js` / `companionToolbar.test.js`; a Quench test checks the live toolbar and window width under the Phone override. Not yet checked on a real phone |
 | PTT-TOUCHCANCEL | LATENT | The push-to-talk button stopped on `touchend` / `mouseup` / `mouseleave` but not `touchcancel`, which the system fires when it interrupts a touch, so listening could stay on → `injectPushToTalkButton` (`src/index.js`) stops on `touchcancel` too |
+| PHONE-PINCH-MAP | UX | First phone test (v1.7.34, the GM on a Pixel): a pinch that started on Foundry's map drew its orange drag-select box instead of zooming the page, because PIXI sets `touch-action: none` inline on the map canvas (`#board`); only a pinch begun on a window or the toolbar reached the browser → in v1.7.35, on a phone (`sf-compact` + `sf-touch`), `#board` gets `touch-action: pinch-zoom !important`: two fingers pinch-zoom and pan the page, one finger still works the map. The one place the layout reaches into Foundry's UI, at the maintainer's request (decisions.md → "Phone layout"). The Quench Phone test checks the map's touch-action on and off. Still to check on the phone: that Foundry clears a half-drawn selection box when the browser takes over a pinch |
 
 ### ASSET-ABILITY-TEXT — the narrator never saw what a character's assets do — fixed in the v1.7.34 cycle
 

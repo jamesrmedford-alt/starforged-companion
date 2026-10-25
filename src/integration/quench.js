@@ -4410,6 +4410,22 @@ function registerToolbarTests(quench) {
               panel.element.getBoundingClientRect().width, window.innerWidth, 2,
               "a module window spans the screen's width in the compact layout",
             );
+
+            // On a phone, two-finger gestures reach the browser over Foundry's
+            // map (#board), whose touch-action PIXI sets to none inline.
+            let noCanvas = false;
+            try { noCanvas = !!game.settings.get("core", "noCanvas"); }
+            catch (err) { console.warn(`${MODULE_ID} | quench: core.noCanvas unreadable:`, err); }
+            if (!noCanvas) {
+              const board = document.getElementById("board");
+              assert.isOk(board, "Foundry's map canvas should be #board");
+              assert.equal(globalThis.getComputedStyle(board).touchAction, "pinch-zoom",
+                "on a phone, two-finger pinches pass through Foundry's map");
+              await game.settings.set(MODULE_ID, LAYOUT_SETTING, "desktop");
+              await settle();
+              assert.notEqual(globalThis.getComputedStyle(board).touchAction, "pinch-zoom",
+                "on a desktop, the map keeps Foundry's own touch handling");
+            }
           } finally {
             if (panel) await panel.close();
             await game.settings.set(MODULE_ID, LAYOUT_SETTING, before ?? "auto");

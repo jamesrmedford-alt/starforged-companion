@@ -13,7 +13,8 @@ code) The module's UI switches to a compact, touch-friendly layout by itself,
 by detecting what the device can do: a coarse pointer (a finger), a small
 width or height. It doesn't try to decide whether the device is a phone. A
 client-scoped setting (Automatic, Phone, Desktop) overrides the guess. Only
-the module's UI adapts; Foundry's own UI is out of reach. The
+the module's UI adapts, with one exception for Foundry's map on a phone
+(below). The
 phone user is the GM, debugging alone, in portrait and in landscape: no
 multiplayer session runs with the GM on a phone. A dedicated phone view
 comes only if the compact layout isn't enough, judged after a test pass on
@@ -38,6 +39,14 @@ the phone.
   scrolling inside. Dragging and resizing are moot on a phone.
 - **Touch** grows tap targets: 48 px on the toolbar, 44 px for buttons in
   module windows and module chat cards.
+- **The exception: Foundry's map on a phone** (the maintainer's request,
+  2026-10-24, after the first phone test, v1.7.35). Foundry's map takes
+  every touch: PIXI sets `touch-action: none` inline on `#board`, so a pinch
+  that started on the map drew an orange drag-select box instead of zooming
+  the page. When the layout is both compact and touch (a phone), the CSS sets
+  `touch-action: pinch-zoom !important` on `#board`: two fingers pinch-zoom
+  and pan the page, and one finger still works the map. Tablets and desktops
+  keep Foundry's handling.
 
 **Why:** on a Pixel joined to a Forge game (2026-10-23), the windows were too
 big for the screen, panning and zooming back out were finicky, and toolbar

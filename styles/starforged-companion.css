@@ -2558,6 +2558,15 @@ body.sf-touch .application.sf-window .window-header button {
   min-width: 44px;
 }
 
+/* Phone (compact + touch): two-finger gestures pinch-zoom and pan the page
+   even over Foundry's map. The map claims every touch otherwise (PIXI sets
+   touch-action: none inline on it, hence !important), so a pinch became an
+   orange drag-select box. One finger still works the map. The one place the
+   layout reaches into Foundry's own UI, at the maintainer's request. */
+body.sf-compact.sf-touch #board {
+  touch-action: pinch-zoom !important;
+}
+
 
 /* ============================================================================
    INCITING INCIDENT CARD (Envision an Inciting Incident — play kit launch)

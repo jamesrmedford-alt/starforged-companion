@@ -7,8 +7,9 @@
  * decision as two classes on <body> — `sf-compact` and `sf-touch` — that the
  * stylesheet keys on, so the CSS and the code never disagree about which
  * layout is active. A per-device setting overrides the guess: Automatic (the
- * default), Phone or Desktop. Only the module's UI adapts; Foundry's own UI is
- * untouched. See docs/decisions.md → "Phone layout".
+ * default), Phone or Desktop. Only the module's UI adapts, with one exception:
+ * on a phone, two-finger gestures pass through Foundry's map to the browser
+ * (the stylesheet). See docs/decisions.md → "Phone layout".
  */
 
 const MODULE_ID = "starforged-companion";
@@ -135,7 +136,8 @@ export function registerLayoutSettings() {
     name:    "Layout",
     hint:    "How the Companion's own windows, toolbar and buttons are laid out on this device. " +
       "Automatic switches to a compact, touch-friendly layout on a phone-sized or touch screen; " +
-      "Phone and Desktop force one or the other. A per-device setting; Foundry's own UI is unchanged." +
+      "Phone and Desktop force one or the other. On a phone, two fingers also pinch-zoom and pan the page " +
+      "over Foundry's map. A per-device setting; Foundry's own UI is otherwise unchanged." +
       describeDevice(),
     scope:   "client",
     config:  true,
