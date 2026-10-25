@@ -1,0 +1,176 @@
+{
+  "scenario": "first-session",
+  "source": "hand-written",
+  "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
+  "exchanges": [
+    {
+      "kind": "callNarratorAPI>narrateSessionVignette",
+      "user": "OPENING VIGNETTE — begin-session ship's galley. Active players (their PCs are physically in the galley together)",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Mira Kestrel eats standing up, as she always does, one hip against the galley counter of the Kobayashi IV while the recycler wheezes through its morning cycle. <npc>\"You'll ruin your digestion,\"</npc> the galley's ancient service drone announces, as it has every morning for six years. She salutes it with a spoon of protein paste. An empty chair at the bolted-down table still has its owner's mug strapped to it, handle turned the way they liked it. Below the viewport the docking rings of the Hollow Spire blink awake one rationed section at a time."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"MOVE\", \"suggestedMove\": \"gather_information\", \"category\": \"investigation\", \"confidence\": 0.86, \"reasoning\": \"Questioning a witness for specific information is Gather Information.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callClaudeAPI>interpretMove",
+      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"moveId\": \"gather_information\", \"moveName\": \"Gather Information\", \"statUsed\": \"wits\", \"statValue\": 0, \"adds\": 0, \"isProgressMove\": false, \"progressTicks\": 0, \"moveTarget\": null, \"expeditionRank\": null, \"combatRank\": null, \"rationale\": \"Mira is questioning the dockmaster for specific information about the courier.\", \"mischiefApplied\": false, \"confidence\": \"high\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narrateResolution",
+      "user": "MOVE OUTCOME Gather Information Strong Hit I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Vance Oduya doesn't look up from the departure ledger when you lean into the dock office. He's a broad, slow-moving man with a burn scar climbing out of his collar, and he runs one oil-black finger down the column of berths as if you'd asked him about the weather.\n\n<npc>\"Courier left two days back,\"</npc> he says. <npc>\"Unregistered skiff out of berth nine. Paid the departure tax in Ascendancy scrip — nobody pays in scrip out here unless they want to be remembered.\"</npc> He turns the ledger so you can read the entry: no name, a berth number, and a stamp you don't recognise.\n\nThen he finally meets your eyes. <npc>\"Asked after you, too. Wanted to know which ship you came in on.\"</npc>\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya is the Hollow Spire's dockmaster and keeps the departure ledger.\"}, {\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya says the courier paid the departure tax in Ascendancy scrip.\"}, {\"subject\": \"scene\", \"fact\": \"The courier left the Hollow Spire two days ago on an unregistered skiff from berth nine.\"}], \"stateChanges\": [{\"subject\": \"Vance Oduya\", \"attribute\": \"location\", \"value\": \"the Hollow Spire dock office\"}], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Questioning the dockmaster about the courier\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callHaiku>defaultCallDetectionAPI",
+      "user": "Vance Oduya departure ledger dock office burn scar berth nine unregistered skiff Ascendancy scrip",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"entities\": [{\"type\": \"connection\", \"name\": \"Vance Oduya\", \"description\": \"Broad, slow-moving dockmaster of the Hollow Spire with a burn scar climbing out of his collar; keeps the departure ledger.\", \"confidence\": \"high\", \"pronouns\": \"he/him\", \"role\": \"Dockmaster\", \"goal\": \"Keep the Hollow Spire's docks paying\"}, {\"type\": \"connection\", \"name\": \"Mira Kestrel\", \"description\": \"The traveller the courier asked about.\", \"confidence\": \"high\", \"pronouns\": \"she/her\", \"role\": \"\", \"goal\": \"\"}], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "I lean on the counter and ask Vance what the Ascendancy wants with him.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"NARRATIVE\", \"suggestedMove\": null, \"category\": \"social\", \"confidence\": 0.74, \"reasoning\": \"Conversation with no risk or uncertainty to resolve.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narratePacedInput",
+      "user": "No move was rolled. I lean on the counter and ask Vance what the Ascendancy wants with him.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Vance laughs, one short dry sound, and closes the ledger. <npc>\"What does the Ascendancy want with anyone? Everything, eventually.\"</npc> He pushes up his sleeve far enough to show the faded tithe-mark inked inside his wrist. <npc>\"I owe them eleven years. The courier's scrip came with a note: clear the skiff, and the debt clears with it.\"</npc>\n\nHe slides the ledger under the counter, out of sight of the dock cameras.\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya owes the Ascendancy eleven years of tithe; clearing the courier's skiff was meant to clear the debt.\"}], \"stateChanges\": [{\"subject\": \"Vance Oduya\", \"attribute\": \"location\", \"value\": \"behind the counter of the Hollow Spire dock office\"}], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Vance admits his debt to the Ascendancy\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callHaiku>defaultCallDetectionAPI",
+      "user": "Vance laughs closes the ledger tithe-mark wrist owe them eleven years courier's scrip note clear the skiff debt",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [{\"name\": \"Ascendancy debt collectors\", \"type\": \"faction\", \"severity\": \"looming\", \"salience\": \"significant\", \"summary\": \"The Ascendancy holds eleven years of Vance Oduya's tithe, and its scrip is paying people at the Hollow Spire to look the other way.\"}], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Vance Oduya connection Vance laughs tithe-mark owe them eleven years",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": [{\"entityId\": \"Vance Oduya\", \"detail\": \"Admitted he owes the Ascendancy eleven years of tithe, and that clearing the courier's skiff was meant to clear it.\", \"salience\": \"significant\"}]}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>getRollingSessionSummary",
+      "user": "summary session Vance Oduya courier",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Mira Kestrel came to the Hollow Spire looking for a missing courier. The dockmaster, Vance Oduya, told her the courier left two days ago on an unregistered skiff from berth nine, paying in Ascendancy scrip — and that the courier had asked which ship Mira came in on. Pressed, Vance admitted he owes the Ascendancy eleven years of tithe, and that clearing the skiff was meant to clear his debt."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narrateSessionVignette",
+      "user": "CLOSING VIGNETTE — end-session NPC slice-of-life. FLAVOUR: END. Featured NPC",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Vance Oduya eats his supper at the dock-office counter, one hand flat on the closed ledger as if it might leave without him. The water ration light over the sink blinks amber; he fills a cup halfway and stops. Out in berth nine the empty clamps tick as they cool. He drinks, rinses the cup, and turns the office lamp off a minute early."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>getCampaignRecap",
+      "user": "campaign recap chronicle",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Mira Kestrel's search for a missing courier brought her to the Hollow Spire, where the dockmaster Vance Oduya — a man deep in debt to the Ascendancy — let slip that the courier fled on an unregistered skiff and had been asking about her."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narrateSessionVignette",
+      "user": "OPENING VIGNETTE — begin-session ship's galley. Active players (their PCs are physically in the galley together)",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "The Kobayashi IV's galley smells of reheated noodles and coolant. Mira Kestrel sits with the courier's berth number written on the back of her hand, turning a cup she has not drunk from. <npc>\"Berth nine,\"</npc> the service drone repeats helpfully, having heard her say it in her sleep. Through the viewport the Hollow Spire's docks are already busy, and somewhere in that crowd Vance Oduya is deciding what his debt is worth."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    }
+  ]
+}

@@ -6,7 +6,9 @@
 # ritual (EULA → admin key → launch world → enable modules → run Quench
 # → assert no failures). Then runs the second-client suite against the
 # same world: a GM and a player in two Playwright browsers
-# (playwright/multiplayer.mjs, issue #282).
+# (playwright/multiplayer.mjs, issue #282), and the scripted playthroughs:
+# short sessions narrated through the GM's real pipeline, Claude answered
+# from recorded replies (playwright/playthrough.mjs, issue #290 part 2).
 #
 # What "fresh world" means here:
 #   - ./data/ (the Foundry userData bind-mount) is wiped except for
@@ -28,6 +30,10 @@
 #   --no-rebuild  Skip the data/ wipe + install-deps + setup-world step.
 #                 Use when iterating on the Cypress spec itself against
 #                 a known-good world. Foundry must already be running.
+#   --record-playthroughs
+#                 Answer the playthroughs' Claude calls from Anthropic
+#                 (needs ANTHROPIC_API_KEY in the environment) and rewrite
+#                 playwright/recordings/. Run outside CI; commit the result.
 
 set -euo pipefail
 
@@ -41,12 +47,14 @@ CI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 keep=0
 rebuild=1
+playthrough_mode=replay
 for arg in "$@"; do
   case "${arg}" in
     --keep)       keep=1 ;;
     --no-rebuild) rebuild=0 ;;
+    --record-playthroughs) playthrough_mode=record ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -60,6 +68,11 @@ cd "${CI_DIR}"
 
 log()  { printf '\033[1;34m[e2e]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[e2e]\033[0m %s\n' "$*" >&2; }
+
+if [[ "${playthrough_mode}" == "record" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  warn "--record-playthroughs answers Claude for real: export ANTHROPIC_API_KEY first"
+  exit 2
+fi
 
 # ---- credentials ----------------------------------------------------------
 
@@ -166,6 +179,20 @@ docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull players
 mp_exit=$?
 set -e
 
+# ---- run the scripted playthroughs ------------------------------------------
+# Short sessions played through the GM's real narrator pipeline
+# (playwright/playthrough.mjs, issue #290 part 2), in the same image as the
+# multiplayer suite. Claude is answered from playwright/recordings/ — or, with
+# --record-playthroughs, from Anthropic, rewriting those recordings.
+
+log "running the playthroughs (Playwright: scripted sessions, ${playthrough_mode} Claude replies)"
+set +e
+docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull \
+  -e PLAYTHROUGH_MODE="${playthrough_mode}" -e ANTHROPIC_API_KEY \
+  players "test -d node_modules/playwright || npm ci --no-audit --no-fund --loglevel=error; node playthrough.mjs"
+pt_exit=$?
+set -e
+
 # ---- teardown -------------------------------------------------------------
 
 if (( keep )); then
@@ -176,12 +203,14 @@ else
   docker compose "${COMPOSE_FILES[@]}" down >/dev/null 2>&1 || true
 fi
 
-if (( cy_exit == 0 && mp_exit == 0 )); then
-  log "PASSED (Quench + multiplayer)"
+if (( cy_exit == 0 && mp_exit == 0 && pt_exit == 0 )); then
+  log "PASSED (Quench + multiplayer + playthroughs)"
 else
   (( cy_exit == 0 )) || warn "Quench FAILED (cypress exit ${cy_exit}) — artifacts: cypress/artifacts/screenshots/ and cypress/artifacts/videos/"
   (( mp_exit == 0 )) || warn "multiplayer FAILED (exit ${mp_exit}) — artifacts: playwright/artifacts/"
+  (( pt_exit == 0 )) || warn "playthroughs FAILED (exit ${pt_exit}) — artifacts: playwright/artifacts/"
 fi
 
 if (( cy_exit != 0 )); then exit "${cy_exit}"; fi
-exit "${mp_exit}"
+if (( mp_exit != 0 )); then exit "${mp_exit}"; fi
+exit "${pt_exit}"

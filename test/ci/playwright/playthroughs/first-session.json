@@ -1,0 +1,71 @@
+{
+  "name": "first-session",
+  "description": "A solo player's first session at a lawless settlement: the opening vignette, a Gather Information move that introduces an NPC, the GM confirming him, a paced follow-up, a Private Channel turn built in the player's browser, End a Session, and the next session's opening.",
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false
+  },
+  "seed": {
+    "pc": { "name": "Mira Kestrel", "pronouns": "she/her", "stats": { "edge": 2, "heart": 1, "iron": 1, "shadow": 2, "wits": 3 } },
+    "ship": { "name": "Kobayashi IV" },
+    "settlement": { "name": "Hollow Spire", "authority": "None / lawless", "trouble": "Water rationing" },
+    "at": "Hollow Spire"
+  },
+  "steps": [
+    { "do": "beginSession", "as": "player", "galley": true,
+      "then": [
+        { "check": "noMarkup" }
+      ] },
+    { "do": "move", "as": "player",
+      "text": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "dice": { "challenge": [2, 5], "action": 5 },
+      "move": "gather_information", "outcome": "strong_hit",
+      "then": [
+        { "check": "moveLockReleased" },
+        { "check": "ledgerTruth", "about": "Vance Oduya" },
+        { "check": "momentum", "of": "Mira Kestrel", "is": 4 },
+        { "check": "request", "kind": "callNarratorAPI>narrateResolution",
+          "carries": ["MOVE OUTCOME"], "section": { "CHARACTER": "Name: Mira Kestrel" } },
+        { "check": "noMarkup" }
+      ] },
+    { "do": "confirmDraft", "name": "Vance Oduya", "type": "connection",
+      "then": [
+        { "check": "noDraftFor", "name": "Mira Kestrel" },
+        { "check": "npcCard", "name": "Vance Oduya", "type": "connection", "sheet": "starforged", "description": true },
+        { "check": "ledgerTruth", "about": "Vance Oduya", "entityKeyed": true }
+      ] },
+    { "do": "say", "as": "player",
+      "text": "I lean on the counter and ask Vance what the Ascendancy wants with him.",
+      "then": [
+        { "check": "npcCard", "name": "Vance Oduya", "details": 1 },
+        { "check": "journalPage", "journal": "World Journal — Threats", "page": "Ascendancy debt collectors" },
+        { "check": "request", "kind": "callNarratorAPI>narratePacedInput",
+          "carries": ["ENTITIES IN SCENE"], "section": { "CHARACTER": "Name: Mira Kestrel" },
+          "sectionLacks": { "PARTY": "Vance Oduya" } }
+      ] },
+    { "do": "privateChannel", "as": "player", "npc": "Vance Oduya",
+      "message": "I wonder whether Vance Oduya was lying about the courier.",
+      "carries": ["ACTIVE SCENE"] },
+    { "do": "endSession", "as": "player", "questFocus": "Find the courier",
+      "then": [
+        { "check": "sessionLog", "session": 1 },
+        { "check": "npcCard", "name": "Vance Oduya", "lastKnown": ["location"] },
+        { "check": "momentum", "of": "Mira Kestrel", "is": 5 },
+        { "check": "moveLockReleased" }
+      ] },
+    { "do": "beginSession", "as": "player", "galley": true, "spotlight": true,
+      "then": [
+        { "check": "request", "kind": "callNarratorAPI>narrateSessionVignette", "nth": -1, "carries": ["LAST SESSION"] },
+        { "check": "momentum", "of": "Mira Kestrel", "is": 6 },
+        { "check": "momentum", "of": "Vance Oduya", "is": 2 },
+        { "check": "noMarkup" }
+      ] }
+  ]
+}
