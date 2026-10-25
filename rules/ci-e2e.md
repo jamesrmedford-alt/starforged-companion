@@ -155,7 +155,10 @@ fact block, detection and draft cards, End and Begin a Session.
   frames above `apiPost` — `callNarratorAPI>narrateResolution`,
   `callHaiku>defaultCallDetectionAPI`. A request gets the unused recording of
   its kind whose user message it shares the most words with (ties: the
-  earliest), so a reordered background call still gets its own reply.
+  earliest), so a reordered background call still gets its own reply — and
+  only when it holds at least half of that recording's words, so a call
+  nothing was recorded for (the tier pass a vignette schedules, say) can't
+  take the reply meant for a later call of its kind.
 - **Recordings** live in `test/ci/playwright/recordings/<scenario>.json`
   (not `tests/fixtures/`). Record them outside CI with a key:
   `ANTHROPIC_API_KEY=… test/ci/scripts/e2e.sh --record-playthroughs`, then

@@ -18,8 +18,10 @@
 // or `callHaiku>defaultCallDetectionAPI`. That is the call's `kind`. A request
 // is answered by the unused recording of its kind whose user message it
 // shares the most words with (ties go to the earliest), so a reordered
-// background call still gets its own reply. A call with no recording left gets
-// a neutral stub reply (narrator prose with an empty fact block, "{}" for a
+// background call still gets its own reply. A recording counts as a match only
+// when the request holds at least half of its words (MATCH_FLOOR): a call
+// nothing was recorded for must not take the reply meant for a later one of
+// its kind. A call with no recording that matches gets a neutral stub reply (narrator prose with an empty fact block, "{}" for a
 // JSON helper) and is reported as UNRECORDED. A recording whose system prompt
 // sections no longer match the live request is reported as STALE: the prompt
 // changed since it was recorded, and it should be re-recorded.
@@ -34,6 +36,7 @@ const SIDECAR_SECTION = "## RESPONSE FORMAT — MANDATORY SIDECAR";
 const NARRATOR_ROLE   = "## NARRATOR ROLE AND VOICE";
 const PRIVATE_ROLE    = "You are the narrator running a private channel session.";
 const STUB_PROSE      = "The narrator pauses (no recorded reply for this call).";
+const MATCH_FLOOR     = 0.5;
 
 /** The placeholder key the page holds; record mode swaps in the real one. */
 export const PAGE_KEY = "sk-ant-playthrough-placeholder";
@@ -191,7 +194,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, log
       const score = containment(words(x.user), liveWords);
       if (!best || score > best.score) best = { i, score };
     });
-    if (!best) return null;
+    if (!best || best.score < MATCH_FLOOR) return null;
     used.add(best.i);
     const x = exchanges[best.i];
     if (Array.isArray(x.sections)) {

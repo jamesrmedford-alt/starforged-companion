@@ -122,7 +122,7 @@
     },
     {
       "kind": "callNarratorAPI>getRollingSessionSummary",
-      "user": "summary session Vance Oduya courier",
+      "user": "## SESSION NARRATION (oldest first) Vance Oduya dockmaster courier",
       "response": {
         "content": [
           {
@@ -148,7 +148,7 @@
     },
     {
       "kind": "callNarratorAPI>getCampaignRecap",
-      "user": "campaign recap chronicle",
+      "user": "## CAMPAIGN CHRONICLE Write a campaign recap of 3–5 paragraphs covering",
       "response": {
         "content": [
           {
