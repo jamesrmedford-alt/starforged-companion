@@ -295,6 +295,10 @@ Hooks.on("quenchReady", (quench) => {
   // Journal. The existing inciting batch runs narration OFF, so the detection
   // pass (PLAYTEST-1717 B) was never exercised end-to-end from the inciting path.
   registerIncitingDetectionWiringTests(quench);
+  // Prompt contracts (issue #290 part 1) — every narrator mode runs against a
+  // stubbed Anthropic endpoint and its captured request is checked section by
+  // section: present when the data the section reads exists, absent when not.
+  registerPromptContractTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2241,8 +2245,10 @@ function registerStarshipSeedHookTests(quench) {
 
       // Wait up to N ms for an assertion predicate to be satisfied.
       // The createActor hook fires async — seedStarshipActor doesn't block
-      // Actor.create — so the test must poll briefly before asserting.
-      async function waitFor(predicate, timeoutMs = 4000) {
+      // Actor.create — so the test must poll briefly before asserting. The
+      // seed installs the rolled identity's modules (compendium lookups)
+      // before it writes the flag and Notes (issue #290), hence the margin.
+      async function waitFor(predicate, timeoutMs = 10000) {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
           if (await predicate()) return true;
@@ -11737,5 +11743,563 @@ function registerPrecursorSiteTests(quench) {
       });
     },
     { displayName: "STARFORGED: Precursor Sites", timeout: 60000 },
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROMPT CONTRACTS — what every narrator mode sends (issue #290 part 1)
+//
+// Nothing else checks the narrator's request in a live world: the narrator
+// batches check the card, the GM + player suite doesn't narrate, and CI has no
+// Claude key. This batch stubs the Anthropic endpoint for its whole run, runs
+// every narrator mode against real documents and captures each request. Each
+// section is checked against the data it reads: in the request when the data
+// exists, out of it when it doesn't. Ten of the playtest bugs from v1.6.1 to
+// v1.7.17 were data that existed in the world but never reached the prompt.
+//
+// The world is built with the module's own writers (createConnection,
+// createSettlement, createShip, createCharacterVowItem, addProgressTrack,
+// createClock, startScene + applySidecar + applySceneFrame, mintSession,
+// addChronicleEntry). The composition tests at the end produce their inputs by
+// narrating: a fact block, an @scene answer and an inciting incident must
+// reach the next request.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function registerPromptContractTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.promptContracts",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = "starforged-companion";
+
+      const NARRATOR_ROLE   = "## NARRATOR ROLE AND VOICE";
+      const SIDECAR_SECTION = "## RESPONSE FORMAT — MANDATORY SIDECAR";
+      const PRIVATE_ROLE    = "You are the narrator running a private channel session.";
+      const TRACKS_JOURNAL  = "Starforged Progress Tracks";
+
+      /** What the fixtures are called — what the assertions look for. */
+      const N = {
+        pcA:         "Kira Vey (contract)",
+        pcB:         "Mave Torres (contract)",
+        npc:         "Vance Oduya",
+        npcGoal:     "Pay off his debt to the Ascendancy",
+        settlement:  "Hollow Spire",
+        authority:   "None / lawless",
+        sector:      "Quench Reach",
+        ship:        "Kobayashi IV",
+        vow:         "Avenge my sister",
+        clock:       "Reactor breach",
+        fight:       "Corsair boarding party",
+        objective:   "hold the airlock",
+        truth:       "Carries a cracked datapad with the beacon codes",
+        premise:     "A distress beacon from a salvage tug in the Hollow Spire debris field",
+        lastSession: "Last session the crew slipped out of Bleakhold with stolen charts.",
+        privateLine: "Spiders",
+        chronicle:   "QUENCH CONTRACT: the crew fled Bleakhold with the charts.",
+      };
+
+      /** Settings each section depends on, pinned for the batch (defaults may change). */
+      const PINNED = {
+        claudeApiKey:                      "sk-ant-contract-stub",
+        narrationEnabled:                  true,
+        narratorSessionSummary:            true,
+        vowSwearingNarration:              true,
+        sceneQueryEnabled:                 true,
+        "factContinuity.enabled":          true,
+        "factContinuity.ledgerInContext":  true,
+        "factContinuity.sceneFrame":       true,
+        // Its own Claude call and GM card — no section depends on it.
+        "factContinuity.consistencyCheck": false,
+        // An auto-seed on the fixtures' createActor would write campaignState
+        // concurrently with the seeded world's own write.
+        autoSeedStarship:                  false,
+        autoSeedConnection:                false,
+      };
+
+      /** The sections the seeded world adds to every prose mode's request. */
+      const SEEDED_SECTIONS = [
+        "ENTITIES IN SCENE", "ACTIVE SCENE", "LAST SESSION", "CLOCKS",
+        "OPEN PROGRESS TRACKS", "CAMPAIGN PREMISE", "ACTIVE SECTOR",
+      ];
+
+      const INTERACTION = {
+        resolvedClass: "interaction", entityIds: [], entityTypes: [],
+        matchedNames: [], needsClarification: false, referenceType: "none",
+      };
+
+      // The stub answers every Anthropic call for the whole batch, so the
+      // background passes a narration schedules (detection, tier updates,
+      // chronicle) land on it too. `prose` / `sidecars` queue the next
+      // narrator replies; by default a narration gets a line of prose and an
+      // empty fact block, and a helper that reads JSON gets "{}".
+      const stub = { requests: [], prose: [], sidecars: [] };
+      let realFetch = null;
+      const pinnedAtStart = {};
+      let stateAtStart = null;
+      let tracksAtStart;
+      let split = null;
+      const fx = {};
+
+      function replyTo(request) {
+        if (request.system.includes(SIDECAR_SECTION)) {
+          const prose   = stub.prose.shift() ?? `The contract stub narrates, turn ${stub.requests.length}.`;
+          const sidecar = stub.sidecars.shift() ?? { newTruths: [], stateChanges: [] };
+          return `${prose}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
+        }
+        if (request.system.startsWith(NARRATOR_ROLE) || request.system.includes(PRIVATE_ROLE)) {
+          return stub.prose.shift() ?? `The contract stub narrates, turn ${stub.requests.length}.`;
+        }
+        return /json/i.test(request.system) ? "{}" : "The contract stub answers.";
+      }
+
+      function installClaudeStub() {
+        realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => {
+          const target = typeof url === "string" ? url : url?.url ?? String(url);
+          if (!target.includes("api.anthropic.com")) return realFetch(url, init);
+          const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+          const request = {
+            body,
+            system: (body.system ?? []).map(b => b?.text ?? "").join("\n\n"),
+            user:   (body.messages ?? []).map(m => (typeof m.content === "string"
+              ? m.content
+              : (m.content ?? []).map(c => c?.text ?? "").join(""))).join("\n\n"),
+          };
+          stub.requests.push(request);
+          return new Response(JSON.stringify({
+            content:     [{ type: "text", text: replyTo(request) }],
+            stop_reason: "end_turn",
+            usage:       { input_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 40 },
+          }), { status: 200, headers: { "Content-Type": "application/json" } });
+        };
+      }
+
+      const state = () => game.settings.get(MODULE, "campaignState");
+      const tracksJournal = () => game.journal?.find?.(j => j.name === TRACKS_JOURNAL) ?? null;
+      const narrator = () => import(`${MODULE_PATH}/narration/narrator.js`);
+
+      async function waitFor(fn, label, timeout = 10000) {
+        const deadline = Date.now() + timeout;
+        while (Date.now() < deadline) {
+          const value = await fn();
+          if (value) return value;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        throw new Error(`timed out waiting for ${label}`);
+      }
+
+      /** The section of a prompt with this heading (or a heading that starts with it and a space). */
+      function findSection(text, name) {
+        return split(text).find(s => s.heading === name || s.heading.startsWith(`${name} `)) ?? null;
+      }
+
+      function carries(request, name, label, contains = []) {
+        const section = findSection(request.system, name) ?? findSection(request.user, name);
+        assert.isOk(section,
+          `${label}: the request should carry ${name} — it carries: ${split(request.system).map(s => s.heading).join(" | ")}`);
+        for (const text of contains) assert.include(section.text, text, `${label}: ${name} should say "${text}"`);
+        return section;
+      }
+
+      function lacks(request, name, label) {
+        const section = findSection(request.system, name) ?? findSection(request.user, name);
+        assert.isNull(section, `${label}: the request should not carry ${name}`);
+      }
+
+      /** Run a mode and return the narrator request it sent (the last one whose user message has its marker). */
+      async function capture(mode) {
+        const since = stub.requests.length;
+        await withSilencedNotifications(() => mode.run());
+        const sent = stub.requests.slice(since).filter(r =>
+          (r.system.startsWith(NARRATOR_ROLE) || r.system.includes(PRIVATE_ROLE)) && r.user.includes(mode.marker));
+        assert.isAtLeast(sent.length, 1,
+          `${mode.name}: no narrator request carried "${mode.marker}" (${stub.requests.length - since} request(s) sent)`);
+        return sent.at(-1);
+      }
+
+      // Every narrator mode, run as the module runs it. `speaker` modes name
+      // their PC; the others narrate for the first PC.
+      const MOVE = { name: "move resolution", marker: "## MOVE OUTCOME", speaker: true, run: async () => {
+        const { narrateResolution } = await narrator();
+        await narrateResolution({
+          _id: `quench-contract-${foundry.utils.randomID()}`, moveId: "face_danger", moveName: "Face Danger",
+          statUsed: "wits", statValue: 2, actionDie: 5, actionScore: 7, challengeDice: [3, 8],
+          outcome: "weak_hit", outcomeLabel: "Weak Hit", consequences: {},
+          playerNarration: "I brace the airlock door and check the seals.",
+          loremasterContext: "[MOVE: Face Danger +wits] [OUTCOME: Weak Hit]",
+        }, state(), { relevance: INTERACTION, speakerActorId: fx.pcA.id });
+      } };
+      const PACED = { name: "paced narration", marker: "No move was rolled", speaker: true, run: async () => {
+        const { narratePacedInput } = await narrator();
+        await narratePacedInput("I run a hand along the airlock seals.", state(), { speakerActorId: fx.pcA.id });
+      } };
+      const SCENE = { name: "@scene", marker: "## PLAYER QUESTION", speaker: true, run: async () => {
+        const { interrogateScene } = await narrator();
+        await interrogateScene("What does the docking bay smell like?", state(), { speakerActorId: fx.pcA.id });
+      } };
+      const ORACLE = { name: "oracle follow-up", marker: "The player invoked the oracle", speaker: true, run: async () => {
+        const { narrateOracleFollowup } = await narrator();
+        await narrateOracleFollowup({
+          kind: "oracle_yes_no", oracleName: "Ask the Oracle (50/50)", question: "Is the airlock sealed?",
+          rolledLine: "d100 = 47 → Yes", campaignState: state(), speakerActorId: fx.pcA.id,
+        });
+      } };
+      const GALLEY = { name: "Begin Session vignette", marker: "OPENING VIGNETTE", run: async () => {
+        const galley = await import(`${MODULE_PATH}/session/galleyVignette.js`);
+        const { narrateSessionVignette } = await narrator();
+        const cs = state();
+        await narrateSessionVignette({
+          userMessage: galley.buildGalleyVignetteUserMessage(galley.collectGalleyParticipants(), cs),
+          campaignState: cs,
+        });
+      } };
+      const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {
+        const closing = await import(`${MODULE_PATH}/session/endSessionVignette.js`);
+        const { narrateSessionVignette } = await narrator();
+        const cs = state();
+        await narrateSessionVignette({
+          userMessage: closing.buildEndSessionVignetteUserMessage(closing.selectEndSessionNPC(cs), cs),
+          campaignState: cs,
+        });
+      } };
+      const CLOCK = { name: "clock vignette", marker: `The clock "${N.clock}"`, run: async () => {
+        const { narrateClockAdvancement } = await narrator();
+        await narrateClockAdvancement({
+          clock: { name: N.clock, type: "tension", filled: 3, segments: 6, triggered: false },
+          campaignState: state(),
+        });
+      } };
+      const VOW = { name: "vow scene", marker: "A character is swearing", run: async () => {
+        const { narrateVowSwearing } = await narrator();
+        await narrateVowSwearing({ vow: { name: N.vow, rank: "dangerous" }, campaignState: state() });
+      } };
+      const INCITING = { name: "inciting incident", marker: "Envision the campaign's inciting incident", run: async () => {
+        const { narrateIncitingIncident } = await narrator();
+        const { buildIncitingIncidentUserMessage } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+        await narrateIncitingIncident({
+          userMessage: buildIncitingIncidentUserMessage({ action: "Betray", theme: "Debt" }),
+          campaignState: state(),
+        });
+      } };
+      const RECAP = { name: "campaign recap", marker: "## CAMPAIGN CHRONICLE", run: async () => {
+        const { getCampaignRecap } = await narrator();
+        await getCampaignRecap(state(), { forceRefresh: true });
+      } };
+      const PRIVATE = { name: "Private Channel", marker: "## PLAYER MESSAGE", run: async () => {
+        const { requestPrivateNarration } = await import(`${MODULE_PATH}/private-channel/narrate.js`);
+        const result = await requestPrivateNarration({
+          campaignState: state(), userId: game.user.id, actorId: fx.pcA.id,
+          transcriptTurns: [], playerMessage: `What do I remember about ${N.npc}?`,
+        });
+        assert.isTrue(result?.ok, `the Private Channel turn should succeed (${result?.reason})`);
+      } };
+      const PROSE_MODES = [MOVE, PACED, SCENE, ORACLE, GALLEY, CLOSING, CLOCK, VOW, INCITING];
+
+      before(async function () {
+        this.timeout(30000);
+        if (!game.user.isGM) { this.skip(); return; }
+        ({ splitPromptSections: split } = await import(`${MODULE_PATH}/narration/narratorDebug.js`));
+        stateAtStart = JSON.parse(JSON.stringify(state() ?? {}));
+        const tracks = tracksJournal();
+        tracksAtStart = tracks ? JSON.parse(JSON.stringify(tracks.getFlag(MODULE, "tracks") ?? [])) : undefined;
+        for (const [key, value] of Object.entries(PINNED)) {
+          pinnedAtStart[key] = game.settings.get(MODULE, key);
+          await game.settings.set(MODULE, key, value);
+        }
+        installClaudeStub();
+
+        // The speaking player character, in every test.
+        fx.pcA = await Actor.create({
+          name: N.pcA, type: "character",
+          system: { pronouns: "she/her", edge: 2, heart: 2, iron: 2, shadow: 1, wits: 3 },
+        });
+        const { getPlayerActors } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+        // PCs this batch didn't make (a populated world): the checks that need
+        // the first PC to be this one, or one PC only, are skipped then.
+        fx.otherPcs = getPlayerActors().filter(a => a.id !== fx.pcA.id);
+      });
+
+      after(async function () {
+        this.timeout(30000);
+        if (!stateAtStart) return;
+        // Let the background passes the last narrations scheduled land on the stub.
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        if (realFetch) globalThis.fetch = realFetch;
+        for (const [key, value] of Object.entries(pinnedAtStart)) {
+          await game.settings.set(MODULE, key, value).catch(() => {});
+        }
+        await game.settings.set(MODULE, "campaignState", stateAtStart);
+        const tracks = tracksJournal();
+        if (tracks && tracksAtStart !== undefined) await tracks.setFlag(MODULE, "tracks", tracksAtStart);
+      });
+
+      describe("a bare world: nothing the seeded sections read exists", function () {
+        before(async function () {
+          this.timeout(30000);
+          await tracksJournal()?.setFlag(MODULE, "tracks", []);
+          await game.settings.set(MODULE, "campaignState", {
+            currentSessionId: "quench-contract-bare", sessionNumber: 1, sessionActive: true,
+            safety: { lines: [], veils: [], privateLines: [] },
+          });
+        });
+
+        for (const mode of PROSE_MODES) {
+          it(`${mode.name}: the role, safety and the character, and none of the seeded sections`, async function () {
+            const request = await capture(mode);
+            assert.isTrue(request.system.startsWith(NARRATOR_ROLE), `${mode.name}: the role comes first`);
+            carries(request, "SAFETY CONFIGURATION", mode.name);
+            carries(request, "CHARACTER", mode.name);
+            for (const name of SEEDED_SECTIONS) lacks(request, name, mode.name);
+            if (!fx.otherPcs.length) lacks(request, "PARTY", mode.name);
+          });
+        }
+
+        it("campaign recap: nothing is sent without a chronicle", async function () {
+          if (fx.otherPcs.length) { this.skip(); return; }   // their chronicles count
+          const since = stub.requests.length;
+          await RECAP.run();
+          assert.isFalse(stub.requests.slice(since).some(r => r.user.includes(RECAP.marker)),
+            "with no chronicle entry the recap makes no call");
+        });
+
+        it("Private Channel: no shared story", async function () {
+          const request = await capture(PRIVATE);
+          carries(request, "ROLE", PRIVATE.name);
+          carries(request, "CHARACTER", PRIVATE.name, [N.pcA]);
+          for (const name of ["LAST SESSION", "ENTITIES IN SCENE", "ACTIVE SCENE", "CAMPAIGN PREMISE"]) {
+            lacks(request, name, PRIVATE.name);
+          }
+        });
+      });
+
+      describe("a seeded world: each section reaches the request", function () {
+        before(async function () {
+          this.timeout(90000);
+          const { createConnection } = await import(`${MODULE_PATH}/entities/connection.js`);
+          const { createSettlement } = await import(`${MODULE_PATH}/entities/settlement.js`);
+          const { createShip }       = await import(`${MODULE_PATH}/entities/ship.js`);
+          const { createCharacterVowItem } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          const { addProgressTrack, setCombatTrackPosition } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const { createClock }       = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const { startScene }        = await import(`${MODULE_PATH}/factContinuity/sceneLifecycle.js`);
+          const { applySidecar, applySceneFrame } = await import(`${MODULE_PATH}/factContinuity/ledgers.js`);
+          const { collectAllEntities } = await import(`${MODULE_PATH}/context/relevanceResolver.js`);
+          const { mintSession }       = await import(`${MODULE_PATH}/session/lifecycle.js`);
+          const { addChronicleEntry } = await import(`${MODULE_PATH}/character/chronicle.js`);
+
+          // A second PC; a vow on the first one's sheet; a chronicle for the recap.
+          fx.pcB = await Actor.create({ name: N.pcB, type: "character", system: { pronouns: "he/him" } });
+          await createCharacterVowItem(fx.pcA, { name: N.vow, rank: "dangerous", vowId: "quench-contract-vow" });
+          await addChronicleEntry(fx.pcA.id, { type: "discovery", text: N.chronicle, automated: true, sessionId: "quench-contract-s1" });
+
+          // The sector's cast: an NPC with a goal, a lawless settlement, the command vehicle.
+          const sector = { id: "quench-contract-sector", name: N.sector, region: "terminus", regionLabel: "Terminus", trouble: "Pirates raid the lanes" };
+          const scratch = { activeSectorId: sector.id, sectors: [sector] };
+          await createConnection(
+            { name: N.npc, role: "Salvager", goal: N.npcGoal, pronouns: "he/him", rank: "dangerous", sectorId: sector.id },
+            scratch, { persist: false });
+          await createSettlement(
+            { name: N.settlement, authority: N.authority, trouble: "Water rationing", sectorId: sector.id },
+            scratch, { persist: false });
+          await createShip({ name: N.ship, isCommandVehicle: true }, scratch);
+
+          // An open fight, in the Progress Tracks store.
+          await tracksJournal()?.setFlag(MODULE, "tracks", []);
+          const fight = await addProgressTrack({
+            label: N.fight, type: "combat", rank: "dangerous", objective: N.objective, linkedVowName: N.vow,
+          });
+          await setCombatTrackPosition(fight.id, "bad_spot");
+
+          // The campaign: last session's summary (kept by the real mint), the
+          // premise, every player's safety lines, the recap's cache (so the
+          // session's first narration makes no recap call).
+          const cs = {
+            currentSessionId: "quench-contract-s1", sessionNumber: 1, sessionActive: true,
+            sessionSummary: { text: N.lastSession, sessionId: "quench-contract-s1", coveredCount: 4, updatedAt: new Date().toISOString() },
+            safety: {
+              lines: ["No harm to children"], veils: [],
+              privateLines: [{ playerId: "quench-contract-player", lines: [N.privateLine] }],
+            },
+            connectionIds: scratch.connectionIds, settlementIds: scratch.settlementIds, shipIds: scratch.shipIds,
+            sectors: [sector], activeSectorId: sector.id,
+            incitingIncident: {
+              prose: N.premise, spark: { action: "Betray", theme: "Debt" },
+              vow: { statement: N.vow, rank: "dangerous" }, sessionId: "quench-contract-s1",
+              establishedAt: new Date().toISOString(),
+            },
+            campaignRecapCache: { text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(), chronicleLength: 1 },
+          };
+          mintSession(cs);
+          await game.settings.set(MODULE, "campaignState", cs);
+
+          // The scene: the NPC in the frame, a fact about him in the ledger.
+          await startScene(state(), { reason: "quench_contract" });
+          const live = state();
+          applySidecar({ newTruths: [{ subject: N.npc, fact: N.truth }], stateChanges: [] },
+            { campaignState: live, entities: collectAllEntities(live) });
+          applySceneFrame({ location: `${N.settlement} docks`, present: [N.npc], situation: "Haggling over salvage rights" }, live);
+          await game.settings.set(MODULE, "campaignState", live);
+
+          await createClock({ name: N.clock, segments: 6, type: "tension" });
+        });
+
+        for (const mode of PROSE_MODES) {
+          it(`${mode.name}: carries every seeded section`, async function () {
+            const request = await capture(mode);
+            carries(request, "ENTITIES IN SCENE", mode.name);
+            carries(request, N.npc.toUpperCase(), mode.name, [N.npcGoal]);
+            carries(request, "ACTIVE SCENE", mode.name, [N.truth, `COMMAND VEHICLE: ${N.ship}`]);
+            carries(request, "LAST SESSION", mode.name, [N.lastSession]);
+            carries(request, "CLOCKS", mode.name, [N.clock]);
+            carries(request, "OPEN PROGRESS TRACKS", mode.name, [N.fight, `objective: ${N.objective}`, "in a bad spot", N.vow]);
+            carries(request, "CAMPAIGN PREMISE", mode.name, [N.premise]);
+            carries(request, "ACTIVE SECTOR", mode.name, [N.settlement, N.npc]);
+            // A GM's client builds for the table: every player's Private Lines.
+            carries(request, "SAFETY CONFIGURATION", mode.name, ["No harm to children", N.privateLine]);
+            carries(request, "PARTY", mode.name, [N.pcA, N.pcB]);
+            const character = carries(request, "CHARACTER", mode.name);
+            if (mode.speaker || !fx.otherPcs.length) {
+              assert.include(character.text, N.pcA, `${mode.name}: CHARACTER is the speaking (or first) PC`);
+              assert.include(character.text, N.vow, `${mode.name}: CHARACTER lists the PC's open vow`);
+            }
+          });
+        }
+
+        it("move resolution: the creative latitude, the outcome and the player's line", async function () {
+          const request = await capture(MOVE);
+          carries(request, "NARRATOR PERMISSIONS", MOVE.name, ["INTERACTION MODE"]);
+          carries(request, "MOVE OUTCOME", MOVE.name, ["Weak Hit"]);
+          carries(request, `PLAYER NARRATION — spoken by ${N.pcA}`, MOVE.name, ["I brace the airlock door"]);
+        });
+
+        it("paced narration and @scene: the speaker is named", async function () {
+          carries(await capture(PACED), `PLAYER NARRATION — spoken by ${N.pcA}`, PACED.name);
+          carries(await capture(SCENE), `PLAYER QUESTION — asked by ${N.pcA}`, SCENE.name);
+        });
+
+        it("oracle follow-up: the rolled result", async function () {
+          assert.include((await capture(ORACLE)).user, "Mechanical result: d100 = 47 → Yes");
+        });
+
+        it("Begin Session vignette: both PCs, with their pronouns (PLAYTEST-1712 B, R)", async function () {
+          const request = await capture(GALLEY);
+          assert.include(request.user, `${N.pcA} [she/her]`, "the first PC and her pronouns");
+          assert.include(request.user, `${N.pcB} [he/him]`, "the second PC and his pronouns");
+        });
+
+        it("End Session vignette: the NPC, with his pronouns (PLAYTEST-1712 R)", async function () {
+          const request = await capture(CLOSING);
+          assert.include(request.user, `Featured NPC (connection): ${N.npc}`);
+          assert.include(request.user, "Pronouns: he/him");
+        });
+
+        it("vow scene: the vow being sworn", async function () {
+          assert.include((await capture(VOW)).user, `"${N.vow}"`);
+        });
+
+        it("inciting incident: the NPC's goal and the settlement's authority (PLAYTEST-1717 C, 1712 T)", async function () {
+          const request = await capture(INCITING);
+          carries(request, "ACTIVE SECTOR", INCITING.name, [
+            `Goal: ${N.npcGoal}`, `${N.settlement} (Authority: ${N.authority}`,
+          ]);
+        });
+
+        it("campaign recap: the chronicle and the premise, none of the live-scene sections", async function () {
+          const request = await capture(RECAP);
+          carries(request, "CAMPAIGN CHRONICLE", RECAP.name, [N.chronicle]);
+          carries(request, "CAMPAIGN PREMISE", RECAP.name, [N.premise]);
+          carries(request, "CHARACTER", RECAP.name);
+          carries(request, "PARTY", RECAP.name, [N.pcA, N.pcB]);
+          for (const name of ["LAST SESSION", "STORY SO FAR", "CLOCKS", "OPEN PROGRESS TRACKS", "NARRATOR PERMISSIONS", "RESPONSE FORMAT"]) {
+            lacks(request, name, RECAP.name);
+          }
+        });
+
+        it("Private Channel: the shared story, and only its player's own Private Lines (#286 D1)", async function () {
+          const request = await capture(PRIVATE);
+          carries(request, "ROLE", PRIVATE.name);
+          carries(request, "CAMPAIGN PREMISE", PRIVATE.name, [N.premise]);
+          carries(request, "CHARACTER", PRIVATE.name, [N.pcA]);
+          carries(request, "CURRENT SCENE CONTEXT", PRIVATE.name);
+          carries(request, "LAST SESSION", PRIVATE.name, [N.lastSession]);
+          carries(request, "ENTITIES IN SCENE", PRIVATE.name);
+          carries(request, N.npc.toUpperCase(), PRIVATE.name, [N.npcGoal]);
+          carries(request, "ACTIVE SCENE", PRIVATE.name, [N.truth]);
+          assert.notInclude(request.system, N.privateLine, "another player's Private Line never reaches this player's request");
+          for (const name of ["CLOCKS", "PARTY", "OPEN PROGRESS TRACKS"]) lacks(request, name, PRIVATE.name);
+        });
+      });
+
+      describe("composition: what one narration records, the next one is told", function () {
+        it("a fact block's truth, state and scene frame reach the next request", async function () {
+          const fact = "Hid the beacon codes in his left boot";
+          stub.prose.push("Vance limps to the hatch, one boot squelching.");
+          stub.sidecars.push({
+            newTruths:    [{ subject: N.npc, fact }],
+            stateChanges: [{ subject: N.npc, attribute: "condition", value: "bleeding from the scalp" }],
+            sceneFrame:   { location: `${N.settlement} airlock`, present: [N.npc], situation: "Vance limps to the hatch" },
+          });
+          await withSilencedNotifications(() => PACED.run());
+          await waitFor(() => (state()?.sceneTruths ?? []).some(t => t.fact === fact), "the fact block to persist");
+
+          const request = await capture(PACED);
+          carries(request, "ACTIVE SCENE", "the next narration", [fact, "bleeding from the scalp", `${N.settlement} airlock`]);
+          carries(request, "RECENT SCENE", "the next narration", ["one boot squelching"]);
+        });
+
+        it("an @scene answer is in the next narration's recent scene (v1.7.8 F8)", async function () {
+          stub.prose.push("Vance's tug drifts three klicks sunward, engines dark.");
+          await withSilencedNotifications(() => SCENE.run());
+          carries(await capture(PACED), "RECENT SCENE", "the next narration", ["three klicks sunward"]);
+        });
+
+        it("the inciting incident becomes the premise and enters the recent scene (v1.7.8 F7, PLAYTEST-1712 S)", async function () {
+          const { runIncitingIncident } = await import(`${MODULE_PATH}/session/incitingIncident.js`);
+          stub.prose.push("QUENCH-INCITE: a coded hail from the derelict Morrow's Wake.\n\nSuggested vow: I will board the Morrow's Wake (formidable)");
+          await withSilencedNotifications(() => runIncitingIncident(state()));
+          assert.include(state()?.incitingIncident?.prose ?? "", "QUENCH-INCITE", "the premise is saved as canon");
+
+          const request = await capture(PACED);
+          carries(request, "CAMPAIGN PREMISE", "the next narration", ["QUENCH-INCITE"]);
+          carries(request, "RECENT SCENE", "the next narration", ["QUENCH-INCITE"]);
+        });
+
+        it("!narrator debug shows the request that was sent, without the Private Lines", async function () {
+          const request = await capture(PACED);
+          const before  = new Set(game.messages.contents.map(m => m.id));
+          await ChatMessage.create({ content: "!narrator debug" });
+          const card = await waitFor(
+            () => game.messages.contents.find(m => !before.has(m.id) && m.flags?.[MODULE]?.narratorDebugCard),
+            "the narrator debug card");
+          assert.include(card.content, "narratePacedInput");
+          for (const { heading } of split(request.system)) {
+            if (/[&<>"']/.test(heading)) continue;   // escaped in the card
+            // The card clips a long heading; its start is enough to find it.
+            assert.include(card.content, heading.slice(0, 60), `the debug card lists the ${heading} section`);
+          }
+          assert.notInclude(card.content, N.privateLine, "Private Lines are counted, never shown");
+          assert.include(card.content, "1 private line");
+        });
+      });
+
+      describe("ship description: the modules the ship carries (v1.6.1 F7)", function () {
+        it("the description request names the ship's installed modules", async function () {
+          const { createShip, seedStarshipActor } = await import(`${MODULE_PATH}/entities/ship.js`);
+          const cs = state();
+          await createShip({ name: "Tern (contract)" }, cs);
+          const actor = game.actors.get(cs.shipIds.at(-1));
+          await actor.createEmbeddedDocuments("Item", [
+            { name: "Research Lab", type: "asset", system: { category: "Module", abilities: [] } },
+          ]);
+          const since = stub.requests.length;
+          await withSilencedNotifications(() => seedStarshipActor(actor, state()));
+          const request = stub.requests.slice(since).find(r => r.system.includes("introduction to the player's starship"));
+          assert.isOk(request, "seeding the ship should ask for its description");
+          assert.include(request.user, "Installed modules: Research Lab");
+        });
+      });
+    },
+    { displayName: "STARFORGED: Prompt Contracts", timeout: 60000 },
   );
 }

@@ -544,6 +544,84 @@ describe("seedStarshipActor", () => {
   });
 });
 
+// v1.6.1 F7: the Notes prose described a carrier launching fighters on a ship
+// whose only module was a Research Lab — the prose prompt never saw the
+// ship's modules. It now lists them, after the rolled identity's own modules
+// are installed.
+describe("seedStarshipActor — the Notes prose is grounded in the ship's modules (v1.6.1 F7)", () => {
+  let apiPost;
+
+  beforeEach(async () => {
+    ({ apiPost } = await import("../../src/api-proxy.js"));
+    apiPost.mockClear();
+    rollOracle.mockImplementation((id) => ({
+      tableId: id,
+      result:  id === "starship_type" ? "Carrier — Launches fighters" : "—",
+    }));
+    global.game.settings.get = (_mod, key) => {
+      if (key === "claudeApiKey")   return "sk-ant-test";
+      if (key === "narrationModel") return "claude-sonnet-4-5-20250929";
+      if (key === "narrationTone")  return "wry";
+      return undefined;
+    };
+    global.game.settings.set = async () => {};
+    getCanonicalAsset.mockReset();
+    getCanonicalAsset.mockImplementation(async (slug) => ({
+      name:   { vehicle_bay: "Vehicle Bay", sensor_array: "Sensor Array" }[slug] ?? slug,
+      type:   "asset",
+      system: { category: "Module", abilities: [] },
+      toObject() { return { name: this.name, type: this.type, system: { ...this.system } }; },
+    }));
+  });
+
+  /** The body of the prose request apiPost was sent. */
+  const proseRequest = () => apiPost.mock.calls.at(-1)?.[2];
+
+  it("names a module the ship already carries, and says the modules are what it can do", async () => {
+    const actor = global.makeTestActor({
+      type:  "starship",
+      name:  "Kobayashi IV",
+      items: { contents: [{ name: "Research Lab", type: "asset", system: { category: "Module", abilities: [] } }] },
+    });
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    const body = proseRequest();
+    expect(body.messages[0].content).toContain("Installed modules: Research Lab");
+    expect(body.system[0].text).toContain("The installed modules are what the ship can actually do");
+    expect(getCanonicalAsset).not.toHaveBeenCalled();   // a ship with a module keeps it
+  });
+
+  it("names the modules the seed installed for the rolled identity", async () => {
+    const actor = global.makeTestActor({ type: "starship", name: "Tern" });
+    actor.createEmbeddedDocuments = async (_kind, docs) => {
+      actor.items.contents.push(...docs);
+      return docs;
+    };
+    global.game.actors._set(actor.id, actor);
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    const modulesLine = proseRequest().messages[0].content.split("\n").find(l => l.startsWith("Installed modules:"));
+    expect(modulesLine).toContain("Vehicle Bay");
+    expect(modulesLine).toContain("Sensor Array");
+  });
+
+  it("asks for nothing about modules when the ship has none", async () => {
+    getCanonicalAsset.mockResolvedValue(null);
+    const actor = global.makeTestActor({ type: "starship", name: "Bare Hull" });
+    global.game.actors._set(actor.id, actor);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
+
+    warn.mockRestore();
+    expect(proseRequest().messages[0].content).not.toContain("Installed modules");
+    expect(proseRequest().system[0].text).not.toContain("installed modules");
+  });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // installModulesForRolledIdentity (F18 — modules match rolled identity)

@@ -2665,3 +2665,59 @@ body.sf-compact.sf-touch #board {
   border-color: #6a2d8f;
   color:       #d9b3ff;
 }
+
+
+/* ============================================================================
+   NARRATOR DEBUG CARD (!narrator debug — issue #290)
+   What the narrator was last sent, section by section. GM-whispered.
+   ============================================================================ */
+
+.sf-narrator-debug-card {
+  padding:       8px 10px;
+  border-left:   3px solid var(--color-text-dark-secondary, #666);
+  border-radius: 2px;
+  margin:        4px 0;
+  font-size:     0.85em;
+  background:    rgba(102, 102, 102, 0.05);
+}
+
+.sf-narrator-debug-label {
+  font-size:      0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight:    600;
+  margin-bottom:  4px;
+  color:          var(--color-text-dark-secondary, #666);
+}
+
+.sf-narrator-debug-card h4 {
+  margin:    8px 0 2px;
+  font-size: 0.95em;
+}
+
+.sf-narrator-debug-meta,
+.sf-narrator-debug-note {
+  margin:    2px 0;
+  color:     var(--color-text-dark-secondary, #555);
+  font-size: 0.9em;
+}
+
+.sf-narrator-debug-sections,
+.sf-narrator-debug-earlier {
+  margin:       2px 0;
+  padding-left: 1.6em;
+}
+
+.sf-narrator-debug-size {
+  color:     var(--color-text-dark-secondary, #777);
+  font-size: 0.85em;
+}
+
+.sf-narrator-debug-card pre {
+  white-space: pre-wrap;
+  word-break:  break-word;
+  max-height:  20em;
+  overflow:    auto;
+  margin:      2px 0 4px;
+  font-size:   0.85em;
+}

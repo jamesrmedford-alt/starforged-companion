@@ -79,6 +79,7 @@ import {
   registerRollingSummaryRefreshHook,
   registerPublishedReflectionHook,
 } from "./narration/narrator.js";
+import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
@@ -589,6 +590,9 @@ export const CHAT_COMMAND_ROUTES = [
   { name: "!recap",            match: isRecapCommand,            runOn: RUN_ON.CLAUDE,       run: handleRecapCommand },
   { name: "!recap (GM-only)",  match: isDeniedRecapCommand,      runOn: RUN_ON.AUTHOR,       run: handleDeniedRecapCommand },
   { name: "!pace",             match: isPaceCommand,             runOn: RUN_ON.AUTHOR,       run: handlePaceCommand },
+  // !narrator debug shows this browser's own capture of the last narrator
+  // request (narration/narratorDebug.js), so it runs where it was typed.
+  { name: "!narrator",         match: isNarratorCommand,         runOn: RUN_ON.AUTHOR,       run: handleNarratorCommand },
   { name: "!migrate-entities", match: isMigrateEntitiesCommand,  runOn: RUN_ON.AUTHOR,       run: handleMigrateEntitiesCommand },
   { name: "!oracle",           match: isOracleCommand,           runOn: RUN_ON.AUTHOR,       run: handleOracleCommand },
   { name: "!pay-the-price",    match: isPayThePriceCommand,      runOn: RUN_ON.AUTHOR,       run: handlePayThePriceCommand },

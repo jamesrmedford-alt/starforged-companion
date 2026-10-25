@@ -1306,6 +1306,7 @@ export function buildNarratorSystemPrompt(
     previousSessionSummary = null,
     clocks               = [],
     sessionFocus         = null,
+    progressTracks       = [],
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1456,6 +1457,10 @@ export function buildNarratorSystemPrompt(
     if (clocksBlock) parts.push(clocksBlock);
     const focusBlock = formatSessionFocusBlock(sessionFocus);
     if (focusBlock) parts.push(focusBlock);
+    // [4j] Open fights, expeditions and scene challenges (TRACKS-UNPORTED,
+    //      issue #290) — only the retired assembler rendered them.
+    const tracksBlock = formatProgressTracksBlock(progressTracks);
+    if (tracksBlock) parts.push(tracksBlock);
   }
 
   // [5] Current location card — always injected when set
@@ -1684,6 +1689,48 @@ function formatSessionFocusBlock(focus) {
     `## THE TABLE'S FOCUS THIS SESSION\n\n` +
     `At the end of the last session the table chose these threads to focus on. ` +
     `Give them room when the fiction allows; never force them.\n\n` +
+    lines.join('\n')
+  );
+}
+
+/** Track types the Progress Tracks panel lists, as the [4j] block names them. */
+const PROGRESS_TRACK_LABELS = {
+  combat:          'Fight',
+  expedition:      'Expedition',
+  scene_challenge: 'Scene challenge',
+};
+
+/**
+ * [4j] The table's open fights, expeditions and scene challenges, from the
+ * Progress Tracks journal (`listOpenProgressTracks`, src/ui/progressTracks.js):
+ * rank and filled boxes, and for a fight its objective, position and the vow
+ * it serves (#241 P1 — that block lived in the retired context assembler and
+ * no narration saw it, TRACKS-UNPORTED). At most six. '' when none is open.
+ *
+ * @param {Array<{ type: string, label: string, rank?: string, ticks?: number, objective?: string|null,
+ *   combatState?: string|null, linkedVowName?: string|null }>} tracks
+ * @returns {string}
+ */
+function formatProgressTracksBlock(tracks) {
+  const list = (Array.isArray(tracks) ? tracks : [])
+    .filter(t => PROGRESS_TRACK_LABELS[t?.type] && typeof t?.label === 'string' && t.label.trim() && !t.completed)
+    .slice(0, 6);
+  if (!list.length) return '';
+  const lines = list.map(t => {
+    const boxes = Math.max(0, Math.min(10, Math.floor((Number(t.ticks) || 0) / 4)));
+    const bits  = [[t.rank, `${boxes}/10 progress`].filter(Boolean).join(', ')];
+    if (typeof t.objective === 'string' && t.objective.trim()) bits.push(`objective: ${t.objective.trim()}`);
+    if (t.combatState === 'in_control') bits.push('position: in control');
+    else if (t.combatState === 'bad_spot') bits.push('position: in a bad spot');
+    if (typeof t.linkedVowName === 'string' && t.linkedVowName.trim()) {
+      bits.push(`serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`);
+    }
+    return `- ${PROGRESS_TRACK_LABELS[t.type]}: ${t.label.trim()} — ${bits.join('; ')}`;
+  });
+  return (
+    `## OPEN PROGRESS TRACKS\n\n` +
+    `The fights, expeditions and challenges under way. Keep the fiction true to ` +
+    `each one's objective and position; never mention the track or its count.\n\n` +
     lines.join('\n')
   );
 }

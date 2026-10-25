@@ -116,8 +116,12 @@ entities in play, then the most recent, 8 in all; it was the 5 most recent)
 dead assembler packet until 2026-07; see `faction-flow.md`) · **[4h] clocks**
 (`campaignState.clocks`, active campaign / tension clocks, read from the
 store — issue #286 C5) · **[4i] the table's focus this session** (the End
-Session foci, kept as `sessionFocus` at Begin Session — C5) · [5] current
-location card · [5b]
+Session foci, kept as `sessionFocus` at Begin Session — C5) · **[4j] open
+progress tracks** (the open fights, expeditions and scene challenges in the
+Progress Tracks journal, `listOpenProgressTracks` — a fight with its
+objective, position and linked vow, at most six; skipped for the recap.
+Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED)
+· [5] current location card · [5b]
 active-sector anchor · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
 C5) · [6.5] active-scene ledger
@@ -183,6 +187,21 @@ the frame's cast.
 `callNarratorAPI` now **warns on `stop_reason: "max_tokens"`** so the
 remaining cases are visible (the pre-fence truncation that used to parse as
 "clean prose, no sidecar" is caught here).
+
+**What was sent — `!narrator debug`** (issue #290 part 1). `callNarratorAPI`
+records each request in this browser (`src/narration/narratorDebug.js`: the
+system prompt, the user message, model, cap, the narrator function, then the
+response's text, stop reason and usage, or its error; the last 10), and
+`applyNarratorSidecar` adds the fact block it parsed. `!narrator debug` (GM
+only, `RUN_ON.AUTHOR`) whispers the typist a card of the last narration's
+request — the background summary regen is listed, not detailed — split into
+sections by `splitPromptSections` (at the `---` rules and `## ` headings),
+with Private Lines counted, not shown. The Private Channel calls the API
+itself and is not captured. The Quench batch `starforged-companion.promptContracts`
+reads requests with the same splitter: it runs every mode above against a
+stubbed endpoint in a live world and checks each section against the data it
+reads, present and absent. **A section added to the prompt, or a new mode,
+gets a check there.**
 
 ## 2. Write-back side — how output becomes memory
 

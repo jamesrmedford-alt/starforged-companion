@@ -6,6 +6,13 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **`!narrator debug`** (GM only, issue #290). Shows what the narrator was sent for the last narration: each section of its instructions, the message for that turn, and the facts it recorded from its reply (its fact block). The card is whispered to you, for playtest reports. It covers narration from your own browser since it loaded, and counts Private Lines without showing them.
+- Fixed: **The narrator knows about your open fights and expeditions** (issue #290). A fight's objective, position (in control or in a bad spot) and the vow it serves reached the narrator only through the retired context assembler, which no narration read, so no narration saw an open fight, expedition or scene challenge. They are back in every narration's instructions.
+- Fixed: **A new ship's description matches its modules** (issue #290, playtest v1.6.1 F7). The description written when a ship is set up now names the modules it carries, so a ship with a research lab isn't written up as a carrier launching fighters. The modules matched to the ship's rolled type are installed first, so the description sees them too.
+- Internal: **prompt-contract checks** (issue #290 part 1). A Quench batch runs every narrator mode (move, paced, `@scene`, oracle follow-up, the Begin and End Session and clock vignettes, vow scenes, the inciting incident, the campaign recap and the Private Channel) against a stubbed Claude endpoint in a live world, captures each request and checks every section against the data it reads: present when the data exists, absent when it doesn't. Further checks follow what one narration records into the next request.
+
+## [1.7.35] — 2026-10-24
+
 - Added: **On a phone, two fingers pinch-zoom and pan the page over the map** (issue #293). Foundry's map took every touch, so a pinch that started on it drew an orange selection box instead of zooming. One finger still works the map. Tablets and desktops are unchanged.
 
 ## [1.7.34] — 2026-10-24

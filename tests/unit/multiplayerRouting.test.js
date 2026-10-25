@@ -43,6 +43,7 @@ const SAMPLES = {
   '!recap':            '!recap',
   '!recap (GM-only)':  '!recap',
   '!pace':             '!pace hot',
+  '!narrator':         '!narrator debug',
   '!migrate-entities': '!migrate-entities',
   '!oracle':           '!oracle yes likely is the hatch sealed',
   '!pay-the-price':    '!ptp',
