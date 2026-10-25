@@ -1,6 +1,6 @@
 {
   "name": "first-session",
-  "description": "A solo player's first session at a lawless settlement: the opening vignette, a Gather Information move that introduces an NPC, the GM confirming him, a paced follow-up, a Private Channel turn built in the player's browser, End a Session, and the next session's opening.",
+  "description": "A solo player's first session at a lawless settlement: the opening vignette, a Gather Information move that introduces an NPC, the GM confirming him, a paced follow-up, a Private Channel turn built in the player's browser, End a Session, and the next session's opening. The Private Channel step pins #289's answer: a player's client holds the cards of NPCs it has no permission on, so the private prompt carries the card of an NPC the player names.",
   "settings": {
     "narrationEnabled": true,
     "narratorSessionSummary": true,
@@ -52,7 +52,7 @@
       ] },
     { "do": "privateChannel", "as": "player", "npc": "Vance Oduya",
       "message": "I wonder whether Vance Oduya was lying about the courier.",
-      "carries": ["ACTIVE SCENE"] },
+      "expectCard": true, "carries": ["ENTITIES IN SCENE", "ACTIVE SCENE"] },
     { "do": "endSession", "as": "player", "questFocus": "Find the courier",
       "then": [
         { "check": "sessionLog", "session": 1 },

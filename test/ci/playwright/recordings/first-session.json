@@ -17,6 +17,19 @@
       }
     },
     {
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Mira Kestrel eats standing up galley counter Kobayashi IV recycler wheezes morning cycle service drone protein paste",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": []}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
       "kind": "callClassifierAPI>classifyInput",
       "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
       "response": {
@@ -63,6 +76,19 @@
           {
             "type": "text",
             "text": "{\"entities\": [{\"type\": \"connection\", \"name\": \"Vance Oduya\", \"description\": \"Broad, slow-moving dockmaster of the Hollow Spire with a burn scar climbing out of his collar; keeps the departure ledger.\", \"confidence\": \"high\", \"pronouns\": \"he/him\", \"role\": \"Dockmaster\", \"goal\": \"Keep the Hollow Spire's docks paying\"}, {\"type\": \"connection\", \"name\": \"Mira Kestrel\", \"description\": \"The traveller the courier asked about.\", \"confidence\": \"high\", \"pronouns\": \"she/her\", \"role\": \"\", \"goal\": \"\"}], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Move: gather_information Outcome: strong_hit ## NARRATION Vance Oduya departure ledger berth nine",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"discovery\", \"salience\": \"notable\", \"text\": \"Vance Oduya, the Hollow Spire's dockmaster, told Mira the courier fled two days ago on an unregistered skiff, paying in Ascendancy scrip.\"}"
           }
         ],
         "stop_reason": "end_turn"
@@ -121,6 +147,19 @@
       }
     },
     {
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Context: paced narration — no move was rolled. ## NARRATION Vance laughs tithe-mark eleven years",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"relationship\", \"salience\": \"significant\", \"text\": \"Vance Oduya admitted he owes the Ascendancy eleven years of tithe, and that clearing the courier's skiff was meant to clear it.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
       "kind": "callNarratorAPI>getRollingSessionSummary",
       "user": "## SESSION NARRATION (oldest first) Vance Oduya dockmaster courier",
       "response": {
@@ -147,6 +186,19 @@
       }
     },
     {
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Vance Oduya eats his supper hand flat closed ledger water ration light blinks amber empty clamps tick cool",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": []}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
       "kind": "callNarratorAPI>getCampaignRecap",
       "user": "## CAMPAIGN CHRONICLE Write a campaign recap of 3–5 paragraphs covering",
       "response": {
@@ -167,6 +219,19 @@
           {
             "type": "text",
             "text": "The Kobayashi IV's galley smells of reheated noodles and coolant. Mira Kestrel sits with the courier's berth number written on the back of her hand, turning a cup she has not drunk from. <npc>\"Berth nine,\"</npc> the service drone repeats helpfully, having heard her say it in her sleep. Through the viewport the Hollow Spire's docks are already busy, and somewhere in that crowd Vance Oduya is deciding what his debt is worth."
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Kobayashi IV's galley smells reheated noodles coolant berth number written back of her hand",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": []}"
           }
         ],
         "stop_reason": "end_turn"

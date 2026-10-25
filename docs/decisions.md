@@ -6,6 +6,68 @@ rejected.
 
 ---
 
+## Scripted playthroughs: Claude answered at the fetch boundary from recordings (2026-10)
+
+**Decision:** (issue #290 part 2. The maintainer settled where the
+recordings live — "no opinion … as long as it is in the repo" — and the
+budget, under 5 extra minutes of CI to start; the rest was decided while
+building it, on 2026-10-25.)
+- **Played in the Playwright GM + player suite, after the multiplayer one**
+  (`test/ci/playwright/playthrough.mjs`). The player types and answers the
+  session dialogs, the GM's client runs the real pipeline, and the GM clicks
+  the confirm dialog and the draft card, as at a table.
+- **Claude is answered by the Playwright process** (`lib/claude.mjs`): an
+  init script wraps `window.fetch`, and a call to `api.anthropic.com` goes,
+  with the JS stack at the call, to a function exposed from Node. No module
+  code changes, no CORS (the page never reaches the network for Claude), and
+  a recording run's key never enters the world.
+- **A call's kind is its caller** — the two named module frames above
+  `apiPost` — not its prompt text, which is what changes. A request takes the
+  unused recording of its kind that its user message contains the most words
+  of, and only one it contains at least half of: order can vary (background
+  passes), and a call nothing was recorded for (the tier pass a vignette
+  schedules) must not take another call's reply. The first CI run hit
+  exactly that before the floor existed.
+- **Drift is reported, not failed.** A call with no matching recording gets a
+  neutral stub and an `UNRECORDED` line; a recording whose prompt sections no
+  longer match logs `STALE`. Failing either would block every prompt change
+  on a re-record that needs a key. The checks still fail when the behaviour
+  breaks.
+- **Recordings live in `test/ci/playwright/recordings/`**, next to the
+  scenarios, not `tests/fixtures/`. They are recorded outside CI
+  (`e2e.sh --record-playthroughs`, the key in `ANTHROPIC_API_KEY`), with the
+  entity ids the model echoes stored as names, since ids differ per world.
+  The first scenario starts on hand-written placeholders in each parser's
+  format (`"source": "hand-written"`) until it is recorded.
+- **Scenarios are data** (`playthroughs/*.json`: seed, pinned settings,
+  steps, checks), so part 3's playtester can reuse and extend them. Each
+  starts from a fresh world: the suites before it leave actors, journals,
+  chat and campaign state behind.
+- **Dice are scripted at `rollDie`:** the GM page answers `Math.random`
+  calls made directly from the resolver's `rollDie` from the step's queue,
+  and leaves every other caller random (ids, oracle tables).
+- **The Private Channel question #289 left open is answered in the player's
+  browser:** a player's client holds NPC cards it has no permission on, and
+  the private prompt carries the card of an NPC the player names. The
+  scenario now asserts it.
+
+**Reason:** part 1 checks each request alone; the playtest bugs part 2
+targets live between steps — a confirmed page left empty, a Session Log
+never written, a lock never released, a PC drafted as a connection, `<npc>`
+markup on a card — and only show when the real pipeline runs a session with
+two clients and real permissions.
+
+**Rejected:**
+- *`page.route` on `api.anthropic.com`*: the request then crosses CORS, with
+  preflights to answer and headers to fake, and still carries no caller.
+- *Matching by prompt hash*: every prompt edit would break every replay.
+- *Matching in call order*: background passes (detection, tier updates,
+  summaries, chronicle) fire on timers and interleave.
+- *A test seam in `resolver.js` for dice*: production code for a test; the
+  stack check needs none.
+- *Failing CI on a stale or missing recording*: a prompt change would then
+  need a key to merge.
+
 ## Prompt contracts and `!narrator debug`: check the request the narrator is sent (2026-10)
 
 **Decision:** (issue #290 part 1. The issue set the scope; the choices below
@@ -196,6 +258,11 @@ and write")
   the published text: the player's own private lines are never published.
 - **No ledger facts.** The private narrator emits no sidecar; nothing said in
   the private window is recorded until it is published.
+- **Verified in Foundry (issue #290 part 2, 2026-10-25):** a player's client
+  holds every NPC card, including ones it has no permission on (ownership 0:
+  the sheet stays closed to them), so the private prompt carries the card of
+  an NPC the player names. The `first-session` playthrough checks it in the
+  player's browser.
 
 **Why:** the private narrator remembered only the open window's turns, the
 location and three ring cards, so a private aside could contradict the

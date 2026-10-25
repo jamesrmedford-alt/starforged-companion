@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Narrator in-client testing (issue #290) — part 1 fixed in the v1.7.36 cycle
+### Narrator in-client testing (issue #290) — parts 1 and 2 built in the v1.7.36 cycle
 
 The prompt-contract checks (Quench batch `starforged-companion.promptContracts`,
 issue #290 part 1) were written against the playtest bugs the issue lists for
@@ -22,9 +22,29 @@ them. Two of those bugs were still live:
 | TRACKS-UNPORTED | PRODUCED-BUT-DEAD | No narration was told about an open fight, expedition or scene challenge. #241 P1's ACTIVE FIGHT block (a fight's objective, position and linked vow) and the PROGRESS TRACKS section (ASSEMBLER-002) were rendered only by the context assembler, whose packet no narration read (FACTION-PACKET-DEAD) and which #271 deleted without porting them; `docs/flows/combat-flow.md` still described the block → `listOpenProgressTracks` (`src/ui/progressTracks.js`) feeds `buildNarratorExtras`, and every prose mode renders [4j] OPEN PROGRESS TRACKS (the recap doesn't). `tests/unit/narratorProgressTracks.test.js` fails with the fix reverted |
 | SHIP-FLAVOR-MODULES | WRONG-DETAIL | v1.6.1 F7, still open: the ship description written at seed / ✦ Finalise was grounded only in the oracle rolls, so a ship carrying a Research Lab was written up as a carrier launching fighters → `seedStarshipActor` installs the rolled identity's modules before the Notes, and the prose prompt names the ship's installed modules and says they are what it can do. Two tests in `entityShipActor.test.js` fail with the fix reverted |
 
-Parts 2 (a scripted GM + player playthrough on recorded responses) and 3
-(live QA with an AI playtester) are not started; see the issue's "To settle
-before building".
+**Part 2** (scripted playthroughs on recorded responses, v1.7.36 cycle) runs
+in CI after the multiplayer suite: `test/ci/playwright/playthrough.mjs` plays
+`playthroughs/first-session.json` (rules/ci-e2e.md → "Scripted playthroughs").
+It checks the ledger, the confirmed NPC card (sheet, description, the
+narrator's details, last-known whereabouts), the Session Log, a World Journal
+threat page's body, the move lock, PC-only momentum, `<npc>` markup on cards,
+no PC drafted as a connection, and LAST SESSION in the next session's
+opening. It found no new bug on its first green run, and answered #289's open
+question: a player's client holds the cards of NPCs it has no permission on,
+so the Private Channel prompt carries them (decisions.md → "The Private
+Channel reads the shared story"). Open:
+
+- **PLAYTHROUGH-PLACEHOLDERS.** `recordings/first-session.json` is
+  hand-written (`"source": "hand-written"`), in each parser's format. The
+  parsers have not yet seen a real reply in this suite — the truncation,
+  fence and markup quirks the issue wants exercised — until someone records
+  it with a key: `ANTHROPIC_API_KEY=… npm run test:e2e -- --record-playthroughs`.
+- **PLAYTHROUGH-SHIP-POSITION.** The scenario does not move the ship (v1.7.10
+  F5's position writes): that needs a sector, its scene and a token. A
+  follow-up scenario.
+
+Part 3 (live QA with an AI playtester) is not started; its open questions
+are in the issue's "To settle before building".
 
 ### Phone play on The Forge (issue #293) — fixed in the v1.7.34 and v1.7.35 cycles
 

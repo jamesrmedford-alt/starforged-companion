@@ -178,7 +178,8 @@ fact block, detection and draft cards, End and Begin a Session.
   settlement, where they are), the settings the run pins (restored after),
   and steps — `beginSession`, `move` (with scripted dice and the expected
   move and outcome), `say` (a paced line), `confirmDraft`, `privateChannel`
-  (builds the player's Private Channel prompt in their browser),
+  (builds the player's Private Channel prompt in their browser; `expectCard`
+  pins whether a named NPC's card is in it),
   `endSession`, `expect` — each with `then` checks. The checks
   (`moveLockReleased`, `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`,
   `journalPage`, `momentum`, `noMarkup`, `request`) poll for up to 20 s; the
