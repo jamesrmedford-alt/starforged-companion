@@ -11811,6 +11811,10 @@ function registerPromptContractTests(quench) {
         "factContinuity.sceneFrame":       true,
         // Its own Claude call and GM card — no section depends on it.
         "factContinuity.consistencyCheck": false,
+        // An auto-seed on the fixtures' createActor would write campaignState
+        // concurrently with the seeded world's own write.
+        autoSeedStarship:                  false,
+        autoSeedConnection:                false,
       };
 
       /** The sections the seeded world adds to every prose mode's request. */
