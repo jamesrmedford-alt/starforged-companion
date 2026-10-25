@@ -187,6 +187,7 @@ configuration.
 | `!recap` / `!recap campaign` | Post a campaign recap (Claude, cached; GM-only by default) |
 | `!recap session [N]` | Post a recap of the current (or Nth) session — no API call; GM-only by default |
 | `!pace hot\|quiet\|clear\|status` | Override or inspect scene pacing (GM) |
+| `!narrator debug` | Show what the narrator was sent for the last narration, section by section, with the facts it recorded — whispered to you, for playtest reports (GM) |
 
 ### Fact continuity
 

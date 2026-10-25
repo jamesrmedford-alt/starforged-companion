@@ -771,6 +771,28 @@ export async function getActiveCombatTrack() {
 }
 
 /**
+ * The open (not completed) fights, expeditions and scene challenges — the
+ * tracks this panel lists — whole, with each fight's objective, position and
+ * linked vow. For the narrator's OPEN PROGRESS TRACKS block
+ * (narrator.js buildNarratorExtras). Read-only: with no journal there are no
+ * tracks, and none is created, so any client may call it.
+ *
+ * @returns {object[]}
+ */
+export function listOpenProgressTracks() {
+  try {
+    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const tracks  = journal?.getFlag?.(MODULE_ID, FLAG_KEY) ?? [];
+    return Array.isArray(tracks)
+      ? tracks.filter(t => t && !t.completed && t.type in PANEL_TRACK_TYPES)
+      : [];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | listOpenProgressTracks: the Progress Tracks journal could not be read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
  * Write the combat position to a specific track. Called by the pipeline after
  * any combat move that sets consequences.combatPosition.
  *

@@ -21,6 +21,7 @@ import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParse
 import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
+import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
@@ -195,6 +196,22 @@ async function buildShipboardGuidanceBlock(campaignState) {
   }
 }
 
+/**
+ * The open tracks in the Progress Tracks journal (ui/progressTracks.js),
+ * for [4j]. Fail-open: a read failure is no tracks, never a blocked narration.
+ *
+ * @returns {Promise<Object[]>}
+ */
+async function readOpenProgressTracks() {
+  try {
+    const { listOpenProgressTracks } = await import('../ui/progressTracks.js');
+    return listOpenProgressTracks();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: open progress tracks read failed:`, err?.message ?? err);
+    return [];
+  }
+}
+
 export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const {
     playerNarration = '',
@@ -249,6 +266,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       ? stored.sessionFocus
       : null;
   }
+
+  // Open fights, expeditions and scene challenges (TRACKS-UNPORTED, issue
+  // #290): each fight's objective, position and the vow it serves. Only the
+  // retired context assembler ever rendered them, so no narration saw an open
+  // fight; vows and bonds reach the CHARACTER block from the sheet.
+  extras.progressTracks = (mode === 'campaign_recap') ? [] : await readOpenProgressTracks();
 
   // Recent oracle results (narrator-context audit 2026-07) — the raw
   // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
@@ -2859,9 +2882,13 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     // Setting not registered (unit tests, very early init). Default to on.
     console.debug?.(`${MODULE_ID} | factContinuity: setting lookup failed; defaulting to enabled:`, err);
   }
-  if (!enabled) return rawText;
+  if (!enabled) {
+    recordNarratorFactBlock(rawText, { skipped: 'fact continuity is off' });
+    return rawText;
+  }
 
   const { prose, sidecar, parseError } = extractSidecar(rawText);
+  recordNarratorFactBlock(rawText, { sidecar, parseError });
 
   if (parseError) {
     console.warn(`${MODULE_ID} | factContinuity: sidecar parse failed:`, parseError);
@@ -3100,8 +3127,19 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     'anthropic-beta':    'prompt-caching-2024-07-31',
   };
 
+  // What the narrator is sent and what comes back, for `!narrator debug`
+  // (issue #290) — in memory, this browser only.
+  const capture = recordNarratorRequest({
+    label, model, maxTokens: body.max_tokens, system: systemPrompt, user: userMessage,
+  });
   const started = Date.now();
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  let data;
+  try {
+    data = await apiPost(ANTHROPIC_URL, headers, body);
+  } catch (err) {
+    recordNarratorResponse(capture, { error: err, elapsedMs: Date.now() - started });
+    throw err;
+  }
   // Token usage and time per call (issue #286 F6 step 1) — fire-and-forget.
   logNarratorUsage({
     label, model,
@@ -3126,6 +3164,7 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     .filter(b => b.type === 'text')
     .map(b => b.text)
     .join('');
+  recordNarratorResponse(capture, { data, text, elapsedMs: Date.now() - started });
 
   if (!text) throw new Error('Narrator API returned no text content.');
   return text;

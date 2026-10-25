@@ -82,6 +82,22 @@ await import(`${MODULE_PATH}/context/safety.js`)  // works
 ```
 Static imports at file top resolve correctly. Only dynamic import() has this behaviour.
 
+## Prompt contracts (issue #290)
+
+`starforged-companion.promptContracts` checks what every narrator mode sends.
+It stubs the Anthropic endpoint for the whole batch (its `before` / `after`,
+so background passes land on the stub), runs each mode against real
+documents, and reads the captured request with `splitPromptSections`
+(`src/narration/narratorDebug.js`). Extend it in the same change when you:
+- **add a prompt section** — seed its data in the seeded world's `before`
+  with the module's own writer, assert it in the per-mode loop, and assert
+  it absent in the bare world;
+- **add a narrator mode** — add a mode object (`run`, and a `marker` only its
+  user message carries) to `PROSE_MODES`, or give it its own test when its
+  contract differs (the recap and the Private Channel do);
+- **change what a mode's user message carries** — assert it in that mode's
+  test.
+
 ## Unit-test mock fidelity (vitest harness, `tests/setup.js`)
 
 Mocks standing in for Foundry APIs must match the **real Foundry v13 return

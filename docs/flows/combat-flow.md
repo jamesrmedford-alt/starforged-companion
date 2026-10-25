@@ -84,11 +84,14 @@ are in control") is a `combat-position` suffer call (`src/moves/sufferDialog.js`
 that writes the open track — or stashes onto the pending threshold card when
 clicked before Enter the Fray.
 
-**Narrator awareness:** the context assembler appends an `### ACTIVE FIGHT`
-block under CHARACTER STATE (label, objective, current position
-in-control/bad-spot, linked vow) for every open combat track; shipboard
-fights additionally inject Battle Stations guidance
-(`src/moves/battleStations.js`).
+**Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
+TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
+`src/ui/progressTracks.js`): each open fight's label, rank, filled boxes,
+objective, position (in control / in a bad spot) and the vow it serves, with
+open expeditions and scene challenges. Until issue #290 this was the
+assembler's ACTIVE FIGHT block, which no narration read, and #271 deleted it
+unported (TRACKS-UNPORTED). Shipboard fights additionally inject Battle
+Stations guidance (`src/moves/battleStations.js`).
 
 ## 3. Ending a fight
 
@@ -204,7 +207,9 @@ and "Enter the Fray's position rides the threshold card"):
   (`WAY_OUT_MOVES` / `buildWayOutHtml`, wired by `registerWayOutHook`), each
   posting the forced move so choosing an exit rolls it.
 - ~~The ACTIVE FIGHT block omitted the position~~ — **addressed**: the
-  assembler's fight lines now include in-control / bad-spot.
+  assembler's fight lines now include in-control / bad-spot. *(Issue #290:
+  that block never reached a narration — see "Narrator awareness" above; the
+  position renders in [4j] OPEN PROGRESS TRACKS.)*
 - **Range badges are advisory — reaffirmed deliberate** (no RAW range
   mechanic; the tooltip says so). See `decisions.md` → "Flow-audit soft
   spots".

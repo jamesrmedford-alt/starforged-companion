@@ -535,15 +535,32 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     updatedAt:  now,
   };
 
+  // F18: install canonical Modules that match the rolled identity. Pure mapping
+  // (no LLM/IO) runs first; the install step fetches each asset from the
+  // starforgedassets compendium and embeds it on the actor. Failures here are
+  // non-fatal — a missing compendium, an offline Forge, or a pack-index miss
+  // logs and continues without aborting the rest of the seed. Installed before
+  // the Notes are written, so the prose describes the modules the ship has.
+  await installModulesForRolledIdentity(
+    actor,
+    { type: ship.type, firstLook: ship.firstLook, mission: ship.mission },
+    Number.isFinite(opts.moduleLimit) ? { limit: opts.moduleLimit } : {},
+  ).catch(err =>
+    console.warn(`${MODULE_ID} | seedStarshipActor: module install failed:`, err?.message ?? err));
+
   // Atmospheric Notes: ask the narrator model to turn the oracle rolls into a
-  // short introduction (prose + a compact fact line). Falls back to the bare
-  // oracle bullet list when no Claude key is set or the call fails.
+  // short introduction (prose + a compact fact line), grounded in the ship's
+  // installed modules (v1.6.1 F7: a ship carrying a Research Lab was written
+  // up as a carrier launching fighters — the prompt never saw its modules).
+  // Falls back to the bare oracle bullet list when no Claude key is set or
+  // the call fails.
   const notesHtml = await composeStarshipNotesHtml({
     type:      ship.type,
     firstLook: ship.firstLook,
     mission:   ship.mission,
     region,
     name:      ship.name,
+    modules:   installedModuleNames(actor),
   });
 
   try {
@@ -575,18 +592,6 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
         console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err));
     }
   }
-
-  // F18: install canonical Modules that match the rolled identity. Pure mapping
-  // (no LLM/IO) runs first; the install step fetches each asset from the
-  // starforgedassets compendium and embeds it on the actor. Failures here are
-  // non-fatal — a missing compendium, an offline Forge, or a pack-index miss
-  // logs and continues without aborting the rest of the seed.
-  await installModulesForRolledIdentity(
-    actor,
-    { type: ship.type, firstLook: ship.firstLook, mission: ship.mission },
-    Number.isFinite(opts.moduleLimit) ? { limit: opts.moduleLimit } : {},
-  ).catch(err =>
-    console.warn(`${MODULE_ID} | seedStarshipActor: module install failed:`, err?.message ?? err));
 
   // Silent portrait — gated on OpenRouter key. Failures stay silent.
   if (portraitSource && hasOpenRouterKey()) {
@@ -706,11 +711,11 @@ function buildStarshipNotesHtml({ type, firstLook, mission, region }) {
  * plain oracle bullet list when no Claude key is configured or the call fails —
  * Notes generation must never block actor seeding.
  */
-async function composeStarshipNotesHtml({ type, firstLook, mission, region, name }) {
+async function composeStarshipNotesHtml({ type, firstLook, mission, region, name, modules = [] }) {
   const facts = [type, firstLook, mission].filter(Boolean);
   if (!facts.length) return "";
 
-  const prose = await generateStarshipIntroProse({ type, firstLook, mission, name })
+  const prose = await generateStarshipIntroProse({ type, firstLook, mission, name, modules })
     .catch(() => null);
 
   if (!prose) {
@@ -734,7 +739,7 @@ async function composeStarshipNotesHtml({ type, firstLook, mission, region, name
  * All Anthropic traffic goes through src/api-proxy.js per the architecture
  * constraint in CLAUDE.md.
  */
-async function generateStarshipIntroProse({ type, firstLook, mission, name }) {
+async function generateStarshipIntroProse({ type, firstLook, mission, name, modules = [] }) {
   const apiKey = readClaudeKey();
   if (!apiKey) return null;
 
@@ -745,16 +750,21 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name }) {
   const system =
     `You are the narrator for an Ironsworn: Starforged solo campaign. ` +
     `Tone: ${tone}. Write a short (2-3 sentence) atmospheric introduction to ` +
-    `the player's starship, grounded ONLY in the oracle details provided. ` +
+    `the player's starship, grounded ONLY in the details provided. ` +
     `Address the player in second person ("your ship", "you"). Evocative but ` +
     `spare. Plain prose only — no headings, lists, or markdown. Do not invent ` +
-    `proper nouns, crew, factions, or plot beyond what the details imply.`;
+    `proper nouns, crew, factions, or plot beyond what the details imply.` +
+    (modules.length
+      ? ` The installed modules are what the ship can actually do: describe no ` +
+        `weapon, bay or system they don't include, whatever the type suggests.`
+      : "");
 
   const userMsg = [
     name      ? `Ship name: ${name}`       : null,
     type      ? `Type: ${type}`            : null,
     firstLook ? `First look: ${firstLook}` : null,
     mission   ? `Mission: ${mission}`      : null,
+    modules.length ? `Installed modules: ${modules.join(", ")}` : null,
   ].filter(Boolean).join("\n");
 
   const body = {
@@ -781,6 +791,16 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name }) {
 function readClaudeKey() {
   try { return globalThis.game?.settings?.get(MODULE_ID, "claudeApiKey") || null; }
   catch { return null; }
+}
+
+/** The names of the Module assets on a starship Actor. */
+function installedModuleNames(actor) {
+  const raw   = actor?.items?.contents ?? actor?.items ?? [];
+  const items = Array.isArray(raw) ? raw : [];
+  return items
+    .filter(i => i?.type === "asset" && /module/i.test(String(i.system?.category ?? "")))
+    .map(i => String(i.name ?? "").trim())
+    .filter(Boolean);
 }
 
 function readModuleSetting(key) {

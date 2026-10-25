@@ -6,6 +6,52 @@ rejected.
 
 ---
 
+## Prompt contracts and `!narrator debug`: check the request the narrator is sent (2026-10)
+
+**Decision:** (issue #290 part 1. The issue set the scope; the choices below
+were made while building it, on 2026-10-25.)
+- **The capture is this browser's, in memory.** `callNarratorAPI` records
+  each request (system prompt, user message, model, cap, the narrator
+  function) and its response; `applyNarratorSidecar` adds the fact block it
+  parsed (`src/narration/narratorDebug.js`). The last 10 are kept, a reload
+  clears them, and nothing is written to the world.
+- **`!narrator debug` is GM-only and runs where it is typed**
+  (`RUN_ON.AUTHOR`), because the capture it shows is that browser's. It
+  whispers the typist a card of the last narration (the background summary
+  regen is listed, not detailed): each section, the fact block, the raw
+  response. The card says that a narration run in another browser isn't in it.
+- **Private Lines are counted, not shown**, on the card. A GM's client sends
+  every player's lines to the narrator (the Private Lines entry below), but
+  the card is not a place to read them. **The Private Channel is not
+  captured**: it is one player's conversation, and it calls the API itself.
+- **The contract is checked in Quench, every PR, with no key**
+  (`starforged-companion.promptContracts`). The Anthropic endpoint is stubbed
+  for the whole batch, so the background passes a narration schedules land on
+  the stub too. Every narrator mode runs against real documents built with
+  the module's own writers, and each section is checked by its heading:
+  present when its data exists, absent when it doesn't. The card and the
+  batch read sections with the same `splitPromptSections`. A section added to
+  the prompt, or a new mode, gets a check there.
+- **The bugs the checks found ship with them:** the open progress tracks
+  [4j] (TRACKS-UNPORTED, restoring #241 P1's active-fight awareness) and the
+  ship description's modules (SHIP-FLAVOR-MODULES, v1.6.1 F7).
+
+**Reason:** ten of the 58 playtest bugs from v1.6.1 to v1.7.17 were data
+that existed in the world but never reached the prompt (the issue's
+classification), and nothing tested the request itself: the Quench narrator
+batches check the card, and CI has no key. A playtest report of "the
+narrator forgot X" needs to show whether X was in the prompt.
+
+**Rejected:**
+- *Showing the canonical GM's capture to whoever types it*: the prompt would
+  have to be relayed between browsers, and the GM who types it is usually
+  the one narrating.
+- *A dialog instead of a chat card*: the card stays in the log for the report.
+- *A table of section ids*: a second copy of the builders' headings to keep
+  in step. The tests and the card read the headings the prompt has.
+- *A fetch stub per test*: a background pass scheduled by one narration
+  fired after its test had restored the real fetch.
+
 ## Phone layout: adapt to what the device can do, with a per-device override (2026-10)
 
 **Decision:** (issue #293, the maintainer's choice on 2026-10-24, before any
@@ -229,6 +275,9 @@ compactly on every prose call:
   last three `history` events.
 - **[4i] THE TABLE'S FOCUS THIS SESSION** — the End a Session foci, kept as
   `sessionFocus` when Begin a Session surfaces and clears them.
+- *(Issue #290 adds **[4j] OPEN PROGRESS TRACKS** beside them: the open
+  fights, expeditions and scene challenges — see the prompt-contracts entry
+  above.)*
 
 **Rejected:** rendering a connection's `background` and `secrets` — no
 production code writes either (known-issues.md); cards for everything in the
