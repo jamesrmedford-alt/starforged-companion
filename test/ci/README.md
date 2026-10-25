@@ -125,7 +125,13 @@ That runs `test/ci/scripts/e2e.sh`, which:
    posting one card, a player's Begin a Session, Burn Momentum applying once,
    Private Lines reaching the GM. Failure screenshots land in
    `playwright/artifacts/`. See `rules/ci-e2e.md` → "Second client".
-6. Tears down the container (use `--keep` to leave it running).
+7. Runs the scripted playthroughs in the same container
+   (`playwright/playthrough.mjs`, issue #290 part 2): a GM and a player play a
+   short session from `playwright/playthroughs/`, the GM's client narrating
+   through the real pipeline, with Claude answered from
+   `playwright/recordings/` — so no key is needed. See `rules/ci-e2e.md` →
+   "Scripted playthroughs".
+8. Tears down the container (use `--keep` to leave it running).
 
 Runtime: ~3–5 minutes (Foundry boot ~30 s + Quench suite ~130 s +
 Cypress overhead). Designed for **per-PR** CI gating, not per-commit.
@@ -138,6 +144,22 @@ npm run test:e2e -- --no-rebuild # skip data wipe — iterate the spec against
                                  # an already-running world. Useful while
                                  # developing the spec itself.
 ```
+
+### Recording the playthroughs
+
+The playthroughs replay recorded Claude replies. To record real ones (after
+a prompt change, or to replace the hand-written placeholders a new scenario
+starts with), run the whole suite with your key:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-… npm run test:e2e -- --record-playthroughs
+```
+
+The playthrough calls Claude for real (a scenario is a dozen or so calls)
+and rewrites `playwright/recordings/<scenario>.json`. The key stays in the
+Playwright process; the Foundry world only ever holds a placeholder. Check
+the run passed before committing the recordings — a live model can drift
+from what the scenario's checks expect.
 
 ### Cypress artifacts
 
