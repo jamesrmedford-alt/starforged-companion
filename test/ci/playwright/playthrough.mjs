@@ -90,6 +90,7 @@ async function setUpWorld(gm, scenario) {
     await drop(CONFIG.ChatMessage.documentClass, game.messages.contents);
     await drop(CONFIG.Actor.documentClass, game.actors.contents);
     await drop(CONFIG.JournalEntry.documentClass, game.journal.contents.filter(j => !/help/i.test(j.name)));
+    await drop(CONFIG.Scene.documentClass, game.scenes.contents.filter(sc => sc.flags?.[MODULE_ID]?.sectorScene));
     const fresh = game.settings.settings.get(`${MODULE_ID}.campaignState`)?.default ?? {};
     await game.settings.set(MODULE_ID, "campaignState", foundry.utils.deepClone(fresh));
 
@@ -121,19 +122,52 @@ async function setUpWorld(gm, scenario) {
     await user.update({ character: pc.id });
 
     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+    let sectorId = null;
+    if (seed.sector) {
+      sectorId = "playthrough-sector";
+      cs.sectors = [{ id: sectorId, ...seed.sector }];
+      cs.activeSectorId = sectorId;
+    }
+    let shipActorId = null;
     if (seed.ship) {
       const { createShip } = await import(`${MODULE_SRC}/entities/ship.js`);
       await createShip({ name: seed.ship.name, isCommandVehicle: true }, cs);
+      shipActorId = cs.shipIds.at(-1);
     }
-    if (seed.settlement) {
+    const settlementIds = {};
+    if (seed.settlements?.length) {
       const { createSettlement } = await import(`${MODULE_SRC}/entities/settlement.js`);
-      await createSettlement({ ...seed.settlement }, cs, { persist: false });
-      if (seed.at === seed.settlement.name) {
-        cs.currentLocationId   = cs.settlementIds.at(-1);
+      for (const { pin: _pin, ...data } of seed.settlements) {
+        await createSettlement({ ...data, sectorId }, cs, { persist: false });
+        settlementIds[data.name] = cs.settlementIds.at(-1);
+      }
+      if (settlementIds[seed.at]) {
+        cs.currentLocationId   = settlementIds[seed.at];
         cs.currentLocationType = "settlement";
       }
     }
     await game.settings.set(MODULE_ID, "campaignState", cs);
+
+    // The sector map: a pin per settlement and the command vehicle's token
+    // on `seed.map.shipAt` — placing it records where the ship is (the
+    // createToken hook, v1.7.10 F5).
+    if (seed.map) {
+      const scene = await CONFIG.Scene.documentClass.create({
+        name: `${seed.sector?.name ?? "Sector"} (playthrough)`, width: 2000, height: 1200, padding: 0,
+        grid: { size: 100 },
+        flags: { [MODULE_ID]: { sectorScene: true, sectorId } },
+      });
+      await scene.createEmbeddedDocuments("Note", seed.settlements.filter(s => s.pin).map(s => ({
+        x: s.pin[0], y: s.pin[1], text: s.name,
+        flags: { [MODULE_ID]: { settlementId: settlementIds[s.name], actorId: settlementIds[s.name] } },
+      })));
+      const at = seed.settlements.find(s => s.name === seed.map.shipAt)?.pin;
+      if (shipActorId && at) {
+        const ship = game.actors.get(shipActorId);
+        const token = await ship.getTokenDocument({ x: at[0], y: at[1] });
+        await scene.createEmbeddedDocuments("Token", [token.toObject()]);
+      }
+    }
     return { gmId: game.user.id, playerId: user.id, pcId: pc.id };
   }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario });
 }
@@ -204,6 +238,39 @@ async function submitDialog(client, title, fill) {
   }, { title, fill });
 }
 
+// ── moves ────────────────────────────────────────────────────────────────────
+
+/** The command vehicle's token on the sector map, as the GM's world holds it. */
+const shipTokenAt = (gm) => gm.page.evaluate((MODULE_ID) => {
+  const scene = game.scenes.find(sc => sc.flags?.[MODULE_ID]?.sectorScene);
+  const token = scene?.tokens.find(t => t.flags?.[MODULE_ID]?.commandVehicle);
+  return token ? { x: token.x, y: token.y } : null;
+}, MODULE_ID);
+
+/**
+ * The GM's half of a move: the confirmation dialog (its proposed move checked,
+ * `beforeAccept` run while it is open), then the narration, the scripted dice
+ * all rolled, the outcome, and the move lock released.
+ */
+async function resolveMove(ctx, step, before, beforeAccept = null) {
+  const dialog = ctx.gm.page.locator(".move-confirm-dialog").last();
+  await dialog.waitFor({ state: "visible", timeout: STEP_MS }).catch(() => {
+    throw new Error("the GM never got the move confirmation dialog");
+  });
+  const moveId = await dialog.locator(".confirm-move-id").getAttribute("data-move-id");
+  if (step.move) assert(moveId === step.move, `the dialog proposes ${moveId}, the scenario expects ${step.move}`);
+  if (beforeAccept) await beforeAccept();
+  // A DOM click, as on the cards: no hit-testing against notifications
+  // that may overlap the window.
+  await dialog.locator('[data-action="accept"]').evaluate(el => el.click());
+
+  const card = await waitForCard(ctx.gm, before, "f.narratorCard === true && !!f.moveId", "the move's narration", STEP_MS * 2);
+  const left = await ctx.gm.page.evaluate(() => (window.__sfcDice ?? []).length);
+  assert(left === 0, `${left} scripted dice were never rolled — did the resolver stop using rollDie?`);
+  if (step.outcome) assert(card.flags.outcome === step.outcome, `the move resolved ${card.flags.outcome}, the scenario expects ${step.outcome}`);
+  await waitForState(ctx.gm, "cs.pendingMove !== true", "the move lock to release");
+}
+
 // ── steps ────────────────────────────────────────────────────────────────────
 
 const STEPS = {
@@ -237,22 +304,33 @@ const STEPS = {
     const before = await messageIds(ctx.gm);
     await ctx.gm.page.evaluate((q) => { window.__sfcDice = q; }, diceQueue(step.dice));
     await chat(actor, step.text);
+    await resolveMove(ctx, step, before);
+  },
 
-    const dialog = ctx.gm.page.locator(".move-confirm-dialog").last();
-    await dialog.waitFor({ state: "visible", timeout: STEP_MS }).catch(() => {
-      throw new Error("the GM never got the move confirmation dialog");
+  /**
+   * Drag the command vehicle's token onto a settlement's pin on the sector
+   * map. The drop is cancelled and becomes a Set a Course (sectorSceneHooks
+   * handleCommandVehicleTokenDrag); the token stays where it was until the
+   * move resolves, and moves to the pin on a hit.
+   */
+  async dragShip(ctx, step) {
+    const actor = ctx.client(step.as ?? "gm");
+    const before = await messageIds(ctx.gm);
+    await ctx.gm.page.evaluate((q) => { window.__sfcDice = q; }, diceQueue(step.dice));
+    const from = await actor.page.evaluate(async ({ MODULE_ID, to }) => {
+      const scene = game.scenes.find(sc => sc.flags?.[MODULE_ID]?.sectorScene);
+      const token = scene?.tokens.find(t => t.flags?.[MODULE_ID]?.commandVehicle);
+      const pin = scene?.notes.find(n => n.text === to);
+      if (!token || !pin) throw new Error(`no ship token or no "${to}" pin on the sector map`);
+      const at = { x: token.x, y: token.y };
+      await token.update({ x: pin.x, y: pin.y });
+      return at;
+    }, { MODULE_ID, to: step.to });
+    await resolveMove(ctx, { ...step, move: "set_a_course" }, before, async () => {
+      const now = await shipTokenAt(ctx.gm);
+      assert(now && now.x === from.x && now.y === from.y,
+        `the ship token moved to ${JSON.stringify(now)} before the move resolved (it was at ${JSON.stringify(from)})`);
     });
-    const moveId = await dialog.locator(".confirm-move-id").getAttribute("data-move-id");
-    if (step.move) assert(moveId === step.move, `the interpreter proposed ${moveId}, the scenario expects ${step.move}`);
-    // A DOM click, as on the cards: no hit-testing against notifications
-    // that may overlap the window.
-    await dialog.locator('[data-action="accept"]').evaluate(el => el.click());
-
-    const card = await waitForCard(ctx.gm, before, "f.narratorCard === true && !!f.moveId", "the move's narration", STEP_MS * 2);
-    const left = await ctx.gm.page.evaluate(() => (window.__sfcDice ?? []).length);
-    assert(left === 0, `${left} scripted dice were never rolled — did the resolver stop using rollDie?`);
-    if (step.outcome) assert(card.flags.outcome === step.outcome, `the move resolved ${card.flags.outcome}, the scenario expects ${step.outcome}`);
-    await waitForState(ctx.gm, "cs.pendingMove !== true", "the move lock to release");
   },
 
   /** A player's line the pacing classifier sends to the narrator without a roll. */
@@ -428,6 +506,55 @@ const CHECKS = {
     for (const text of c.bodyIncludes ?? []) assert(page.text.includes(text), `the "${c.page}" page should say "${text}"`);
   },
 
+  /**
+   * The command vehicle's position record is at `at` (v1.7.10 F5). Which writer
+   * wrote it last isn't checked: a recorded narration may report the ship's
+   * position itself (the sidecar's ship stateChange) after the move's own
+   * write. The move's write is pinned by the narration request it precedes
+   * (a `request` check for the SHIP POSITION line).
+   */
+  async shipPosition(ctx, c) {
+    const pos = await ctx.gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC }) => {
+      const { getCommandVehicle } = await import(`${MODULE_SRC}/entities/ship.js`);
+      const position = getCommandVehicle(game.settings.get(MODULE_ID, "campaignState"))?.position ?? null;
+      if (!position) return null;
+      return { ...position, settlement: game.actors.get(position.nearestSettlementId)?.name ?? null };
+    }, { MODULE_ID, MODULE_SRC });
+    assert(pos, "the command vehicle has no position record");
+    assert(pos.settlement === c.at, `the ship's position is ${pos.settlement ?? (pos.freeText || "unset")}, expected ${c.at}`);
+  },
+
+  /** The command vehicle's token sits on `at`'s pin on the sector map. */
+  async shipToken(ctx, c) {
+    const found = await ctx.gm.page.evaluate(({ MODULE_ID, at }) => {
+      const scene = game.scenes.find(sc => sc.flags?.[MODULE_ID]?.sectorScene);
+      const token = scene?.tokens.find(t => t.flags?.[MODULE_ID]?.commandVehicle);
+      const pin = scene?.notes.find(n => n.text === at);
+      return { token: token ? { x: token.x, y: token.y } : null, pin: pin ? { x: pin.x, y: pin.y } : null };
+    }, { MODULE_ID, at: c.at });
+    assert(found.token, "no command-vehicle token on the sector map");
+    assert(found.pin, `no "${c.at}" pin on the sector map`);
+    assert(found.token.x === found.pin.x && found.token.y === found.pin.y,
+      `the ship token is at ${JSON.stringify(found.token)}, ${c.at}'s pin at ${JSON.stringify(found.pin)}`);
+  },
+
+  /** campaignState's current location (what `!at` and an arrival write). */
+  async currentLocation(ctx, c) {
+    const name = await ctx.gm.page.evaluate((MODULE_ID) => {
+      const id = game.settings.get(MODULE_ID, "campaignState")?.currentLocationId ?? null;
+      return id ? (game.actors.get(id)?.name ?? `(unresolved ${id})`) : null;
+    }, MODULE_ID);
+    assert(name === c.is, `the current location is ${name ?? "unset"}, expected ${c.is}`);
+  },
+
+  /** `count` cards carry `flags[MODULE_ID][flag]` (outcome-filtered when given). */
+  async card(ctx, c) {
+    const n = await ctx.gm.page.evaluate(({ MODULE_ID, flag, outcome }) => game.messages.contents
+      .filter(m => m.flags?.[MODULE_ID]?.[flag] && (!outcome || m.flags[MODULE_ID].outcome === outcome)).length,
+    { MODULE_ID, flag: c.flag, outcome: c.outcome ?? null });
+    assert(n === (c.count ?? 1), `${n} card(s) carry ${c.flag}${c.outcome ? ` (${c.outcome})` : ""}, expected ${c.count ?? 1}`);
+  },
+
   /** No chat card shows the narrator's `<npc>` voice markup, raw or escaped (v1.6.1 F9, PLAYTEST-1717 A). */
   async noMarkup(ctx) {
     const leaks = await ctx.gm.page.evaluate(() => game.messages.contents
@@ -440,7 +567,7 @@ const CHECKS = {
    * A request the narrator (or a helper) was sent: the `nth` call of `kind`
    * (negative counts from the end). `carries` / `lacks` name sections;
    * `section` maps a heading to text it must contain, `sectionLacks` to text it
-   * must not.
+   * must not; `contains` is text anywhere in the request.
    */
   async request(ctx, c) {
     const calls = ctx.harness.requests.filter(r => r.kind === c.kind);
@@ -454,6 +581,9 @@ const CHECKS = {
       const s = sectionOf(heading);
       assert(s, `${c.kind} #${nth} lacks ${heading}`);
       for (const t of [].concat(texts)) assert(s.includes(t), `${c.kind} #${nth}: ${heading} should say "${t}"`);
+    }
+    for (const text of c.contains ?? []) {
+      assert(`${r.system}\n${r.user}`.includes(text), `${c.kind} #${nth} doesn't say "${text}"`);
     }
     for (const [heading, texts] of Object.entries(c.sectionLacks ?? {})) {
       const s = sectionOf(heading) ?? "";

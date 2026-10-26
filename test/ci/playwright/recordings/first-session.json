@@ -160,6 +160,84 @@
       }
     },
     {
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "We set a course for Bleakhold Station.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"MOVE\", \"suggestedMove\": \"set_a_course\", \"category\": \"exploration\", \"confidence\": 0.9, \"reasoning\": \"Travelling to a known destination is Set a Course.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callClaudeAPI>interpretMove",
+      "user": "We set a course for Bleakhold Station.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"moveId\": \"set_a_course\", \"moveName\": \"Set a Course\", \"statUsed\": \"supply\", \"statValue\": 0, \"adds\": 0, \"isProgressMove\": false, \"progressTicks\": 0, \"moveTarget\": \"Bleakhold Station\", \"expeditionRank\": null, \"combatRank\": null, \"rationale\": \"A journey to a known destination along charted lanes.\", \"mischiefApplied\": false, \"confidence\": \"high\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narrateResolution",
+      "user": "MOVE OUTCOME Set a Course Strong Hit We set a course for Bleakhold Station.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "The Kobayashi IV slips her clamps at the Hollow Spire and runs the lanes on a lean burn, Mira watching the pirate beacons stay dark the whole way. Bleakhold Station swells out of the black right on schedule, a corporate wheel of floodlit docks, harbour drones already herding her toward berth sixteen.\n\n<npc>\"Kobayashi IV, you're cleared,\"</npc> a bored traffic officer drawls. <npc>\"Dock fees are posted. Smile for the scanners.\"</npc>\n\n```json\n{\"newTruths\": [{\"subject\": \"Bleakhold Station\", \"fact\": \"Bleakhold Station's harbour drones herd arriving ships to assigned berths; the Kobayashi IV is at berth sixteen.\"}], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Bleakhold Station, berth sixteen\", \"present\": [], \"situation\": \"Docking at Bleakhold Station\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Move: set_a_course Outcome: strong_hit ## NARRATION clamps lean burn pirate beacons Bleakhold floodlit harbour drones berth sixteen",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"moment\", \"salience\": \"notable\", \"text\": \"The Kobayashi IV made Bleakhold Station without trouble and docked at berth sixteen.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callNarratorAPI>narrateResolution",
+      "user": "MOVE OUTCOME Set a Course Strong Hit I set a course for Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Bleakhold's floodlights shrink behind the Kobayashi IV as Mira swings her back toward the Hollow Spire. The run home is quiet enough that the hull's tick and creak sound loud. The Spire's rationed docking rings flicker on one section at a time, and the old berth clamps take her like they never let go.\n\n```json\n{\"newTruths\": [], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Hollow Spire docks\", \"present\": [], \"situation\": \"Back at the Hollow Spire\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Move: set_a_course Outcome: strong_hit ## NARRATION floodlights shrink swings back run home quiet hull tick creak berth clamps",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"moment\", \"salience\": \"scene\", \"text\": \"Mira brought the Kobayashi IV back to the Hollow Spire.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
       "kind": "callNarratorAPI>getRollingSessionSummary",
       "user": "## SESSION NARRATION (oldest first) Vance Oduya dockmaster courier",
       "response": {

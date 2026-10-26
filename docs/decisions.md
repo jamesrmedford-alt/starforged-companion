@@ -46,6 +46,13 @@ building it, on 2026-10-25.)
 - **Dice are scripted at `rollDie`:** the GM page answers `Math.random`
   calls made directly from the resolver's `rollDie` from the step's queue,
   and leaves every other caller random (ids, oracle tables).
+- **The ship's moves are pinned by the request they precede.** The
+  playthrough moves the ship by a typed Set a Course and by a drag of its
+  token on a seeded sector map. A recorded narration may report the ship's
+  position itself and rewrite the record after the move did, so the position
+  checks look only at where the ship ends up; each move's own write is
+  checked in the narration request it precedes, which must carry the new
+  SHIP POSITION line (v1.7.10 F5: the write never ran).
 - **The Private Channel question #289 left open is answered in the player's
   browser:** a player's client holds NPC cards it has no permission on, and
   the private prompt carries the card of an NPC the player names. The

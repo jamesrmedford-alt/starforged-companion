@@ -174,21 +174,26 @@ fact block, detection and draft cards, End and Begin a Session.
   sections differ from the live request logs `STALE <kind>`: re-record. The
   per-kind call counts, and any recording nothing asked for, are logged after
   each scenario. A check that then fails is a real failure.
-- **Scenarios are data** (`playthroughs/*.json`): the seed (PC, ship,
-  settlement, where they are), the settings the run pins (restored after),
-  and steps — `beginSession`, `move` (with scripted dice and the expected
-  move and outcome), `say` (a paced line), `confirmDraft`, `privateChannel`
-  (builds the player's Private Channel prompt in their browser; `expectCard`
-  pins whether a named NPC's card is in it),
-  `endSession`, `expect` — each with `then` checks. The checks
-  (`moveLockReleased`, `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`,
-  `journalPage`, `momentum`, `noMarkup`, `request`) poll for up to 20 s; the
+- **Scenarios are data** (`playthroughs/*.json`): the seed (PC, sector,
+  ship, settlements, where they are, and optionally a sector map — a flagged
+  scene with a pin per settlement and the ship's token on one), the settings
+  the run pins (restored after), and steps — `beginSession`, `move` (with
+  scripted dice and the expected move and outcome), `say` (a paced line),
+  `confirmDraft`, `privateChannel` (builds the player's Private Channel prompt
+  in their browser; `expectCard` pins whether a named NPC's card is in it),
+  `dragShip` (drops the ship's token on a settlement's pin; checks the token
+  stays put while the Set a Course it starts is pending), `endSession`,
+  `expect` — each with `then` checks. The checks (`moveLockReleased`,
+  `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`, `journalPage`,
+  `momentum`, `shipPosition`, `shipToken`, `currentLocation`, `card`,
+  `noMarkup`, `request`) poll for up to 20 s; the
   runner first waits until no Claude call has started for 4 s, so the passes
   a narration schedules 2 s later have landed (a negative check would pass
   vacuously before them). `PLAYTHROUGH=<name>` runs one scenario. Part 3's AI
   playtester reuses the format.
 - **Fresh world per scenario.** The runner deletes the chat, every actor and
-  every journal but the help journal, and resets `campaignState` to its
+  every journal but the help journal, every sector scene, and resets
+  `campaignState` to its
   registered default before seeding — earlier suites leave all of these
   behind, and a replay must meet the world its recording met.
 - **Scripted dice.** The resolver rolls with `Math.random` inside `rollDie`

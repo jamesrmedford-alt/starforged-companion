@@ -29,7 +29,12 @@ It checks the ledger, the confirmed NPC card (sheet, description, the
 narrator's details, last-known whereabouts), the Session Log, a World Journal
 threat page's body, the move lock, PC-only momentum, `<npc>` markup on cards,
 no PC drafted as a connection, and LAST SESSION in the next session's
-opening. It found no new bug on its first green run, and answered #289's open
+opening. The ship moves too (v1.7.10 F5): its token placed on a seeded sector
+map records its position before the first narration; a typed Set a Course
+moves the record, the token, the current location and the feedback card; a
+drag of the token onto a settlement's pin starts a Set a Course, holds the
+token until it resolves and then moves it; and each move's narration request
+carries the new SHIP POSITION line. It found no new bug on its first green run, and answered #289's open
 question: a player's client holds the cards of NPCs it has no permission on,
 so the Private Channel prompt carries them (decisions.md → "The Private
 Channel reads the shared story"). Open:
@@ -39,9 +44,11 @@ Channel reads the shared story"). Open:
   parsers have not yet seen a real reply in this suite — the truncation,
   fence and markup quirks the issue wants exercised — until someone records
   it with a key: `ANTHROPIC_API_KEY=… npm run test:e2e -- --record-playthroughs`.
-- **PLAYTHROUGH-SHIP-POSITION.** The scenario does not move the ship (v1.7.10
-  F5's position writes): that needs a sector, its scene and a token. A
-  follow-up scenario.
+- **PLAYTHROUGH-SHIP-MISS.** The ship moves only on strong hits: a Set a
+  Course miss rolls Pay the Price, whose result can open a suffer dialog at
+  random, and a weak hit opens the suffer choice. So the drag's "a miss leaves
+  the token where it was" path is not played; the token staying put while the
+  move is pending is.
 
 Part 3 (live QA with an AI playtester) is not started; its open questions
 are in the issue's "To settle before building".
