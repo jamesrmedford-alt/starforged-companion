@@ -139,6 +139,79 @@ multi-client harness (`tests/helpers/multiClient.js`).
   sticky comment: poll the run's status (the public API is enough for a
   public repo) and read the log with `mcp__github__get_job_logs`.
 
+## Scripted playthroughs: the narrator end to end (Playwright, recorded Claude)
+
+After the multiplayer suite, `e2e.sh` runs `test/ci/playwright/playthrough.mjs`
+(issue #290 part 2) in the same `players` container: a GM and a player play a
+short scripted session, and the GM's client narrates through the real
+pipeline — pacing, interpretation, the confirm dialog, dice, narration, the
+fact block, detection and draft cards, End and Begin a Session.
+
+- **Claude, answered at the fetch boundary** (`lib/claude.mjs`). An init
+  script wraps `window.fetch` in both pages; a call to `api.anthropic.com` is
+  handed, with the JS stack at the call, to a function exposed from the Node
+  process. The page never reaches the network for Claude (no CORS), and the
+  GM holds a placeholder key. A call's **kind** is the two named module
+  frames above `apiPost` — `callNarratorAPI>narrateResolution`,
+  `callHaiku>defaultCallDetectionAPI`. A request gets the unused recording of
+  its kind whose user message it shares the most words with (ties: the
+  earliest), so a reordered background call still gets its own reply — and
+  only when it holds at least half of that recording's words, so a call
+  nothing was recorded for (the tier pass a vignette schedules, say) can't
+  take the reply meant for a later call of its kind.
+- **Recordings** live in `test/ci/playwright/recordings/<scenario>.json`
+  (not `tests/fixtures/`). Record them outside CI with a key:
+  `ANTHROPIC_API_KEY=… test/ci/scripts/e2e.sh --record-playthroughs`, then
+  commit the rewritten file. A recording run stores each reply with the
+  entity ids the model echoed (`(id: …)` record headers) replaced by the
+  entity's name — ids differ in every fresh world, and the readers that take
+  an id accept the name. A file with `"source": "hand-written"` is a
+  placeholder written to the parsers' formats; the log says so when it
+  replays one.
+- **Drift is reported, not failed.** A call with no recording left gets a
+  neutral stub (narrator prose with an empty fact block; `{}` for a JSON
+  helper) and an `UNRECORDED <kind>` line. A recording whose system-prompt
+  sections differ from the live request logs `STALE <kind>`: re-record. The
+  per-kind call counts, and any recording nothing asked for, are logged after
+  each scenario. A check that then fails is a real failure.
+- **Scenarios are data** (`playthroughs/*.json`): the seed (PC, sector,
+  ship, settlements, where they are, and optionally a sector map — a flagged
+  scene with a pin per settlement and the ship's token on one), the settings
+  the run pins (restored after), and steps — `beginSession`, `move` (with
+  scripted dice and the expected move and outcome), `say` (a paced line),
+  `confirmDraft`, `privateChannel` (builds the player's Private Channel prompt
+  in their browser; `expectCard` pins whether a named NPC's card is in it),
+  `dragShip` (drops the ship's token on a settlement's pin; checks the token
+  stays put while the Set a Course it starts is pending), `endSession`,
+  `expect` — each with `then` checks. The checks (`moveLockReleased`,
+  `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`, `journalPage`,
+  `momentum`, `shipPosition`, `shipToken`, `currentLocation`, `card`,
+  `noMarkup`, `request`) poll for up to 20 s; the
+  runner first waits until no Claude call has started for 4 s, so the passes
+  a narration schedules 2 s later have landed (a negative check would pass
+  vacuously before them). `PLAYTHROUGH=<name>` runs one scenario. Part 3's AI
+  playtester reuses the format.
+- **Fresh world per scenario.** The runner deletes the chat, every actor and
+  every journal but the help journal, every sector scene, and resets
+  `campaignState` to its
+  registered default before seeding — earlier suites leave all of these
+  behind, and a replay must meet the world its recording met.
+- **Scripted dice.** The resolver rolls with `Math.random` inside `rollDie`
+  (challenge dice, then the action die). The GM page's init script answers
+  only calls made directly from `rollDie` from `window.__sfcDice`; every
+  other caller gets real randomness. A `move` step fails if any scripted die
+  went unrolled.
+- **Record mode needs the scenario to steer the model.** A live model may
+  name the NPC differently or pick another move; name what the checks look
+  for in the player's lines, and check structure (a card exists, its
+  description isn't empty) rather than prose. A recording run that fails its
+  checks still writes the file and says so — fix the scenario before
+  committing it.
+- **Result.** `[playthrough] PASS / FAIL` lines, `FINDING` lines (the
+  Private Channel probe), a final `summary` JSON line. On failure, the
+  screenshots and `playthrough-<scenario>-requests.json` (every call's kind,
+  source and user message) land in `test/ci/playwright/artifacts/`.
+
 ## Quench batch coupling — shared defaults and hooks
 
 Settings defaults and module hooks are **shared state across all Quench

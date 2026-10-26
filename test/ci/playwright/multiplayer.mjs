@@ -21,106 +21,21 @@
 // land in ./artifacts (uploaded by .github/workflows/e2e.yml).
 
 import { chromium } from "playwright";
-import fs from "node:fs";
-import path from "node:path";
+import {
+  MODULE_ID, MODULE_SRC, GM_NAME, STEP_MS, SETTLE_MS,
+  sleep, assert, openClient, join, chat, campaignState, cards, newCards, snapshot, logConsoleErrors,
+} from "./lib/foundry.mjs";
 
-const BASE_URL    = process.env.BASE_URL ?? "http://foundry:30000";
-const MODULE_ID   = "starforged-companion";
-const MODULE_SRC  = `/modules/${MODULE_ID}/src`;
-const GM_NAME     = process.env.GM_USER_NAME ?? "Gamemaster";
 const PLAYER_NAME = "E2E Player";
 const PC_NAME     = "E2E Kira";
-const ARTIFACTS   = path.resolve("artifacts");
-const STEP_MS     = 30_000;
-const SETTLE_MS   = 4_000;   // time for a duplicate (another client's copy) to show up
 const RUN_CAP_MS  = 8 * 60_000;
 
 const results = [];
 const log = (...args) => console.log("[multiplayer]", ...args);
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-function assert(cond, message) {
-  if (!cond) throw new Error(message);
-}
-
-// ── clients ──────────────────────────────────────────────────────────────────
-
-async function openClient(browser, label) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const page = await context.newPage();
-  const errors = [];
-  page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
-  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
-  return { label, context, page, errors };
-}
-
-/** Join the running world as `userName` (blank password) and wait for game.ready. */
-async function join(client, userName) {
-  const { page, label } = client;
-  await page.goto(`${BASE_URL}/join`, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  const select = page.locator('select[name="userid"], select#join-game-user').first();
-  await select.waitFor({ state: "visible", timeout: 120_000 });
-  const value = await select.evaluate((el, name) => {
-    const options = [...el.options];
-    const opt = options.find(o => o.textContent.trim() === name) ?? options.find(o => o.textContent.includes(name));
-    return opt?.value ?? null;
-  }, userName);
-  assert(value, `${label}: no user "${userName}" on the join screen`);
-  await select.selectOption(value);
-  await page.locator('form#join-game button[type="submit"], button[name="join"]').first().click();
-  await page.waitForFunction(() => window.game?.ready === true, null, { timeout: 120_000 });
-  log(`${label} joined as ${userName} (${await page.evaluate(() => game.user.id)})`);
-}
-
-/**
- * Send a chat line the way typing it does: ChatLog#processMessage fires the
- * chatMessage hook (the X-Card interception) and creates the message. Falls
- * back to typing into the chat box if this Foundry build has no
- * processMessage.
- */
-async function chat(client, text) {
-  const used = await client.page.evaluate(async (t) => {
-    if (typeof ui?.chat?.processMessage !== "function") return null;
-    await ui.chat.processMessage(t);
-    return "processMessage";
-  }, text);
-  if (used) return;
-  const box = client.page.locator("#chat-message, textarea[name='content']").first();
-  await box.fill(text);
-  await box.press("Enter");
-}
-
-const campaignState = (client) =>
-  client.page.evaluate((id) => game.settings.get(id, "campaignState") ?? {}, MODULE_ID);
-
-/** Messages carrying `flags[MODULE_ID][flag]`, as this client sees them. */
-const cards = (client, flag) =>
-  client.page.evaluate(({ id, flag }) => game.messages.contents
-    .filter(m => m.flags?.[id]?.[flag])
-    .map(m => ({ id: m.id, author: m.author?.id ?? null, flags: m.flags[id] })), { id: MODULE_ID, flag });
-
-async function newCards(client, flag, before, { atLeast = 1 } = {}) {
-  await client.page.waitForFunction(({ id, flag, n }) =>
-    game.messages.contents.filter(m => m.flags?.[id]?.[flag]).length >= n,
-  { id: MODULE_ID, flag, n: before.length + atLeast }, { timeout: STEP_MS });
-  await sleep(SETTLE_MS);
-  const seen = new Set(before.map(c => c.id));
-  return (await cards(client, flag)).filter(c => !seen.has(c.id));
-}
 
 // ── scenario runner ──────────────────────────────────────────────────────────
 
 let clients = [];
-
-/** Screenshot every client's page into ./artifacts. */
-async function snapshot(name) {
-  fs.mkdirSync(ARTIFACTS, { recursive: true });
-  const slug = name.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60);
-  for (const c of clients) {
-    await c.page.screenshot({ path: path.join(ARTIFACTS, `${slug}-${c.label}.png`) })
-      .catch(err => log(`screenshot of ${c.label} failed: ${err?.message ?? err}`));
-  }
-}
 
 async function scenario(name, fn) {
   const started = Date.now();
@@ -131,7 +46,7 @@ async function scenario(name, fn) {
   } catch (err) {
     results.push({ name, ok: false, error: err?.message ?? String(err) });
     log(`FAIL  ${name}\n      ${err?.message ?? err}`);
-    await snapshot(name);
+    await snapshot(clients, name, log);
   }
 }
 
@@ -144,7 +59,7 @@ async function main() {
   clients = [gm, player];
 
   try {
-    await join(gm, GM_NAME);
+    await join(gm, GM_NAME, log);
 
     // GM-side fixtures: the module is active, a player user owning a PC, and
     // the campaign flags the scenarios assert on reset (Quench leaves state).
@@ -167,7 +82,7 @@ async function main() {
     }, { MODULE_ID, PLAYER_NAME, PC_NAME });
     log("fixtures", JSON.stringify(ids));
 
-    await join(player, PLAYER_NAME);
+    await join(player, PLAYER_NAME, log);
 
     await scenario("Private Lines: a player's line, added in their settings panel, reaches campaignState.safety", async () => {
       const LINE = "E2E: no spiders";
@@ -293,16 +208,10 @@ async function main() {
   } catch (err) {
     results.push({ name: "setup", ok: false, error: err?.message ?? String(err) });
     log(`FAIL  setup\n      ${err?.stack ?? err}`);
-    await snapshot("setup");
+    await snapshot(clients, "setup", log);
   } finally {
     const failed = results.filter(r => !r.ok);
-    if (failed.length) {
-      for (const c of clients) {
-        if (!c.errors.length) continue;
-        log(`${c.label} console errors (last 30):`);
-        for (const e of c.errors.slice(-30)) log(`  ${e}`);
-      }
-    }
+    if (failed.length) logConsoleErrors(clients, log);
     log("summary", JSON.stringify({ passed: results.length - failed.length, failed: failed.length, results }));
     await browser.close();
     process.exitCode = failed.length || !results.length ? 1 : 0;

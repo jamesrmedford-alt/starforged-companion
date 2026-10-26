@@ -37,7 +37,9 @@ services:
   # single GM, so this is the only check against real Foundry permissions and
   # socket delivery. The image ships the browsers; `npm ci` installs the
   # matching playwright package (keep playwright/package.json in step with
-  # this tag).
+  # this tag). scripts/e2e.sh runs the scripted playthroughs
+  # (playwright/playthrough.mjs, issue #290 part 2) in this service too, with
+  # its own command.
   players:
     image: mcr.microsoft.com/playwright:v1.56.1-noble
     profiles: ["e2e"]
