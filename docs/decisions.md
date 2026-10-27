@@ -6,6 +6,75 @@ rejected.
 
 ---
 
+## Issue #300 bug audit: outcomes apply once, payments are whole, waits are bounded (2026-10)
+
+**Decision:** the sixteen fixes in issue #300 settle these rules (each
+finding's ID in brackets):
+
+- **Burn Momentum and Improve Result open only after the original outcome is
+  recorded, and are exclusive** [F02]. The pipeline stamps `originalApplied`
+  on the card when `persistResolution` lands (one combined update with the
+  `recorded` flag), and the buttons are disabled until then
+  (`resultUpgradeBlocker`: "original-pending", or "already-upgraded" once the
+  other button consumed the card). The upgrade always swaps the original's
+  effects for the new outcome's — there is no "original not applied yet"
+  path left. One claim set (`claimResultUpgrade`) covers both buttons.
+  Burn previews use the actor's live momentum and its bounds (`readMomentumState`,
+  `actorBridge.js`), never a value past the maximum [F03].
+- **Repair is pay-in-full or nothing** [F04]. The supply trade for extra
+  repair points is paid before any benefit (`paySupplyTrade`); a missing or
+  unowned payer or too little supply applies no repairs, and a partial debit
+  is refunded. The card says so.
+- **Site matching runs across sectors, strongest rung first** [F07]: an exact
+  id anywhere, then an exact name, then the scoped guesses (the active sector
+  first) — `selectSectorSite`, shared by reveal, clear and the expedition
+  stamp. An earlier sector's weak match never beats a later exact one.
+- **A session's start effects apply once** [F11]. Begin a Session stamps
+  `sessionStartedId` (store-owned) before granting anything; a second Begin
+  for the same session posts "already begun" and repeats nothing. Begins on
+  the GM are chained, so two at once cannot both pass the check.
+- **A narration in flight when the X-Card is played is discarded** [F13] —
+  every narrator entry point re-checks the live X-Card after its Claude call
+  returns, before the sidecar or any card (see "X-Card: anyone plays it").
+- **Shared-supply mirror writes carry a marker** [F05]. The mirror update
+  passes `{ "starforged-companion": { sharedSupplyMirror: true } }` in its
+  options and the hook skips marked updates, instead of a global in-flight
+  flag that also dropped real edits; a change during a sync is coalesced and
+  synced after it.
+- **Private Channel turns stay buffered until their write succeeds** [F01];
+  writes per player are chained, and a failed batch goes back to the front
+  and is retried (5 s × attempt, three automatic retries).
+- **Request deadlines cover the body** [F06] (`fetchWithTimeout`), **audio
+  playback has one sequencing loop per run and a generation stop() ends**
+  [F08, F09], **push-to-talk tracks "held" apart from the engine** [F10],
+  and **the Entity Panel listens to Actor hooks** [F12].
+- **GM queue budgets are per kind, counted from when the predecessor starts**
+  [F15] — see "Player-invoked world writes go through the GM relay".
+- **The help describes Private Lines' real privacy** [F16]: never shown in
+  another player's interface or sent in another player's request; seen by the
+  GM; readable from shared world data (see "Private Lines in shared
+  narration", Boundary).
+
+**Reason:** issue #300 (two audit passes and the validity review of #299)
+reproduced each defect; the regression tests that came with the fixes fail
+with each fix reverted.
+
+**Rejected:**
+- *Let an early burn cancel the pending original* (F02's other option) — the
+  pipeline would need a cancellation point between narration and persist on
+  every path; gating the buttons on the recorded original is one check.
+- *Revalidate an affordable smaller repair when the supply falls short*
+  (F04) — guesses which repairs the player wanted; rejecting and asking for a
+  new trade keeps the player's choice.
+- *A flat, longer queue cap* (F15) — every hung non-Claude handler would then
+  block relays for minutes too.
+
+**Trade-offs accepted:** a Claude-calling relay that truly hangs now holds
+later relays for up to 270 s, not 60 s (the X-Card is still unqueued); a
+Burn / Improve button stays disabled for the whole narration.
+
+---
+
 ## Scripted playthroughs: Claude answered at the fetch boundary from recordings (2026-10)
 
 **Decision:** (issue #290 part 2. The maintainer settled where the
@@ -735,10 +804,12 @@ never writes the whole snapshot back.
   write (no await between read and set) and merges (`mergeWithLatestState`):
   **store-owned** fields always take the store's value (`xCardActive`,
   `safety`, `safetyFlags`, `nextMoveAdd`, `questFocus` / `connectionFocus`, the
-  session-active and session-id fields, `customOracles`, `recentOracles`,
+  session-active and session-id fields (`sessionStartedId` included),
+  `customOracles`, `recentOracles`,
   `clocks`, `pacing`, `campaignRecapCache`, `dismissedEntities`, `pendingMove`,
   `activeSectorId`, `incitingIncident`, the `worldTruths*` fields); entity id
-  lists are an ordered union; `sessionLogs` come from the store plus this
+  lists are an ordered union; `artAssetIds` (a map) keeps both sides' entries,
+  the store's winning a clash; `sessionLogs` come from the store plus this
   resolution's entry; `sessionSummary` by newer `updatedAt`; `legacyTracks`
   take the per-track max (`cleared` sticks); scene ledgers — if the store is
   on a different scene its scene wins wholesale, otherwise `sceneTruths` is
@@ -762,6 +833,14 @@ never writes the whole snapshot back.
 - Single-field consumers re-read the store: Take a Break's +1 is cleared on
   the store (`clearPersistedNextMoveAdd`), and every narrator X-Card gate reads
   the live setting as well as the caller's snapshot.
+- Registrations write only their own key onto the latest store (issue #300
+  F14, CREATE-PERSIST-WHOLE): an entity creator unions its new id into its id
+  list (`registerEntityIdInStore`, `src/entities/registry.js`), a portrait its
+  art-asset entry (`registerArtAssetInStore`), and the sector store its sector
+  (`persistSectorOntoStore`). Each still updates the caller's copy, so the
+  caller's own later persist keeps the id. Creators used to write the caller's
+  whole object — the Make a Connection auto-create wrote the move pipeline's
+  snapshot and could clear an X-Card played mid-narration.
 
 **Reason:** STALE-SNAPSHOT-CLOBBER — the move pipeline reads campaignState
 before its confirm dialog and Claude calls (seconds to minutes) and wrote it
@@ -800,11 +879,13 @@ be recorded and carries no resume button. Only a GM resumes: the card's
 is warned), or `game.modules.get("starforged-companion").api.clearXCard()`.
 Resuming clears the flag, marks every open X-Card card resolved and posts an
 "X-Card cleared" card. While the flag is set every narrator entry point stands
-down — checking the live setting as well as the caller's snapshot; the relayed
-activation runs the moment it reaches the GM, never queued behind other relayed
-actions — and a move resolved meanwhile posts its result card plus a short
-"narration paused" notice (not a narrator card, so it stays out of the
-recent-narration ring and the rolling summary).
+down — checking the live setting as well as the caller's snapshot, on entry
+and again when each Claude call returns, so a narration in flight when the card
+is played is discarded unposted (issue #300 F13); the relayed activation runs
+the moment it reaches the GM, never queued behind other relayed actions — and a
+move resolved meanwhile posts its result card plus a short "narration paused"
+notice (not a narrator card, so it stays out of the recent-narration ring and
+the rolling summary).
 
 **Reason:** the X-Card is the safety tool a player reaches for without
 explanation, and for players it recorded nothing (XCARD-PLAYER-NOOP); move
