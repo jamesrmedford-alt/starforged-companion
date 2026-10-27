@@ -6,6 +6,65 @@ rejected.
 
 ---
 
+## Issue #301 follow-up audit: identity by stable id, caches by content (2026-10)
+
+**Decision:** the four fixes in issue #301 settle these rules (each
+finding's ID in brackets) — all instances of `rules/reachability.md` §6,
+"resolve identity by stable id, not by mutable display name":
+
+- **A card that forces a move names its target by id** [B01]. The
+  connection picker posts `forcedMoveTargetId` (the connection's host Actor
+  id) beside `forcedMoveTarget` (its name); the pipeline carries the id as
+  `interpretation.moveTargetId`, and `selectConnection` resolves it before
+  any name. An id that matches no active connection resolves **nothing** —
+  never a namesake. Forge a Bond never falls back to a bonded connection
+  (`unbonded`): with no id and no matching name it takes the sole un-bonded
+  connection, else nothing.
+- **A vow payoff acts on the roller's own vow** [B02]. `resolveVowItemCopies`
+  takes the Item the roll scored (`itemId`), then the roller's own
+  exact-name vow (open before completed), and only then the global name
+  ladder; shared copies are collected by `vowId` after that. Every caller —
+  fulfil (native and pipeline), Forsake, the won-fight card, milestone
+  holder and fight reward — passes the roller.
+- **A Chronicle is its actor's by the `chronicleActorId` flag** [B03]. The
+  "Chronicle — {name}" title is a label, set on write to the actor's
+  current name. Several journals flagged for one actor (a rename before the
+  fix split them) read merged and fold into one on the next write. An
+  unflagged journal under the actor's name is adopted only when exactly one
+  character has that name; a journal flagged for another actor never is.
+- **A derived cache is valid for the content it was made from, not its
+  count** [B04]. The campaign recap cache stores `chronicleLength` and
+  `chronicleHash` (each entry's text, timestamp and session number — what the
+  recap prompt reads; `campaignRecapCacheKey`) and is used — by
+  `getCampaignRecap` and the session's first narration alike — only while
+  both match. A stale cache with no key to regenerate gives no recap, never
+  the stale one. A cache from before the hash regenerates once.
+
+**Reason:** issue #301 reproduced each defect (five failing probes); the
+regression tests that came with the fixes fail with each fix reverted.
+
+**Rejected:**
+- *Fall back to the name when a picker's id no longer matches* (B01) — the
+  connection was deleted or lost; a same-named connection is a different
+  record.
+- *A `linkedVowId` on combat tracks* (B02) — a schema change, and the
+  roller preference already resolves the fight's vow; a renamed vow still
+  resolves through the ladder.
+- *Rename the Chronicle journal from an `updateActor` hook* (B03) — a new
+  hook with its own single-emitter question; relabelling on the next write
+  needs neither.
+- *Clear the recap cache on every Chronicle write* (B04) — players edit
+  entries but cannot write world settings, and the session-opening read
+  would still need a check; a content key is validated where it is read.
+
+**Trade-offs accepted:** each world regenerates its campaign recap once
+after the update (one Claude call). Entries that two same-named characters
+already shared cannot be separated — entries carry no actor. A write by a
+user who cannot edit an old split journal leaves it unemptied; reads still
+merge it.
+
+---
+
 ## Issue #300 bug audit: outcomes apply once, payments are whole, waits are bounded (2026-10)
 
 **Decision:** the sixteen fixes in issue #300 settle these rules (each

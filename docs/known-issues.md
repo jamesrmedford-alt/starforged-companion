@@ -11,6 +11,31 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit follow-up (issue #301) — all four fixed in the v1.7.36 cycle
+
+Four findings from the follow-up audit, plus what fixing them turned up. Each
+fix ships with regression tests that fail with it reverted; none has been
+checked in a live Foundry world yet (a connection pick at a table with one
+bonded connection, two PCs with same-named vows, a renamed character's
+Chronicle and a corrected entry before End a Session are the ones to try).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| B01 PICKER-TARGET-DROPPED | WRONG-DETAIL | `applyConnectionPick` posted the forced Develop Your Relationship / Forge a Bond with no target, and a forced move skips the interpreter, so the pick never reached enrichment or the develop / forge branches: Forge a Bond scored 0 with several un-bonded connections (a certain miss) or the sole bonded connection's track (then forged nothing), and Develop marked the bonded one → the pick rides as `forcedMoveTargetId` (host Actor id) + `forcedMoveTarget`, carried as `interpretation.moveTargetId`; `selectConnection` resolves the id first (an unmatched id resolves nothing). `connectionPickerTarget.test.js` drives the picker through the real pipeline |
+| B02 VOW-NAMESAKE-PAYOFF | ATTRIBUTION | Two PCs' independent vows with one name (both "Background Vow", different `vowId`s): `resolveVowItemCopies` took the first PC's, so the native fulfil payoff stamped it paid, rewarded it, paid legacy from its rank and deepened its connection — and its own fulfilment later paid nothing → the resolver takes the scored Item (`itemId`), then the roller's own exact-name vow (open, then completed), before the global ladder |
+| B03 CHRONICLE-BY-NAME | LOSE-PLOT | `findChronicleJournal` looked journals up as "Chronicle — <name>" although creation stamped `chronicleActorId`: a rename hid the history (a new journal under the new name) and namesakes shared one — read twice by the campaign recap → lookup by the flag; a rename-split history reads merged and folds into one journal on the next write (relabelled); an unflagged legacy journal is adopted only when one character has its name. Entries namesakes already mixed can't be separated |
+| B04 RECAP-CACHE-COUNT | WRONG-DETAIL | `getCampaignRecap` kept its cache while the entry count matched, so a corrected entry ("Vex died." → "Vex survived."), or a wrong one deleted and replaced, kept the old recap; the End Session / world-load refreshes used the same check → the cache stores `chronicleLength` + `chronicleHash` (each entry's text, timestamp, session number — `campaignRecapCacheKey`) and is used only while both match; a stale cache with no key gives no recap; a pre-hash cache regenerates once |
+
+**Found while fixing — fixed in the same cycle:**
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| FORGE-BONDED-FALLBACK | WRONG-DETAIL | A typed Forge a Bond that named no connection fell back to the sole bonded connection — scored its full track, then forged nothing → Forge a Bond's resolution (enrichment and the forge branch) falls back only to the sole un-bonded connection (`selectConnection` `unbonded`) |
+| VOW-RESOLVER-ROLLER-BLIND | ATTRIBUTION | B02's lookup also served pipeline Fulfill Your Vow (completed the other PC's vow), Forsake Your Vow (forsook it), the won-fight card (its rank and 🤝 Deepen connection), the milestone holder and the fight reward → every caller passes the roller; the pipeline also the Item enrichment scored |
+| RECAP-START-UNCHECKED | WRONG-DETAIL | `sessionStartRecap` served the cached recap with no validity check, so at a table whose GM has no key (nothing regenerates it) a stale recap opened every session → the same check as `getCampaignRecap` |
+| QUENCH-CHRONICLE-DELETE | LATENT | Two Quench cleanups deleted the test actor's Chronicle journal by name — a real character of the same name would have lost theirs → by the actor flag. A unit test now fails if code outside `chronicle.js` builds a "Chronicle — ${…}" lookup |
+| TESTS-PINNED-THE-BUGS | TEST-GAP | `cardActions.test.js` asserted the picker's target-less flags with `toEqual`, and `sessionSummary.test.js` served a recap cache stamped for 99 entries over an empty chronicle — both passed because of the defects → they assert the target, and that such a cache is refused |
+
 ### Bug audit (issue #300) — all sixteen fixed in the v1.7.36 cycle
 
 Two audit passes plus the validity review of #299. Each fix ships with
@@ -141,9 +166,11 @@ canon").
 - **SUMMARY-KEYLESS-GM** — the rolling summary regenerates on the canonical
   GM (B7); at a table whose GM has no Claude key it is never generated.
 - **STRIKE-CHRONICLE** — a strike does not reach the chronicle (or the
-  campaign recap built from it).
+  campaign recap built from it). Since issue #301 B04 a corrected chronicle
+  entry does reach the recap, so a strike will once it edits the chronicle.
 - **CHRONICLE-FIRST-PC** — chronicle entries are all written to the first PC
-  (`resolveActorId`, `chronicleWriter.js`).
+  (`resolveActorId`, `chronicleWriter.js`). Issue #301 B03 resolves each
+  Chronicle by actor id; the writer still picks the first PC.
 - **CONN-BACKGROUND-UNWRITTEN** — a connection's `background` and `secrets`
   have no production writer, so neither renders.
 - ~~**CREATE-PERSIST-WHOLE**~~ — fixed by issue #300 F14 (below): creators
