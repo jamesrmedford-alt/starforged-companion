@@ -48,7 +48,20 @@
  *   - Dialogs (foundry.applications.api.DialogV2) record which client opened
  *     them; each client answers through `client.answerDialogs(fn)`.
  *   - Claude: `fetch` to api.anthropic.com is answered by `table.claude`,
- *     which records the calling client and the API key it used.
+ *     which records the calling client and the API key it used. A reply may
+ *     be a fault (tests/helpers/faults.js `claudeFault`: an HTTP error, a
+ *     malformed body, a body that stalls, a request that never answers).
+ *
+ * Fault boundaries (issue #302 slice B)
+ *   `table.interceptWrites(fn)` runs fn(write) before each world-setting
+ *   write, Actor create / update and ChatMessage create / update applies
+ *   (write = { kind, key | id, client, … }); returning an Error rejects the
+ *   write (nothing applies, the caller's promise rejects) and returning a
+ *   promise holds it until the promise settles. `table.onEvent(fn)` sees, in
+ *   order, every Claude call and reply, applied or rejected write, card,
+ *   notification, dialog and socket emit — the event order a failure report
+ *   prints (faults.js `traceTable`). Both are cleared by reset(), and a table
+ *   with neither installed behaves exactly as before.
  *
  * Async work
  *   Hook handlers are fire-and-forget in Foundry. The harness tracks every
@@ -105,6 +118,13 @@ import {
 import { staticSettingScope } from "./settingScopes.js";
 
 export const MODULE_ID = "starforged-companion";
+
+/**
+ * A Claude reply carrying this key is a fault, not a reply: `handle` returns
+ * what reply[CLAUDE_FAULT](call) returns — a Response-like object, a rejected
+ * promise (a network error) or one that never settles. Built by faults.js.
+ */
+export const CLAUDE_FAULT = Symbol.for("multiClient.claudeFault");
 
 // Captured at import, before any test can install fake timers: deliveries and
 // settle() must keep flowing under vi.useFakeTimers().
@@ -641,7 +661,8 @@ class SimClaude {
    */
   static DEFAULT_REPLY = 'The station hums. Nothing moves.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
-  constructor() {
+  constructor(table = null) {
+    this.table = table;
     this.calls = [];
     this._responder = null;
   }
@@ -680,7 +701,14 @@ class SimClaude {
       body,
     };
     this.calls.push(call);
+    const n = this.calls.length;
+    this.table?._emitEvent({ type: "claude.call", n, client: call.client, model: call.model, userText: call.userText });
     const out = this._responder ? await this._responder(call) : SimClaude.DEFAULT_REPLY;
+    if (out && typeof out[CLAUDE_FAULT] === "function") {
+      this.table?._emitEvent({ type: "claude.reply", n, client: call.client, outcome: out.label ?? "fault" });
+      return out[CLAUDE_FAULT](call);
+    }
+    this.table?._emitEvent({ type: "claude.reply", n, client: call.client, outcome: "reply" });
     const json = typeof out === "string"
       ? {
           id: `msg_${this.calls.length}`, type: "message", role: "assistant", model: call.model,
@@ -910,6 +938,7 @@ class SimClient {
     const client = this;
     const note = (level) => (message, options) => {
       client.notifications.push({ level, message: String(message), options });
+      client.table._emitEvent({ type: "notify", client: client.id, level, message: String(message) });
       return { id: client.notifications.length };
     };
     return {
@@ -1010,7 +1039,7 @@ class SimTable {
     this.macros = new SimCollection();
     this.items = new SimCollection();
     this.rollTables = new SimCollection();
-    this.claude = new SimClaude();
+    this.claude = new SimClaude(this);
     this.clients = [];
     this.dialogs = [];
     this.socketLog = [];
@@ -1025,6 +1054,8 @@ class SimTable {
     this._progress = 0;
     this._initialUsers = userSpecs.map(u => ({ ...u }));
     this._tornDown = false;
+    this._writeInterceptors = [];   // interceptWrites() — fault boundaries
+    this._eventSinks = [];          // onEvent() — the event order
 
     const t = this;
     this.world = {
@@ -1125,6 +1156,8 @@ class SimTable {
     this.journal._reset();
     this.folders._reset();
     this.claude.reset();
+    this._writeInterceptors.length = 0;
+    this._eventSinks.length = 0;
     this.dialogs.length = 0;
     this.socketLog.length = 0;
     this.errors.length = 0;
@@ -1154,6 +1187,53 @@ class SimTable {
   listen(hook, fn) {
     const offs = this.clients.map(c => c.listen(hook, (...args) => fn(c, ...args)));
     return () => offs.forEach(off => off());
+  }
+
+  /**
+   * A test boundary on world writes: fn(write) runs before each one applies.
+   * write = { kind: "setting", key, client, value } | { kind: "actor.create",
+   * name, client } | { kind: "actor.update", id, name, client, changes } |
+   * { kind: "message.create", client, data } | { kind: "message.update", id,
+   * client, changes }. Return an Error (or a promise of one) to reject the
+   * write; return a promise to hold it. Removed by reset().
+   *
+   * @returns {() => void} remove it now
+   */
+  interceptWrites(fn) {
+    this._writeInterceptors.push(fn);
+    return () => {
+      const i = this._writeInterceptors.indexOf(fn);
+      if (i >= 0) this._writeInterceptors.splice(i, 1);
+    };
+  }
+
+  /**
+   * fn(event) for every Claude call / reply, write, card, notification, dialog
+   * and socket emit, in the order they happen. Removed by reset().
+   *
+   * @returns {() => void} remove it now
+   */
+  onEvent(fn) {
+    this._eventSinks.push(fn);
+    return () => {
+      const i = this._eventSinks.indexOf(fn);
+      if (i >= 0) this._eventSinks.splice(i, 1);
+    };
+  }
+
+  _emitEvent(event) {
+    for (const fn of this._eventSinks) fn(event);
+  }
+
+  /** Run the write interceptors; throws the Error one returns (the write is refused). */
+  async _interceptWrite(write) {
+    for (const fn of [...this._writeInterceptors]) {
+      const out = await fn(write);
+      if (out instanceof Error) {
+        this._emitEvent({ type: "write", outcome: "rejected", ...write, error: out.message });
+        throw out;
+      }
+    }
   }
 
   async teardown() {
@@ -1338,7 +1418,11 @@ class SimTable {
     const json = JSON.stringify(value ?? null);
     const existed = this._worldSettings.has(k);
     if (existed && this._worldSettings.get(k) === json) return;   // Foundry: unchanged → no update
+    if (this._writeInterceptors.length) {
+      await this._interceptWrite({ kind: "setting", key: k, client: writer.id, value: JSON.parse(json) });
+    }
     this._worldSettings.set(k, json);
+    this._emitEvent({ type: "write", outcome: "applied", kind: "setting", key: k, client: writer.id });
     const hook = existed ? "updateSetting" : "createSetting";
     const apply = (client) => {
       client.worldCache.delete(k);
@@ -1374,7 +1458,11 @@ class SimTable {
     const preview = new SimChatMessageReplica(creator, source);
     if (creator.hooks.call("preCreateChatMessage", [preview, data, options, user.id], true) === false) return undefined;
 
+    if (this._writeInterceptors.length) {
+      await this._interceptWrite({ kind: "message.create", client: user.id, data: jsonClone(source) });
+    }
     this._serverMessages.set(source._id, source);
+    this._emitEvent({ type: "write", outcome: "applied", kind: "message.create", id: source._id, client: user.id, flags: Object.keys(source.flags?.[MODULE_ID] ?? {}) });
     const replica = this.#applyCreate(creator, source, options, user.id);
     for (const other of this.connectedClients) {
       if (other !== creator) this._deliverLater(other, () => { this.#applyCreate(other, source, options, user.id); }, `${other.id} createChatMessage`);
@@ -1390,9 +1478,14 @@ class SimTable {
   }
 
   async _updateMessage(caller, id, changes, options) {
+    if (!this._serverMessages.get(id)) throw new Error(`ChatMessage ${id} does not exist (deleted?)`);
+    if (this._writeInterceptors.length) {
+      await this._interceptWrite({ kind: "message.update", id, client: caller.user.id, changes: jsonClone(changes) });
+    }
     const source = this._serverMessages.get(id);
     if (!source) throw new Error(`ChatMessage ${id} does not exist (deleted?)`);
     applyUpdate(source, jsonClone(changes));
+    this._emitEvent({ type: "write", outcome: "applied", kind: "message.update", id, client: caller.user.id, changes: Object.keys(changes ?? {}) });
     const userId = caller.user.id;
     const apply = (client) => {
       const replica = client.messages.get(id);
@@ -1433,6 +1526,10 @@ class SimTable {
     const payload = jsonClone(args);
     sender.socketEmits.push({ event, payload: payload[0] });
     this.socketLog.push({ from: sender.id, event, payload: payload[0] });
+    this._emitEvent({
+      type: "socket", client: sender.id, event, kind: payload[0]?.kind ?? null,
+      to: sender.connected ? this.connectedClients.filter(c => c !== sender).map(c => c.id) : [],
+    });
     if (!sender.connected) return;
     for (const other of this.connectedClients) {
       if (other === sender) continue;
@@ -1459,6 +1556,7 @@ class SimTable {
     const dialog = new SimDialog(client, api, options);
     this.dialogs.push(dialog);
     client.dialogs.push(dialog);
+    this._emitEvent({ type: "dialog", client: client.id, title: dialog.title });
     const responder = client._dialogResponder;
     if (!responder) return Promise.resolve(null);
     return Promise.resolve().then(() => client.run(() => responder(dialog)));
@@ -1495,14 +1593,28 @@ class SimTable {
         if (other !== caller) table._deliverLater(other, () => fire(other), `${other.id} updateActor`);
       }
     };
+    const intercept = async (changes) => {
+      if (table._writeInterceptors.length) {
+        await table._interceptWrite({ kind: "actor.update", id: actor.id, name: actor.name, client: currentClient()?.id ?? null, changes: jsonClone(changes) });
+      }
+    };
+    const applied = (changes) => table._emitEvent({
+      type: "write", outcome: "applied", kind: "actor.update", id: actor.id, name: actor.name,
+      client: currentClient()?.id ?? null, changes: Object.keys(changes ?? {}),
+    });
     actor.update = async (changes = {}, options = {}) => {
+      await intercept(changes);
       await rawUpdate(changes, options);
+      applied(changes);
       broadcast(changes, options);
       return actor;
     };
     actor.setFlag = async (scope, key, value) => {
+      const changes = { [`flags.${scope}.${key}`]: value };
+      await intercept(changes);
       await rawSetFlag(scope, key, value);
-      broadcast({ [`flags.${scope}.${key}`]: value });
+      applied(changes);
+      broadcast(changes);
       return actor;
     };
   }
@@ -1511,6 +1623,9 @@ class SimTable {
     const table = this;
     return {
       async create(data = {}) {
+        if (table._writeInterceptors.length) {
+          await table._interceptWrite({ kind: "actor.create", name: data?.name ?? "Unknown Actor", client: currentClient()?.id ?? null, data: jsonClone(data) });
+        }
         const actor = table.addActor({
           id: data?.id ?? data?._id ?? nextDocumentId("sact"),
           name: data?.name ?? "Unknown Actor",
@@ -1521,6 +1636,7 @@ class SimTable {
           system: data?.system ?? {},
           ownership: data?.ownership ?? {},
         });
+        table._emitEvent({ type: "write", outcome: "applied", kind: "actor.create", id: actor.id, name: actor.name, client: currentClient()?.id ?? null });
         const caller = currentClient();
         if (caller) {
           caller.run(() => caller.hooks.call("createActor", [actor, {}, caller.id], false));
