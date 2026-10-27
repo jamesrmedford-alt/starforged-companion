@@ -348,6 +348,44 @@ describe('the move lock survives a refused write', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Refused writes: the X-Card pause
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the X-Card card says whether its pause was saved', () => {
+  it("the GM's X-Card pause is refused: the card says it was not saved, with no resume button", async () => {
+    traceTable(table);
+    failWrites(table, w => campaignStateWrite('gm-1')(w) && w.value?.xCardActive === true);
+
+    await table.client('gm-1').chat('!x');
+    await table.drain();
+
+    expect(world().xCardActive).not.toBe(true);
+    const cards = table.cards(f => f.xcardCard);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].flags[MODULE_ID].xcardRecorded).toBe(false);
+    expect(cards[0].content).toMatch(/could not be saved/);
+    expect(cards[0].content).not.toMatch(/Current content is suppressed/);
+    expect(cards[0].content).not.toContain('sf-xcard-resume');
+  });
+
+  it("a player's X-Card the GM cannot save: the GM's card says so — the player's card could not know", async () => {
+    const trace = traceTable(table);
+    failWrites(table, w => campaignStateWrite('gm-1')(w) && w.value?.xCardActive === true);
+
+    await table.client('pl-1').chat('!x');
+    await table.drain();
+
+    expect(world().xCardActive).not.toBe(true);
+    const cards = table.cards(f => f.xcardCard);
+    trace.mark(`X-Card cards: ${cards.map(c => `${c.author} recorded=${c.flags[MODULE_ID].xcardRecorded}`).join(', ')}`);
+    // The relay has no ack (decisions.md → GM relay), so the player's own card
+    // says the scene is paused; the GM, whose write failed, says it was not.
+    expect(cards.map(c => [c.author, c.flags[MODULE_ID].xcardRecorded])).toEqual([['pl-1', true], ['gm-1', false]]);
+    expect(cards[1].content).toMatch(/could not be saved/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Disconnect
 // ─────────────────────────────────────────────────────────────────────────────
 

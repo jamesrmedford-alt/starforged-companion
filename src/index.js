@@ -4345,7 +4345,7 @@ export function resolveCurrentLocationName(name, campaignState) {
  */
 async function handleXCardCommand(_message) {
   const recorded = await suppressScene();
-  await postXCardCard({ recorded: recorded !== false });
+  await postXCardCard({ recorded: recorded !== false, reason: "not-saved" });
 }
 
 /**

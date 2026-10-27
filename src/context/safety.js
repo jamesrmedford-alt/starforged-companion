@@ -134,18 +134,28 @@ function readOwnPrivateLines() {
  * X-Card card's "Resume narration" button, `!x clear`, or the module API's
  * clearXCard).
  *
+ * When the write fails on a relayed play, the player's card already says the
+ * scene is paused (a relay has no ack), so the GM posts a card saying the
+ * pause was not saved (issue #302). A local caller posts its own card.
+ *
  * @param {Object} [_payload] — relay payload (unused)
- * @param {Object} [_ctx]     — relay context (unused — anyone may play the X-Card)
+ * @param {Object} [ctx]      — relay context (anyone may play the X-Card; `local: false` on a relayed play)
  * @returns {Promise<boolean>} true when the pause was persisted
  */
-export async function suppressScene(_payload, _ctx) {
+export async function suppressScene(_payload, ctx) {
   try {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    campaignState.xCardActive = true;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    // A copy: a write that fails must leave this client's cached value as it
+    // was, or the narrator here would hold a pause that never landed (#302).
+    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+    cs.xCardActive = true;
+    await game.settings.set(MODULE_ID, "campaignState", cs);
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | suppressScene: could not persist X-Card state:`, err.message);
+    if (ctx?.local === false) {
+      await postXCardCard({ recorded: false, reason: "not-saved" }).catch(postErr =>
+        console.warn(`${MODULE_ID} | suppressScene: could not post the "not saved" card:`, postErr?.message ?? postErr));
+    }
     return false;
   }
 }
@@ -162,9 +172,11 @@ export async function suppressScene(_payload, _ctx) {
  */
 export async function clearXCard() {
   try {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    campaignState.xCardActive = false;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    // A copy: a failed write must not leave this client's cached value saying
+    // the X-Card is cleared — the narrator here would resume (issue #302).
+    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+    cs.xCardActive = false;
+    await game.settings.set(MODULE_ID, "campaignState", cs);
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | clearXCard: could not clear X-Card state:`, err.message);
@@ -183,8 +195,11 @@ export const XCARD_RESUME_ACTION = "sf-xcard-resume";
 /**
  * Play the X-Card from this client: ask the canonical GM to record the pause
  * (requestGmAction — local on the canonical GM, socket relay elsewhere) and
- * post the X-Card card. When no GM is connected the pause cannot be recorded;
- * the card says so rather than claiming a pause that never landed.
+ * post the X-Card card. When no GM is connected the pause cannot be recorded,
+ * and on the canonical GM a write that fails is not recorded either; the card
+ * says so rather than claiming a pause that never landed (issue #302). A
+ * relayed play has no ack: its card says paused, and the GM's handler reports
+ * a write that failed (suppressScene).
  *
  * Callers: the typed `!x` pre-creation hook (src/ui/settingsPanel.js).
  *
@@ -192,14 +207,17 @@ export const XCARD_RESUME_ACTION = "sf-xcard-resume";
  */
 export async function playXCard() {
   let recorded = false;
+  let reason = "no-gm";
   try {
     const { requestGmAction } = await import("../multiplayer/gmRelay.js");
     const res = await requestGmAction("xcard.activate", {});
-    recorded = res?.ok === true;
+    recorded = res?.ok === true && res.result !== false;
+    if (res?.ok === true && !recorded) reason = "not-saved";
   } catch (err) {
     console.error(`${MODULE_ID} | X-Card: could not request the scene pause:`, err);
+    reason = "not-saved";
   }
-  await postXCardCard({ recorded });
+  await postXCardCard({ recorded, reason });
   return { recorded };
 }
 
@@ -207,13 +225,18 @@ export async function playXCard() {
  * Post the X-Card chat card. Flagged `type: "xcard"` + `xcardCard: true` so
  * the `!x` command predicate never re-triggers on it. When the pause was
  * recorded the card carries a "Resume narration" button (GM-only — see
- * bindXCardCard); when it was not, the card says the pause could not be
- * recorded until a GM joins.
+ * bindXCardCard); when it was not, the card says why: no GM is connected
+ * (`reason: "no-gm"`), or the GM could not save it (`"not-saved"`).
  *
- * @param {{ recorded?: boolean }} [opts]
+ * @param {{ recorded?: boolean, reason?: "no-gm"|"not-saved" }} [opts]
  * @returns {Promise<Object>} the created ChatMessage
  */
-export async function postXCardCard({ recorded = true } = {}) {
+export async function postXCardCard({ recorded = true, reason = "no-gm" } = {}) {
+  const unrecorded = reason === "not-saved"
+    ? `<p class="xcard-unrecorded"><strong>The pause could not be saved.</strong>
+              The narrator will not hold the scene; play the X-Card again.</p>`
+    : `<p class="xcard-unrecorded"><strong>The pause could not be recorded — no GM is connected.</strong>
+              The narrator will not hold the scene until a GM joins; play the X-Card again once one has.</p>`;
   const body = recorded
     ? `<p class="xcard-message">
               Scene paused. Current content is suppressed.<br>
@@ -225,8 +248,7 @@ export async function postXCardCard({ recorded = true } = {}) {
     : `<p class="xcard-message">
               Scene paused at the table.
             </p>
-            <p class="xcard-unrecorded"><strong>The pause could not be recorded — no GM is connected.</strong>
-              The narrator will not hold the scene until a GM joins; play the X-Card again once one has.</p>`;
+            ${unrecorded}`;
 
   return ChatMessage.create({
     content: `
