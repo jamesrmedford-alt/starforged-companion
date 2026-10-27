@@ -1484,10 +1484,12 @@ class SimTable {
     const rawSetFlag = actor.setFlag;
     actor.testUserPermission = (user, level) => (level === "OWNER" || level === 3 ? userOwnsDocument(user, actor) : true);
     Object.defineProperty(actor, "isOwner", { get: () => userOwnsDocument(currentClient()?.user ?? null, actor), configurable: true });
-    const broadcast = (changes) => {
+    // The update's options reach every client's hook, as Foundry's do — a
+    // module marks its own writes with one (sharedSupply's mirror writes).
+    const broadcast = (changes, options = {}) => {
       const caller = currentClient();
       if (!caller) return;
-      const fire = (client) => client.hooks.call("updateActor", [actor, jsonClone(changes), {}, caller.id], false);
+      const fire = (client) => client.hooks.call("updateActor", [actor, jsonClone(changes), jsonClone(options), caller.id], false);
       caller.run(() => fire(caller));
       for (const other of table.connectedClients) {
         if (other !== caller) table._deliverLater(other, () => fire(other), `${other.id} updateActor`);
@@ -1495,7 +1497,7 @@ class SimTable {
     };
     actor.update = async (changes = {}, options = {}) => {
       await rawUpdate(changes, options);
-      broadcast(changes);
+      broadcast(changes, options);
       return actor;
     };
     actor.setFlag = async (scope, key, value) => {

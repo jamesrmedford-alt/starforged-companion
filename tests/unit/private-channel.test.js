@@ -250,6 +250,86 @@ describe("transcript write/read", () => {
     expect(await loadCurrentSessionTranscript("player-1", "ses-2")).toContain("Session two.");
   });
 
+  // Issue #300 F01: a flush dropped its turns before writing, so a failed
+  // write lost them; overlapping flushes each appended to the same old page
+  // content and the later write erased the other's turns.
+  it("keeps the turns of a failed write and writes them once, in order, on the retry", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "First." });
+    await flushNow("player-1");
+    const page = _journals.get("Private Channel — Kira").pages.contents[0];
+    const realUpdate = page.update;
+    page.update = vi.fn(async () => { throw new Error("socket closed"); });
+
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Second." });
+    expect(await flushNow("player-1")).toBeNull();
+    expect(page.text.content).not.toContain("Second.");
+
+    page.update = realUpdate;
+    appendToBuffer("player-1", { who: "narrator", name: "Narrator", text: "Third." });
+    await flushNow("player-1");
+    const html = page.text.content;
+    expect(html.match(/Second\./g)).toHaveLength(1);
+    expect(html.indexOf("First.")).toBeLessThan(html.indexOf("Second."));
+    expect(html.indexOf("Second.")).toBeLessThan(html.indexOf("Third."));
+  });
+
+  it("retries a failed write by itself", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      appendToBuffer("player-1", { who: "player", name: "Kira", text: "Opening." });
+      await flushNow("player-1");
+      const page = _journals.get("Private Channel — Kira").pages.contents[0];
+      const realUpdate = page.update;
+      page.update = vi.fn(async () => { throw new Error("socket closed"); });
+      appendToBuffer("player-1", { who: "player", name: "Kira", text: "Kept." });
+      await flushNow("player-1");
+
+      page.update = realUpdate;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(page.text.content).toContain("Kept.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("two overlapping flushes both land — the second builds on the first", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Seed." });
+    await flushNow("player-1");
+    const page = _journals.get("Private Channel — Kira").pages.contents[0];
+    const realUpdate = page.update;
+    let release;
+    page.update = vi.fn((data) => new Promise((r) => { release = () => r(realUpdate(data)); }));
+
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "One." });
+    const first = flushNow("player-1");
+    await vi.waitFor(() => expect(page.update).toHaveBeenCalledTimes(1));
+    appendToBuffer("player-1", { who: "narrator", name: "Narrator", text: "Two." });
+    const second = flushNow("player-1");
+    release();
+    await first;
+    page.update = realUpdate;
+    await second;
+
+    const html = page.text.content;
+    expect(html.match(/One\./g)).toHaveLength(1);
+    expect(html.match(/Two\./g)).toHaveLength(1);
+    expect(html.indexOf("One.")).toBeLessThan(html.indexOf("Two."));
+  });
+
+  it("keeps the turns when the journal cannot be created, and writes them to their own session's page later", async () => {
+    expectConsoleError(/journal create failed/);
+    const create = global.JournalEntry.create;
+    global.JournalEntry.create = async () => { throw new Error("permission denied"); };
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "In session one." });
+    expect(await flushNow("player-1")).toBeNull();
+
+    global.JournalEntry.create = create;
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "ses-2" });
+    await flushNow("player-1");
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("In session one.");
+    expect(await loadCurrentSessionTranscript("player-1", "ses-2")).toBe("");
+  });
+
   it("loadCurrentSessionTranscript returns '' when no journal or no matching page exists", async () => {
     expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toBe("");
     appendToBuffer("player-1", { who: "player", name: "Kira", text: "x" });

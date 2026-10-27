@@ -13,15 +13,26 @@
  * on window close / session end, or when the page is hidden or unloaded. This
  * avoids a Foundry document write per message while keeping transcripts
  * durable across unexpected disconnects.
+ *
+ * A player's flushes run one at a time, and turns leave the buffer only once
+ * their page write lands (issue #300 F01): a flush used to drop its turns
+ * before writing, so a failed write lost them, and two overlapping flushes
+ * each appended to the same old page content — the later write erased the
+ * other's turns. A failed batch goes back ahead of newer turns, with its
+ * session id, and is retried.
  */
 
 const MODULE_ID   = "starforged-companion";
 const FOLDER_NAME = "Starforged Companion";
 const FLAG_KEY    = "privateChannelPage";
 const DEFAULT_DEBOUNCE_MS = 5000;
+/** Automatic retries after a failed write (5 s, 10 s, 15 s); the next flush trigger retries after that. */
+const MAX_AUTO_RETRIES = 3;
 
-// userId → { turns: Turn[], timerId: ReturnType<setTimeout>|null, sessionId: string }
-// Turn = { who: "player"|"narrator", name: string, text: string }
+// userId → { batches: Batch[], timerId, chain: Promise, failures: number }
+// Batch = { sessionId: string, turns: Turn[] } — turns waiting for their page
+// write, oldest first; the session id is captured on the batch's first append.
+// Turn  = { who: "player"|"narrator", name: string, text: string }
 const _buffers = new Map();
 
 
@@ -186,10 +197,15 @@ export function appendToBuffer(userId, turn) {
   registerFlushOnHide();
   let entry = _buffers.get(userId);
   if (!entry) {
-    entry = { turns: [], timerId: null, sessionId: currentSessionId() };
+    entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0 };
     _buffers.set(userId, entry);
   }
-  entry.turns.push({
+  let batch = entry.batches.at(-1);
+  if (!batch) {
+    batch = { sessionId: currentSessionId(), turns: [] };
+    entry.batches.push(batch);
+  }
+  batch.turns.push({
     who:  turn.who === "narrator" ? "narrator" : "player",
     name: turn.name ?? "",
     text: String(turn.text),
@@ -209,26 +225,48 @@ export function scheduleDebouncedWrite(userId, delayMs = DEFAULT_DEBOUNCE_MS) {
 }
 
 /**
- * Flush buffered turns to the session page immediately. No-op when the buffer
- * is empty. Clears the buffer (and its timer) on success.
+ * Flush buffered turns to their session pages now. No-op when nothing is
+ * buffered. Runs after any flush of this player's already under way, so each
+ * write builds on the page the previous one wrote; a batch whose write fails
+ * goes back ahead of newer turns and a retry is scheduled.
  *
  * @param {string} userId
- * @returns {Promise<JournalEntryPage|null>}
+ * @returns {Promise<JournalEntryPage|null>} the last page written, or null
+ *   when nothing was written (nothing buffered, or a write failed)
  */
-export async function flushNow(userId) {
+export function flushNow(userId) {
   const entry = _buffers.get(userId);
-  if (entry?.timerId) { clearTimeout(entry.timerId); entry.timerId = null; }
-  if (!entry || entry.turns.length === 0) return null;
+  if (!entry) return Promise.resolve(null);
+  if (entry.timerId) { clearTimeout(entry.timerId); entry.timerId = null; }
+  const run = entry.chain.then(() => writePending(userId, entry));
+  entry.chain = run.catch(() => {});
+  return run;
+}
 
-  // Detach the pending turns up front so concurrent appends start a fresh cycle.
-  const turns     = entry.turns.splice(0);
-  const sessionId = entry.sessionId;
-  _buffers.delete(userId);
+async function writePending(userId, entry) {
+  // Taken for this write: turns appended meanwhile start a fresh batch.
+  const batches = entry.batches.splice(0);
+  let page = null;
+  for (let i = 0; i < batches.length; i++) {
+    const written = await writeBatch(userId, batches[i]);
+    if (!written) {
+      entry.batches.unshift(...batches.slice(i));
+      entry.failures += 1;
+      if (entry.failures <= MAX_AUTO_RETRIES) scheduleDebouncedWrite(userId, DEFAULT_DEBOUNCE_MS * entry.failures);
+      return null;
+    }
+    page = written;
+  }
+  if (page) entry.failures = 0;
+  return page;
+}
 
+/** Append one batch to its session page; the page, or null when the write failed. */
+async function writeBatch(userId, { sessionId, turns }) {
   const journal = await getOrCreatePrivateJournal(userId);
   const page    = await getOrCreateSessionPage(journal, sessionId);
   if (!page) {
-    console.warn(`${MODULE_ID} | privateChannel: flush dropped ${turns.length} turn(s) — no page`);
+    console.warn(`${MODULE_ID} | privateChannel: no session page — ${turns.length} turn(s) kept for a retry`);
     return null;
   }
 
@@ -237,7 +275,7 @@ export async function flushNow(userId) {
     await page.update({ text: { format: 1, content: appended } });
     return page;
   } catch (err) {
-    console.warn(`${MODULE_ID} | privateChannel: page write failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | privateChannel: page write failed — ${turns.length} turn(s) kept for a retry:`, err?.message ?? err);
     return null;
   }
 }
