@@ -1,6 +1,7 @@
 {
   "name": "first-session",
-  "description": "A solo player's first session at a lawless settlement: the opening vignette, a Gather Information move that introduces an NPC, the GM confirming him, a paced follow-up, a Private Channel turn built in the player's browser, a typed Set a Course to a second settlement and the GM dragging the ship's token back on the sector map, End a Session, and the next session's opening. The Private Channel step pins #289's answer: a player's client holds the cards of NPCs it has no permission on, so the private prompt carries the card of an NPC the player names.",
+  "description": "A solo player's first session at a lawless settlement: the opening vignette, a Gather Information move that introduces an NPC, the GM confirming him, a paced follow-up, a Private Channel turn built in the player's browser, a typed Set a Course to a second settlement and the GM dragging the ship's token back on the sector map, End a Session, and the next session's opening. The Private Channel step pins #289's answer: a player's client holds the cards of NPCs it has no permission on, so the private prompt carries the card of an NPC the player names. Strict (issue #302): each step declares the Claude calls it makes, and a required call the recording doesn't answer, one whose prompt breaks its contract, or an undeclared call fails the step.",
+  "strict": true,
   "settings": {
     "narrationEnabled": true,
     "narratorSessionSummary": true,
@@ -28,78 +29,108 @@
     "map": { "shipAt": "Hollow Spire" }
   },
   "steps": [
-    { "do": "beginSession", "as": "player", "galley": true,
+    { "id": "open", "do": "beginSession", "as": "player", "galley": true,
+      "calls": [
+        { "kind": "callNarratorAPI>narrateSessionVignette", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] }
+      ],
+      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [
         { "check": "shipToken", "at": "Hollow Spire" },
         { "check": "shipPosition", "at": "Hollow Spire" },
-        { "check": "request", "kind": "callNarratorAPI>narrateSessionVignette", "nth": 0,
-          "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
         { "check": "noMarkup" }
       ] },
-    { "do": "move", "as": "player",
+    { "id": "gather", "do": "move", "as": "player",
       "text": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
       "dice": { "challenge": [2, 5], "action": 5 },
       "move": "gather_information", "outcome": "strong_hit",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" },
+        { "kind": "callClaudeAPI>interpretMove" },
+        { "kind": "callNarratorAPI>narrateResolution", "carries": ["MOVE OUTCOME"], "section": { "CHARACTER": "Name: Mira Kestrel" } },
+        { "kind": "callHaiku>defaultCallDetectionAPI" },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: gather_information" } }
+      ],
       "then": [
         { "check": "moveLockReleased" },
         { "check": "ledgerTruth", "about": "Vance Oduya" },
         { "check": "momentum", "of": "Mira Kestrel", "is": 4 },
-        { "check": "request", "kind": "callNarratorAPI>narrateResolution",
-          "carries": ["MOVE OUTCOME"], "section": { "CHARACTER": "Name: Mira Kestrel" } },
         { "check": "noMarkup" }
       ] },
-    { "do": "confirmDraft", "name": "Vance Oduya", "type": "connection",
+    { "id": "confirm-vance", "do": "confirmDraft", "name": "Vance Oduya", "type": "connection",
+      "calls": [],
       "then": [
         { "check": "noDraftFor", "name": "Mira Kestrel" },
         { "check": "npcCard", "name": "Vance Oduya", "type": "connection", "sheet": "starforged", "description": true },
         { "check": "ledgerTruth", "about": "Vance Oduya", "entityKeyed": true }
       ] },
-    { "do": "say", "as": "player",
+    { "id": "ask-vance", "do": "say", "as": "player",
       "text": "I lean on the counter and ask Vance what the Ascendancy wants with him.",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" },
+        { "kind": "callNarratorAPI>narratePacedInput",
+          "carries": ["ENTITIES IN SCENE"], "section": { "CHARACTER": "Name: Mira Kestrel" },
+          "sectionLacks": { "PARTY": "Vance Oduya" } },
+        { "kind": "callHaiku>defaultCallDetectionAPI" },
+        { "kind": "callHaiku>defaultCallTierAPI" },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Context: paced narration" } }
+      ],
       "then": [
         { "check": "npcCard", "name": "Vance Oduya", "details": 1 },
-        { "check": "journalPage", "journal": "World Journal — Threats", "page": "Ascendancy debt collectors" },
-        { "check": "request", "kind": "callNarratorAPI>narratePacedInput",
-          "carries": ["ENTITIES IN SCENE"], "section": { "CHARACTER": "Name: Mira Kestrel" },
-          "sectionLacks": { "PARTY": "Vance Oduya" } }
+        { "check": "journalPage", "journal": "World Journal — Threats", "page": "Ascendancy debt collectors" }
       ] },
-    { "do": "privateChannel", "as": "player", "npc": "Vance Oduya",
+    { "id": "private-aside", "do": "privateChannel", "as": "player", "npc": "Vance Oduya",
       "message": "I wonder whether Vance Oduya was lying about the courier.",
-      "expectCard": true, "carries": ["ENTITIES IN SCENE", "ACTIVE SCENE"] },
-    { "do": "move", "as": "player",
+      "expectCard": true, "carries": ["ENTITIES IN SCENE", "ACTIVE SCENE"],
+      "calls": [] },
+    { "id": "course-bleakhold", "do": "move", "as": "player",
       "text": "We set a course for Bleakhold Station.",
       "dice": { "challenge": [2, 3], "action": 5 },
       "move": "set_a_course", "outcome": "strong_hit",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" },
+        { "kind": "callClaudeAPI>interpretMove" },
+        { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Bleakhold Station"] },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
+      ],
       "then": [
         { "check": "shipPosition", "at": "Bleakhold Station" },
         { "check": "shipToken", "at": "Bleakhold Station" },
         { "check": "currentLocation", "is": "Bleakhold Station" },
         { "check": "card", "flag": "setACourseFeedback", "count": 1 },
-        { "check": "request", "kind": "callNarratorAPI>narrateResolution",
-          "contains": ["SHIP POSITION: Kobayashi IV docked at Bleakhold Station"] },
         { "check": "momentum", "of": "Mira Kestrel", "is": 5 }
       ] },
-    { "do": "dragShip", "as": "gm", "to": "Hollow Spire",
+    { "id": "drag-home", "do": "dragShip", "as": "gm", "to": "Hollow Spire",
       "dice": { "challenge": [2, 3], "action": 5 }, "outcome": "strong_hit",
+      "calls": [
+        { "kind": "callNarratorAPI>narrateResolution", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "Move: set_a_course" } }
+      ],
       "then": [
         { "check": "shipToken", "at": "Hollow Spire" },
         { "check": "shipPosition", "at": "Hollow Spire" },
         { "check": "currentLocation", "is": "Hollow Spire" },
         { "check": "card", "flag": "setACourseFeedback", "count": 2 },
-        { "check": "request", "kind": "callNarratorAPI>narrateResolution",
-          "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] },
         { "check": "moveLockReleased" }
       ] },
-    { "do": "endSession", "as": "player", "questFocus": "Find the courier",
+    { "id": "end", "do": "endSession", "as": "player", "questFocus": "Find the courier",
+      "calls": [
+        { "kind": "callNarratorAPI>getRollingSessionSummary", "carries": ["SESSION NARRATION"] },
+        { "kind": "callNarratorAPI>narrateSessionVignette" },
+        { "kind": "callNarratorAPI>getCampaignRecap", "section": { "CAMPAIGN CHRONICLE": "Vance Oduya" } }
+      ],
+      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [
         { "check": "sessionLog", "session": 1 },
         { "check": "npcCard", "name": "Vance Oduya", "lastKnown": ["location"] },
         { "check": "momentum", "of": "Mira Kestrel", "is": 7 },
         { "check": "moveLockReleased" }
       ] },
-    { "do": "beginSession", "as": "player", "galley": true, "spotlight": true,
+    { "id": "reopen", "do": "beginSession", "as": "player", "galley": true, "spotlight": true,
+      "calls": [
+        { "kind": "callNarratorAPI>narrateSessionVignette", "section": { "LAST SESSION": "Vance Oduya" } }
+      ],
+      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [
-        { "check": "request", "kind": "callNarratorAPI>narrateSessionVignette", "nth": -1, "carries": ["LAST SESSION"] },
         { "check": "momentum", "of": "Mira Kestrel", "is": 8 },
         { "check": "momentum", "of": "Vance Oduya", "is": 2 },
         { "check": "noMarkup" }

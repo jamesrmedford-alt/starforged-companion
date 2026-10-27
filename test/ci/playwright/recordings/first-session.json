@@ -1,9 +1,10 @@
 {
   "scenario": "first-session",
   "source": "hand-written",
-  "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
+  "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Each exchange names the scenario step that makes its call (strict replay, issue #302). Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
   "exchanges": [
     {
+      "step": "open",
       "kind": "callNarratorAPI>narrateSessionVignette",
       "user": "OPENING VIGNETTE — begin-session ship's galley. Active players (their PCs are physically in the galley together)",
       "response": {
@@ -17,6 +18,7 @@
       }
     },
     {
+      "step": "open",
       "kind": "callHaiku>defaultCallTierAPI",
       "user": "Mira Kestrel eats standing up galley counter Kobayashi IV recycler wheezes morning cycle service drone protein paste",
       "response": {
@@ -30,6 +32,7 @@
       }
     },
     {
+      "step": "gather",
       "kind": "callClassifierAPI>classifyInput",
       "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
       "response": {
@@ -43,6 +46,7 @@
       }
     },
     {
+      "step": "gather",
       "kind": "callClaudeAPI>interpretMove",
       "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
       "response": {
@@ -56,6 +60,7 @@
       }
     },
     {
+      "step": "gather",
       "kind": "callNarratorAPI>narrateResolution",
       "user": "MOVE OUTCOME Gather Information Strong Hit I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
       "response": {
@@ -69,6 +74,7 @@
       }
     },
     {
+      "step": "gather",
       "kind": "callHaiku>defaultCallDetectionAPI",
       "user": "Vance Oduya departure ledger dock office burn scar berth nine unregistered skiff Ascendancy scrip",
       "response": {
@@ -82,6 +88,7 @@
       }
     },
     {
+      "step": "gather",
       "kind": "callChronicleAPI>writeChronicleEntry",
       "user": "## CONTEXT Move: gather_information Outcome: strong_hit ## NARRATION Vance Oduya departure ledger berth nine",
       "response": {
@@ -95,6 +102,7 @@
       }
     },
     {
+      "step": "ask-vance",
       "kind": "callClassifierAPI>classifyInput",
       "user": "I lean on the counter and ask Vance what the Ascendancy wants with him.",
       "response": {
@@ -108,6 +116,7 @@
       }
     },
     {
+      "step": "ask-vance",
       "kind": "callNarratorAPI>narratePacedInput",
       "user": "No move was rolled. I lean on the counter and ask Vance what the Ascendancy wants with him.",
       "response": {
@@ -121,6 +130,7 @@
       }
     },
     {
+      "step": "ask-vance",
       "kind": "callHaiku>defaultCallDetectionAPI",
       "user": "Vance laughs closes the ledger tithe-mark wrist owe them eleven years courier's scrip note clear the skiff debt",
       "response": {
@@ -134,6 +144,7 @@
       }
     },
     {
+      "step": "ask-vance",
       "kind": "callHaiku>defaultCallTierAPI",
       "user": "Vance Oduya connection Vance laughs tithe-mark owe them eleven years",
       "response": {
@@ -147,6 +158,7 @@
       }
     },
     {
+      "step": "ask-vance",
       "kind": "callChronicleAPI>writeChronicleEntry",
       "user": "## CONTEXT Context: paced narration — no move was rolled. ## NARRATION Vance laughs tithe-mark eleven years",
       "response": {
@@ -160,6 +172,7 @@
       }
     },
     {
+      "step": "course-bleakhold",
       "kind": "callClassifierAPI>classifyInput",
       "user": "We set a course for Bleakhold Station.",
       "response": {
@@ -173,6 +186,7 @@
       }
     },
     {
+      "step": "course-bleakhold",
       "kind": "callClaudeAPI>interpretMove",
       "user": "We set a course for Bleakhold Station.",
       "response": {
@@ -186,6 +200,7 @@
       }
     },
     {
+      "step": "course-bleakhold",
       "kind": "callNarratorAPI>narrateResolution",
       "user": "MOVE OUTCOME Set a Course Strong Hit We set a course for Bleakhold Station.",
       "response": {
@@ -199,6 +214,7 @@
       }
     },
     {
+      "step": "course-bleakhold",
       "kind": "callChronicleAPI>writeChronicleEntry",
       "user": "## CONTEXT Move: set_a_course Outcome: strong_hit ## NARRATION clamps lean burn pirate beacons Bleakhold floodlit harbour drones berth sixteen",
       "response": {
@@ -212,6 +228,7 @@
       }
     },
     {
+      "step": "drag-home",
       "kind": "callNarratorAPI>narrateResolution",
       "user": "MOVE OUTCOME Set a Course Strong Hit I set a course for Hollow Spire.",
       "response": {
@@ -225,6 +242,7 @@
       }
     },
     {
+      "step": "drag-home",
       "kind": "callChronicleAPI>writeChronicleEntry",
       "user": "## CONTEXT Move: set_a_course Outcome: strong_hit ## NARRATION floodlights shrink swings back run home quiet hull tick creak berth clamps",
       "response": {
@@ -238,6 +256,7 @@
       }
     },
     {
+      "step": "end",
       "kind": "callNarratorAPI>getRollingSessionSummary",
       "user": "## SESSION NARRATION (oldest first) Vance Oduya dockmaster courier",
       "response": {
@@ -251,6 +270,7 @@
       }
     },
     {
+      "step": "end",
       "kind": "callNarratorAPI>narrateSessionVignette",
       "user": "CLOSING VIGNETTE — end-session NPC slice-of-life. FLAVOUR: END. Featured NPC",
       "response": {
@@ -264,6 +284,7 @@
       }
     },
     {
+      "step": "end",
       "kind": "callHaiku>defaultCallTierAPI",
       "user": "Vance Oduya eats his supper hand flat closed ledger water ration light blinks amber empty clamps tick cool",
       "response": {
@@ -277,6 +298,7 @@
       }
     },
     {
+      "step": "end",
       "kind": "callNarratorAPI>getCampaignRecap",
       "user": "## CAMPAIGN CHRONICLE Write a campaign recap of 3–5 paragraphs covering",
       "response": {
@@ -290,6 +312,7 @@
       }
     },
     {
+      "step": "reopen",
       "kind": "callNarratorAPI>narrateSessionVignette",
       "user": "OPENING VIGNETTE — begin-session ship's galley. Active players (their PCs are physically in the galley together)",
       "response": {
@@ -303,6 +326,7 @@
       }
     },
     {
+      "step": "reopen",
       "kind": "callHaiku>defaultCallTierAPI",
       "user": "Kobayashi IV's galley smells reheated noodles coolant berth number written back of her hand",
       "response": {

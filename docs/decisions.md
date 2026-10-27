@@ -6,6 +6,66 @@ rejected.
 
 ---
 
+## Strict replay for critical playthroughs; regression tests proven sensitive (2026-10)
+
+**Decision:** (issue #302 slice A. The maintainer asked for slices A and B
+on 2026-10-27; the choices below were made while building them.)
+- **A strict scenario fails replay drift; a permissive one reports it.**
+  `"strict": true` makes a scenario name every step and declare, per step,
+  the Claude calls it makes — `calls` (each required once, with an optional
+  prompt contract) and `optionalCalls`. A required call that never happened
+  (`MISSING`), that only the stub answered (`UNRECORDED`) or whose prompt
+  breaks its contract (`CONTRACT`), and any call nothing declared
+  (`UNEXPECTED`), fail the step, before its checks run. first-session is
+  strict. This narrows "Drift is reported, not failed" (Scripted
+  playthroughs, below) for strict scenarios only.
+- **Calls belong to steps.** The harness files each call under the step it
+  started in, and a recording run stores the step on every exchange. A call
+  takes its own step's recording of its kind before any word matching, so a
+  prompt edit no longer costs its reply; cross-step matching (permissive
+  only) keeps the half-the-words floor.
+- **Contracts, not fingerprints, are the gate.** A contract fails even when
+  a recorded reply answered the call, so data the prompt lost can't hide
+  behind a canned reply. A change in a recording's prompt sections (its
+  normalised fingerprint: entity ids and numbers ignored) stays a `STALE`
+  warning, so a prompt change still merges without a key unless it breaks
+  a contract. The `request` check became these contracts and was removed.
+- **A failed recording run never becomes the baseline.** It writes its
+  capture to `artifacts/recordings/<scenario>.rejected.json` and leaves
+  `recordings/` alone; a recording marked `"passed": false` is refused. A
+  recording carries its provenance: the scenario revision (a hash of the
+  seed, settings and steps), the commit, the models, and per exchange its
+  step and prompt fingerprint.
+- **A result keeps replay validity, integration and narrator quality
+  apart** (`verdict`), and classes a failure as infrastructure, replay or
+  integration.
+- **Regression tests are shown to fail without their fix.**
+  `scripts/fix-sensitivity.mjs` reverts a fix commit's `src/` changes in a
+  temporary worktree and runs the commit's tests, or applies a defect patch
+  (`scripts/defects/*.patch`) to HEAD. A test that fails only because the
+  fix's export is missing doesn't count; injecting the specific defect is
+  how such a test is shown sensitive (B04's recap cache). The results are
+  kept in `docs/testing/fix-sensitivity.md`.
+
+**Reason:** the #301 audit found four defects while 90 related tests
+passed: coverage stopped short of workflow and identity boundaries. The
+first-session recording is hand-written, so a permissive replay that
+stubbed a required call, or a prompt that lost a section, could pass.
+
+**Rejected:**
+- *Fail on STALE*: every prompt edit would need a key to re-record — the
+  reason drift was made a warning in the first place.
+- *Match calls in call order*: background passes interleave; the step plus
+  the kind is the stable key.
+- *Keep the `request` check beside the contracts*: two ways to say one
+  thing, and the check's `nth` counted across the whole run.
+
+**Trade-offs accepted:** a new Claude call in a strict scenario fails CI
+until a scenario edit declares it (no key needed). The first-session
+replies are still hand-written; real ones need a recording run with a key.
+
+---
+
 ## Issue #301 follow-up audit: identity by stable id, caches by content (2026-10)
 
 **Decision:** the four fixes in issue #301 settle these rules (each
@@ -163,7 +223,9 @@ building it, on 2026-10-25.)
   neutral stub and an `UNRECORDED` line; a recording whose prompt sections no
   longer match logs `STALE`. Failing either would block every prompt change
   on a re-record that needs a key. The checks still fail when the behaviour
-  breaks.
+  breaks. (Narrowed for strict scenarios by "Strict replay for critical
+  playthroughs", above: an undeclared or unanswered required call fails
+  there; STALE is still a warning.)
 - **Recordings live in `test/ci/playwright/recordings/`**, next to the
   scenarios, not `tests/fixtures/`. They are recorded outside CI
   (`e2e.sh --record-playthroughs`, the key in `ANTHROPIC_API_KEY`), with the
