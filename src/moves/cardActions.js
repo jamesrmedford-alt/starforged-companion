@@ -131,8 +131,9 @@ const PICK_MOVES = Object.freeze({
  * Validates the pick against the card's own choices, posts the forced
  * Develop Your Relationship / Forge a Bond move ONCE — with
  * `speaker.actor` = the clicker's PC, so the pipeline's resolveSpeakerActorId
- * credits the roller even though the GM authors the message — then stamps
- * the picker `resolved`. Idempotent per card.
+ * credits the roller even though the GM authors the message, and the picked
+ * connection as `forcedMoveTargetId` (host id) + `forcedMoveTarget` (name) —
+ * then stamps the picker `resolved`. Idempotent per card.
  *
  * @param {{ messageId?: string, hostId?: string|null, connectionName?: string|null,
  *           actorId?: string|null }} payload
@@ -185,11 +186,21 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
   _inFlight.add(key);
   try {
     const label = choice.name || "connection";
+    // The picked connection travels with the forced move: the pipeline skips
+    // the interpreter, so the name in the narration is never read. The host id
+    // is what enrichment and the develop / forge branches resolve by; the name
+    // is the fallback and the narrator's target (issue #301 B01 — without
+    // either, Forge a Bond scored 0 against "no connection", or the sole
+    // bonded one).
+    const target = {
+      ...(choice.name   ? { forcedMoveTarget:   choice.name }   : {}),
+      ...(choice.hostId ? { forcedMoveTargetId: choice.hostId } : {}),
+    };
     try {
       await ChatMessage.create({
         content: move.content(label),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, ...target } },
       });
     } catch (err) {
       // Leave the card unresolved so the pick can be retried.

@@ -412,6 +412,29 @@ describe('enrichProgressTicks', () => {
     expect(interp.statValue).toBe(8);
   });
 
+  // Issue #301 B01: a picker's host id scores THAT connection; with no target,
+  // forge never scores the sole bonded connection's (full) track.
+  const KIRA_SABLE_ROOK = async () => [
+    { _id: 'c1', __hostId: 'h-kira',  name: 'Kira',  relationshipTicks: 40, bonded: true,  active: true },
+    { _id: 'c2', __hostId: 'h-sable', name: 'Sable', relationshipTicks: 32, bonded: false, active: true },
+    { _id: 'c3', __hostId: 'h-rook',  name: 'Rook',  relationshipTicks: 8,  bonded: false, active: true },
+  ];
+
+  it('forge_a_bond: the picker\'s host id scores the picked connection', async () => {
+    const interp = { ...interpFor('forge_a_bond'), moveTargetId: 'h-sable' };
+    const info = await enrichProgressTicks(interp, { listConnections: KIRA_SABLE_ROOK });
+    expect(info).toMatchObject({ label: 'Sable', ticks: 32 });
+    expect(interp.statValue).toBe(32);
+  });
+
+  it('forge_a_bond: no target and several un-bonded connections scores nothing — not the bonded one', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const interp = interpFor('forge_a_bond');
+    await enrichProgressTicks(interp, { listConnections: KIRA_SABLE_ROOK });
+    expect(interp.statValue).toBe(0);
+    warn.mockRestore();
+  });
+
   it('finish_an_expedition: completed expedition tracks are excluded', async () => {
     const interp = interpFor('finish_an_expedition', 'The Vault');
     await enrichProgressTicks(interp, {

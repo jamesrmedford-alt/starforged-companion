@@ -802,6 +802,11 @@ export function registerChatHook() {
     const forcedMoveTarget = typeof message.flags?.[MODULE_ID]?.forcedMoveTarget === "string"
       ? message.flags[MODULE_ID].forcedMoveTarget
       : null;
+    // A connection picker also names the connection's host Actor id — the
+    // stable key the develop / forge branches resolve by (issue #301 B01).
+    const forcedMoveTargetId = typeof message.flags?.[MODULE_ID]?.forcedMoveTargetId === "string"
+      ? message.flags[MODULE_ID].forcedMoveTargetId
+      : null;
     const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
 
     // Pacing classifier — decides whether to run the move pipeline, narrate
@@ -854,7 +859,7 @@ export function registerChatHook() {
       const combatPosition = await getActiveCombatPosition();
 
       const interpretation = forcedMoveId
-        ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget)
+        ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget, forcedMoveTargetId)
         : await interpretMove(narration, {
             campaignState,
             mischiefLevel: dial,
@@ -1145,7 +1150,10 @@ export function registerChatHook() {
           const connections = (campaignState.connectionIds ?? [])
             .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
             .filter(Boolean);
-          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          // A picker's host id first — without it, a picked un-bonded
+          // connection fell back to the sole bonded one (issue #301 B01).
+          const target = selectConnection(connections, interpretation.moveTarget ?? null,
+            { hostId: interpretation.moveTargetId ?? null });
           const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
 
           if (plan.action === "bond-legacy") {
@@ -1221,7 +1229,10 @@ export function registerChatHook() {
           const connections = (campaignState.connectionIds ?? [])
             .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
             .filter(Boolean);
-          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          // The same resolution enrichment scored (issue #301 B01): the
+          // picker's host id, then the name, never a bonded fallback.
+          const target = selectConnection(connections, interpretation.moveTarget ?? null,
+            { hostId: interpretation.moveTargetId ?? null, unbonded: true });
           if (target?.__hostId && !target.bonded) {
             await conn.forgeBond(target.__hostId).catch(err =>
               console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
@@ -2567,7 +2578,7 @@ async function handleJournalCommand(message) {
  * to the move's first listed stat; the confirmation dialog still lets the
  * player override.
  */
-function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null) {
+function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null, moveTargetId = null) {
   const moveData = MOVES[moveId];
   const statUsed = moveData?.stat?.[0] ?? null;
   const moveName = moveId.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
@@ -2583,6 +2594,10 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
     isProgressMove:   moveData?.progressMove === true,
     progressTicks:    0,
     moveTarget:       typeof moveTarget === "string" && moveTarget.trim() ? moveTarget.trim() : null,
+    // The target's stable id when the card that forced the move knows it (a
+    // connection picker's host Actor id) — selectConnection resolves by it
+    // before any name.
+    moveTargetId:     typeof moveTargetId === "string" && moveTargetId ? moveTargetId : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
     confidence:       "high",

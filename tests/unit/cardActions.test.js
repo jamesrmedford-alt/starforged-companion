@@ -101,8 +101,20 @@ describe('applyConnectionPick', () => {
     const posted = ChatMessage._created[0];
     expect(posted.content).toBe('Forge a bond with Kira.');
     expect(posted.speaker).toEqual({ actor: 'pc-b', alias: 'Bex' });
-    expect(posted.flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'forge_a_bond' });
+    // The picked connection rides the forced move — the pipeline skips the
+    // interpreter, so this is the only way it learns the target (issue #301 B01).
+    expect(posted.flags[MODULE_ID]).toEqual({
+      bypassPacing: true, forcedMoveId: 'forge_a_bond',
+      forcedMoveTarget: 'Kira', forcedMoveTargetId: 'conn-1',
+    });
     expect(picker.flags[MODULE_ID].resolved).toBe(true);
+  });
+
+  it('names the card\'s choice — not the client\'s relayed name — as the target', async () => {
+    await applyConnectionPick({ messageId: 'pick-1', hostId: 'conn-2', connectionName: 'Mallory', actorId: 'pc-b' }, P1_CTX);
+    expect(ChatMessage._created[0].flags[MODULE_ID]).toMatchObject({
+      forcedMoveTarget: 'Sable', forcedMoveTargetId: 'conn-2',
+    });
   });
 
   it('uses Foundry\'s speaker builder when it is available', async () => {
@@ -164,7 +176,20 @@ describe('applyConnectionPick', () => {
     const res = await applyConnectionPick({ messageId: 'pick-old', hostId: 'conn-3', actorId: 'pc-b' }, P1_CTX);
     expect(res).toEqual({ posted: true });
     expect(ChatMessage._created[0].content).toBe('Develop my relationship with Ren & Co.');
-    expect(ChatMessage._created[0].flags[MODULE_ID].forcedMoveId).toBe('develop_your_relationship');
+    expect(ChatMessage._created[0].flags[MODULE_ID]).toMatchObject({
+      forcedMoveId: 'develop_your_relationship', forcedMoveTarget: 'Ren & Co', forcedMoveTargetId: 'conn-3',
+    });
+  });
+
+  it('a pre-choices button with no host id still names its connection', async () => {
+    const old = makeCard('pick-older', { connectionPicker: true, pickAction: 'develop', resolved: false },
+      '<button type="button" data-action="sf-connection-pick" data-pick-action="develop" data-connection-name="Ren">Ren</button>');
+    messages.push(old);
+    const res = await applyConnectionPick({ messageId: 'pick-older', hostId: null, connectionName: 'Ren', actorId: 'pc-b' }, P1_CTX);
+    expect(res).toEqual({ posted: true });
+    const f = ChatMessage._created[0].flags[MODULE_ID];
+    expect(f.forcedMoveTarget).toBe('Ren');
+    expect(f).not.toHaveProperty('forcedMoveTargetId');
   });
 
   it('leaves the card open for a retry when the forced-move post fails', async () => {

@@ -260,14 +260,15 @@ export const PROGRESS_TICK_SOURCES = {
  * Fill interpretation.statValue (and progressTicks, for card display) with the
  * live tick count of the track this progress move rolls against. Module data
  * is ground truth — the interpreter is instructed never to supply tick counts,
- * and card buttons only name a target via forcedMoveTarget.
+ * and card buttons only name a target via forcedMoveTarget (a connection
+ * picker also via forcedMoveTargetId → interpretation.moveTargetId).
  *
  * Dependency-injected so it unit-tests without Foundry:
  *
  * @param {Object} interpretation — mutated in place (statValue, progressTicks)
  * @param {{ listTracks?:    () => Promise<Array<{id,label,type,rank,ticks,completed,combatState}>>,
  *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed}>>,
- *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active}>> }} deps
+ *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active,__hostId}>> }} deps
  * @returns {Promise<{ ticks:number, source:string, label:string|null,
  *                     trackId:string|null,
  *                     combatState:("in_control"|"bad_spot"|null) }|null>}
@@ -327,8 +328,14 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
       }
     }
   } else if (source === "connection") {
+    // A picker's host id first; Forge a Bond never scores a bonded connection
+    // it wasn't asked for (issue #301 B01 — with the id dropped, it scored the
+    // sole bonded one's full track).
     const connections = (await deps.listConnections?.()) ?? [];
-    const conn = selectConnection(connections, target);
+    const conn = selectConnection(connections, target, {
+      hostId:   interpretation?.moveTargetId ?? null,
+      unbonded: moveId === "forge_a_bond",
+    });
     if (conn) {
       resolved = {
         ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,

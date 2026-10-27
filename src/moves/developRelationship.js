@@ -73,21 +73,34 @@ export function nextRank(rank) {
 }
 
 /**
- * Resolve which connection a Develop Your Relationship move targets.
+ * Resolve which connection a Develop Your Relationship / Forge a Bond move
+ * targets.
  *
  * Resolution order (mirrors selectExpeditionTrack / selectCombatTrack):
+ *  0. `hostId` — the connection's host Actor id (`__hostId`, the
+ *     `campaignState.connectionIds` entry), carried by a connection picker
+ *     card's choice. It is stable, so it outranks every name; an id that
+ *     matches no active connection resolves nothing rather than a guess
+ *     (rules/reachability.md §6 — issue #301 B01)
  *  1. Exact name match (case-insensitive, ignoring a leading "the")
  *  2. Substring match in either direction
- *  3. Fallback: the sole bonded connection, else the sole active connection
+ *  3. Fallback: the sole bonded connection, else the sole active connection —
+ *     with `unbonded` (Forge a Bond), the sole un-bonded one instead: a bonded
+ *     connection is never what a forge with no matching target meant
  *  4. null when ambiguous
  *
- * @param {Array<{_id,name,rank,bonded,active}>} connections
+ * @param {Array<{_id,name,rank,bonded,active,__hostId}>} connections
  * @param {string|null} target — interpretation.moveTarget (the named connection)
+ * @param {{ hostId?: string|null, unbonded?: boolean }} [opts]
  * @returns {object|null}
  */
-export function selectConnection(connections, target) {
+export function selectConnection(connections, target, { hostId = null, unbonded = false } = {}) {
   const active = (connections ?? []).filter(c => c && c.active !== false);
   if (!active.length) return null;
+
+  if (typeof hostId === "string" && hostId) {
+    return active.find(c => c.__hostId === hostId) ?? null;
+  }
 
   if (target) {
     const norm = s => String(s ?? "").toLowerCase().replace(/^the\s+/, "").trim();
@@ -103,6 +116,10 @@ export function selectConnection(connections, target) {
     }
   }
 
+  if (unbonded) {
+    const open = active.filter(c => !c.bonded);
+    return open.length === 1 ? open[0] : null;
+  }
   const bonded = active.filter(c => c.bonded);
   if (bonded.length === 1) return bonded[0];
   return active.length === 1 ? active[0] : null;
