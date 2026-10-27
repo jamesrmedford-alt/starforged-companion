@@ -23,7 +23,11 @@ rejected.
   started in, and a recording run stores the step on every exchange. A call
   takes its own step's recording of its kind before any word matching, so a
   prompt edit no longer costs its reply; cross-step matching (permissive
-  only) keeps the half-the-words floor.
+  only) keeps the half-the-words floor. Timing is not assumed: before a
+  strict step is checked, the runner waits (up to 20 s) for its required
+  calls, and the optional ones its recording made there, to start — the
+  first strict CI runs passed on one runner and failed on a slower one that
+  fired the passes' 2 s timers after the 4 s quiet window.
 - **Contracts, not fingerprints, are the gate.** A contract fails even when
   a recorded reply answered the call, so data the prompt lost can't hide
   behind a canned reply. A change in a recording's prompt sections (its

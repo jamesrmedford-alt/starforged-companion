@@ -37,7 +37,9 @@
 //
 // Strict scenarios declare, per step, the calls the step must make (`calls`,
 // each with an optional prompt contract) and the ones it may make
-// (`optionalCalls`, plus the scenario's own list). checkStep() then fails a
+// (`optionalCalls`, plus the scenario's own list). waitForCalls() gives a slow
+// page time to start a step's calls (its required ones, and the optional ones
+// its recording made there); checkStep() then fails a
 // required call that never happened (MISSING), was answered by the stub
 // (UNRECORDED), or lacks what its contract requires (CONTRACT), and a call
 // nothing declared (UNEXPECTED). Drift that is not declared fails; drift that
@@ -422,6 +424,27 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
 
     /** The step the calls starting from now belong to. */
     setStep(id) { step = id; },
+
+    /**
+     * Wait until step `id` has started the calls it is expected to make (or
+     * `timeoutMs` passes): each required call, and each optional kind as
+     * often as the recording has it in this step. A slow page fires the
+     * background passes' 2 s timers late; checking before they start would
+     * report a required call MISSING, and an optional one that then starts
+     * in the next step UNEXPECTED there. Returns whether all of them started.
+     */
+    async waitForCalls(id, { calls = [], optionalCalls = [] } = {}, alsoOptional = [], { timeoutMs = 20_000 } = {}) {
+      const need = new Map();
+      for (const c of calls) need.set(c.kind, (need.get(c.kind) ?? 0) + 1);
+      for (const kind of new Set([...optionalCalls, ...alsoOptional])) {
+        const recordedHere = exchanges.filter(x => x.step === id && x.kind === kind).length;
+        need.set(kind, Math.max(need.get(kind) ?? 0, recordedHere));
+      }
+      const started = () => [...need].every(([kind, n]) => requests.filter(r => r.step === id && r.kind === kind).length >= n);
+      const deadline = Date.now() + timeoutMs;
+      while (!started() && Date.now() < deadline) await new Promise(r => setTimeout(r, 200));
+      return started();
+    },
 
     /** Wait until no call is in flight and none started for `quietMs`. */
     async idle({ quietMs = 2500, timeoutMs = 60_000 } = {}) {

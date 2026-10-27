@@ -187,15 +187,18 @@ fact block, detection and draft cards, End and Begin a Session.
   `sectionLacks` text within a section, `contains` text anywhere) and
   `optionalCalls` (kinds allowed in that step; the scenario's own
   `optionalCalls` apply to every step). After each step, before its checks,
-  the runner fails the step on a required call that is `MISSING`,
-  `UNRECORDED` (the stub answered it) or breaks its `CONTRACT`, and on an
-  `UNEXPECTED` call nothing declared; an optional call is logged
-  `OPTIONAL`. A contract fails even when a recorded reply answered the call,
-  so the prompt can't lose data a canned reply would paper over. STALE stays
-  a warning: a prompt change does not need a key to merge unless it breaks
-  a contract. first-session is strict; `tests/unit/playthroughReplay.test.js`
-  checks its declarations against its recording on every PR, no Foundry
-  needed.
+  the runner waits (up to 20 s) until the step's required calls — and the
+  optional ones its recording made in that step — have started, then for
+  4 s with no call: a slow runner fires the passes' 2 s timers late (CI run
+  245 reported them `MISSING`). It then fails the step on a required call
+  that is `MISSING`, `UNRECORDED` (the stub answered it) or breaks its
+  `CONTRACT`, and on an `UNEXPECTED` call nothing declared; an optional call
+  is logged `OPTIONAL`. A contract fails even when a recorded reply
+  answered the call, so the prompt can't lose data a canned reply would
+  paper over. STALE stays a warning: a prompt change does not need a key to
+  merge unless it breaks a contract. first-session is strict;
+  `tests/unit/playthroughReplay.test.js` checks its declarations against its
+  recording on every PR, no Foundry needed.
 - **Scenarios are data** (`playthroughs/*.json`): the seed (PC, sector,
   ship, settlements, where they are, and optionally a sector map — a flagged
   scene with a pin per settlement and the ship's token on one), the settings

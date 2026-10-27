@@ -178,6 +178,48 @@ describe('strict replay fails what a permissive replay only reported', () => {
     expect(report.variations).toEqual([expect.stringMatching(/^OPTIONAL callHaiku>defaultCallTierAPI \(call #2\) in step "open" — stub$/)]);
   });
 
+  it('a slow page: a strict step waits until its required calls have started (CI run 245)', async () => {
+    const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
+    const gather = SCENARIO.steps[1];
+    harness.setStep('gather');
+    // The step's calls start late — the passes' timers fire after the action returned.
+    gather.calls.forEach((call, k) => setTimeout(() => { harness.send(call.kind, { system: promptFor(call) }); }, 60 * (k + 1)));
+    await expect(harness.waitForCalls('gather', gather, [], { timeoutMs: 2_000 })).resolves.toBe(true);
+    await harness.idle({ quietMs: 50 });
+    expect(harness.checkStep('gather', gather, []).failures).toEqual([]);
+
+    // A required call that never starts: the wait gives up, and the check names it.
+    harness.setStep('drag-home');
+    await expect(harness.waitForCalls('drag-home', SCENARIO.steps[6], [], { timeoutMs: 300 })).resolves.toBe(false);
+    expect(harness.checkStep('drag-home', SCENARIO.steps[6], []).failures).toHaveLength(2);
+  });
+
+  it('and for the optional calls its recording made in that step, so they do not start in the next one', async () => {
+    const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
+    const open = SCENARIO.steps[0];
+    harness.setStep('open');
+    await harness.send(open.calls[0].kind, { system: promptFor(open.calls[0]) });
+    let tierStarted = false;
+    setTimeout(() => { tierStarted = true; harness.send('callHaiku>defaultCallTierAPI', { user: 'galley' }); }, 300);
+    await expect(harness.waitForCalls('open', open, [], { timeoutMs: 2_000 })).resolves.toBe(true);
+    expect(tierStarted).toBe(true);
+    expect(harness.checkStep('open', open, []).variations).toEqual([
+      expect.stringMatching(/^OPTIONAL callHaiku>defaultCallTierAPI \(call #2\) in step "open" — recording #2$/),
+    ]);
+  });
+
+  it('an optional kind the recording did not make in that step is not waited for', async () => {
+    const recording = structuredClone(RECORDING);
+    recording.exchanges = recording.exchanges.filter(x => !(x.step === 'open' && x.kind === 'callHaiku>defaultCallTierAPI'));
+    const harness = harnessFor({ mode: 'replay', recording, strict: true });
+    const open = SCENARIO.steps[0];
+    harness.setStep('open');
+    await harness.send(open.calls[0].kind, { system: promptFor(open.calls[0]) });
+    const t0 = Date.now();
+    await expect(harness.waitForCalls('open', open, [], { timeoutMs: 5_000 })).resolves.toBe(true);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+
   it('calls before the first step or after the last are UNEXPECTED unless the scenario allows them', async () => {
     const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
     await harness.send('callHaiku>defaultCallTierAPI', { user: 'setup' });

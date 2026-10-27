@@ -678,7 +678,10 @@ async function runScenario(browser, scenario) {
       // Let the passes a step schedules (detection, tier updates, summaries —
       // 2 s after a narration) land before checking: a negative check passes
       // vacuously while they are still pending, and a strict step's calls are
-      // counted once they have all started.
+      // counted once they have all started. A slow runner fires those timers
+      // late (CI run 245), so a strict step first waits for the calls it
+      // expects to start.
+      if (strict) await harness.waitForCalls(id, step, optional, { timeoutMs: CHECK_MS });
       await harness.idle({ quietMs: 4000 });
       const report = strict ? checkCalls(id, step) : null;
       for (const check of step.then ?? []) await runCheck(ctx, check);
