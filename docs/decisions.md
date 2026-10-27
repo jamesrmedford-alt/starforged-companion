@@ -667,10 +667,15 @@ and performed by a handler on the canonical GM:
   the relay path. Payloads are plain JSON; handlers re-validate and clamp them
   and take effect values from the GM-authored card, not the payload.
 - Every action runs through **one serialised queue** on the GM, released in a
-  `finally`; a predecessor that never settles is waited on for at most
-  `GM_ACTION_TIMEOUT_MS` (60 s, warned). Handlers' campaignState
-  read-modify-writes therefore never interleave. A handler must not call
-  `requestGmAction` itself — it would queue behind its own caller. **The
+  `finally`; a predecessor that never settles is waited on for at most its run
+  budget (warned), counted from when it started running: `GM_ACTION_TIMEOUT_MS`
+  (60 s), or `GM_CLAUDE_ACTION_TIMEOUT_MS` (two bounded Claude requests, 270 s)
+  for a kind marked `claude: true` — issue #300 F15: the flat 60 s cap was
+  shorter than one Claude request, so an ordinary slow narration let the
+  action behind it run alongside it, and a backlog behind one slow action
+  timed out together. Handlers' campaignState read-modify-writes therefore
+  never interleave. A handler must not call `requestGmAction` itself — it
+  would queue behind its own caller. **The
   X-Card is the exception:** `xcard.activate` runs the moment it arrives —
   queued behind a Claude-calling handler (an oracle follow-up, a burn
   re-narration, End a Session's summary) it waited up to 60 s while the

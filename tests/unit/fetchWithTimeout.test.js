@@ -103,3 +103,54 @@ describe('fetchWithTimeout — AbortController absent', () => {
     }
   });
 });
+
+// Issue #300 F06: fetch() resolves at the response headers, and the helper
+// cleared its timer there — a body that stalled after the headers left the
+// caller's res.json() waiting forever. The deadline now covers the body.
+describe('fetchWithTimeout — the deadline covers the body', () => {
+  it('rejects a body read that stalls past timeoutMs', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: () => new Promise(() => {}) }));
+
+    const res = await fetchWithTimeout('https://api.example.com/x', {}, { timeoutMs: 5000, label: 'Slow body' });
+    const read = expect(res.json()).rejects.toThrow(/Slow body timed out after 5s/);
+    await vi.advanceTimersByTimeAsync(5000);
+    await read;
+  });
+
+  it('stops a real Response whose stream never ends', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stalled = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('{"partial":')); } });
+    globalThis.fetch = vi.fn(async () => new Response(stalled, { status: 200 }));
+
+    const res = await fetchWithTimeout('https://api.example.com/x', {}, { timeoutMs: 1000, label: 'Stream' });
+    const read = expect(res.text()).rejects.toThrow(/Stream timed out after 1s/);
+    await vi.advanceTimersByTimeAsync(1000);
+    await read;
+  });
+
+  it('a body read in time is returned, and the deadline is cleared', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+
+    const res = await fetchWithTimeout('https://api.example.com/x', {}, { timeoutMs: 5000 });
+    expect(await res.json()).toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a caller of the Anthropic proxy gets the timeout, not a hang', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: () => new Promise(() => {}) }));
+    const { apiPost } = await import('../../src/api-proxy.js');
+
+    const call = expect(apiPost('https://api.anthropic.com/v1/messages', { 'x-api-key': 'sk-ant-x' }, {}))
+      .rejects.toThrow(/Anthropic request timed out after 120s/);
+    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+    await call;
+  });
+});

@@ -273,8 +273,10 @@ lives in the matching `docs/flows/*-flow.md` maps.
   played in that window says "Scene paused" without being recorded. Relayed
   card buttons re-arm after 15 s if the card isn't marked used.
 - **One serialised GM queue.** A long handler (an oracle follow-up's Claude
-  call, End a Session's summary) delays later relays until it settles or 60 s
-  pass. The X-Card is exempt — it runs the moment it reaches the GM.
+  call, End a Session's summary) delays later relays until it settles — or,
+  if it hangs, until its run budget passes (60 s; 270 s for a handler that
+  awaits a Claude call, which covers its bounded requests: issue #300 F15).
+  The X-Card is exempt — it runs the moment it reaches the GM.
 - **Session vignettes need a keyed GM.** The Begin / End a Session galley and
   closing vignettes run inside the canonical-GM relay handlers, so at a
   keyless-GM table they are skipped (a player's key isn't used).

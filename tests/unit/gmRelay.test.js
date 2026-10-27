@@ -21,6 +21,7 @@ import {
   GM_RELAY_KIND_PREFIX,
   GM_RELAY_READY_KIND,
   GM_ACTION_TIMEOUT_MS,
+  GM_CLAUDE_ACTION_TIMEOUT_MS,
   hasActiveGM,
   requestGmAction,
   registerGmRelaySocket,
@@ -31,6 +32,8 @@ import {
 } from '../../src/multiplayer/gmRelay.js';
 import * as safety from '../../src/context/safety.js';
 import * as sessionDialogs from '../../src/safety/sessionDialogs.js';
+import * as oracleFollowup from '../../src/oracles/oracleFollowup.js';
+import { DEFAULT_TIMEOUT_MS } from '../../src/net/fetchWithTimeout.js';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -51,6 +54,15 @@ beforeEach(() => {
 });
 
 describe('GM_ACTIONS wiring contract', () => {
+  // Issue #300 F15: a handler that awaits a Claude call gets the longer queue
+  // budget. Pinned, so marking (or unmarking) a kind is a deliberate change.
+  it('marks the handlers that await a Claude call, and their budget covers two bounded requests', () => {
+    const claudeKinds = Object.keys(GM_ACTIONS).filter(k => GM_ACTIONS[k].claude).sort();
+    expect(claudeKinds).toEqual(['move.burnMomentum', 'move.improveResult', 'oracle.narrate', 'session.begin', 'session.end']);
+    expect(GM_CLAUDE_ACTION_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_TIMEOUT_MS);
+    expect(GM_ACTION_TIMEOUT_MS).toBeLessThan(GM_CLAUDE_ACTION_TIMEOUT_MS);
+  });
+
   it('declares the one-shot card-button kinds', () => {
     for (const kind of ['milestone.pick', 'connection.pick', 'fightVow.markMilestone', 'fightVow.deepenBond']) {
       expect(GM_ACTIONS[kind], kind).toBeDefined();
@@ -246,6 +258,80 @@ describe('runGmAction — serialised on the GM', () => {
       await vi.advanceTimersByTimeAsync(2);
       await expect(b).resolves.toBe('after');
       expect(getCapturedWarns().some(w => /still running after .* running "safety.setFlag" anyway/.test(w))).toBe(true);
+      spy.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Issue #300 F15: the cap was a flat 60 s — shorter than one Claude request
+  // (DEFAULT_TIMEOUT_MS, 120 s) — so an ordinary slow narration let the action
+  // behind it run alongside it, and every action queued behind one slow action
+  // timed out together.
+  it('a Claude-calling action ahead is waited on for its own, longer budget', async () => {
+    vi.useFakeTimers();
+    try {
+      setUsers([GM, PLAYER], 'gm-1');
+      const narration = deferred();
+      const followup = vi.spyOn(oracleFollowup, 'narrateOracleFollowupOnGm').mockImplementationOnce(() => narration.promise);
+      const flag = vi.spyOn(sessionDialogs, 'applySafetyFlag').mockResolvedValueOnce('flag');
+      const a = runGmAction('oracle.narrate', {});
+      const b = runGmAction('safety.setFlag', {});
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS + 1);   // past the old cap and one request's deadline
+      expect(flag).not.toHaveBeenCalled();
+      narration.resolve('text');
+      await expect(a).resolves.toBe('text');
+      await expect(b).resolves.toBe('flag');
+      expect(getCapturedWarns().some(w => /still running after/.test(w))).toBe(false);
+      followup.mockRestore();
+      flag.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a Claude-calling action that never settles is still passed, after GM_CLAUDE_ACTION_TIMEOUT_MS', async () => {
+    vi.useFakeTimers();
+    try {
+      setUsers([GM, PLAYER], 'gm-1');
+      const followup = vi.spyOn(oracleFollowup, 'narrateOracleFollowupOnGm').mockImplementationOnce(() => new Promise(() => {}));
+      const flag = vi.spyOn(sessionDialogs, 'applySafetyFlag').mockResolvedValueOnce('after');
+      void runGmAction('oracle.narrate', {});
+      const b = runGmAction('safety.setFlag', {});
+      await vi.advanceTimersByTimeAsync(GM_CLAUDE_ACTION_TIMEOUT_MS - 1);
+      expect(flag).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      await expect(b).resolves.toBe('after');
+      expect(getCapturedWarns().some(w => w.includes(
+        `("oracle.narrate") is still running after ${GM_CLAUDE_ACTION_TIMEOUT_MS}ms — running "safety.setFlag" anyway`,
+      ))).toBe(true);
+      followup.mockRestore();
+      flag.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a backlog behind a hung action still runs one at a time — each budget counts from when that action starts', async () => {
+    vi.useFakeTimers();
+    try {
+      setUsers([GM, PLAYER], 'gm-1');
+      const order = [];
+      const second = deferred();
+      const spy = vi.spyOn(sessionDialogs, 'applySafetyFlag')
+        .mockImplementationOnce(() => new Promise(() => {}))   // hangs forever
+        .mockImplementationOnce(async () => { order.push('b:start'); await second.promise; order.push('b:end'); })
+        .mockImplementationOnce(async () => { order.push('c'); });
+      void runGmAction('safety.setFlag', {});
+      const b = runGmAction('safety.setFlag', {});
+      const c = runGmAction('safety.setFlag', {});
+      await vi.advanceTimersByTimeAsync(GM_ACTION_TIMEOUT_MS + 1);
+      expect(order).toEqual(['b:start']);   // b passed the hung action; c waits for b, not alongside it
+      await vi.advanceTimersByTimeAsync(GM_ACTION_TIMEOUT_MS / 2);
+      expect(order).toEqual(['b:start']);
+      second.resolve();
+      await Promise.all([b, c]);
+      expect(order).toEqual(['b:start', 'b:end', 'c']);
       spy.mockRestore();
     } finally {
       vi.useRealTimers();
