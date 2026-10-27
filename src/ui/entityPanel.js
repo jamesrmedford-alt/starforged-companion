@@ -1091,7 +1091,51 @@ export class EntityPanelApp extends ApplicationV2 {
       if (instance.#selectedId === doc.id) instance.#selectedId = null;
       instance.render();
     });
+
+    // Five of the seven entity types — connection, ship, settlement, planet,
+    // location — are hosted on Actors (registry.js HOST_COLLECTION): their
+    // records, names and ship impacts change on Actor documents, which the
+    // journal hooks above never see (issue #300 F12).
+    Hooks.on('createActor', (actor) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered || !isEntityActor(actor)) return;
+      instance.render();
+    });
+
+    Hooks.on('updateActor', (actor, change) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered || !actorUpdateShowsInPanel(actor, change)) return;
+      instance.render();
+    });
+
+    Hooks.on('deleteActor', (actor) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered) return;
+      const wasSelected = !!actor?.id && instance.#selectedId === actor.id;
+      if (wasSelected) instance.#selectedId = null;
+      if (wasSelected || isEntityActor(actor)) instance.render();
+    });
   }
+}
+
+/** True when an Actor hosts a record of one of the panel's entity types. */
+function isEntityActor(actor) {
+  return Object.keys(ENTITY_TYPES).some(typeKey => !!readEntityFlag(typeKey, actor));
+}
+
+/**
+ * Whether an Actor update changes what the panel shows: an entity record
+ * flag set, edited or removed; or, on an entity Actor, its name (the host
+ * name wins over the record's) or a ship's impacts (read from its sheet).
+ */
+function actorUpdateShowsInPanel(actor, change) {
+  if (!change || typeof change !== 'object') return false;
+  const has = (path) => foundry.utils.hasProperty(change, path);
+  const touchesRecord = Object.keys(ENTITY_TYPES).some(typeKey =>
+    has(`flags.${MODULE_ID}.${typeKey}`) || has(`flags.${MODULE_ID}.-=${typeKey}`));
+  if (touchesRecord) return true;
+  if (!isEntityActor(actor)) return false;
+  return has('name') || has('system.debility');
 }
 
 /**
