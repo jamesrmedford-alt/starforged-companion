@@ -54,7 +54,7 @@ const ONE_SIDED = {
 /** The merge policies: every name they list must be a live field. */
 const FIELD_LISTS = [
   ['src/moves/persistResolution.js',          'STORE_OWNED_FIELDS'],
-  ['src/moves/persistResolution.js',          'ENTITY_ID_LISTS'],
+  ['src/entities/registry.js',                'ENTITY_ID_LISTS'],
   ['src/factContinuity/sceneLifecycle.js',    'SCENE_FIELDS'],
   ['src/safety/sessionLifecycleDialogs.js',   'END_SESSION_FIELDS'],
   ['src/narration/narrator.js',               'SIDECAR_FIELDS'],

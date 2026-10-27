@@ -28,6 +28,10 @@
  * (requestGmAction("move.improveResult", { messageId })) because a player
  * cannot update the GM-authored move card's `consumed` flag; the GM-side
  * applyImproveFromRelay is the authoritative idempotency check.
+ *
+ * Like the burn, the button opens only once the pipeline has recorded the
+ * original outcome (`originalApplied`), and an improvement and a burn are
+ * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
 import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
@@ -37,6 +41,10 @@ import {
   supersedeOriginalNarration,
   relayCardButtonClick,
   requesterOwnsActor,
+  claimResultUpgrade,
+  releaseResultUpgrade,
+  resultUpgradeBlocker,
+  UPGRADE_PENDING_TITLE,
 } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
@@ -44,10 +52,6 @@ const MODULE_ID = "starforged-companion";
 // narrate / persist injected by registerImproveResultHook (src/index.js), kept
 // at module scope for the GM-side relay handler.
 let _deps = { narrate: null, persist: null };
-
-// Move-card ids whose improvement is being applied on this (canonical GM)
-// client — blocks a near-simultaneous second click before `consumed` lands.
-const _inFlight = new Set();
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,7 +144,8 @@ export function registerImproveResultHook({ narrate, persist } = {}) {
   _deps = { narrate: narrate ?? null, persist: persist ?? null };
 
   onChatMessageRender((message, root) => {
-    const improve = message?.flags?.[MODULE_ID]?.improve;
+    const flags   = message?.flags?.[MODULE_ID] ?? {};
+    const improve = flags.improve;
     if (!improve?.canImprove) return;
 
     const btn = root.querySelector('[data-action="sf-improve-result"]');
@@ -149,6 +154,18 @@ export function registerImproveResultHook({ narrate, persist } = {}) {
     if (improve.consumed) {
       btn.disabled    = true;
       btn.textContent = "✦ Improved to Strong Hit";
+      return;
+    }
+    const blocker = resultUpgradeBlocker(improve, flags.burn);
+    if (blocker === "already-upgraded") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — momentum was already burned";
+      return;
+    }
+    if (blocker === "original-pending") {
+      // Re-rendered with the button live once the pipeline stamps the card.
+      btn.disabled = true;
+      btn.title    = UPGRADE_PENDING_TITLE;
       return;
     }
 
@@ -198,14 +215,21 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | improveResult: move card ${messageId ?? "?"} not found — not applied.`);
     return { applied: false, reason: "no-message" };
   }
-  const improve = message.flags?.[MODULE_ID]?.improve;
+  const flags   = message.flags?.[MODULE_ID] ?? {};
+  const improve = flags.improve;
   if (!improve?.canImprove) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} offers no improvement — ignoring.`);
     return { applied: false, reason: "not-improvable" };
   }
-  if (improve.consumed || _inFlight.has(messageId)) {
+  if (improve.consumed) {
     console.debug(`${MODULE_ID} | improveResult: card ${messageId} already improved — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
+  }
+  const blocker = resultUpgradeBlocker(improve, flags.burn);
+  if (blocker) {
+    console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${blocker === "original-pending"
+      ? "the original outcome is not recorded yet" : "momentum was already burned"}; improvement refused.`);
+    return { applied: false, reason: blocker };
   }
   const actor = getActor(improve.actorId);
   if (actor && !requesterOwnsActor(actor, ctx)) {
@@ -213,11 +237,14 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "not-owner" };
   }
 
-  _inFlight.add(messageId);
+  if (!claimResultUpgrade(messageId)) {
+    console.debug(`${MODULE_ID} | improveResult: card ${messageId} is already being upgraded — ignoring repeat click.`);
+    return { applied: false, reason: "already-consumed" };
+  }
   try {
     return await handleImproveClick(message, _deps);
   } finally {
-    _inFlight.delete(messageId);
+    releaseResultUpgrade(messageId);
   }
 }
 
@@ -265,18 +292,14 @@ async function handleImproveClick(message, { narrate, persist }) {
 }
 
 /**
- * Reverse the original outcome's meter consequences (if they were applied)
- * and apply the strong-hit consequences. No momentum reset — unlike burn, the
- * dice don't change; only the outcome does.
+ * Swap the recorded original outcome's meter consequences for the strong-hit
+ * ones (an improvement is accepted only once the original is on the sheet).
+ * No momentum reset — unlike burn, the dice don't change; only the outcome
+ * does.
  */
 async function applyImproveMeterDeltas({ actor, improve, newConsequences }) {
-  const applied = !!improve.originalApplied;
-  const orig    = improve.originalConsequences ?? {};
-  const delta   = (k) => {
-    const newVal = Number(newConsequences[k] ?? 0);
-    const oldVal = Number(orig[k] ?? 0);
-    return applied ? (newVal - oldVal) : newVal;
-  };
+  const orig  = improve.originalConsequences ?? {};
+  const delta = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
   await applyMeterChanges(actor, {
     momentum: delta("momentumChange"),
     health:   delta("healthChange"),

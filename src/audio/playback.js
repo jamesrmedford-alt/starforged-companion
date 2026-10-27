@@ -125,6 +125,13 @@ function _createBlobAudioAdapter(src) {
  * One playback session per chat card. Sequentially plays an array of
  * `{ voice, src, text }` segments where `src` is a path or URL the
  * Foundry Sound class can load.
+ *
+ * One sequencing loop owns the segment cursor (issue #300): resume plays the
+ * paused sound on and lets the loop that started it carry on — a second
+ * continuation used to start the next two segments at once (F08). Each play
+ * from the top takes a new generation, and stop() ends the current one, so a
+ * sound that finishes loading after a stop, or after another card took over
+ * playback, is never played (F09).
  */
 export class PlaybackSession {
   /**
@@ -145,6 +152,8 @@ export class PlaybackSession {
     this._currentIdx  = 0;
     this._currentSound = null;
     this._stopped     = false;
+    this._generation  = 0;
+    this._run         = null;   // the sequencing loop's promise — settles when the session ends
   }
 
   get state() { return this._state; }
@@ -158,25 +167,25 @@ export class PlaybackSession {
     // Stop any other session before we make a sound — prevents overlap.
     _claimActivePlayback(this);
     if (this._state === PLAYBACK_STATE.PAUSED && this._currentSound) {
+      // The loop that started this segment still waits for its end and
+      // carries on from there — resuming adds no continuation of its own.
       this._setState(PLAYBACK_STATE.PLAYING);
       try {
         if (typeof this._currentSound.play === "function") {
           await this._currentSound.play({ volume: this.volume });
         }
-        return this._resumeAfterCurrent();
       } catch (err) {
         return this._fail(err);
       }
+      return this._run;
     }
 
     this._stopped = false;
     this._currentIdx = 0;
+    const generation = ++this._generation;
     this._setState(PLAYBACK_STATE.LOADING);
-    try {
-      await this._playFromCurrent();
-    } catch (err) {
-      this._fail(err);
-    }
+    this._run = this._playFromCurrent(generation).catch(err => this._fail(err));
+    return this._run;
   }
 
   async pause() {
@@ -191,6 +200,7 @@ export class PlaybackSession {
 
   async stop() {
     this._stopped = true;
+    this._generation++;   // a load still in flight must not start playing
     this._setState(PLAYBACK_STATE.STOPPED);
     if (this._currentSound && typeof this._currentSound.stop === "function") {
       try { await this._currentSound.stop(); } catch (err) {
@@ -201,30 +211,28 @@ export class PlaybackSession {
     _releaseActivePlayback(this);
   }
 
-  async _playFromCurrent() {
-    if (this._stopped) return;
-    while (this._currentIdx < this.segments.length) {
-      if (this._stopped) return;
-      const seg = this.segments[this._currentIdx];
-      this._currentSound = await this._createSound(seg.src);
+  async _playFromCurrent(generation) {
+    const current = () => !this._stopped && generation === this._generation;
+    while (current() && this._currentIdx < this.segments.length) {
+      const seg   = this.segments[this._currentIdx];
+      const sound = await this._createSound(seg.src);
+      if (!current()) {
+        // Stopped, or replayed from the top, while this loaded: never play it.
+        try { await sound?.stop?.(); } catch (err) {
+          console.debug?.(`${MODULE_ID} | playback: stopping a stale sound failed:`, err?.message ?? err);
+        }
+        return;
+      }
+      this._currentSound = sound;
       this._setState(PLAYBACK_STATE.PLAYING);
-      await this._playOneSound(this._currentSound);
+      await this._playOneSound(sound);
+      if (!current()) return;
       this._currentIdx++;
     }
-    if (!this._stopped) {
+    if (current()) {
       this._setState(PLAYBACK_STATE.IDLE);
       _releaseActivePlayback(this);
     }
-  }
-
-  _resumeAfterCurrent() {
-    return new Promise((resolve, reject) => {
-      const onEnd = () => {
-        this._currentIdx++;
-        this._playFromCurrent().then(resolve, reject);
-      };
-      this._currentSound?.addEventListener?.("end", onEnd, { once: true });
-    });
   }
 
   async _createSound(src) {

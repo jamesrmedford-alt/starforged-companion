@@ -202,7 +202,9 @@ the reachability failure on the write side.
   re-arms the button when the click is not delivered (`relayCardAction`). A
   local `disabled` is not a guard — another client, or a re-render, re-arms it.
 - Never call `requestGmAction` from inside a handler on the canonical GM: the
-  nested action queues behind its own caller until `GM_ACTION_TIMEOUT_MS`.
+  nested action queues behind its own caller until the caller's run budget
+  (`GM_ACTION_TIMEOUT_MS`, or `GM_CLAUDE_ACTION_TIMEOUT_MS` for a `claude: true`
+  kind) runs out.
 - **Changing *where* code runs needs this audit.** Before the 2026-10 audit
   every client ran every chat command, so the GM's client re-ran a player's
   `!bond`, `!truth`, Set a Flag, … with GM authority and its own dice — those

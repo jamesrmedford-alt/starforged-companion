@@ -467,6 +467,10 @@ export const CampaignStateSchema = {
   // Wall-clock ISO of the last beginSession() call. Powers the panel's
   // "active for N minutes" display and the session-vignette anchor.
   sessionActiveStartedAt: null,
+  // The session whose start effects (Spotlight momentum, campaign clocks,
+  // galley vignette) Begin a Session already applied — they run once per
+  // session (issue #300 F11). Written and read by applyBeginSession.
+  sessionStartedId:     null,
 
   // End a Session spotlights: the vow and connection the
   // table wants to focus on next time. Written by applyEndSession, surfaced

@@ -16,9 +16,16 @@ import { isCanonicalGM } from "./gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 
-// Re-entrancy guard: the GM's sibling-writes must not cascade back through this
-// same updateActor hook. Supply is one shared value, so a single flag suffices.
-const _supplySyncInFlight = { active: false };
+// The canonical GM marks its sibling writes with this update option, so the
+// hook can tell its own mirror writes from independent changes.
+const MIRROR_OPTION = "sharedSupplyMirror";
+
+// A sync pass is writing siblings; `next` is the newest independent change
+// still to propagate. A change that lands mid-pass becomes the next pass
+// (from its live value) instead of being dropped (issue #300 F05) — a single
+// in-flight flag used to discard every supply update while a sync ran, so a
+// second edit during one never reached the other PCs.
+const _sync = { running: false, next: null };
 
 /** Read an actor's supply value (system.supply.value), or null if unreadable. */
 function supplyOf(actor) {
@@ -50,25 +57,33 @@ export function computeSupplySyncUpdates(source, allActors) {
 
 /**
  * Register the crew-shared supply sync. Single-writer via isCanonicalGM (the GM
- * holds write perms on every PC); a re-entrancy guard stops the sibling-writes
- * from cascading. Register once on ready (all clients; non-canonical no-op).
+ * holds write perms on every PC); its sibling writes carry an update option so
+ * they never cascade back through this hook, and independent changes that
+ * land mid-sync are queued, newest wins. Register once on ready (all clients;
+ * non-canonical no-op).
  */
 export function registerSharedSupplyHook() {
   if (registerSharedSupplyHook._installed) return;
   registerSharedSupplyHook._installed = true;
-  Hooks.on("updateActor", async (actor, change) => {
+  Hooks.on("updateActor", async (actor, change, options) => {
     try {
       if (!isCanonicalGM()) return;
       if (!isPlayerCharacterActor(actor)) return;
       if (change?.system?.supply?.value === undefined) return;  // only supply changes
-      if (_supplySyncInFlight.active) return;                   // sibling-write cascade guard
-      _supplySyncInFlight.active = true;
+      if (options?.[MODULE_ID]?.[MIRROR_OPTION]) return;        // our own sibling write
+      _sync.next = actor;
+      if (_sync.running) return;                                // the running pass picks it up
+      _sync.running = true;
       try {
-        for (const u of computeSupplySyncUpdates(actor, getPlayerActors())) {
-          await u.actor.update({ "system.supply.value": u.value });
+        while (_sync.next) {
+          const source = _sync.next;
+          _sync.next = null;
+          for (const u of computeSupplySyncUpdates(source, getPlayerActors())) {
+            await u.actor.update({ "system.supply.value": u.value }, { [MODULE_ID]: { [MIRROR_OPTION]: true } });
+          }
         }
       } finally {
-        _supplySyncInFlight.active = false;
+        _sync.running = false;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | shared-supply sync failed:`, err?.message ?? err);

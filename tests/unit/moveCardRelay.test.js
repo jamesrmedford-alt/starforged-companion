@@ -142,6 +142,9 @@ function improveCard(id = "m-imp") {
   });
 }
 
+const NARRATION_MODEL = "claude-sonnet-4-5-20250929";   // narrationModel default
+const NARRATION_REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
+
 const narrate = vi.fn(async () => {});
 const persist = vi.fn(async () => {});
 
@@ -236,6 +239,56 @@ describe("applyBurnFromRelay", () => {
     expect(getCapturedWarns().some(w => /burn refused/.test(w))).toBe(true);
   });
 
+  // Issue #300 F02: a burn applied before the pipeline recorded the original
+  // outcome was followed by that persist, stacking both outcomes.
+  it("refuses while the original outcome is not recorded yet", async () => {
+    const pc   = installPc();
+    const card = burnCard();
+    card.flags[MODULE_ID].burn.originalApplied = false;
+    installMessages(card);
+
+    const res = await applyBurnFromRelay({ messageId: "m-burn" }, OWNER_CTX);
+
+    expect(res).toEqual({ applied: false, reason: "original-pending" });
+    expect(pc._updateHistory).toHaveLength(0);
+    expect(card.update).not.toHaveBeenCalled();
+  });
+
+  it("burns the momentum the PC holds now, not the card's stale preview", async () => {
+    const pc   = installPc("pc-burn", 1);   // the card previews 8; the sheet says 1
+    const card = burnCard();
+    installMessages(card);
+
+    const res = await applyBurnFromRelay({ messageId: "m-burn" }, OWNER_CTX);
+
+    expect(res).toEqual({ applied: false, reason: "no-improvement" });
+    expect(pc._updateHistory).toHaveLength(0);
+    expect(card.flags[MODULE_ID].burn.consumed).toBeFalsy();
+  });
+
+  it("is refused once the result was improved, and an improvement once momentum was burned", async () => {
+    const pc   = installPc();
+    const card = makeCard("m-both", {
+      burn:    { ...burnCard().flags[MODULE_ID].burn },
+      improve: { ...improveCard().flags[MODULE_ID].improve },
+    });
+    installMessages(card);
+
+    expect(await applyImproveFromRelay({ messageId: "m-both" }, OWNER_CTX)).toEqual({ applied: true });
+    const writes = pc._updateHistory.length;
+    expect(await applyBurnFromRelay({ messageId: "m-both" }, OWNER_CTX)).toEqual({ applied: false, reason: "already-upgraded" });
+    expect(pc._updateHistory).toHaveLength(writes);
+
+    const other = makeCard("m-both-2", {
+      burn:    { ...burnCard().flags[MODULE_ID].burn },
+      improve: { ...improveCard().flags[MODULE_ID].improve },
+    });
+    installMessages(other);
+    installPc();
+    expect(await applyBurnFromRelay({ messageId: "m-both-2" }, OWNER_CTX)).toEqual({ applied: true });
+    expect(await applyImproveFromRelay({ messageId: "m-both-2" }, OWNER_CTX)).toEqual({ applied: false, reason: "already-upgraded" });
+  });
+
   it("warns and stops when the card is gone", async () => {
     installMessages();
     const res = await applyBurnFromRelay({ messageId: "nope" }, GM_CTX);
@@ -282,6 +335,24 @@ describe("applyImproveFromRelay", () => {
     const res = await applyImproveFromRelay({ messageId: "m-imp" }, OTHER_CTX);
     expect(res).toEqual({ applied: false, reason: "not-owner" });
     expect(pc._updateHistory).toHaveLength(0);
+  });
+
+  it("refuses while the original outcome is not recorded yet (issue #300 F02)", async () => {
+    const pc   = installPc();
+    const card = improveCard();
+    card.flags[MODULE_ID].improve.originalApplied = false;
+    installMessages(card);
+    const res = await applyImproveFromRelay({ messageId: "m-imp" }, OWNER_CTX);
+    expect(res).toEqual({ applied: false, reason: "original-pending" });
+    expect(pc._updateHistory).toHaveLength(0);
+  });
+
+  it("swaps the recorded original's meters for the strong hit's", async () => {
+    const pc = installPc("pc-burn", 5);
+    installMessages(improveCard());
+    await applyImproveFromRelay({ messageId: "m-imp" }, OWNER_CTX);
+    // Gather Information: weak hit +1 momentum is on the sheet; strong hit is +2.
+    expect(pc.system.momentum.value).toBe(6);
   });
 });
 
@@ -377,14 +448,19 @@ describe("across a booted table", () => {
   }, 30_000);
   afterAll(() => table?.teardown());
 
-  /** Pat (pl-1) narrates a Face Danger; the GM's pipeline posts the move card. */
-  async function rollWeakHit() {
+  /**
+   * Pat (pl-1) narrates a Face Danger; the GM's pipeline posts the move card.
+   * `beforeChat` runs after the table reset (which clears table.claude's
+   * responder) and before the narration — e.g. to hold the narrator's reply.
+   */
+  async function rollWeakHit({ beforeChat } = {}) {
     await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema, sessionActive: true } } } });
     await table.setClaudeKey("gm-1", "sk-ant-gina");
     pc = table.addActor({
       id: "pc-pat", name: "Kira", ownership: { "pl-1": 3 },
       system: { momentum: { value: 8, max: 10, min: -6, resetValue: 2 } },
     });
+    beforeChat?.();
     await table.client("pl-1").chat("I brace against the hull and push through the breach.", { speaker: { actor: "pc-pat" } });
     await table.settle();
     const cards = table.cards(f => f.moveResolution);
@@ -394,6 +470,21 @@ describe("across a booted table", () => {
 
   const flagsOf = (id) => table.world.message(id).flags[MODULE_ID];
   const momentumWrites = () => pc._updateHistory.filter(u => "system.momentum.value" in u);
+
+  /** Hold the GM's first narration call until the returned deferred resolves. */
+  function holdNarration() {
+    let release;
+    const held = new Promise((r) => { release = r; });
+    let taken = false;
+    table.claude.respond((call) => {
+      if (!taken && call.client === "gm-1" && call.model === NARRATION_MODEL) {
+        taken = true;
+        return held.then(() => NARRATION_REPLY);
+      }
+      return NARRATION_REPLY;
+    });
+    return { resolve: release };
+  }
 
   describe("Burn Momentum", () => {
     beforeEach(() => { pipeline.abilities = []; });
@@ -441,6 +532,38 @@ describe("across a booted table", () => {
       expect(momentumWrites()).toHaveLength(1);   // momentum is reset to a target, so a second burn writes nothing —
       expect(narrations() - before).toBe(1);      // but it re-narrates: the burned outcome is narrated once
       expect(flagsOf(card._id).burn.consumed).toBe(true);
+    });
+
+    // Issue #300 F02: a burn clicked while the narration was generated applied
+    // the strong hit, then the pipeline's persist added the weak hit on top.
+    it("waits for the original result to be recorded, then applies only the upgraded one", async () => {
+      let held;
+      const card = await rollWeakHit({ beforeChat: () => { held = holdNarration(); } });
+      expect(flagsOf(card._id).burn.originalApplied).toBe(false);
+
+      // The player's button is disabled while the narration is generated …
+      const btn = table.client("pl-1").render(card._id).querySelector('[data-action="sf-burn-momentum"]');
+      expect(btn.disabled).toBe(true);
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      // … and a burn relayed anyway (a stale screen) is refused on the GM.
+      const player = table.client("pl-1");
+      const relay = await player.import("../../src/multiplayer/gmRelay.js");
+      await player.run(() => relay.requestGmAction("move.burnMomentum", { messageId: card._id }));
+      await table.settle();
+      expect(momentumWrites()).toEqual([]);
+      expect(getCapturedWarns().some(w => /not recorded yet; burn refused/.test(w))).toBe(true);
+
+      held.resolve();
+      await table.settle();
+      expect(flagsOf(card._id).burn.originalApplied).toBe(true);
+      expect(table.client("pl-1").render(card._id).querySelector('[data-action="sf-burn-momentum"]').disabled).toBe(false);
+
+      table.client("pl-1").click(card._id, '[data-action="sf-burn-momentum"]');
+      await table.settle();
+      expect(pc.system.momentum.value).toBe(3);   // reset to 2, then +1 for the strong hit — nothing stacked on top
+      expect(momentumWrites()).toHaveLength(1);
+      // The original narration exists by the time the burn runs, so it is struck.
+      expect(table.cards(f => f.narratorCard && f.burnSuperseded)).toHaveLength(1);
     });
 
     it("a player who does not own the PC cannot burn its momentum", async () => {

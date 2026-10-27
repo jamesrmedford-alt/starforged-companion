@@ -16,7 +16,7 @@ import {
   derelictTypeTableFor,
   generateSectorSites,
   buildSiteLocationData,
-  selectSiteForReveal,
+  selectSectorSite,
 } from "../../src/sectors/precursorSites.js";
 
 // A deterministic rollOracle stub: returns a fixed result per table id.
@@ -190,30 +190,34 @@ describe("buildSiteLocationData", () => {
   });
 });
 
-// ── selectSiteForReveal ───────────────────────────────────────────────────────
+// ── selectSectorSite ──────────────────────────────────────────────────────────
 
-describe("selectSiteForReveal", () => {
+/** The ladder over one sector's discoveries — the site it picks, or null. */
+const pick = (sites, label, opts) =>
+  selectSectorSite([{ id: "sec", mapData: { discoveries: sites } }], label, opts)?.site ?? null;
+
+describe("selectSectorSite — the ladder within a sector", () => {
   const sites = () => [
     { id: "a", name: "Precursor Vault — Monument", type: "vault",    discovered: false },
     { id: "b", name: "Derelict Starship",          type: "derelict", discovered: false },
   ];
 
   it("returns null when there are no undiscovered sites", () => {
-    expect(selectSiteForReveal([], "vault")).toBeNull();
-    expect(selectSiteForReveal([{ id: "a", name: "X", discovered: true }], "x")).toBeNull();
+    expect(pick([], "vault")).toBeNull();
+    expect(pick([{ id: "a", name: "X", discovered: true }], "x")).toBeNull();
   });
 
   it("matches an exact name (case-insensitive, leading 'the' stripped)", () => {
-    expect(selectSiteForReveal(sites(), "the derelict starship")?.id).toBe("b");
+    expect(pick(sites(), "the derelict starship")?.id).toBe("b");
   });
 
   it("matches a substring in either direction", () => {
-    expect(selectSiteForReveal(sites(), "monument")?.id).toBe("a");
+    expect(pick(sites(), "monument")?.id).toBe("a");
   });
 
   it("falls back to a type keyword when one undiscovered site of that type exists", () => {
-    expect(selectSiteForReveal(sites(), "the vault")?.id).toBe("a");
-    expect(selectSiteForReveal(sites(), "that derelict")?.id).toBe("b");
+    expect(pick(sites(), "the vault")?.id).toBe("a");
+    expect(pick(sites(), "that derelict")?.id).toBe("b");
   });
 
   it("substring-matches the first candidate when the keyword is in several names", () => {
@@ -225,7 +229,7 @@ describe("selectSiteForReveal", () => {
       { id: "a", name: "Precursor Vault — Monument", type: "vault", discovered: false },
       { id: "c", name: "Precursor Vault — Vessel",   type: "vault", discovered: false },
     ];
-    expect(selectSiteForReveal(two, "vault")?.id).toBe("a");
+    expect(pick(two, "vault")?.id).toBe("a");
   });
 
   it("returns null for an ambiguous keyword with no name hit and several candidates", () => {
@@ -235,33 +239,73 @@ describe("selectSiteForReveal", () => {
     ];
     // "ghost" is in neither name and there are two derelicts, so neither the
     // substring rung nor the single-of-type fallback can pick one → null.
-    expect(selectSiteForReveal(two, "ghost")).toBeNull();
+    expect(pick(two, "ghost")).toBeNull();
   });
 
   it("auto-selects the sole undiscovered site when nothing else matches", () => {
     const one = [{ id: "a", name: "Precursor Vault — Monument", type: "vault", discovered: false }];
-    expect(selectSiteForReveal(one, "somewhere unrelated")?.id).toBe("a");
+    expect(pick(one, "somewhere unrelated")?.id).toBe("a");
+  });
+
+  it("takes an explicit site id over every rung, and honours `eligible`", () => {
+    expect(pick(sites(), "monument", { siteId: "b" })?.id).toBe("b");
+    const cleared = [{ id: "x", name: "Old Vault", type: "vault", discovered: true, cleared: false }];
+    expect(pick(cleared, "old vault", { eligible: s => s.discovered && !s.cleared })?.id).toBe("x");
   });
 });
 
 
-describe("selectSiteForReveal — requireLabelMatch (expedition→site stamping)", () => {
+describe("selectSectorSite — requireLabelMatch (expedition→site stamping)", () => {
   const sites = [
     { id: "s1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false },
   ];
 
   it("still falls back to the sole undiscovered site by default (reveal path)", () => {
-    expect(selectSiteForReveal(sites, "somewhere unrelated")?.id).toBe("s1");
+    expect(pick(sites, "somewhere unrelated")?.id).toBe("s1");
   });
 
   it("returns null for a non-matching label when requireLabelMatch is set (stamping path)", () => {
-    expect(selectSiteForReveal(sites, "Bleakhold Station", { requireLabelMatch: true })).toBeNull();
-    expect(selectSiteForReveal(sites, null, { requireLabelMatch: true })).toBeNull();
+    expect(pick(sites, "Bleakhold Station", { requireLabelMatch: true })).toBeNull();
+    expect(pick(sites, null, { requireLabelMatch: true })).toBeNull();
   });
 
   it("still resolves confident matches with requireLabelMatch set", () => {
-    expect(selectSiteForReveal(sites, "sunken choir", { requireLabelMatch: true })?.id).toBe("s1");
-    expect(selectSiteForReveal(sites, "the vault", { requireLabelMatch: true })?.id).toBe("s1");
+    expect(pick(sites, "sunken choir", { requireLabelMatch: true })?.id).toBe("s1");
+    expect(pick(sites, "the vault", { requireLabelMatch: true })?.id).toBe("s1");
+  });
+});
+
+
+// Issue #300 F07: the ladder ran sector by sector, so an earlier sector's sole
+// (or sole-of-type) site was picked before a later sector's exact match — even
+// with the expedition's explicit site id.
+describe("selectSectorSite — across sectors", () => {
+  const sectors = () => [
+    { id: "s-old", mapData: { discoveries: [{ id: "mine", name: "Abandoned Mine", type: "derelict", discovered: false }] } },
+    { id: "s-new", mapData: { discoveries: [
+      { id: "target-site", name: "Crystal Vault", type: "vault",    discovered: false },
+      { id: "wreck",       name: "Hollow Hulk",   type: "derelict", discovered: false },
+    ] } },
+  ];
+
+  it("an exact name in a later sector beats an earlier sector's sole site", () => {
+    expect(selectSectorSite(sectors(), "Crystal Vault")).toMatchObject({ sector: { id: "s-new" }, site: { id: "target-site" } });
+  });
+
+  it("an explicit site id beats an earlier sector's sole site", () => {
+    expect(selectSectorSite(sectors(), "somewhere", { siteId: "target-site" })?.site.id).toBe("target-site");
+  });
+
+  it("a type-keyword guess is ambiguous across sectors unless the active sector settles it", () => {
+    expect(selectSectorSite(sectors(), "the derelict")).toBeNull();
+    expect(selectSectorSite(sectors(), "the derelict", { activeSectorId: "s-new" })?.site.id).toBe("wreck");
+    expect(selectSectorSite(sectors(), "the derelict", { activeSectorId: "s-old" })?.site.id).toBe("mine");
+  });
+
+  it("the sole-site guess fires only when one candidate is left in scope", () => {
+    expect(selectSectorSite(sectors(), "somewhere unrelated")).toBeNull();
+    expect(selectSectorSite(sectors(), "somewhere unrelated", { activeSectorId: "s-old" })?.site.id).toBe("mine");
+    expect(selectSectorSite(sectors(), "somewhere unrelated", { activeSectorId: "s-old", requireLabelMatch: true })).toBeNull();
   });
 });
 

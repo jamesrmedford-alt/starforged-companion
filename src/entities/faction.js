@@ -16,6 +16,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
+import { registerEntityIdInStore } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
@@ -97,7 +98,7 @@ export async function createFaction(data, campaignState) {
   if (!campaignState.factionIds) campaignState.factionIds = [];
   if (!campaignState.factionIds.includes(entry.id)) {
     campaignState.factionIds.push(entry.id);
-    await persistCampaignState(campaignState);
+    await registerEntityIdInStore("factionIds", entry.id, "faction");
   }
 
   return faction;
@@ -332,13 +333,4 @@ export function renderEntityBody(faction) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | faction: persistCampaignState failed:`, err);
-    throw err;
-  }
 }

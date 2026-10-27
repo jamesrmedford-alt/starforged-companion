@@ -21,7 +21,12 @@ connectionId, then name), so the two stay in step.
 
 ## 1. Meet (creation)
 
-Five paths converge on `createConnection()`:
+Five paths converge on `createConnection()`. It registers the NPC card's id
+in `connectionIds` on the caller's copy and on the latest stored campaignState
+(`registerEntityIdInStore`) — never by writing the caller's copy whole, which
+reverted a relayed X-Card when the caller was the move pipeline (issue #300
+F14). Sector creation passes `persist: false` and registers everything in its
+final `storeSector` write.
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
   actual creation rides the post-narration discovery pass (canonical GM, hits

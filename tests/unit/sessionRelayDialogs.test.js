@@ -178,7 +178,7 @@ describe("Begin a Session", () => {
     'input[name="galleyVignette"]': false,
   });
 
-  it("canonical GM: momentum → flip → clocks run locally, in order", async () => {
+  it("canonical GM: flip → momentum → clocks run locally, in order", async () => {
     setUsers([GM, PLAYER], "gm-1");
     installDialog({ form });
     await openBeginSessionDialog();
@@ -193,6 +193,72 @@ describe("Begin a Session", () => {
     await applyBeginSession({ vignetteRolled: false, includeGalley: true }, {});
     expect(vi.getTimerCount()).toBe(1);
     expect(applyMeterChanges).not.toHaveBeenCalled();
+  });
+
+  // Issue #300 F11: Begin again on the same session advanced its campaign
+  // clocks and granted the Spotlight momentum a second time.
+  it("applies a session's start effects once — a second Begin posts a note and changes nothing", async () => {
+    setUsers([GM], "gm-1");
+    await applyBeginSession({ vignetteRolled: true, includeGalley: true }, {});
+    const sessionId = state().currentSessionId;
+    expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
+    expect(state().sessionStartedId).toBe(sessionId);
+    expect(vi.getTimerCount()).toBe(1);
+
+    calls.length = 0;
+    vi.clearAllTimers();
+    await applyBeginSession({ vignetteRolled: true, includeGalley: true }, {});
+    expect(calls).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(state().currentSessionId).toBe(sessionId);
+    expect(ChatMessage._created.at(-1).content).toMatch(/already begun/);
+  });
+
+  it("two Begins at once apply the start effects once", async () => {
+    setUsers([GM], "gm-1");
+    await Promise.all([
+      applyBeginSession({ vignetteRolled: true, includeGalley: false }, {}),
+      applyBeginSession({ vignetteRolled: true, includeGalley: false }, {}),
+    ]);
+    expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
+  });
+
+  it("End then Begin applies the next session's start effects", async () => {
+    setUsers([GM], "gm-1");
+    await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
+    const first = state().currentSessionId;
+    await applyEndSession({ questFocus: "", connectionFocus: "" }, {});
+    calls.length = 0;
+
+    await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
+    expect(state().currentSessionId).not.toBe(first);
+    expect(calls).toEqual(["clocks"]);
+  });
+
+  it("a session that went idle is begun anew, although nobody ended it", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      sessionActive: true, currentSessionId: "s-old", sessionStartedId: "s-old",
+      lastSessionTimestamp: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+    });
+    await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
+    expect(state().currentSessionId).not.toBe("s-old");
+    expect(state().sessionStartedId).toBe(state().currentSessionId);
+    expect(calls).toEqual(["clocks"]);
+  });
+
+  it("the dialog does not open on a session already begun", async () => {
+    setUsers([GM, PLAYER], "pl-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      sessionActive: true, currentSessionId: "s1", sessionStartedId: "s1",
+      lastSessionTimestamp: new Date().toISOString(),
+    });
+    const prompts = installDialog({ form });
+    const info = vi.spyOn(ui.notifications, "info");
+    await openBeginSessionDialog();
+    expect(prompts).toHaveLength(0);
+    expect(info).toHaveBeenCalledWith(expect.stringMatching(/already begun/));
+    expect(ChatMessage._created).toHaveLength(0);
   });
 });
 

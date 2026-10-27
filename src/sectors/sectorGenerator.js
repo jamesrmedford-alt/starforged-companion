@@ -13,6 +13,7 @@
 import { createSettlement, updateSettlement } from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { createLocation }      from "../entities/location.js";
+import { ENTITY_ID_LISTS, unionIdList } from "../entities/registry.js";
 import { generateSectorSites, buildSiteLocationData } from "./precursorSites.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { finalizeEntityArtOnly } from "../entities/finalize.js";
@@ -490,9 +491,39 @@ export async function storeSector(sector, extras, campaignState) {
     }
   }
 
-  await persistCampaignState(campaignState);
+  await persistSectorOntoStore(stored, campaignState);
 
   return stored;
+}
+
+/**
+ * Write a new sector onto the LATEST stored campaignState — its record, the
+ * active sector, and the entity ids its creators registered on the caller's
+ * copy (they run with persist:false so sector creation is one write) — never
+ * the caller's whole object. Sector creation holds that copy across entity
+ * creation, art and narrator calls, often minutes; writing it whole reverted
+ * every write relayed meanwhile, an X-Card included (issue #300 F14).
+ *
+ * @param {Object} stored         the sector record storeSector built
+ * @param {Object} campaignState  the caller's copy (already updated in place)
+ */
+async function persistSectorOntoStore(stored, campaignState) {
+  const latest  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const sectors = Array.isArray(latest.sectors) ? [...latest.sectors] : [];
+  const at      = sectors.findIndex(s => s?.id === stored.id);
+  if (at >= 0) sectors[at] = stored;
+  else         sectors.push(stored);
+  const next = { ...latest, sectors, activeSectorId: stored.id };
+  for (const key of ENTITY_ID_LISTS) {
+    const merged = unionIdList(latest[key], campaignState[key]);
+    if (merged) next[key] = merged;
+  }
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", next);
+  } catch (err) {
+    console.error(`${MODULE_ID} | sectorGenerator: storing the sector failed:`, err);
+    throw err;
+  }
 }
 
 /**
@@ -887,15 +918,6 @@ function autoLayoutY(index, _total) {
 function generateId() {
   try   { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | sectorGenerator: persistCampaignState failed:`, err);
-    throw err;
-  }
 }
 
 function getClaudeApiKey() {

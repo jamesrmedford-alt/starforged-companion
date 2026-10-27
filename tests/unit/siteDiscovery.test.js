@@ -186,3 +186,49 @@ describe("clearSectorSite", () => {
     expect(result).toBeNull();
   });
 });
+
+
+// Issue #300 F07: matching fell back within each sector before looking at the
+// next, so an earlier sector's sole site was revealed (or cleared) instead of
+// the exact target in a later one — even when reveal had the target's id.
+describe("reveal / clear across sectors (issue #300 F07)", () => {
+  function twoSectors({ discovered = false } = {}) {
+    return {
+      sectors: [
+        { id: "sec-old", sceneId: "scene-old", mapData: { discoveries: [
+          { id: "mine", type: "derelict", name: "Abandoned Mine", discovered, actorId: "loc-mine" },
+        ] } },
+        { id: "sec-new", sceneId: "scene-new", mapData: { discoveries: [
+          { id: "target-site", type: "vault", name: "Crystal Vault", discovered, actorId: "loc-target" },
+        ] } },
+      ],
+    };
+  }
+
+  it("reveals the exact target with its id, not the earlier sector's sole site", async () => {
+    const state = twoSectors();
+    const d = deps(state, { getScene: vi.fn((id) => ({ id })) });
+    const result = await revealSectorSite("Crystal Vault", { ...d, siteId: "target-site" });
+
+    expect(result?.site?.id).toBe("target-site");
+    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
+    expect(d.updateLoc).toHaveBeenCalledWith("loc-target", { status: "visited" });
+    expect(d.getScene).toHaveBeenCalledWith("scene-new");
+  });
+
+  it("reveals the exact name without an id", async () => {
+    const state = twoSectors();
+    expect((await revealSectorSite("Crystal Vault", deps(state)))?.site?.id).toBe("target-site");
+  });
+
+  it("clears the exact target, not the earlier sector's sole discovered site", async () => {
+    const { clearSectorSite } = await import("../../src/sectors/siteDiscovery.js");
+    const state = twoSectors({ discovered: true });
+    const updateLoc = vi.fn(async () => {});
+    const result = await clearSectorSite("Crystal Vault", { getState: () => state, setState: vi.fn(async () => {}), updateLoc });
+
+    expect(result?.site?.id).toBe("target-site");
+    expect(state.sectors[0].mapData.discoveries[0].cleared).toBeUndefined();
+    expect(updateLoc).toHaveBeenCalledWith("loc-target", { status: "cleared" });
+  });
+});

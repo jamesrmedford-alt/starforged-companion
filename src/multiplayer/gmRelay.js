@@ -39,9 +39,15 @@
  * (runGmAction, local and socket paths alike), so handlers' campaignState
  * read-modify-writes never interleave (two Private Lines syncs, a `!bond`
  * landing mid-End a Session, …). A handler that rejects releases the queue in
- * a `finally`; one that never settles is waited on for at most
- * GM_ACTION_TIMEOUT_MS (warned) before the next action runs anyway — one bad
- * action can never wedge every later relay. Consequences:
+ * a `finally`; one that never settles is waited on for at most its run budget
+ * (warned) before the next action runs anyway — one bad action can never
+ * wedge every later relay. The budget is GM_ACTION_TIMEOUT_MS, or for a kind
+ * that makes a Claude call (`claude: true`) GM_CLAUDE_ACTION_TIMEOUT_MS — two
+ * bounded requests in sequence — and it counts from the moment
+ * the predecessor starts running, not from when the waiting action was queued
+ * (issue #300 F15: a flat 60 s cap, shorter than one 120 s Claude request,
+ * let an ordinary slow narration run alongside the action behind it, and a
+ * backlog behind one slow action timed out together). Consequences:
  *   - a long handler (an oracle follow-up's or End a Session's Claude call)
  *     delays later relays until it settles or times out;
  *   - a handler must NOT call requestGmAction itself on the canonical GM — the
@@ -95,6 +101,7 @@
  */
 
 import { isCanonicalGM } from "./gmGate.js";
+import { DEFAULT_TIMEOUT_MS } from "../net/fetchWithTimeout.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -112,16 +119,26 @@ export const GM_RELAY_KIND_PREFIX = "gmRelay.";
 export const GM_RELAY_READY_KIND = `${GM_RELAY_KIND_PREFIX}ready`;
 
 /**
- * How long a queued action waits for the action ahead of it before running
- * anyway (with a warning), so a handler that never settles cannot block later
- * relays. Generous: an action may make a Claude call (oracle follow-up
- * narration, session vignettes).
+ * How long a queued action waits for the action ahead of it — counted from
+ * when that action started running — before running anyway (with a warning),
+ * so a handler that never settles cannot block later relays.
  */
 export const GM_ACTION_TIMEOUT_MS = 60_000;
 
 /**
- * kind → { load, fn }. `load` imports the owning module; `fn` names the
- * exported handler. Paths are relative to this file.
+ * The same budget for an action that makes a Claude call (`claude: true`):
+ * two bounded requests in sequence (DEFAULT_TIMEOUT_MS each, body included —
+ * a call and its rate-limit retry, or a helper call ahead of the narration),
+ * with headroom. An ordinary slow narration keeps the queue serialised; only
+ * a hung handler is passed.
+ */
+export const GM_CLAUDE_ACTION_TIMEOUT_MS = 2 * DEFAULT_TIMEOUT_MS + 30_000;
+
+/**
+ * kind → { load, fn, claude? }. `load` imports the owning module; `fn` names
+ * the exported handler; `claude` marks a handler that awaits a Claude call
+ * (its run budget is GM_CLAUDE_ACTION_TIMEOUT_MS). Paths are relative to this
+ * file.
  */
 export const GM_ACTIONS = Object.freeze({
   // Safety
@@ -130,19 +147,19 @@ export const GM_ACTIONS = Object.freeze({
   "session.takeBreak":         { load: () => import("../safety/sessionDialogs.js"),                  fn: "applyTakeBreak" },
   "safety.syncPrivateLines":   { load: () => import("../ui/settingsPanel.js"),                       fn: "applyPrivateLinesSync" },
   // Session lifecycle
-  "session.begin":             { load: () => import("../safety/sessionLifecycleDialogs.js"),         fn: "applyBeginSession" },
-  "session.end":               { load: () => import("../safety/sessionLifecycleDialogs.js"),         fn: "applyEndSession" },
+  "session.begin":             { load: () => import("../safety/sessionLifecycleDialogs.js"),         fn: "applyBeginSession", claude: true },
+  "session.end":               { load: () => import("../safety/sessionLifecycleDialogs.js"),         fn: "applyEndSession",   claude: true },
   // Chat commands
   "bond.apply":                { load: () => import("../moves/bondCommand.js"),                      fn: "applyBondEffects" },
   "factContinuity.command":    { load: () => import("../factContinuity/chatCommands.js"),            fn: "applyFactContinuityCommand" },
-  "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm" },
+  "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm", claude: true },
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Chat-card buttons
-  "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay" },
-  "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay" },
+  "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
+  "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
   "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
   "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
   "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone" },
@@ -172,56 +189,68 @@ export function hasActiveGM() {
  */
 const UNQUEUED_ACTIONS = new Set(["xcard.activate"]);
 
-// Tail of the queue: resolves when the last enqueued action has released it.
-// Gates only ever resolve (never reject), so a failed action cannot poison the
-// chain. `_pending` counts actions queued or running; while it is 0 the queue
-// is idle and a new action starts without arming any timer.
-let _queueTail = Promise.resolve();
-let _pending   = 0;
+// The last action enqueued, or null when the queue is idle. Each entry knows
+// when its action started running and when it settled; both only ever resolve
+// (never reject), so a failed action cannot poison the chain.
+let _queueTail = null;
 
 const WAIT_TIMED_OUT = Symbol("gmRelay.waitTimedOut");
+
+/** How long an action of `kind` may run before the action behind it stops waiting. */
+function actionBudgetMs(kind) {
+  return GM_ACTIONS[kind]?.claude ? GM_CLAUDE_ACTION_TIMEOUT_MS : GM_ACTION_TIMEOUT_MS;
+}
 
 /**
  * Run `task` after every previously enqueued action has released the queue.
  * The caller gets the task's own result (or rejection). The queue is released
- * in a `finally` when the task settles; an action that waits more than
- * `timeoutMs` for its predecessor (a handler that never settles) is warned
- * about and run anyway, so a hung handler cannot wedge every later relay.
+ * in a `finally` when the task settles; an action whose predecessor has run
+ * longer than its budget (a handler that never settles) is warned about and
+ * run anyway, so a hung handler cannot wedge every later relay.
  *
  * @template T
  * @param {string} kind
  * @param {() => Promise<T>} task
- * @param {number} [timeoutMs]
  * @returns {Promise<T>}
  */
-function enqueueGmAction(kind, task, timeoutMs = GM_ACTION_TIMEOUT_MS) {
+function enqueueGmAction(kind, task) {
   const prev = _queueTail;
-  const idle = _pending === 0;
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  _queueTail = gate;
-  _pending += 1;
+  let markStarted, release;
+  const entry = {
+    kind,
+    budgetMs: actionBudgetMs(kind),
+    started:  new Promise(resolve => { markStarted = resolve; }),
+    done:     new Promise(resolve => { release = resolve; }),
+  };
+  _queueTail = entry;
 
   return (async () => {
     try {
-      if (!idle) await waitForPrevious(prev, kind, timeoutMs);
+      if (prev) await waitForPrevious(prev, kind);
+      markStarted();
       return await task();
     } finally {
-      _pending = Math.max(0, _pending - 1);
+      markStarted();   // no-op once started; releases successors if the wait threw
       release();
+      if (_queueTail === entry) _queueTail = null;
     }
   })();
 }
 
-/** Wait for the previous action's gate, at most `timeoutMs` (then warn). */
-async function waitForPrevious(prev, kind, timeoutMs) {
+/**
+ * Wait for the previous action to settle — at most its run budget, counted
+ * from when it started running (its own wait for the action ahead of it
+ * doesn't count against it); then warn and go.
+ */
+async function waitForPrevious(prev, kind) {
+  await prev.started;
   let timer = null;
-  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(WAIT_TIMED_OUT), timeoutMs); });
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(WAIT_TIMED_OUT), prev.budgetMs); });
   try {
-    const outcome = await Promise.race([prev, timedOut]);
+    const outcome = await Promise.race([prev.done, timedOut]);
     if (outcome === WAIT_TIMED_OUT) {
       console.warn(
-        `${MODULE_ID} | gmRelay: the action ahead of "${kind}" is still running after ${timeoutMs}ms — ` +
+        `${MODULE_ID} | gmRelay: the action ahead of "${kind}" ("${prev.kind}") is still running after ${prev.budgetMs}ms — ` +
         `running "${kind}" anyway so the queue is not wedged.`,
       );
     }
@@ -414,6 +443,5 @@ export function _resetGmRelayForTests() {
   registerGmRelaySocket._installed = false;
   onGmRelayReady._installed = false;
   _readyCallbacks.clear();
-  _queueTail = Promise.resolve();
-  _pending   = 0;
+  _queueTail = null;
 }

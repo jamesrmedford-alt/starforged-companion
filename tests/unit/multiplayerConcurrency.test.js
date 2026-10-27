@@ -20,9 +20,10 @@
  * released, and every relayed write must have survived persistResolution.
  *
  * The GM relay queue: relayed actions run one at a time on the canonical GM
- * (a slow handler — an oracle follow-up's Claude call — holds the next one),
- * the X-Card skips the queue, and a handler that never settles is released
- * after GM_ACTION_TIMEOUT_MS so later relays still run.
+ * (a slow handler — an oracle follow-up's Claude call — holds the next one,
+ * for as long as its bounded request can take: issue #300 F15), and the
+ * X-Card skips the queue. A handler that never settles is passed after its
+ * budget (tests/unit/gmRelay.test.js).
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
@@ -66,6 +67,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { GM_ACTION_TIMEOUT_MS } from '../../src/multiplayer/gmRelay.js';
+import { DEFAULT_TIMEOUT_MS } from '../../src/net/fetchWithTimeout.js';
 
 const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
 const DEFAULT_REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
@@ -242,12 +244,19 @@ describe('the GM relay queue', () => {
 
     held.resolve();
     await table.settle();
-    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(1);
+    // The X-Card was played while the follow-up was generated: its reply is
+    // discarded, not posted (issue #300 F13) — the queue still moves on.
+    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(0);
     expect(world().safetyFlags).toMatchObject([{ text: 'spiders' }]);
   });
 
-  it('a handler that never settles is released after GM_ACTION_TIMEOUT_MS, with a warning — later relays still run', async () => {
+  // Issue #300 F15: the queue's flat 60 s cap was shorter than one Claude
+  // request (120 s), so a slow follow-up let the flag behind it run alongside
+  // it. The follow-up now holds the queue until its request ends — a stalled
+  // one at the request deadline — and the flag runs then, with no queue pass.
+  it('a slow follow-up holds the next relay past GM_ACTION_TIMEOUT_MS; a stalled request ends at its deadline and the relay runs', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    expectConsoleError(/narrateOracleFollowup failed/);
     const held = holdOracleNarration();
     try {
       await table.client('pl-1').chat('!oracle yes is anyone aboard');
@@ -255,22 +264,24 @@ describe('the GM relay queue', () => {
       // requestOracleNarration relays from a setTimeout(0): fire it (on pl-1).
       await vi.advanceTimersByTimeAsync(0);
       await table.settle();
-      expect(table.claude.calls.map(c => c.client)).toEqual(['gm-1']);   // the follow-up is stuck on the GM
+      expect(table.claude.calls.map(c => c.client)).toEqual(['gm-1']);   // the follow-up's request is in flight on the GM
       table.client('pl-2').answerDialogs(d => d.submit({ 'textarea[name="text"]': 'drowning' }));
       await table.client('pl-2').chat('!flag');
       await table.settle();
       expect(world().safetyFlags).toBeUndefined();
 
-      await vi.advanceTimersByTimeAsync(GM_ACTION_TIMEOUT_MS - 1);
+      await vi.advanceTimersByTimeAsync(GM_ACTION_TIMEOUT_MS + 1);
       await table.settle();
-      expect(world().safetyFlags).toBeUndefined();
+      expect(world().safetyFlags).toBeUndefined();   // still queued: the follow-up is within its budget
 
-      await vi.advanceTimersByTimeAsync(2);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - GM_ACTION_TIMEOUT_MS);
       await table.settle();
       expect(world().safetyFlags).toMatchObject([{ text: 'drowning' }]);
-      expect(getCapturedWarns().some(w => /still running after 60000ms — running "safety.setFlag" anyway/.test(w))).toBe(true);
+      expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(0);
+      expect(getCapturedWarns().some(w => /Anthropic request timed out after 120s/.test(w))).toBe(true);
+      expect(getCapturedWarns().some(w => /still running after/.test(w))).toBe(false);
     } finally {
-      held.resolve();   // let the stuck follow-up finish so the GM's queue is idle for the next test
+      held.resolve();   // settle the stub's held reply so nothing is left pending for the next test
       vi.useRealTimers();
       await table.settle();
     }

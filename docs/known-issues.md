@@ -11,6 +11,40 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit (issue #300) — all sixteen fixed in the v1.7.36 cycle
+
+Two audit passes plus the validity review of #299. Each fix ships with
+regression tests that fail with it reverted; none has been checked in a live
+Foundry world yet (delayed narration, delayed audio loads, push-to-talk
+startup and concurrent player edits are the ones to try).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| F01 TRANSCRIPT-LOSS | LOSE-PLOT | `flushNow` (`transcript.js`) dropped a Private Channel batch before its write succeeded, and two flushes could overwrite each other → per-player writes are chained; a failed batch returns to the front and is retried (three automatic retries) |
+| F02 UPGRADE-DOUBLE-APPLY | WRONG-DETAIL | Burn Momentum / Improve Result clicked during narration applied the upgrade, then the original persist stacked on top (momentum 5 instead of 4) → the buttons open once the original is recorded (`originalApplied`), are exclusive, and always swap against the original; the pipeline now sets `resolution._id`, so the superseded narration is found and struck |
+| F03 BURN-PAST-MAX | WRONG-DETAIL | `buildBurnState` counted momentum past the maximum → clamped to the live bounds (`readMomentumState`, impacts included) |
+| F04 REPAIR-UNPAID | WRONG-DETAIL | Extra repair points applied even when the supply trade failed → `paySupplyTrade` pays first; a failed payment applies no repairs and says so |
+| F05 SUPPLY-SYNC-DROP | RACE | A supply edit during a shared-supply sync was dropped → mirror writes carry an update-options marker; a change mid-sync is synced after it |
+| F06 BODY-UNBOUNDED | LATENT | `fetchWithTimeout`'s deadline ended at the headers → the body readers race the same deadline |
+| F07 SITE-WRONG-SECTOR | WRONG-DETAIL | Site reveal / clear fell back within an earlier sector before an exact match in a later one → `selectSectorSite` runs each rung across all sectors |
+| F08 AUDIO-DOUBLE-LOOP | UX | Resume added a second sequencing continuation (B and C started together) → resume rejoins the run in progress |
+| F09 AUDIO-STOP-LOADING | UX | A sound that loaded after Stop played → each run has a generation `stop()` ends; a stale sound is stopped |
+| F10 PTT-EARLY-RELEASE | UX | A release before `onstart` was ignored and capture began afterwards → a pending start is aborted; a late `onstart` after release aborts at once |
+| F11 BEGIN-TWICE | WRONG-DETAIL | A second Begin a Session advanced clocks and granted momentum again → `sessionStartedId`; Begins are chained on the GM |
+| F12 PANEL-ACTOR-STALE | UX | The Entity Panel ignored Actor create / update / delete → Actor hooks re-render it and clear a deleted selection |
+| F13 XCARD-IN-FLIGHT | SAFETY | An X-Card played while a narration was generated didn't stop it → every narrator entry point re-checks the live X-Card after its Claude call |
+| F14 CREATE-PERSIST-WHOLE | SAFETY | Entity creators wrote the caller's whole campaignState and could clear a mid-narration X-Card → id registration onto the latest store; art-asset and sector registration likewise |
+| F15 QUEUE-CAP-SHORT | RACE | The GM queue's 60 s cap was shorter than one Claude request, and a backlog timed out together → per-kind budgets counted from the predecessor's start |
+| F16 PRIVATE-LINES-WORDING | DOCS | The help said Private Lines were never visible to other players → it describes the real boundary (shared world data a console can read) |
+
+**Found while fixing — fixed in the same cycle:**
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| AUDIO-RESUME-LABEL | UX | After a resumed narration ended, its card's button read Pause: `togglePlayback` (`src/audio/index.js`) set "playing" after awaiting the resumed run, which settles only when playback ends → it labels from the session's final state. `audioCardButton.test.js` drives the card's button through play / pause / resume / end |
+| PANEL-OPEN-ID-DEAD | LATENT | `openEntityPanel(journalId)` wrote the id to `app._EntityPanelApp__selectedId`, a public property nothing read, and no caller passed one → the parameter is removed (no speculative surface, `rules/reachability.md` §4) |
+| PTT-QUICK-REPRESS | UX | A push-to-talk press made while the last run wound down from its release (a cancelled start, or the transcript being finalised) was dropped — `recognition.start()` throws until `onend` → the controller tracks the run (`running`, `released`) and a press after the run's release captures at `onend`. A hold that outlasts its utterance still doesn't restart (one utterance per hold) |
+
 ### Narrator in-client testing (issue #290) — parts 1 and 2 built in the v1.7.36 cycle
 
 The prompt-contract checks (Quench batch `starforged-companion.promptContracts`,
@@ -112,9 +146,8 @@ canon").
   (`resolveActorId`, `chronicleWriter.js`).
 - **CONN-BACKGROUND-UNWRITTEN** — a connection's `background` and `secrets`
   have no production writer, so neither renders.
-- **CREATE-PERSIST-WHOLE** — entity creators (e.g. `createConnection`'s
-  `persistCampaignState`) write the caller's campaignState whole, so the
-  make_a_connection auto-create writes the move pipeline's snapshot.
+- ~~**CREATE-PERSIST-WHOLE**~~ — fixed by issue #300 F14 (below): creators
+  register their id onto the latest store (`registerEntityIdInStore`).
 - **TEXT-SUBJECT-LOWERCASE** — a text subject's CURRENT STATE label renders
   lowercased.
 
@@ -273,8 +306,10 @@ lives in the matching `docs/flows/*-flow.md` maps.
   played in that window says "Scene paused" without being recorded. Relayed
   card buttons re-arm after 15 s if the card isn't marked used.
 - **One serialised GM queue.** A long handler (an oracle follow-up's Claude
-  call, End a Session's summary) delays later relays until it settles or 60 s
-  pass. The X-Card is exempt — it runs the moment it reaches the GM.
+  call, End a Session's summary) delays later relays until it settles — or,
+  if it hangs, until its run budget passes (60 s; 270 s for a handler that
+  awaits a Claude call, which covers its bounded requests: issue #300 F15).
+  The X-Card is exempt — it runs the moment it reaches the GM.
 - **Session vignettes need a keyed GM.** The Begin / End a Session galley and
   closing vignettes run inside the canonical-GM relay handlers, so at a
   keyless-GM table they are skipped (a player's key isn't used).

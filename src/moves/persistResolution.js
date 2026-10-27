@@ -35,6 +35,7 @@ import {
 } from '../character/actorBridge.js';
 import { postSufferChoiceCard } from './sufferCard.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
+import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -123,6 +124,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //                                   on the store via clearPersistedNextMoveAdd
 //       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
 //       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
+//       sessionStartedId            Begin a Session relay (start effects once per session)
 //       currentSessionId, sessionNumber, lastSessionTimestamp,
 //       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
 //                                   (world load, Begin / End relays, the chat-activity stamp)
@@ -141,9 +143,12 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       incitingIncident            session/incitingIncident.js
 //       worldTruths, worldTruthsSet, worldTruthsJournalId   truths flows
 //
-//   ENTITY_ID_LISTS — both sides append (the narrator's auto-created
-//     connections land on the working copy; a GM confirming an entity draft
-//     card writes the store): ordered union, store first.
+//   ENTITY_ID_LISTS (entities/registry.js) — both sides append (the
+//     narrator's auto-created connections land on the working copy and the
+//     store; a GM confirming an entity draft card writes the store): ordered
+//     union, store first.
+//   artAssetIds — the art index (asset id → journal entry name), a map both
+//     sides add to (a portrait stored during the move): every entry kept.
 //   sessionLogs — the store's logs; this resolution's entry is appended after.
 //   sessionSummary — whichever record has the newer updatedAt.
 //   legacyTracks — both sides add ticks (pipeline addLegacyTicks; `!bond`, the
@@ -171,6 +176,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'sessionFocus',
   'sessionActive',
   'sessionActiveStartedAt',
+  'sessionStartedId',
   'currentSessionId',
   'sessionNumber',
   'lastSessionTimestamp',
@@ -191,18 +197,6 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'worldTruthsJournalId',
 ]);
 
-const ENTITY_ID_LISTS = Object.freeze([
-  'characterIds',
-  'connectionIds',
-  'settlementIds',
-  'locationIds',
-  'creatureIds',
-  'shipIds',
-  'planetIds',
-  'factionIds',
-  'artAssetIds',
-]);
-
 /**
  * Merge the latest stored campaignState into the pipeline's (already cloned)
  * working copy, per the field policy above. Mutates and returns `working`.
@@ -221,8 +215,14 @@ function mergeWithLatestState(working, latestRaw) {
   }
 
   for (const key of ENTITY_ID_LISTS) {
-    const merged = unionList(latest[key], working[key]);
+    const merged = unionIdList(latest[key], working[key]);
     if (merged) working[key] = merged;
+  }
+
+  // A map, not a list: listed with the id lists, it was never merged and the
+  // working copy's index dropped entries stored meanwhile (issue #300 F14).
+  if (latest.artAssetIds || working.artAssetIds) {
+    working.artAssetIds = { ...(working.artAssetIds ?? {}), ...(latest.artAssetIds ?? {}) };
   }
 
   if (latest.sessionLogs && typeof latest.sessionLogs === 'object') {
@@ -240,16 +240,6 @@ function mergeWithLatestState(working, latestRaw) {
     console.debug(`${MODULE_ID} | persistResolution: the scene changed while the move resolved — keeping the stored scene ledgers.`);
   }
   return working;
-}
-
-/** Ordered union of two id lists (store order first). null when neither is a list. */
-function unionList(storeList, workingList) {
-  const a = Array.isArray(storeList)   ? storeList   : null;
-  const b = Array.isArray(workingList) ? workingList : null;
-  if (!a && !b) return null;
-  const out = [...(a ?? [])];
-  for (const id of b ?? []) if (!out.includes(id)) out.push(id);
-  return out;
 }
 
 function isNewerRecord(storeRec, workingRec) {

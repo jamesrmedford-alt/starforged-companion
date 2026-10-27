@@ -34,6 +34,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
+  registerEntityIdInStore,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
 
@@ -152,7 +153,7 @@ export async function createShip(data, campaignState) {
   if (!campaignState.shipIds) campaignState.shipIds = [];
   if (!campaignState.shipIds.includes(actor.id)) {
     campaignState.shipIds.push(actor.id);
-    await persistCampaignState(campaignState);
+    await registerEntityIdInStore("shipIds", actor.id, "ship");
   }
 
   return ship;
@@ -269,7 +270,7 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
       if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
       if (!campaignState.shipIds.includes(actor.id)) {
         campaignState.shipIds.push(actor.id);
-        await persistCampaignState(campaignState).catch(err =>
+        await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
           console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err));
       }
     }
@@ -403,15 +404,6 @@ function generateId() {
   catch { return Math.random().toString(36).slice(2, 10); }
 }
 
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | ship: persistCampaignState failed:`, err);
-    throw err;
-  }
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEED — populate a freshly-created starship Actor from oracle rolls
@@ -483,7 +475,7 @@ export async function registerStarshipActorLight(actor, campaignState) {
     if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
     if (!campaignState.shipIds.includes(actor.id)) {
       campaignState.shipIds.push(actor.id);
-      await persistCampaignState(campaignState).catch(err =>
+      await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
         console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err));
     }
   }
@@ -588,7 +580,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
     if (!campaignState.shipIds.includes(actor.id)) {
       campaignState.shipIds.push(actor.id);
-      await persistCampaignState(campaignState).catch(err =>
+      await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
         console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err));
     }
   }

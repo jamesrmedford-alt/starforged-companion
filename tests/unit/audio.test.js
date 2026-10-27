@@ -624,6 +624,93 @@ describe('PlaybackSession', () => {
     expect(first.state).toBe(PLAYBACK_STATE.IDLE);   // unchanged — was released on completion
   });
 
+  // Issue #300 F08: resume installed a second 'end' continuation beside the
+  // loop already waiting on the paused segment, so both advanced the cursor —
+  // B and C started together when A ended.
+  it('resumes a paused segment and still plays the rest one at a time', async () => {
+    const Sound = globalThis.foundry.audio.Sound;
+    const session = new PlaybackSession({
+      cardId: 'f08',
+      segments: ['A', 'B', 'C'].map(x => ({ voice: 'narrator', src: `/${x}.mp3`, text: x })),
+    });
+    const done = session.play();
+    await new Promise(r => setTimeout(r, 0));
+    await session.pause();
+    expect(session.state).toBe(PLAYBACK_STATE.PAUSED);
+    session.play();                                   // resume
+    await new Promise(r => setTimeout(r, 0));
+    expect(Sound._instances.map(s => s.src)).toEqual(['/A.mp3']);
+
+    Sound._instances[0]._fire('end');
+    await new Promise(r => setTimeout(r, 0));
+    expect(Sound._instances.map(s => s.src)).toEqual(['/A.mp3', '/B.mp3']);   // not C as well
+
+    Sound._instances[1]._fire('end');
+    await new Promise(r => setTimeout(r, 0));
+    expect(Sound._instances.map(s => s.src)).toEqual(['/A.mp3', '/B.mp3', '/C.mp3']);
+    Sound._instances[2]._fire('end');
+    await done;
+    expect(session.state).toBe(PLAYBACK_STATE.IDLE);
+  });
+
+  it('pausing and resuming twice in one segment still starts the next segment once', async () => {
+    const Sound = globalThis.foundry.audio.Sound;
+    const session = new PlaybackSession({
+      cardId: 'f08b',
+      segments: ['A', 'B', 'C'].map(x => ({ voice: 'narrator', src: `/${x}.mp3`, text: x })),
+    });
+    session.play();
+    await new Promise(r => setTimeout(r, 0));
+    for (let i = 0; i < 2; i++) {
+      await session.pause();
+      session.play();
+      await new Promise(r => setTimeout(r, 0));
+    }
+    Sound._instances[0]._fire('end');
+    await new Promise(r => setTimeout(r, 0));
+    expect(Sound._instances.map(s => s.src)).toEqual(['/A.mp3', '/B.mp3']);
+  });
+
+  // Issue #300 F09: _playFromCurrent checked `stopped` before awaiting the load,
+  // not after — a sound that finished loading after Stop played anyway.
+  it('a sound that finishes loading after stop() never plays', async () => {
+    const Sound = globalThis.foundry.audio.Sound;
+    let finishLoad;
+    vi.spyOn(Sound.prototype, 'load').mockImplementation(() => new Promise(r => { finishLoad = r; }));
+    const play = vi.spyOn(Sound.prototype, 'play');
+    const session = new PlaybackSession({
+      cardId: 'f09',
+      segments: [{ voice: 'narrator', src: '/slow.mp3', text: 'slow' }],
+    });
+    const done = session.play();
+    await new Promise(r => setTimeout(r, 0));
+    await session.stop();
+    finishLoad();
+    await done;
+    expect(play).not.toHaveBeenCalled();
+    expect(session.state).toBe(PLAYBACK_STATE.STOPPED);
+  });
+
+  it('a card that takes over while the old one loads is the only one heard', async () => {
+    const Sound = globalThis.foundry.audio.Sound;
+    const loads = [];
+    vi.spyOn(Sound.prototype, 'load').mockImplementation(function () {
+      return new Promise(r => loads.push({ src: this.src, finish: r }));
+    });
+    const play = vi.spyOn(Sound.prototype, 'play');
+    const first  = new PlaybackSession({ cardId: 'old', segments: [{ voice: 'narrator', src: '/old.mp3', text: 'o' }] });
+    const second = new PlaybackSession({ cardId: 'new', segments: [{ voice: 'narrator', src: '/new.mp3', text: 'n' }] });
+    first.play();
+    await new Promise(r => setTimeout(r, 0));
+    second.play();                                    // claims playback, stops `first`
+    await new Promise(r => setTimeout(r, 0));
+    for (const l of loads) l.finish();
+    await new Promise(r => setTimeout(r, 0));
+    expect(play.mock.contexts.map(s => s.src)).toEqual(['/new.mp3']);
+    expect(first.state).toBe(PLAYBACK_STATE.STOPPED);
+    expect(second.state).toBe(PLAYBACK_STATE.PLAYING);
+  });
+
   it('stopActivePlayback() stops the current session and is a no-op when nothing is active', async () => {
     // Nothing playing yet → resolves false, no throw.
     await expect(stopActivePlayback()).resolves.toBe(false);

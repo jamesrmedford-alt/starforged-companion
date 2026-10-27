@@ -493,8 +493,11 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
     return;
   }
   if (session && session.state === PLAYBACK_STATE.PAUSED) {
+    // Resuming settles only when the narration ends (the session's
+    // onStateChange labels the button meanwhile), so label from the state it
+    // ended in — a fixed "playing" here left a finished card showing Pause.
     await session.play();
-    setButtonLabel(btn, "playing");
+    setButtonLabel(btn, btnLabelFromState(session.state));
     return;
   }
 

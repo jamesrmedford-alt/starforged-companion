@@ -13,7 +13,7 @@
  * the orchestration unit-tests without a live game.
  */
 
-import { selectSiteForReveal } from "./precursorSites.js";
+import { selectSectorSite } from "./precursorSites.js";
 import { restyleSiteOnScene }  from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
 
@@ -30,7 +30,9 @@ const MODULE_ID = "starforged-companion";
  * @param {string}   [opts.siteId]    — a stored expedition→site link: reveal
  *   exactly this discovery when it exists, bypassing the name-fuzzy ladder
  *   (2026-07 soft-spot fix — with several undiscovered sites the ladder could
- *   reveal the "wrong" one).
+ *   reveal the "wrong" one). The ladder runs across every sector at once
+ *   (selectSectorSite), so neither this id nor an exact name can be preempted
+ *   by a guess in an earlier sector (issue #300 F07).
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise
  * @param {Function} [opts.getScene]  — (sceneId) => Scene|null
@@ -46,33 +48,30 @@ export async function revealSectorSite(label, opts = {}) {
   const restyle   = opts.restyle   ?? restyleSiteOnScene;
 
   const state = getState();
-  for (const sector of state?.sectors ?? []) {
-    const discoveries = sector.mapData?.discoveries ?? [];
-    const match = (opts.siteId
-        ? discoveries.find(d => d && d.id === opts.siteId && !d.discovered)
-        : null)
-      ?? selectSiteForReveal(discoveries, label);
-    if (!match) continue;
+  const found = selectSectorSite(state?.sectors, label, {
+    siteId:         opts.siteId ?? null,
+    activeSectorId: state?.activeSectorId ?? null,
+  });
+  if (!found) return null;
+  const { sector, site: match } = found;
 
-    match.discovered = true;
+  match.discovered = true;
 
-    if (match.actorId) {
-      try { await updateLoc(match.actorId, { status: "visited" }); }
-      catch (err) { console.warn(`${MODULE_ID} | revealSectorSite: location status update failed:`, err?.message ?? err); }
-    }
-
-    if (sector.sceneId) {
-      const scene = getScene(sector.sceneId);
-      if (scene) {
-        try { await restyle(scene, match); }
-        catch (err) { console.warn(`${MODULE_ID} | revealSectorSite: scene restyle failed:`, err?.message ?? err); }
-      }
-    }
-
-    await setState(state);
-    return { sector, site: match };
+  if (match.actorId) {
+    try { await updateLoc(match.actorId, { status: "visited" }); }
+    catch (err) { console.warn(`${MODULE_ID} | revealSectorSite: location status update failed:`, err?.message ?? err); }
   }
-  return null;
+
+  if (sector.sceneId) {
+    const scene = getScene(sector.sceneId);
+    if (scene) {
+      try { await restyle(scene, match); }
+      catch (err) { console.warn(`${MODULE_ID} | revealSectorSite: scene restyle failed:`, err?.message ?? err); }
+    }
+  }
+
+  await setState(state);
+  return { sector, site: match };
 }
 
 /**
@@ -122,8 +121,9 @@ export async function postSiteDiscoveryCard(result) {
  * Mark a DISCOVERED site fully explored (SITE-NO-COMPLETION fix, 2026-07):
  * sets the location Actor's status to "cleared" and stamps the discovery
  * record, closing the unexplored → visited → cleared lifecycle the schema
- * always documented. Same matching ladder as revealSectorSite, over
- * discovered sites that aren't already cleared. GM-gated by the caller.
+ * always documented. Same matching ladder as revealSectorSite (across every
+ * sector at once — issue #300 F07), over discovered sites that aren't already
+ * cleared. GM-gated by the caller.
  *
  * @param {string|null} label
  * @param {Object} [opts] — same injection seams as revealSectorSite
@@ -135,28 +135,20 @@ export async function clearSectorSite(label, opts = {}) {
   const updateLoc = opts.updateLoc ?? updateLocation;
 
   const state = getState();
-  for (const sector of state?.sectors ?? []) {
-    const discoveries = sector.mapData?.discoveries ?? [];
-    const eligible = discoveries.filter(d => d && d.discovered && !d.cleared);
-    // Reuse the reveal ladder by presenting eligible sites as "undiscovered"
-    // candidates (the ladder filters on !discovered).
-    const match = selectSiteForReveal(
-      eligible.map(d => ({ ...d, discovered: false })),
-      label,
-    );
-    if (!match) continue;
-    const record = discoveries.find(d => d && d.id === match.id);
-    if (!record) continue;
+  const found = selectSectorSite(state?.sectors, label, {
+    eligible:       (site) => site.discovered && !site.cleared,
+    activeSectorId: state?.activeSectorId ?? null,
+  });
+  if (!found) return null;
+  const { sector, site: record } = found;
 
-    record.cleared = true;
-    if (record.actorId) {
-      try { await updateLoc(record.actorId, { status: "cleared" }); }
-      catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
-    }
-    await setState(state);
-    return { sector, site: record };
+  record.cleared = true;
+  if (record.actorId) {
+    try { await updateLoc(record.actorId, { status: "cleared" }); }
+    catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
   }
-  return null;
+  await setState(state);
+  return { sector, site: record };
 }
 
 function escapeSiteHtml(s) {

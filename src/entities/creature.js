@@ -18,6 +18,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
+import { registerEntityIdInStore } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "creature";
@@ -88,7 +89,7 @@ export async function createCreature(data, campaignState) {
   if (!campaignState.creatureIds) campaignState.creatureIds = [];
   if (!campaignState.creatureIds.includes(entry.id)) {
     campaignState.creatureIds.push(entry.id);
-    await persistCampaignState(campaignState);
+    await registerEntityIdInStore("creatureIds", entry.id, "creature");
   }
 
   return creature;
@@ -130,13 +131,4 @@ export function renderEntityBody(creature) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | creature: persistCampaignState failed:`, err);
-    throw err;
-  }
 }

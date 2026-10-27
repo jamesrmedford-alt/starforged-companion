@@ -99,11 +99,29 @@ function createSpeechController(language) {
   recognition.interimResults = false;  // Final results only — no live partial text
   recognition.maxAlternatives = 1;
 
+  // The player's button and the engine are tracked apart (issue #300 F10).
+  // `held` is the button. A run lasts from recognition.start() until onend
+  // (`running`) — start() throws until then — and captures between onstart
+  // and onend (`isActive`); onstart comes only once capture begins, after a
+  // permission prompt, often hundreds of ms. A release before then used to
+  // find nothing active and leave capture to start after the release (and
+  // auto-submit whatever it heard). `released` marks the current run's
+  // release: a press after it, before onend, captures as soon as the run
+  // ends (PTT-QUICK-REPRESS: that press used to be dropped).
+  let running  = false;
   let isActive = false;
+  let held     = false;
+  let released = false;
 
   // ── Event handlers ─────────────────────────────────────────────────────────
 
   recognition.onstart = () => {
+    if (released) {
+      // Released before capture began (stop() aborted the run): capture
+      // nothing. A press since the release captures once the run ends.
+      abortQuietly();
+      return;
+    }
     isActive = true;
     setButtonState(CLASS_LISTENING);
     console.log(`${MODULE_ID} | Speech recognition started`);
@@ -118,18 +136,23 @@ function createSpeechController(language) {
   };
 
   recognition.onend = () => {
+    const pressedAgain = held && released;
+    running  = false;
     isActive = false;
+    released = false;
     setButtonState(null);   // Clear all state classes
     console.log(`${MODULE_ID} | Speech recognition ended`);
+    if (pressedAgain) beginCapture();
   };
 
   recognition.onerror = (event) => {
-    isActive = false;
+    isActive = false;   // onend follows and ends the run
     console.warn(`${MODULE_ID} | Speech recognition error: ${event.error}`);
 
     // Distinguish between user-caused and system errors
-    if (event.error === "no-speech") {
-      // Silent hold — not an error from the user's perspective, just clear state
+    if (event.error === "no-speech" || event.error === "aborted") {
+      // Silent hold, or a release that cancelled the start — not an error
+      // from the user's perspective, just clear state
       setButtonState(null);
     } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       setButtonState(CLASS_ERROR);
@@ -141,33 +164,60 @@ function createSpeechController(language) {
     }
   };
 
+  function abortQuietly() {
+    try {
+      recognition.abort();
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | speechInput: recognition.abort() failed (likely already stopped):`, err?.message ?? err);
+    }
+  }
+
+  function beginCapture() {
+    try {
+      running  = true;
+      released = false;
+      setButtonState(CLASS_LISTENING);
+      recognition.start();
+    } catch (err) {
+      running = false;
+      setButtonState(null);
+      // InvalidStateError if the engine is somehow still running
+      console.warn(`${MODULE_ID} | recognition.start() called in invalid state:`, err.message);
+    }
+  }
+
   // ── Controller API ─────────────────────────────────────────────────────────
 
   return {
     /**
      * Start capturing audio.
      * Called on mousedown / touchstart on the PTT button.
-     * Safe to call when already active — browser ignores duplicate starts.
+     * Safe to call while a run is in progress: a repeated start for the same
+     * hold is ignored, and a press after the run's release captures once the
+     * run ends (onend).
      */
     start() {
-      if (isActive) return;
-      try {
-        setButtonState(CLASS_LISTENING);
-        recognition.start();
-      } catch (err) {
-        // InvalidStateError thrown if recognition is already running
-        // This can happen with very fast button taps — ignore silently
-        console.warn(`${MODULE_ID} | recognition.start() called in invalid state:`, err.message);
-      }
+      held = true;
+      if (running) return;
+      beginCapture();
     },
 
     /**
      * Stop capturing audio and trigger transcription.
      * Called on mouseup / touchend / mouseleave on the PTT button.
      * Transitions button to "processing" state while the API finalises.
+     * A release while recognition is still starting cancels it: nothing has
+     * been captured, and nothing may be after the release.
      */
     stop() {
-      if (!isActive) return;
+      held = false;
+      if (!running || released) return;
+      released = true;
+      if (!isActive) {
+        abortQuietly();
+        setButtonState(null);
+        return;
+      }
       try {
         setButtonState(CLASS_PROCESSING);
         recognition.stop();
@@ -184,6 +234,7 @@ function createSpeechController(language) {
      * Called if the module is disabled mid-session.
      */
     destroy() {
+      held = false;   // a run ending after this must not start another
       try {
         recognition.abort();
       } catch (err) {

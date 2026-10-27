@@ -54,11 +54,16 @@ export async function storeArtAsset(asset, campaignState) {
     await createAssetEntry(entryName, asset);
   }
 
-  // Register in campaign state asset index
+  // Register in campaign state asset index — on the caller's copy, and on
+  // the latest stored campaignState rather than by writing that copy whole: a
+  // portrait finishes long after its caller read campaignState (the move
+  // pipeline's Make a Connection auto-create, sector creation), and the whole
+  // write reverted every write relayed meanwhile — an X-Card included
+  // (issue #300 F14).
   if (!campaignState.artAssetIds) campaignState.artAssetIds = {};
   campaignState.artAssetIds[asset._id] = entryName;
 
-  await persistCampaignState(campaignState);
+  await registerArtAssetInStore(asset._id, entryName);
   return asset;
 }
 
@@ -225,11 +230,20 @@ function buildEntryName(asset) {
   return `Art: ${asset.entityType} ${asset.entityId} ${asset._id}`;
 }
 
-async function persistCampaignState(campaignState) {
+/**
+ * Add one entry to the art index on the latest stored campaignState (no await
+ * between read and write). Always written: the caller's copy is often the
+ * setting's cached object, already holding the entry.
+ */
+async function registerArtAssetInStore(assetId, entryName) {
+  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
   try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await game.settings.set(MODULE_ID, "campaignState", {
+      ...latest,
+      artAssetIds: { ...(latest.artAssetIds ?? {}), [assetId]: entryName },
+    });
   } catch (err) {
-    console.error(`${MODULE_ID} | art/storage: persistCampaignState failed:`, err);
+    console.error(`${MODULE_ID} | art/storage: registering the art asset failed:`, err);
     throw err;
   }
 }

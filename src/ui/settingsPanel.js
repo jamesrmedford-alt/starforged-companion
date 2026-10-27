@@ -191,7 +191,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PRIVATE_LINES, {
     name:    'Private Lines',
-    hint:    'Personal hard limits visible only to you. Injected into your context packets.',
+    hint:    "Personal hard limits. Sent to the GM's client so every narration respects them; never shown to other players.",
     scope:   'client',
     config:  false,
     type:    Array,
@@ -1072,7 +1072,7 @@ export class SettingsPanelApp extends ApplicationV2 {
 
     const gmNote = ctx.isGM ? '' : `
       <p class="safety-gm-note">
-        Global Lines and Veils are set by the GM. Your private Lines are visible only to you.
+        Global Lines and Veils are set by the GM. Your Private Lines are sent to the GM and never shown to other players &mdash; though they are stored in shared world data a browser console can read.
       </p>
     `;
 

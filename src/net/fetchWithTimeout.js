@@ -14,9 +14,13 @@
  * ordinary rejection, so the existing graceful-degradation paths run and the
  * failure surfaces in the console / error-log journal instead of disappearing.
  *
- * Our calls are all non-streaming (Anthropic /v1/messages, OpenRouter
- * chat-completions, image-URL download), so the fetch() promise resolves only
- * once the full response is ready — bounding fetch() bounds the whole call.
+ * The deadline covers the response body as well. fetch() resolves once the
+ * headers arrive — even for our non-streaming calls — and the body can stall
+ * after them; the helper used to clear its timer at that point, so a stalled
+ * body left `res.json()` / `res.text()` / `res.arrayBuffer()` waiting forever
+ * (issue #300 F06). Each body reader on the returned Response now races the
+ * same deadline (and stops the timer when it settles); a caller that reads
+ * `res.body` itself is bounded too — the deadline aborts the request.
  */
 
 const MODULE_ID = "starforged-companion";
@@ -52,22 +56,54 @@ export async function fetchWithTimeout(
   }
 
   const controller = new globalThis.AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
+  const seconds    = Math.round(timeoutMs / 1000);
+  const deadline   = {
+    expired: false,
+    reject:  null,
+    timeoutError() {
+      console.warn(`${MODULE_ID} | fetchWithTimeout: ${label} timed out after ${seconds}s (${url})`);
+      return new Error(`${label} timed out after ${seconds}s`);
+    },
+  };
+  // Rejects at the deadline; raced by the fetch and by every body reader.
+  deadline.promise = new Promise((_resolve, reject) => { deadline.reject = reject; });
+  deadline.promise.catch(() => {});   // observed only through those races
+  deadline.timer = setTimeout(() => {
+    deadline.expired = true;
     controller.abort();
+    deadline.reject(new Error("deadline"));
   }, timeoutMs);
 
+  let res;
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    res = await Promise.race([fetch(url, { ...init, signal: controller.signal }), deadline.promise]);
   } catch (err) {
-    if (timedOut || err?.name === "AbortError") {
-      const seconds = Math.round(timeoutMs / 1000);
-      console.warn(`${MODULE_ID} | fetchWithTimeout: ${label} timed out after ${seconds}s (${url})`);
-      throw new Error(`${label} timed out after ${seconds}s`);
-    }
+    clearTimeout(deadline.timer);
+    if (deadline.expired || err?.name === "AbortError") throw deadline.timeoutError();
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
+  return bindBodyToDeadline(res, deadline);
+}
+
+/** Wrap the Response's body readers so each races the request deadline. */
+function bindBodyToDeadline(res, deadline) {
+  if (!res || typeof res !== "object") {
+    clearTimeout(deadline.timer);
+    return res;
+  }
+  for (const method of ["json", "text", "arrayBuffer", "blob"]) {
+    const read = res[method];
+    if (typeof read !== "function") continue;
+    res[method] = async () => {
+      try {
+        return await Promise.race([read.call(res), deadline.promise]);
+      } catch (err) {
+        if (deadline.expired || err?.name === "AbortError") throw deadline.timeoutError();
+        throw err;
+      } finally {
+        clearTimeout(deadline.timer);
+      }
+    };
+  }
+  return res;
 }

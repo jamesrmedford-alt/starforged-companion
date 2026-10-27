@@ -13,10 +13,17 @@
  *
  * In this module the burn is offered AFTER persistResolution has applied
  * the original outcome's consequences — the card carries the metadata to
- * undo and reapply when the player clicks. We track the applied-state on
- * the card flag (`originalApplied`) so the click handler can compute the
- * correct meter delta whether or not the original outcome reached the
- * sheet (player clients defer to GM, so multi-user races are possible).
+ * undo and reapply when the player clicks. The button stays disabled, and
+ * the GM-side handler refuses, until the pipeline stamps the card
+ * `originalApplied` right after that persist: a burn clicked while the
+ * narration was still running used to apply the upgraded outcome first,
+ * then the pipeline persisted the original on top of it (issue #300 F02).
+ * So a burn always swaps the recorded original for the upgraded outcome.
+ *
+ * Burn Momentum and Improve Result (improveResult.js) are exclusive on a
+ * card: once either upgrades the result, the other is spent. Improve always
+ * reaches a strong hit, so stacking them never helps a player, and each
+ * diffs against the original outcome — a second upgrade would double-count.
  *
  * Multiplayer: the move card is authored by the canonical GM, so a player
  * cannot message.update() its `consumed` flag. A click therefore relays to
@@ -39,12 +46,12 @@ import {
   canBurnMomentum,
   applyMomentumBurn,
   mapConsequences,
-  OUTCOME_RANK,
 } from "./resolver.js";
 import {
   getActor,
   getPlayerActors,
   applyMeterChanges,
+  readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction }     from "../multiplayer/gmRelay.js";
@@ -65,11 +72,46 @@ export const RELAY_RECOVERY_MS = 15000;
 // closure, possibly for another player's click — can re-narrate and log.
 let _deps = { narrate: null, persist: null };
 
-// Move-card ids whose burn is being applied on this (the canonical GM's)
-// client. Two near-simultaneous clicks both relay; the second must not
-// re-apply the meter deltas while the first is still before the `consumed`
-// stamp.
-const _inFlight = new Set();
+// Move-card ids whose result is being upgraded — by a burn or an Improve
+// Result — on this (the canonical GM's) client. Two near-simultaneous clicks
+// both relay; the second must not re-apply the meter deltas while the first is
+// still before its `consumed` stamp, and a burn and an improvement must not
+// both pass their checks on one card.
+const _upgradeInFlight = new Set();
+
+/**
+ * Claim a move card for a result upgrade (burn or improve). False when another
+ * upgrade of that card is already being applied on this client.
+ * @param {string} messageId
+ * @returns {boolean}
+ */
+export function claimResultUpgrade(messageId) {
+  if (_upgradeInFlight.has(messageId)) return false;
+  _upgradeInFlight.add(messageId);
+  return true;
+}
+
+/** Release a claim taken by claimResultUpgrade. */
+export function releaseResultUpgrade(messageId) {
+  _upgradeInFlight.delete(messageId);
+}
+
+/**
+ * Why a card's result can't be upgraded right now, or null when it can: the
+ * original outcome is not recorded yet ("original-pending"), or the other
+ * upgrade already changed the result ("already-upgraded").
+ * @param {Object} upgrade   the card's `burn` or `improve` flag
+ * @param {Object} [other]   the card's other upgrade flag
+ * @returns {"original-pending"|"already-upgraded"|null}
+ */
+export function resultUpgradeBlocker(upgrade, other) {
+  if (other?.consumed) return "already-upgraded";
+  if (upgrade?.originalApplied !== true) return "original-pending";
+  return null;
+}
+
+/** Tooltip on a burn / improve button waiting for the original outcome to be recorded. */
+export const UPGRADE_PENDING_TITLE = "Available once the move's result is recorded";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +126,9 @@ const _inFlight = new Set();
  *
  * `postMomentum` is the momentum the actor will have AFTER the original
  * outcome's consequences are persisted — that's the value the player
- * burns against per the rules.
+ * burns against per the rules. It is clamped to the character's bounds the
+ * way the sheet write clamps it, so the preview never offers a burn with
+ * momentum above the effective maximum (issue #300 F03).
  *
  * @param {Object} resolution
  * @param {Actor}  actor       — active character; needed for momentum + impacts
@@ -94,10 +138,10 @@ export function buildBurnState(resolution, actor, ptpReversals = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
 
-  const currentMomentum    = readMomentum(actor);
+  const momentum           = readMomentumState(actor);
   const consequenceDelta   = Number(resolution.consequences?.momentumChange ?? 0);
-  const postMomentum       = currentMomentum + consequenceDelta;
-  const markedImpactCount  = countImpacts(actor);
+  const postMomentum       = Math.min(Math.max(momentum.value + consequenceDelta, momentum.min), momentum.max);
+  const markedImpactCount  = momentum.impactCount;
 
   if (!canBurnMomentum(postMomentum, resolution.outcome, resolution.challengeDice, false)) {
     return null;
@@ -171,7 +215,8 @@ export function registerBurnMomentumHook({ narrate, persist } = {}) {
   _deps = { narrate: narrate ?? null, persist: persist ?? null };
 
   onChatMessageRender((message, root) => {
-    const burn = message?.flags?.[MODULE_ID]?.burn;
+    const flags = message?.flags?.[MODULE_ID] ?? {};
+    const burn  = flags.burn;
     if (!burn?.canBurn) return;
 
     const btn = root.querySelector('[data-action="sf-burn-momentum"]');
@@ -180,6 +225,18 @@ export function registerBurnMomentumHook({ narrate, persist } = {}) {
     if (burn.consumed) {
       btn.disabled    = true;
       btn.textContent = `🔥 Burned (${labelForOutcome(burn.previewOutcome)})`;
+      return;
+    }
+    const blocker = resultUpgradeBlocker(burn, flags.improve);
+    if (blocker === "already-upgraded") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — the result was already improved";
+      return;
+    }
+    if (blocker === "original-pending") {
+      // Re-rendered with the button live once the pipeline stamps the card.
+      btn.disabled = true;
+      btn.title    = UPGRADE_PENDING_TITLE;
       return;
     }
 
@@ -297,14 +354,21 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | burnMomentum: move card ${messageId ?? "?"} not found — burn not applied.`);
     return { applied: false, reason: "no-message" };
   }
-  const burn = message.flags?.[MODULE_ID]?.burn;
+  const flags = message.flags?.[MODULE_ID] ?? {};
+  const burn  = flags.burn;
   if (!burn?.canBurn) {
     console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} offers no burn — ignoring.`);
     return { applied: false, reason: "not-burnable" };
   }
-  if (burn.consumed || _inFlight.has(messageId)) {
+  if (burn.consumed || _upgradeInFlight.has(messageId)) {
     console.debug(`${MODULE_ID} | burnMomentum: card ${messageId} already burned — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
+  }
+  const blocker = resultUpgradeBlocker(burn, flags.improve);
+  if (blocker) {
+    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${blocker === "original-pending"
+      ? "the original outcome is not recorded yet" : "the result was already improved"}; burn refused.`);
+    return { applied: false, reason: blocker };
   }
   const actor = resolveActor(burn.actorId);
   if (actor && !requesterOwnsActor(actor, ctx)) {
@@ -312,11 +376,11 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "not-owner" };
   }
 
-  _inFlight.add(messageId);
+  if (!claimResultUpgrade(messageId)) return { applied: false, reason: "already-consumed" };
   try {
     return await handleBurnClick(message, _deps);
   } finally {
-    _inFlight.delete(messageId);
+    releaseResultUpgrade(messageId);
   }
 }
 
@@ -336,26 +400,24 @@ async function handleBurnClick(message, { narrate, persist }) {
     return { applied: false, reason: "no-actor" };
   }
 
-  const burnResult = applyMomentumBurn(
-    burn.momentum, burn.challengeDice, burn.markedImpactCount,
-  );
-
-  // Defense-in-depth: never apply a burn that does not strictly improve the
-  // outcome, even if a stale card offered one. The render-time gate
-  // (canBurnMomentum in buildBurnState) should already prevent this, but a
-  // momentum change between render and click could leave a worsening burn on
-  // the card. Bail without touching meters or the card.
-  if (OUTCOME_RANK[burnResult.outcome] <= OUTCOME_RANK[burn.originalOutcome]) {
-    console.warn(`${MODULE_ID} | burnMomentum: burn would not improve ${burn.originalOutcome} → ${burnResult.outcome}; ignoring`);
+  // Burn the momentum the PC holds now, against its live impacts — the
+  // original outcome is already on the sheet, so this includes its change.
+  // The card's preview can be stale (another move or a sheet edit since);
+  // never apply a burn that does not strictly improve the outcome.
+  const momentum = readMomentumState(actor);
+  if (!canBurnMomentum(momentum.value, burn.originalOutcome, burn.challengeDice, false)) {
+    console.warn(`${MODULE_ID} | burnMomentum: momentum ${momentum.value} would not improve ${burn.originalOutcome}; ignoring`);
     return { applied: false, reason: "no-improvement" };
   }
+  const burnResult = applyMomentumBurn(momentum.value, burn.challengeDice, momentum.impactCount);
 
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
 
   await applyBurnMeterDeltas({
     actor,
     burnState: burn,
-    newMomentumReset: burnResult.newMomentum,
+    currentMomentum:  momentum.value,
+    newMomentumReset: momentum.reset,
     newConsequences,
   });
 
@@ -385,34 +447,27 @@ async function handleBurnClick(message, { narrate, persist }) {
   // Re-narrate on the upgraded outcome. Best-effort — if the campaign has
   // no API key configured or the narrator is otherwise disabled, the move
   // card is still correctly updated above.
-  await renarrate({ burn, burnResult, newConsequences, narrate, persist })
+  await renarrate({ burn, burnResult, burnedMomentum: momentum.value, newConsequences, narrate, persist })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 
   return { applied: true };
 }
 
-async function applyBurnMeterDeltas({ actor, burnState, newMomentumReset, newConsequences }) {
-  const applied = !!burnState.originalApplied;
-  const orig    = burnState.originalConsequences ?? {};
+async function applyBurnMeterDeltas({ actor, burnState, currentMomentum, newMomentumReset, newConsequences }) {
+  const orig = burnState.originalConsequences ?? {};
 
-  const currentMomentum = readMomentum(actor);
-  const targetMomentum  = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
-  const momentumDelta   = targetMomentum - currentMomentum;
-
-  // For health/spirit/supply: if the original consequences were already
-  // applied to the actor, the diff must reverse them and apply the new
-  // ones; otherwise just apply the new ones.
-  const dimensionDelta = (k) => {
-    const newVal = Number(newConsequences[k] ?? 0);
-    const oldVal = Number(orig[k] ?? 0);
-    return applied ? (newVal - oldVal) : newVal;
-  };
+  // The original outcome is on the sheet (a burn is accepted only once it is
+  // recorded): momentum goes to the reset value plus the upgraded outcome's
+  // momentum; health / spirit / supply swap the original's change for the
+  // upgraded one's.
+  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
+  const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
 
   await applyMeterChanges(actor, {
-    momentum: momentumDelta,
-    health:   dimensionDelta("healthChange"),
-    spirit:   dimensionDelta("spiritChange"),
-    supply:   dimensionDelta("supplyChange"),
+    momentum: targetMomentum - currentMomentum,
+    health:   swap("healthChange"),
+    spirit:   swap("spiritChange"),
+    supply:   swap("supplyChange"),
   });
 }
 
@@ -464,7 +519,7 @@ async function revertPtpEffects(ptpReversals, actor) {
   }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: revert card failed:`, err));
 }
 
-async function renarrate({ burn, burnResult, newConsequences, narrate, persist }) {
+async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, narrate, persist }) {
   if (typeof narrate !== "function") {
     console.warn(`${MODULE_ID} | burnMomentum: no narrator registered (registerBurnMomentumHook) — burned outcome not re-narrated.`);
     return;
@@ -479,7 +534,7 @@ async function renarrate({ burn, burnResult, newConsequences, narrate, persist }
     statValue:       0,
     adds:            0,
     actionDie:       0,
-    actionScore:     burn.momentum,
+    actionScore:     burnedMomentum,
     challengeDice:   burn.challengeDice,
     isMatch:         burnResult.isMatch,
     outcome:         burnResult.outcome,
@@ -487,7 +542,7 @@ async function renarrate({ burn, burnResult, newConsequences, narrate, persist }
     isProgressMove:  false,
     progressScore:   0,
     momentumBurned:  true,
-    momentumBurnedFrom: burn.momentum,
+    momentumBurnedFrom: burnedMomentum,
     consequences:    newConsequences,
     oracleSeeds:     null,
     playerNarration: "[Player burned momentum to upgrade the outcome]",
@@ -587,18 +642,6 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-
-function readMomentum(actor) {
-  const m = actor?.system?.momentum;
-  if (m == null) return 0;
-  if (typeof m === "number") return m;
-  return Number(m.value ?? 0);
-}
-
-function countImpacts(actor) {
-  const d = actor?.system?.debility ?? {};
-  return Object.values(d).filter(Boolean).length;
-}
 
 /**
  * The module flags of the card as it stands NOW — the live game.messages
