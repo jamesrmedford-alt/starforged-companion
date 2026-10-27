@@ -20,6 +20,38 @@
 
 const MODULE_ID = 'starforged-companion';
 
+/**
+ * The campaignState id lists of entity host documents. Creators append to
+ * them (registerEntityIdInStore); writers that hold a campaignState copy
+ * across long awaits union them onto the latest store instead of replacing
+ * them (persistResolution's merge, the sector store).
+ */
+export const ENTITY_ID_LISTS = Object.freeze([
+  'characterIds',
+  'connectionIds',
+  'settlementIds',
+  'locationIds',
+  'creatureIds',
+  'shipIds',
+  'planetIds',
+  'factionIds',
+]);
+
+/**
+ * Ordered union of two id lists (store order first). null when neither is a list.
+ * @param {Array|undefined} storeList
+ * @param {Array|undefined} workingList
+ * @returns {Array|null}
+ */
+export function unionIdList(storeList, workingList) {
+  const a = Array.isArray(storeList)   ? storeList   : null;
+  const b = Array.isArray(workingList) ? workingList : null;
+  if (!a && !b) return null;
+  const out = [...(a ?? [])];
+  for (const id of b ?? []) if (!out.includes(id)) out.push(id);
+  return out;
+}
+
 // Per typeKey → host document collection. All seven types currently host on
 // JournalEntries; the Phase 2/3 rewrites flip ship/planet/settlement/location
 // to 'actors' here without touching any caller.
@@ -129,4 +161,34 @@ export function resolveEntityById(id) {
     if (data) return { typeKey, document, data };
   }
   return null;
+}
+
+/**
+ * Register an entity's host-document id in a campaignState id list, on the
+ * LATEST stored campaignState — never by writing the caller's whole object
+ * (issue #300 F14, CREATE-PERSIST-WHOLE). Creators run inside long-lived
+ * callers — the move pipeline's Make a Connection auto-create, a vow card's
+ * connection prompt — whose snapshot predates writes relayed meanwhile (an
+ * X-Card, a flag, Private Lines, clocks), and writing it whole reverted them.
+ * The creator still pushes the id onto the caller's copy, so a caller's own
+ * later persist (persistResolution's id-list union) keeps it. No await
+ * between the read and the write.
+ *
+ * @param {string} listKey   the campaignState id list, e.g. "connectionIds"
+ * @param {string} id        the host document id
+ * @param {string} [label]   the caller, for the error log
+ * @returns {Promise<void>}  rejects when the setting write fails
+ */
+export async function registerEntityIdInStore(listKey, id, label = listKey) {
+  // Always written: the caller's copy is often the setting's cached object,
+  // which already holds the id the creator pushed onto it — a "registered
+  // already" check would read that copy, not what is stored.
+  const latest = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
+  const list   = unionIdList(latest[listKey], [id]);
+  try {
+    await globalThis.game.settings.set(MODULE_ID, 'campaignState', { ...latest, [listKey]: list });
+  } catch (err) {
+    console.error(`${MODULE_ID} | ${label}: registering ${listKey} failed:`, err);
+    throw err;
+  }
 }

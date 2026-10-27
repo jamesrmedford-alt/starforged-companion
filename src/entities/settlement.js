@@ -28,6 +28,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
+  registerEntityIdInStore,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -150,7 +151,7 @@ export async function createSettlement(data, campaignState, { persist = true } =
   if (!campaignState.settlementIds) campaignState.settlementIds = [];
   if (!campaignState.settlementIds.includes(actor.id)) {
     campaignState.settlementIds.push(actor.id);
-    if (persist) await persistCampaignState(campaignState);
+    if (persist) await registerEntityIdInStore("settlementIds", actor.id, "settlement");
   }
 
   return settlement;
@@ -201,13 +202,4 @@ export async function updateSettlement(actorId, updates) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | settlement: persistCampaignState failed:`, err);
-    throw err;
-  }
 }

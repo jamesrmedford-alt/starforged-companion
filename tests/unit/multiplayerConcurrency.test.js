@@ -242,7 +242,9 @@ describe('the GM relay queue', () => {
 
     held.resolve();
     await table.settle();
-    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(1);
+    // The X-Card was played while the follow-up was generated: its reply is
+    // discarded, not posted (issue #300 F13) — the queue still moves on.
+    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(0);
     expect(world().safetyFlags).toMatchObject([{ text: 'spiders' }]);
   });
 

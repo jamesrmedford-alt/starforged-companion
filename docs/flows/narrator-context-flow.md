@@ -90,7 +90,11 @@ clock vignettes, vow swearing, inciting incident — against the caller's
 campaignState **and** the live stored setting (internal `isXCardActive`,
 `narrator.js`; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played
-meanwhile is only visible in the store. A move resolved under the X-Card still
+meanwhile is only visible in the store. Each gate runs twice — on entry and
+again the moment the Claude reply arrives (`xCardPlayedDuringCall`), before the
+sidecar is applied: a card played while the reply was generated discards it
+(no card, no audio, no ledger facts, no post-narration passes — issue #300
+F13), and the entry point stands down as it would have on entry. A move resolved under the X-Card still
 posts its result card, then a short "narration paused" notice
 (`narrationPaused` flag, outside the flag family) instead of narration — the
 move-path gate had been lost with the retired assembler (ASSEMBLER-003).
@@ -247,7 +251,12 @@ follow-up's truth that landed during the narration survives. The pipeline's own 
 relay-owned fields such as `xCardActive`, `safety`, `safetyFlags`,
 `nextMoveAdd`, `clocks`, `recentOracles` take the stored value; same-scene
 `sceneTruths` union by id with retractions sticky; a scene change mid-move
-keeps the stored scene ledgers).
+keeps the stored scene ledgers). The registrations that run inside those long
+callers write only their own key onto the latest store, never the caller's
+copy: an entity creator's id (`registerEntityIdInStore`, `entities/registry.js`
+— the Make a Connection auto-create used to write the pipeline's snapshot whole
+and clear a mid-narration X-Card, issue #300 F14), a portrait's art-index entry
+(`storeArtAsset`), and a new sector (`storeSector`).
 
 **The flag family covers every fiction card** (2026-07): move narration,
 paced, @scene, inciting incident, galley/end-session vignettes, **vow-swearing

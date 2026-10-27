@@ -123,6 +123,19 @@ describe("persistResolution — concurrent writes survive the stale working copy
     expect(stored().connectionIds).toEqual(["c-1", "c-gm", "c-pipeline"]);
   });
 
+  // Issue #300 F14: artAssetIds is a map; listed with the id lists it was
+  // never merged, so the working copy dropped a portrait stored meanwhile.
+  it("keeps every art index entry from both sides", async () => {
+    const snapshot = pipelineSnapshot();
+    snapshot.artAssetIds = { "a-pipeline": "Art: connection c-1 a-pipeline" };
+    stored().artAssetIds = { "a-gm": "Art: ship s-1 a-gm" };
+    await persistResolution(resolution(), snapshot);
+    expect(stored().artAssetIds).toEqual({
+      "a-pipeline": "Art: connection c-1 a-pipeline",
+      "a-gm":       "Art: ship s-1 a-gm",
+    });
+  });
+
   it("legacy ticks from a concurrent `!bond` are not reverted", async () => {
     const snapshot = pipelineSnapshot();
     snapshot.legacyTracks.quests = { ticks: 4, cleared: false };   // pipeline: fulfil a vow

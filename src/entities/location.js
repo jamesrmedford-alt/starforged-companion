@@ -24,6 +24,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
+  registerEntityIdInStore,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -103,7 +104,7 @@ export async function createLocation(data, campaignState, { persist = true } = {
   if (!campaignState.locationIds) campaignState.locationIds = [];
   if (!campaignState.locationIds.includes(actor.id)) {
     campaignState.locationIds.push(actor.id);
-    if (persist) await persistCampaignState(campaignState);
+    if (persist) await registerEntityIdInStore("locationIds", actor.id, "location");
   }
 
   return location;
@@ -175,13 +176,4 @@ export async function updateLocation(actorId, updates) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | location: persistCampaignState failed:`, err);
-    throw err;
-  }
 }

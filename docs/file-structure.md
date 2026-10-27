@@ -42,7 +42,7 @@ developer-only and excluded from the release.
 | `generator.js` | Portrait pipeline (generate-once → one regeneration → locked). |
 | `openRouterImage.js` | OpenRouter image client; decodes inline base64. **Sole image-provider call site.** |
 | `promptBuilder.js` | Builds image prompts from entity descriptions. |
-| `storage.js` | Portrait persistence (base64 flag storage). |
+| `storage.js` | Portrait persistence (base64 flag storage). `storeArtAsset` adds its `artAssetIds` index entry to the latest stored campaignState, never the caller's whole copy (issue #300 F14). |
 
 ### `audio/` — ElevenLabs narration overlay
 
@@ -81,7 +81,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `registry.js` | Host-document dispatch: routes reads/writes to Actor vs JournalEntry storage. |
+| `registry.js` | Host-document dispatch: routes reads/writes to Actor vs JournalEntry storage. `ENTITY_ID_LISTS` + `unionIdList` (the campaignState id lists, unioned by persistResolution's merge and the sector store); `registerEntityIdInStore` — every creator registers its new id on the latest stored campaignState instead of writing the caller's copy whole (issue #300 F14). |
 | `connection.js`, `ship.js`, `settlement.js`, `planet.js`, `location.js`, `faction.js`, `creature.js` | Per-type entity record CRUD (ships/settlements/planets/locations on Actors; others on JournalEntry pages). The art pipeline links portraits through the registry (`art/generator.js` → `writeEntityFlag`); the zero-consumer per-type `setPortraitId` / `setPortraitSourceDescription` / `isReadyForArtGeneration` helpers and `creature.updateCreature` were deleted in the 2026-10 audit. `ship.js`: `repairIntegrity` / `clearBattered` are live (`!repair`); `isShipBattered` reads the canonical native `system.debility.battered` (the starship sheet's toggle and the suffer dialog use only that field — the flag's `battered` is a write-through mirror kept by `updateShip`); `sufferDamage` is still `// UNWIRED: #216 Phase D`. |
 | `shipEnvision.js` | On-demand ✦ Envision / 📜 History for ships. Rolls supplementary oracles beyond the seed (captain, crew, agenda, initial contact) + Action+Theme backstory beats; narrator-prose composer; chat-command predicates + handlers (`!ship envision` / `!ship history`, routed `RUN_ON.CLAUDE` — the keyed canonical GM when one is connected, else the author, whose client posts the card but skips the GM-only notes write with a debug line); idempotent dated-subsection notes append. |
 | `entityExtractor.js` | Combined detection pass: extracts entities from narrator output + World Journal routing rule; renders draft Confirm/Dismiss cards. `appendGenerativeTierUpdates` records a matched entity's significant new developments to its card, salience-gated (`TIER_SALIENCE_FLOOR`, fail-open) and biased toward actions over trivia, and saves them on the host document through the registry. `promoteNewEntityLedgerSubjects` re-keys the scene ledgers' text-subject facts to a new entity's host id (draft Confirm, make_a_connection auto-create, inciting vow-target create). |
@@ -201,7 +201,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `sectorGenerator.js` | 11-step sector generation (rulebook pp. 114–127). |
+| `sectorGenerator.js` | 11-step sector generation (rulebook pp. 114–127). `storeSector` writes the sector record, `activeSectorId` and the sector's entity ids (unioned) onto the latest stored campaignState — sector creation holds its copy for minutes (issue #300 F14). |
 | `sectorPanel.js` | Sector Creator ApplicationV2 wizard. |
 | `sectorArt.js` | Per-region background art generation. |
 | `sceneBuilder.js` | Foundry Scene creation (Note pins + Drawing passages). |

@@ -96,6 +96,24 @@ function isXCardActive(campaignState) {
   }
 }
 
+/**
+ * True when the X-Card was played while a narration was being generated
+ * (issue #300 F13). Every narrator entry point checks the X-Card on entry,
+ * but the reply arrives seconds later: the table must not read or hear what
+ * the card was played to stop, and the reply's side-data must not enter the
+ * scene ledger. Call right after the API returns — before the sidecar is
+ * applied or anything is posted — and stand down as on entry.
+ *
+ * @param {string} label           the entry point, for the debug line
+ * @param {Object|null} campaignState
+ * @returns {boolean}
+ */
+function xCardPlayedDuringCall(label, campaignState) {
+  if (!isXCardActive(campaignState)) return false;
+  console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
+  return true;
+}
+
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
 
@@ -625,6 +643,10 @@ export async function narrateResolution(resolution, campaignState, options = {})
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
+    if (xCardPlayedDuringCall('narrateResolution', campaignState)) {
+      await postNarrationPausedCard(resolution, campaignState);
+      return null;
+    }
     const narration = applyNarratorSidecar(raw, campaignState, {
       moveId:           resolution?.moveId,
       matchedEntityIds: extras.matchedEntityIds ?? [],
@@ -657,6 +679,10 @@ export async function narrateResolution(resolution, campaignState, options = {})
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
+        if (xCardPlayedDuringCall('narrateResolution', campaignState)) {
+          await postNarrationPausedCard(resolution, campaignState);
+          return null;
+        }
         const narration = applyNarratorSidecar(raw, campaignState, {
           moveId:           resolution?.moveId,
           matchedEntityIds: extras.matchedEntityIds ?? [],
@@ -1460,6 +1486,10 @@ export async function interrogateScene(question, campaignState, options = {}) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
+    if (xCardPlayedDuringCall('interrogateScene', campaignState)) {
+      await postSceneFallbackCard(question, 'Scene paused — X-Card is active.', sessionId);
+      return null;
+    }
     const response = applyNarratorSidecar(raw, campaignState, {
       moveId: null, matchedEntityIds: extras.matchedEntityIds,
     });
@@ -1489,6 +1519,10 @@ export async function interrogateScene(question, campaignState, options = {}) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
+        if (xCardPlayedDuringCall('interrogateScene', campaignState)) {
+          await postSceneFallbackCard(question, 'Scene paused — X-Card is active.', sessionId);
+          return null;
+        }
         const response = applyNarratorSidecar(raw, campaignState, {
           moveId: null, matchedEntityIds: extras.matchedEntityIds,
         });
@@ -1584,6 +1618,7 @@ export async function narrateOracleFollowup({
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
+    if (xCardPlayedDuringCall('narrateOracleFollowup', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
 
     if (!text?.trim()) return null;
@@ -1602,6 +1637,7 @@ export async function narrateOracleFollowup({
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
+        if (xCardPlayedDuringCall('narrateOracleFollowup', campaignState)) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId });
@@ -1709,6 +1745,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
+    if (xCardPlayedDuringCall('narrateSessionVignette', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState);   // its NPCs' developments → their cards (#286 D4)
@@ -1723,6 +1760,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
+        if (xCardPlayedDuringCall('narrateSessionVignette', campaignState)) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState);
@@ -1774,6 +1812,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
+    if (xCardPlayedDuringCall('narrateClockAdvancement', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   } catch (err) {
@@ -1786,6 +1825,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
+        if (xCardPlayedDuringCall('narrateClockAdvancement', campaignState)) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
         return (text && text.trim()) ? text : null;
       } catch (retryErr) {
@@ -1857,6 +1897,7 @@ export async function narrateVowSwearing({ vow, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
+    if (xCardPlayedDuringCall('narrateVowSwearing', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   };
@@ -1953,6 +1994,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
+    if (xCardPlayedDuringCall('narrateIncitingIncident', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
     return (text && text.trim()) ? text : null;
   };
@@ -2036,6 +2078,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
+    if (xCardPlayedDuringCall('narratePacedInput', campaignState)) return null;
     const text = applyNarratorSidecar(raw, campaignState, {
       moveId: null, matchedEntityIds: extras.matchedEntityIds,
     });
@@ -2062,6 +2105,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
+        if (xCardPlayedDuringCall('narratePacedInput', campaignState)) return null;
         const text = applyNarratorSidecar(raw, campaignState, {
           moveId: null, matchedEntityIds: extras.matchedEntityIds,
         });

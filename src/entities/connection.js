@@ -26,7 +26,7 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore } from "./registry.js";
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -102,7 +102,7 @@ export async function createConnection(data, campaignState, { persist = true } =
   if (!campaignState.connectionIds) campaignState.connectionIds = [];
   if (actor?.id && !campaignState.connectionIds.includes(actor.id)) {
     campaignState.connectionIds.push(actor.id);
-    if (persist) await persistCampaignState(campaignState);
+    if (persist) await registerEntityIdInStore("connectionIds", actor.id, "connection");
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);
@@ -352,15 +352,6 @@ function generateId() {
     return foundry.utils.randomID();
   } catch {
     return Math.random().toString(36).slice(2, 10);
-  }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | connection: persistCampaignState failed:`, err);
-    throw err;
   }
 }
 

@@ -25,6 +25,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
+  registerEntityIdInStore,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -140,7 +141,7 @@ export async function createPlanet(data, campaignState, { persist = true } = {})
   if (!campaignState.planetIds) campaignState.planetIds = [];
   if (!campaignState.planetIds.includes(actor.id)) {
     campaignState.planetIds.push(actor.id);
-    if (persist) await persistCampaignState(campaignState);
+    if (persist) await registerEntityIdInStore("planetIds", actor.id, "planet");
   }
 
   return planet;
@@ -191,13 +192,4 @@ export async function updatePlanet(actorId, updates) {
 function generateId() {
   try { return foundry.utils.randomID(); }
   catch { return Math.random().toString(36).slice(2, 10); }
-}
-
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
-  } catch (err) {
-    console.error(`${MODULE_ID} | planet: persistCampaignState failed:`, err);
-    throw err;
-  }
 }
