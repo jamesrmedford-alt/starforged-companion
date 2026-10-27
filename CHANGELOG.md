@@ -26,6 +26,8 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **The Entities panel updates as NPCs, ships, settlements, planets and locations change** (issue #300 F12). Created, renamed or deleted while the panel is open, they now show at once, and a deleted entity's page closes.
 - Fixed: **Players' actions wait for a slow narration** (issue #300 F15). An action queued behind a narration on the GM's client ran alongside it after 60 seconds, although one narration may take two minutes. Actions now wait while a narration is within its time limit, and a backlog stays in order.
 - Changed: **The help says who can see Private Lines** (issue #300 F16). The GM can. Other players never see them in their interface, and they are never sent in another player's narration. They are stored in shared world data, though, which a browser console can read. The help also notes that narration generated in a player's own browser (no GM with a key online) carries only that player's lines.
+- Fixed: **A resumed narration's button reads Play when it ends.** After you paused and resumed narrator audio, the card's button still read Pause once the narration had finished.
+- Fixed: **Pressing push-to-talk again right after letting go works.** A press made while the last capture was still finishing — a cancelled start, or the last sentence being transcribed — was ignored. It now starts listening as soon as the last capture ends.
 
 ## [1.7.35] — 2026-10-24
 

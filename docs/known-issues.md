@@ -37,17 +37,13 @@ startup and concurrent player edits are the ones to try).
 | F15 QUEUE-CAP-SHORT | RACE | The GM queue's 60 s cap was shorter than one Claude request, and a backlog timed out together → per-kind budgets counted from the predecessor's start |
 | F16 PRIVATE-LINES-WORDING | DOCS | The help said Private Lines were never visible to other players → it describes the real boundary (shared world data a console can read) |
 
-**Open follow-ups** (found while fixing; not changed):
+**Found while fixing — fixed in the same cycle:**
 
-- **AUDIO-RESUME-LABEL** — after resuming a paused narration, the card's
-  button can show "playing" once the narration has ended: `togglePlayback`
-  (`src/audio/index.js`) sets the label after awaiting the resumed run, which
-  settles only when playback ends. Behaviour is unaffected (a click replays).
-- **PANEL-OPEN-ID-DEAD** — `openEntityPanel(journalId)` writes
-  `app._EntityPanelApp__selectedId`, not the private `#selectedId`, so the id
-  is ignored. No caller passes one (the toolbar calls it bare).
-- **PTT-QUICK-REPRESS** — a press made while a cancelled start is still
-  winding down (before `onend`) is ignored; the next press works.
+| Code | Class | Defect → fix |
+|---|---|---|
+| AUDIO-RESUME-LABEL | UX | After a resumed narration ended, its card's button read Pause: `togglePlayback` (`src/audio/index.js`) set "playing" after awaiting the resumed run, which settles only when playback ends → it labels from the session's final state. `audioCardButton.test.js` drives the card's button through play / pause / resume / end |
+| PANEL-OPEN-ID-DEAD | LATENT | `openEntityPanel(journalId)` wrote the id to `app._EntityPanelApp__selectedId`, a public property nothing read, and no caller passed one → the parameter is removed (no speculative surface, `rules/reachability.md` §4) |
+| PTT-QUICK-REPRESS | UX | A push-to-talk press made while the last run wound down from its release (a cancelled start, or the transcript being finalised) was dropped — `recognition.start()` throws until `onend` → the controller tracks the run (`running`, `released`) and a press after the run's release captures at `onend`. A hold that outlasts its utterance still doesn't restart (one utterance per hold) |
 
 ### Narrator in-client testing (issue #290) — parts 1 and 2 built in the v1.7.36 cycle
 

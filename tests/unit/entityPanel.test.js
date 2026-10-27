@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { EntityPanelApp, registerEntityPanelHooks } from '../../src/ui/entityPanel.js';
+import { EntityPanelApp, openEntityPanel, registerEntityPanelHooks } from '../../src/ui/entityPanel.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -102,5 +102,17 @@ describe('Entity Panel — Actor-hosted entities', () => {
     Hooks.call('updateActor', ship, { _id: 'ship-3', name: 'Renamed' }, {}, 'gm-1');
     Hooks.call('deleteActor', ship, {}, 'gm-1');
     expect(panel.render).not.toHaveBeenCalled();
+  });
+});
+
+// PANEL-OPEN-ID-DEAD (found while fixing issue #300 F12): openEntityPanel
+// took a journalId that it wrote to a public property the panel never read,
+// and no caller passed one — the parameter is gone (no speculative surface).
+describe('openEntityPanel', () => {
+  it('opens the one Entity Panel on its list', async () => {
+    const app = openEntityPanel();
+    expect(app).toBe(EntityPanelApp.open());
+    expect((await app._prepareContext({})).view).toBe('list');
+    expect(openEntityPanel).toHaveLength(0);
   });
 });

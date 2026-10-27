@@ -1157,13 +1157,8 @@ function shipImpactsFromSheet(actorId) {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function openEntityPanel(journalId = null) {
-  const app = EntityPanelApp.open();
-  if (journalId) {
-    app._EntityPanelApp__selectedId = journalId;
-    app.render();
-  }
-  return app;
+export function openEntityPanel() {
+  return EntityPanelApp.open();
 }
 
 export function registerEntityPanelHooks() {

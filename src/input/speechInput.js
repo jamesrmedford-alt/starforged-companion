@@ -99,22 +99,26 @@ function createSpeechController(language) {
   recognition.interimResults = false;  // Final results only — no live partial text
   recognition.maxAlternatives = 1;
 
-  // Two states, kept apart (issue #300 F10): `held` is what the player asked
-  // for (the button is down), `starting` / `isActive` what the engine is
-  // doing. Recognition reports onstart only once capture begins — after a
-  // permission prompt, often hundreds of ms — so a release before then used to
-  // find nothing active, return, and leave capture to start after the release
-  // (and auto-submit whatever it heard).
+  // The player's button and the engine are tracked apart (issue #300 F10).
+  // `held` is the button. A run lasts from recognition.start() until onend
+  // (`running`) — start() throws until then — and captures between onstart
+  // and onend (`isActive`); onstart comes only once capture begins, after a
+  // permission prompt, often hundreds of ms. A release before then used to
+  // find nothing active and leave capture to start after the release (and
+  // auto-submit whatever it heard). `released` marks the current run's
+  // release: a press after it, before onend, captures as soon as the run
+  // ends (PTT-QUICK-REPRESS: that press used to be dropped).
+  let running  = false;
   let isActive = false;
-  let starting = false;
   let held     = false;
+  let released = false;
 
   // ── Event handlers ─────────────────────────────────────────────────────────
 
   recognition.onstart = () => {
-    starting = false;
-    if (!held) {
-      // Released before capture began: stop it now, capture nothing.
+    if (released) {
+      // Released before capture began (stop() aborted the run): capture
+      // nothing. A press since the release captures once the run ends.
       abortQuietly();
       return;
     }
@@ -132,15 +136,17 @@ function createSpeechController(language) {
   };
 
   recognition.onend = () => {
+    const pressedAgain = held && released;
+    running  = false;
     isActive = false;
-    starting = false;
+    released = false;
     setButtonState(null);   // Clear all state classes
     console.log(`${MODULE_ID} | Speech recognition ended`);
+    if (pressedAgain) beginCapture();
   };
 
   recognition.onerror = (event) => {
-    isActive = false;
-    starting = false;
+    isActive = false;   // onend follows and ends the run
     console.warn(`${MODULE_ID} | Speech recognition error: ${event.error}`);
 
     // Distinguish between user-caused and system errors
@@ -166,27 +172,34 @@ function createSpeechController(language) {
     }
   }
 
+  function beginCapture() {
+    try {
+      running  = true;
+      released = false;
+      setButtonState(CLASS_LISTENING);
+      recognition.start();
+    } catch (err) {
+      running = false;
+      setButtonState(null);
+      // InvalidStateError if the engine is somehow still running
+      console.warn(`${MODULE_ID} | recognition.start() called in invalid state:`, err.message);
+    }
+  }
+
   // ── Controller API ─────────────────────────────────────────────────────────
 
   return {
     /**
      * Start capturing audio.
      * Called on mousedown / touchstart on the PTT button.
-     * Safe to call when already active or starting.
+     * Safe to call while a run is in progress: a repeated start for the same
+     * hold is ignored, and a press after the run's release captures once the
+     * run ends (onend).
      */
     start() {
       held = true;
-      if (isActive || starting) return;
-      try {
-        starting = true;
-        setButtonState(CLASS_LISTENING);
-        recognition.start();
-      } catch (err) {
-        starting = false;
-        // InvalidStateError thrown if recognition is already running
-        // This can happen with very fast button taps — ignore silently
-        console.warn(`${MODULE_ID} | recognition.start() called in invalid state:`, err.message);
-      }
+      if (running) return;
+      beginCapture();
     },
 
     /**
@@ -198,12 +211,13 @@ function createSpeechController(language) {
      */
     stop() {
       held = false;
-      if (starting && !isActive) {
+      if (!running || released) return;
+      released = true;
+      if (!isActive) {
         abortQuietly();
         setButtonState(null);
         return;
       }
-      if (!isActive) return;
       try {
         setButtonState(CLASS_PROCESSING);
         recognition.stop();
@@ -220,6 +234,7 @@ function createSpeechController(language) {
      * Called if the module is disabled mid-session.
      */
     destroy() {
+      held = false;   // a run ending after this must not start another
       try {
         recognition.abort();
       } catch (err) {

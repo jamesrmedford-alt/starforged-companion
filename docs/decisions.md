@@ -46,8 +46,11 @@ finding's ID in brackets):
   and is retried (5 s × attempt, three automatic retries).
 - **Request deadlines cover the body** [F06] (`fetchWithTimeout`), **audio
   playback has one sequencing loop per run and a generation stop() ends**
-  [F08, F09], **push-to-talk tracks "held" apart from the engine** [F10],
-  and **the Entity Panel listens to Actor hooks** [F12].
+  [F08, F09], **push-to-talk tracks "held" apart from the engine** [F10] —
+  and a press made while the last run winds down from its release captures
+  when that run ends, while a hold that outlasts its utterance still gets one
+  utterance (PTT-QUICK-REPRESS) — and **the Entity Panel listens to Actor
+  hooks** [F12].
 - **GM queue budgets are per kind, counted from when the predecessor starts**
   [F15] — see "Player-invoked world writes go through the GM relay".
 - **The help describes Private Lines' real privacy** [F16]: never shown in
