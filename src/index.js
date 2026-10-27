@@ -845,7 +845,17 @@ export function registerChatHook() {
 
     // Claim the lock before any async work so other clients see it immediately.
     campaignState.pendingMove = true;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    try {
+      await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    } catch (err) {
+      // The claim never landed. `campaignState` is this client's cached
+      // setting value (Foundry returns it by reference): left set, the flag
+      // refused every later move here until a reload (issue #302).
+      campaignState.pendingMove = false;
+      console.error(`${MODULE_ID} | could not claim the move lock:`, err);
+      ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
+      return;
+    }
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
@@ -1682,8 +1692,10 @@ export function registerChatHook() {
 export async function releasePendingMoveLock() {
   const latestState = game.settings.get(MODULE_ID, "campaignState");
   if (!latestState?.pendingMove) return;   // already released — cheap no-op
-  latestState.pendingMove = false;
-  await game.settings.set(MODULE_ID, "campaignState", latestState).catch(err =>
+  // Write a copy: `get` returns this client's cached value, and clearing the
+  // flag on it before a write that failed made the retry (the pipeline's
+  // finally) read "released" and skip — the world kept the lock (issue #302).
+  await game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false }).catch(err =>
     console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err),
   );
 }

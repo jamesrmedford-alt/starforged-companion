@@ -312,6 +312,42 @@ describe('a world write is refused', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Refused writes: the move lock (the claim and the release write a value a
+// refusal must not leave half-applied in this client's cached setting)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the move lock survives a refused write', () => {
+  it('the lock claim is refused: no move runs, the GM is told, and the next move runs — the lock is not left set', async () => {
+    expectConsoleError(/could not claim the move lock/);
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    const refused = failWrites(table, w => campaignStateWrite('gm-1')(w) && w.value?.pendingMove === true);
+
+    await move();
+    await table.drain();
+
+    expect(refused.refused).toBe(1);
+    expect(table.cards(f => f.moveResolution)).toHaveLength(0);
+    expect(notices('gm-1')).toContainEqual(expect.stringMatching(/^error: .*could not start/));
+    await expectNextMoveNarrates();
+  });
+
+  it('the lock release is refused once: the pipeline\'s finally releases it — the next move runs', async () => {
+    expectConsoleError(/Failed to release pendingMove lock/);
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    const refused = failWrites(table, w => campaignStateWrite('gm-1')(w) && w.value?.pendingMove === false);
+
+    await move();
+    await table.drain();
+
+    expect(refused.refused).toBe(1);
+    expectMoveRecordedOnce();
+    await expectNextMoveNarrates();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Disconnect
 // ─────────────────────────────────────────────────────────────────────────────
 
