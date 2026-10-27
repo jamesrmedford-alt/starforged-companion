@@ -64,7 +64,7 @@ describe('GM_ACTIONS wiring contract', () => {
   });
 
   it('declares the one-shot card-button kinds', () => {
-    for (const kind of ['milestone.pick', 'connection.pick', 'fightVow.markMilestone', 'fightVow.deepenBond']) {
+    for (const kind of ['milestone.pick', 'connection.pick', 'fightVow.markMilestone', 'fightVow.deepenBond', 'suffer.pick']) {
       expect(GM_ACTIONS[kind], kind).toBeDefined();
     }
   });

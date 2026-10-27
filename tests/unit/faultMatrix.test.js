@@ -423,6 +423,79 @@ describe("Confirm on a new NPC's draft card applies once", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Repeat clicks: a suffer card
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a suffer card applies one pick', () => {
+  /** Kira rolls a weak hit; the suffer card ("make a suffer move -1") is posted. */
+  async function sufferCard() {
+    control.dice = WEAK;
+    scriptClaude(table, { fallback: () => REPLY });
+    await move();
+    await table.drain();
+    const cards = table.cards(f => f.sufferCard);
+    expect(cards).toHaveLength(1);
+    return cards[0];
+  }
+
+  // ANY_SUFFER_MOVES order: endure_harm, endure_stress, lose_momentum, sacrifice_resources, …
+  const LOSE_MOMENTUM = 2;
+  const SACRIFICE_RESOURCES = 3;
+  const sufferApplied = () => [momentumOf('pc-pat') < 2, meter('pc-pat', 'supply') < 3].filter(Boolean).length;
+
+  it('two suffer moves picked from one card on one client: one is applied', async () => {
+    const trace = traceTable(table);
+    const card = await sufferCard();
+    const player = table.client('pl-1');
+    trace.mark('Kira\'s player taps Lose Momentum, then Sacrifice Resources');
+    player.click(card._id, '[data-action="sf-suffer-pick"]', { index: LOSE_MOMENTUM });
+    player.click(card._id, '[data-action="sf-suffer-pick"]', { index: SACRIFICE_RESOURCES });
+    await table.drain();
+
+    expect(sufferApplied()).toBe(1);
+    expect(table.world.message(card._id).flags[MODULE_ID].resolved).toBe(true);
+  });
+
+  it('the player and the GM each pick a suffer move from the same card: one is applied', async () => {
+    const trace = traceTable(table);
+    const card = await sufferCard();
+    trace.mark('the player taps Lose Momentum while the GM taps Sacrifice Resources');
+    table.client('pl-1').click(card._id, '[data-action="sf-suffer-pick"]', { index: LOSE_MOMENTUM });
+    table.client('gm-1').click(card._id, '[data-action="sf-suffer-pick"]', { index: SACRIFICE_RESOURCES });
+    await table.drain();
+
+    expect(sufferApplied()).toBe(1);
+    expect(table.world.message(card._id).flags[MODULE_ID].resolved).toBe(true);
+  });
+
+  it('a pick-two card still takes two picks, one after the other (control)', async () => {
+    traceTable(table);
+    const gm = table.client('gm-1');
+    const { postSufferChoiceCard } = await gm.import('../../src/moves/sufferCard.js');
+    await gm.run(() => postSufferChoiceCard({
+      sufferPrompt: { kind: 'enumerated', multi: 2, options: [
+        { label: '+1 momentum', momentum: 1 }, { label: '+1 supply', supply: 1 }, { label: '+1 spirit', spirit: 1 },
+      ] },
+      actor: table.actors.get('pc-pat'),
+      moveId: 'secure_an_advantage',
+    }));
+    await table.settle();
+    const [card] = table.cards(f => f.sufferCard);
+    const player = table.client('pl-1');
+    player.click(card._id, '[data-action="sf-suffer-pick"]', { index: 0 });
+    await table.drain();
+    expect(table.world.message(card._id).flags[MODULE_ID]).toMatchObject({ resolved: false, pickedIndices: [0] });
+    player.click(card._id, '[data-action="sf-suffer-pick"]', { index: 1 });
+    await table.drain();
+
+    expect(momentumOf('pc-pat')).toBe(3);
+    expect(meter('pc-pat', 'supply')).toBe(4);
+    expect(meter('pc-pat', 'spirit')).toBe(5);
+    expect(table.world.message(card._id).flags[MODULE_ID].resolved).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Disconnect
 // ─────────────────────────────────────────────────────────────────────────────
 
