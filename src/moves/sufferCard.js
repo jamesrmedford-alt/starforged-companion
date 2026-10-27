@@ -292,7 +292,8 @@ function offeredPick(flags, payload, actor) {
       : null;
   }
   if (payload.pickKind === "enum" && prompt.kind !== "any") {
-    const i      = Number(payload.optionIndex);
+    const raw    = payload.optionIndex;
+    const i      = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
     const option = Number.isInteger(i) ? prompt.options?.[i] : null;
     const picked = Array.isArray(flags.pickedIndices) ? flags.pickedIndices : [];
     return option && isOptionAvailable(option, { actor }) && !picked.includes(i)

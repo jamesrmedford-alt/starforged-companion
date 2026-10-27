@@ -226,6 +226,12 @@ describe("applySufferPickFromRelay — a pick applies once, on the canonical GM"
       await expect(applySufferPickFromRelay({ messageId: options.id, pickKind: "enum", optionIndex }, gm), optionIndex)
         .resolves.toEqual({ applied: false, reason: "not-offered" });
     }
+    // No index is not option 0, though Number(null) is 0.
+    const open = sufferCardMessage({ kind: "enumerated", options: [{ label: "-1 momentum", momentum: -1 }] });
+    for (const optionIndex of [null, "", undefined]) {
+      await expect(applySufferPickFromRelay({ messageId: open.id, pickKind: "enum", optionIndex }, gm), String(optionIndex))
+        .resolves.toEqual({ applied: false, reason: "not-offered" });
+    }
     expect(pc._updateHistory).toEqual([]);
   });
 
