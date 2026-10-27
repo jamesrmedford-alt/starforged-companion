@@ -3813,9 +3813,13 @@ function registerChronicleTests(quench) {
       after(async function () {
         if (app?.close) await app.close().catch(() => {});
         if (actor) {
-          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
-          if (chronicleJournal?.delete) {
-            await chronicleJournal.delete().catch(err =>
+          // The test actor's own Chronicle journal(s), by the actor flag —
+          // by name this could delete a real character's same-named chronicle
+          // (issue #301 B03).
+          const chronicleJournals = (game.journal?.contents ?? []).filter(j =>
+            j?.flags?.[MODULE_ID]?.chronicleActorId === actor.id);
+          for (const chronicleJournal of chronicleJournals) {
+            await chronicleJournal.delete?.().catch(err =>
               console.warn(`${MODULE_ID} | quench: chronicle journal cleanup failed:`, err));
           }
           if (actor.delete) await actor.delete().catch(() => {});
@@ -5161,9 +5165,9 @@ function registerChatCardActionsTests(quench) {
 
           // Stub fetch so the (likely-cached) regen call doesn't hit Anthropic.
           // The handler reads campaignState.campaignRecapCache; if a cache
-          // exists and matches the current chronicle length, the regen
-          // returns the cached text without an API call. With no cache and
-          // no chronicle, postCampaignRecap posts the empty-state card.
+          // exists and matches the current chronicle (count and content), the
+          // regen returns the cached text without an API call. With no cache
+          // and no chronicle, postCampaignRecap posts the empty-state card.
           await withSilencedNotifications(async () => {
             await withStubbedFetch([[
               "api.anthropic.com",
@@ -5319,9 +5323,10 @@ function registerRecapEndToEndTests(quench) {
             .catch(() => {});
         }
         if (actor) {
-          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
-          if (chronicleJournal?.delete) {
-            await chronicleJournal.delete().catch(err =>
+          const chronicleJournals = (game.journal?.contents ?? []).filter(j =>
+            j?.flags?.[MODULE_ID]?.chronicleActorId === actor.id);
+          for (const chronicleJournal of chronicleJournals) {
+            await chronicleJournal.delete?.().catch(err =>
               console.warn(`${MODULE_ID} | quench: recap chronicle cleanup failed:`, err));
           }
           if (actor.delete) await actor.delete().catch(() => {});
@@ -12128,7 +12133,13 @@ function registerPromptContractTests(quench) {
               vow: { statement: N.vow, rank: "dangerous" }, sessionId: "quench-contract-s1",
               establishedAt: new Date().toISOString(),
             },
-            campaignRecapCache: { text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(), chronicleLength: 1 },
+          };
+          // The recap's cache, made from the chronicle as it stands: the
+          // narrator uses one only while it matches (issue #301 B04).
+          const { campaignRecapCacheKey } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          cs.campaignRecapCache = {
+            text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(),
+            ...(await campaignRecapCacheKey(cs)),
           };
           mintSession(cs);
           await game.settings.set(MODULE, "campaignState", cs);

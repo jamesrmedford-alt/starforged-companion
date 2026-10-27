@@ -37,7 +37,12 @@ Terminology up front, because it drives every gap below:
   completed (fulfilling A used to resolve the one other open vow B and pay
   B's payoff). Likewise an exact name for a completed vow skips the substring
   rung, so fulfilling "Find the ship" can't resolve the open "Find the ship's
-  captain".
+  captain". **The roller's own vow comes first** (issue #301 B02): given the
+  roll's `itemId` (the Item it scored) and/or `actorId` (the roller), the
+  resolver takes that Item, else the roller's own exact-name vow (open, then
+  completed), before the global ladder — two PCs' *independent* vows can
+  share a name (both "Background Vow", different `vowId`s), and the ladder
+  used to take whichever PC came first.
 
 ## 1. Creation
 
@@ -94,7 +99,9 @@ All real progress lands on **item ticks** (`system.current`) via
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else
   whichever PC does (`resolveVowHolderActor`) — once per card (relayed
-  `fightVow.markMilestone`).
+  `fightVow.markMilestone`). The card's rank and 🤝 Deepen connection come
+  from the same roller-first resolution (`postFightVowMilestoneCard`), not
+  the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
   to sibling copies by `vowId` — `["current","clockTicks","completed"]`
   (`SHARED_VOW_SYNC_FIELDS`; `completed` joined in the VOW-FULFIL-SIBLINGS
@@ -127,8 +134,10 @@ come from module data".
 
 **Pipeline path** (typed, victory-card button, or suggestion button):
 `finishVow` closes the journal twin if one exists; `completeVowItemByName`
-closes **every open item copy** across PCs; payoff via `payFulfilledVowNative`
-with `skipLegacy:true` and `actorId` = the roller (quests legacy is paid on
+closes **every open item copy** across PCs of the roller's vow — the Item
+the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
+payoff via `payFulfilledVowNative` with `skipLegacy:true`, `actorId` = the
+roller and the same `itemId` (quests legacy is paid on
 the pipeline's own campaignState object, which `persistResolution` merges
 onto the stored state keeping the higher tick count) — connection
 deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`) +
@@ -146,13 +155,15 @@ nothing completes.
 **Native-sheet path**: the roller's client narrates the vendor progress-roll
 card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
-`payFulfilledVowNative`, which here also pays quests legacy). Idempotency:
+`payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
+also pays quests legacy — from the roller's vow's rank). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
 across both paths.
 
 **Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
 the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
-every copy completed + `forsaken` (audit-preserving — nothing is deleted),
+every copy of the roller's vow completed + `forsaken` (audit-preserving —
+nothing is deleted),
 closes the journal twin, flips a still-promised reward to **lost**, and posts
 the "⛓ Vow Forsaken" card. The costs suffer-prompt (Endure Stress −2 / Test
 Your Relationship / discard an asset / narrative cost) rides alongside as
@@ -212,3 +223,11 @@ summary lives in the `known-issues.md` table and the code.
   relay, no resolved stamp) and silently did nothing with no GM~~ — relayed
   `fightVow.markMilestone`, one-shot via `resolvedActions.markMilestone`
   (`combat-flow.md` §4).
+- ~~Two PCs' independent vows with the same name paid, completed and forsook
+  each other~~ (issue #301 B02): the first PC's open copy won the name
+  ladder, so it was stamped `fulfilPaid`, granted the reward, set the legacy
+  rank and had its connection deepened — and its own later fulfilment paid
+  nothing — while the roller's vow stayed unpaid (and, on the pipeline path,
+  open). Every resolver caller now passes the roller (and the scored Item
+  where known): the fulfil payoff, pipeline completion, Forsake, the
+  won-fight card, milestone holder and fight reward.

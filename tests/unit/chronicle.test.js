@@ -10,6 +10,7 @@ import {
   addChronicleEntry,
   getChronicleEntries,
   updateChronicleEntry,
+  saveChronicleEntries,
 } from '../../src/character/chronicle.js';
 import * as chronicle from '../../src/character/chronicle.js';
 
@@ -295,5 +296,150 @@ describe('error path coverage', () => {
     expect(updated[0].moveId).toBeNull();
     expect(updated[0].sessionId).toBe('');
     expect(updated[0].automated).toBe(false);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity — the journal is the actor's by id, never by name (issue #301 B03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('identity by actor id, not by name (issue #301 B03)', () => {
+  // A listable journal collection (Foundry's game.journal is one): getName
+  // returns the FIRST journal with the name, as Foundry's does.
+  let journals, savedJournal;
+
+  function makeJournal({ name, owner = null, entries = [] }) {
+    const page = {
+      name: 'Chronicle',
+      flags: { [MODULE_ID]: { [CHRONICLE_KEY]: entries.map(e => ({ ...e })) } },
+      setFlag: async (mod, key, val) => { (page.flags[mod] ??= {})[key] = val; },
+    };
+    const journal = {
+      id: `j-${journals.length + 1}`, name,
+      flags: owner ? { [MODULE_ID]: { chronicleActorId: owner } } : {},
+      pages: { contents: [page] },
+      setFlag: async (mod, key, val) => { (journal.flags[mod] ??= {})[key] = val; },
+      update: async (changes) => { if (changes.name) journal.name = changes.name; },
+      createEmbeddedDocuments: async () => [],
+    };
+    journals.push(journal);
+    return journal;
+  }
+
+  beforeEach(() => {
+    journals = [];
+    savedJournal = game.journal;
+    game.journal = {
+      get contents() { return [...journals]; },
+      get: (id) => journals.find(j => j.id === id) ?? null,
+      getName: (n) => journals.find(j => j.name === n) ?? null,
+      [Symbol.iterator]: () => journals[Symbol.iterator](),
+    };
+    JournalEntry.create = async (data) => {
+      const owner = data.flags?.[MODULE_ID]?.chronicleActorId ?? null;
+      return makeJournal({ name: data.name, owner });
+    };
+  });
+  afterEach(() => { game.journal = savedJournal; });
+
+  const texts = async (actorId) => (await getChronicleEntries(actorId)).map(e => e.text);
+  const stored = (journal) => journal.pages.contents[0].flags[MODULE_ID][CHRONICLE_KEY].map(e => e.text);
+
+  it('a rename keeps the history in one journal, relabelled with the new name', async () => {
+    const ash = setupActor('pc-1', 'Ash');
+    await addChronicleEntry('pc-1', { text: 'We found the vault.' });
+    ash.name = 'Ash Renamed';
+    await addChronicleEntry('pc-1', { text: 'We opened the vault.' });
+
+    expect(await texts('pc-1')).toEqual(['We found the vault.', 'We opened the vault.']);
+    expect(journals).toHaveLength(1);
+    expect(journals[0].name).toBe('Chronicle — Ash Renamed');
+  });
+
+  it('characters who share a name keep separate chronicles', async () => {
+    setupActor('pc-a', 'Ash');
+    setupActor('pc-b', 'Ash');
+    await addChronicleEntry('pc-a', { text: 'Ash A found a vault.' });
+    await addChronicleEntry('pc-b', { text: 'Ash B met Sable.' });
+
+    expect(await texts('pc-a')).toEqual(['Ash A found a vault.']);
+    expect(await texts('pc-b')).toEqual(['Ash B met Sable.']);
+    expect(journals).toHaveLength(2);
+  });
+
+  it('a history an earlier rename split reads as one, and the next write folds it into one journal', async () => {
+    setupActor('pc-1', 'Ash Renamed');
+    const old  = makeJournal({ name: 'Chronicle — Ash', owner: 'pc-1', entries: [
+      { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'We found the vault.' },
+      { id: 'e3', timestamp: '2026-01-03T00:00:00Z', text: 'We lost the map.' },
+    ] });
+    const made = makeJournal({ name: 'Chronicle — Ash Renamed', owner: 'pc-1', entries: [
+      { id: 'e2', timestamp: '2026-01-02T00:00:00Z', text: 'We opened the vault.' },
+    ] });
+
+    expect(await texts('pc-1')).toEqual(['We found the vault.', 'We opened the vault.', 'We lost the map.']);
+
+    await addChronicleEntry('pc-1', { text: 'We sealed it again.' });
+    expect(stored(made)).toEqual(['We found the vault.', 'We opened the vault.', 'We lost the map.', 'We sealed it again.']);
+    expect(stored(old)).toEqual([]);
+    expect(await texts('pc-1')).toHaveLength(4);
+  });
+
+  it('an edit and a panel save reach an entry wherever a split left it — and a delete sticks', async () => {
+    setupActor('pc-1', 'Ash Renamed');
+    makeJournal({ name: 'Chronicle — Ash', owner: 'pc-1', entries: [
+      { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'Vex died.' },
+    ] });
+    makeJournal({ name: 'Chronicle — Ash Renamed', owner: 'pc-1', entries: [
+      { id: 'e2', timestamp: '2026-01-02T00:00:00Z', text: 'We opened the vault.' },
+    ] });
+
+    await updateChronicleEntry('pc-1', 'e1', 'Vex survived.');
+    expect(await texts('pc-1')).toEqual(['Vex survived.', 'We opened the vault.']);
+
+    const kept = (await getChronicleEntries('pc-1')).filter(e => e.id !== 'e1');
+    expect(await saveChronicleEntries('pc-1', kept)).toBe(true);
+    expect(await texts('pc-1')).toEqual(['We opened the vault.']);
+  });
+
+  it('never attaches a journal that belongs to another character, whatever its name', async () => {
+    setupActor('pc-a', 'Ash');
+    setupActor('pc-b', 'Bex');
+    makeJournal({ name: 'Chronicle — Bex', owner: 'pc-a', entries: [{ id: 'e1', text: 'Ash\'s secret.' }] });
+
+    expect(await texts('pc-b')).toEqual([]);
+    await addChronicleEntry('pc-b', { text: 'Bex met Sable.' });
+    expect(await texts('pc-b')).toEqual(['Bex met Sable.']);
+    expect(await texts('pc-a')).toEqual(['Ash\'s secret.']);
+  });
+
+  it('adopts an unflagged journal under the name when one character has it, and stamps it on write', async () => {
+    setupActor('pc-1', 'Kira');
+    const legacy = makeJournal({ name: 'Chronicle — Kira', entries: [{ id: 'e1', text: 'Old entry.' }] });
+
+    expect(await texts('pc-1')).toEqual(['Old entry.']);
+    await addChronicleEntry('pc-1', { text: 'New entry.' });
+    expect(legacy.flags[MODULE_ID].chronicleActorId).toBe('pc-1');
+    expect(journals).toHaveLength(1);
+  });
+
+  it('no code outside chronicle.js finds a Chronicle journal by its name (the panel and Quench did)', async () => {
+    const fs = await import('node:fs');
+    const root = new URL('../../src/', import.meta.url);
+    const offenders = fs.readdirSync(root, { recursive: true })
+      .filter(f => String(f).endsWith('.js') && !String(f).replace(/\\/g, '/').endsWith('character/chronicle.js'))
+      .filter(f => /Chronicle — \$\{/.test(fs.readFileSync(new URL(String(f), root), 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
+  it('attaches an unflagged journal to neither of two characters who share its name', async () => {
+    setupActor('pc-a', 'Kira');
+    setupActor('pc-b', 'Kira');
+    makeJournal({ name: 'Chronicle — Kira', entries: [{ id: 'e1', text: 'Whose is this?' }] });
+
+    expect(await texts('pc-a')).toEqual([]);
+    expect(await texts('pc-b')).toEqual([]);
+    expect(getCapturedWarns().some(w => /not attached to either/.test(String(w)))).toBe(true);
   });
 });

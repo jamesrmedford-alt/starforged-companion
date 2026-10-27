@@ -50,8 +50,9 @@ final `storeSector` write.
 ## 2. Develop (relationship progress)
 
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
-  pipeline branch): `selectConnection` (exact → substring → sole-bonded →
-  sole-active) + `planDevelopRelationship` — **un-bonded** → one rank-step of
+  pipeline branch): `selectConnection` (a picker's host id → exact →
+  substring → sole-bonded → sole-active) + `planDevelopRelationship` —
+  **un-bonded** → one rank-step of
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → bonds-legacy ticks (strong 2 / weak 1) and a match-on-hit
   raises the connection's rank (`nextRank`, clamped at epic). Ambiguous
@@ -87,8 +88,16 @@ final `storeSector` write.
   attributes for an older card) and that the clicker's PC is one the
   requester owns, posts the forced Develop Your Relationship / Forge a Bond
   move **once** — speaking as the clicker's PC, so the pipeline credits the
-  roller although the GM authors the message — and stamps the card
-  `resolved` (in-flight guarded; a failed post leaves it open). A click with
+  roller although the GM authors the message, and naming the picked
+  connection as `forcedMoveTargetId` (its host Actor id) and
+  `forcedMoveTarget` (its name) — and stamps the card `resolved` (in-flight
+  guarded; a failed post leaves it open). A forced move skips the
+  interpreter, so those flags are the only way the pick reaches the move: the
+  chat pipeline carries them as `interpretation.moveTargetId` /
+  `moveTarget`, and enrichment and the develop / forge branches resolve by
+  the id first (issue #301 B01 — the flags used to be missing, so forge
+  scored 0 or the sole bonded connection's track, and develop marked the
+  sole bonded connection). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the
@@ -108,7 +117,10 @@ BOND-NATIVE-FORGE fix). The Bolster (+2) / Expand (second role, +1) influence
 choice is card text, tracked manually. Once
 `bonded`: always context-injected (`allyFlag`), develop switches to the
 bond-legacy branch, `selectConnection` prefers it as the sole-bonded
-fallback, and forge affordances exclude it.
+fallback, and forge affordances exclude it. Forge a Bond's own resolution —
+enrichment and the forge branch alike — never falls back to a bonded
+connection (`selectConnection`'s `unbonded` option): with no picker id and
+no matching name it takes the sole un-bonded connection, else nothing.
 
 ## 4. Payoffs and interplay
 

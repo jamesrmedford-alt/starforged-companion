@@ -90,6 +90,52 @@ describe("selectConnection", () => {
     // only Ben is active → sole active fallback
     expect(selectConnection(list, null)?._id).toBe("b");
   });
+
+  // Issue #301 B01 — a connection picker names its choice by host Actor id.
+  describe("by host id (a picker's choice)", () => {
+    const list = [
+      conn({ _id: "a", __hostId: "h-kira",  name: "Kira",  bonded: true }),
+      conn({ _id: "b", __hostId: "h-sable", name: "Sable" }),
+      conn({ _id: "c", __hostId: "h-sable2", name: "Sable" }),
+    ];
+
+    it("resolves the id over the sole-bonded fallback and over a same-named connection", () => {
+      expect(selectConnection(list, null, { hostId: "h-sable" })?._id).toBe("b");
+      expect(selectConnection(list, "Sable", { hostId: "h-sable2" })?._id).toBe("c");
+    });
+
+    it("an id that matches no active connection resolves nothing — never a name guess", () => {
+      expect(selectConnection(list, "Sable", { hostId: "h-gone" })).toBeNull();
+      const lost = [...list, conn({ _id: "d", __hostId: "h-lost", name: "Lost", active: false })];
+      expect(selectConnection(lost, null, { hostId: "h-lost" })).toBeNull();
+    });
+
+    it("an empty id falls through to the name ladder", () => {
+      expect(selectConnection(list, "Kira", { hostId: "" })?._id).toBe("a");
+    });
+  });
+
+  describe("unbonded (Forge a Bond)", () => {
+    const list = [
+      conn({ _id: "a", name: "Kira", bonded: true }),
+      conn({ _id: "b", name: "Sable" }),
+    ];
+
+    it("never falls back to a bonded connection", () => {
+      expect(selectConnection(list, null)?._id).toBe("a");          // develop: sole bonded
+      expect(selectConnection(list, null, { unbonded: true })?._id).toBe("b");
+      expect(selectConnection(list, "Nobody", { unbonded: true })?._id).toBe("b");
+    });
+
+    it("returns null when several un-bonded connections could be meant", () => {
+      const more = [...list, conn({ _id: "c", name: "Rook" })];
+      expect(selectConnection(more, null, { unbonded: true })).toBeNull();
+    });
+
+    it("a named bonded connection still resolves to itself (the forge then pays nothing)", () => {
+      expect(selectConnection(list, "Kira", { unbonded: true })?._id).toBe("a");
+    });
+  });
 });
 
 // ─── planDevelopRelationship ─────────────────────────────────────────────────

@@ -150,7 +150,14 @@ duplicate or silently hit the wrong target.
   resolving vow copies `vowId`-first. `FOLDER-001` spawned a duplicate sector
   folder every load because "does this folder exist?" matched loosely.
   Placeholder figures were duplicated instead of renamed in place until the
-  detector matched the existing record.
+  detector matched the existing record. Issue #301 found three more: the
+  connection picker validated its choice's host id and then posted the move
+  without it (B01); vow payoffs matched the name across every PC instead of
+  the roller's own vow (B02); and the Chronicle was found by
+  "Chronicle — {name}" although its journal carried the actor id (B03).
+- A cache derived from mutable content is keyed by that content, not by a
+  count: the campaign recap kept serving "Vex died." after the entry was
+  corrected, because only the entry count was compared (issue #301 B04).
 - When only a name is available (narrator prose, a chat command), use a
   **bounded ladder** — exact → substring → type-keyword-when-unique →
   sole-open — and **stop before guessing** when a wrong guess is costly

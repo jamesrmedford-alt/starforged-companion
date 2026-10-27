@@ -802,6 +802,11 @@ export function registerChatHook() {
     const forcedMoveTarget = typeof message.flags?.[MODULE_ID]?.forcedMoveTarget === "string"
       ? message.flags[MODULE_ID].forcedMoveTarget
       : null;
+    // A connection picker also names the connection's host Actor id — the
+    // stable key the develop / forge branches resolve by (issue #301 B01).
+    const forcedMoveTargetId = typeof message.flags?.[MODULE_ID]?.forcedMoveTargetId === "string"
+      ? message.flags[MODULE_ID].forcedMoveTargetId
+      : null;
     const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
 
     // Pacing classifier — decides whether to run the move pipeline, narrate
@@ -854,7 +859,7 @@ export function registerChatHook() {
       const combatPosition = await getActiveCombatPosition();
 
       const interpretation = forcedMoveId
-        ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget)
+        ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget, forcedMoveTargetId)
         : await interpretMove(narration, {
             campaignState,
             mischiefLevel: dial,
@@ -1145,7 +1150,10 @@ export function registerChatHook() {
           const connections = (campaignState.connectionIds ?? [])
             .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
             .filter(Boolean);
-          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          // A picker's host id first — without it, a picked un-bonded
+          // connection fell back to the sole bonded one (issue #301 B01).
+          const target = selectConnection(connections, interpretation.moveTarget ?? null,
+            { hostId: interpretation.moveTargetId ?? null });
           const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
 
           if (plan.action === "bond-legacy") {
@@ -1221,7 +1229,10 @@ export function registerChatHook() {
           const connections = (campaignState.connectionIds ?? [])
             .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
             .filter(Boolean);
-          const target = selectConnection(connections, interpretation.moveTarget ?? null);
+          // The same resolution enrichment scored (issue #301 B01): the
+          // picker's host id, then the name, never a bonded fallback.
+          const target = selectConnection(connections, interpretation.moveTarget ?? null,
+            { hostId: interpretation.moveTargetId ?? null, unbonded: true });
           if (target?.__hostId && !target.bonded) {
             await conn.forgeBond(target.__hostId).catch(err =>
               console.warn(`${MODULE_ID} | forge bond: forgeBond failed:`, err?.message ?? err));
@@ -1325,7 +1336,15 @@ export function registerChatHook() {
             ?? fin?.track?.label
             ?? interpretation.moveTarget
             ?? null;
-          const itemDone = await completeVowItemByName(vowName);
+          // The roller and the Item the roll scored: completion and payoff
+          // resolve THAT vow, never another PC's same-named one (issue #301
+          // B02). trackId is a journal track's id on the journal fallback —
+          // it then matches no Item and the roller's name match applies.
+          const vowKey = {
+            actorId: rollerActor?.id ?? null,
+            itemId:  tickInfo?.source === "vow" ? (tickInfo.trackId ?? null) : null,
+          };
+          const itemDone = await completeVowItemByName(vowName, vowKey);
 
           if (fin?.track) {
             if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
@@ -1334,14 +1353,14 @@ export function registerChatHook() {
             // Journal path already paid the quests legacy — deliver only the
             // connection deepen + promised reward. Sets fulfilPaid, so a later
             // native-sheet roll of the same vow can't double-pay.
-            if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, actorId: rollerActor?.id ?? null });
+            if (itemDone) await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey });
           } else if (itemDone) {
             // Item-only vow (no journal twin): legacy on the pipeline's
             // campaignState, deepen + reward via the shared payoff, then a
             // fulfil card synthesized from the item.
             const ticks = legacyRewardTicks(itemDone.rank, ranksDown);
             if (ticks > 0) addLegacyTicks(campaignState, "quests", ticks);
-            await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, actorId: rollerActor?.id ?? null });
+            await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey });
             await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks }).catch(err =>
               console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
           } else {
@@ -1360,7 +1379,10 @@ export function registerChatHook() {
       // achieved. The resolver's cost sufferPrompt rides separately.
       if (resolution.consequences?.forsakeVow && game.user.isGM) {
         try {
-          const { primary, copies } = resolveVowItemCopies(interpretation.moveTarget ?? null);
+          // The roller's own vow first (issue #301 B02) — never another PC's
+          // vow that shares the name.
+          const { primary, copies } = resolveVowItemCopies(interpretation.moveTarget ?? null,
+            { actorId: rollerActor?.id ?? null });
           const fin = await finishVow(
             { moveTarget: interpretation.moveTarget ?? primary?.item?.name ?? null, ranksDown: 0 },
             {
@@ -2567,7 +2589,7 @@ async function handleJournalCommand(message) {
  * to the move's first listed stat; the confirmation dialog still lets the
  * player override.
  */
-function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null) {
+function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null, moveTargetId = null) {
   const moveData = MOVES[moveId];
   const statUsed = moveData?.stat?.[0] ?? null;
   const moveName = moveId.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
@@ -2583,6 +2605,10 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
     isProgressMove:   moveData?.progressMove === true,
     progressTicks:    0,
     moveTarget:       typeof moveTarget === "string" && moveTarget.trim() ? moveTarget.trim() : null,
+    // The target's stable id when the card that forced the move knows it (a
+    // connection picker's host Actor id) — selectConnection resolves by it
+    // before any name.
+    moveTargetId:     typeof moveTargetId === "string" && moveTargetId ? moveTargetId : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
     confidence:       "high",
@@ -3323,20 +3349,17 @@ function registerCombatThresholdSocket() {
 
 // ── Won-fight vow milestone (#241): surface the vow the fight served ─────────
 
-async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
-  // Look up the linked vow on the roster for its rank + connection link.
-  let connectionName = null, vowRank = null;
-  for (const actor of getPlayerActors()) {
-    const item = (actor.items ?? []).find(i =>
-      i.type === "progress" && i.system?.subtype === "vow"
-      && (i.name ?? "").toLowerCase() === String(vowName ?? "").toLowerCase()
-      && !i.system?.completed);
-    if (item) {
-      vowRank        = item.system?.rank ?? null;
-      connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
-      break;
-    }
-  }
+// Exported for unit testing.
+export async function postFightVowMilestoneCard(vowName, marks, actorId = null) {
+  // The linked vow's rank + connection link — read from the vow the card's
+  // buttons will act on: the roller's own (resolveVowItemCopies; the milestone
+  // button marks resolveVowHolderActor's). The first PC's same-named vow used
+  // to supply them, so 🤝 Deepen could name another PC's connection (issue
+  // #301 B02). Open vows only, as before.
+  const { primary } = resolveVowItemCopies(vowName, { actorId });
+  const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
+  const vowRank        = item?.system?.rank ?? null;
+  const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
     ? ` <button type="button" class="entity-btn" data-action="sf-deepen-bond">🤝 Deepen your bond with ${escapeChatHtml(connectionName)}</button>`
@@ -3379,7 +3402,7 @@ export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
  */
 export function resolveVowHolderActor(vowName, preferredActorId = null) {
   const preferred = preferredActorId ? (game.actors?.get?.(preferredActorId) ?? null) : null;
-  const { primary, copies } = resolveVowItemCopies(vowName);
+  const { primary, copies } = resolveVowItemCopies(vowName, { actorId: preferred?.id ?? null });
   if (preferred && copies.some(({ actor }) => actor?.id === preferred.id)) return preferred;
   return primary?.actor ?? preferred ?? getPlayerActors()[0] ?? null;
 }
@@ -3432,15 +3455,27 @@ async function postDeepenBondCard(name, marks) {
 // match on a completed vow skips the sole-open-vow rung (which is for a name
 // that matches NOTHING — a fully renamed vow).
 //
+// The roller's own vow comes first (issue #301 B02). `itemId` — the exact
+// Item a roll scored — outranks every name; then, with `actorId`, that PC's
+// own exact-name vow (open, else completed: the sheet or the pipeline may
+// have closed it before the payoff runs). Two PCs' INDEPENDENT vows can share
+// a name (both "Background Vow", different vowIds), and the global ladder
+// below took whichever PC came first — another PC's vow was completed,
+// forsaken, stamped paid and rewarded, its rank set the legacy and its
+// connection was deepened. The global ladder applies only when the roller
+// holds no such vow.
+//
+// @param {string|null} vowName
+// @param {{ actorId?: string|null, itemId?: string|null }} [opts]
 // @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
-export function resolveVowItemCopies(vowName) {
+export function resolveVowItemCopies(vowName, { actorId = null, itemId = null } = {}) {
   const all  = collectPlayerVowItems();
   const open = all.filter(e => e.item.system?.completed !== true);
   const lo   = String(vowName ?? "").trim().toLowerCase();
-  let primary = null;
+  let primary = rollerVowEntry(all, lo, { actorId, itemId });
   const completedMatch = (score) => !!lo && all.some(e =>
     e.item.system?.completed === true && vowNameMatch(e, lo) >= score);
-  if (lo) {
+  if (!primary && lo) {
     primary = open.find(e => vowNameMatch(e, lo) === 2) ?? null;
     // An exact name for a vow that is already completed outranks a substring
     // match on another open vow: fulfilling "Find the ship" completes it
@@ -3454,6 +3489,20 @@ export function resolveVowItemCopies(vowName) {
   if (!primary && open.length === 1 && !completedMatch(1)) primary = open[0];
   if (!primary) return { primary: null, copies: [] };
   return { primary, copies: collectVowCopies(all, primary) };
+}
+
+// The roller's vow entry for resolveVowItemCopies: the scored Item by id (the
+// roller's copy when several PCs carry the id — a duplicated actor keeps its
+// items' ids), else the roller's exact-name vow, open before completed.
+function rollerVowEntry(all, lo, { actorId = null, itemId = null } = {}) {
+  if (typeof itemId === "string" && itemId) {
+    const byId = all.filter(e => e.item.id === itemId);
+    const hit  = byId.find(e => e.actor?.id === actorId) ?? byId[0] ?? null;
+    if (hit) return hit;
+  }
+  if (!actorId || !lo) return null;
+  const own = all.filter(e => e.actor?.id === actorId && vowNameMatch(e, lo) === 2);
+  return own.find(e => e.item.system?.completed !== true) ?? own[0] ?? null;
 }
 
 // Name-ladder score of a vow entry against a lowercased target: 2 exact,
@@ -3505,7 +3554,7 @@ function collectVowCopies(all, primary) {
 async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, actorId = null, copies: knownCopies = null } = {}) {
   const copies = Array.isArray(knownCopies) && knownCopies.length
     ? knownCopies
-    : resolveVowItemCopies(vowName).copies;
+    : resolveVowItemCopies(vowName, { actorId }).copies;
   let reward = null, vowId = null, anyRewardFlag = false, rewardHolder = null;
   for (const { actor, item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
@@ -3558,7 +3607,13 @@ async function postRewardGrantCard(reward, plan) {
 // bypasses the journal-track fulfill branch AND never touches our legacy tracks,
 // so this also marks the Quests legacy. GM-side (world writes); idempotent per
 // vow via the fulfilPaid flag. Exported for unit testing.
-export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false, actorId = null } = {}) {
+//
+// `actorId` is the roller; `itemId` the vow Item the roll scored (the
+// pipeline knows it). The roller's own vow — open or already completed — is
+// the one paid, before any other PC's vow of the same name (issue #301 B02:
+// another PC's independent, still-open "Background Vow" took the stamp, the
+// reward, the legacy rank and the connection deepen).
+export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = false, actorId = null, itemId = null } = {}) {
   // vowId-first resolution with a name ladder — a renamed vow or stale
   // linkedVowName snapshot still resolves (VOW-RENAME-PAYOFF). The completed
   // filter is bypassed here: the vendor sheet — or the pipeline's
@@ -3568,7 +3623,7 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
   // then collect EVERY PC's copy of that vow (by vowId, else name).
   // Collecting only the first PC's copy made a shared vow's reward land on the
   // first PC instead of the roller.
-  let { primary, copies } = resolveVowItemCopies(vowName);
+  let { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
   if (!primary) {
     const lo  = String(vowName ?? "").trim().toLowerCase();
     const all = collectPlayerVowItems();
@@ -3628,9 +3683,11 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
 // as one copy per PC; copies collect by vowId, so a renamed copy still
 // closes — VOW-RENAME-PAYOFF). Pipeline Fulfill Your Vow companion to
 // actorBridge.completeVowItem. Returns { name, rank } of the resolved vow,
-// or null when nothing matched.
-async function completeVowItemByName(vowName) {
-  const { primary, copies } = resolveVowItemCopies(vowName);
+// or null when nothing matched. `actorId` / `itemId` (the roller, the scored
+// Item) resolve the roller's own vow first — another PC's same-named vow used
+// to be the one completed (issue #301 B02).
+async function completeVowItemByName(vowName, { actorId = null, itemId = null } = {}) {
+  const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
   if (!primary) return null;
   let anyDone = false;
   for (const { actor, item } of copies) {

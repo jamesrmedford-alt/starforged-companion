@@ -407,7 +407,12 @@ function previousSessionSummaryFor(campaignState) {
  * the first move narration per page load, after a fresh Claude call whenever
  * the chronicle had grown (issue #286 C3). It is read from the cache, which
  * End a Session and a new session's world load refresh; generated here only
- * when none was ever made, and only on a GM — the client that keeps it.
+ * when no current one exists, and only on a GM — the client that keeps it.
+ *
+ * Only a recap of the chronicle as it stands now is used (issue #301 B04):
+ * this read used no validity check at all, so a recap made before an entry
+ * was corrected opened every session with the uncorrected story — and at a
+ * table whose GM has no key, where nothing regenerates it, indefinitely.
  */
 async function sessionStartRecap(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
@@ -420,8 +425,9 @@ async function sessionStartRecap(campaignState) {
   let stored = null;
   try { stored = game.settings.get(MODULE_ID, 'campaignState')?.campaignRecapCache ?? null; }
   catch { stored = null; }
+  const key = await campaignRecapCacheKey(campaignState);
   for (const cache of [stored, campaignState?.campaignRecapCache]) {
-    if (typeof cache?.text === 'string' && cache.text.trim()) return cache.text;
+    if (isRecapCacheCurrent(cache, key)) return cache.text;
   }
   if (!game.user?.isGM) return '';
   return getCampaignRecap(campaignState).catch(() => '');
@@ -1064,7 +1070,9 @@ export async function postSessionRecap(campaignState, sessionId = null) {
 
 /**
  * Get the campaign recap text — from cache if valid, or generate via Claude.
- * Uses the chronicle length from campaignState to detect stale caches.
+ * The cache is valid while the chronicle is exactly what it was made from
+ * (campaignRecapCacheKey — issue #301 B04). A stale cache is never returned:
+ * with no key to regenerate, the result is ''.
  *
  * @param {Object} campaignState
  * @param {Object} [options]
@@ -1072,17 +1080,18 @@ export async function postSessionRecap(campaignState, sessionId = null) {
  * @returns {Promise<string>}
  */
 export async function getCampaignRecap(campaignState, options = {}) {
-  const cache = campaignState?.campaignRecapCache;
-  const chronicleLength = await _getChronicleLength(campaignState);
+  const cache     = campaignState?.campaignRecapCache;
+  const chronicle = await _recapChronicle(campaignState);
+  const key       = chronicleRecapKey(chronicle);
 
-  if (!options.forceRefresh && cache?.text && cache.chronicleLength === chronicleLength) {
+  if (!options.forceRefresh && isRecapCacheCurrent(cache, key)) {
     return cache.text;
   }
 
   const apiKey = getApiKey();
   if (!apiKey) return '';
 
-  const chronicleEntries = await _getChronicleEntries(campaignState);
+  const chronicleEntries = formatRecapEntries(chronicle);
   if (!chronicleEntries.length) return '';
 
   const settings    = getNarratorSettings();
@@ -1106,7 +1115,7 @@ export async function getCampaignRecap(campaignState, options = {}) {
       updated.campaignRecapCache = {
         text:            text,
         generatedAt:     new Date().toISOString(),
-        chronicleLength: chronicleLength,
+        ...key,          // the chronicle it was made from
       };
       await game.settings.set(MODULE_ID, 'campaignState', updated);
     }
@@ -3591,35 +3600,63 @@ async function _collectAllChronicleEntries(campaignState) {
 }
 
 /**
- * Count chronicle entries across every PC. Used to detect stale recap caches.
+ * What a campaign recap's cache is checked against (issue #301 B04): the
+ * entry count and a hash of exactly what the recap prompt is built from —
+ * each entry's text, timestamp and session number, in campaign order (pins
+ * and type changes do not count). The count alone kept serving a recap made
+ * before a correction that kept the count: "Vex died." edited to "Vex
+ * survived.", or a wrong entry deleted and a right one added, left the old
+ * recap in the cache and in every session-opening narration. Exported for
+ * the tests and Quench checks that seed a cache.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<{ chronicleLength: number, chronicleHash: string }>}
  */
-async function _getChronicleLength(campaignState) {
+export async function campaignRecapCacheKey(campaignState) {
+  return chronicleRecapKey(await _recapChronicle(campaignState));
+}
+
+// Every PC's chronicle entries for the recap — [] when they cannot be read.
+async function _recapChronicle(campaignState) {
   try {
-    const entries = await _collectAllChronicleEntries(campaignState);
-    return entries.length;
+    return await _collectAllChronicleEntries(campaignState);
   } catch (err) {
-    console.warn(`${MODULE_ID} | narrator: _getChronicleLength failed:`, err);
-    return 0;
+    console.warn(`${MODULE_ID} | narrator: reading the chronicle for the recap failed:`, err);
+    return [];
   }
 }
 
-/**
- * Read chronicle entries as formatted strings for the campaign recap prompt.
- */
-async function _getChronicleEntries(campaignState) {
-  try {
-    const entries = await _collectAllChronicleEntries(campaignState);
-    return entries.map(e => {
-      const date    = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
-      const session = e.sessionNumber ? `Session ${e.sessionNumber}` : '';
-      const header  = [session, date].filter(Boolean).join(' — ');
-      const body    = e.text ?? e.content ?? '';
-      return header ? `[${header}]\n${body}` : body;
-    }).filter(Boolean);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | narrator: _getChronicleEntries failed:`, err);
-    return [];
+function chronicleRecapKey(entries) {
+  let h = 0x811c9dc5;                                   // FNV-1a, 32-bit
+  for (const e of entries) {
+    const s = `${e?.timestamp ?? ''}\u0000${e?.sessionNumber ?? ''}\u0000${e?.text ?? e?.content ?? ''}\u0001`;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
   }
+  return { chronicleLength: entries.length, chronicleHash: (h >>> 0).toString(16).padStart(8, '0') };
+}
+
+// A recap cache is current when it was made from the chronicle as it stands
+// now. One from before the hash existed is not — it is regenerated once.
+function isRecapCacheCurrent(cache, key) {
+  return typeof cache?.text === 'string' && cache.text.trim() !== ''
+    && cache.chronicleLength === key.chronicleLength
+    && cache.chronicleHash === key.chronicleHash;
+}
+
+/**
+ * Chronicle entries as formatted strings for the campaign recap prompt.
+ */
+function formatRecapEntries(entries) {
+  return entries.map(e => {
+    const date    = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
+    const session = e.sessionNumber ? `Session ${e.sessionNumber}` : '';
+    const header  = [session, date].filter(Boolean).join(' — ');
+    const body    = e.text ?? e.content ?? '';
+    return header ? `[${header}]\n${body}` : body;
+  }).filter(Boolean);
 }
 
 /**

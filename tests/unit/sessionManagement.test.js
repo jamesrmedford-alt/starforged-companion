@@ -177,6 +177,7 @@ describe('CampaignStateSchema', () => {
     expect(cache.text).toBe('');
     expect(cache.generatedAt).toBeNull();
     expect(cache.chronicleLength).toBe(0);
+    expect(cache.chronicleHash).toBeNull();   // the chronicle a recap was made from (issue #301 B04)
   });
 });
 

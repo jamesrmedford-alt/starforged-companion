@@ -434,17 +434,22 @@ describe('a session carries into the next one (C3, C4)', () => {
   const SUMMARY = 'The crew paid Vex 300 credits for the beacon code, 7-Delta-9.';
   const RECAP   = 'RECAP: the crew still owes Vex a favour.';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     table.claude.respond((call) => {
       if (call.system?.includes('continuity scribe')) return SUMMARY;
       if (call.userText?.includes('## CAMPAIGN CHRONICLE')) return RECAP;
       if (call.model === NARRATION_MODEL) return replies.shift() ?? reply('The station hums. Nothing moves.');
       return '{}';
     });
+    // A recap made from the chronicle as it stands — a cache is used only
+    // while it matches (issue #301 B04).
+    const gm = table.client('gm-1');
+    const { campaignRecapCacheKey } = await gm.import('../../src/narration/narrator.js');
+    const chronicle = await gm.run(() => campaignRecapCacheKey(world()));
     table.world.setSetting('campaignState', {
       ...world(),
       lastSessionTimestamp: new Date().toISOString(),
-      campaignRecapCache:   { text: RECAP, generatedAt: null, chronicleLength: 0 },
+      campaignRecapCache:   { text: RECAP, generatedAt: null, ...chronicle },
     });
   });
 
