@@ -11,6 +11,8 @@
  *     even after the pipeline already completed every copy;
  *   - resolveVowItemCopies no longer falls back to a DIFFERENT sole open vow
  *     when the name names a vow that is already completed;
+ *   - two PCs' independent vows that share a name: every payoff resolves the
+ *     roller's own (issue #301 B02);
  *   - momentumRecalcRunsHere — exactly one client re-derives momentum bounds
  *     after another user edits a PC's debilities (incl. a GM's sheet edit).
  */
@@ -21,6 +23,8 @@ import {
   wireFightVowButtons,
   payFulfilledVowNative,
   resolveVowItemCopies,
+  resolveVowHolderActor,
+  postFightVowMilestoneCard,
   momentumRecalcRunsHere,
 } from '../../src/index.js';
 import { GM_RELAY_SOCKET, _resetGmRelayForTests } from '../../src/multiplayer/gmRelay.js';
@@ -350,6 +354,121 @@ describe('resolveVowItemCopies — sole-open-vow rung', () => {
     await payFulfilledVowNative('archive', 'strong_hit', { skipLegacy: true, actorId: 'pc-b' });
     expect(done.flags[MODULE_ID].fulfilPaid).toBe(true);
     expect(other.flags[MODULE_ID].fulfilPaid).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Independent vows that share a name — the roller's own vow (issue #301 B02)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('independent same-name vows — every payoff resolves the roller\'s own vow (issue #301 B02)', () => {
+  // Two PCs, each with their OWN "Background Vow" (different vowIds — not a
+  // shared vow), each promising supply and linked to a different connection.
+  // Ash (pc-a) comes first in getPlayerActors() order, as the defect needs.
+  const reward = () => ({ status: 'promised', description: 'Fuel cells', form: 'supply' });
+  let vowA, vowB, kira, sable;
+
+  function connectionActor(id, name) {
+    return makeTestActor({ id, name, flags: { [MODULE_ID]: {
+      entityType: 'connection',
+      connection: { _id: `rec-${id}`, name, rank: 'dangerous', relationshipTicks: 0, bonded: false, active: true, history: [] },
+    } } });
+  }
+
+  beforeEach(() => {
+    setUsers([GM, P1], 'gm-1');
+    vowA = makeVow('v-a', 'Background Vow', { rank: 'epic',        flags: { vowId: 'vid-a', reward: reward(), linkedConnectionName: 'Kira' } });
+    vowB = makeVow('v-b', 'Background Vow', { rank: 'troublesome', flags: { vowId: 'vid-b', reward: reward(), linkedConnectionName: 'Sable' } });
+    pcA.items.contents.push(vowA);
+    pcB.items.contents.push(vowB);
+    kira  = connectionActor('conn-kira', 'Kira');
+    sable = connectionActor('conn-sable', 'Sable');
+    game.actors._setAll([pcA, pcB, kira, sable]);
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      ...CampaignStateSchema, characterIds: ['pc-a', 'pc-b'], connectionIds: ['conn-kira', 'conn-sable'],
+    });
+  });
+
+  const supplied = (pc) => pc._updateHistory.some(u => 'system.supply.value' in u);
+  const ticks    = (actor) => actor.flags[MODULE_ID].connection.relationshipTicks;
+  const quests   = () => game.settings.get(MODULE_ID, 'campaignState').legacyTracks?.quests?.ticks ?? 0;
+
+  it('native fulfil (roller\'s vow already completed, the other still open): the roller is paid, the other PC untouched', async () => {
+    vowB.system.completed = true;
+    await payFulfilledVowNative('Background Vow', 'strong_hit', { actorId: 'pc-b' });
+
+    expect(vowB.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(vowA.flags[MODULE_ID].fulfilPaid).toBeUndefined();
+    expect(supplied(pcB)).toBe(true);
+    expect(supplied(pcA)).toBe(false);
+    expect(vowA.flags[MODULE_ID].reward.status).toBe('promised');   // Ash's reward is still owed
+    expect(quests()).toBe(1);                                         // B's troublesome rank, not A's epic 12
+    expect(ticks(sable)).toBe(8);                                     // B's connection deepened…
+    expect(ticks(kira)).toBe(0);                                      // …not A's
+  });
+
+  it('native fulfil with both still open: the roller\'s vow, though another PC is listed first', async () => {
+    await payFulfilledVowNative('Background Vow', 'strong_hit', { skipLegacy: true, actorId: 'pc-b' });
+    expect(vowB.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(vowA.flags[MODULE_ID].fulfilPaid).toBeUndefined();
+  });
+
+  it('the other PC\'s vow is paid on their own fulfilment — not early, on the roller\'s', async () => {
+    vowB.system.completed = true;
+    await payFulfilledVowNative('Background Vow', 'strong_hit', { skipLegacy: true, actorId: 'pc-b' });
+    // Before Ash fulfils, nothing of Ash's has been paid…
+    expect({ stamped: vowA.flags[MODULE_ID].fulfilPaid ?? false, supplied: supplied(pcA), kira: ticks(kira) })
+      .toEqual({ stamped: false, supplied: false, kira: 0 });
+    vowA.system.completed = true;
+    await payFulfilledVowNative('Background Vow', 'strong_hit', { skipLegacy: true, actorId: 'pc-a' });
+    // …and Ash's own fulfilment pays in full (Kira deepens by Ash's EPIC
+    // rank: three marks).
+    expect({ stamped: vowA.flags[MODULE_ID].fulfilPaid, supplied: supplied(pcA), kira: ticks(kira) })
+      .toEqual({ stamped: true, supplied: true, kira: 24 });
+  });
+
+  it('resolveVowItemCopies: the roller\'s vow (open before completed), the scored item by id, else the old ladder', () => {
+    expect(resolveVowItemCopies('Background Vow', { actorId: 'pc-b' }).primary.item.id).toBe('v-b');
+    expect(resolveVowItemCopies('Background Vow', { actorId: 'pc-b' }).copies.map(c => c.item.id)).toEqual(['v-b']);
+    expect(resolveVowItemCopies('Background Vow', { itemId: 'v-b' }).primary.item.id).toBe('v-b');
+    // No roller given (or the roller holds no such vow): the global ladder, unchanged.
+    expect(resolveVowItemCopies('Background Vow').primary.item.id).toBe('v-a');
+    expect(resolveVowItemCopies('Background Vow', { actorId: 'pc-nobody' }).primary.item.id).toBe('v-a');
+    // The roller's own open copy outranks their own completed one.
+    const old = makeVow('v-b-old', 'Background Vow', { completed: true, flags: { vowId: 'vid-b-old' } });
+    pcB.items.contents.unshift(old);
+    expect(resolveVowItemCopies('Background Vow', { actorId: 'pc-b' }).primary.item.id).toBe('v-b');
+  });
+
+  it('a duplicated actor\'s shared item id resolves to the roller\'s copy', () => {
+    const twin = makeVow('v-b', 'Background Vow', { flags: { vowId: 'vid-twin' } });
+    pcA.items.contents.unshift(twin);
+    expect(resolveVowItemCopies('Background Vow', { actorId: 'pc-b', itemId: 'v-b' }).primary.actor.id).toBe('pc-b');
+  });
+
+  it('resolveVowHolderActor: the roller holds their own same-named vow', () => {
+    expect(resolveVowHolderActor('Background Vow', 'pc-b')).toBe(pcB);
+    expect(resolveVowHolderActor('Background Vow', 'pc-a')).toBe(pcA);
+  });
+
+  it('the won-fight card names the roller\'s vow rank and connection — 🤝 Deepen acts on it', async () => {
+    await postFightVowMilestoneCard('Background Vow', 2, 'pc-b');
+    const card = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.fightVowCard);
+    expect(card.flags[MODULE_ID]).toMatchObject({ vowRank: 'troublesome', connectionName: 'Sable', actorId: 'pc-b' });
+    expect(card.content).toContain('Deepen your bond with Sable');
+  });
+
+  it('a shared vow (one vowId on every PC) still pays every copy, the reward to the roller', async () => {
+    const shared = () => ({ vowId: 'shared-9', reward: reward() });
+    const copyA = makeVow('v-sa', 'Find the Archive', { completed: true, flags: shared() });
+    const copyB = makeVow('v-sb', 'Find the Archive', { completed: true, flags: shared() });
+    pcA.items.contents.push(copyA);
+    pcB.items.contents.push(copyB);
+    await payFulfilledVowNative('Find the Archive', 'strong_hit', { skipLegacy: true, actorId: 'pc-b' });
+    expect(copyA.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(copyB.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(supplied(pcB)).toBe(true);
+    expect(supplied(pcA)).toBe(false);
   });
 });
 
