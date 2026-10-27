@@ -21,6 +21,7 @@ import {
   getRollingSessionSummary,
   finalizeSessionSummary,
   buildNarratorExtras,
+  campaignRecapCacheKey,
 } from '../../src/narration/narrator.js';
 import { buildNarratorSystemPrompt } from '../../src/narration/narratorPrompt.js';
 
@@ -317,7 +318,9 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
   });
 
   it('the campaign recap comes from its cache on the session\'s first narration only, in any mode', async () => {
-    const state = makeState({ campaignRecapCache: { text: 'The campaign so far.', chronicleLength: 99 } });
+    const state = makeState({ campaignRecapCache: {
+      text: 'The campaign so far.', generatedAt: null, ...(await campaignRecapCacheKey(makeState())),
+    } });
     const first = await buildNarratorExtras('session_vignette', state);
     expect(first.campaignRecap).toBe('The campaign so far.');
     expect(buildNarratorSystemPrompt(state, SETTINGS, null, '', first))
@@ -325,6 +328,18 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
 
     setCards(1);   // a narrator card of this session exists
     expect((await buildNarratorExtras('paced_narrative', state)).campaignRecap).toBe('');
+  });
+
+  it('a cache made from a different chronicle never opens the session (issue #301 B04)', async () => {
+    // This read had no validity check: a cache stamped for 99 entries opened
+    // the session though the chronicle had none. With no key to regenerate,
+    // the session opens with no recap rather than a stale one.
+    const stale = makeState({ campaignRecapCache: { text: 'The campaign so far.', chronicleLength: 99 } });
+    expect((await buildNarratorExtras('session_vignette', stale)).campaignRecap).toBe('');
+    // …and a cache from before the hash existed counts as stale even when its
+    // count happens to match.
+    const legacy = makeState({ campaignRecapCache: { text: 'The campaign so far.', chronicleLength: 0 } });
+    expect((await buildNarratorExtras('session_vignette', legacy)).campaignRecap).toBe('');
   });
 
   it('finalizeSessionSummary makes no call when the summary covers every card, and catches up when it does not', async () => {

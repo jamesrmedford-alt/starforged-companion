@@ -5165,9 +5165,9 @@ function registerChatCardActionsTests(quench) {
 
           // Stub fetch so the (likely-cached) regen call doesn't hit Anthropic.
           // The handler reads campaignState.campaignRecapCache; if a cache
-          // exists and matches the current chronicle length, the regen
-          // returns the cached text without an API call. With no cache and
-          // no chronicle, postCampaignRecap posts the empty-state card.
+          // exists and matches the current chronicle (count and content), the
+          // regen returns the cached text without an API call. With no cache
+          // and no chronicle, postCampaignRecap posts the empty-state card.
           await withSilencedNotifications(async () => {
             await withStubbedFetch([[
               "api.anthropic.com",
@@ -12133,7 +12133,13 @@ function registerPromptContractTests(quench) {
               vow: { statement: N.vow, rank: "dangerous" }, sessionId: "quench-contract-s1",
               establishedAt: new Date().toISOString(),
             },
-            campaignRecapCache: { text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(), chronicleLength: 1 },
+          };
+          // The recap's cache, made from the chronicle as it stands: the
+          // narrator uses one only while it matches (issue #301 B04).
+          const { campaignRecapCacheKey } = await import(`${MODULE_PATH}/narration/narrator.js`);
+          cs.campaignRecapCache = {
+            text: "QUENCH CONTRACT recap.", generatedAt: new Date().toISOString(),
+            ...(await campaignRecapCacheKey(cs)),
           };
           mintSession(cs);
           await game.settings.set(MODULE, "campaignState", cs);

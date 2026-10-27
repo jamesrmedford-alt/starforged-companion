@@ -8,8 +8,11 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { isNewSessionStart, isRecapCommand } from '../../src/index.js';
-import { postSessionRecap, getCampaignRecap, postNarrationCard } from '../../src/narration/narrator.js';
+import { postSessionRecap, getCampaignRecap, postNarrationCard, campaignRecapCacheKey } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
+import {
+  addChronicleEntry, getChronicleEntries, updateChronicleEntry, saveChronicleEntries,
+} from '../../src/character/chronicle.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -280,12 +283,12 @@ describe('getCampaignRecap() — cache', () => {
     expect(result).toBe('');
   });
 
-  it('returns cached text when chronicle length is unchanged', async () => {
+  it('returns cached text while the chronicle is unchanged', async () => {
     const state = makeCampaignState({
       campaignRecapCache: {
         text:            'Previously, in the void...',
         generatedAt:     new Date().toISOString(),
-        chronicleLength: 0,
+        ...(await campaignRecapCacheKey(makeCampaignState())),
       },
       characterIds: [],
     });
@@ -554,6 +557,128 @@ describe('getCampaignRecap() — same-named characters (issue #301 B03)', () => 
     expect(result).toBe('recap ok');
     expect(captured.split('Ash A found a vault.').length - 1).toBe(1);
     expect(captured.split('Ash B met Sable.').length - 1).toBe(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// 4d. Issue #301 B04 — a recap cache is valid only for the chronicle it was
+// made from. It was checked by entry count alone, so a correction that kept
+// the count ("Vex died." → "Vex survived.") kept serving the old recap.
+// ---------------------------------------------------------------------------
+
+describe('getCampaignRecap() — the cache after a chronicle correction (issue #301 B04)', () => {
+  let journals, savedJournal, savedCreate, origFetch, requests;
+  const state = (overrides = {}) => makeCampaignState({ characterIds: ['pc-vex'], ...overrides });
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    game.actors._set('pc-vex', makeTestActor({ id: 'pc-vex', name: 'Vex' }));
+    journals = [];
+    savedJournal = game.journal;
+    savedCreate  = JournalEntry.create;
+    game.journal = {
+      get contents() { return [...journals]; },
+      get: (id) => journals.find(j => j.id === id) ?? null,
+      getName: (n) => journals.find(j => j.name === n) ?? null,
+    };
+    JournalEntry.create = async (data) => {
+      const page = { name: 'Chronicle', flags: { [MODULE_ID]: { chronicle: [] } },
+        setFlag: async (mod, key, val) => { (page.flags[mod] ??= {})[key] = val; } };
+      const journal = { id: `j-${journals.length + 1}`, name: data.name, flags: data.flags ?? {},
+        pages: { contents: [page] }, createEmbeddedDocuments: async () => [] };
+      journals.push(journal);
+      return journal;
+    };
+    origFetch = global.fetch;
+    requests = [];
+    global.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      requests.push(body.messages?.[body.messages.length - 1]?.content ?? '');
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Fresh recap.' }] }), text: async () => '' };
+    });
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, '');
+    game.settings._store.delete(`${MODULE_ID}.campaignState`);
+  });
+  afterEach(() => {
+    game.journal = savedJournal;
+    JournalEntry.create = savedCreate;
+    global.fetch = origFetch;
+    game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    game.settings._store.delete(`${MODULE_ID}.campaignState`);
+    game.actors._reset();
+  });
+
+  /** A cache made from the chronicle as it stands now. */
+  const cacheOf = async (text) => ({ text, generatedAt: null, ...(await campaignRecapCacheKey(state())) });
+
+  it('an in-place correction invalidates it — and with no key, no stale recap is returned', async () => {
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    const withCache = state({ campaignRecapCache: await cacheOf('Vex died.') });
+    expect(await getCampaignRecap(withCache)).toBe('Vex died.');
+
+    const [entry] = await getChronicleEntries('pc-vex');
+    await updateChronicleEntry('pc-vex', entry.id, 'Vex survived.');
+    expect((await getChronicleEntries('pc-vex'))[0].text).toBe('Vex survived.');
+    expect(await getCampaignRecap(withCache)).toBe('');
+  });
+
+  it('a same-count replacement — the wrong entry deleted, the right one added — invalidates it', async () => {
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    const withCache = state({ campaignRecapCache: await cacheOf('Vex died.') });
+    await saveChronicleEntries('pc-vex', []);
+    await addChronicleEntry('pc-vex', { text: 'Vex survived.' });
+    expect(await getChronicleEntries('pc-vex')).toHaveLength(1);
+    expect(await getCampaignRecap(withCache)).toBe('');
+  });
+
+  it('with a key, the recap is regenerated from the corrected chronicle, and that cache is then reused', async () => {
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    const withCache = state({ campaignRecapCache: await cacheOf('Vex died.') });
+    const [entry] = await getChronicleEntries('pc-vex');
+    await updateChronicleEntry('pc-vex', entry.id, 'Vex survived.');
+
+    expect(await getCampaignRecap(withCache)).toBe('Fresh recap.');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('Vex survived.');
+    expect(requests[0]).not.toContain('Vex died.');
+
+    const stored = game.settings.get(MODULE_ID, 'campaignState');
+    expect(await getCampaignRecap(stored)).toBe('Fresh recap.');
+    expect(requests).toHaveLength(1);                     // the regenerated cache is current
+  });
+
+  it('an unchanged chronicle reuses the cache without a Claude call', async () => {
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    expect(await getCampaignRecap(state({ campaignRecapCache: await cacheOf('Cached recap.') }))).toBe('Cached recap.');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('pinning or re-typing an entry keeps the recap — neither is in it', async () => {
+    await addChronicleEntry('pc-vex', { type: 'annotation', text: 'Vex died.' });
+    const withCache = state({ campaignRecapCache: await cacheOf('Cached recap.') });
+    const entries = await getChronicleEntries('pc-vex');
+    await saveChronicleEntries('pc-vex', entries.map(e => ({ ...e, pinned: true, type: 'scar' })));
+    expect(await getCampaignRecap(withCache)).toBe('Cached recap.');
+  });
+
+  it('forceRefresh regenerates even a current recap', async () => {
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    const withCache = state({ campaignRecapCache: await cacheOf('Cached recap.') });
+    expect(await getCampaignRecap(withCache, { forceRefresh: true })).toBe('Fresh recap.');
+    expect(requests).toHaveLength(1);
+  });
+
+  it('a cache from before the hash existed is regenerated once, even with a matching count', async () => {
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    await addChronicleEntry('pc-vex', { text: 'Vex died.' });
+    const legacy = state({ campaignRecapCache: { text: 'Old recap.', generatedAt: null, chronicleLength: 1 } });
+    expect(await getCampaignRecap(legacy)).toBe('Fresh recap.');
+    expect(requests).toHaveLength(1);
   });
 });
 

@@ -102,7 +102,8 @@ move-path gate had been lost with the retired assembler (ASSEMBLER-003).
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
 campaign recap (a session's first narration in any prose mode, from
-`campaignRecapCache` — issue #286 C3) · [1] safety · [2] permission-class latitude · [2.5]
+`campaignRecapCache` while it matches the chronicle — issue #286 C3, #301
+B04) · [1] safety · [2] permission-class latitude · [2.5]
 Battle Stations · [3] oracle seeds (move-provided only) · **[3b] recent
 oracle results** (`campaignState.recentOracles` — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
@@ -180,7 +181,13 @@ galley vignette) run once per session id: `applyBeginSession` stamps
 prose mode), the campaign recap ([0b], the session's first narration — no
 narrator card of the session yet — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
-LAST KNOWN, established lore and the campaign premise.
+LAST KNOWN, established lore and the campaign premise. The recap cache stores
+the chronicle it was made from (`chronicleLength` + `chronicleHash`, over
+each entry's text, timestamp and session number — `campaignRecapCacheKey`);
+`getCampaignRecap` and the session-opening read use it only while that still
+matches, so a corrected entry is never recapped in its old form, and with no
+key to regenerate there is no recap rather than a stale one (issue #301 B04 —
+the check was the entry count alone, and the session-opening read had none).
 
 **Ledger scope** ([6.5]): scene subjects and free-text subjects (unrecorded
 figures and places — the ledger holds only this scene) are always in scope
