@@ -42,6 +42,16 @@ export async function openBeginSessionDialog() {
   const { DialogV2 } = foundry.applications.api;
 
   const state    = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  // A session begins once (issue #300 F11): its clocks, momentum and opening
+  // scene already ran. The canonical GM re-checks; this saves the table a card
+  // that promises momentum nobody gets.
+  if (await sessionAlreadyBegun(state)) {
+    ui.notifications?.info(
+      "Starforged Companion: this session has already begun — its clocks, momentum and opening scene ran once. " +
+      "End a Session first to begin the next one.",
+    );
+    return;
+  }
   const flagList = (state.safetyFlags ?? [])
     .filter(f => f.visibility !== "private" || game.user?.isGM)
     .slice(-5)
@@ -118,27 +128,50 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
 }
 
 /** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
-const BEGIN_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionFocus", "sessionActive", "sessionActiveStartedAt"]);
+const BEGIN_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionFocus", "sessionActive", "sessionActiveStartedAt", "sessionStartedId"]);
+
+/**
+ * True when Begin a Session already ran for the current session — it has not
+ * ended or gone idle since (a session that has, starts anew at the next
+ * Begin). Its start effects then never run again (issue #300 F11).
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<boolean>}
+ */
+async function sessionAlreadyBegun(campaignState) {
+  const id = campaignState?.currentSessionId;
+  if (!id || campaignState.sessionStartedId !== id) return false;
+  const { sessionNeedsMint } = await import("../session/lifecycle.js");
+  return !sessionNeedsMint(campaignState);
+}
+
+// One Begin a Session at a time on this client. The GM relay queue already
+// serialises them; this holds even past its wait cap, so two never both see
+// the session un-begun and both apply its start effects.
+let _beginChain = Promise.resolve();
 
 /**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
- * order: Spotlight Vignette momentum → a new session when the last one is
- * over → session-active flip (+ clear last session's foci, now surfaced) →
+ * order: a new session when the last one is over → session-active flip
+ * (+ clear last session's foci, now surfaced) → Spotlight Vignette momentum →
  * campaign clock advance (+ clock card and clock vignettes) → opening galley
- * vignette.
+ * vignette. The start effects run once per session: Begin again on a session
+ * already begun posts a note and changes nothing (issue #300 F11).
  *
  * @param {{ vignetteRolled?: boolean, includeGalley?: boolean }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
-export async function applyBeginSession(payload = {}, _ctx = {}) {
+export function applyBeginSession(payload = {}, _ctx = {}) {
+  const run = _beginChain.then(() => beginSessionOnce(payload));
+  _beginChain = run.catch(() => {});
+  return run;
+}
+
+async function beginSessionOnce(payload) {
   const vignetteRolled = payload.vignetteRolled === true;
   const includeGalley  = payload.includeGalley !== false;
-
-  if (vignetteRolled) {
-    await applyMomentumToAllPlayers(1);
-  }
 
   // Start a new session when the last one is over — End a Session closed it,
   // or it went idle (issue #286 C4: End → Begin used to keep the same session
@@ -148,13 +181,22 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
   // at the last End a Session have now been surfaced (dialog + card) and go
   // on to the narrator as this session's focus, so clear them for the next
   // End. The roll can await a Claude call, so only
-  // Begin's own fields are merged onto the latest store.
+  // Begin's own fields are merged onto the latest store. `sessionStartedId`
+  // marks the session's start effects applied: a second Begin for the same
+  // session used to advance its clocks and grant the momentum again (F11).
+  let begun = false;
   try {
     const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
     const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
     await rollSessionIfDue(cs);
+    if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
+      console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
+      await postSessionAlreadyBegunCard();
+      return;
+    }
     beginSession(cs);
+    cs.sessionStartedId = cs.currentSessionId ?? null;
     // The foci go on to the narrator for this session (issue #286 C5).
     const quest      = cleanFocus(cs.questFocus);
     const connection = cleanFocus(cs.connectionFocus);
@@ -163,8 +205,14 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
     cs.connectionFocus = "";
     await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session"));
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
+    begun = true;
   } catch (err) {
-    console.warn(`${MODULE_ID} | beginSession state flip failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | beginSession state flip failed — start effects skipped:`, err?.message ?? err);
+  }
+  if (!begun) return;
+
+  if (vignetteRolled) {
+    await applyMomentumToAllPlayers(1);
   }
 
   // Campaign clocks — roll Ask the Oracle for each at session start (play
@@ -247,6 +295,15 @@ export async function applyBeginSession(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | galley vignette generation failed:`, err?.message ?? err);
     }
   }, 0);
+}
+
+
+/** Begin a Session ran again on a session already begun — say what (didn't) happen. */
+async function postSessionAlreadyBegunCard() {
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>This session has already begun — its campaign clocks, momentum and opening scene are not repeated. End a Session to begin the next one.</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: note card failed:`, err?.message ?? err));
 }
 
 

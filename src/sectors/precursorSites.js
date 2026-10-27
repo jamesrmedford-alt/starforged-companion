@@ -256,49 +256,74 @@ function normalizeLabel(s) {
 }
 
 /**
- * Choose which UNDISCOVERED site a reveal targets, from a sector's
- * mapData.discoveries[]. Mirrors selectExpeditionTrack's matching ladder:
+ * Choose the site a reveal, a clear or an expedition link targets, across
+ * every stored sector. Mirrors selectExpeditionTrack's matching ladder —
  * exact name → substring (either direction) → type keyword (vault/derelict)
- * when a single undiscovered site of that type remains → sole undiscovered.
+ * when one eligible site of that type remains → the sole eligible site — but
+ * runs each rung over ALL sectors before the next, weaker one, so a guess in
+ * an earlier sector can never preempt an exact match in a later one (issue
+ * #300 F07). An explicit site id (the expedition→site link) beats every rung.
+ * The two guessing rungs try the active sector first, then every sector, and
+ * fire only when unambiguous.
  *
- * @param {Array<{id,name,type,discovered}>} sites
+ * @param {Array<{id, mapData?: {discoveries?: Array}}>} sectors — campaignState.sectors
  * @param {string|null} label — the expedition destination / command target
- * @param {{ requireLabelMatch?: boolean }} [opts] — true skips the final
- *   sole-undiscovered fallback, so only a name/type-confident match returns.
- *   Used when STAMPING an expedition→site link at creation (a guess there
- *   would tie unrelated expeditions to the one remaining site); the reveal
- *   path keeps the fallback.
- * @returns {Object|null}
+ * @param {Object} [opts]
+ * @param {(site: Object) => boolean} [opts.eligible] — which sites qualify
+ *   (default: undiscovered; clearing passes discovered-and-not-cleared)
+ * @param {string|null} [opts.siteId] — an exact link, tried first
+ * @param {string|null} [opts.activeSectorId] — scopes the guessing rungs first
+ * @param {boolean} [opts.requireLabelMatch] — true skips the sole-site guess,
+ *   so only a name/type-confident match returns. Used when STAMPING an
+ *   expedition→site link at creation (a guess there would tie unrelated
+ *   expeditions to the one remaining site); reveal and clear keep the guess.
+ * @returns {{ sector: Object, site: Object }|null}
  */
-export function selectSiteForReveal(sites, label, { requireLabelMatch = false } = {}) {
-  const undiscovered = (sites ?? []).filter(s => s && !s.discovered);
-  if (!undiscovered.length) return null;
+export function selectSectorSite(sectors, label, {
+  eligible = (site) => !site.discovered,
+  siteId = null,
+  activeSectorId = null,
+  requireLabelMatch = false,
+} = {}) {
+  const candidates = [];
+  for (const sector of sectors ?? []) {
+    for (const site of sector?.mapData?.discoveries ?? []) {
+      if (site && eligible(site)) candidates.push({ sector, site });
+    }
+  }
+  if (!candidates.length) return null;
+
+  if (siteId) {
+    const linked = candidates.find(c => c.site.id === siteId);
+    if (linked) return linked;
+  }
 
   const want = normalizeLabel(label);
   if (want) {
-    const exact = undiscovered.find(s => normalizeLabel(s.name) === want);
+    const exact = candidates.find(c => normalizeLabel(c.site.name) === want);
     if (exact) return exact;
 
-    const sub = undiscovered.find(s => {
-      const n = normalizeLabel(s.name);
+    const sub = candidates.find(c => {
+      const n = normalizeLabel(c.site.name);
       return n && (n.includes(want) || want.includes(n));
     });
     if (sub) return sub;
-
-    const wantsVault    = /vault|precursor/.test(want);
-    const wantsDerelict = /derelict|wreck|ghost/.test(want);
-    if (wantsVault) {
-      const vaults = undiscovered.filter(s => s.type === "vault");
-      if (vaults.length === 1) return vaults[0];
-    }
-    if (wantsDerelict) {
-      const ders = undiscovered.filter(s => s.type === "derelict");
-      if (ders.length === 1) return ders[0];
-    }
   }
 
-  if (requireLabelMatch) return null;
-  return undiscovered.length === 1 ? undiscovered[0] : null;
+  const kinds = [
+    ...(/vault|precursor/.test(want)     ? ["vault"]    : []),
+    ...(/derelict|wreck|ghost/.test(want) ? ["derelict"] : []),
+  ];
+  const active = candidates.filter(c => activeSectorId && c.sector?.id === activeSectorId);
+  for (const scope of [active, candidates]) {
+    if (!scope.length) continue;
+    for (const kind of kinds) {
+      const ofKind = scope.filter(c => c.site.type === kind);
+      if (ofKind.length === 1) return ofKind[0];
+    }
+    if (!requireLabelMatch && scope.length === 1) return scope[0];
+  }
+  return null;
 }
 
 function generateId() {

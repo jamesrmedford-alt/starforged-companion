@@ -36,7 +36,7 @@
  * the card it posts reports what actually landed.
  */
 
-import { applyMeterChanges, getActor, readCharacterSnapshot } from "../character/actorBridge.js";
+import { applyMeterChanges, getActor, readCharacterSnapshot, invalidateActorCache } from "../character/actorBridge.js";
 import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity, isShipBattered } from "../entities/ship.js";
 import { requestGmAction }         from "../multiplayer/gmRelay.js";
 import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
@@ -184,6 +184,13 @@ export async function openRepairDialog(message = null) {
         }
 
         const actorId = alloc.extra > 0 ? resolveRepairActorId(message) : null;
+        // Traded points need the supply to pay for them (the GM re-checks):
+        // say so here rather than relay a repair that cannot be paid.
+        const supply = actorId ? currentSupply(getActor(actorId)) : null;
+        if (supply !== null && supply < alloc.extra) {
+          ui.notifications?.warn(`Repair: only ${supply} supply to trade — the ${alloc.extra} extra points need ${alloc.extra}.`);
+          return;
+        }
         await requestGmAction("repair.apply", {
           situation: alloc.situation,
           outcome:   alloc.outcome,
@@ -253,14 +260,22 @@ export async function applyRepairSpends(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | repair: rejected relayed allocation — ${alloc.reason}`);
     return;
   }
-  const { situation, outcome, earned, extra, spends } = alloc;
-  const lines   = [];
+  const { extra, spends } = alloc;
   const actions = [];
 
   // 1. Sacrifice Resources — debit the repairing player's PC (payload.actorId,
   //    resolved on their own client), never the GM's game.user.character.
+  //    The traded points exist only once their supply is paid, so the payment
+  //    settles before any repair lands: a missing payer, another player's PC,
+  //    too little supply or a failed debit repairs nothing (issue #300 F04 —
+  //    the full allocation used to apply with a warning on the card).
   if (extra > 0) {
-    actions.push(await applySupplyTrade(payload.actorId, extra, ctx));
+    const payment = await paySupplyTrade(payload.actorId, extra, ctx);
+    if (!payment.paid) {
+      await postRepairCard(alloc, [payment.line, "No repairs were applied — Repair again with a trade the supply covers."]);
+      return;
+    }
+    actions.push(payment.line);
   }
 
   // 2 + 3. Command-vehicle spends — through the canonical ship record.
@@ -287,52 +302,72 @@ export async function applyRepairSpends(payload = {}, ctx = {}) {
     actions.push(`Repaired ${spends.other_device_cx} other device${spends.other_device_cx === 1 ? "" : "s"} with complication (recorded only).`);
   }
 
-  lines.push(
-    `<strong>Repair</strong> — ${situation.replace("_", " ")} / ${outcome} hit · ${alloc.totalCost} of ${earned} points allocated`,
-  );
   if (actions.length === 0) {
     actions.push("No spends allocated.");
   }
-  lines.push(`<ul>${actions.map(a => `<li>${a}</li>`).join("")}</ul>`);
+  await postRepairCard(alloc, actions);
+}
 
+/** The Repair card — what actually happened, never what was merely allocated. */
+async function postRepairCard({ situation, outcome, totalCost, earned }, actions) {
+  const lines = [
+    `<strong>Repair</strong> — ${situation.replace("_", " ")} / ${outcome} hit · ${totalCost} of ${earned} points allocated`,
+    `<ul>${actions.map(a => `<li>${a}</li>`).join("")}</ul>`,
+  ];
   await ChatMessage.create({
     content: `<div class="sf-repair-card">${lines.join("")}</div>`,
     flags:   { [MODULE_ID]: { repairCard: true } },
   });
 }
 
+/** A PC's supply as the sheet holds it now (the snapshot cache dropped first). */
+function currentSupply(actor) {
+  if (!actor) return null;
+  invalidateActorCache(actor.id);
+  return readCharacterSnapshot(actor)?.meters?.supply ?? 0;
+}
+
 /**
- * Debit `extra` supply from the repairing PC. Permission is the REQUESTER's
- * (ctx), not this GM client's: a player may only spend their own PC's supply.
+ * Pay `extra` supply from the repairing PC, in full or not at all. Permission
+ * is the REQUESTER's (ctx), not this GM client's: a player may only spend
+ * their own PC's supply.
  *
- * @returns {Promise<string>} the card line describing what happened
+ * @returns {Promise<{ paid: boolean, line: string }>} whether the whole trade
+ *   was paid, and the card line describing what happened
  */
-async function applySupplyTrade(actorId, extra, ctx) {
+async function paySupplyTrade(actorId, extra, ctx) {
   const pts   = `${extra} repair point${extra === 1 ? "" : "s"}`;
   const actor = actorId ? getActor(actorId) : null;
   if (!actor) {
     console.warn(`${MODULE_ID} | repair: no character resolved to pay ${extra} supply (actorId=${actorId ?? "none"}).`);
-    return `<em>No character found to pay ${extra} supply for +${pts} — adjust supply by hand.</em>`;
+    return { paid: false, line: `<em>No character found to pay ${extra} supply for +${pts}.</em>` };
   }
   const name = escapeHtml(actor.name);
   if (!requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | repair: requester ${ctx?.requesterId ?? "unknown"} does not own ${actor.name}; supply not debited.`);
-    return `<em>${name}'s supply was not debited (not your character) — adjust supply by hand.</em>`;
+    return { paid: false, line: `<em>${name}'s supply was not debited (not your character).</em>` };
+  }
+  const before = currentSupply(actor);
+  if (before < extra) {
+    return { paid: false, line: `<strong>${name}</strong> has only ${before} supply — the +${pts} traded need ${extra}; nothing was spent.` };
   }
   try {
-    const before = readCharacterSnapshot(actor)?.meters?.supply ?? 0;
     await applyMeterChanges(actor, { supply: -extra });
-    const after  = readCharacterSnapshot(actor)?.meters?.supply ?? before;
-    const paid   = Math.max(0, before - after);
-    if (paid < extra) {
-      return `<strong>${name}</strong> had only ${before} supply — sacrificed ${paid} (supply now ${after}); ` +
-        `${extra - paid} of the +${pts} were not covered.`;
-    }
-    return `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.`;
   } catch (err) {
     console.error(`${MODULE_ID} | repair: supply trade failed:`, err);
-    return `<em>Supply trade failed for ${name} — see console; adjust supply by hand.</em>`;
+    return { paid: false, line: `<em>Supply trade failed for ${name} — see console; nothing was spent.</em>` };
   }
+  const after = currentSupply(actor);
+  const paid  = Math.max(0, before - after);
+  if (paid < extra) {
+    // The supply changed between the check and the debit: hand back what was taken.
+    if (paid > 0) {
+      await applyMeterChanges(actor, { supply: paid }).catch(err =>
+        console.warn(`${MODULE_ID} | repair: refunding a partial supply payment failed:`, err?.message ?? err));
+    }
+    return { paid: false, line: `<em>${name}'s supply changed during the trade — nothing was spent.</em>` };
+  }
+  return { paid: true, line: `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.` };
 }
 
 /**

@@ -89,8 +89,11 @@ only).
 ## 4. Site discovery
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
-`selectSiteForReveal` picks the target (exact → substring → type-keyword
-vault/derelict → sole-undiscovered), flips `discovered:true`, marks the
+`selectSectorSite` picks the target — the expedition's `siteId` link first,
+then exact → substring → type-keyword vault/derelict → sole-undiscovered,
+each rung over every sector before the next (the two guesses scoped to the
+active sector first, and only when unambiguous: an earlier sector's sole
+site used to preempt a later sector's exact match, issue #300 F07) — flips `discovered:true`, marks the
 location Actor `visited`, and restyles the scene — pin renamed to the site's
 real name with the discovered icon, dashed passage → solid brightened route —
 then posts the "◈ Site Discovered" card.
@@ -125,7 +128,7 @@ summary lives in the `known-issues.md` table and the code.
 
 - ~~Expedition→site linkage was name-fuzzy~~ — **addressed**: expedition
   creation stamps `siteId` when the destination confidently names an
-  undiscovered site (`selectSiteForReveal` with `requireLabelMatch`; never
+  undiscovered site (`selectSectorSite` with `requireLabelMatch`; never
   the sole-undiscovered guess), and `revealSectorSite` reveals the linked
   site first.
 - ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers

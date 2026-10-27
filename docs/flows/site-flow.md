@@ -44,8 +44,9 @@ Two reveal paths, both funnelling through `revealSectorSite`
 
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
    creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
-   (`selectSiteForReveal`: exact → substring → type-keyword-when-unique →
-   sole-undiscovered). The reveal mutates the in-memory campaignState so the
+   (`selectSectorSite`: exact → substring → type-keyword-when-unique →
+   sole-undiscovered, each rung over every sector before the next, the
+   guesses scoped to the active sector first — issue #300 F07). The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
    keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
 2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder.

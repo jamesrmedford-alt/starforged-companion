@@ -173,7 +173,10 @@ ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
 an unended session's summary is brought up to date
 (`finalizeSessionSummary`), its scene closes under its own id, then
 `mintSession` keeps that summary as `previousSessionSummary` and mints the next
-id. What carries over to the new session's prompts: LAST SESSION ([4c], every
+id. Begin a Session's start effects (Spotlight momentum, campaign clocks, the
+galley vignette) run once per session id: `applyBeginSession` stamps
+`sessionStartedId`, and a second Begin on that session posts a note instead
+(the dialog does not open for it) — issue #300 F11. What carries over to the new session's prompts: LAST SESSION ([4c], every
 prose mode), the campaign recap ([0b], the session's first narration — no
 narrator card of the session yet — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and

@@ -201,30 +201,59 @@ describe("applyRepairSpends", () => {
     expect(lastCard()).toMatch(/Sacrificed 2 supply from <strong>PLAYER-PC<\/strong> \(supply now 1\)/);
   });
 
-  it("refuses to debit a PC the requester does not own", async () => {
-    installShip();
+  // Issue #300 F04: the traded points were granted whatever the payment did —
+  // the card warned, and the vehicle was repaired anyway. These assert the
+  // ship, not only the card: no unpaid repair lands.
+  it("refuses to debit a PC the requester does not own — and repairs nothing", async () => {
+    installShip({ integrity: 1 });
     const other = installPc("other-pc", { supply: 3, ownership: { "someone-else": 3 } });
 
-    await applyRepairSpends(payload({ extra: 1, actorId: "other-pc" }), PLAYER_CTX);
+    await applyRepairSpends(payload({ situation: "under_fire", outcome: "weak", extra: 2, spends: { integrity: 2 }, actorId: "other-pc" }), PLAYER_CTX);
 
     expect(other.system.supply.value).toBe(3);
+    expect(getShip("ship-1").integrity).toBe(1);
     expect(lastCard()).toMatch(/not debited/);
+    expect(lastCard()).toMatch(/No repairs were applied/);
     expect(getCapturedWarns().some(w => /does not own/.test(w))).toBe(true);
   });
 
-  it("reports a partial supply payment when the PC has less supply than traded", async () => {
-    installShip();
+  it("spends nothing and repairs nothing when the PC has less supply than traded", async () => {
+    installShip({ integrity: 0 });
     const pc = installPc("poor-pc", { supply: 1, ownership: { "pl-1": 3 } });
 
-    await applyRepairSpends(payload({ extra: 3, actorId: "poor-pc" }), PLAYER_CTX);
+    await applyRepairSpends(payload({ situation: "under_fire", outcome: "weak", extra: 3, spends: { integrity: 3 }, actorId: "poor-pc" }), PLAYER_CTX);
 
-    expect(pc.system.supply.value).toBe(0);
-    expect(lastCard()).toMatch(/had only 1 supply — sacrificed 1/);
+    expect(pc.system.supply.value).toBe(1);
+    expect(getShip("ship-1").integrity).toBe(0);
+    expect(lastCard()).toMatch(/has only 1 supply — the \+3 repair points traded need 3; nothing was spent/);
+    expect(lastCard()).toMatch(/No repairs were applied/);
   });
 
-  it("states that supply was not paid when no character resolved", async () => {
-    await applyRepairSpends(payload({ extra: 1, actorId: null }), GM_CTX);
+  it("repairs nothing when no character resolved to pay", async () => {
+    installShip({ integrity: 0 });
+    await applyRepairSpends(payload({ situation: "under_fire", outcome: "weak", extra: 1, spends: { integrity: 1 }, actorId: null }), GM_CTX);
+    expect(getShip("ship-1").integrity).toBe(0);
     expect(lastCard()).toMatch(/No character found to pay 1 supply/);
+    expect(lastCard()).toMatch(/No repairs were applied/);
+  });
+
+  it("repairs nothing when the supply write is rejected", async () => {
+    expectConsoleError(/supply trade failed/);
+    installShip({ integrity: 0 });
+    const pc = installPc("pc-x", { supply: 3, ownership: { "pl-1": 3 } });
+    pc.update = async () => { throw new Error("write rejected"); };
+
+    await applyRepairSpends(payload({ situation: "under_fire", outcome: "weak", extra: 2, spends: { integrity: 2 }, actorId: "pc-x" }), PLAYER_CTX);
+
+    expect(getShip("ship-1").integrity).toBe(0);
+    expect(lastCard()).toMatch(/Supply trade failed .* nothing was spent/);
+    expect(lastCard()).toMatch(/No repairs were applied/);
+  });
+
+  it("applies the base points with no trade at all", async () => {
+    installShip({ integrity: 1 });
+    await applyRepairSpends(payload({ situation: "field", outcome: "weak", spends: { integrity: 1 } }), PLAYER_CTX);
+    expect(getShip("ship-1").integrity).toBe(2);
   });
 
   it("rejects an over-budget relayed allocation without posting a card", async () => {

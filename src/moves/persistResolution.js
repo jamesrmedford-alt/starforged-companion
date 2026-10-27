@@ -124,6 +124,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //                                   on the store via clearPersistedNextMoveAdd
 //       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
 //       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
+//       sessionStartedId            Begin a Session relay (start effects once per session)
 //       currentSessionId, sessionNumber, lastSessionTimestamp,
 //       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
 //                                   (world load, Begin / End relays, the chat-activity stamp)
@@ -175,6 +176,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'sessionFocus',
   'sessionActive',
   'sessionActiveStartedAt',
+  'sessionStartedId',
   'currentSessionId',
   'sessionNumber',
   'lastSessionTimestamp',

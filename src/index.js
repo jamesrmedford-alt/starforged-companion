@@ -99,7 +99,7 @@ import {
   updateTrackFields,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition, legacyRewardTicks, selectExpeditionTrack, planRecommit } from "./moves/expedition.js";
-import { selectSiteForReveal } from "./sectors/precursorSites.js";
+import { selectSectorSite } from "./sectors/precursorSites.js";
 import { finishVow, shouldPayFulfilledVow } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -1085,19 +1085,17 @@ export function registerChatHook() {
           if (result?.track) {
             // Link the new expedition to the undiscovered site its destination
             // confidently names (exact/substring/type keyword — never the
-            // sole-undiscovered guess). Finishing then reveals THIS site
-            // instead of re-guessing by name — the audit's "expedition→site
-            // linkage is name-fuzzy" gap.
+            // sole-undiscovered guess), searched across every sector at once
+            // (issue #300 F07). Finishing then reveals THIS site instead of
+            // re-guessing by name — the audit's "expedition→site linkage is
+            // name-fuzzy" gap.
             if (result.created) {
               try {
-                for (const sector of campaignState.sectors ?? []) {
-                  const site = selectSiteForReveal(
-                    sector.mapData?.discoveries ?? [], result.track.label, { requireLabelMatch: true });
-                  if (site) {
-                    await updateTrackFields(result.track.id, { siteId: site.id });
-                    break;
-                  }
-                }
+                const linked = selectSectorSite(campaignState.sectors, result.track.label, {
+                  requireLabelMatch: true,
+                  activeSectorId:    campaignState.activeSectorId ?? null,
+                });
+                if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
               } catch (err) {
                 console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
               }
