@@ -3813,9 +3813,13 @@ function registerChronicleTests(quench) {
       after(async function () {
         if (app?.close) await app.close().catch(() => {});
         if (actor) {
-          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
-          if (chronicleJournal?.delete) {
-            await chronicleJournal.delete().catch(err =>
+          // The test actor's own Chronicle journal(s), by the actor flag —
+          // by name this could delete a real character's same-named chronicle
+          // (issue #301 B03).
+          const chronicleJournals = (game.journal?.contents ?? []).filter(j =>
+            j?.flags?.[MODULE_ID]?.chronicleActorId === actor.id);
+          for (const chronicleJournal of chronicleJournals) {
+            await chronicleJournal.delete?.().catch(err =>
               console.warn(`${MODULE_ID} | quench: chronicle journal cleanup failed:`, err));
           }
           if (actor.delete) await actor.delete().catch(() => {});
@@ -5319,9 +5323,10 @@ function registerRecapEndToEndTests(quench) {
             .catch(() => {});
         }
         if (actor) {
-          const chronicleJournal = game.journal?.getName?.(`Chronicle — ${actor.name}`);
-          if (chronicleJournal?.delete) {
-            await chronicleJournal.delete().catch(err =>
+          const chronicleJournals = (game.journal?.contents ?? []).filter(j =>
+            j?.flags?.[MODULE_ID]?.chronicleActorId === actor.id);
+          for (const chronicleJournal of chronicleJournals) {
+            await chronicleJournal.delete?.().catch(err =>
               console.warn(`${MODULE_ID} | quench: recap chronicle cleanup failed:`, err));
           }
           if (actor.delete) await actor.delete().catch(() => {});

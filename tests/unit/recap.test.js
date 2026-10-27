@@ -502,6 +502,63 @@ describe('getCampaignRecap() — populated chronicle (regression)', () => {
 
 
 // ---------------------------------------------------------------------------
+// 4c. Issue #301 B03 — characters who share a name each bring their own
+// chronicle to the recap, once. The name lookup read the first "Chronicle —
+// Ash" journal for both, so its entries reached the recap twice and the other
+// character's not at all.
+// ---------------------------------------------------------------------------
+
+describe('getCampaignRecap() — same-named characters (issue #301 B03)', () => {
+  let savedJournal, origFetch;
+
+  function chronicleJournal(id, owner, entries) {
+    const page = { name: 'Chronicle', flags: { [MODULE_ID]: { chronicle: entries } }, setFlag: async () => {} };
+    return { id, name: 'Chronicle — Ash', flags: { [MODULE_ID]: { chronicleActorId: owner } }, pages: { contents: [page] } };
+  }
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    savedJournal = game.journal;
+    origFetch = global.fetch;
+  });
+  afterEach(() => {
+    game.journal = savedJournal;
+    global.fetch = origFetch;
+    game.settings._store.delete(`${MODULE_ID}.claudeApiKey`);
+    game.actors._reset();
+  });
+
+  it('each character\'s entries reach the recap once', async () => {
+    game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash' }));
+    game.actors._set('pc-b', makeTestActor({ id: 'pc-b', name: 'Ash' }));
+    const journals = [
+      chronicleJournal('j-a', 'pc-a', [{ id: 'a1', timestamp: '2026-01-01T00:00:00Z', text: 'Ash A found a vault.' }]),
+      chronicleJournal('j-b', 'pc-b', [{ id: 'b1', timestamp: '2026-01-02T00:00:00Z', text: 'Ash B met Sable.' }]),
+    ];
+    game.journal = {
+      contents: journals,
+      get: (id) => journals.find(j => j.id === id) ?? null,
+      getName: (n) => journals.find(j => j.name === n) ?? null,
+    };
+
+    let captured = '';
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    global.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      captured = body.messages?.[body.messages.length - 1]?.content ?? '';
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'recap ok' }] }), text: async () => '' };
+    });
+
+    const result = await getCampaignRecap(makeCampaignState({ characterIds: ['pc-a', 'pc-b'] }));
+    expect(result).toBe('recap ok');
+    expect(captured.split('Ash A found a vault.').length - 1).toBe(1);
+    expect(captured.split('Ash B met Sable.').length - 1).toBe(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
 // 5. buildCampaignRecapUserMessage()
 // ---------------------------------------------------------------------------
 

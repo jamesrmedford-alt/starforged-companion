@@ -16,6 +16,7 @@ import {
   getChronicleEntries,
   addChronicleEntry,
   updateChronicleEntry,
+  saveChronicleEntries,
 } from './chronicle.js';
 
 import { getPlayerActors, getActor } from './actorBridge.js';
@@ -180,20 +181,13 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
   // ── Persistence ───────────────────────────────────────────────────────────
 
+  // Through chronicle.js, which finds the journal by the actor's id — this
+  // used to look it up by the actor's current name, so after a rename (or for
+  // a namesake) a delete / re-type / pin saved nowhere or into the wrong
+  // character's chronicle (issue #301 B03).
   async #saveEntries(entries) {
     try {
-      const actor = getActor(this.#actorId);
-      if (!actor) return;
-
-      const journalName = `Chronicle — ${actor.name}`;
-      const journal     = game.journal?.getName(journalName);
-      if (!journal) return;
-
-      const page = journal.pages?.contents?.[0];
-      if (!page) return;
-
-      await page.setFlag(MODULE_ID, 'chronicle', entries);
-      this.#entries = entries;
+      if (await saveChronicleEntries(this.#actorId, entries)) this.#entries = entries;
     } catch (err) {
       console.error(`${MODULE_ID} | chroniclePanel: failed to save entries`, err);
     }
