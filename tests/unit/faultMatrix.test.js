@@ -386,6 +386,43 @@ describe('the X-Card card says whether its pause was saved', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Repeat clicks: a new NPC's draft card
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Confirm on a new NPC's draft card applies once", () => {
+  /** A "New Entities Detected" card for Vance Oduya, posted on the GM. */
+  async function draftCard() {
+    const gm = table.client('gm-1');
+    const { routeEntityDrafts } = await gm.import('../../src/entities/entityExtractor.js');
+    await gm.run(() => routeEntityDrafts(
+      [{ type: 'connection', name: 'Vance Oduya', description: 'The dockmaster of the Hollow Spire.', confidence: 'high' }],
+      game.settings.get(MODULE_ID, 'campaignState'),
+      { autoCreateConnection: false },
+    ));
+    await table.settle();
+    const cards = table.cards(f => f.draftEntityCard);
+    expect(cards).toHaveLength(1);
+    return cards[0];
+  }
+
+  const vances = () => table.actors.filter(a => a.name === 'Vance Oduya' && a.flags?.[MODULE_ID]?.entityType === 'connection');
+
+  it('Confirm on a new NPC clicked twice before the first finished: one NPC card', async () => {
+    const trace = traceTable(table);
+    const card = await draftCard();
+    const gm = table.client('gm-1');
+    trace.mark('the GM double-clicks Confirm');
+    gm.click(card._id, '[data-action="sf-draft-confirm"]');
+    gm.click(card._id, '[data-action="sf-draft-confirm"]');
+    await table.drain();
+
+    expect(vances()).toHaveLength(1);
+    expect(world().connectionIds).toEqual([vances()[0].id]);
+    expect(table.world.message(card._id).flags[MODULE_ID].drafts.map(d => d.status)).toEqual(['confirmed']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Disconnect
 // ─────────────────────────────────────────────────────────────────────────────
 

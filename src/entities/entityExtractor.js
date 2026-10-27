@@ -1613,7 +1613,23 @@ export function registerDraftCardHooks() {
   });
 }
 
+// "<messageId>:<draftIndex>" drafts this client is confirming. The card says
+// "confirmed" only once the entity exists, so a second click meanwhile — a
+// double-click, a re-rendered card — created the entity twice (issue #302).
+const _draftsInFlight = new Set();
+
 async function handleDraftConfirm(message, draftIndex) {
+  const key = `${message?.id}:${draftIndex}`;
+  if (_draftsInFlight.has(key)) return;
+  _draftsInFlight.add(key);
+  try {
+    await confirmDraft(message, draftIndex);
+  } finally {
+    _draftsInFlight.delete(key);
+  }
+}
+
+async function confirmDraft(message, draftIndex) {
   const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
     ? [...message.flags[MODULE_ID].drafts]
     : [];
