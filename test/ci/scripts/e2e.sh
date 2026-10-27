@@ -186,9 +186,12 @@ set -e
 # --record-playthroughs, from Anthropic, rewriting those recordings.
 
 log "running the playthroughs (Playwright: scripted sessions, ${playthrough_mode} Claude replies)"
+# The commit a recording run captures against goes into the recording's
+# provenance (the container has the playwright/ folder only, no git).
+playthrough_commit="$(git -C "${CI_DIR}" rev-parse HEAD 2>/dev/null || true)"
 set +e
 docker compose "${COMPOSE_FILES[@]}" --profile e2e run --rm --quiet-pull \
-  -e PLAYTHROUGH_MODE="${playthrough_mode}" -e ANTHROPIC_API_KEY \
+  -e PLAYTHROUGH_MODE="${playthrough_mode}" -e ANTHROPIC_API_KEY -e PLAYTHROUGH_COMMIT="${playthrough_commit}" \
   players "test -d node_modules/playwright || npm ci --no-audit --no-fund --loglevel=error; node playthrough.mjs"
 pt_exit=$?
 set -e

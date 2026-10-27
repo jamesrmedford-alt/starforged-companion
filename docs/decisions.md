@@ -6,6 +6,100 @@ rejected.
 
 ---
 
+## Strict replay for critical playthroughs; regression tests proven sensitive (2026-10)
+
+**Decision:** (issue #302 slices A and B. The maintainer asked for both on
+2026-10-27; the choices below were made while building them.)
+- **A strict scenario fails replay drift; a permissive one reports it.**
+  `"strict": true` makes a scenario name every step and declare, per step,
+  the Claude calls it makes — `calls` (each required once, with an optional
+  prompt contract) and `optionalCalls`. A required call that never happened
+  (`MISSING`), that only the stub answered (`UNRECORDED`) or whose prompt
+  breaks its contract (`CONTRACT`), and any call nothing declared
+  (`UNEXPECTED`), fail the step, before its checks run. first-session is
+  strict. This narrows "Drift is reported, not failed" (Scripted
+  playthroughs, below) for strict scenarios only.
+- **Calls belong to steps.** The harness files each call under the step it
+  started in, and a recording run stores the step on every exchange. A call
+  takes its own step's recording of its kind before any word matching, so a
+  prompt edit no longer costs its reply; cross-step matching (permissive
+  only) keeps the half-the-words floor. Timing is not assumed: before a
+  strict step is checked, the runner waits (up to 20 s) for its required
+  calls, and the optional ones its recording made there, to start — the
+  first strict CI runs passed on one runner and failed on a slower one that
+  fired the passes' 2 s timers after the 4 s quiet window.
+- **Contracts, not fingerprints, are the gate.** A contract fails even when
+  a recorded reply answered the call, so data the prompt lost can't hide
+  behind a canned reply. A change in a recording's prompt sections (its
+  normalised fingerprint: entity ids and numbers ignored) stays a `STALE`
+  warning, so a prompt change still merges without a key unless it breaks
+  a contract. The `request` check became these contracts and was removed.
+- **A failed recording run never becomes the baseline.** It writes its
+  capture to `artifacts/recordings/<scenario>.rejected.json` and leaves
+  `recordings/` alone; a recording marked `"passed": false` is refused. A
+  recording carries its provenance: the scenario revision (a hash of the
+  seed, settings and steps), the commit, the models, and per exchange its
+  step and prompt fingerprint.
+- **A result keeps replay validity, integration and narrator quality
+  apart** (`verdict`), and classes a failure as infrastructure, replay or
+  integration.
+- **Regression tests are shown to fail without their fix.**
+  `scripts/fix-sensitivity.mjs` reverts a fix commit's `src/` changes in a
+  temporary worktree and runs the commit's tests, or applies a defect patch
+  (`scripts/defects/*.patch`) to HEAD. A test that fails only because the
+  fix's export is missing doesn't count; injecting the specific defect is
+  how such a test is shown sensitive (B04's recap cache). The results are
+  kept in `docs/testing/fix-sensitivity.md`.
+- **Fault boundaries live in the multi-client harness** (slice B):
+  `table.interceptWrites` refuses or holds world writes, a Claude reply can
+  be a fault (`tests/helpers/faults.js` `claudeFault`), and
+  `table.onEvent` records the order things happened in, which a failing
+  test prints. Rows assert after `table.drain()`, never before deferred work
+  has settled, so a negative check can't pass ahead of a late effect. The
+  matrix is `tests/unit/faultMatrix.test.js`.
+- **A known, open defect is a keyed check, not a skip.** `expectKnownIssue`
+  asserts the correct behaviour, passes while that check fails with the
+  recorded signature, fails on any other error, and fails when the defect no
+  longer reproduces (MOVE-BUSY-NOTICE).
+- **Never set a field on a cached setting value before a write that can
+  fail.** `game.settings.get` returns an object setting by reference: write
+  a copy, or undo the field when the write rejects (rules/foundry-api.md).
+  The move lock's claim and release and the X-Card's pause and clear did
+  it, and a refused write left a client disagreeing with the world.
+- **A suffer card's pick is applied on the canonical GM** (`suffer.pick`),
+  once per card, like the other one-shot card buttons. Draft Confirm keeps
+  running on the clicking GM, behind a per-client in-flight guard; two GMs
+  confirming at once is an accepted, recorded limitation
+  (DRAFT-CONFIRM-TWO-GMS).
+
+**Reason:** the #301 audit found four defects while 90 related tests
+passed: coverage stopped short of workflow and identity boundaries. The
+first-session recording is hand-written, so a permissive replay that
+stubbed a required call, or a prompt that lost a section, could pass. The
+#300 fixes were tested where each defect was found, not against the
+interruptions a table produces (refused writes, failed calls, repeat
+clicks, a dropped connection); the matrix found six defects there.
+
+**Rejected:**
+- *Fail on STALE*: every prompt edit would need a key to re-record — the
+  reason drift was made a warning in the first place.
+- *Match calls in call order*: background passes interleave; the step plus
+  the kind is the stable key.
+- *Keep the `request` check beside the contracts*: two ways to say one
+  thing, and the check's `nth` counted across the whole run.
+- *`it.fails` for known defects*: it passes on any failure, so it would hide
+  an unrelated regression in the same test.
+- *Relay draft Confirm through the canonical GM now*: the realistic case is
+  one GM's double-click, which the in-flight guard covers; the relay is the
+  recorded follow-up.
+
+**Trade-offs accepted:** a new Claude call in a strict scenario fails CI
+until a scenario edit declares it (no key needed). The first-session
+replies are still hand-written; real ones need a recording run with a key.
+A suffer pick needs a connected GM, like every other card button.
+
+---
+
 ## Issue #301 follow-up audit: identity by stable id, caches by content (2026-10)
 
 **Decision:** the four fixes in issue #301 settle these rules (each
@@ -163,7 +257,9 @@ building it, on 2026-10-25.)
   neutral stub and an `UNRECORDED` line; a recording whose prompt sections no
   longer match logs `STALE`. Failing either would block every prompt change
   on a re-record that needs a key. The checks still fail when the behaviour
-  breaks.
+  breaks. (Narrowed for strict scenarios by "Strict replay for critical
+  playthroughs", above: an undeclared or unanswered required call fails
+  there; STALE is still a warning.)
 - **Recordings live in `test/ci/playwright/recordings/`**, next to the
   scenarios, not `tests/fixtures/`. They are recorded outside CI
   (`e2e.sh --record-playthroughs`, the key in `ANTHROPIC_API_KEY`), with the
@@ -831,7 +927,7 @@ Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `factContinuity.command`, `oracle.narrate`, `repair.apply`,
 `payThePrice.advanceClocks`, `move.burnMomentum`, `move.improveResult`,
 `milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
-`fightVow.deepenBond`. Four older world-writing socket relays predate it
+`fightVow.deepenBond`, `suffer.pick` (issue #302). Four older world-writing socket relays predate it
 (`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
 `vow.linkConnection`) — fold them in when next touched (known-issues
 RELAY-LEGACY-KINDS).
@@ -936,7 +1032,9 @@ the message is created (the settings panel's `chatMessage` hook) and handled by
 (`suppressScene` sets `campaignState.xCardActive`, no permission check) and
 posts the X-Card card. A programmatic `!x` message (a macro) is routed
 `RUN_ON.CANONICAL_GM`. With no GM connected the card says the pause could not
-be recorded and carries no resume button. Only a GM resumes: the card's
+be recorded and carries no resume button; when the GM's write of the pause
+fails, the card says it could not be saved — the GM's own card on a relayed
+play, whose player's card (no ack) already says paused (issue #302). Only a GM resumes: the card's
 **Resume narration** button (removed for non-GM viewers), `!x clear` (a player
 is warned), or `game.modules.get("starforged-companion").api.clearXCard()`.
 Resuming clears the flag, marks every open X-Card card resolved and posts an
@@ -3168,7 +3266,10 @@ pipeline posts the card and continues; the move-concurrency lock
 (`pendingMove`) is released normally. The player taps a button to apply the
 choice, which runs the same `resolveSufferSelection` + `runSufferResolution`
 path and the same `requires`-filtering the dialog used — so meters stay exactly
-as correct; nothing is auto-applied or guessed.
+as correct; nothing is auto-applied or guessed. The pick is applied on the
+canonical GM (`suffer.pick`), once per card (issue #302: the clicker's client
+applied it, so two taps applied two costs, and a player could not mark the
+GM's card resolved).
 
 **Reason:** The dialog was `await`ed *inside* the move lock (in
 `persistResolution`). The v1.7.16 settle-on-close fix only helps if the dialog

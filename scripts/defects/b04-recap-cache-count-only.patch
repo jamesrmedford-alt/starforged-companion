@@ -1,0 +1,20 @@
+Defect: B04 (issue #301) — the campaign recap cache is checked by its entry count only, so a correction that keeps the count keeps the stale recap
+Tests: tests/unit/recap.test.js tests/unit/sessionSummary.test.js
+Catches: an in-place correction invalidates it
+Catches: a same-count replacement — the wrong entry deleted, the right one added — invalidates it
+Catches: a cache made from a different chronicle never opens the session
+
+diff --git a/src/narration/narrator.js b/src/narration/narrator.js
+index ecefb96..617df13 100644
+--- a/src/narration/narrator.js
++++ b/src/narration/narrator.js
+@@ -3642,8 +3642,7 @@ function chronicleRecapKey(entries) {
+ // now. One from before the hash existed is not — it is regenerated once.
+ function isRecapCacheCurrent(cache, key) {
+   return typeof cache?.text === 'string' && cache.text.trim() !== ''
+-    && cache.chronicleLength === key.chronicleLength
+-    && cache.chronicleHash === key.chronicleHash;
++    && cache.chronicleLength === key.chronicleLength;
+ }
+ 
+ /**

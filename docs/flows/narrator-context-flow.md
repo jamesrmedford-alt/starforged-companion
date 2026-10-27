@@ -84,7 +84,8 @@ its card carries the flag family (ring, rolling summary), and the canonical
 GM runs the tier pass for the entities it names
 (`registerPublishedReflectionHook`). No ledger facts — the private narrator
 emits no sidecar. The X-Card
-(`xCardActive`, set by the `xcard.activate` relay) is checked by every
+(`xCardActive`, set by the `xcard.activate` relay — a write that fails is
+reported on a card, not assumed, issue #302) is checked by every
 narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
 clock vignettes, vow swearing, inciting incident — against the caller's
 campaignState **and** the live stored setting (internal `isXCardActive`,

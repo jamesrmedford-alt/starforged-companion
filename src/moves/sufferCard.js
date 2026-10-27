@@ -14,6 +14,11 @@
  * filtering (`isOptionAvailable`) are reused unchanged from sufferDialog.js, so
  * meters stay exactly as correct as the dialog — nothing is auto-applied or
  * guessed.
+ *
+ * A pick is applied on the canonical GM ("suffer.pick", gmRelay.js), once per
+ * card, behind an in-flight guard — the card-button pattern of cardActions.js.
+ * The clicker's own client used to apply it, so a second tap, or the player
+ * and the GM both tapping, applied two suffer moves (issue #302).
  */
 
 import {
@@ -24,6 +29,8 @@ import {
 import { getActor, getPlayerActors } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
+import { relayCardAction } from "./cardActions.js";
+import { requesterOwnsActor } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -190,7 +197,10 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
 
 /**
  * Wire the suffer-card buttons on render. Idempotent across re-renders (clones
- * each button to drop stale listeners, like the burn-momentum hook).
+ * each button to drop stale listeners, like the burn-momentum hook). A click
+ * disables the card's buttons and relays the pick to the canonical GM; they
+ * re-arm when the pick did not resolve the card (refused, not delivered, or a
+ * multi-select pick with more to choose).
  */
 export function registerSufferCardHook() {
   onChatMessageRender((message, root) => {
@@ -200,21 +210,97 @@ export function registerSufferCardHook() {
     const stale = root.querySelectorAll('[data-action="sf-suffer-pick"]');
     stale.forEach(btn => btn.replaceWith(btn.cloneNode(true)));
 
-    root.querySelectorAll('[data-action="sf-suffer-pick"]').forEach(btn => {
-      if (btn.disabled) return;
+    const buttons = [...root.querySelectorAll('[data-action="sf-suffer-pick"]')];
+    for (const btn of buttons) {
+      if (btn.disabled) continue;
       btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        btn.disabled = true;
-        try {
-          await handleSufferPick(message, { ...btn.dataset });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | sufferCard: pick handler failed:`, err?.message ?? err);
-          btn.disabled = false;
-        }
+        const enabled = buttons.filter(b => !b.disabled);
+        for (const b of enabled) b.disabled = true;
+        await relayCardAction({
+          kind:    "suffer.pick",
+          payload: {
+            messageId:   message?.id ?? null,
+            pickKind:    btn.dataset.pickKind ?? null,
+            sufferId:    btn.dataset.sufferId ?? null,
+            optionIndex: btn.dataset.optionIndex ?? null,
+          },
+          isResolved: () => !!(globalThis.game?.messages?.get?.(message?.id) ?? message)?.flags?.[MODULE_ID]?.resolved,
+          restore:    () => { for (const b of enabled) b.disabled = false; },
+        });
       });
-    });
+    }
   });
+}
+
+// Suffer cards this (the canonical GM's) client is applying a pick from: a
+// second pick must not apply while the first is between its meter writes and
+// the card's resolved stamp.
+const _picksInFlight = new Set();
+
+/**
+ * gmRelay handler for "suffer.pick" — runs on the canonical GM (issue #302).
+ * Applies one pick from a suffer card, once. The card decides what a pick
+ * does: the payload only names the button, and it must be one the card offers
+ * (an "any" suffer move, or an available, unpicked option). The requester must
+ * own the card's PC or be a GM. A pick that arrives while another is being
+ * applied, or after the card resolved, applies nothing.
+ *
+ * @param {{ messageId?: string, pickKind?: string, sufferId?: string, optionIndex?: string|number }} payload
+ * @param {Object} ctx — relay context (requesterIsGM / requester)
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${messageId ?? "?"} not found — pick not applied.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.sufferCard || f.resolved || _picksInFlight.has(messageId)) {
+    console.debug(`${MODULE_ID} | sufferCard: card ${messageId} already resolved — ignoring the pick.`);
+    return { applied: false, reason: "already-resolved" };
+  }
+  const actor = getActor(f.actorId) ?? null;
+  const pick  = offeredPick(f, payload, actor);
+  if (!pick) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${messageId} offers no such pick — ignoring.`);
+    return { applied: false, reason: "not-offered" };
+  }
+  if (actor && !requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | sufferCard: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — pick refused.`);
+    return { applied: false, reason: "not-owner" };
+  }
+  _picksInFlight.add(messageId);
+  try {
+    await handleSufferPick(message, pick);
+    return { applied: true };
+  } finally {
+    _picksInFlight.delete(messageId);
+  }
+}
+
+/** The pick a relayed click names, shaped like its button's dataset — or null when the card offers no such pick. */
+function offeredPick(flags, payload, actor) {
+  const prompt = flags.sufferPrompt;
+  if (!prompt) return null;
+  if (payload.pickKind === "any") {
+    return prompt.kind === "any" && ANY_SUFFER_MOVES.some(s => s.id === payload.sufferId)
+      ? { pickKind: "any", sufferId: payload.sufferId }
+      : null;
+  }
+  if (payload.pickKind === "enum" && prompt.kind !== "any") {
+    const raw    = payload.optionIndex;
+    const i      = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+    const option = Number.isInteger(i) ? prompt.options?.[i] : null;
+    const picked = Array.isArray(flags.pickedIndices) ? flags.pickedIndices : [];
+    return option && isOptionAvailable(option, { actor }) && !picked.includes(i)
+      ? { pickKind: "enum", optionIndex: String(i) }
+      : null;
+  }
+  return null;
 }
 
 async function handleSufferPick(message, dataset) {

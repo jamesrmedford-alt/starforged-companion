@@ -8,19 +8,31 @@
 // the checks to make in the GM's world afterwards. Part 3's AI playtester
 // reuses the same format.
 //
+// A scenario marked `"strict": true` (issue #302 slice A) names every step
+// (`id`) and declares the Claude calls each step makes: `calls` (required, each
+// with an optional prompt contract) and `optionalCalls` (allowed; the
+// scenario's own `optionalCalls` apply to every step). After each step the
+// runner checks them: a required call that never happened, was answered by the
+// stub, or breaks its contract fails the step, and so does a call nothing
+// declared. A permissive scenario only reports such drift.
+//
 // Modes (PLAYTHROUGH_MODE):
 //   replay (default) — answer Claude from recordings/<scenario>.json;
 //   record           — answer Claude from Anthropic with ANTHROPIC_API_KEY and
 //                      write recordings/<scenario>.json. Run it outside CI
 //                      (test/ci/scripts/e2e.sh --record-playthroughs) and
-//                      commit the result; re-record when a prompt changes.
+//                      commit the result; re-record when a prompt changes. A
+//                      run that fails writes nothing there: its capture goes
+//                      to artifacts/recordings/<scenario>.rejected.json.
 // PLAYTHROUGH=<name> runs one scenario.
 //
 // Runs after the multiplayer suite (scripts/e2e.sh), against the same live
 // world. Each scenario starts by clearing what earlier suites left — chat,
 // actors, journals, campaign state — so a replay meets the world its recording
 // met. Exit code 0 when every scenario passes; 1 otherwise. Failure
-// screenshots and the run's Claude request log land in ./artifacts.
+// screenshots and the run's Claude request log land in ./artifacts. Each
+// result says separately whether the replay was valid, whether the checks
+// passed, and that the narrator's prose quality was not assessed.
 
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -29,7 +41,10 @@ import {
   MODULE_ID, MODULE_SRC, GM_NAME, ARTIFACTS, STEP_MS,
   sleep, assert, openClient, join, chat, snapshot, logConsoleErrors,
 } from "./lib/foundry.mjs";
-import { createClaudeHarness, PAGE_KEY, findSection } from "./lib/claude.mjs";
+import {
+  createClaudeHarness, PAGE_KEY, SETUP_STEP, AFTER_STEP,
+  recordingProblem, scenarioRevision, stepId, validateScenario,
+} from "./lib/claude.mjs";
 
 const MODE          = process.env.PLAYTHROUGH_MODE === "record" ? "record" : "replay";
 const ONLY          = process.env.PLAYTHROUGH || null;
@@ -511,7 +526,7 @@ const CHECKS = {
    * wrote it last isn't checked: a recorded narration may report the ship's
    * position itself (the sidecar's ship stateChange) after the move's own
    * write. The move's write is pinned by the narration request it precedes
-   * (a `request` check for the SHIP POSITION line).
+   * (the step's call contract for the SHIP POSITION line).
    */
   async shipPosition(ctx, c) {
     const pos = await ctx.gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC }) => {
@@ -562,34 +577,6 @@ const CHECKS = {
       .map(m => (m.content ?? "").replace(/\s+/g, " ").slice(0, 160)));
     assert(!leaks.length, `<npc> markup shows in ${leaks.length} card(s): ${leaks.join(" || ")}`);
   },
-
-  /**
-   * A request the narrator (or a helper) was sent: the `nth` call of `kind`
-   * (negative counts from the end). `carries` / `lacks` name sections;
-   * `section` maps a heading to text it must contain, `sectionLacks` to text it
-   * must not; `contains` is text anywhere in the request.
-   */
-  async request(ctx, c) {
-    const calls = ctx.harness.requests.filter(r => r.kind === c.kind);
-    const nth = c.nth ?? -1;
-    const r = nth < 0 ? calls.at(nth) : calls[nth];
-    assert(r, `no ${c.kind} call #${nth} — the run made ${calls.length} (kinds seen: ${[...new Set(ctx.harness.requests.map(x => x.kind))].join(", ")})`);
-    const sectionOf = (heading) => findSection(r.system, heading) ?? findSection(r.user, heading);
-    for (const heading of c.carries ?? []) assert(sectionOf(heading), `${c.kind} #${nth} lacks ${heading}`);
-    for (const heading of c.lacks ?? []) assert(!sectionOf(heading), `${c.kind} #${nth} carries ${heading}`);
-    for (const [heading, texts] of Object.entries(c.section ?? {})) {
-      const s = sectionOf(heading);
-      assert(s, `${c.kind} #${nth} lacks ${heading}`);
-      for (const t of [].concat(texts)) assert(s.includes(t), `${c.kind} #${nth}: ${heading} should say "${t}"`);
-    }
-    for (const text of c.contains ?? []) {
-      assert(`${r.system}\n${r.user}`.includes(text), `${c.kind} #${nth} doesn't say "${text}"`);
-    }
-    for (const [heading, texts] of Object.entries(c.sectionLacks ?? {})) {
-      const s = sectionOf(heading) ?? "";
-      for (const t of [].concat(texts)) assert(!s.includes(t), `${c.kind} #${nth}: ${heading} should not say "${t}"`);
-    }
-  },
 };
 
 async function runCheck(ctx, check) {
@@ -618,17 +605,30 @@ function writeArtifact(name, data) {
   fs.writeFileSync(path.join(ARTIFACTS, name), JSON.stringify(data, null, 2));
 }
 
+/** Record a scenario that never reached its browsers (a bad scenario or recording). */
+function refuse(scenario, failure, error) {
+  results.push({ name: scenario.name, ok: false, failure, error, verdict: { replay: failure === "replay" ? "invalid" : "not run", integration: "not run", narratorQuality: "not assessed" } });
+  log(`FAIL  ${scenario.name}: ${error}`);
+}
+
 async function runScenario(browser, scenario) {
   const started = Date.now();
+  const strict = scenario.strict === true;
+  const problems = validateScenario(scenario);
+  if (problems.length) return refuse(scenario, "scenario", `the scenario is not valid: ${problems.join("; ")}`);
   const recording = MODE === "replay" ? loadRecording(scenario.name) : null;
   if (MODE === "replay" && !recording) {
-    results.push({ name: scenario.name, ok: false, error: `no recordings/${scenario.name}.json — record it (scripts/e2e.sh --record-playthroughs)` });
-    log(`FAIL  ${scenario.name}: no recording`);
-    return;
+    return refuse(scenario, "replay", `no recordings/${scenario.name}.json — record it (scripts/e2e.sh --record-playthroughs)`);
   }
+  const unusable = MODE === "replay" ? recordingProblem(recording, { strict }) : null;
+  if (unusable) return refuse(scenario, "replay", `recordings/${scenario.name}.json can't be replayed: ${unusable}`);
   if (recording?.source && recording.source !== "recorded") log(`${scenario.name}: replaying ${recording.source} replies (${recording.note ?? "not recorded from Claude"})`);
+  const revision = scenarioRevision(scenario);
+  if (recording?.scenarioRevision && recording.scenarioRevision !== revision) {
+    log(`SCENARIO-REVISED ${scenario.name}: recorded against revision ${recording.scenarioRevision}, now ${revision} — the seed, settings or steps changed since; re-record if the replies no longer fit`);
+  }
 
-  const harness = createClaudeHarness({ mode: MODE, recording, apiKey: process.env.ANTHROPIC_API_KEY ?? null, log });
+  const harness = createClaudeHarness({ mode: MODE, recording, apiKey: process.env.ANTHROPIC_API_KEY ?? null, strict, log });
   const gm = await openClient(browser, "gm", { prepare: async (page) => {
     await harness.attach(page, "gm");
     await page.addInitScript(installDiceScript);
@@ -639,8 +639,26 @@ async function runScenario(browser, scenario) {
     client: (who) => (who === "gm" ? gm : player),
   };
   const clients = [gm, player];
+  const optional = scenario.optionalCalls ?? [];
+  const steps = scenario.steps ?? [];
+  const variations = [];
   let failed = null;
+  let failure = null;        // "infrastructure" | "replay" | "integration"
   let stepLabel = "setup";
+  let current = null;        // { id, step } — the step running now
+  let stepsRun = 0;
+
+  /** A strict step's calls against its declarations; throws on a failure. */
+  const checkCalls = (id, declared) => {
+    const report = harness.checkStep(id, declared, optional);
+    for (const v of report.variations) log(`  ${v}`);
+    variations.push(...report.variations);
+    if (report.failures.length) {
+      failure = "replay";
+      throw new Error(`strict replay — ${report.failures.join("; ")}`);
+    }
+    return report;
+  };
 
   try {
     await join(gm, GM_NAME, log);
@@ -648,49 +666,98 @@ async function runScenario(browser, scenario) {
     log(`${scenario.name}: world seeded ${JSON.stringify(ctx.ids)}`);
     await join(player, PLAYER_NAME, log);
 
-    for (const [i, step] of (scenario.steps ?? []).entries()) {
-      stepLabel = `step ${i + 1} (${step.do}${step.text ? `: "${step.text.slice(0, 40)}"` : step.name ? `: ${step.name}` : ""})`;
+    for (const [i, step] of steps.entries()) {
+      const id = stepId(step, i);
+      current = { id, step };
+      harness.setStep(id);
+      stepLabel = `step ${i + 1} "${id}" (${step.do}${step.text ? `: "${step.text.slice(0, 40)}"` : step.name ? `: ${step.name}` : ""})`;
       const fn = STEPS[step.do];
       assert(fn, `unknown step "${step.do}"`);
       const t0 = Date.now();
       await fn(ctx, step);
       // Let the passes a step schedules (detection, tier updates, summaries —
       // 2 s after a narration) land before checking: a negative check passes
-      // vacuously while they are still pending.
+      // vacuously while they are still pending, and a strict step's calls are
+      // counted once they have all started. A slow runner fires those timers
+      // late (CI run 245), so a strict step first waits for the calls it
+      // expects to start.
+      if (strict) await harness.waitForCalls(id, step, optional, { timeoutMs: CHECK_MS });
       await harness.idle({ quietMs: 4000 });
+      const report = strict ? checkCalls(id, step) : null;
       for (const check of step.then ?? []) await runCheck(ctx, check);
-      log(`  ok  ${stepLabel} (${Math.round((Date.now() - t0) / 100) / 10}s)`);
+      stepsRun += 1;
+      log(`  ok  ${stepLabel} (${Math.round((Date.now() - t0) / 100) / 10}s${report ? `; ${report.calls.length} call(s): ${report.calls.join(", ") || "none"}` : ""})`);
     }
+    current = null;
+    harness.setStep(AFTER_STEP);
     for (const check of scenario.always ?? []) await runCheck(ctx, check);
+    if (strict) {
+      stepLabel = "outside the steps";
+      checkCalls(SETUP_STEP, {});
+      checkCalls(AFTER_STEP, {});
+    }
   } catch (err) {
     failed = `${stepLabel}: ${err?.message ?? err}`;
+    failure ??= stepLabel === "setup" ? "infrastructure" : "integration";
+    // A missing reply often surfaces as a wait that timed out: say what the
+    // step's calls looked like when it failed.
+    if (strict && current && failure === "integration") {
+      const report = harness.checkStep(current.id, current.step, optional);
+      if (report.failures.length) {
+        failed += ` — at the failure, strict replay: ${report.failures.join("; ")}`;
+        if (report.failures.some(f => f.startsWith("UNRECORDED"))) failure = "replay";
+      }
+    }
   }
 
   const summary = harness.summary();
   log(`${scenario.name}: Claude calls ${JSON.stringify(summary.byKind)}`);
   if (summary.unusedRecordings.length) log(`${scenario.name}: recordings never asked for — ${summary.unusedRecordings.join(", ")}`);
+  // What a result means, kept apart: whether the replay answered every call
+  // it had to from recordings, whether the checks passed, and that the
+  // narrator's prose quality is not assessed here at all.
+  const verdict = {
+    replay: MODE === "record" ? "live (recording run)"
+      : failure === "replay" ? "invalid"
+      : strict ? (failed ? `valid through ${stepsRun} of ${steps.length} step(s)` : "valid")
+      : `permissive (${harness.requests.filter(r => r.source === "stub").length} stubbed call(s))`,
+    integration: failure === "integration" ? "fail" : failed ? "not reached" : "pass",
+    narratorQuality: MODE === "record" ? "live replies — not assessed" : "not assessed (recorded replies)",
+  };
 
   if (failed) {
-    results.push({ name: scenario.name, ok: false, error: failed, ms: Date.now() - started });
-    log(`FAIL  ${scenario.name}\n      ${failed}`);
+    results.push({ name: scenario.name, ok: false, failure, error: failed, verdict, ms: Date.now() - started });
+    log(`FAIL  ${scenario.name} (${failure})\n      ${failed}`);
     await snapshot(clients, `playthrough-${scenario.name}`, log);
     logConsoleErrors(clients, log);
     writeArtifact(`playthrough-${scenario.name}-requests.json`, {
-      summary, findings: ctx.findings,
-      requests: harness.requests.map(({ n, client, kind, model, source, user, system }) => ({
-        n, client, kind, model, source, user, systemSections: system.split("\n").filter(l => /^##\s/.test(l)),
+      summary, verdict, variations, findings: ctx.findings,
+      requests: harness.requests.map(({ n, client, step, kind, model, source, recordedStep, user, system }) => ({
+        n, client, step, kind, model, source, recordedStep, user, systemSections: system.split("\n").filter(l => /^##\s/.test(l)),
       })),
     });
   } else {
-    results.push({ name: scenario.name, ok: true, ms: Date.now() - started, calls: summary.calls, findings: ctx.findings });
-    log(`PASS  ${scenario.name} (${Math.round((Date.now() - started) / 1000)}s, ${summary.calls} Claude calls)`);
+    results.push({ name: scenario.name, ok: true, verdict, ms: Date.now() - started, calls: summary.calls, variations, findings: ctx.findings });
+    log(`PASS  ${scenario.name} (${Math.round((Date.now() - started) / 1000)}s, ${summary.calls} Claude calls; replay ${verdict.replay})`);
   }
 
   if (MODE === "record") {
-    fs.mkdirSync(RECORDING_DIR, { recursive: true });
-    const out = harness.recordingOut({ scenario: scenario.name, scenarioFile: scenario.file, passed: !failed });
-    fs.writeFileSync(path.join(RECORDING_DIR, `${scenario.name}.json`), `${JSON.stringify(out, null, 2)}\n`);
-    log(`${scenario.name}: wrote recordings/${scenario.name}.json (${out.exchanges.length} exchanges${failed ? " — the run FAILED; check it before committing" : ""})`);
+    const out = harness.recordingOut({
+      scenario: scenario.name, scenarioFile: scenario.file, revision, passed: !failed,
+      commit: process.env.PLAYTHROUGH_COMMIT || null,
+    });
+    // A failed run never becomes the baseline: its capture is kept for
+    // diagnosis, and recordings/ keeps what was there.
+    if (failed) {
+      const dir = path.join(ARTIFACTS, "recordings");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${scenario.name}.rejected.json`), `${JSON.stringify(out, null, 2)}\n`);
+      log(`${scenario.name}: the recording run FAILED — recordings/${scenario.name}.json is unchanged; the capture is in artifacts/recordings/${scenario.name}.rejected.json`);
+    } else {
+      fs.mkdirSync(RECORDING_DIR, { recursive: true });
+      fs.writeFileSync(path.join(RECORDING_DIR, `${scenario.name}.json`), `${JSON.stringify(out, null, 2)}\n`);
+      log(`${scenario.name}: wrote recordings/${scenario.name}.json (${out.exchanges.length} exchanges) — review the run's checks and the replies before committing it`);
+    }
   }
 
   await restoreWorld(gm);

@@ -153,12 +153,18 @@ fact block, detection and draft cards, End and Begin a Session.
   process. The page never reaches the network for Claude (no CORS), and the
   GM holds a placeholder key. A call's **kind** is the two named module
   frames above `apiPost` — `callNarratorAPI>narrateResolution`,
-  `callHaiku>defaultCallDetectionAPI`. A request gets the unused recording of
-  its kind whose user message it shares the most words with (ties: the
-  earliest), so a reordered background call still gets its own reply — and
-  only when it holds at least half of that recording's words, so a call
-  nothing was recorded for (the tier pass a vignette schedules, say) can't
-  take the reply meant for a later call of its kind.
+  `callHaiku>defaultCallDetectionAPI`. Each call is filed under the scenario
+  step during which it started (the runner waits for 4 s with no call
+  before a step's checks, and every background pass starts within 2 s), and
+  a recording run stores that step on every exchange. A request gets an
+  unused recording of its kind **from its own step** first, whatever its
+  words (the step and the kind pin the call, so a prompt edit doesn't lose
+  its reply); then an untagged recording, only when the request holds at
+  least half of its words, so a call nothing was recorded for (the tier pass
+  a vignette schedules, say) can't take the reply meant for a later call of
+  its kind; then, in a permissive scenario only, another step's recording on
+  the same floor (a late background call). Among several, the one sharing
+  the most words wins (ties: the earliest, logged `AMBIGUOUS`).
 - **Recordings** live in `test/ci/playwright/recordings/<scenario>.json`
   (not `tests/fixtures/`). Record them outside CI with a key:
   `ANTHROPIC_API_KEY=… test/ci/scripts/e2e.sh --record-playthroughs`, then
@@ -168,12 +174,31 @@ fact block, detection and draft cards, End and Begin a Session.
   an id accept the name. A file with `"source": "hand-written"` is a
   placeholder written to the parsers' formats; the log says so when it
   replays one.
-- **Drift is reported, not failed.** A call with no recording left gets a
-  neutral stub (narrator prose with an empty fact block; `{}` for a JSON
-  helper) and an `UNRECORDED <kind>` line. A recording whose system-prompt
-  sections differ from the live request logs `STALE <kind>`: re-record. The
-  per-kind call counts, and any recording nothing asked for, are logged after
-  each scenario. A check that then fails is a real failure.
+- **Permissive scenarios report drift; strict ones fail it** (issue #302
+  slice A). A call with no recording left gets a neutral stub (narrator
+  prose with an empty fact block; `{}` for a JSON helper) and an
+  `UNRECORDED <kind>` line. A recording whose system-prompt sections differ
+  from the live request — entity ids and numbers normalised away — logs
+  `STALE <kind>`: re-record. The per-kind call counts, and any recording
+  nothing asked for, are logged after each scenario.
+  A scenario marked `"strict": true` names every step (`id`) and declares
+  its Claude calls: `calls` (each one required once, with an optional
+  **contract** — `carries` / `lacks` section headings, `section` /
+  `sectionLacks` text within a section, `contains` text anywhere) and
+  `optionalCalls` (kinds allowed in that step; the scenario's own
+  `optionalCalls` apply to every step). After each step, before its checks,
+  the runner waits (up to 20 s) until the step's required calls — and the
+  optional ones its recording made in that step — have started, then for
+  4 s with no call: a slow runner fires the passes' 2 s timers late (CI run
+  245 reported them `MISSING`). It then fails the step on a required call
+  that is `MISSING`, `UNRECORDED` (the stub answered it) or breaks its
+  `CONTRACT`, and on an `UNEXPECTED` call nothing declared; an optional call
+  is logged `OPTIONAL`. A contract fails even when a recorded reply
+  answered the call, so the prompt can't lose data a canned reply would
+  paper over. STALE stays a warning: a prompt change does not need a key to
+  merge unless it breaks a contract. first-session is strict;
+  `tests/unit/playthroughReplay.test.js` checks its declarations against its
+  recording on every PR, no Foundry needed.
 - **Scenarios are data** (`playthroughs/*.json`): the seed (PC, sector,
   ship, settlements, where they are, and optionally a sector map — a flagged
   scene with a pin per settlement and the ship's token on one), the settings
@@ -186,7 +211,8 @@ fact block, detection and draft cards, End and Begin a Session.
   `expect` — each with `then` checks. The checks (`moveLockReleased`,
   `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`, `journalPage`,
   `momentum`, `shipPosition`, `shipToken`, `currentLocation`, `card`,
-  `noMarkup`, `request`) poll for up to 20 s; the
+  `noMarkup`) poll for up to 20 s — what a request carried is a strict
+  step's call contract, not a check; the
   runner first waits until no Claude call has started for 4 s, so the passes
   a narration schedules 2 s later have landed (a negative check would pass
   vacuously before them). `PLAYTHROUGH=<name>` runs one scenario. Part 3's AI
@@ -204,13 +230,24 @@ fact block, detection and draft cards, End and Begin a Session.
 - **Record mode needs the scenario to steer the model.** A live model may
   name the NPC differently or pick another move; name what the checks look
   for in the player's lines, and check structure (a card exists, its
-  description isn't empty) rather than prose. A recording run that fails its
-  checks still writes the file and says so — fix the scenario before
-  committing it.
+  description isn't empty) rather than prose. A recording run that fails —
+  a check, or a strict call declaration — leaves `recordings/` untouched:
+  its capture goes to `artifacts/recordings/<scenario>.rejected.json`, and a
+  recording marked `"passed": false` is refused on replay. A passing run's
+  recording carries its provenance (`scenarioRevision`, the hash of the
+  seed, settings and steps it was captured against, then `provenance`: when,
+  the commit, the models) and each exchange its step and prompt
+  `fingerprint`. Review the run's checks and the replies before committing
+  it; a later run whose scenario revision differs logs `SCENARIO-REVISED`.
 - **Result.** `[playthrough] PASS / FAIL` lines, `FINDING` lines (the
-  Private Channel probe), a final `summary` JSON line. On failure, the
-  screenshots and `playthrough-<scenario>-requests.json` (every call's kind,
-  source and user message) land in `test/ci/playwright/artifacts/`.
+  Private Channel probe), a final `summary` JSON line. Each result keeps
+  three things apart: `verdict.replay` (strict: `valid` / `invalid`;
+  otherwise `permissive` with its stub count), `verdict.integration` (the
+  checks: `pass` / `fail` / `not reached`) and `verdict.narratorQuality`
+  (never assessed here). A failure is classed `infrastructure` (before the
+  first step), `replay` or `integration`. On failure, the screenshots and
+  `playthrough-<scenario>-requests.json` (every call's step, kind, source
+  and user message) land in `test/ci/playwright/artifacts/`.
 
 ## Quench batch coupling — shared defaults and hooks
 

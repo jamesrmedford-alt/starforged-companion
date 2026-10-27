@@ -7,11 +7,17 @@
  * every client, socket delivery to everyone but the sender, per-client
  * settings / dialogs / Claude calls, and the permission-faithful rules
  * applied per client. The module-behaviour tests built on it live in
- * multiplayerRouting / multiplayerRelay / multiplayerConcurrency.
+ * multiplayerRouting / multiplayerRelay / multiplayerConcurrency. Its fault
+ * boundaries (issue #302 slice B: refused and held writes, Claude faults, the
+ * event order — tests/helpers/faults.js) are checked last; faultMatrix.test.js
+ * uses them.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { simulateTable, USERS, MODULE_ID, currentClient } from '../helpers/multiClient.js';
+import {
+  campaignStateWrite, claudeFault, expectKnownIssue, failWrites, holdWrites, scriptClaude, traceTable,
+} from '../helpers/faults.js';
 
 const { GM, GM2, P1, P2 } = USERS;
 
@@ -231,3 +237,98 @@ describe('render and click', () => {
     expect(() => p1.click(card, '[data-action="nope"]')).toThrow(/data-actions: probe-click/);
   });
 });
+
+describe('fault boundaries (issue #302)', () => {
+  const API = 'https://api.anthropic.com/v1/messages';
+  const ask = (client) => client.run(async () => {
+    const { apiPost } = await import('../../src/api-proxy.js');
+    return apiPost(API, { 'x-api-key': 'sk-ant-test' }, { model: 'claude-test', messages: [{ role: 'user', content: 'Hi' }] });
+  });
+
+  it('a refused write rejects its caller and reaches no client; the next one applies', async () => {
+    const gm = table.client('gm-1');
+    const refused = failWrites(table, campaignStateWrite('gm-1'));
+    await expect(gm.setSetting('campaignState', { sessionActive: true })).rejects.toThrow(/refused/);
+    expect(refused.refused).toBe(1);
+    expect(table.world.campaignState()).toBeUndefined();
+    await gm.setSetting('campaignState', { sessionActive: true });
+    expect(table.world.campaignState()).toEqual({ sessionActive: true });
+  });
+
+  it('a held write applies only when released — another write can land first', async () => {
+    const gm = table.client('gm-1');
+    const held = holdWrites(table, (w) => w.kind === 'setting' && w.value?.n === 1);
+    const first = gm.setSetting('campaignState', { n: 1 });
+    expect((await held.arrived).client).toBe('gm-1');
+    await gm.setSetting('campaignState', { n: 2 });
+    expect(table.world.campaignState()).toEqual({ n: 2 });
+    held.release();
+    await first;
+    expect(table.world.campaignState()).toEqual({ n: 1 });   // the late write wins, as on a real server
+  });
+
+  it('Actor and ChatMessage writes can be refused too; reset() removes every interceptor', async () => {
+    const gm = table.client('gm-1');
+    const actor = table.addActor({ id: 'a-1', name: 'Kira', ownership: {} });
+    failWrites(table, (w) => w.kind === 'actor.update' && w.id === 'a-1');
+    failWrites(table, (w) => w.kind === 'message.create');
+    await expect(gm.run(() => actor.update({ name: 'Kira Vale' }))).rejects.toThrow(/refused/);
+    expect(actor.name).toBe('Kira');
+    await expect(gm.run(() => ChatMessage.create({ content: 'x' }))).rejects.toThrow(/refused/);
+    expect(table.world.messages()).toEqual([]);
+    await table.reset();
+    await gm.run(() => ChatMessage.create({ content: 'x' }));
+    expect(table.world.messages()).toHaveLength(1);
+  });
+
+  it('a Claude fault is what the caller gets: an HTTP error, a malformed body, a network error', async () => {
+    const gm = table.client('gm-1');
+    const claude = scriptClaude(table);
+    claude.when(() => true, claudeFault.overloaded());
+    await expect(ask(gm)).rejects.toThrow(/Anthropic API error 529/);
+    claude.when(() => true, claudeFault.malformed());
+    await expect(ask(gm)).rejects.toThrow(SyntaxError);
+    claude.when(() => true, claudeFault.networkError());
+    await expect(ask(gm)).rejects.toThrow(/Failed to fetch/);
+    await expect(ask(gm)).resolves.toMatchObject({ content: [{ text: '{}' }] });   // the fallback reply
+  });
+
+  it('a held Claude call is answered when the test releases it', async () => {
+    const gm = table.client('gm-1');
+    const held = scriptClaude(table).hold(() => true);
+    const answer = ask(gm);
+    expect((await held.arrived).client).toBe('gm-1');
+    held.release('Released.');
+    await expect(answer).resolves.toMatchObject({ content: [{ text: 'Released.' }] });
+  });
+
+  it('the event order records calls, replies, writes, cards, notifications and test marks in sequence', async () => {
+    const trace = traceTable(table);
+    const gm = table.client('gm-1');
+    scriptClaude(table).when(() => true, claudeFault.serverError());
+    trace.mark('start');
+    await gm.setSetting('campaignState', { a: 1 });
+    await expect(ask(gm)).rejects.toThrow(/500/);
+    await gm.run(() => ChatMessage.create({ content: 'x', flags: { [MODULE_ID]: { probe: true } } }));
+    gm.run(() => ui.notifications.warn('Careful.'));
+    expect(trace.entries.map(e => e.replace(/ smsg\w+/, ''))).toEqual([
+      '── start',
+      'setting campaignState by gm-1',
+      'claude #1 → gm-1 claude-test "Hi"',
+      'claude #1 ← HTTP 500 api_error',
+      'card [probe] by gm-1',
+      'notify gm-1 warn: "Careful."',
+    ]);
+  });
+
+  it('expectKnownIssue passes while its check fails as described, and fails otherwise', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    await expectKnownIssue('ISSUE-X', /expected 1 to be 2/, async () => { expect(1).toBe(2); });
+    expect(info).toHaveBeenCalledWith(expect.stringMatching(/^KNOWN ISSUE ISSUE-X: /));
+    await expect(expectKnownIssue('ISSUE-X', /expected 1 to be 2/, async () => { throw new Error('something else'); }))
+      .rejects.toThrow('something else');
+    await expect(expectKnownIssue('ISSUE-X', /expected 1 to be 2/, async () => {}))
+      .rejects.toThrow(/no longer reproduces/);
+  });
+});
+

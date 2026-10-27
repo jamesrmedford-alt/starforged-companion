@@ -14,7 +14,9 @@ import {
   renderSufferCard,
   summarizeSufferCalls,
   postSufferChoiceCard,
+  applySufferPickFromRelay,
 } from "../../src/moves/sufferCard.js";
+import { invalidateActorCache } from "../../src/character/actorBridge.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -149,3 +151,93 @@ describe("postSufferChoiceCard", () => {
     expect(ChatMessage._created).toHaveLength(0);
   });
 });
+
+// ── applySufferPickFromRelay (gmRelay "suffer.pick", issue #302) ─────────────
+
+describe("applySufferPickFromRelay — a pick applies once, on the canonical GM", () => {
+  let pc;
+  let card;
+
+  function sufferCardMessage(prompt, extra = {}) {
+    const msg = {
+      id: "m-suffer",
+      content: renderSufferCard(prompt, pc, []),
+      flags: { [MODULE_ID]: { sufferCard: true, sufferPrompt: prompt, executorOpts: {}, actorId: pc.id, moveId: "face_danger", pickedIndices: [], resolved: false, ...extra } },
+      async update(changes) {
+        for (const [path, val] of Object.entries(changes)) {
+          if (path === "content") { msg.content = val; continue; }
+          const parts = path.split(".");
+          let t = msg;
+          for (let i = 0; i < parts.length - 1; i++) t = (t[parts[i]] ??= {});
+          t[parts.at(-1)] = val;
+        }
+      },
+    };
+    game.messages = { contents: [msg], get: (id) => (id === msg.id ? msg : null) };
+    return msg;
+  }
+
+  const gm     = { requesterId: "gm-1", requesterIsGM: true };
+  const owner  = { requesterId: "pl-1", requesterIsGM: false, requester: { id: "pl-1" } };
+  const other  = { requesterId: "pl-2", requesterIsGM: false, requester: { id: "pl-2" } };
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    pc = makeTestActor({ id: "pc-1", name: "Kira", ownership: { "pl-1": 3 } });
+    game.actors._set(pc.id, pc);
+    invalidateActorCache(pc.id);
+    card = sufferCardMessage({ kind: "any", amount: 1, count: 1 });
+  });
+
+  it("applies the owner's pick and resolves the card; a second pick applies nothing", async () => {
+    await expect(applySufferPickFromRelay({ messageId: card.id, pickKind: "any", sufferId: "lose_momentum" }, owner))
+      .resolves.toEqual({ applied: true });
+    expect(pc.system.momentum.value).toBe(1);
+    expect(card.flags[MODULE_ID].resolved).toBe(true);
+
+    await expect(applySufferPickFromRelay({ messageId: card.id, pickKind: "any", sufferId: "sacrifice_resources" }, gm))
+      .resolves.toEqual({ applied: false, reason: "already-resolved" });
+    expect(pc.system.supply.value).toBe(3);
+  });
+
+  it("refuses a requester who neither is a GM nor owns the PC", async () => {
+    await expect(applySufferPickFromRelay({ messageId: card.id, pickKind: "any", sufferId: "lose_momentum" }, other))
+      .resolves.toEqual({ applied: false, reason: "not-owner" });
+    expect(pc.system.momentum.value).toBe(2);
+    expect(card.flags[MODULE_ID].resolved).toBe(false);
+  });
+
+  it("refuses a pick the card does not offer — the payload only names a button", async () => {
+    for (const payload of [
+      { pickKind: "any", sufferId: "drink_the_reactor" },
+      { pickKind: "enum", optionIndex: "0" },
+      { pickKind: "something" },
+    ]) {
+      await expect(applySufferPickFromRelay({ messageId: card.id, ...payload }, gm), JSON.stringify(payload))
+        .resolves.toEqual({ applied: false, reason: "not-offered" });
+    }
+    const options = sufferCardMessage({ kind: "enumerated", options: [
+      { label: "+1 health (if not wounded)", health: 1, requires: "!wounded" },
+      { label: "-1 momentum", momentum: -1 },
+    ] }, { pickedIndices: [1] });
+    pc.system.debility.wounded = true;
+    for (const optionIndex of ["0", "1", "7", "x"]) {   // unavailable, already picked, out of range, not a number
+      await expect(applySufferPickFromRelay({ messageId: options.id, pickKind: "enum", optionIndex }, gm), optionIndex)
+        .resolves.toEqual({ applied: false, reason: "not-offered" });
+    }
+    // No index is not option 0, though Number(null) is 0.
+    const open = sufferCardMessage({ kind: "enumerated", options: [{ label: "-1 momentum", momentum: -1 }] });
+    for (const optionIndex of [null, "", undefined]) {
+      await expect(applySufferPickFromRelay({ messageId: open.id, pickKind: "enum", optionIndex }, gm), String(optionIndex))
+        .resolves.toEqual({ applied: false, reason: "not-offered" });
+    }
+    expect(pc._updateHistory).toEqual([]);
+  });
+
+  it("warns and applies nothing when the card is gone", async () => {
+    await expect(applySufferPickFromRelay({ messageId: "m-gone", pickKind: "any", sufferId: "lose_momentum" }, gm))
+      .resolves.toEqual({ applied: false, reason: "no-message" });
+  });
+});
+

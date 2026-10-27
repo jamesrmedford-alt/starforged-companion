@@ -288,6 +288,27 @@ describe("X-Card play / resume", () => {
     expect(card.flags[MODULE_ID].xcardRecorded).toBe(false);
   });
 
+  it("postXCardCard (not saved) says the pause could not be saved, with no resume button", async () => {
+    await postXCardCard({ recorded: false, reason: "not-saved" });
+    const card = ChatMessage._created[0];
+    expect(card.content).toMatch(/The pause could not be saved/);
+    expect(card.content).not.toMatch(/no GM is connected/);
+    expect(card.content).not.toContain(XCARD_RESUME_ACTION);
+    expect(card.flags[MODULE_ID].xcardRecorded).toBe(false);
+  });
+
+  // Issue #302: the canonical GM's own write failing used to post "Scene
+  // paused … Current content is suppressed" with a resume button.
+  it("playXCard on the canonical GM whose write fails says the pause was not saved", async () => {
+    setUsers([GM, PLAYER], "gm-1");
+    const set = vi.spyOn(game.settings, "set").mockRejectedValueOnce(new Error("refused"));
+    await expect(playXCard()).resolves.toEqual({ recorded: false });
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(game.settings.get(MODULE_ID, "campaignState").xCardActive).not.toBe(true);
+    expect(ChatMessage._created[0].content).toMatch(/could not be saved/);
+    expect(ChatMessage._created[0].flags[MODULE_ID].xcardRecorded).toBe(false);
+  });
+
   it("playXCard on the canonical GM records the pause locally and posts the card", async () => {
     setUsers([GM, PLAYER], "gm-1");
     await expect(playXCard()).resolves.toEqual({ recorded: true });

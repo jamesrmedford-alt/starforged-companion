@@ -164,6 +164,7 @@ export const GM_ACTIONS = Object.freeze({
   "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
   "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone" },
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
+  "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay" },
 });
 
 /**
