@@ -17,7 +17,14 @@ Two cross-cutting facts to hold onto:
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
-  a no-GM warning and a re-armed button when the click is not delivered). The
+  a no-GM warning and a re-armed button when the click is not delivered).
+  Burn and Improve open only once the pipeline has persisted the original
+  outcome and stamped the card `originalApplied` (until then the button is
+  disabled and the GM handler refuses — issue #300 F02); each swaps that
+  recorded original for the upgraded outcome, burns the PC's live momentum
+  (bounds from `actorBridge.readMomentumState`), and spends the other, so one
+  card is upgraded at most once. The pipeline gives each resolution an `_id`
+  so the upgrade can strike the original narration card. The
   threshold card's **Enter the Fray** still uses its older ad-hoc relay
   (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
   the canonical GM — no no-GM warning).

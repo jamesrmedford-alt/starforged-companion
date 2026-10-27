@@ -93,12 +93,7 @@ export function readCharacterSnapshot(actor) {
   const sys  = actor.system ?? {};
   const debs = readDebilities(actor);
   const impactCount = countImpacts(debs);
-
-  // Prefer the vendor system's computed getters (#impactCount-driven) when
-  // present so any future schema change tracks automatically; otherwise fall
-  // back to the local formula matching the play kit (p.1).
-  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
-  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
+  const { max: momentumMax, reset: momentumReset } = momentumBounds(sys, impactCount);
 
   const snapshot = {
     name:    actor.name,
@@ -299,6 +294,24 @@ export function readDebilities(actor) {
   };
 }
 
+/**
+ * Momentum and its bounds, read live from the sheet (never the cached
+ * snapshot): what a burn spends and resets to must match what the sheet
+ * holds right now (issue #300 F03).
+ * @param {Actor} actor
+ * @returns {{ value: number, min: number, max: number, reset: number, impactCount: number }}
+ */
+export function readMomentumState(actor) {
+  const sys = actor?.system ?? {};
+  const impactCount = countImpacts(readDebilities(actor));
+  return {
+    value: meterValue(sys.momentum),
+    min:   MOMENTUM_MIN,
+    ...momentumBounds(sys, impactCount),
+    impactCount,
+  };
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WRITE
@@ -318,9 +331,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
   const impactCount = countImpacts(debs);
-
-  const momentumMax   = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
-  const momentumReset = sys.momentumReset ?? Math.max(0, 2 - impactCount);
+  const { max: momentumMax, reset: momentumReset } = momentumBounds(sys, impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
   const spiritMax  = debs.shaken  ? 3 : 5;
@@ -837,8 +848,7 @@ export async function recalculateMomentumBounds(actor) {
   const sys       = actor.system ?? {};
   const debs      = readDebilities(actor);
   const impactCount = countImpacts(debs);
-  const maxMom    = sys.momentumMax   ?? Math.max(0, 10 - impactCount);
-  const resetMom  = sys.momentumReset ?? Math.max(0, 2 - impactCount);
+  const { max: maxMom, reset: resetMom } = momentumBounds(sys, impactCount);
   const current   = meterValue(sys.momentum);
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
 
@@ -867,6 +877,18 @@ function meterValue(meter) {
 
 function countImpacts(debs) {
   return IMPACT_KEYS.filter(k => debs[k]).length;
+}
+
+// Momentum max and reset (the burn target) for an impact count. Prefers the
+// vendor system's computed getters (#impactCount-driven) when present so a
+// future schema change tracks automatically; otherwise the play-kit formula
+// (p.1). The one derivation of the bounds — the sheet writes, the snapshot and
+// the burn preview all read it.
+function momentumBounds(sys, impactCount) {
+  return {
+    max:   sys.momentumMax   ?? Math.max(0, 10 - impactCount),
+    reset: sys.momentumReset ?? Math.max(0, 2 - impactCount),
+  };
 }
 
 function clamp(value, min, max) {

@@ -995,6 +995,12 @@ export function registerChatHook() {
       // that site's canonical interior tables.
       const currentSite = getCurrentSiteKind(campaignState);
       const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite });
+      // resolveMove leaves the id to its caller. The move card's Burn / Improve
+      // flags and the narration card both carry it, and superseding the
+      // original narration after an upgrade finds that card by it — with no id
+      // the struck-through pre-burn prose was never struck and kept reaching
+      // the narrator's recent-narration ring (issue #300 F02).
+      resolution._id = foundry.utils.randomID();
 
       // Fact-continuity §20 — when a travel move with ARRIVAL semantics
       // resolves to a non-miss, the ship arrived at the destination the
@@ -1586,23 +1592,19 @@ export function registerChatHook() {
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
         await persistResolution(resolution, campaignState, speakerActorId);
-        // Mark the move card so the Burn handler knows the original
-        // consequences have been written to the actor. Without this flag,
-        // a burn click after persistence would double-reverse the meter
-        // change (or, when persistence hasn't fired yet, the click would
-        // assume it had and over-apply).
-        if (burnState && moveResultMessage) {
-          await moveResultMessage.update({
-            [`flags.${MODULE_ID}.burn.originalApplied`]: true,
-          }).catch(err => console.warn(`${MODULE_ID} | burn metadata update failed:`, err));
-        }
-        // Same flag for the improve affordance (finding G): once the original
-        // outcome's consequences are on the sheet, the click handler must diff
-        // against them rather than re-applying from zero.
-        if (improveState && moveResultMessage) {
-          await moveResultMessage.update({
-            [`flags.${MODULE_ID}.improve.originalApplied`]: true,
-          }).catch(err => console.warn(`${MODULE_ID} | improve metadata update failed:`, err));
+        // The original outcome is on the sheet: open the card's Burn Momentum /
+        // Improve Result buttons. They stay disabled (and their GM handlers
+        // refuse) until this stamp — a burn clicked during the narration above
+        // applied the upgraded outcome, then this persist added the original
+        // on top of it (issue #300 F02). The click handlers diff the upgraded
+        // outcome against the recorded original.
+        const recorded = {
+          ...(burnState    ? { [`flags.${MODULE_ID}.burn.originalApplied`]:    true } : {}),
+          ...(improveState ? { [`flags.${MODULE_ID}.improve.originalApplied`]: true } : {}),
+        };
+        if (moveResultMessage && Object.keys(recorded).length) {
+          await moveResultMessage.update(recorded).catch(err =>
+            console.warn(`${MODULE_ID} | burn / improve metadata update failed:`, err));
         }
 
         // The move is resolved, persisted, and narrated — the critical section

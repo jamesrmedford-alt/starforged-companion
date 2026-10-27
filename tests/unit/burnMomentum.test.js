@@ -126,6 +126,29 @@ describe('buildBurnState', () => {
     const burn = buildBurnState(makeResolution(), actor);
     expect(burn?.ptpReversals).toBeNull();
   });
+
+  // Issue #300 F03: the preview used current + delta unclamped, so a PC at
+  // 10/10 with a +1 weak hit was offered a burn of 11 against a 10.
+  it('never previews momentum above the maximum (10/10 with +1 against [9, 10])', () => {
+    const burn = buildBurnState(makeResolution({ challengeDice: [9, 10] }), actorWithMomentum(10));
+    expect(burn).toBeNull();
+  });
+
+  it('records the clamped momentum on an eligible card', () => {
+    const burn = buildBurnState(makeResolution(), actorWithMomentum(10));
+    expect(burn.momentum).toBe(10);
+  });
+
+  it('clamps to an impact-reduced maximum (two impacts: max 8)', () => {
+    const actor = actorWithMomentum(8, { wounded: true, shaken: true });
+    expect(buildBurnState(makeResolution({ challengeDice: [8, 3] }), actor)).toBeNull();
+    expect(buildBurnState(makeResolution({ challengeDice: [7, 3] }), actor)?.momentum).toBe(8);
+  });
+
+  it('counts only impacts, not every truthy debility field', () => {
+    const actor = actorWithMomentum(7, { wounded: true, custom1name: 'Haunted' });
+    expect(buildBurnState(makeResolution(), actor).markedImpactCount).toBe(1);
+  });
 });
 
 
