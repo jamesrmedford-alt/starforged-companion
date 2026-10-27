@@ -37,7 +37,8 @@ final `storeSector` write.
   Item).
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
-  same way, Dismiss records the name in `dismissedEntities`.
+  same way (once per draft on the clicking GM — an in-flight guard, issue
+  #302), Dismiss records the name in `dismissedEntities`.
   Placeholder-name reveals rename in place rather than duplicating.
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.

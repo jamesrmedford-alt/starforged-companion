@@ -8,8 +8,8 @@ rejected.
 
 ## Strict replay for critical playthroughs; regression tests proven sensitive (2026-10)
 
-**Decision:** (issue #302 slice A. The maintainer asked for slices A and B
-on 2026-10-27; the choices below were made while building them.)
+**Decision:** (issue #302 slices A and B. The maintainer asked for both on
+2026-10-27; the choices below were made while building them.)
 - **A strict scenario fails replay drift; a permissive one reports it.**
   `"strict": true` makes a scenario name every step and declare, per step,
   the Claude calls it makes — `calls` (each required once, with an optional
@@ -46,11 +46,35 @@ on 2026-10-27; the choices below were made while building them.)
   fix's export is missing doesn't count; injecting the specific defect is
   how such a test is shown sensitive (B04's recap cache). The results are
   kept in `docs/testing/fix-sensitivity.md`.
+- **Fault boundaries live in the multi-client harness** (slice B):
+  `table.interceptWrites` refuses or holds world writes, a Claude reply can
+  be a fault (`tests/helpers/faults.js` `claudeFault`), and
+  `table.onEvent` records the order things happened in, which a failing
+  test prints. Rows assert after `table.drain()`, never before deferred work
+  has settled, so a negative check can't pass ahead of a late effect. The
+  matrix is `tests/unit/faultMatrix.test.js`.
+- **A known, open defect is a keyed check, not a skip.** `expectKnownIssue`
+  asserts the correct behaviour, passes while that check fails with the
+  recorded signature, fails on any other error, and fails when the defect no
+  longer reproduces (MOVE-BUSY-NOTICE).
+- **Never set a field on a cached setting value before a write that can
+  fail.** `game.settings.get` returns an object setting by reference: write
+  a copy, or undo the field when the write rejects (rules/foundry-api.md).
+  The move lock's claim and release and the X-Card's pause and clear did
+  it, and a refused write left a client disagreeing with the world.
+- **A suffer card's pick is applied on the canonical GM** (`suffer.pick`),
+  once per card, like the other one-shot card buttons. Draft Confirm keeps
+  running on the clicking GM, behind a per-client in-flight guard; two GMs
+  confirming at once is an accepted, recorded limitation
+  (DRAFT-CONFIRM-TWO-GMS).
 
 **Reason:** the #301 audit found four defects while 90 related tests
 passed: coverage stopped short of workflow and identity boundaries. The
 first-session recording is hand-written, so a permissive replay that
-stubbed a required call, or a prompt that lost a section, could pass.
+stubbed a required call, or a prompt that lost a section, could pass. The
+#300 fixes were tested where each defect was found, not against the
+interruptions a table produces (refused writes, failed calls, repeat
+clicks, a dropped connection); the matrix found six defects there.
 
 **Rejected:**
 - *Fail on STALE*: every prompt edit would need a key to re-record — the
@@ -59,10 +83,16 @@ stubbed a required call, or a prompt that lost a section, could pass.
   the kind is the stable key.
 - *Keep the `request` check beside the contracts*: two ways to say one
   thing, and the check's `nth` counted across the whole run.
+- *`it.fails` for known defects*: it passes on any failure, so it would hide
+  an unrelated regression in the same test.
+- *Relay draft Confirm through the canonical GM now*: the realistic case is
+  one GM's double-click, which the in-flight guard covers; the relay is the
+  recorded follow-up.
 
 **Trade-offs accepted:** a new Claude call in a strict scenario fails CI
 until a scenario edit declares it (no key needed). The first-session
 replies are still hand-written; real ones need a recording run with a key.
+A suffer pick needs a connected GM, like every other card button.
 
 ---
 
@@ -893,7 +923,7 @@ Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `factContinuity.command`, `oracle.narrate`, `repair.apply`,
 `payThePrice.advanceClocks`, `move.burnMomentum`, `move.improveResult`,
 `milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
-`fightVow.deepenBond`. Four older world-writing socket relays predate it
+`fightVow.deepenBond`, `suffer.pick` (issue #302). Four older world-writing socket relays predate it
 (`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
 `vow.linkConnection`) — fold them in when next touched (known-issues
 RELAY-LEGACY-KINDS).
@@ -998,7 +1028,9 @@ the message is created (the settings panel's `chatMessage` hook) and handled by
 (`suppressScene` sets `campaignState.xCardActive`, no permission check) and
 posts the X-Card card. A programmatic `!x` message (a macro) is routed
 `RUN_ON.CANONICAL_GM`. With no GM connected the card says the pause could not
-be recorded and carries no resume button. Only a GM resumes: the card's
+be recorded and carries no resume button; when the GM's write of the pause
+fails, the card says it could not be saved — the GM's own card on a relayed
+play, whose player's card (no ack) already says paused (issue #302). Only a GM resumes: the card's
 **Resume narration** button (removed for non-GM viewers), `!x clear` (a player
 is warned), or `game.modules.get("starforged-companion").api.clearXCard()`.
 Resuming clears the flag, marks every open X-Card card resolved and posts an
@@ -3230,7 +3262,10 @@ pipeline posts the card and continues; the move-concurrency lock
 (`pendingMove`) is released normally. The player taps a button to apply the
 choice, which runs the same `resolveSufferSelection` + `runSufferResolution`
 path and the same `requires`-filtering the dialog used — so meters stay exactly
-as correct; nothing is auto-applied or guessed.
+as correct; nothing is auto-applied or guessed. The pick is applied on the
+canonical GM (`suffer.pick`), once per card (issue #302: the clicker's client
+applied it, so two taps applied two costs, and a player could not mark the
+GM's card resolved).
 
 **Reason:** The dialog was `await`ed *inside* the move lock (in
 `persistResolution`). The v1.7.16 settle-on-close fix only helps if the dialog

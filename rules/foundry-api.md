@@ -113,6 +113,23 @@ wherever the dialog fits them: they already settle on close (reject or
 resolve-null) and cannot hang. Reserve the custom-promise ApplicationV2
 pattern for dialogs the primitives can't express.
 
+**`game.settings.get` returns an object setting's cached value by reference —
+set nothing on it before a write that can fail:**
+
+A world write can be refused (a server error, a dropped connection). Setting a
+field on the value `get` returned and then writing it leaves this client's
+cache changed when the write fails, so the client disagrees with the world:
+issue #302 found the move lock's release skipped its own retry (it read
+"released"), a refused claim locked the GM's client until a reload, and the
+X-Card could be held or lifted on the GM alone. Write a copy, or undo the
+field when the write rejects:
+
+```js
+const cs = { ...game.settings.get(MODULE_ID, "campaignState") };
+cs.pendingMove = false;                                   // a copy
+await game.settings.set(MODULE_ID, "campaignState", cs);  // a refusal leaves the cache as it was
+```
+
 **Specific things confirmed to have changed in v13 — always verify:**
 
 | API | v12 | v13 | Status in this codebase |

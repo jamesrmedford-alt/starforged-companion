@@ -1,14 +1,16 @@
-# Regression-test sensitivity — issues #300 and #301
+# Regression-test sensitivity — issues #300, #301 and #302
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300 and #301 audits: the tests that fail with the fix taken out. It was
-produced by `scripts/fix-sensitivity.mjs` on 2026-10-27, against `ac1da10`
-(the patch is applied to that revision). To reproduce:
+#300 and #301 audits and from issue #302's disturbance matrix (slice B): the
+tests that fail with the fix taken out. It was produced by
+`scripts/fix-sensitivity.mjs` on 2026-10-27; the patch was applied to
+`ec08eb4`. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
   632a180 c8e4268 c925f10 3749058 23ee366 ea69ddf ed8d688 f068664 19c5ef0 c958eb0 45b7350 \
+  ca5bf5d cdb8c80 e572ebd ec08eb4 \
   --inject scripts/defects/b04-recap-cache-count-only.patch --md details.md
 ```
 
@@ -33,6 +35,8 @@ temporary git worktree; the checkout it is run from is not touched.
 
 ## Summary by finding
 
+### Issues #300 and #301
+
 | Finding | Fix | Shown by | Assertions that fail without the fix |
 | --- | --- | --- | --- |
 | #300 F01 TRANSCRIPT-LOSS | 3749058 | revert | 4 — `private-channel.test.js` (a failed write's turns kept and written once, in order; retried by itself; two overlapping flushes both land; a journal that can't be created) |
@@ -56,6 +60,15 @@ temporary git worktree; the checkout it is run from is not touched.
 | #301 B02 same-name vows | 19c5ef0 | revert | 8 — `cardButtonWiring.test.js`, `vowAttribution.test.js`; one more fails only on a missing export |
 | #301 B03 Chronicle identity | c958eb0 | revert | 9 — `chronicle.test.js` (rename, same-named characters, split histories), `recap.test.js` |
 | #301 B04 recap after a correction | 45b7350 | revert, then inject | revert: 3 (10 more fail only on the missing `campaignRecapCacheKey`); inject `b04-recap-cache-count-only.patch`: 5 — `recap.test.js` (an in-place correction, a same-count replacement, a regeneration from the corrected Chronicle, a pre-hash cache) and `sessionSummary.test.js` (a cache from another chronicle never opens the session) |
+
+### Issue #302 slice B — found by the disturbance matrix
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| LOCK-CLAIM-WEDGE, LOCK-RELEASE-NO-RETRY | ca5bf5d | revert | 2 — `faultMatrix.test.js` (a refused claim, then a move that narrates; a refused release, retried by the pipeline's `finally`) |
+| XCARD-UNSAVED-CLAIMED, XCARD-UNSAVED-RELAYED | cdb8c80 | revert | 4 — `faultMatrix.test.js` (the GM's own X-Card; a player's relayed one) and `safety.test.js` (the "could not be saved" wording; the canonical GM's failed write) |
+| DRAFT-CONFIRM-TWICE | e572ebd | revert | 1 — `faultMatrix.test.js` (a double-click on Confirm) |
+| SUFFER-PICK-TWICE | ec08eb4 | revert | 4 — `faultMatrix.test.js` (two picks on one client; the player and the GM; the pick-two control, which fails because a player's pick could not be recorded on the GM's card) and `gmRelay.test.js` (the kind is declared); 4 more in `sufferCard.test.js` fail only on the missing export |
 
 ## Controls: new tests that pass with and without the fix
 
@@ -165,9 +178,9 @@ Test files: `tests/unit/precursorSites.test.js`, `tests/unit/repair.test.js`, `t
 | (new) tests/unit/repair.test.js › applyRepairSpends spends nothing and repairs nothing when the PC has less supply than traded | AssertionError: expected +0 to be 1 // Object.is equality |
 | (new) tests/unit/repair.test.js › applyRepairSpends repairs nothing when no character resolved to pay | AssertionError: expected 1 to be +0 // Object.is equality |
 | (new) tests/unit/repair.test.js › applyRepairSpends repairs nothing when the supply write is rejected | AssertionError: expected 2 to be +0 // Object.is equality |
-| (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session applies a session's start effects once — a second Begin posts a note and changes nothing | AssertionError: expected undefined to be '4qgl5Oi10nvGK96g' // Object.is equality |
+| (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session applies a session's start effects once — a second Begin posts a note and changes nothing | AssertionError: expected undefined to be 'JvvW103HGCE4VSvR' // Object.is equality |
 | (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session two Begins at once apply the start effects once | AssertionError: expected [ 'momentum:a1:1', …(3) ] to deeply equal [ 'momentum:a1:1', …(2) ] |
-| (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session a session that went idle is begun anew, although nobody ended it | AssertionError: expected 's-old' to be 'SON3SIoadZ5w06Ki' // Object.is equality |
+| (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session a session that went idle is begun anew, although nobody ended it | AssertionError: expected 's-old' to be 'DFh6ke4LnbRURFAh' // Object.is equality |
 | (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session the dialog does not open on a session already begun | AssertionError: expected [ { …(3) } ] to have a length of +0 but got 1 |
 | (new) tests/unit/siteDiscovery.test.js › reveal / clear across sectors (issue #300 F07) reveals the exact target with its id, not the earlier sector's sole site | AssertionError: expected 'mine' to be 'target-site' // Object.is equality |
 | (new) tests/unit/siteDiscovery.test.js › reveal / clear across sectors (issue #300 F07) reveals the exact name without an id | AssertionError: expected 'mine' to be 'target-site' // Object.is equality |
@@ -217,7 +230,7 @@ Test files: `tests/unit/audio.test.js`, `tests/unit/fetchWithTimeout.test.js`, `
 | (new) tests/unit/gmRelay.test.js › runGmAction — serialised on the GM a Claude-calling action ahead is waited on for its own, longer budget | AssertionError: expected "applySafetyFlag" to not be called at all, but actually been called 1 times |
 | (new) tests/unit/gmRelay.test.js › runGmAction — serialised on the GM a Claude-calling action that never settles is still passed, after GM_CLAUDE_ACTION_TIMEOUT_MS | timed out — the test hung |
 | (new) tests/unit/gmRelay.test.js › runGmAction — serialised on the GM a backlog behind a hung action still runs one at a time — each budget counts from when that action starts | AssertionError: expected [] to deeply equal [ 'b:start' ] |
-| (new) tests/unit/multiplayerConcurrency.test.js › the GM relay queue a slow follow-up holds the next relay past GM_ACTION_TIMEOUT_MS; a stalled request ends at its deadline and the relay runs | AssertionError: expected [ { _id: 'eGJYDxPjb9nnER08', …(4) } ] to be undefined |
+| (new) tests/unit/multiplayerConcurrency.test.js › the GM relay queue a slow follow-up holds the next relay past GM_ACTION_TIMEOUT_MS; a stalled request ends at its deadline and the relay runs | AssertionError: expected [ { _id: '9m259DRp3t1vRxZn', …(4) } ] to be undefined |
 | (new) tests/unit/speechInput.test.js › push-to-talk start / release a release before recognition starts cancels it | AssertionError: expected [ 'start' ] to deeply equal [ 'start', 'abort' ] |
 | (new) tests/unit/speechInput.test.js › push-to-talk start / release a start that arrives after the release is stopped at once | AssertionError: expected [ 'start' ] to deeply equal [ 'start', 'abort', 'abort' ] |
 | (new) tests/unit/speechInput.test.js › push-to-talk start / release pressing again while recognition is still starting does not start it twice | AssertionError: expected [ 'start', 'start' ] to deeply equal [ 'start' ] |
@@ -362,6 +375,65 @@ Test files: `tests/unit/narratorDetailPersistence.test.js`, `tests/unit/recap.te
 | tests/unit/sessionManagement.test.js › CampaignStateSchema includes campaignRecapCache field with expected shape | AssertionError: expected undefined to be null |
 | (API) tests/unit/sessionSummary.test.js › earlier sessions reach every prose mode (issue #286 C3) the campaign recap comes from its cache on the session's first narration only, in any mode | TypeError: (0 , campaignRecapCacheKey) is not a function |
 | (new) tests/unit/sessionSummary.test.js › earlier sessions reach every prose mode (issue #286 C3) a cache made from a different chronicle never opens the session (issue #301 B04) | AssertionError: expected 'The campaign so far.' to be '' // Object.is equality |
+
+### ca5bf5d — fix: a refused write no longer leaves the move lock set (issue #302)
+
+Test files: `tests/unit/faultMatrix.test.js`. Source restored: 1 file(s).
+
+- With the fix: 16 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 14 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/faultMatrix.test.js › the move lock survives a refused write the lock claim is refused: no move runs, the GM is told, and the next move runs — the lock is not left set | AssertionError: expected [] to deep equally contain StringMatching{…} |
+| (new) tests/unit/faultMatrix.test.js › the move lock survives a refused write the lock release is refused once: the pipeline's finally releases it — the next move runs | AssertionError: expected true to be false // Object.is equality |
+
+### cdb8c80 — fix: the X-Card card says when its pause could not be saved (issue #302)
+
+Test files: `tests/unit/faultMatrix.test.js`, `tests/unit/safety.test.js`. Source restored: 2 file(s).
+
+- With the fix: 46 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 42 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/faultMatrix.test.js › the X-Card card says whether its pause was saved the GM's X-Card pause is refused: the card says it was not saved, with no resume button | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/faultMatrix.test.js › the X-Card card says whether its pause was saved a player's X-Card the GM cannot save: the GM's card says so — the player's card could not know | AssertionError: expected [ [ 'pl-1', true ] ] to deeply equal [ [ 'pl-1', true ], [ 'gm-1', false ] ] |
+| (new) tests/unit/safety.test.js › X-Card play / resume postXCardCard (not saved) says the pause could not be saved, with no resume button | AssertionError: expected '&lt;div class="starforged-move-card xcar…' to match /The pause could not be saved/ |
+| (new) tests/unit/safety.test.js › X-Card play / resume playXCard on the canonical GM whose write fails says the pause was not saved | AssertionError: expected { recorded: true } to deeply equal { recorded: false } |
+
+### e572ebd — fix: Confirm on a new NPC's draft card creates it once (issue #302)
+
+Test files: `tests/unit/faultMatrix.test.js`. Source restored: 1 file(s).
+
+- With the fix: 19 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 18 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/faultMatrix.test.js › Confirm on a new NPC's draft card applies once Confirm on a new NPC clicked twice before the first finished: one NPC card | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+
+### ec08eb4 — fix: a suffer card applies one pick, on the canonical GM (issue #302)
+
+Test files: `tests/unit/faultMatrix.test.js`, `tests/unit/gmRelay.test.js`, `tests/unit/sufferCard.test.js`. Source restored: 2 file(s).
+
+- With the fix: 96 passed, 0 failed.
+- Without it: 8 failed (7 new; 4 only for a missing export); 87 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/faultMatrix.test.js › a suffer card applies one pick two suffer moves picked from one card on one client: one is applied | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/faultMatrix.test.js › a suffer card applies one pick the player and the GM each pick a suffer move from the same card: one is applied | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/faultMatrix.test.js › a suffer card applies one pick a pick-two card still takes two picks, one after the other (control) | AssertionError: expected { sufferCard: true, …(6) } to match object { resolved: false, …(1) } |
+| tests/unit/gmRelay.test.js › GM_ACTIONS wiring contract declares the one-shot card-button kinds | AssertionError: suffer.pick: expected undefined to be defined |
+| (new) (API) tests/unit/sufferCard.test.js › applySufferPickFromRelay — a pick applies once, on the canonical GM applies the owner's pick and resolves the card; a second pick applies nothing | TypeError: (0 , applySufferPickFromRelay) is not a function |
+| (new) (API) tests/unit/sufferCard.test.js › applySufferPickFromRelay — a pick applies once, on the canonical GM refuses a requester who neither is a GM nor owns the PC | TypeError: (0 , applySufferPickFromRelay) is not a function |
+| (new) (API) tests/unit/sufferCard.test.js › applySufferPickFromRelay — a pick applies once, on the canonical GM refuses a pick the card does not offer — the payload only names a button | TypeError: (0 , applySufferPickFromRelay) is not a function |
+| (new) (API) tests/unit/sufferCard.test.js › applySufferPickFromRelay — a pick applies once, on the canonical GM warns and applies nothing when the card is gone | TypeError: (0 , applySufferPickFromRelay) is not a function |
 
 ### `scripts/defects/b04-recap-cache-count-only.patch` — B04 (issue #301) — the campaign recap cache is checked by its entry count only, so a correction that keeps the count keeps the stale recap
 

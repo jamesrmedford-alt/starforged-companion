@@ -11,6 +11,42 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Fault-injection findings (issue #302 slice B) — six fixed in the v1.7.36 cycle, three open
+
+Found by the disturbance matrix, `tests/unit/faultMatrix.test.js`, which
+refuses or holds writes, fails Claude calls, repeats clicks and drops the GM's
+connection on a booted multi-client table (`tests/helpers/faults.js`). Each
+fix's rows fail with it reverted (`docs/testing/fix-sensitivity.md`); none has
+been checked in a live Foundry world yet.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| LOCK-RELEASE-NO-RETRY | LOCKUP | `releasePendingMoveLock` cleared `pendingMove` on this client's cached campaignState — `game.settings.get` returns it by reference — before writing it. A refused write left the world locked, and the pipeline's `finally` retry read "released" and skipped → the release writes a copy; the retry lands |
+| LOCK-CLAIM-WEDGE | LOCKUP | The claim set `pendingMove` on the cached value outside the pipeline's `try`: a refused claim left the GM's client locked (every later move "already being resolved" until a reload) and was an unhandled rejection nobody saw → the claim undoes the flag, tells the GM the move could not start, and returns |
+| XCARD-UNSAVED-CLAIMED | SAFETY | On the canonical GM, `playXCard` read `{ ok: true, result: false }` — the pause write failed — as recorded: the card said "Scene paused … suppressed", with a Resume button → it says "The pause could not be saved … play the X-Card again"; a programmatic `!x` too |
+| XCARD-UNSAVED-RELAYED | SAFETY | A player's relayed X-Card whose write failed on the GM left only a console warning; the player's card (a relay has no ack) said paused → the GM posts the "could not be saved" card. `suppressScene` / `clearXCard` write copies, so a failed write can't leave the GM's client holding, or lifting, a pause the world doesn't have |
+| DRAFT-CONFIRM-TWICE | DUPLICATE | Confirm on a "New Entities Detected" draft created the entity before marking the draft confirmed; a second click meanwhile (a double-click, a re-rendered card) created a second NPC card → an in-flight guard per card and draft |
+| SUFFER-PICK-TWICE | WRONG-DETAIL | The clicker's own client applied a suffer pick and disabled only the clicked button: a second pick, or the player and the GM each picking, applied two costs. And a player cannot update the GM-authored card, so a player's pick never marked it resolved (nor recorded a pick-two choice) and its buttons stayed live → picks relay to the canonical GM (`suffer.pick`), applied once behind an in-flight guard and the card's resolved flag, checked against the card's prompt and the PC's owner |
+
+Open — pinned or described, not fixed (each needs a decision first):
+
+- **MOVE-BUSY-NOTICE** (UX). A line typed while another player's move is
+  narrated runs no move, and the "a move is already being resolved" notice
+  shows on the canonical GM's screen (the pipeline runs there), not the
+  typist's — who sees nothing. A KNOWN ISSUE row in `faultMatrix.test.js`
+  pins it and fails once it is fixed. Proposed: whisper the notice to the
+  message's author.
+- **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
+  draft at the same moment can still create it twice: the in-flight guard is
+  per client. Proposed: relay draft Confirm / Dismiss to the canonical GM
+  (`relayCardAction`), as the suffer card now does.
+- **ERROR-TEXT-BLAMES-KEY** (UX). Every narration failure — overloaded, a
+  server error, a timeout, a malformed reply — posts the fallback card
+  "Narration unavailable — check your API key and proxy", and any pipeline
+  exception, a refused campaignState write included, shows "Move
+  interpretation failed. Check your API key…". Only a 401 is about the key.
+  Proposed: word the card and the notice by cause.
+
 ### Bug audit follow-up (issue #301) — all four fixed in the v1.7.36 cycle
 
 Four findings from the follow-up audit, plus what fixing them turned up. Each
@@ -96,7 +132,10 @@ token until it resolves and then moves it; and each move's narration request
 carries the new SHIP POSITION line. It found no new bug on its first green run, and answered #289's open
 question: a player's client holds the cards of NPCs it has no permission on,
 so the Private Channel prompt carries them (decisions.md → "The Private
-Channel reads the shared story"). Open:
+Channel reads the shared story"). Since issue #302 the scenario is **strict**:
+each step declares its Claude calls, and a required call the recording doesn't
+answer, a prompt that breaks its contract, or an undeclared call fails the
+step (decisions.md → "Strict replay for critical playthroughs"). Open:
 
 - **PLAYTHROUGH-PLACEHOLDERS.** `recordings/first-session.json` is
   hand-written (`"source": "hand-written"`), in each parser's format. The
