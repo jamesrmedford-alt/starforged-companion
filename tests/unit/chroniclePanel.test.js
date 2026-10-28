@@ -24,7 +24,7 @@ let journals, saved, pending;
 beforeEach(() => {
   journals = [];
   pending = [];
-  saved = { journal: game.journal, create: JournalEntry.create, user: game.user, document: globalThis.document };
+  saved = { journal: game.journal, create: JournalEntry.create, user: game.user, users: game.users, document: globalThis.document };
   game.journal = {
     get contents() { return [...journals]; },
     get: (id) => journals.find(j => j.id === id) ?? null,
@@ -50,6 +50,7 @@ beforeEach(() => {
     return journal;
   };
   game.user = { id: 'gm-1', isGM: true, active: true };
+  game.users = Object.assign([game.user], { get: (id) => (id === 'gm-1' ? game.user : null) });   // the canonical GM
   game.actors._reset();
   game.actors._set('pc-1', makeTestActor({ id: 'pc-1', name: 'Kira' }));
   globalThis.document = { createElement: (tag) => new StubElement(tag) };
@@ -60,6 +61,7 @@ afterEach(() => {
   game.journal = saved.journal;
   JournalEntry.create = saved.create;
   game.user = saved.user;
+  game.users = saved.users;
   globalThis.document = saved.document;
   setListenerResultSink(null);
 });

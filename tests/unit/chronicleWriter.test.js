@@ -1,8 +1,9 @@
 // tests/unit/chronicleWriter.test.js
 // Coverage for src/character/chronicleWriter.js. The Haiku call is mocked
 // at the apiPost boundary; the chronicle write target is mocked at the
-// addChronicleEntry export so we can verify the per-actor write without
-// dragging in JournalEntry mechanics.
+// requestChronicleEdit export (the edit the canonical GM applies — issue #306
+// R11) so we can verify the per-actor write without dragging in JournalEntry
+// mechanics.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -11,11 +12,11 @@ vi.mock('../../src/api-proxy.js', () => ({
 }));
 
 vi.mock('../../src/character/chronicle.js', () => ({
-  addChronicleEntry: vi.fn(async () => {}),
+  requestChronicleEdit: vi.fn(async () => ({ ok: true, relayed: false, result: { applied: true } })),
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { addChronicleEntry } from '../../src/character/chronicle.js';
+import { requestChronicleEdit } from '../../src/character/chronicle.js';
 import {
   writeChronicleEntry,
   scheduleChronicleEntry,
@@ -35,7 +36,8 @@ const BASE_STATE = {
 
 beforeEach(() => {
   apiPost.mockReset();
-  addChronicleEntry.mockReset();
+  requestChronicleEdit.mockReset();
+  requestChronicleEdit.mockResolvedValue({ ok: true, relayed: false, result: { applied: true } });
   game.settings._store.clear();
   game.settings._store.set(`${MODULE_ID}.chronicleAutoEntry`, true);
   game.settings._store.set(`${MODULE_ID}.claudeApiKey`,       'sk-ant-test');
@@ -75,8 +77,8 @@ describe('writeChronicleEntry()', () => {
       sessionId: 'session-1',
       automated: true,
     });
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
-    expect(addChronicleEntry.mock.calls[0][0]).toBe('actor-1');
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit.mock.calls[0][0]).toBe('actor-1');
   });
 
   it('returns null and skips API call when chronicleAutoEntry is disabled', async () => {
@@ -90,7 +92,7 @@ describe('writeChronicleEntry()', () => {
 
     expect(entry).toBeNull();
     expect(apiPost).not.toHaveBeenCalled();
-    expect(addChronicleEntry).not.toHaveBeenCalled();
+    expect(requestChronicleEdit).not.toHaveBeenCalled();
   });
 
   it('returns null when the current client is not the GM', async () => {
@@ -104,7 +106,7 @@ describe('writeChronicleEntry()', () => {
 
     expect(entry).toBeNull();
     expect(apiPost).not.toHaveBeenCalled();
-    expect(addChronicleEntry).not.toHaveBeenCalled();
+    expect(requestChronicleEdit).not.toHaveBeenCalled();
   });
 
   it('returns null when there are no PCs in characterIds and no player Actors exist', async () => {
@@ -141,8 +143,8 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry).not.toBeNull();
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
-    expect(addChronicleEntry.mock.calls[0][0]).toBe('pc-fallback-1');
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit.mock.calls[0][0]).toBe('pc-fallback-1');
   });
 
   it('ignores non-character Actors when falling back', async () => {
@@ -216,7 +218,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry).toBeNull();
-    expect(addChronicleEntry).not.toHaveBeenCalled();
+    expect(requestChronicleEdit).not.toHaveBeenCalled();
   });
 
   it('strips JSON markdown fences from the model response', async () => {
@@ -282,7 +284,8 @@ describe('writeChronicleEntry()', () => {
       kind:          'move',
     });
 
-    const entry = addChronicleEntry.mock.calls[0][1];
+    const { op, entry } = requestChronicleEdit.mock.calls[0][1];
+    expect(op).toBe('add');
     expect(entry.automated).toBe(true);
     expect(entry.sessionId).toBe('session-1');
     expect(entry.moveId).toBe('gather_information');
@@ -303,7 +306,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry).toBeNull();
-    expect(addChronicleEntry).not.toHaveBeenCalled();
+    expect(requestChronicleEdit).not.toHaveBeenCalled();
   });
 
   it('records a beat at or above the floor', async () => {
@@ -321,7 +324,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry?.text).toContain('munitions');
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
   });
 
   it('records an unrated beat (fail-open — never a silent blackout)', async () => {
@@ -336,7 +339,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry?.text).toBe('A beat with no salience field.');
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
   });
 
   it('does not store the salience field on the chronicle entry', async () => {
@@ -352,7 +355,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry).not.toHaveProperty('salience');
-    expect(addChronicleEntry.mock.calls[0][1]).not.toHaveProperty('salience');
+    expect(requestChronicleEdit.mock.calls[0][1].entry).not.toHaveProperty('salience');
   });
 
   it('respects a chronicle floor lowered to "scene"', async () => {
@@ -368,7 +371,7 @@ describe('writeChronicleEntry()', () => {
     });
 
     expect(entry?.text).toBe('Kept once the floor is lowered.');
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -413,7 +416,7 @@ describe('scheduleChronicleEntry()', () => {
 
     await vi.runAllTimersAsync();
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(addChronicleEntry).toHaveBeenCalledTimes(1);
+    expect(requestChronicleEdit).toHaveBeenCalledTimes(1);
   });
 
   it('skips the scheduled work when chronicleAutoEntry is disabled', async () => {

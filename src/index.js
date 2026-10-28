@@ -129,6 +129,7 @@ import {
 import { promptRiders } from "./moves/riderDialog.js";
 
 import { registerEntityPanelHooks } from "./ui/entityPanel.js";
+import { registerChroniclePanelHooks } from "./character/chroniclePanel.js";
 
 import {
   confirmInterpretation,
@@ -5145,6 +5146,7 @@ Hooks.once("ready", () => {
   registerProgressTrackHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();
+  registerChroniclePanelHooks();             // #306 R11: the open Chronicle panel shows edits the GM applied
   registerDraftCardHooks();
   registerSectorOverviewSync();
   registerSectorSceneHooks();

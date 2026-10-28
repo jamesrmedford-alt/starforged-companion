@@ -167,7 +167,7 @@ describe('addChronicleEntry', () => {
   it('does nothing if actor does not exist', async () => {
     await expect(
       addChronicleEntry('no-such-actor', { type: 'annotation', text: 'Ghost.' })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 });
 
@@ -253,7 +253,7 @@ describe('updateChronicleEntry', () => {
 
     await expect(
       updateChronicleEntry(ACTOR_ID, 'no-such-id', 'Updated.')
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
 
     const unchanged = await getChronicleEntries(ACTOR_ID);
     expect(unchanged[0].text).toBe('Original.');
@@ -275,7 +275,7 @@ describe('error path coverage', () => {
 
     await expect(
       addChronicleEntry(ACTOR_ID, { type: 'annotation', text: 'Test.' })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 
   it('no longer exports the retired-assembler helper getChronicleForContext', () => {
