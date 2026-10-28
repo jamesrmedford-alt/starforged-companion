@@ -14,17 +14,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const forge = vi.hoisted(() => ({ records: new Map(), gate: null, calls: 0 }));
-vi.mock('../../src/entities/connection.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  getConnection: vi.fn((hostId) => (forge.records.has(hostId) ? { ...forge.records.get(hostId) } : null)),
-  forgeBond: vi.fn(async (hostId) => {
-    forge.calls += 1;
-    await forge.gate;
-    forge.records.get(hostId).bonded = true;
-  }),
-}));
-
 import { payFulfilledVowNative, payForgedBondNative } from '../../src/index.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -38,9 +27,6 @@ beforeEach(() => {
   game.users = Object.assign([game.user], { get: (id) => (id === 'gm-1' ? game.user : null) });
   game.settings._store.clear();
   game.settings._store.set(`${MODULE_ID}.campaignState`, structuredClone({ ...CampaignStateSchema, currentSessionId: 's1' }));
-  forge.records.clear();
-  forge.gate = null;
-  forge.calls = 0;
 });
 
 /** A completed vow Item whose fulfilPaid write is held until `gate` resolves. */
@@ -113,29 +99,44 @@ describe('a native vow fulfilment pays once (issue #306 R04)', () => {
 });
 
 describe('a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`)', () => {
+  let rook, held, writes;
+
+  // A connection is hosted on its NPC card (an Actor) — the real store
+  // getConnection / forgeBond read and write. Its first write is held until
+  // `held` resolves, so a second forging can arrive before the bond lands.
   beforeEach(() => {
-    forge.records.set('npc-rook', { name: 'Rook', rank: 'dangerous', bonded: false, active: true });
+    held = null;
+    writes = 0;
+    rook = makeTestActor({ id: 'npc-rook', name: 'Rook', type: 'character' });
+    const flags = { [MODULE_ID]: { connection: { _id: 'npc-rook', name: 'Rook', rank: 'dangerous', bonded: false, active: true, history: [] } } };
+    rook.flags = flags;
+    rook.getFlag = (mod, key) => flags[mod]?.[key];
+    rook.setFlag = async (mod, key, value) => {
+      writes += 1;
+      if (writes === 1) await held;
+      (flags[mod] ??= {})[key] = value;
+    };
+    game.actors._set(rook.id, rook);
     const cs = game.settings.get(MODULE_ID, 'campaignState');
     game.settings._store.set(`${MODULE_ID}.campaignState`, { ...cs, connectionIds: ['npc-rook'] });
   });
 
-  it('two forges of one bond that overlap pay the bonds legacy once', async () => {
+  it('two forgings of one bond that overlap pay the bonds legacy once', async () => {
     const gate = deferred();
-    forge.gate = gate.promise;
+    held = gate.promise;
 
     const one = payForgedBondNative('Rook');
     const two = payForgedBondNative('Rook');
     gate.resolve();
     await Promise.all([one, two]);
 
-    expect(forge.calls).toBe(1);
+    expect(rook.getFlag(MODULE_ID, 'connection').bonded).toBe(true);
     expect(legacy('bonds')).toBe(2);
   });
 
-  it('a forge after the bond has formed pays nothing', async () => {
+  it('a forging after the bond has formed pays nothing', async () => {
     await payForgedBondNative('Rook');
     await payForgedBondNative('Rook');
-    expect(forge.calls).toBe(1);
     expect(legacy('bonds')).toBe(2);
   });
 });
