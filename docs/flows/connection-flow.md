@@ -114,7 +114,10 @@ their request in the fiction) the pipeline branch flips the record
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
-BOND-NATIVE-FORGE fix). The Bolster (+2) / Expand (second role, +1) influence
+BOND-NATIVE-FORGE fix). There the bonds legacy is written at once
+(`writeLegacyTicks`, its box XP only after the write lands); a refused write
+leaves the forge card saying the legacy is "not yet marked" and whispers the
+GMs a payoff failure card with a Retry (issue #306 R04). The Bolster (+2) / Expand (second role, +1) influence
 choice is card text, tracked manually. Once
 `bonded`: always context-injected (`allyFlag`), develop switches to the
 bond-legacy branch, `selectConnection` prefers it as the sole-bonded
@@ -132,6 +135,9 @@ reward; the victory card's 🤝 Deepen button relays `fightVow.deepenBond` to
 the canonical GM (`applyFightVowDeepenBond`, one-shot via
 `resolvedActions.deepenBond`, values from the GM-authored card — see
 `combat-flow.md` §4; it replaced the raw `connection.deepen` socket emit).
+`deepenLinkedConnection` reports `{ ok }`: a refused write, or a connection
+no longer found by that name (renamed or deleted), goes to the GMs instead
+of being swallowed (issue #306 R04).
 Bonds-legacy ticks accrue on
 `campaignState.legacyTracks.bonds`, and every newly filled box now awards XP
 to each PC with an earned-XP card (LEGACY-XP-DEAD fix — `addLegacyTicks`

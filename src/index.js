@@ -81,7 +81,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -1593,8 +1593,18 @@ export function registerChatHook() {
                 console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
               // Deliver the vow's promised concrete reward (#241 Phase 2), scaled
               // by the win; one-time (status flips so a re-win can't re-grant).
-              await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome, { actorId: rollerActor?.id ?? null }).catch(err =>
-                console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err));
+              // A grant that does not land is told to the GMs, with a Retry
+              // (issue #306 R04).
+              const granted = await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome, { actorId: rollerActor?.id ?? null }).catch(err => {
+                console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
+                return null;
+              });
+              if (granted && !granted.ok) {
+                await postPayoffFailureCard({
+                  source: "fight", vowName: result.track.linkedVowName, vowId: granted.vowId ?? null,
+                  actorId: rollerActor?.id ?? null, outcome: resolution.outcome, failures: [granted],
+                }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
+              }
             }
           }
         } catch (err) {
@@ -3259,22 +3269,46 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
  * award is fire-and-forget so call sites stay synchronous; failures warn.
  * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
  * awarding path (persistResolution.markLegacyProgress) required a consequence
- * field no resolver set.
+ * field no resolver set. `awardXp: false` leaves the award to the caller:
+ * writeLegacyTicks awards it once its write has landed.
  *
  * @returns {number} newly filled boxes
  */
-export function addLegacyTicks(campaignState, key, ticks) {
+export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
   const t = campaignState.legacyTracks[key] ?? { ticks: 0, cleared: false };
   const boxesBefore = Math.floor((t.ticks ?? 0) / 4);
   t.ticks = Math.min((t.ticks ?? 0) + ticks, 40);
   const newBoxes = Math.floor(t.ticks / 4) - boxesBefore;
   campaignState.legacyTracks[key] = t;
-  if (newBoxes > 0) {
-    awardLegacyBoxXP(key, newBoxes, newBoxes * (t.cleared ? 1 : 2)).catch(err =>
+  if (newBoxes > 0 && awardXp) {
+    awardLegacyBoxXP(key, newBoxes, legacyBoxXp(t, newBoxes)).catch(err =>
       console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
   }
   return newBoxes;
+}
+
+// XP for newly filled legacy boxes: 2 a box, 1 once the track has been cleared.
+const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
+
+/**
+ * Mark a legacy track and save it at once — a payoff outside the move
+ * pipeline (a vow fulfilled or a bond forged on the sheet, a payoff Retry).
+ * Written on a copy: get() returns the cached value, which a refused write
+ * must leave as it was (rules/foundry-api.md). The XP of a box it fills is
+ * awarded only once the write has landed — it was awarded first, so a refused
+ * write paid XP for ticks that were never saved (issue #306 R04).
+ *
+ * @param {"quests"|"bonds"|"discoveries"} key
+ * @param {number} ticks
+ * @returns {Promise<void>} rejects when the world refuses the write
+ */
+async function writeLegacyTicks(key, ticks) {
+  const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+  const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
+  await game.settings.set(MODULE_ID, "campaignState", cs);
+  if (newBoxes > 0) await awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
 }
 
 /** Award legacy-box XP to every player character and post the earned-XP note. */
@@ -3519,10 +3553,22 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
 // the PC that actually holds the vow — the card's roller when they hold it,
 // else whichever PC does (resolveVowHolderActor). Shared-vow copies on the
 // other PCs follow via the updateItem sync hook. Exported for the won-fight
-// card's relay handler (src/moves/cardActions.js applyFightVowMarkMilestone).
+// card's relay handler (src/moves/cardActions.js applyFightVowMarkMilestone),
+// which stamps the card applied only on { ok: true }: a refused mark, or no
+// open vow to mark, used to be swallowed here and the card stamped anyway
+// (issue #306 R04).
+//
+// @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
 export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
-  await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks).catch(err =>
-    console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err));
+  try {
+    const action = await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
+    if (action === "mark" || action === "pick") return { ok: true };
+    console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
+    return { ok: false, reason: "no-vow" };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: errText(err) };
+  }
 }
 
 /**
@@ -3545,22 +3591,38 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 
 // GM-side: deepen the connection a vow served, by `marks` rank-based marks on
 // its relationship track. Exported for the won-fight card's relay handler
-// (src/moves/cardActions.js applyFightVowDeepenBond).
+// (src/moves/cardActions.js applyFightVowDeepenBond); a fulfilment's payoff
+// and its Retry run it too. Reports, never throws: a refused write, and a
+// connection no longer found by that name (renamed or deleted), used to be
+// swallowed here — the bond silently not deepened (issue #306 R04).
+//
+// @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
 export async function deepenLinkedConnection(connectionName, marks) {
   try {
-    const conn = await import("./entities/connection.js");
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    const connections = (campaignState.connectionIds ?? [])
-      .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-      .filter(Boolean);
-    const target = selectConnection(connections, connectionName ?? null);
-    if (target?.__hostId) {
-      await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
-      await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
+    const target = await findOpenConnection(connectionName);
+    if (!target?.__hostId) {
+      console.warn(`${MODULE_ID} | deepen connection: no connection matched "${connectionName ?? "?"}" — nothing deepened.`);
+      return { ok: false, reason: "not-found" };
     }
+    const conn = await import("./entities/connection.js");
+    await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
+    await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
+    return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: errText(err) };
   }
+}
+
+// The campaign's connection a name resolves to (selectConnection's ladder),
+// as its record plus `__hostId`; null when none does.
+async function findOpenConnection(connectionName) {
+  const conn = await import("./entities/connection.js");
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const connections = (campaignState.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(Boolean);
+  return selectConnection(connections, connectionName ?? null);
 }
 
 async function postDeepenBondCard(name, marks) {
@@ -3687,6 +3749,17 @@ function collectVowCopies(all, primary) {
 // pass the copies it already resolved: by then the vow is completed, and
 // resolveVowItemCopies only resolves OPEN vows, so a fresh lookup found
 // nothing and the promised reward was never granted.
+//
+// Claimed before it is given (issue #306 R04): the status flips on every copy
+// first, so nothing grants it twice, and "🎁 Reward earned" is posted only
+// once the grant has landed. Both writes' failures were swallowed — the
+// status flipped after a refused grant (the reward lost with no word), or
+// stayed "promised" after a granted one (granted again by the next win).
+// Reports, never throws: a refused claim is step "reward" (nothing given), a
+// refused grant after the claim is step "rewardGrant", carrying what to give.
+//
+// @returns {Promise<{ ok: boolean, skipped?: boolean, step?: string,
+//   reason?: string, error?: string, vowId?: string|null }>}
 async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, actorId = null, copies: knownCopies = null } = {}) {
   const copies = Array.isArray(knownCopies) && knownCopies.length
     ? knownCopies
@@ -3704,24 +3777,45 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
         flags:   { [MODULE_ID]: { rewardAbsentNote: true, vowName: vowName ?? null } },
       }).catch(err => console.warn(`${MODULE_ID} | reward-absent note failed:`, err?.message ?? err));
     }
-    return;
+    return { ok: true, skipped: true };
   }
 
   const plan = planRewardGrant(reward, outcome);
   const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
   const pc   = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
-  if (plan.status === "granted" && pc) {
-    if (plan.form === "supply" || plan.form === "momentum") {
-      await applyMeterChanges(pc, { [plan.form]: plan.amount ?? 1 }).catch(err =>
-        console.warn(`${MODULE_ID} | grant reward meter failed:`, err?.message ?? err));
-    } else {
-      await recordGrantedReward(pc, reward).catch(err =>
-        console.warn(`${MODULE_ID} | grant reward record failed:`, err?.message ?? err));
+  if (vowId && !(await setSharedVowReward(vowId, { ...reward, status: plan.status }))) {
+    return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
+  }
+  if (plan.status === "granted") {
+    const given = await giveReward(pc, reward, plan);
+    if (!given.ok) {
+      return {
+        ...given, step: "rewardGrant", vowId, pcId: pc?.id ?? null,
+        reward: { description: reward.description ?? null, form: reward.form ?? null }, plan,
+      };
     }
   }
-  if (vowId) await setSharedVowReward(vowId, { ...reward, status: plan.status }).catch(() => {});
   await postRewardGrantCard(reward, plan).catch(err =>
     console.warn(`${MODULE_ID} | reward grant card failed:`, err?.message ?? err));
+  return { ok: true, vowId };
+}
+
+// Give a granted reward to `pc`: a supply / momentum boost, or the record of
+// gear, an asset, a contact or knowledge on its sheet.
+// @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+async function giveReward(pc, reward, plan) {
+  if (!pc) return { ok: false, reason: "no-pc" };
+  try {
+    if (plan?.form === "supply" || plan?.form === "momentum") {
+      await applyMeterChanges(pc, { [plan.form]: plan.amount ?? 1 });
+    } else if (!(await recordGrantedReward(pc, reward))) {
+      return { ok: false, reason: "refused" };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | grant reward failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: errText(err) };
+  }
 }
 
 async function postRewardGrantCard(reward, plan) {
@@ -3809,37 +3903,44 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
   const rank      = item.system?.rank ?? null;
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
 
+  // Each step that lands is recorded on every copy (the Retry's ledger); each
+  // that does not is told to the GMs on one card (issue #306 R04 — every
+  // failure here went to the console only, and could not be retried).
+  const failures = [];
+  const settle = async (step, res, detail) => {
+    if (res?.ok) {
+      if (!res.skipped) await recordPayoffStep(allCopies, step);
+    } else {
+      failures.push({ ...detail, ...res, step: res?.step ?? step });
+    }
+  };
+
   // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
   // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
   // object (persisted once at pipeline end) and passes true so this fresh
   // read-modify-write can't race/clobber that persist.
   if (!skipLegacy) {
-    try {
-      const ticks = legacyRewardTicks(rank, ranksDown);
-      if (ticks > 0) {
-        // A copy (legacy tracks included): get() returns the cached value,
-        // which a refused write must leave as it was (rules/foundry-api.md).
-        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-        addLegacyTicks(cs, "quests", ticks);
-        await game.settings.set(MODULE_ID, "campaignState", cs);
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | native-fulfil: legacy award failed:`, err?.message ?? err);
-    }
+    const ticks = legacyRewardTicks(rank, ranksDown);
+    if (ticks > 0) await settle("legacy", await runLegacyStep("quests", ticks), { track: "quests", ticks });
   }
 
   // Deepen the linked connection (scaled by the vow's rank).
   const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   if (connectionName) {
-    await deepenLinkedConnection(connectionName, marksForSourceRank(rank)).catch(err =>
-      console.warn(`${MODULE_ID} | native-fulfil: deepen connection failed:`, err?.message ?? err));
+    const marks = marksForSourceRank(rank);
+    await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
   }
 
   // Grant the promised reward (one-time; scaled by outcome). The fulfil path
   // surfaces a note when no reward was ever chosen.
-  await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }).catch(err =>
-    console.warn(`${MODULE_ID} | native-fulfil: grant reward failed:`, err?.message ?? err));
+  await settle("reward", await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }), {});
+
+  if (failures.length) {
+    await postPayoffFailureCard({
+      source: "fulfil", vowName: item.name ?? vowName ?? null, vowId: item.flags?.[MODULE_ID]?.vowId ?? null,
+      actorId, outcome, failures,
+    }).catch(err => console.warn(`${MODULE_ID} | native-fulfil: failure card failed:`, err?.message ?? err));
+  }
 }
 
 // GM-side: mark every copy of the resolved vow completed (shared vows exist
@@ -3922,11 +4023,7 @@ export async function payForgedBondNative(connectionName) {
   let claim = null;
   try {
     const conn = await import("./entities/connection.js");
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    const connections = (campaignState.connectionIds ?? [])
-      .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-      .filter(Boolean);
-    const target = selectConnection(connections, connectionName ?? null);
+    const target = await findOpenConnection(connectionName);
     if (!target?.__hostId) {
       console.debug(`${MODULE_ID} | native-forge: no connection matched "${connectionName ?? "?"}" — no payoff.`);
       return;
@@ -3943,23 +4040,279 @@ export async function payForgedBondNative(connectionName) {
     _nativePayoffsInFlight.add(claim);
 
     await conn.forgeBond(target.__hostId);
-    const ticks = legacyRewardTicks(target.rank, 0);
-    if (ticks > 0) {
-      // Read after the await and written as a copy: the snapshot above may
-      // be stale by now, and a refused write must leave the cache as it was.
-      const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-      addLegacyTicks(cs, "bonds", ticks);
-      await game.settings.set(MODULE_ID, "campaignState", cs);
-    }
-    await postForgeABondCard(target, ticks).catch(err =>
+    // The bonds legacy, read and written after the await (writeLegacyTicks).
+    // A refused write is told to the GMs, with a Retry, and the forge card
+    // says the legacy is not yet marked (issue #306 R04 — it was logged, and
+    // the card claimed the ticks).
+    const ticks  = legacyRewardTicks(target.rank, 0);
+    const legacy = ticks > 0 ? await runLegacyStep("bonds", ticks) : { ok: true };
+    await postForgeABondCard(target, ticks, { legacyPending: !legacy.ok }).catch(err =>
       console.warn(`${MODULE_ID} | native-forge card failed:`, err?.message ?? err));
+    if (!legacy.ok) {
+      await postPayoffFailureCard({
+        source: "forge", connectionName: target.name ?? connectionName ?? null,
+        failures: [{ step: "legacy", track: "bonds", ticks, ...legacy }],
+      }).catch(err => console.warn(`${MODULE_ID} | native-forge: failure card failed:`, err?.message ?? err));
+    }
   } catch (err) {
     console.warn(`${MODULE_ID} | native-forge payoff failed:`, err?.message ?? err);
   } finally {
     if (claim) _nativePayoffsInFlight.delete(claim);
   }
 }
+
+// ── Payoff steps that fail on their own (issue #306 R04) ─────────────────────
+//
+// A vow fulfilled on the sheet, a won fight's promised reward and a bond
+// forged on the sheet each apply writes after the move: a legacy, a
+// connection's progress, a reward. Each used to swallow its own failure into
+// the console — the step lost, nobody told, nothing to retry. Each step now
+// returns { ok: true } once its writes have landed, or { ok: false, reason,
+// error? }; the ones that did not land go to the GMs on one whispered card
+// (postPayoffFailureCard) whose Retry re-runs only them, once ("payoff.retry"
+// → src/moves/cardActions.js applyPayoffRetry → retryPayoffSteps). A
+// fulfilment's steps are also recorded on every copy of the vow as they land
+// (`fulfilPayoff`), so a Retry skips one that did.
+
+const errText = (err) => String(err?.message ?? err ?? "unknown error");
+
+/** A legacy mark as a payoff step (writeLegacyTicks); reports, never throws. */
+async function runLegacyStep(track, ticks) {
+  try {
+    await writeLegacyTicks(track, ticks);
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${track} legacy write failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: errText(err) };
+  }
+}
+
+// A fulfilment's ledger — has `step` landed? (any copy recording it counts)
+function payoffStepLanded(copies, step) {
+  return copies.some(({ item }) => item?.flags?.[MODULE_ID]?.fulfilPayoff?.[step] === true);
+}
+
+// Record a landed step on every copy. Bookkeeping: a refused write is warned,
+// not reported — the step itself landed.
+async function recordPayoffStep(copies, step) {
+  for (const { item } of copies) {
+    if (typeof item?.setFlag !== "function") continue;
+    const ledger = item.flags?.[MODULE_ID]?.fulfilPayoff ?? {};
+    await item.setFlag(MODULE_ID, "fulfilPayoff", { ...ledger, [step]: true }).catch(err =>
+      console.warn(`${MODULE_ID} | payoff ledger write failed on "${item.name ?? item.id}":`, err?.message ?? err));
+  }
+}
+
+// Every copy of a payoff card's vow (completed ones included): by its vowId,
+// else by its exact name, the roller's copy first.
+function payoffVowCopies({ vowId = null, vowName = null, actorId = null } = {}) {
+  const all = collectPlayerVowItems();
+  if (vowId) {
+    const byId = all.filter(e => e.item.flags?.[MODULE_ID]?.vowId === vowId);
+    if (byId.length) return byId;
+  }
+  const lo = String(vowName ?? "").trim().toLowerCase();
+  const exact = lo ? all.filter(e => vowNameMatch(e, lo) === 2) : [];
+  const primary = (actorId ? exact.find(e => e.actor?.id === actorId) : null) ?? exact[0] ?? null;
+  return primary ? collectVowCopies(all, primary) : [];
+}
+
+const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
+
+const PAYOFF_REASONS = {
+  "refused":   "the world did not save it",
+  "not-found": "no connection by that name is open — renamed or deleted?",
+  "no-vow":    "no open vow by that name",
+  "no-pc":     "no player character to receive it",
+};
+
+const PAYOFF_TITLES = {
+  fulfil:      (c) => `Vow payoff incomplete — “${c.vowName ?? "your vow"}”`,
+  fight:       (c) => `Victory reward incomplete — “${c.vowName ?? "your vow"}”`,
+  forge:       (c) => `Bond payoff incomplete — ${c.connectionName ?? "the bond"}`,
+  fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
+};
+
+/**
+ * Tell the GMs which payoff steps did not land: one card, whispered to every
+ * GM, listing each step — what it would apply, why it did not, and the value
+ * it changes as it stands now. A save that reached the world but lost its
+ * confirmation looks the same as a refused one, so the GM can check before
+ * pressing Retry, which re-runs only these steps, once
+ * (wirePayoffRetryButton). `retryable: false` (a won-fight card's button,
+ * which is itself the retry: its action stays unapplied) posts the report
+ * without one. Exported for that button's GM-side handler.
+ *
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton", vowName?: string|null,
+ *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
+ *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
+ */
+export async function postPayoffFailureCard({ source, vowName = null, vowId = null, actorId = null, outcome = null, connectionName = null, failures, retryable = true }) {
+  const context = { source, vowName, vowId, actorId, outcome, connectionName };
+  const lines = [];
+  for (const f of failures) lines.push(`<li>${await describePayoffFailure(f, context)}</li>`);
+  const title = (PAYOFF_TITLES[source] ?? PAYOFF_TITLES.fulfil)(context);
+  const footer = retryable
+    ? `<p class="sf-card-hint">Check these values before retrying: a save that reached the world but lost its confirmation looks the same as a refused one. Only GMs see this card.</p>`
+      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-payoff-retry" `
+      + `title="Apply the steps above again — once">↻ Retry these steps</button></div>`
+    : `<p class="sf-card-hint">Its button on the victory card is live again — press it to retry. Only GMs see this card.</p>`;
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card sf-payoff-failure"><strong>${escapeChatHtml(title)}</strong>`
+      + `<p>Not applied:</p><ul>${lines.join("")}</ul>${footer}</div>`,
+    whisper: gmUserIds(),
+    // steps: what a Retry re-runs — read from this GM-authored card, never
+    // from the click (src/moves/cardActions.js applyPayoffRetry).
+    flags: { [MODULE_ID]: {
+      payoffFailureCard: true, retryable, resolved: false, ...context,
+      steps: failures.map(payoffStepRecord),
+    } },
+  });
+}
+
+// What a Retry needs of a failed step — its display fields stay on the card's text.
+function payoffStepRecord(f) {
+  switch (f?.step) {
+    case "legacy":      return { step: "legacy", track: f.track ?? null, ticks: f.ticks ?? 0 };
+    case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1 };
+    case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
+    case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
+    default:            return { step: f?.step ?? "reward" };
+  }
+}
+
+// One failed step, as a line of the GM card: what, why, and its value now.
+async function describePayoffFailure(f, { vowName, actorId }) {
+  const why = escapeChatHtml(PAYOFF_REASONS[f.reason] ?? f.reason ?? "it failed")
+    + (f.error ? ` <span class="sf-card-hint">(${escapeChatHtml(f.error)})</span>` : "");
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  try {
+    switch (f.step) {
+      case "legacy": {
+        const now = game.settings.get(MODULE_ID, "campaignState")?.legacyTracks?.[f.track]?.ticks ?? 0;
+        return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now.`;
+      }
+      case "deepen": {
+        const target = await findOpenConnection(f.connectionName);
+        const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
+        return `Your bond with ${escapeChatHtml(f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
+      }
+      case "milestone": {
+        const vow = readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
+        const now = vow ? ` It stands at ${vow.ticks}/40 ticks now.` : "";
+        return `⚑ Milestone ×${f.marks ?? 1} on “${escapeChatHtml(vowName ?? "your vow")}” — ${why}.${now}`;
+      }
+      case "rewardGrant": {
+        const pc   = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who  = escapeChatHtml(pc?.name ?? "the character");
+        const form = f.plan?.form;
+        const meter = (form === "supply" || form === "momentum") ? readCharacterSnapshot(pc)?.meters?.[form] : undefined;
+        const now  = meter !== undefined ? ` ${who}'s ${form} stands at ${meter} now; this adds ${f.plan?.amount ?? 1}.` : "";
+        return `The promised reward “${escapeChatHtml(f.reward?.description ?? "your reward")}” — recorded as earned, but not given to ${who}: ${why}.${now}`;
+      }
+      default:
+        return `The promised reward${f.rewardDescription ? ` “${escapeChatHtml(f.rewardDescription)}”` : ""} — ${why}; nothing was given.`;
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | payoff failure line failed:`, err?.message ?? err);
+    return `${escapeChatHtml(f.step ?? "A step")} — ${why}.`;
+  }
+}
+
+/**
+ * The GM side of a payoff card's Retry, once the card is claimed: each step
+ * runs again unless a fulfilment's ledger says it landed meanwhile, and any
+ * that fail again go on a fresh card with its own Retry. Every value comes
+ * from the GM-authored card. Exported for src/moves/cardActions.js
+ * applyPayoffRetry.
+ *
+ * @param {Object} card — the failure card's module flags
+ * @returns {Promise<Array<Object>>} the steps that failed again
+ */
+export async function retryPayoffSteps(card) {
+  const fulfil = card?.source === "fulfil";
+  const copies = (fulfil || card?.source === "fight") ? payoffVowCopies(card ?? {}) : [];
+  const failures = [];
+  for (const s of Array.isArray(card?.steps) ? card.steps : []) {
+    const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
+    if (fulfil && payoffStepLanded(copies, ledgerStep)) continue;
+    const res = await runPayoffStep(s, card, copies);
+    if (res?.ok) {
+      if (fulfil && !res.skipped) await recordPayoffStep(copies, ledgerStep);
+    } else {
+      failures.push({ ...s, ...res, step: res?.step ?? s?.step });
+    }
+  }
+  if (failures.length) {
+    await postPayoffFailureCard({
+      source: card.source, vowName: card.vowName ?? null, vowId: card.vowId ?? null, actorId: card.actorId ?? null,
+      outcome: card.outcome ?? null, connectionName: card.connectionName ?? null, failures,
+    }).catch(err => console.warn(`${MODULE_ID} | payoff retry: failure card failed:`, err?.message ?? err));
+  }
+  return failures;
+}
+
+// Run one failed step again. The card is GM-authored, but its values are still
+// checked: a legacy is one of the three tracks, 1–40 ticks.
+async function runPayoffStep(s, card, copies) {
+  switch (s?.step) {
+    case "legacy": {
+      const ticks = Math.floor(Number(s.ticks));
+      if (!LEGACY_LABELS[s.track] || !(ticks > 0 && ticks <= 40)) return { ok: false, reason: "invalid step" };
+      return runLegacyStep(s.track, ticks);
+    }
+    case "deepen":
+      return deepenLinkedConnection(s.connectionName ?? null, Math.max(1, Math.floor(Number(s.marks)) || 1));
+    case "reward":
+      if (!copies.length) return { ok: false, reason: "no-vow" };
+      return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
+    case "rewardGrant": {
+      const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      const given = await giveReward(pc, s.reward, s.plan);
+      if (given.ok) {
+        await postRewardGrantCard(s.reward, s.plan).catch(err =>
+          console.warn(`${MODULE_ID} | reward grant card failed:`, err?.message ?? err));
+      }
+      return given;
+    }
+    default:
+      return { ok: false, reason: "invalid step" };
+  }
+}
+
+/**
+ * Wire a payoff failure card's "↻ Retry these steps": one press relays to the
+ * canonical GM ("payoff.retry" → src/moves/cardActions.js applyPayoffRetry),
+ * which claims the card before re-running anything; a claimed card renders
+ * disabled, and a press that is not delivered re-arms the button.
+ *
+ * Exported so tests and Quench can drive it with a synthetic message + root.
+ */
+export function wirePayoffRetryButton(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.payoffFailureCard) return;
+  const btn = root?.querySelector?.('[data-action="sf-payoff-retry"]');
+  if (!btn) return;
+  if (liveCardFlags(message)?.resolved) {
+    btn.disabled = true;
+    btn.textContent = "↻ Retried";
+    return;
+  }
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    await relayCardAction({
+      kind:       "payoff.retry",
+      payload:    { messageId: message?.id ?? null },
+      isResolved: () => !!liveCardFlags(message)?.resolved,
+      restore:    () => { fresh.disabled = false; },
+    });
+  });
+}
+onChatMessageRender((message, root) => wirePayoffRetryButton(message, root));
 
 // Wire the won-fight card's buttons (wireFightVowButtons) on every render.
 function registerFightVowMilestoneHook() {
@@ -4119,6 +4472,9 @@ async function postDevelopRelationshipCard(plan) {
  *
  * @param {Actor|null} actor
  * @param {string|null} target
+ * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
+ *   could not act here (no PC, not a GM client); rejects when the mark's
+ *   write is refused
  */
 async function applyReachMilestone(actor, target, marks = 1) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
@@ -4128,7 +4484,7 @@ async function applyReachMilestone(actor, target, marks = 1) {
   // other PCs are kept in lockstep by the updateItem sync hook.
   if (!actor || !game.user?.isGM) {
     console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
-    return;
+    return null;
   }
   const plan = planReachMilestone(readVows(actor), target);
   if (plan.action === "mark") {
@@ -4140,6 +4496,7 @@ async function applyReachMilestone(actor, target, marks = 1) {
   }
   // action "none" → no open vow to mark; the move card's otherEffect already
   // tells the player Reach a Milestone marks vow progress.
+  return plan.action;
 }
 
 /**
@@ -4327,12 +4684,17 @@ async function postFulfillVowCard({ track, legacyTicks }) {
   }
 }
 
-async function postForgeABondCard(connection, legacyTicks) {
+// `legacyPending`: the bonds legacy's write did not land — the card says it is
+// not yet marked rather than claiming the ticks (the GMs have a Retry).
+async function postForgeABondCard(connection, legacyTicks, { legacyPending = false } = {}) {
   const nameLabel = connection.name ?? "connection";
   const rankLabel = connection.rank ? connection.rank.charAt(0).toUpperCase() + connection.rank.slice(1) : "unknown";
+  const legacyLine = legacyPending
+    ? `Bonds legacy track: not yet marked (${rankLabel} rank).`
+    : `Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-card--forge-bond"><div class="sf-card-header">⚑ Bond Forged: ${escapeHtml(nameLabel)}</div><div class="sf-card-body"><p>${escapeHtml(nameLabel)} is now bonded. Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).</p><p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(connection.rank ?? "dangerous"))}</em></p><p><em>Choose: <strong>Bolster Influence</strong> (add +2) or <strong>Expand Influence</strong> (second role, add +1).</em></p></div></div>`,
+      content: `<div class="sf-card sf-card--forge-bond"><div class="sf-card-header">⚑ Bond Forged: ${escapeHtml(nameLabel)}</div><div class="sf-card-body"><p>${escapeHtml(nameLabel)} is now bonded. ${legacyLine}</p><p class="sf-stakes"><em>${escapeHtml(progressPerMilestoneLine(connection.rank ?? "dangerous"))}</em></p><p><em>Choose: <strong>Bolster Influence</strong> (add +2) or <strong>Expand Influence</strong> (second role, add +1).</em></p></div></div>`,
       flags: { [MODULE_ID]: { forgeABondCard: true, connectionName: nameLabel, legacyTicks } },
     });
   } catch (err) {

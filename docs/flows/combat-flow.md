@@ -163,8 +163,12 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`deepenLinkedConnection`, scaled by the vow's rank). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
-one-time (`reward.status` flips from "promised"); it lands on the roller's
-copy when they hold one, else on the PC holding the promised reward.
+one-time (`reward.status` flips from "promised" — written first, as the
+grant's claim); it lands on the roller's copy when they hold one, else on the
+PC holding the promised reward. A grant that does not land is not swallowed:
+the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
+with a one-press Retry, and "🎁 Reward earned" is posted only once the grant
+lands (issue #306 R04 — see `vow-flow.md` §4).
 
 Mark milestone and Deepen your bond are one-shot GM writes:
 `wireFightVowButtons` relays a click via `relayCardAction`
@@ -172,8 +176,14 @@ Mark milestone and Deepen your bond are one-shot GM writes:
 `fightVow.deepenBond` → `applyFightVowMarkMilestone` /
 `applyFightVowDeepenBond` on the canonical GM. The handler takes every value
 from the GM-authored card (never the payload), skips an action already in
-flight or stamped, and stamps `flags.resolvedActions.<action>` once applied;
-an applied action renders disabled for everyone, and a click that is not
+flight or stamped, and stamps `flags.resolvedActions.<action>` once applied —
+only when the step reports it landed (`markLinkedVowMilestone` /
+`deepenLinkedConnection` return `{ ok }`): a refused mark, no open vow to
+mark, or a connection no longer open leaves the action unstamped and
+whispers the GMs a report without a Retry (source `fightButton`) — the
+re-armed button is the retry (issue #306 R04; the stamp used to land
+whatever happened). An applied action renders disabled for everyone, and a
+click that is not
 delivered (no GM connected — `requestGmAction` warns), or a card still
 unstamped after `RELAY_RECOVERY_MS` (15 s), re-arms the button. (They used to
 emit raw `vow.markMilestone` / `connection.deepen` socket messages with no

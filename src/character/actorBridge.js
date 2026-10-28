@@ -510,19 +510,25 @@ export async function completeVowItem(actor, vowItemId) {
  *
  * @param {string} vowId
  * @param {{ description: string, form: string, status?: string }} reward
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} false when a copy's write was refused (each is
+ *   still attempted) — a reward's status is its grant's claim, so a payoff
+ *   must know when it did not land (issue #306 R04)
  */
 export async function setSharedVowReward(vowId, reward) {
-  if (!vowId || !reward?.description) return;
+  if (!vowId || !reward?.description) return true;
+  let landed = true;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
-        await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err =>
-          console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err));
+        await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
+          landed = false;
+          console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
+        });
       }
     }
   }
+  return landed;
 }
 
 /**
@@ -555,15 +561,22 @@ export async function setVowLinkedConnection(vowId, connectionName) {
  *
  * @param {Actor} actor
  * @param {{ description: string, form?: string }} reward
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} true once the record is written; false when
+ *   there was no actor or reward to record, or the write was refused
  */
 export async function recordGrantedReward(actor, reward) {
-  if (!actor?.setFlag || !reward?.description) return;
+  if (!actor?.setFlag || !reward?.description) return false;
   const list = actor.flags?.[MODULE_ID]?.grantedRewards ?? [];
-  await actor.setFlag(MODULE_ID, "grantedRewards", [
-    ...list,
-    { description: reward.description, form: reward.form ?? "gear" },
-  ]).catch(err => console.warn(`${MODULE_ID} | recordGrantedReward failed:`, err?.message ?? err));
+  try {
+    await actor.setFlag(MODULE_ID, "grantedRewards", [
+      ...list,
+      { description: reward.description, form: reward.form ?? "gear" },
+    ]);
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recordGrantedReward failed:`, err?.message ?? err);
+    return false;
+  }
 }
 
 
