@@ -330,6 +330,55 @@ describe("transcript write/read", () => {
     expect(await loadCurrentSessionTranscript("player-1", "ses-2")).toBe("");
   });
 
+  // Issue #306 R07: a turn joined the last waiting batch whatever its session,
+  // so after a failed write (or before a flush) the next session's opening
+  // turns were written to the old session's page.
+  it("a new session's turns never join a failed batch from the last session", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Seed." });
+    await flushNow("player-1");
+    const page = _journals.get("Private Channel — Kira").pages.contents[0];
+    const realUpdate = page.update;
+    page.update = vi.fn(async () => { throw new Error("socket closed"); });
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Old session ending." });
+    expect(await flushNow("player-1")).toBeNull();
+
+    page.update = realUpdate;
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "ses-2" });
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "New session opening." });
+    await flushNow("player-1");
+
+    const one = await loadCurrentSessionTranscript("player-1", "ses-1");
+    const two = await loadCurrentSessionTranscript("player-1", "ses-2");
+    expect(one).toContain("Old session ending.");
+    expect(one).not.toContain("New session opening.");
+    expect(two).toContain("New session opening.");
+    expect(two).not.toContain("Old session ending.");
+  });
+
+  it("a new session's turns never join an unflushed batch from the last session", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Last words of session one." });
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "ses-2" });
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "First words of session two." });
+    await flushNow("player-1");
+
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("Last words of session one.");
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).not.toContain("First words of session two.");
+    expect(await loadCurrentSessionTranscript("player-1", "ses-2")).toContain("First words of session two.");
+  });
+
+  it("turns in one session still share one batch — one write per flush", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "One." });
+    appendToBuffer("player-1", { who: "narrator", name: "Narrator", text: "Two." });
+    await flushNow("player-1");
+    const page = _journals.get("Private Channel — Kira").pages.contents[0];
+    page.update = vi.fn(page.update);
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Three." });
+    appendToBuffer("player-1", { who: "narrator", name: "Narrator", text: "Four." });
+    await flushNow("player-1");
+    expect(page.update).toHaveBeenCalledTimes(1);
+    expect(page.text.content).toMatch(/One\..*Two\..*Three\..*Four\./);
+  });
+
   it("loadCurrentSessionTranscript returns '' when no journal or no matching page exists", async () => {
     expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toBe("");
     appendToBuffer("player-1", { who: "player", name: "Kira", text: "x" });

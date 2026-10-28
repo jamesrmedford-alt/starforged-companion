@@ -185,9 +185,12 @@ export async function loadCurrentSessionTranscript(userId, sessionId) {
 }
 
 /**
- * Buffer a turn for a later debounced write. Captures the session id on the
- * first append of a flush cycle so the write lands on the right page even if
- * the session changes before the flush fires.
+ * Buffer a turn for a later debounced write. A batch captures the session id
+ * on its first turn, so its write lands on that session's page even if the
+ * session changes before the flush fires. A turn joins the waiting batch only
+ * when that batch is the current session's; otherwise it starts a new batch
+ * (issue #306 R07 — a batch kept for a retry, or one not yet flushed, took
+ * the next session's turns onto the old session's page).
  *
  * @param {string} userId
  * @param {{who:"player"|"narrator", name?:string, text:string}} turn
@@ -200,9 +203,10 @@ export function appendToBuffer(userId, turn) {
     entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0 };
     _buffers.set(userId, entry);
   }
+  const sessionId = currentSessionId();
   let batch = entry.batches.at(-1);
-  if (!batch) {
-    batch = { sessionId: currentSessionId(), turns: [] };
+  if (!batch || batch.sessionId !== sessionId) {
+    batch = { sessionId, turns: [] };
     entry.batches.push(batch);
   }
   batch.turns.push({
