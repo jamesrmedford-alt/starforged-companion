@@ -69,6 +69,15 @@ function makeJournal(data) {
       pages.push(...created);
       return created;
     },
+    setFlag: async (m, k, v) => { (journal.flags[m] ??= {})[k] = v; },
+    // A rename re-keys the by-name store, as Foundry's getName would follow it.
+    update:  async (data) => {
+      if (data.name && data.name !== journal.name) {
+        _journals.delete(journal.name);
+        journal.name = data.name;
+        _journals.set(journal.name, journal);
+      }
+    },
   };
   return journal;
 }
@@ -94,6 +103,7 @@ beforeEach(() => {
   global.game.journal = {
     getName: (n) => _journals.get(n) ?? null,
     find:    (fn) => [..._journals.values()].find(fn) ?? null,
+    get contents() { return [..._journals.values()]; },
   };
   global.game.users = {
     get: (id) => _users.get(id) ?? null,
@@ -377,6 +387,71 @@ describe("transcript write/read", () => {
     await flushNow("player-1");
     expect(page.update).toHaveBeenCalledTimes(1);
     expect(page.text.content).toMatch(/One\..*Two\..*Three\..*Four\./);
+  });
+
+  // Issue #306 R08: the journal was found as "Private Channel — <current name>"
+  // although creation stamped the owner's user id, so renaming a player hid
+  // their history and the next write started a second journal.
+  it("a renamed player still reads their session, and the next write keeps one journal, relabelled", async () => {
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Private record before renaming." });
+    await flushNow("player-1");
+    _users.get("player-1").name = "Kira Prime";
+
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("Private record before renaming.");
+    appendToBuffer("player-1", { who: "player", name: "Kira Prime", text: "And after." });
+    await flushNow("player-1");
+
+    expect([..._journals.keys()]).toEqual(["Private Channel — Kira Prime"]);
+    const html = await loadCurrentSessionTranscript("player-1", "ses-1");
+    expect(html.indexOf("Private record before renaming.")).toBeLessThan(html.indexOf("And after."));
+    expect(_journals.get("Private Channel — Kira Prime").pages.contents).toHaveLength(1);
+  });
+
+  it("a session an earlier rename split over two journals reads as one, oldest page first", async () => {
+    const old = makeJournal({ name: "Private Channel — Kira", flags: { [MODULE_ID]: { privateChannelOwner: "player-1" } } });
+    const now = makeJournal({ name: "Private Channel — Kira Prime", flags: { [MODULE_ID]: { privateChannelOwner: "player-1" } } });
+    _journals.set(old.name, old);
+    _journals.set(now.name, now);
+    _users.get("player-1").name = "Kira Prime";
+    await now.createEmbeddedDocuments("JournalEntryPage", [{ name: "S1b", text: { format: 1, content: "<p>Later.</p>" },
+      flags: { [MODULE_ID]: { privateChannelPage: { sessionId: "ses-1", createdAt: "2026-10-02T00:00:00Z" } } } }]);
+    await old.createEmbeddedDocuments("JournalEntryPage", [{ name: "S1a", text: { format: 1, content: "<p>Earlier.</p>" },
+      flags: { [MODULE_ID]: { privateChannelPage: { sessionId: "ses-1", createdAt: "2026-10-01T00:00:00Z" } } } }]);
+
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toBe("<p>Earlier.</p><p>Later.</p>");
+  });
+
+  it("a journal under the player's name that another user owns is never theirs", async () => {
+    const other = makeJournal({ name: "Private Channel — Kira", flags: { [MODULE_ID]: { privateChannelOwner: "player-2" } } });
+    await other.createEmbeddedDocuments("JournalEntryPage", [{ name: "S1", text: { format: 1, content: "<p>Not yours.</p>" },
+      flags: { [MODULE_ID]: { privateChannelPage: { sessionId: "ses-1", createdAt: "2026-10-01T00:00:00Z" } } } }]);
+    const list = [other];
+    global.game.journal = {
+      getName: (n) => list.find(j => j.name === n) ?? null,
+      find:    (fn) => list.find(fn) ?? null,
+      get contents() { return [...list]; },
+    };
+    global.JournalEntry.create = async (data) => { const j = makeJournal(data); list.push(j); return j; };
+
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toBe("");
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "Mine." });
+    await flushNow("player-1");
+    expect(list).toHaveLength(2);
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toContain("Mine.");
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).not.toContain("Not yours.");
+  });
+
+  it("an unflagged journal under the player's name is adopted, and stamped on the next write", async () => {
+    const legacy = makeJournal({ name: "Private Channel — Kira" });
+    _journals.set(legacy.name, legacy);
+    await legacy.createEmbeddedDocuments("JournalEntryPage", [{ name: "S1", text: { format: 1, content: "<p>Old turn.</p>" },
+      flags: { [MODULE_ID]: { privateChannelPage: { sessionId: "ses-1", createdAt: "2026-10-01T00:00:00Z" } } } }]);
+
+    expect(await loadCurrentSessionTranscript("player-1", "ses-1")).toBe("<p>Old turn.</p>");
+    appendToBuffer("player-1", { who: "player", name: "Kira", text: "New turn." });
+    await flushNow("player-1");
+    expect(legacy.flags[MODULE_ID].privateChannelOwner).toBe("player-1");
+    expect(_journals.size).toBe(1);
   });
 
   it("loadCurrentSessionTranscript returns '' when no journal or no matching page exists", async () => {

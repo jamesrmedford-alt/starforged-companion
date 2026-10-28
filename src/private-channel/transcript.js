@@ -7,6 +7,9 @@
  * folder, with per-player ownership ({ default: NONE, [playerId]: OWNER,
  * [gmId]: OBSERVER }). One embedded page per session, matched on a sessionId
  * flag so a resume lands on the right page regardless of the date-derived name.
+ * The journal is the player's by its `privateChannelOwner` flag (their user
+ * id), never by its name (issue #306 R08): a renamed player keeps their
+ * history, and the name is a label kept current on write.
  *
  * Writes are debounced: turns accumulate in a module-scoped in-memory buffer
  * (never on campaignState) and flush 5 s after the last append, or immediately
@@ -100,16 +103,50 @@ export function buildOwnership(userId) {
   return ownership;
 }
 
-function findPrivateJournal(userId) {
-  const name = journalNameFor(userId);
-  return game.journal?.getName?.(name)
-      ?? game.journal?.find?.(j => j.name === name)
-      ?? null;
+function privateChannelOwner(journal) {
+  return journal?.flags?.[MODULE_ID]?.privateChannelOwner ?? null;
+}
+
+/**
+ * Every Private Channel journal of a user, the one to write first. A journal
+ * is the user's by its privateChannelOwner flag, never by its name: looking it
+ * up as "Private Channel — <current name>" hid the history when the user was
+ * renamed, and the next write started a second journal (issue #306 R08). A
+ * history an earlier rename split over two journals reads merged; the one
+ * already labelled with the current name leads. A journal under the user's
+ * current name with no owner flag is adopted; one flagged for another user
+ * never is.
+ *
+ * @param {string} userId
+ * @returns {JournalEntry[]}
+ */
+function findPrivateJournals(userId) {
+  const label   = journalNameFor(userId);
+  const flagged = (game.journal?.contents ?? []).filter(j => privateChannelOwner(j) === userId);
+  if (flagged.length) {
+    return [...flagged.filter(j => j.name === label), ...flagged.filter(j => j.name !== label)];
+  }
+  const named = game.journal?.getName?.(label) ?? game.journal?.find?.(j => j.name === label) ?? null;
+  return named && !privateChannelOwner(named) ? [named] : [];
+}
+
+/** Stamp the owner on a legacy journal and keep its label current; best-effort. */
+async function labelPrivateJournal(journal, userId) {
+  try {
+    if (privateChannelOwner(journal) !== userId) await journal.setFlag?.(MODULE_ID, "privateChannelOwner", userId);
+    const label = journalNameFor(userId);
+    if (journal.name !== label) await journal.update?.({ name: label });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | privateChannel: could not stamp or relabel "${journal.name}":`, err?.message ?? err);
+  }
 }
 
 async function getOrCreatePrivateJournal(userId) {
-  const existing = findPrivateJournal(userId);
-  if (existing) return existing;
+  const [existing] = findPrivateJournals(userId);
+  if (existing) {
+    await labelPrivateJournal(existing, userId);
+    return existing;
+  }
 
   // Folder lookup mirrors worldJournal.js; create lazily, tolerate failure.
   let folderId = null;
@@ -178,10 +215,13 @@ async function getOrCreateSessionPage(journal, sessionId) {
  * @returns {Promise<string>}
  */
 export async function loadCurrentSessionTranscript(userId, sessionId) {
-  const journal = findPrivateJournal(userId);
-  if (!journal) return "";
-  const page = findSessionPage(journal, sessionId);
-  return page?.text?.content ?? "";
+  // A session split over two journals by an earlier rename reads as one, oldest page first.
+  const pages = findPrivateJournals(userId)
+    .map(journal => findSessionPage(journal, sessionId))
+    .filter(Boolean)
+    .sort((a, b) => String(a.flags?.[MODULE_ID]?.[FLAG_KEY]?.createdAt ?? "")
+      .localeCompare(String(b.flags?.[MODULE_ID]?.[FLAG_KEY]?.createdAt ?? "")));
+  return pages.map(page => page.text?.content ?? "").join("");
 }
 
 /**
