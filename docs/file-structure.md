@@ -229,7 +229,7 @@ developer-only and excluded from the release.
 | `ironswornAssets.js` | Runtime path constants for foundry-ironsworn art (starships, locations, icons). |
 | `ironswornPacks.js` | Canonical compendium lookup (moves, oracles, encounters, truths). |
 | `campaignTruths.js` | Injects the foundry-ironsworn canonical-truths digest into context. |
-| `encounterSpawn.js` | `!sfc encounter <name>` canonical encounter spawn. |
+| `encounterSpawn.js` | `!sfc encounter <name>` canonical encounter spawn. A GM's token is built from a world Actor — one already imported from that compendium entry (`_stats.compendiumSource` / `flags.core.sourceId`), else a fresh `importFromCompendium` (issue #306 R12); otherwise the stat card. |
 | `i18n.js` | Localisation wrapper for foundry-ironsworn strings. |
 | `chatHooks.js` | `onChatMessageRender()` — subscribes to both v12/v13 render-hook names (V13-002 fix). |
 

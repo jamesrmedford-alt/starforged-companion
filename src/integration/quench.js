@@ -4105,6 +4105,30 @@ function registerEncounterSpawnLiveTests(quench) {
           assert.isTrue(out?.actor !== undefined,
             "result.actor field should be present (null acceptable on missing slug)");
         });
+
+        // Issue #306 R12: the token was built from the COMPENDIUM Actor, so its
+        // actorId named no world Actor. A placed token's Actor must be a world Actor.
+        it("a placed encounter token is backed by a world Actor", async function () {
+          this.timeout(20000);
+          const scene = globalThis.canvas?.scene;
+          if (!game.user?.isGM || !scene || !game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
+          const { spawnEncounter } = await import(
+            `/modules/${MODULE_ID}/src/system/encounterSpawn.js`);
+          const actorsBefore = new Set(game.actors.map(a => a.id));
+          const tokensBefore = new Set(scene.tokens.map(t => t.id));
+          const out = await withSilencedNotifications(() => spawnEncounter("Bogfaller"));
+          const newTokens = scene.tokens.filter(t => !tokensBefore.has(t.id));
+          try {
+            if (!out?.placed) { this.skip(); return; }
+            assert.lengthOf(newTokens, 1, "one token placed");
+            const [token] = newTokens;
+            assert.ok(game.actors.get(token.actorId), "the token's actorId names a world Actor");
+            assert.equal(token.baseActor?.id, token.actorId, "the token resolves its base Actor");
+          } finally {
+            if (newTokens.length) await scene.deleteEmbeddedDocuments("Token", newTokens.map(t => t.id)).catch(() => {});
+            for (const actor of game.actors.filter(a => !actorsBefore.has(a.id))) await actor.delete().catch(() => {});
+          }
+        });
       });
     },
     { displayName: "STARFORGED: Encounter Spawn (live)" },

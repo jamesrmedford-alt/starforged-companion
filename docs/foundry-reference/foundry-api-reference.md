@@ -325,6 +325,39 @@ await actor.unsetFlag("starforged-companion", "myKey");
 **See `issue #212 (Ironsworn API)` for confirmed field paths in the
 foundry-ironsworn system Actor schema.**
 
+#### Compendium Actors → world Actors, and tokens
+
+A token's Actor is a **world** Actor (`TokenDocument.baseActor`). A compendium
+Actor's `getTokenDocument()` names its compendium id, which no world Actor has,
+so import (or reuse an import) first (issue #306 R12, `encounterSpawn.js`):
+
+```js
+// The compendium Actor's UUID, e.g. "Compendium.foundry-ironsworn.foeactorssf.Actor.<id>"
+const uuid = compendiumActor.uuid;
+
+// An earlier import of that entry: v12+ stamps _stats.compendiumSource;
+// older imports carry flags.core.sourceId.
+const existing = game.actors.find(a =>
+  a._stats?.compendiumSource === uuid || a.flags?.core?.sourceId === uuid);
+
+// WorldCollection#importFromCompendium(pack, id, updateData = {}, options = {})
+//   → Promise<Document | undefined>  (pack: a CompendiumCollection)
+const actor = existing ?? await game.actors.importFromCompendium(
+  compendiumActor.compendium ?? game.packs.get(compendiumActor.pack), compendiumActor.id);
+
+// Actor#getTokenDocument(data = {}, options = {}) → Promise<TokenDocument> (not saved)
+const token = await actor.getTokenDocument({ x, y, hidden: false });
+await canvas.scene.createEmbeddedDocuments("Token", [token.toObject()]);
+```
+
+`WorldCollection#fromCompendium(document, options)` returns the creation data
+`importFromCompendium` uses (options `clearFolder`, `clearSort`, `clearOwnership`,
+`keepId`, `clearState`). Source: the community v13 type definitions
+(League-of-Foundry-Developers/foundry-vtt-types, `world-collection.d.mts`,
+`actor.d.mts`, `fields.d.mts` → `_stats.compendiumSource`), read 2026-10-28
+because foundryvtt.com is unreachable from the build container; confirm in a
+live world.
+
 ### JournalEntry
 
 ```js
