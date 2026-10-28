@@ -63,16 +63,63 @@ export async function updateChronicleEntry(actorId, entryId, newText) {
 }
 
 /**
- * Replace a character's chronicle entries wholesale — the Chronicle panel's
- * delete, re-type and pin. Writes only a chronicle that already exists, through
- * the same identity lookup as every other access (the panel used to find the
- * journal by the actor's current name).
+ * Pin or unpin one chronicle entry (the Chronicle panel's pin button).
  * @param {string} actorId
- * @param {Object[]} entries
- * @returns {Promise<boolean>} true when the entries were written
+ * @param {string} entryId
+ * @param {boolean} pinned
+ * @returns {Promise<boolean>} true when the entry was found and written
  */
-export async function saveChronicleEntries(actorId, entries) {
-  return writeChronicle(actorId, () => (Array.isArray(entries) ? [...entries] : null));
+export async function setChronicleEntryPinned(actorId, entryId, pinned) {
+  return changeEntry(actorId, entryId, entry => ({ ...entry, pinned: pinned === true }));
+}
+
+/**
+ * Change one chronicle entry's type (the Chronicle panel's GM type select).
+ * @param {string} actorId
+ * @param {string} entryId
+ * @param {string} type  — one of CHRONICLE_ENTRY_TYPES
+ * @returns {Promise<boolean>} true when the entry was found and written
+ */
+export async function setChronicleEntryType(actorId, entryId, type) {
+  if (!CHRONICLE_ENTRY_TYPES.includes(type)) return false;
+  return changeEntry(actorId, entryId, entry => ({ ...entry, type }));
+}
+
+/**
+ * Delete one chronicle entry (the Chronicle panel's GM delete button).
+ * @param {string} actorId
+ * @param {string} entryId
+ * @returns {Promise<boolean>} true when the entry was found and removed
+ */
+export async function deleteChronicleEntry(actorId, entryId) {
+  return changeEntry(actorId, entryId, () => null);
+}
+
+/** The entry types the Chronicle panel's GM type select offers. */
+export const CHRONICLE_ENTRY_TYPES = Object.freeze([
+  'revelation', 'relationship', 'vow', 'scar', 'legacy', 'annotation',
+]);
+
+/**
+ * Change one entry, found by id among the entries as stored when the write
+ * runs (issue #306 R02). The panel used to map its own copy of the entries,
+ * made when it rendered, and save that whole list: an entry written since —
+ * an automatic one after the next narration — was erased by a pin, a delete
+ * or a re-type. `change(entry)` returns the new entry, or null to delete it.
+ *
+ * @returns {Promise<boolean>} true when the entry was found and written
+ */
+async function changeEntry(actorId, entryId, change) {
+  if (!entryId) return false;
+  return writeChronicle(actorId, (entries) => {
+    const idx = entries.findIndex(e => e?.id === entryId);
+    if (idx < 0) return null;
+    const next = [...entries];
+    const changed = change(entries[idx]);
+    if (changed) next[idx] = changed;
+    else next.splice(idx, 1);
+    return next;
+  });
 }
 
 

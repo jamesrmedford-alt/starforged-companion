@@ -16,14 +16,17 @@ import {
   getChronicleEntries,
   addChronicleEntry,
   updateChronicleEntry,
-  saveChronicleEntries,
+  setChronicleEntryPinned,
+  setChronicleEntryType,
+  deleteChronicleEntry,
+  CHRONICLE_ENTRY_TYPES,
 } from './chronicle.js';
 
 import { getPlayerActors, getActor } from './actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
-const ENTRY_TYPES = ['revelation', 'relationship', 'vow', 'scar', 'legacy', 'annotation'];
+const ENTRY_TYPES = CHRONICLE_ENTRY_TYPES;
 
 const TYPE_LABELS = {
   revelation:   'Revelation',
@@ -119,10 +122,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
     const newType = e.currentTarget.value;
     if (!entryId || !newType) return;
 
-    const updated = this.#entries.map(en =>
-      en.id === entryId ? { ...en, type: newType } : en
-    );
-    await this.#saveEntries(updated);
+    await this.#edit('re-type', () => setChronicleEntryType(this.#actorId, entryId, newType));
     this.render();
   }
 
@@ -156,8 +156,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
       const entryId = target.dataset.entryId;
       if (!entryId) return;
 
-      const entries = this.#entries.filter(en => en.id !== entryId);
-      await this.#saveEntries(entries);
+      await this.#edit('delete', () => deleteChronicleEntry(this.#actorId, entryId));
       this.render();
     })();
     this._lastAction = work;
@@ -169,10 +168,9 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
       const entryId = target.dataset.entryId;
       if (!entryId) return;
 
-      const updated = this.#entries.map(en =>
-        en.id === entryId ? { ...en, pinned: !en.pinned } : en
-      );
-      await this.#saveEntries(updated);
+      // The pin the row showed, flipped — the write applies it to the stored entry.
+      const shown = this.#entries.find(en => en.id === entryId);
+      await this.#edit('pin', () => setChronicleEntryPinned(this.#actorId, entryId, !shown?.pinned));
       this.render();
     })();
     this._lastAction = work;
@@ -181,15 +179,17 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
   // ── Persistence ───────────────────────────────────────────────────────────
 
-  // Through chronicle.js, which finds the journal by the actor's id — this
-  // used to look it up by the actor's current name, so after a rename (or for
-  // a namesake) a delete / re-type / pin saved nowhere or into the wrong
-  // character's chronicle (issue #301 B03).
-  async #saveEntries(entries) {
+  // Each action changes one entry, by id, on the entries as stored when it
+  // writes (chronicle.js) — never this panel's copy, which is as old as its
+  // last render: saving that copy erased entries written since (issue #306
+  // R02). chronicle.js also finds the journal by the actor's id, not name
+  // (issue #301 B03).
+  async #edit(action, write) {
     try {
-      if (await saveChronicleEntries(this.#actorId, entries)) this.#entries = entries;
+      await write();
     } catch (err) {
-      console.error(`${MODULE_ID} | chroniclePanel: failed to save entries`, err);
+      console.error(`${MODULE_ID} | chroniclePanel: ${action} failed`, err);
+      ui.notifications?.error?.(`Starforged Companion: the Chronicle ${action} could not be saved.`);
     }
   }
 }

@@ -59,9 +59,9 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `actorBridge.js` | **The only** interface for foundry-ironsworn Actor reads/writes (health, spirit, supply, momentum, impacts, XP, legacies). `readCharacterSnapshot` (cached per actor; dropped on `updateActor` and on the actor's Item changes) also carries the `grantedRewards` the narrator's CHARACTER block lists (issue #286 C5). `readMomentumState` — momentum and its bounds read live (value, min, max, reset, impact count) from the one bounds derivation the sheet writes use; the burn preview and burn apply read it (issue #300 F03). |
-| `chronicle.js` | Character chronicle schema + CRUD (`addChronicleEntry`, `getChronicleEntries`, `updateChronicleEntry`, `saveChronicleEntries` — the panel's wholesale save). A chronicle is the Actor's by its journal's `chronicleActorId` flag, never by the "Chronicle — {name}" label (issue #301 B03): a rename keeps the history, namesakes keep separate chronicles, a history an earlier rename split over two journals reads merged and folds into one on the next write, and an unflagged legacy journal is adopted only when one character has its name. |
+| `chronicle.js` | Character chronicle schema + CRUD (`addChronicleEntry`, `getChronicleEntries`, `updateChronicleEntry`; the panel's `setChronicleEntryPinned` / `setChronicleEntryType` / `deleteChronicleEntry`, each changing one entry by id on the entries as stored when it writes — issue #306 R02; `CHRONICLE_ENTRY_TYPES`). A chronicle is the Actor's by its journal's `chronicleActorId` flag, never by the "Chronicle — {name}" label (issue #301 B03): a rename keeps the history, namesakes keep separate chronicles, a history an earlier rename split over two journals reads merged and folds into one on the next write, and an unflagged legacy journal is adopted only when one character has its name. |
 | `chronicleWriter.js` | Claude call writing chronicle entries from move resolutions. |
-| `chroniclePanel.js` | Chronicle UI panel (ApplicationV2). Every read and save goes through `chronicle.js`. |
+| `chroniclePanel.js` | Chronicle UI panel (ApplicationV2). Every read and save goes through `chronicle.js`; pin, delete and re-type change one entry by id, never save the panel's own copy (issue #306 R02). |
 
 ### `clocks/` — campaign & tension clocks
 
