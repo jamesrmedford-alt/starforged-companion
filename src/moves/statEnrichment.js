@@ -261,7 +261,8 @@ export const PROGRESS_TICK_SOURCES = {
  * live tick count of the track this progress move rolls against. Module data
  * is ground truth — the interpreter is instructed never to supply tick counts,
  * and card buttons only name a target via forcedMoveTarget (a connection
- * picker also via forcedMoveTargetId → interpretation.moveTargetId).
+ * picker, a Progress Tracks row and an expedition card also by id, via
+ * forcedMoveTargetId → interpretation.moveTargetId).
  *
  * Dependency-injected so it unit-tests without Foundry:
  *
@@ -293,10 +294,14 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
   let resolved = null; // { ticks, label, trackId, combatState }
 
   if (source === "combat" || source === "expedition") {
+    // A row's id when the roll came from it (the Progress Tracks panel, an
+    // expedition card): that track or nothing — a same-named sibling is a
+    // different fight (issue #306 R06).
+    const trackId = interpretation?.moveTargetId ?? null;
     const tracks = (await deps.listTracks?.()) ?? [];
     const track = source === "combat"
-      ? selectCombatTrack(tracks, target)
-      : selectExpeditionTrack(tracks, target);
+      ? selectCombatTrack(tracks, target, { trackId })
+      : selectExpeditionTrack(tracks, target, { trackId });
     if (track) {
       resolved = {
         ticks:       Number(track.ticks ?? 0),

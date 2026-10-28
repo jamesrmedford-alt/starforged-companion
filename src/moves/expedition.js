@@ -37,14 +37,18 @@ function normalizeLabel(s) {
  * Pick the expedition track an Undertake/Explore should mark, from the full
  * track list. Match the named destination against OPEN expedition tracks
  * (exact-normalised, then substring either way); else fall back to the single
- * open expedition; else null (the caller creates one).
+ * open expedition; else null (the caller creates one). A caller that knows
+ * the track's id (a Progress Tracks panel row, an expedition card) gets that
+ * open track or null — never a same-named sibling (issue #306 R06).
  *
  * @param {Array<{id,label,type,rank,ticks,completed}>} allTracks
  * @param {string|null} label  — the move's destination (interpretation.moveTarget)
+ * @param {{ trackId?: string|null }} [opts]
  * @returns {Object|null}
  */
-export function selectExpeditionTrack(allTracks, label) {
+export function selectExpeditionTrack(allTracks, label, { trackId = null } = {}) {
   const expeditions = (allTracks ?? []).filter(t => t?.type === "expedition" && !t.completed);
+  if (typeof trackId === "string" && trackId) return expeditions.find(t => t.id === trackId) ?? null;
   if (!expeditions.length) return null;
 
   const want = normalizeLabel(label);
@@ -121,10 +125,10 @@ export function legacyRewardTicks(rank, ranksDown = 0) {
  * @param {Object} deps
  * @returns {Promise<{ track:Object, legacyTicks:number }|null>}
  */
-export async function finishExpedition({ moveTarget, ranksDown = 0 }, deps) {
+export async function finishExpedition({ moveTarget, moveTargetId = null, ranksDown = 0 }, deps) {
   if (!deps?.listTracks || !deps?.completeTrack) return null;
   const all   = await deps.listTracks();
-  const track = selectExpeditionTrack(all, moveTarget);
+  const track = selectExpeditionTrack(all, moveTarget, { trackId: moveTargetId });
   if (!track) return null;
   const completed = await deps.completeTrack(track.id);
   return { track: completed ?? track, legacyTicks: legacyRewardTicks(track.rank, ranksDown) };

@@ -1002,6 +1002,19 @@ export function registerChatHook() {
         return null;
       });
 
+      // A roll started from a track (a Progress Tracks row, an expedition
+      // card) names it by id. When that track was deleted or finished
+      // meanwhile, nothing is rolled — and it says so: a same-named sibling is
+      // a different fight, and a score of 0 would be a certain miss with its
+      // consequences (issue #306 R06).
+      if (interpretation.moveTargetId
+          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition")
+          && !tickInfo.trackId) {
+        await postTrackGoneCard(interpretation).catch(err =>
+          console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
+        return;
+      }
+
       // Take Decisive Action — the resolver applies the bad-spot downgrade
       // (play kit p. 5). Prefer the enriched track's own position (exact even
       // with several open fights, where getActiveCombatPosition returns null);
@@ -1273,7 +1286,11 @@ export function registerChatHook() {
       if (resolution.consequences?.finishExpedition && game.user.isGM) {
         try {
           const fin = await finishExpedition(
-            { moveTarget: interpretation.moveTarget, ranksDown: resolution.consequences.finishExpedition.ranksDown ?? 0 },
+            {
+              moveTarget:   interpretation.moveTarget,
+              moveTargetId: interpretation.moveTargetId ?? null,
+              ranksDown:    resolution.consequences.finishExpedition.ranksDown ?? 0,
+            },
             {
               listTracks:   () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),
@@ -1313,7 +1330,8 @@ export function registerChatHook() {
       // hand. The track stays open either way; the button is optional.
       if (resolution.moveId === "finish_an_expedition" && resolution.outcome === "miss" && game.user.isGM) {
         try {
-          const track = selectExpeditionTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
+          const track = selectExpeditionTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
+            { trackId: interpretation.moveTargetId ?? null });
           if (track) {
             await postRecommitOfferCard(track).catch(err =>
               console.warn(`${MODULE_ID} | recommit offer card failed:`, err?.message ?? err));
@@ -1498,7 +1516,8 @@ export function registerChatHook() {
           // bad-spot downgrade could never apply there (issue #306 R05).
           const track = combatProgressTrackId
             ? { id: combatProgressTrackId }
-            : selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
+            : selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
+              { trackId: interpretation.moveTargetId ?? null });
           if (track) {
             await applyCombatPositionToTrack(track.id, pipelinePos, speakerActor);
           } else if (thresholdPosted) {
@@ -1516,7 +1535,7 @@ export function registerChatHook() {
       if (resolution.consequences?.endCombat && game.user.isGM) {
         try {
           const result = await finishCombatTrack(
-            { moveTarget: interpretation.moveTarget },
+            { moveTarget: interpretation.moveTarget, moveTargetId: interpretation.moveTargetId ?? null },
             {
               listTracks:    () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),
@@ -2633,9 +2652,11 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
     isProgressMove:   moveData?.progressMove === true,
     progressTicks:    0,
     moveTarget:       typeof moveTarget === "string" && moveTarget.trim() ? moveTarget.trim() : null,
-    // The target's stable id when the card that forced the move knows it (a
-    // connection picker's host Actor id) — selectConnection resolves by it
-    // before any name.
+    // The target's stable id when the card that forced the move knows it: a
+    // connection picker's host Actor id (selectConnection), or a progress
+    // track's id for Take Decisive Action / Finish an Expedition from a
+    // Progress Tracks row or an expedition card (selectCombatTrack /
+    // selectExpeditionTrack, issue #306 R06) — resolved before any name.
     moveTargetId:     typeof moveTargetId === "string" && moveTargetId ? moveTargetId : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
@@ -3047,14 +3068,32 @@ async function postExpeditionProgressCard({ track, created }) {
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Expedition</strong>${body}${finishBtn}</div>`,
-      // trackLabel: the Finish button forwards it as forcedMoveTarget so the
-      // finish roll resolves THIS expedition even with several open
-      // (EXPEDITION-FINISH-TARGET fix).
-      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null } },
+      // trackId / trackLabel: the Finish button forwards them as
+      // forcedMoveTargetId / forcedMoveTarget so the finish roll resolves THIS
+      // expedition even with several open, same-named ones included
+      // (EXPEDITION-FINISH-TARGET fix; issue #306 R06).
+      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null, trackId: track?.id ?? null } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionProgressCard: chat post failed:`, err?.message ?? err);
   }
+}
+
+/**
+ * A roll started from a track the table has since deleted or finished: say
+ * nothing was rolled (issue #306 R06). Posted instead of the move — never
+ * against a same-named sibling, never at a score of 0.
+ *
+ * @param {{ moveName?: string, moveTarget?: string|null }} interpretation
+ */
+async function postTrackGoneCard(interpretation) {
+  const label = escapeChatHtml(interpretation?.moveTarget ?? "That track");
+  const move  = escapeChatHtml(interpretation?.moveName ?? "The roll");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
+      + `<p><strong>${label}</strong> is no longer open: it was deleted or finished before the roll. Nothing was rolled.</p></div>`,
+    flags:   { [MODULE_ID]: { trackGoneCard: true } },
+  });
 }
 
 // ── Finish an Expedition miss: recommit offer (play kit) ─────────────────────
@@ -5600,11 +5639,13 @@ export function wireFinishExpeditionButton(message, root) {
       // expeditions are open (EXPEDITION-FINISH-TARGET fix). Older cards
       // without the flag fall back to the sole-open-track ladder.
       const trackLabel = message.flags[MODULE_ID].trackLabel ?? null;
+      const trackId    = message.flags[MODULE_ID].trackId ?? null;
       await ChatMessage.create({
         content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "finish_an_expedition",
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
         } },
       });
     } catch (err) {

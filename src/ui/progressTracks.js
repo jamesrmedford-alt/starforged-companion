@@ -187,9 +187,10 @@ export async function rollProgress(track) {
       : `Attempt to finish the expedition — ${track.label}.`;
     await ChatMessage.create({
       content,
-      // forcedMoveTarget: the row's own label, so tick enrichment resolves
-      // exactly the track the player clicked even with several open fights.
-      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label } },
+      // The row's own id (and label): tick enrichment, scoring and completion
+      // act on exactly the track clicked — a label alone took the first
+      // same-named track (issue #306 R06).
+      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label, forcedMoveTargetId: track.id } },
     });
     return;
   }

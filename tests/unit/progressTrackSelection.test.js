@@ -12,6 +12,11 @@
  * position: with two fights open, Take Decisive Action's bad-spot downgrade
  * never applied. And a combat move's position was written only while a single
  * fight was open — with two, nothing recorded it.
+ *
+ * R06: the panel's Roll posted only the row's label, so scoring and completion
+ * took the first track with that label — a same-named sibling's ticks, its
+ * completion and its rewards. The row's id now rides the roll; a track deleted
+ * or finished before the roll resolves rolls nothing, and says so.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -19,7 +24,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 // The pipeline: no pacing call, the confirm dialog accepted, the interpreter
 // answering `control.interpretation` (a typed move), and scripted dice inside
 // the REAL resolveMove (`control.dice`, consumed in order).
-const control = vi.hoisted(() => ({ dice: [], interpretation: null }));
+const control = vi.hoisted(() => ({ dice: [], interpretation: null, onConfirm: null }));
 vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
   ...(await importOriginal()),
   routePacedInput: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
@@ -36,7 +41,7 @@ vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  confirmInterpretation: vi.fn(() => Promise.resolve(true)),
+  confirmInterpretation: vi.fn(async () => { await control.onConfirm?.(); return true; }),
 }));
 vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
   const original = await importOriginal();
@@ -112,6 +117,7 @@ afterAll(() => table?.teardown());
 beforeEach(async () => {
   control.dice = [];
   control.interpretation = null;
+  control.onConfirm = null;
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false,
     campaignState: {
@@ -165,3 +171,35 @@ describe('two fights open: a fight\'s own position reaches Take Decisive Action 
     expect(track(boarders.id).ticks).toBe(8);
   });
 });
+
+describe('two same-named tracks: the panel\'s Roll acts on the row clicked (issue #306 R06)', () => {
+  it.each(['combat', 'expedition'])('a %s roll scores and completes the selected row, not its namesake', async (type) => {
+    const first  = await openTrack('The approach', { type, ticks: 4 });
+    const second = await openTrack('The approach', { type, rank: 'extreme', ticks: 32 });
+
+    control.dice = CHALLENGE_3_4;            // score 8 (the second row) beats 3 and 4; score 1 (the first) misses
+    await panelRoll(second.id);
+
+    const moveId = type === 'combat' ? 'take_decisive_action' : 'finish_an_expedition';
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([[moveId, 'strong_hit']]);
+    expect(track(second.id).completed).toBe(true);
+    expect(track(first.id).completed).toBe(false);
+  });
+
+  it('a row deleted before the roll resolves rolls nothing — not its namesake, not a 0 score', async () => {
+    const first  = await openTrack('The approach', { ticks: 4 });
+    const second = await openTrack('The approach', { rank: 'extreme', ticks: 32 });
+    // The GM removes the row (the panel's Remove writes the list without it) while the roll waits.
+    control.onConfirm = () => journal.setFlag(MODULE_ID, 'tracks', tracks().filter(t => t.id !== second.id));
+
+    control.dice = CHALLENGE_3_4;
+    await panelRoll(second.id);
+
+    expect(sessionLog()).toEqual([]);
+    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    expect(table.cards(f => f.moveResolution)).toHaveLength(0);
+    expect(track(first.id).completed).toBe(false);
+    expect(world().pendingMove).toBe(false);
+  });
+});
+

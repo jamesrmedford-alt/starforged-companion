@@ -179,7 +179,13 @@ vow → legacy.
 For `combat` and `expedition` rows (`TRACK_TYPE_TO_MOVE`,
 `src/ui/progressTracks.js`), the panel's Roll button posts the standard
 forced-move bridge (`bypassPacing` + `forcedMoveId` + `forcedMoveTarget` =
-the row's label) so the pipeline rolls, narrates, and applies consequences.
+the row's label + `forcedMoveTargetId` = the row's id) so the pipeline rolls,
+narrates, and applies consequences. The id rides as
+`interpretation.moveTargetId`: tick enrichment, the position, the completion
+and the recommit offer all take that track (`selectCombatTrack` /
+`selectExpeditionTrack` `{ trackId }`), never a same-named sibling, and a row
+deleted or finished before the roll resolves rolls nothing — a "not rolled"
+card (`trackGoneCard`) instead (issue #306 R06).
 Pre-session (the pipeline's session gate would ignore the bridge) and for
 `scene_challenge` rows (no mapped move), it keeps the bespoke instant display
 roll (`type: 'progressRoll'` card — display-only by design).
