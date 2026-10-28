@@ -3629,6 +3629,10 @@ async function postRewardGrantCard(reward, plan) {
   });
 }
 
+// Native payoffs (a vow's fulfilment, a bond's forging) being paid on this
+// client — claimed synchronously so two that arrive together pay once.
+const _nativePayoffsInFlight = new Set();
+
 // #248 B2: a fulfilled vow pays its linked connection (deepen, scaled by the
 // vow's rank) and grants its promised reward (scaled by outcome). Item vows
 // (inciting / hand-made) are fulfilled on the foundry-ironsworn sheet, which
@@ -3670,6 +3674,26 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
   // to live only on the first-matched copy).
   const allCopies = copies?.length ? copies : [primary];
   if (allCopies.some(({ item: i }) => i.flags?.[MODULE_ID]?.fulfilPaid)) return;
+  // Claimed before the first await (issue #306 R04). The paid flag lands only
+  // when its write returns, so two fulfilments of one vow arriving together —
+  // a duplicate sheet roll — both passed the check above and both paid:
+  // twice the legacy, and the XP of any box it filled. The payoff runs on the
+  // canonical GM only, so a claim on this client covers the table.
+  const claim = `vow:${item.flags?.[MODULE_ID]?.vowId ?? allCopies.map(c => c.item.id).sort().join(",")}`;
+  if (_nativePayoffsInFlight.has(claim)) {
+    console.debug(`${MODULE_ID} | native-fulfil: "${item.name}" is already being paid — not paid twice.`);
+    return;
+  }
+  _nativePayoffsInFlight.add(claim);
+  try {
+    await payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLegacy, actorId });
+  } finally {
+    _nativePayoffsInFlight.delete(claim);
+  }
+}
+
+/** payFulfilledVowNative's payoff, once its claim is held. */
+async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLegacy, actorId }) {
   for (const { item: i } of allCopies) {
     await i.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
   }
@@ -3685,7 +3709,10 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
     try {
       const ticks = legacyRewardTicks(rank, ranksDown);
       if (ticks > 0) {
-        const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        // A copy (legacy tracks included): get() returns the cached value,
+        // which a refused write must leave as it was (rules/foundry-api.md).
+        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
         addLegacyTicks(cs, "quests", ticks);
         await game.settings.set(MODULE_ID, "campaignState", cs);
       }
@@ -3781,8 +3808,10 @@ function registerNativeFulfilConsequenceHook() {
 // GM-side companion to registerNativeFulfilConsequenceHook for Forge a Bond:
 // flip the record to bonded and pay the rank-scaled bonds legacy, exactly as
 // the pipeline forgeABond branch does. Idempotent — an already-bonded
-// connection pays nothing (the bond can only forge once).
-async function payForgedBondNative(connectionName) {
+// connection pays nothing (the bond can only forge once). Exported for unit
+// testing.
+export async function payForgedBondNative(connectionName) {
+  let claim = null;
   try {
     const conn = await import("./entities/connection.js");
     const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -3795,17 +3824,32 @@ async function payForgedBondNative(connectionName) {
       return;
     }
     if (target.bonded) return; // pay once — the bond can only forge once
+    // Claimed before the first await, as payFulfilledVowNative does: two
+    // rolls arriving together both found the bond unforged and both paid the
+    // bonds legacy (issue #306 R04's sibling).
+    if (_nativePayoffsInFlight.has(`bond:${target.__hostId}`)) {
+      console.debug(`${MODULE_ID} | native-forge: "${target.name ?? connectionName}" is already being forged — not paid twice.`);
+      return;
+    }
+    claim = `bond:${target.__hostId}`;
+    _nativePayoffsInFlight.add(claim);
 
     await conn.forgeBond(target.__hostId);
     const ticks = legacyRewardTicks(target.rank, 0);
     if (ticks > 0) {
-      addLegacyTicks(campaignState, "bonds", ticks);
-      await game.settings.set(MODULE_ID, "campaignState", campaignState);
+      // Read after the await and written as a copy: the snapshot above may
+      // be stale by now, and a refused write must leave the cache as it was.
+      const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+      addLegacyTicks(cs, "bonds", ticks);
+      await game.settings.set(MODULE_ID, "campaignState", cs);
     }
     await postForgeABondCard(target, ticks).catch(err =>
       console.warn(`${MODULE_ID} | native-forge card failed:`, err?.message ?? err));
   } catch (err) {
     console.warn(`${MODULE_ID} | native-forge payoff failed:`, err?.message ?? err);
+  } finally {
+    if (claim) _nativePayoffsInFlight.delete(claim);
   }
 }
 

@@ -158,7 +158,11 @@ card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
-across both paths.
+across both paths — and a claim on the vow (its `vowId`), taken before the
+first await, keeps two fulfilments that arrive together (a duplicate sheet
+roll) from both passing the check before the flag lands (issue #306 R04). The
+native Forge a Bond payoff (`payForgedBondNative`) claims its connection the
+same way.
 
 **Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
 the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
