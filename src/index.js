@@ -1484,7 +1484,7 @@ export function registerChatHook() {
         }
       }
 
-      let combatProgressTrackId = null;
+      let combatProgressTrack = null;
       if ((resolution.consequences?.combatProgress ?? 0) > 0 && game.user.isGM) {
         try {
           const count = resolution.consequences.combatProgress;
@@ -1497,7 +1497,7 @@ export function registerChatHook() {
             },
           );
           if (result?.track) {
-            combatProgressTrackId = result.track.id ?? null;
+            combatProgressTrack = result.track;
             await postCombatProgressCard(result).catch(err =>
               console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
           }
@@ -1506,20 +1506,30 @@ export function registerChatHook() {
         }
       }
 
+      // The fight this move was about — the one its progress marked (or
+      // created), else the move's target by the same ladder, else the sole
+      // open fight. Resolved once, for two readers: the move's position is
+      // written to it (the single-active-fight lookup left every position
+      // unwritten while two fights were open, so Take Decisive Action's
+      // bad-spot downgrade could never apply there — issue #306 R05), and the
+      // move card's Finish the Fight button names it, so the roll it starts
+      // scores this fight and no other (TDA-BUTTON-NO-TARGET).
+      let moveFight = null;
+      if (game.user.isGM && (resolution.consequences?.combatPosition || TDA_OFFER_MOVES.has(resolution.moveId))) {
+        try {
+          moveFight = combatProgressTrack
+            ?? selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
+              { trackId: interpretation.moveTargetId ?? null });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
+        }
+      }
+
       if (resolution.consequences?.combatPosition && game.user.isGM) {
         try {
           const pipelinePos = resolution.consequences.combatPosition;
-          // The fight this move was about — the one its progress marked (or
-          // created), else the move's target by the same ladder, else the sole
-          // open fight. The single-active-fight lookup left every position
-          // unwritten while two fights were open, so Take Decisive Action's
-          // bad-spot downgrade could never apply there (issue #306 R05).
-          const track = combatProgressTrackId
-            ? { id: combatProgressTrackId }
-            : selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
-              { trackId: interpretation.moveTargetId ?? null });
-          if (track) {
-            await applyCombatPositionToTrack(track.id, pipelinePos, speakerActor);
+          if (moveFight) {
+            await applyCombatPositionToTrack(moveFight.id, pipelinePos, speakerActor);
           } else if (thresholdPosted) {
             // Enter the Fray: the track doesn't exist yet — the position rides
             // the threshold card's flags and lands at track creation.
@@ -1648,6 +1658,7 @@ export function registerChatHook() {
         improveState,
         milestoneState,
         connectionState,
+        moveFight,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -2656,7 +2667,9 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
     // connection picker's host Actor id (selectConnection), or a progress
     // track's id for Take Decisive Action / Finish an Expedition from a
     // Progress Tracks row or an expedition card (selectCombatTrack /
-    // selectExpeditionTrack, issue #306 R06) — resolved before any name.
+    // selectExpeditionTrack, issue #306 R06), for Take Decisive Action from
+    // a combat move card, and for Battle from an Enter the Fray card
+    // (TDA-BUTTON-NO-TARGET) — resolved before any name.
     moveTargetId:     typeof moveTargetId === "string" && moveTargetId ? moveTargetId : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
@@ -3992,7 +4005,9 @@ async function postCombatTrackCard({ track, created }) {
         + `<p><button type="button" data-action="openProgressTracks" class="entity-btn">⊕ Open Progress Tracks</button>${battleBtn}</p>`
         + battleHint
         + `</div>`,
-      flags:   { [MODULE_ID]: { combatTrackCard: true, created } },
+      // trackId / trackLabel: Battle forwards them as forcedMoveTargetId /
+      // forcedMoveTarget, so it ends this fight while another is open.
+      flags:   { [MODULE_ID]: { combatTrackCard: true, created, trackId: track?.id ?? null, trackLabel: track?.label ?? null } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatTrackCard: chat post failed:`, err?.message ?? err);
@@ -4758,18 +4773,27 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 // excluded.
 const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire"]);
 
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null) {
+/**
+ * @param {{ id: string, label?: string }|null} [fight] — a combat move's own
+ *   fight (the pipeline's moveFight): stamped as combatTrackId /
+ *   combatTrackLabel and named on the Finish the Fight button, which forwards
+ *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
+ */
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
   // and fail-open — never blocks or breaks the result post.
   void showMoveRoll(resolution);
+  const combatMove = TDA_OFFER_MOVES.has(resolution.moveId);
+  const namedFight = combatMove && fight?.id ? fight : null;
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState),
+    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState, namedFight),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
-        ...(TDA_OFFER_MOVES.has(resolution.moveId) ? { combatMoveCard: true } : {}),
+        ...(combatMove ? { combatMoveCard: true } : {}),
+        ...(namedFight ? { combatTrackId: namedFight.id, combatTrackLabel: namedFight.label ?? null } : {}),
         ...(waypointOracleFor(resolution) ? { waypointOracleCard: waypointOracleFor(resolution) } : {}),
         ...(burnState ? { burn: burnState } : {}),
         ...(improveState ? { improve: improveState } : {}),
@@ -4785,7 +4809,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -4830,7 +4854,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${renderMilestoneSuggestionHtml(milestoneState)}
       ${renderConnectionSuggestionHtml(connectionState)}
       ${TDA_OFFER_MOVES.has(resolution.moveId)
-        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight</button></div>`
+        ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight${fight?.label ? `: ${escapeChatHtml(fight.label)}` : ""}</button></div>`
         : ""}
       ${waypointOracleFor(resolution) === "make_a_discovery"
         ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-waypoint-oracle" title="The match reveals something wondrous — roll Make a Discovery (marks the discoveries legacy)">🔭 Make a Discovery</button></div>`
@@ -5367,9 +5391,20 @@ export function wireCombatTrackCardButtons(message, root) {
       event.stopPropagation();
       freshBattle.disabled = true;
       try {
+        // The card's own track rides the move by id (and name), so Battle
+        // ends this fight even while another is open — without it, two open
+        // fights left Battle ending neither. Older cards carry no id.
+        const trackId    = message.flags[MODULE_ID].trackId ?? null;
+        const trackLabel = message.flags[MODULE_ID].trackLabel ?? null;
         await ChatMessage.create({
-          content: "Battle — resolve the fight in a single, decisive clash.",
-          flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "battle" } },
+          content: trackLabel
+            ? `Battle — resolve the fight against ${trackLabel} in a single, decisive clash.`
+            : "Battle — resolve the fight in a single, decisive clash.",
+          flags:   { [MODULE_ID]: {
+            bypassPacing: true, forcedMoveId: "battle",
+            ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+            ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          } },
         });
       } catch (err) {
         console.error(`${MODULE_ID} | Battle button failed:`, err);
@@ -5482,9 +5517,23 @@ export function wireTakeDecisiveActionButton(message, root) {
     event.stopPropagation();
     fresh.disabled = true;
     try {
+      // The card's own fight rides the roll by id (and name), so with two
+      // fights open the roll scores this one — not nothing, a certain miss
+      // (TDA-BUTTON-NO-TARGET). A fight finished or deleted meanwhile rolls
+      // nothing and says so (issue #306 R06). Cards without the stamp (older
+      // ones, or a move whose fight nothing named) post no target: the
+      // pipeline then resolves the sole open fight.
+      const trackId    = message.flags[MODULE_ID].combatTrackId ?? null;
+      const trackLabel = message.flags[MODULE_ID].combatTrackLabel ?? null;
       await ChatMessage.create({
-        content: "Take decisive action to seize the objective.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "take_decisive_action" } },
+        content: trackLabel
+          ? `Take decisive action to seize the objective — ${trackLabel}.`
+          : "Take decisive action to seize the objective.",
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "take_decisive_action",
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+        } },
       });
     } catch (err) {
       console.error(`${MODULE_ID} | Take Decisive Action button failed:`, err);

@@ -17,6 +17,11 @@
  * took the first track with that label — a same-named sibling's ticks, its
  * completion and its rewards. The row's id now rides the roll; a track deleted
  * or finished before the roll resolves rolls nothing, and says so.
+ *
+ * TDA-BUTTON-NO-TARGET: a combat move card's "Attempt to Finish the Fight"
+ * and an Enter the Fray card's "Battle instead" posted their move with no
+ * fight, so with two open the roll scored nothing (a certain miss) and Battle
+ * ended neither. Each card now names its fight by id.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -203,3 +208,70 @@ describe('two same-named tracks: the panel\'s Roll acts on the row clicked (issu
   });
 });
 
+/** A player (or the GM) clicks a card's button; the pipeline it starts runs to the end. */
+async function clickCard(userId, cardId, selector) {
+  table.client(userId).click(cardId, selector);
+  await table.settle();
+  await table.drain();
+}
+
+// Strike +iron: challenge 2 and 3, action 6 + iron 3 = 9 — a strong hit (in control), marked twice.
+const STRIKE_STRONG = [0.15, 0.25, 0.9];
+const strikeAt = (moveTarget) => ({
+  moveId: 'strike', moveName: 'Strike', statUsed: 'iron', adds: 0, moveTarget, rationale: 'test', mischiefApplied: false,
+});
+
+describe('a combat card names its fight (TDA-BUTTON-NO-TARGET)', () => {
+  it('two fights open: a Strike\'s Finish the Fight scores and finishes the Strike\'s fight', async () => {
+    const boarders = await openTrack('Boarders');
+    const turret   = await openTrack('Turret', { rank: 'formidable', ticks: 28 });
+
+    await typedMove(strikeAt('Turret'), STRIKE_STRONG);
+    const [card] = table.cards(f => f.combatMoveCard);
+    expect(card.flags[MODULE_ID]).toMatchObject({ combatTrackId: turret.id, combatTrackLabel: 'Turret' });
+    expect(card.content).toContain('Attempt to Finish the Fight: Turret');
+
+    control.dice = CHALLENGE_3_4;            // the Turret's 9 boxes beat 3 and 4
+    await clickCard('pl-1', card._id, '[data-action="sf-take-decisive-action"]');
+
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['strike', 'strong_hit'], ['take_decisive_action', 'strong_hit']]);
+    expect(track(turret.id).completed).toBe(true);
+    expect(track(boarders.id).completed).toBe(false);
+  });
+
+  it('Battle from an Enter the Fray card ends that fight while another is open', async () => {
+    // The fight is entered, then the GM opens a second from the panel while
+    // the card's Battle button is still live.
+    const gm = table.client('gm-1');
+    const { createCombatTrackFromThreshold } = await gm.import('../../src/index.js');
+    await gm.run(() => createCombatTrackFromThreshold({ label: 'Turret', rank: 'formidable' }));
+    await table.settle();
+    const turret   = tracks().find(t => t.label === 'Turret');
+    const boarders = await openTrack('Boarders', { ticks: 8 });
+    const [card] = table.cards(f => f.combatTrackCard);
+    expect(card.flags[MODULE_ID]).toMatchObject({ created: true, trackId: turret.id, trackLabel: 'Turret' });
+
+    control.dice = [0.15, 0.25, 0.9];        // Battle +edge: 6 + 2 = 8 beats 2 and 3
+    await clickCard('pl-1', card._id, '[data-action="sf-battle"]');
+
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['battle', 'strong_hit']]);
+    expect(track(turret.id).completed).toBe(true);
+    expect(track(boarders.id).completed).toBe(false);
+  });
+
+  it('an older card that names no fight, one fight open, still rolls that fight', async () => {
+    const turret = await openTrack('Turret', { ticks: 36 });
+    const card = await table.client('gm-1').run(() => ChatMessage.create({
+      content: '<div class="sf-move-result"><div class="sf-combat-followup">'
+        + '<button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight</button></div></div>',
+      flags: { [MODULE_ID]: { combatMoveCard: true } },
+    }));
+    await table.settle();
+
+    control.dice = CHALLENGE_3_4;
+    await clickCard('pl-1', card.id, '[data-action="sf-take-decisive-action"]');
+
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['take_decisive_action', 'strong_hit']]);
+    expect(track(turret.id).completed).toBe(true);
+  });
+});

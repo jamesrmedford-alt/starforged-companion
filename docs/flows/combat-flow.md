@@ -61,7 +61,8 @@ relays player clicks). `createCombatTrackFromThreshold` → `applyCombatProgress
 `linkedVowName`, and gets its `combatState` set from the carried position via
 `applyCombatPositionToTrack` (`src/moves/combatTracker.js` — writes the track,
 the actor's sheet field, and the combatant badge). A combat-track card posts
-(stakes line, **Battle instead** button on fresh tracks) and the Foundry Combat
+(stakes line, **Battle instead** button on fresh tracks; flagged with the
+track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges.
 
 **Find another way** posts the way-out card: the `WAY_OUT_PROMPT` nudge plus
@@ -84,10 +85,11 @@ ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
 to the actor + combatant badge (`applyCombatPositionToTrack`). The pipeline
-writes it to the move's own fight: the track its progress marked (or created),
-else `selectCombatTrack` on the move's target, else the sole open fight — with
-several fights open it used to be written only while exactly one was open
-(issue #306 R05). It constrains
+writes it to the move's own fight (`moveFight`): the track its progress marked
+(or created), else `selectCombatTrack` on the move's target, else the sole
+open fight — with several fights open it used to be written only while
+exactly one was open (issue #306 R05). The same `moveFight` is stamped on the
+move card for its Finish the Fight button (§3). It constrains
 which combat moves the interpreter proposes (`constrainMoveToPosition`,
 `src/moves/interpreter.js`) and drives the play-kit Take Decisive Action
 bad-spot downgrade in the resolver. The weak-hit Enter-the-Fray choice ("You
@@ -116,13 +118,23 @@ into the roll (score = floor(ticks / 4) vs 2d10), preferring the enriched
 track's own `combatState` for the bad-spot downgrade — `listProgressTracks`
 carries each fight's `combatState` (it dropped it until issue #306 R05, so
 with two fights open no downgrade applied). Entry points: the
-"⚔ Attempt to Finish the Fight" button on combat move cards, typed narration,
-and the Progress Tracks panel's Roll button (§5). A TDA **weak hit** also rolls
+"⚔ Attempt to Finish the Fight" button on Strike / Clash / Gain Ground / React
+Under Fire cards, typed narration, and the Progress Tracks panel's Roll button
+(§5). The button names the move's own fight: `postMoveResult` stamps the
+pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
+`wireTakeDecisiveActionButton` forwards them as `forcedMoveTargetId` /
+`forcedMoveTarget`, so with two fights open the roll scores that fight — it
+posted no target, scored nothing and was a certain miss
+(TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
+before the stamp) posts no target and resolves the sole open fight. A TDA
+**weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
 pick). A TDA **miss** does not end the fight — it routes Pay the Price.
 
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
-action move that ends the fight on every outcome.
+action move that ends the fight on every outcome. The button forwards its
+card's `trackId` / `trackLabel`, so Battle ends that fight while another is
+open — without them, two open fights left it ending neither.
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 

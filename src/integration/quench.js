@@ -8803,6 +8803,29 @@ function registerCombatCardButtonTests(quench) {
             "the forced TDA message should bypass the pacing classifier");
         });
 
+        it("a card that names its fight forwards it with the move (TDA-BUTTON-NO-TARGET)", async function () {
+          this.timeout(15000);
+          const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight: Turret</button></div>`;
+          const msg = { id: "quench-tda-named", flags: { [MODULE]: {
+            combatMoveCard: true, combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret",
+          } } };
+
+          wireTakeDecisiveActionButton(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-action="sf-take-decisive-action"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "take_decisive_action");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced take_decisive_action message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+            "the card's fight rides the move by id");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+        });
+
         it("no-ops when the card is not a combat move card", async function () {
           this.timeout(5000);
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
@@ -8842,6 +8865,29 @@ function registerCombatCardButtonTests(quench) {
           if (synthetic) track(synthetic.id);
           assert.isOk(synthetic,
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
+        });
+
+        it("a card that names its track forwards it with the Battle (TDA-BUTTON-NO-TARGET)", async function () {
+          this.timeout(15000);
+          const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p>`;
+          const msg = { id: "quench-battle-named", flags: { [MODULE]: {
+            combatTrackCard: true, created: true, trackId: "quench-fight-turret", trackLabel: "Turret",
+          } } };
+
+          wireCombatTrackCardButtons(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-action="sf-battle"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "battle");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced battle message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+            "the card's track rides the Battle by id");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
         });
       });
 
