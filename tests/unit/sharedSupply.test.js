@@ -117,6 +117,50 @@ describe('the updateActor hook (canonical GM)', () => {
     expect(aUpdate).not.toHaveBeenCalled();
   });
 
+  // Issue #306 R03: a pass planned all its writes up front. An independent edit
+  // to a PC the pass hadn't reached yet was overwritten by the pass's older
+  // value, and the queued pass then read that overwritten value — A's 2 beat
+  // B's newer 4.
+  it('a newer edit to a PC the pass has not reached yet wins', async () => {
+    const a = livePc('pc-a', 2);               // A just went to 2
+    const c = livePc('pc-c', 5);
+    const b = livePc('pc-b', 5);               // roster order A, C, B
+    const write = c.update;
+    let release;
+    c.update = vi.fn((changes, options) => (c.update.mock.calls.length === 1
+      ? new Promise((r) => { release = () => r(write(changes, options)); })
+      : write(changes, options)));
+
+    const sync = onUpdate(a, supplyChange(2), {});
+    await vi.waitFor(() => expect(c.update).toHaveBeenCalledTimes(1));
+    await b.update({ 'system.supply.value': 4 });   // B's player edits while C's write is pending
+    await onUpdate(b, supplyChange(4), {});
+    release();
+    await sync;
+
+    expect([a, c, b].map(x => x.system.supply.value)).toEqual([4, 4, 4]);
+  });
+
+  it('a PC whose own edit an older pass overwrote is set back to its edit', async () => {
+    const a = livePc('pc-a', 2);               // A just went to 2
+    const b = livePc('pc-b', 5);
+    const c = livePc('pc-c', 5);               // roster order A, B, C
+    const write = b.update;
+    let release;
+    b.update = vi.fn((changes, options) => (b.update.mock.calls.length === 1
+      ? new Promise((r) => { release = () => r(write(changes, options)); })
+      : write(changes, options)));
+
+    const sync = onUpdate(a, supplyChange(2), {});
+    await vi.waitFor(() => expect(b.update).toHaveBeenCalledTimes(1));
+    b.system.supply.value = 4;                 // B's own edit lands first …
+    await onUpdate(b, supplyChange(4), {});
+    release();                                 // … then the pass's older write (B → 2)
+    await sync;
+
+    expect([a, b, c].map(x => x.system.supply.value)).toEqual([4, 4, 4]);
+  });
+
   it('an independent edit on any PC is mirrored to the others', async () => {
     livePc('pc-a', 5);
     const b = livePc('pc-b', 2);
