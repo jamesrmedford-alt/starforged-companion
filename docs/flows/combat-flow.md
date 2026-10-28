@@ -83,7 +83,11 @@ Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
-to the actor + combatant badge (`applyCombatPositionToTrack`). It constrains
+to the actor + combatant badge (`applyCombatPositionToTrack`). The pipeline
+writes it to the move's own fight: the track its progress marked (or created),
+else `selectCombatTrack` on the move's target, else the sole open fight — with
+several fights open it used to be written only while exactly one was open
+(issue #306 R05). It constrains
 which combat moves the interpreter proposes (`constrainMoveToPosition`,
 `src/moves/interpreter.js`) and drives the play-kit Take Decisive Action
 bad-spot downgrade in the resolver. The weak-hit Enter-the-Fray choice ("You
@@ -109,7 +113,9 @@ card, and deletes the Combat doc.
 **Take Decisive Action** is a progress move: `enrichProgressTicks`
 (`src/moves/statEnrichment.js`) copies the resolved combat track's live ticks
 into the roll (score = floor(ticks / 4) vs 2d10), preferring the enriched
-track's own `combatState` for the bad-spot downgrade. Entry points: the
+track's own `combatState` for the bad-spot downgrade — `listProgressTracks`
+carries each fight's `combatState` (it dropped it until issue #306 R05, so
+with two fights open no downgrade applied). Entry points: the
 "⚔ Attempt to Finish the Fight" button on combat move cards, typed narration,
 and the Progress Tracks panel's Roll button (§5). A TDA **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer

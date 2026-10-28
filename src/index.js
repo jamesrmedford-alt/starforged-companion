@@ -91,7 +91,6 @@ import {
   openProgressTracks,
   registerProgressTrackHooks,
   getActiveCombatPosition,
-  getActiveCombatTrack,
   listProgressTracks,
   markProgressById,
   addProgressTrack,
@@ -1459,6 +1458,7 @@ export function registerChatHook() {
         }
       }
 
+      let combatProgressTrackId = null;
       if ((resolution.consequences?.combatProgress ?? 0) > 0 && game.user.isGM) {
         try {
           const count = resolution.consequences.combatProgress;
@@ -1471,6 +1471,7 @@ export function registerChatHook() {
             },
           );
           if (result?.track) {
+            combatProgressTrackId = result.track.id ?? null;
             await postCombatProgressCard(result).catch(err =>
               console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
           }
@@ -1482,7 +1483,14 @@ export function registerChatHook() {
       if (resolution.consequences?.combatPosition && game.user.isGM) {
         try {
           const pipelinePos = resolution.consequences.combatPosition;
-          const track = await getActiveCombatTrack();
+          // The fight this move was about — the one its progress marked (or
+          // created), else the move's target by the same ladder, else the sole
+          // open fight. The single-active-fight lookup left every position
+          // unwritten while two fights were open, so Take Decisive Action's
+          // bad-spot downgrade could never apply there (issue #306 R05).
+          const track = combatProgressTrackId
+            ? { id: combatProgressTrackId }
+            : selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
           if (track) {
             await applyCombatPositionToTrack(track.id, pipelinePos, speakerActor);
           } else if (thresholdPosted) {
@@ -1490,7 +1498,7 @@ export function registerChatHook() {
             // the threshold card's flags and lands at track creation.
             console.debug(`${MODULE_ID} | combat position "${pipelinePos}" rides the threshold card — track not created yet.`);
           } else {
-            console.warn(`${MODULE_ID} | combat position "${pipelinePos}" had no single active combat track to write to.`);
+            console.warn(`${MODULE_ID} | combat position "${pipelinePos}" matched no open fight ("${interpretation.moveTarget ?? "?"}") — not written.`);
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
