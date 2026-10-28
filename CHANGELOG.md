@@ -50,7 +50,10 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **Narrator audio at 0% volume is silent** (issue #306 R09). A volume of 0 played at 80%.
 - Fixed: **Turning Push-to-Talk off takes effect at once** (issue #306 R10). The microphone button stayed in the chat bar and kept listening until a reload. Turning it back on brings the button back.
 - Fixed: **`!sfc encounter` places a working foe** (issue #306 R12). The token pointed at the system compendium instead of a world Actor, so the foe had no sheet. The foe is now added to the world's Actors first, once per foe, and reused after that.
-- Internal: **issue #306's fixes are shown sensitive** — every fix has a test that fails without it (one shown by injecting its defect), recorded with the earlier audits'.
+- Fixed: **"Attempt to Finish the Fight" and "Battle instead" act on their own fight** (issue #306). With two fights open, the Take Decisive Action button on a Strike, Clash, Gain Ground or React Under Fire card rolled against no fight — a certain miss — and an Enter the Fray card's Battle ended neither fight. Each card now names its fight, and its button rolls that one.
+- Added: **"Which fight?"** (issue #306). A Take Decisive Action that names no fight while two or more are open — typed, or from an older card — is not rolled: a card lists the open fights, and the pick rolls that fight for the player who made the move.
+- Fixed: **A payoff that isn't saved is no longer lost** (issue #306 R04). When the world refused part of a vow's payoff — the Quests legacy, the linked connection's progress, the promised reward — or a forged bond's legacy, a won fight's reward, or a victory card's Mark milestone / Deepen your bond, the failure went to the browser console only. The GMs now get a card (only they see it) listing what wasn't applied and where each value stands, with a Retry that applies those parts once. A legacy box's experience is given only once the legacy is saved (it was given first), "Reward earned" appears only once the reward is given, and a victory-card button whose effect wasn't saved stays live.
+- Internal: **issue #306's fixes are shown sensitive** — every fix has a test that fails without it (some shown by injecting their defect), recorded with the earlier audits'.
 
 ## [1.7.35] — 2026-10-24
 

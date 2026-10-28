@@ -5,8 +5,8 @@ A regression test is evidence only if it fails while its defect is present
 #300, #301 and #306 audits and from issue #302's disturbance matrix (slice
 B): the tests that fail with the fix taken out. It was produced by
 `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to `ec08eb4`)
-and, for issue #306, on 2026-10-28 (the patch applied to `8bee894`). To
-reproduce:
+and, for issue #306, on 2026-10-28 (the patch applied to `8bee894`; for the
+two follow-ups, the patches applied to `514f5eb`). To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -18,6 +18,20 @@ node scripts/fix-sensitivity.mjs \
 node scripts/fix-sensitivity.mjs \
   601889d 059f33b e428b50 e2dac8b c556612 10d0f4b a2644a9 7bf24b9 1054cd8 e1fd5fb 92ca408 70c05d3 \
   --inject scripts/defects/r04-forge-unclaimed.patch --md details.md
+
+# issue #306 — the follow-ups (TDA-BUTTON-NO-TARGET, R04's third point)
+node scripts/fix-sensitivity.mjs \
+  23b2c8b be61488 514f5eb \
+  --inject scripts/defects/tda-which-fight-unspoken.patch \
+  --inject scripts/defects/tda-which-fight-twice.patch \
+  --inject scripts/defects/r04-xp-before-write.patch \
+  --inject scripts/defects/r04-reward-earned-unearned.patch \
+  --inject scripts/defects/r04-connection-gone-silent.patch \
+  --inject scripts/defects/r04-ledger-unread.patch \
+  --inject scripts/defects/r04-retry-claims-late.patch \
+  --inject scripts/defects/r04-retry-any-user.patch \
+  --inject scripts/defects/r04-retry-repeatable.patch \
+  --inject scripts/defects/r04-fight-stamp-optimistic.patch --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -93,6 +107,9 @@ temporary git worktree; the checkout it is run from is not touched.
 | R09 VOLUME-ZERO-LOST | c556612 | revert | 2 — `audioCardButton.test.js` (0% on the card), `audio.test.js` (the blob adapter at 0) |
 | R10 PTT-OFF-IGNORED | 10d0f4b | revert | 3 — `speechInputSetting.test.js` (the setting's real onChange, off and on again), `speechInput.test.js` (re-initialising); 3 more fail only on the missing `disableSpeechInput` |
 | R12 ENCOUNTER-COMPENDIUM-TOKEN | 70c05d3 | revert | 4 — `encounterSpawn.test.js` (first use imports; an earlier import is reused, either marker; a failed import posts the card) |
+| TDA-BUTTON-NO-TARGET — a card names its fight | 23b2c8b | revert | 2 — `progressTrackSelection.test.js` (two fights open: a Strike's Finish the Fight scores and finishes its own fight; Battle from an Enter the Fray card ends its own fight) |
+| TDA-BUTTON-NO-TARGET — which fight? | be61488 | revert; inject `tda-which-fight-unspoken.patch`, `tda-which-fight-twice.patch` | 2 under revert — `progressTrackSelection.test.js` (a Take Decisive Action naming no fight posts the card and rolls nothing; one pick per card). By injection: the pick is spoken as the roller (1); the GM's pick stamp holds on another client (1) |
+| R04 NATIVE-PAYOFF-NO-RETRY | 514f5eb | revert; inject the eight `r04-*.patch` follow-up patches | 15 under revert — `payoffFailure.test.js` (13: every step lands; a refused legacy write pays no XP and a Retry pays it once; a refused grant posts no "Reward earned"; a refused claim; a connection gone; a step that fails again; the ledger; a duplicate fulfilment; GM only; a refused claim of the card; the forge; a won fight's reward; the victory card's button) and `cardActions.test.js` (2: a mark or a deepen that does not land stays unapplied). 4 more fail only on the missing `applyPayoffRetry`; injection covers each. By injection: XP before the write (1), "Reward earned" after a refused grant (2), a missing connection skipped silently (1), a Retry that ignores the ledger (1), a late claim (3), any user (2), a repeatable Retry (2), an optimistic victory-card stamp (3) |
 
 ## Controls: new tests that pass with and without the fix
 
@@ -126,6 +143,8 @@ ways; each was read and is a control:
 | `chronicleRelay` › the GM created the journal, and the player cannot write it directly — Foundry's default | the modelled journal permission (#306 R11) |
 | `nativePayoffOnce` › two different vows that overlap are both paid | independent vows (#306 R04) |
 | `nativePayoffOnce` › a fulfilment after the first has finished pays nothing — the paid flag | the paid flag (#306 R04) |
+| `progressTrackSelection` › an older card that names no fight, one fight open, still rolls that fight | a card without the stamp, one fight open (TDA-BUTTON-NO-TARGET) |
+| `progressTrackSelection` › a typed Take Decisive Action that names its fight rolls it without asking | no question when the fight is named (TDA-BUTTON-NO-TARGET) |
 
 ## Details
 
@@ -709,3 +728,190 @@ Test files: `tests/unit/nativePayoffOnce.test.js`.
 | Fails with the defect | First failure line |
 | --- | --- |
 | tests/unit/nativePayoffOnce.test.js › a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`) two forgings of one bond that overlap pay the bonds legacy once | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### 23b2c8b — fix: a combat card's Finish the Fight and Battle name their fight
+
+Test files: `tests/unit/progressTrackSelection.test.js`. Source restored: 2 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 7 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) two fights open: a Strike's Finish the Fight scores and finishes the Strike's fight | AssertionError: expected { moveResolution: true, …(2) } to match object { …(2) } |
+| (new) tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) Battle from an Enter the Fray card ends that fight while another is open | AssertionError: expected { Object (combatTrackCard, created) } to match object { created: true, …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) an older card that names no fight, one fight open, still rolls that fight
+
+### be61488 — fix: a Take Decisive Action that names no fight asks which
+
+Test files: `tests/unit/progressTrackSelection.test.js`. Source restored: 2 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 10 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) two fights open: nothing is rolled — the card lists them, and a pick rolls that fight for the roller | AssertionError: expected [ { …(4) } ] to deeply equal [] |
+| (new) tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) one pick per card: a second click, on another client, rolls nothing more | AssertionError: a which-fight card: expected undefined to be truthy |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) a typed Take Decisive Action that names its fight rolls it without asking
+
+### 514f5eb — fix: a payoff step that does not land is told to the GMs, with a Retry (issue #306 R04)
+
+Test files: `tests/unit/cardActions.test.js`, `tests/unit/payoffFailure.test.js`. Source restored: 4 file(s).
+
+- With the fix: 42 passed, 0 failed.
+- Without it: 19 failed (19 new; 4 only for a missing export); 23 still pass (0 new).
+- Verdict: **sensitive** — 15 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cardActions.test.js › won-fight card actions a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04) | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'refused' } |
+| (new) tests/unit/cardActions.test.js › won-fight card actions a deepen that does not land (the connection gone) stays unapplied and is reported | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'not-found' } |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a GM's press claims the card, then re-runs its steps from the card | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) once: a repeat press, or two at once, re-run nothing more | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a refused claim re-runs nothing | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) refuses a player, a card a player wrote, and a report without a Retry | TypeError: applyPayoffRetry is not a function |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) every step lands: no card, and each step is on the vow's ledger | AssertionError: expected undefined to deeply equal { legacy: true, deepen: true, …(1) } |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward grant: no "Reward earned"; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward claim gives nothing; Retry claims and gives it | AssertionError: expected 5 to be 3 // Object.is equality |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a connection no longer open is reported, not skipped | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a step that fails again goes on a fresh card with its own Retry | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a Retry skips a step the vow's ledger says landed meanwhile | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a duplicate fulfilment after a partial failure pays nothing more | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) only a GM may retry: a player's relayed press applies nothing | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a press whose claim is refused applies nothing, and the button re-arms | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a bond forged on the sheet: a refused bonds legacy goes to the GMs (issue #306 R04) the forge card says the legacy is not yet marked; Retry marks it once | AssertionError: the forge card: expected undefined to be truthy |
+| (new) tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused reward grant after a won fight goes to the GMs; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused milestone mark leaves the victory card's button live and tells the GMs; pressing again marks once | AssertionError: expected true to be undefined |
+
+### `scripts/defects/tda-which-fight-unspoken.patch` — TDA-BUTTON-NO-TARGET — a which-fight pick posts the move with no speaker, so the GM's pick is credited to whoever clicked, not the player who made the move
+
+Test files: `tests/unit/progressTrackSelection.test.js`.
+
+- On HEAD: 12 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) two fights open: nothing is rolled — the card lists them, and a pick rolls that fight for the roller | AssertionError: expected undefined to be 'pc-pat' // Object.is equality |
+
+### `scripts/defects/tda-which-fight-twice.patch` — TDA-BUTTON-NO-TARGET — a which-fight card's buttons ignore the GM's pick stamp, so another client's click rolls a second Take Decisive Action
+
+Test files: `tests/unit/progressTrackSelection.test.js`.
+
+- On HEAD: 12 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) one pick per card: a second click, on another client, rolls nothing more | AssertionError: expected [ 'take_decisive_action', …(1) ] to deeply equal [ 'take_decisive_action' ] |
+
+### `scripts/defects/r04-xp-before-write.patch` — issue #306 R04 — writeLegacyTicks awards a filled box's XP before its write, so a refused legacy write still pays the XP
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected 2 to be +0 // Object.is equality |
+
+### `scripts/defects/r04-reward-earned-unearned.patch` — issue #306 R04 — a refused reward grant is ignored: "Reward earned" is posted and nothing is reported
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward grant: no "Reward earned"; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused reward grant after a won fight goes to the GMs; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+
+### `scripts/defects/r04-connection-gone-silent.patch` — issue #306 R04 — deepenLinkedConnection treats a connection no longer open as done, so the deepen is skipped without a word
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a connection no longer open is reported, not skipped | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+
+### `scripts/defects/r04-ledger-unread.patch` — issue #306 R04 — a payoff Retry ignores the vow's ledger, so a step recorded as landed is applied again
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a Retry skips a step the vow's ledger says landed meanwhile | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-retry-claims-late.patch` — issue #306 R04 — a payoff Retry re-runs its steps before claiming the card, so a press whose claim is refused still applies them, and the next press applies them again
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 39 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a GM's press claims the card, then re-runs its steps from the card | AssertionError: expected [ 'retry', 'claim' ] to deeply equal [ 'claim', 'retry' ] |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a refused claim re-runs nothing | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a press whose claim is refused applies nothing, and the button re-arms | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-retry-any-user.patch` — issue #306 R04 — a payoff Retry does not check that the requester is a GM
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 40 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) refuses a player, a card a player wrote, and a report without a Retry | AssertionError: expected undefined to be 'not-gm' // Object.is equality |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) only a GM may retry: a player's relayed press applies nothing | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-fight-stamp-optimistic.patch` — issue #306 R04 — a won-fight card action is stamped applied whatever its step reported, so a refused mark can't be retried from the card and nobody is told
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 39 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › won-fight card actions a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04) | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'refused' } |
+| tests/unit/cardActions.test.js › won-fight card actions a deepen that does not land (the connection gone) stays unapplied and is reported | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'not-found' } |
+| tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused milestone mark leaves the victory card's button live and tells the GMs; pressing again marks once | AssertionError: expected true to be undefined |
+
+### `scripts/defects/r04-retry-repeatable.patch` — issue #306 R04 — a payoff Retry ignores the card's claim, so a second press after the first has finished re-runs its steps
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 40 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) once: a repeat press, or two at once, re-run nothing more | AssertionError: expected undefined to be 'already-resolved' // Object.is equality |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected { applied: true, failed: +0 } to match object { applied: false, …(1) } |

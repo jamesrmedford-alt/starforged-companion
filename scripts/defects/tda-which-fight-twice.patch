@@ -1,0 +1,20 @@
+Defect: TDA-BUTTON-NO-TARGET — a which-fight card's buttons ignore the GM's pick stamp, so another client's click rolls a second Take Decisive Action
+Tests: tests/unit/progressTrackSelection.test.js
+Catches: one pick per card
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..ba9fa8d 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -5978,11 +5978,6 @@ export function wireWhichFightButtons(message, root) {
+   const buttons = [...(root?.querySelectorAll?.('[data-action="sf-which-fight"]') ?? [])];
+   if (!buttons.length) return;
+ 
+-  const picked = liveCardFlags(message)?.whichFightPicked ?? null;
+-  if (picked) {
+-    for (const b of buttons) b.disabled = true;
+-    return;
+-  }
+ 
+   const fresh = buttons.map(btn => {
+     const clone = btn.cloneNode(true);

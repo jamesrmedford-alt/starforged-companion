@@ -1,0 +1,19 @@
+Defect: issue #306 R04 — writeLegacyTicks awards a filled box's XP before its write, so a refused legacy write still pays the XP
+Tests: tests/unit/payoffFailure.test.js
+Catches: a refused legacy write
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..7a5f8e3 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -3306,9 +3306,8 @@ const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
+ async function writeLegacyTicks(key, ticks) {
+   const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+-  const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
++  addLegacyTicks(cs, key, ticks);
+   await game.settings.set(MODULE_ID, "campaignState", cs);
+-  if (newBoxes > 0) await awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
+ }
+ 
+ /** Award legacy-box XP to every player character and post the earned-XP note. */

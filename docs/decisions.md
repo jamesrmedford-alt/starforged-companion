@@ -11,7 +11,10 @@ rejected.
 **Decision:** (issue #306. The maintainer asked for every finding to be
 addressed on 2026-10-28, after a review that recommended the approaches
 below — the Chronicle relay over granting journal ownership among them.
-Each finding's ID in brackets.)
+Each finding's ID in brackets. The last two bullets settle the two
+follow-ups the fixes left open: the maintainer chose "1A + 1B" for the
+first and "option 2, failure reporting extended to the won-fight buttons,
+GMs only" for the second, the same day.)
 - **A narration the X-Card interrupted stays discarded after a resume**
   [R01]. `suppressScene` counts each play in `campaignState.xCardPlays`,
   which nothing lowers. Every narrator entry point starts a watch on entry
@@ -53,6 +56,32 @@ Each finding's ID in brackets.)
   [R10] — Push-to-Talk off destroys the controller and removes the 🎙
   button; **an encounter token's Actor is a world Actor** [R12], imported
   from the compendium or reused when that entry was imported before.
+- **A fight-ending roll names its fight** [TDA-BUTTON-NO-TARGET]. The
+  pipeline resolves a combat move's fight once (`moveFight`: the track its
+  progress marked, else its target, else the sole open fight) for both its
+  position and its card, which stamps `combatTrackId` / `combatTrackLabel`;
+  the Enter the Fray card stamps its track. Their "Attempt to Finish the
+  Fight" and "Battle instead" buttons forward the id like a track row [R06].
+  A Take Decisive Action that still names no fight while two or more are
+  open is not rolled: a "Which fight?" card lists them, and a pick posts the
+  move again with that fight's id, spoken as the original roller. Nothing is
+  written, so the pick needs no relay; one pick per card (local disable,
+  the GM's pick stamped). Battle and Face Defeat typed with no fight named
+  keep closing none — they can be about a fight with no track.
+- **A payoff step that does not land is told to the GMs, with a one-press
+  Retry** [R04, option 2]. The native fulfilment's steps (Quests legacy,
+  connection deepen, promised reward), the native forge's bonds legacy, a
+  won fight's reward and the victory card's two buttons each report
+  `{ ok }`. Failures go on one card whispered to the GMs only, showing each
+  value as it stands now; its Retry relays `payoff.retry` (GM only, the card
+  GM-authored), claims the card before re-running anything, and posts a
+  fresh card for any step that fails again. A legacy box's XP is awarded
+  after the legacy write lands; a reward is claimed (status flipped) before
+  it is given, and "Reward earned" follows the grant. A fulfilment records
+  each landed step on the vow's copies (`fulfilPayoff`), which a Retry
+  consults. `fulfilPaid` still means "payoff started": a duplicate roll pays
+  nothing. A won-fight button that fails stays unapplied — re-pressing it is
+  the retry — and its report has no Retry of its own.
 
 **Reason:** issue #306 reproduced each defect (fifteen failing probes) on
 the code after the #300 and #301 fixes; the regression tests that came with
@@ -68,6 +97,17 @@ the fixes fail with each fix reverted, or with its defect injected
   differ; a counter compares exactly.
 - *Fall back to the label when a row's id no longer matches* (R06) — as B01
   decided for connections: a same-named track is a different fight.
+- *A pop-up fight picker on the clicker's screen* (TDA-BUTTON-NO-TARGET) —
+  it covers only the button, not a typed Take Decisive Action, and the table
+  doesn't see it.
+- *Report only, without a Retry* (R04 option 1) — the GM would re-apply each
+  step by hand; *retry automatically* (option 3, e.g. on the next load) —
+  it acts with nobody watching, and a write the world applied but reported
+  as failed would be applied twice. The card's current values are option
+  2's guard against that same case; no ledger can detect it.
+- *Show the failure card to everyone* (R04) — the maintainer chose GMs only:
+  the players see the effects that did land, and "Reward earned" only when
+  it did.
 - *Roll a vanished track at a score of 0* (R06) — a certain miss with its
   consequences, for a track the player can no longer see.
 - *Fold a rename-split Private Channel history into one journal* (R08) — it
@@ -1003,7 +1043,8 @@ Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `payThePrice.advanceClocks`, `move.burnMomentum`, `move.improveResult`,
 `milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
 `fightVow.deepenBond`, `suffer.pick` (issue #302), `chronicle.edit` (issue #306 — every Chronicle
-write, the automatic writer's included). Four older world-writing socket relays predate it
+write, the automatic writer's included), `payoff.retry` (issue #306 R04 — a payoff failure card's
+Retry, GM only). Four older world-writing socket relays predate it
 (`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
 `vow.linkConnection`) — fold them in when next touched (known-issues
 RELAY-LEGACY-KINDS).

@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Post-fix bug audit (issue #306) — all twelve fixed in the v1.7.36 cycle, two follow-ups open
+### Post-fix bug audit (issue #306) — all twelve fixed in the v1.7.36 cycle, with the two follow-ups
 
 Found by the 2026-10-27 audit of `ac1da10`, after the #300 / #301 fixes:
 fifteen failing probes, ten reproduced through production code and two
@@ -22,7 +22,8 @@ editing, pinning and adding a note to their own Chronicle while the
 journal keeps Foundry's default permissions (R11); `!sfc encounter` for a foe
 never imported from the compendium (R12 — the Quench batch
 `encounterSpawnLive` now checks the placed token's Actor); the X-Card played
-and resumed while a narration is written (R01).
+and resumed while a narration is written (R01); a GM's Retry on a payoff
+failure card after a dropped connection (R04).
 
 | Code | Class | Defect → fix |
 |---|---|---|
@@ -39,20 +40,23 @@ and resumed while a narration is written (R01).
 | R10 PTT-OFF-IGNORED | UX | Switching Push-to-Talk off did nothing until a reload — a capture kept running and the 🎙 button kept working → off stops the capture, leaves a no-op controller and removes the button; on again brings back one fresh controller and the button |
 | R11 CHRONICLE-PLAYER-UNWRITABLE | GM-GATE | The GM's client creates a PC's Chronicle journal, which Foundry gives no other user ownership of; the player's panel wrote it directly, so a player's edits, notes and pins never saved → every Chronicle write is a `chronicle.edit` relay applied by the canonical GM; the open panel re-renders when its chronicle changes |
 | R12 ENCOUNTER-COMPENDIUM-TOKEN | WRONG-DETAIL | `!sfc encounter` built the token from the compendium Actor, so it named no world Actor (no sheet, no actor to act on) → the token is built from a world Actor, imported from the compendium or reused when imported before |
+| TDA-BUTTON-NO-TARGET | WRONG-DETAIL | Found while fixing R06. A Strike / Clash / Gain Ground / React Under Fire card's "Attempt to Finish the Fight" and an Enter the Fray card's "Battle instead" posted their move with no fight: with two open, Take Decisive Action scored nothing (a certain miss) and Battle ended neither → each card names its fight by id (the pipeline's `moveFight`, the card's track) and its button forwards it; a Take Decisive Action that names no fight while two or more are open posts a "Which fight?" card instead of rolling, and a pick rolls that fight for the original roller |
+| R04 NATIVE-PAYOFF-NO-RETRY | LOSE-STATE | R04's third point. A payoff step that failed after `fulfilPaid` — the Quests legacy, the connection deepen, the promised reward — was logged and lost: a refused legacy still paid its box XP (awarded before the write), a refused grant still said "Reward earned" and flipped the reward's status, a deleted connection was skipped silently; the forge's bonds legacy, a won fight's reward and the victory card's buttons (stamped applied whatever happened) the same → each step reports `{ ok }`; failures go on a card whispered to the GMs with each value as it stands now and a one-press Retry (`payoff.retry`, GM only, the card claimed first); legacy XP follows the write; a reward is claimed before it is given; a fulfilment records each landed step on the vow (`fulfilPayoff`); a failed victory-card action stays unapplied, its button the retry |
 
-Open — found while fixing, not fixed (each needs a decision first):
+Open — found while fixing, not fixed (needs a decision first):
 
-- **TDA-BUTTON-NO-TARGET** (WRONG-DETAIL). The "Take Decisive Action" button
-  on Strike / Clash / Gain Ground / React Under Fire cards posts no target,
-  so with two fights open tick enrichment resolves nothing and the roll
-  scores 0 — a certain miss. Proposed: the combat move card carries its
-  fight's track id (known once the move's progress is marked) and the button
-  forwards it, as an expedition card's Finish now does.
-- **NATIVE-PAYOFF-NO-RETRY** (LOSE-STATE). A native vow fulfilment stamps
-  `fulfilPaid` before paying; a legacy, connection or reward step that then
-  fails is logged to the console only and can't be retried (issue #306 R04's
-  third acceptance point, not addressed). Proposed: tell the GM which step
-  failed, or stamp each step as it lands.
+- **ENTER-FRAY-SOLE-FIGHT** (WRONG-DETAIL). Entering the fray against a new
+  foe while exactly one fight is open resumes that fight: the threshold
+  check and `createCombatTrackFromThreshold` resolve the foe's name with
+  `selectCombatTrack`, whose sole-open-fight fallback (meant for a combat
+  move whose target the interpreter named loosely) returns the open fight
+  — so no threshold card is posted from typed narration, and no second
+  track is created; later moves against the new foe mark the old fight.
+  With two or more open, a new name does create a new fight. Found while
+  writing the Battle test in `progressTrackSelection.test.js`. Proposed:
+  Enter the Fray matches by
+  name only (no sole-fight fallback) — a decision, since a loosely named
+  foe would then open a second fight.
 
 ### Fault-injection findings (issue #302 slice B) — six fixed in the v1.7.36 cycle, three open
 
@@ -424,10 +428,9 @@ lives in the matching `docs/flows/*-flow.md` maps.
   keyless-GM table they are skipped (a player's key isn't used).
 - **Momentum recalc gap:** a canonical GM's own sheet edit of a PC whose owner
   is offline is not recalculated (own-write skip; debug-logged).
-- **Fight-vow stamps are optimistic:** `fightVow.*` marks the card applied
-  even when `markLinkedVowMilestone` / `deepenLinkedConnection` logged and
-  swallowed an internal failure, so a failed mark can't be retried from the
-  card.
+- ~~**Fight-vow stamps are optimistic**~~ — resolved (issue #306 R04): a
+  `fightVow.*` action is stamped applied only when its step reports it
+  landed; one that didn't is reported to the GMs and its button re-arms.
 - **The persist merge has no baseline:** two concurrent adds to the same
   legacy track keep the larger; `sceneState` / `sceneFrame` / `spotlight` /
   `currentLocation*` / `sectors` changed by a relay mid-pipeline are overwritten

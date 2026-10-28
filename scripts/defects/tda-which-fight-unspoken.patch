@@ -1,0 +1,16 @@
+Defect: TDA-BUTTON-NO-TARGET — a which-fight pick posts the move with no speaker, so the GM's pick is credited to whoever clicked, not the player who made the move
+Tests: tests/unit/progressTrackSelection.test.js
+Catches: a pick rolls that fight for the roller
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..e4ae3fd 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -6005,7 +6005,6 @@ export function wireWhichFightButtons(message, root) {
+         }
+         await ChatMessage.create({
+           content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
+-          ...(f.actorId ? { speaker: { actor: f.actorId } } : {}),
+           flags:   { [MODULE_ID]: {
+             bypassPacing: true, forcedMoveId: f.moveId ?? "take_decisive_action",
+             forcedMoveTargetId: fight.id,

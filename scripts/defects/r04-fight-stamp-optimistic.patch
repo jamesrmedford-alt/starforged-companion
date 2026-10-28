@@ -1,0 +1,25 @@
+Defect: issue #306 R04 — a won-fight card action is stamped applied whatever its step reported, so a refused mark can't be retried from the card and nobody is told
+Tests: tests/unit/payoffFailure.test.js tests/unit/cardActions.test.js
+Catches: a refused milestone mark leaves the victory card
+Catches: a mark that does not land stays unapplied
+Catches: a deepen that does not land
+
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 733059c..620ee99 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -308,14 +308,6 @@ async function applyFightVowAction(action, payload, ctx, apply) {
+   try {
+     const out = await apply(f);
+     if (out === false) return { applied: false, reason: "nothing-to-apply" };
+-    if (out?.ok !== true) {
+-      const { postPayoffFailureCard } = await import("../index.js");
+-      await postPayoffFailureCard({
+-        source: "fightButton", vowName: f.vowName ?? null, actorId: typeof f.actorId === "string" ? f.actorId : null,
+-        connectionName: f.connectionName ?? null, failures: [out ?? { step: action, reason: "failed" }], retryable: false,
+-      }).catch(err => console.warn(`${MODULE_ID} | fight-vow ${action}: failure card failed:`, err?.message ?? err));
+-      return { applied: false, reason: out?.reason ?? "failed" };
+-    }
+     await message.update({ [`flags.${MODULE_ID}.resolvedActions.${action}`]: true })
+       .catch(err => console.warn(`${MODULE_ID} | fight-vow ${action}: resolve update failed:`, err?.message ?? err));
+     return { applied: true };
