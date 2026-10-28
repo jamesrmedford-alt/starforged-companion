@@ -111,7 +111,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `speechInput.js` | Push-to-talk dictation via the Web Speech API (Chromium). A release before recognition reports `onstart` cancels it (`abort`), and a start that arrives after the release is stopped at once — capture never outlives the button hold (issue #300 F10). A run lasts from `recognition.start()` to `onend`; a press after the run's release, before `onend`, captures as soon as the run ends (PTT-QUICK-REPRESS). |
+| `speechInput.js` | Push-to-talk dictation via the Web Speech API (Chromium). A release before recognition reports `onstart` cancels it (`abort`), and a start that arrives after the release is stopped at once — capture never outlives the button hold (issue #300 F10). A run lasts from `recognition.start()` to `onend`; a press after the run's release, before `onend`, captures as soon as the run ends (PTT-QUICK-REPRESS). `disableSpeechInput` — the Push-to-Talk setting switched off: stops a capture, leaves a no-op controller and removes the 🎙 buttons; switched on again, one fresh controller and the button (issue #306 R10). |
 
 ### `integration/` — live tests
 

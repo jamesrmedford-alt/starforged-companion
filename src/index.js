@@ -68,7 +68,7 @@ import {
   handleOracleAddCommand,
   rehydrateCustomOracles,
 } from "./oracles/customOracles.js";
-import { initSpeechInput }       from "./input/speechInput.js";
+import { initSpeechInput, disableSpeechInput } from "./input/speechInput.js";
 import {
   narrateResolution,
   interrogateScene,
@@ -381,7 +381,14 @@ function registerCoreSettings() {
     type:     Boolean,
     default:  true,
     onChange: (value) => {
-      if (value) initSpeechInput();
+      if (!value) {
+        disableSpeechInput();
+        return;
+      }
+      initSpeechInput();
+      // The chat's render hooks add the 🎙 button only when it re-renders.
+      const chatRoot = globalThis.ui?.chat?.element ?? globalThis.document?.body;
+      if (chatRoot) injectPushToTalkButton(chatRoot);
     },
   });
 
