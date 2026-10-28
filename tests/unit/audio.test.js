@@ -772,6 +772,30 @@ describe('_createSound blob URL adapter', () => {
     expect(session.state).toBe(PLAYBACK_STATE.IDLE);
   });
 
+  // Issue #306 R09: the adapter set `Number(volume) || 1`, so a session at
+  // volume 0 played at full volume.
+  it('keeps a session volume of 0 on the HTMLAudioElement, and clamps the rest', async () => {
+    const played = [];
+    globalThis.Audio = class {
+      constructor() { this.volume = 1; this._listeners = {}; played.push(this); }
+      play() { return Promise.resolve(); }
+      pause() {}
+      addEventListener(event, cb) { (this._listeners[event] ??= []).push(cb); }
+    };
+    for (const [volume, expected] of [[0, 0], [0.4, 0.4], [3, 1]]) {
+      const session = new PlaybackSession({
+        cardId: `blob-vol-${volume}`,
+        segments: [{ voice: 'narrator', src: 'blob:http://localhost/vol', text: 'x' }],
+        volume,
+      });
+      const p = session.play();
+      await vi.waitFor(() => expect(played).toHaveLength(1));
+      expect(played[0].volume).toBe(expected);
+      (played.shift()._listeners.ended ?? []).forEach(cb => cb());
+      await p;
+    }
+  });
+
   it('falls back to foundry.audio.Sound for blob: URLs when Audio is unavailable', async () => {
     globalThis.Audio = undefined;
     const session = new PlaybackSession({

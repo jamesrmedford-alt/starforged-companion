@@ -99,7 +99,7 @@ function _createBlobAudioAdapter(src) {
   return {
     async load() { /* HTMLAudioElement loads lazily on play(); no-op. */ },
     async play({ volume = 1 } = {}) {
-      el.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+      el.volume = clamp01(volume);   // 0 stays 0 — `|| 1` played a muted session at full volume (issue #306 R09)
       return el.play();
     },
     async pause() { el.pause(); },
