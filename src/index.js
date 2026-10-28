@@ -893,6 +893,30 @@ export function registerChatHook() {
         );
       }
 
+      // Take Decisive Action scores one fight's progress. With two or more
+      // fights open and none named — a typed "I take decisive action", or a
+      // combat card whose fight nothing named — it would score nothing: a
+      // certain miss. Ask which fight instead of rolling; each pick posts the
+      // move again with that fight's id (TDA-BUTTON-NO-TARGET).
+      if (interpretation.moveId === "take_decisive_action" && !interpretation.moveTargetId) {
+        const tracks = await listProgressTracks().catch(err => {
+          console.warn(`${MODULE_ID} | which-fight lookup failed:`, err?.message ?? err);
+          return [];
+        });
+        const openFights = tracks.filter(t => t.type === "combat" && !t.completed);
+        if (openFights.length >= 2 && !selectCombatTrack(openFights, interpretation.moveTarget ?? null)) {
+          await postWhichFightCard({
+            moveId:    interpretation.moveId,
+            moveName:  interpretation.moveName,
+            narration,
+            actorId:   speakerActorId ?? null,
+            fights:    openFights,
+          }).catch(err =>
+            console.warn(`${MODULE_ID} | which-fight card failed:`, err?.message ?? err));
+          return;
+        }
+      }
+
       // The ROLLER's character (decisions.md → "Multiplayer attribution"):
       // the speaker resolved from the message, first PC only as fallback.
       // One actor drives the ability scan, the stat substitution it offers,
@@ -2668,8 +2692,8 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
     // track's id for Take Decisive Action / Finish an Expedition from a
     // Progress Tracks row or an expedition card (selectCombatTrack /
     // selectExpeditionTrack, issue #306 R06), for Take Decisive Action from
-    // a combat move card, and for Battle from an Enter the Fray card
-    // (TDA-BUTTON-NO-TARGET) — resolved before any name.
+    // a combat move card or a which-fight pick, and for Battle from an Enter
+    // the Fray card (TDA-BUTTON-NO-TARGET) — resolved before any name.
     moveTargetId:     typeof moveTargetId === "string" && moveTargetId ? moveTargetId : null,
     rationale:        "Move nominated by pacing classifier; player confirmed via suggestion button.",
     mischiefApplied:  false,
@@ -3106,6 +3130,38 @@ async function postTrackGoneCard(interpretation) {
     content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
       + `<p><strong>${label}</strong> is no longer open: it was deleted or finished before the roll. Nothing was rolled.</p></div>`,
     flags:   { [MODULE_ID]: { trackGoneCard: true } },
+  });
+}
+
+/**
+ * Take Decisive Action with two or more fights open and none named: ask which
+ * fight, instead of rolling a score of nothing — a certain miss
+ * (TDA-BUTTON-NO-TARGET). Posted in place of the move; nothing is rolled or
+ * written. Each open fight gets a button (wireWhichFightButtons) that posts
+ * the move again with that fight's id, credited to the original roller.
+ *
+ * @param {{ moveId: string, moveName?: string, narration?: string,
+ *   actorId?: string|null, fights: Array<{ id: string, label?: string,
+ *   rank?: string, ticks?: number }> }} opts
+ */
+async function postWhichFightCard({ moveId, moveName, narration, actorId = null, fights }) {
+  const buttons = fights.map(t => {
+    const rank  = escapeChatHtml(String(t.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
+    const boxes = Math.floor(Number(t.ticks ?? 0) / 4);
+    return `<button type="button" class="sf-followup-btn" data-action="sf-which-fight" data-track-id="${escapeChatHtml(t.id)}" `
+      + `title="Roll this fight's progress">⚔ ${escapeChatHtml(t.label ?? "Combat")} — ${rank}, ${boxes}/10 boxes</button>`;
+  }).join("");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which fight?</strong>`
+      + `<p>More than one fight is open and nothing named this one. Choose the fight to finish — nothing has been rolled yet.</p>`
+      + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
+    // fights: the open fights' ids and names when asked — a pick forwards its
+    // fight as forcedMoveTargetId / forcedMoveTarget. actorId: the roller, the
+    // pick's speaker, so the move stays theirs whoever clicks.
+    flags: { [MODULE_ID]: {
+      whichFightCard: true, moveId, narration: narration ?? null, actorId,
+      fights: fights.map(t => ({ id: t.id, label: t.label ?? null })),
+    } },
   });
 }
 
@@ -5522,7 +5578,7 @@ export function wireTakeDecisiveActionButton(message, root) {
       // (TDA-BUTTON-NO-TARGET). A fight finished or deleted meanwhile rolls
       // nothing and says so (issue #306 R06). Cards without the stamp (older
       // ones, or a move whose fight nothing named) post no target: the
-      // pipeline then resolves the sole open fight.
+      // pipeline then resolves the sole open fight, or asks which fight.
       const trackId    = message.flags[MODULE_ID].combatTrackId ?? null;
       const trackLabel = message.flags[MODULE_ID].combatTrackLabel ?? null;
       await ChatMessage.create({
@@ -5542,6 +5598,66 @@ export function wireTakeDecisiveActionButton(message, root) {
   });
 }
 onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
+
+/**
+ * Wire a "which fight?" card's buttons (postWhichFightCard). A pick posts the
+ * move again — the forced-move bridge every roll button uses — with that
+ * fight's id and name, spoken as the original roller so the move stays
+ * theirs whoever clicks. One pick per card: every button disables on click,
+ * and the pick is stamped on the card where this client may update it (the
+ * GM, its author) so re-renders and other clients show it; a player's click
+ * disables locally, as the pacing card's Roll does.
+ *
+ * Exported so tests and Quench can drive it with a synthetic message + root.
+ */
+export function wireWhichFightButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.whichFightCard) return;
+  const buttons = [...(root?.querySelectorAll?.('[data-action="sf-which-fight"]') ?? [])];
+  if (!buttons.length) return;
+
+  const picked = liveCardFlags(message)?.whichFightPicked ?? null;
+  if (picked) {
+    for (const b of buttons) b.disabled = true;
+    return;
+  }
+
+  const fresh = buttons.map(btn => {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+    return clone;
+  });
+  for (const btn of fresh) {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const fight = (f.fights ?? []).find(t => t.id === btn.dataset.trackId);
+      if (!fight) return;
+      for (const b of fresh) b.disabled = true;
+      try {
+        try {
+          await message.update({ [`flags.${MODULE_ID}.whichFightPicked`]: fight.id });
+        } catch (err) {
+          // A player may not update the GM's card: the local disable stands.
+          console.debug?.(`${MODULE_ID} | which-fight stamp skipped (non-owner):`, err?.message ?? err);
+        }
+        await ChatMessage.create({
+          content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
+          ...(f.actorId ? { speaker: { actor: f.actorId } } : {}),
+          flags:   { [MODULE_ID]: {
+            bypassPacing: true, forcedMoveId: f.moveId ?? "take_decisive_action",
+            forcedMoveTargetId: fight.id,
+            ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
+          } },
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | which-fight pick failed:`, err);
+        for (const b of fresh) b.disabled = false;
+      }
+    });
+  }
+}
+onChatMessageRender((message, root) => wireWhichFightButtons(message, root));
 
 /**
  * Wire the "⚑ Reach a Milestone" suggestion button on a move-result card.

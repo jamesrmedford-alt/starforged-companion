@@ -127,6 +127,13 @@ pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
 posted no target, scored nothing and was a certain miss
 (TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
 before the stamp) posts no target and resolves the sole open fight. A TDA
+that names no fight while two or more are open — typed narration, or such a
+card — is not rolled: the pipeline posts a **Which fight?** card instead
+(`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
+names, the narration and the roller's `actorId`), and a pick
+(`wireWhichFightButtons`) posts the move again with that fight's id, spoken
+as the original roller. One pick per card: every button disables, and the
+GM's pick is stamped `whichFightPicked`. A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
 pick). A TDA **miss** does not end the fight — it routes Pay the Price.

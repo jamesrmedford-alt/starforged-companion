@@ -8891,6 +8891,39 @@ function registerCombatCardButtonTests(quench) {
         });
       });
 
+      describe("Which fight? card (a Take Decisive Action that names no fight)", function () {
+        it("a pick posts the move with that fight's id, spoken as the original roller", async function () {
+          this.timeout(15000);
+          const { wireWhichFightButtons } = await import(`${MODULE_PATH}/index.js`);
+          const roller = (game.actors?.contents ?? []).find(a => a.type === "character" && !a.flags?.[MODULE]?.entityType) ?? null;
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-milestone-suggest-row">`
+            + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-boarders">Boarders</button>`
+            + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-turret">Turret</button></div>`;
+          const msg = { id: "quench-which-fight", flags: { [MODULE]: {
+            whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
+            actorId: roller?.id ?? null,
+            fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
+          } } };
+
+          wireWhichFightButtons(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-track-id="quench-fight-turret"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "take_decisive_action");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced take_decisive_action message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+          if (roller) assert.equal(synthetic.speaker?.actor, roller.id, "the move stays the roller's");
+          for (const b of root.querySelectorAll('[data-action="sf-which-fight"]')) {
+            assert.isTrue(b.disabled, "one pick per card: every button disables");
+          }
+        });
+      });
+
       describe("Panel Progress Roll bridge (rollProgress)", function () {
         // The session-ACTIVE bridge path (combat/expedition rows → forced-move
         // message) is pinned by the unit suite (progressRollBridge.test.js) —
