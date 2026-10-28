@@ -11,7 +11,8 @@ import { isNewSessionStart, isRecapCommand } from '../../src/index.js';
 import { postSessionRecap, getCampaignRecap, postNarrationCard, campaignRecapCacheKey } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
 import {
-  addChronicleEntry, getChronicleEntries, updateChronicleEntry, saveChronicleEntries,
+  addChronicleEntry, getChronicleEntries, updateChronicleEntry,
+  deleteChronicleEntry, setChronicleEntryPinned, setChronicleEntryType,
 } from '../../src/character/chronicle.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -627,7 +628,8 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
   it('a same-count replacement — the wrong entry deleted, the right one added — invalidates it', async () => {
     await addChronicleEntry('pc-vex', { text: 'Vex died.' });
     const withCache = state({ campaignRecapCache: await cacheOf('Vex died.') });
-    await saveChronicleEntries('pc-vex', []);
+    const [wrong] = await getChronicleEntries('pc-vex');
+    await deleteChronicleEntry('pc-vex', wrong.id);
     await addChronicleEntry('pc-vex', { text: 'Vex survived.' });
     expect(await getChronicleEntries('pc-vex')).toHaveLength(1);
     expect(await getCampaignRecap(withCache)).toBe('');
@@ -660,8 +662,9 @@ describe('getCampaignRecap() — the cache after a chronicle correction (issue #
   it('pinning or re-typing an entry keeps the recap — neither is in it', async () => {
     await addChronicleEntry('pc-vex', { type: 'annotation', text: 'Vex died.' });
     const withCache = state({ campaignRecapCache: await cacheOf('Cached recap.') });
-    const entries = await getChronicleEntries('pc-vex');
-    await saveChronicleEntries('pc-vex', entries.map(e => ({ ...e, pinned: true, type: 'scar' })));
+    const [entry] = await getChronicleEntries('pc-vex');
+    await setChronicleEntryPinned('pc-vex', entry.id, true);
+    await setChronicleEntryType('pc-vex', entry.id, 'scar');
     expect(await getCampaignRecap(withCache)).toBe('Cached recap.');
   });
 

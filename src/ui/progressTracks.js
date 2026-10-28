@@ -187,9 +187,10 @@ export async function rollProgress(track) {
       : `Attempt to finish the expedition — ${track.label}.`;
     await ChatMessage.create({
       content,
-      // forcedMoveTarget: the row's own label, so tick enrichment resolves
-      // exactly the track the player clicked even with several open fights.
-      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label } },
+      // The row's own id (and label): tick enrichment, scoring and completion
+      // act on exactly the track clicked — a label alone took the first
+      // same-named track (issue #306 R06).
+      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label, forcedMoveTargetId: track.id } },
     });
     return;
   }
@@ -856,13 +857,18 @@ export async function addProgressTrack(data) {
 /**
  * List the current progress tracks for callers outside the panel — e.g. the
  * consequence-rider track picker and the expedition lifecycle (moves/expedition.js,
- * which needs `completed` + `type` to pick the open expedition track).
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean}>>}
+ * which needs `completed` + `type` to pick the open expedition track). A fight
+ * keeps its position (`combatState`): Take Decisive Action's tick enrichment
+ * reads the scored fight's own position for the bad-spot downgrade, and this
+ * projection dropped it — with two fights open, no downgrade ever applied
+ * (issue #306 R05).
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null)}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
   return tracks.map(t => ({
     id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks, completed: t.completed === true,
+    combatState: t.combatState ?? null,
   }));
 }
 

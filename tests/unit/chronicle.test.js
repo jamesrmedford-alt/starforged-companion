@@ -10,7 +10,7 @@ import {
   addChronicleEntry,
   getChronicleEntries,
   updateChronicleEntry,
-  saveChronicleEntries,
+  deleteChronicleEntry,
 } from '../../src/character/chronicle.js';
 import * as chronicle from '../../src/character/chronicle.js';
 
@@ -167,7 +167,7 @@ describe('addChronicleEntry', () => {
   it('does nothing if actor does not exist', async () => {
     await expect(
       addChronicleEntry('no-such-actor', { type: 'annotation', text: 'Ghost.' })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 });
 
@@ -253,7 +253,7 @@ describe('updateChronicleEntry', () => {
 
     await expect(
       updateChronicleEntry(ACTOR_ID, 'no-such-id', 'Updated.')
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
 
     const unchanged = await getChronicleEntries(ACTOR_ID);
     expect(unchanged[0].text).toBe('Original.');
@@ -275,7 +275,7 @@ describe('error path coverage', () => {
 
     await expect(
       addChronicleEntry(ACTOR_ID, { type: 'annotation', text: 'Test.' })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 
   it('no longer exports the retired-assembler helper getChronicleForContext', () => {
@@ -386,7 +386,7 @@ describe('identity by actor id, not by name (issue #301 B03)', () => {
     expect(await texts('pc-1')).toHaveLength(4);
   });
 
-  it('an edit and a panel save reach an entry wherever a split left it — and a delete sticks', async () => {
+  it('an edit and a panel delete reach an entry wherever a split left it — and the delete sticks', async () => {
     setupActor('pc-1', 'Ash Renamed');
     makeJournal({ name: 'Chronicle — Ash', owner: 'pc-1', entries: [
       { id: 'e1', timestamp: '2026-01-01T00:00:00Z', text: 'Vex died.' },
@@ -398,8 +398,7 @@ describe('identity by actor id, not by name (issue #301 B03)', () => {
     await updateChronicleEntry('pc-1', 'e1', 'Vex survived.');
     expect(await texts('pc-1')).toEqual(['Vex survived.', 'We opened the vault.']);
 
-    const kept = (await getChronicleEntries('pc-1')).filter(e => e.id !== 'e1');
-    expect(await saveChronicleEntries('pc-1', kept)).toBe(true);
+    expect(await deleteChronicleEntry('pc-1', 'e1')).toBe(true);
     expect(await texts('pc-1')).toEqual(['We opened the vault.']);
   });
 

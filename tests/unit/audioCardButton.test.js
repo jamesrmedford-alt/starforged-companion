@@ -88,3 +88,29 @@ describe('narrator card audio button', () => {
     expect(foundry.audio.Sound._instances).toHaveLength(1);           // the same segment resumed, nothing new loaded
   });
 });
+
+// Issue #306 R09: the card read the volume as `Number(setting) || 0.8`, so the
+// supported 0% setting played at 80%.
+describe('narrator card audio volume', () => {
+  const playedVolume = async () => {
+    const card = await renderCard();
+    card.click();
+    await vi.waitFor(() => expect(foundry.audio.Sound._instances.at(-1)?._lastVolume).toBeDefined());
+    return foundry.audio.Sound._instances.at(-1)._lastVolume;
+  };
+
+  it('plays at 0 when the volume setting is 0%', async () => {
+    game.settings._store.set(`${MODULE_ID}.audio.volume`, 0);
+    expect(await playedVolume()).toBe(0);
+  });
+
+  it('plays at the setting otherwise', async () => {
+    game.settings._store.set(`${MODULE_ID}.audio.volume`, 0.35);
+    expect(await playedVolume()).toBe(0.35);
+  });
+
+  it('plays at 0.8 when the setting is unset', async () => {
+    game.settings._store.delete(`${MODULE_ID}.audio.volume`);
+    expect(await playedVolume()).toBe(0.8);
+  });
+});

@@ -132,7 +132,10 @@ function readOwnPrivateLines() {
  *
  * The flag persists in game.settings until a GM resumes narration (the
  * X-Card card's "Resume narration" button, `!x clear`, or the module API's
- * clearXCard).
+ * clearXCard). Each play also counts in `xCardPlays`, which resuming never
+ * lowers: a narration that started before the play compares the count, so it
+ * stays discarded even when a GM resumes before its reply returns (issue
+ * #306 R01; narrator.js watchXCard).
  *
  * When the write fails on a relayed play, the player's card already says the
  * scene is paused (a relay has no ack), so the GM posts a card saying the
@@ -148,6 +151,7 @@ export async function suppressScene(_payload, ctx) {
     // was, or the narrator here would hold a pause that never landed (#302).
     const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
     cs.xCardActive = true;
+    cs.xCardPlays = (Number(cs.xCardPlays) || 0) + 1;
     await game.settings.set(MODULE_ID, "campaignState", cs);
     return true;
   } catch (err) {

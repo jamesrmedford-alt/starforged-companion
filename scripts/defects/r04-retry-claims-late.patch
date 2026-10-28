@@ -1,0 +1,27 @@
+Defect: issue #306 R04 — a payoff Retry re-runs its steps before claiming the card, so a press whose claim is refused still applies them, and the next press applies them again
+Tests: tests/unit/payoffFailure.test.js tests/unit/cardActions.test.js
+Catches: a press whose claim is refused applies nothing
+Catches: a refused claim re-runs nothing
+Catches: a GM's press claims the card
+
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 733059c..e99d5b4 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -368,14 +368,14 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
+ 
+   _inFlight.add(key);
+   try {
++    const { retryPayoffSteps } = await import("../index.js");
++    const failed = await retryPayoffSteps(f);
+     try {
+       await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+     } catch (err) {
+       console.warn(`${MODULE_ID} | payoff retry: card ${messageId} could not be claimed — nothing retried:`, err?.message ?? err);
+       return { applied: false, reason: "claim-refused" };
+     }
+-    const { retryPayoffSteps } = await import("../index.js");
+-    const failed = await retryPayoffSteps(f);
+     return { applied: true, failed: failed.length };
+   } finally {
+     _inFlight.delete(key);

@@ -35,6 +35,15 @@ describe("normalizeExpeditionRank", () => {
 });
 
 describe("selectExpeditionTrack", () => {
+  // Issue #306 R06: a Progress Tracks row's or an expedition card's id picks that track, never a namesake.
+  it("an id picks that open expedition; an unknown or finished one picks nothing — never a namesake", () => {
+    const tracks = [exp({ id: "a" }), exp({ id: "b" }), exp({ id: "c", completed: true })];
+    expect(selectExpeditionTrack(tracks, "The Vault of Tears", { trackId: "b" })?.id).toBe("b");
+    expect(selectExpeditionTrack(tracks, "The Vault of Tears", { trackId: "gone" })).toBeNull();
+    expect(selectExpeditionTrack(tracks, "The Vault of Tears", { trackId: "c" })).toBeNull();
+    expect(selectExpeditionTrack([exp({ id: "a" })], null, { trackId: "gone" })).toBeNull();
+  });
+
   it("matches an open expedition by normalised label (ignoring leading 'the')", () => {
     const t = selectExpeditionTrack([exp({ id: "a", label: "The Vault of Tears" })], "vault of tears");
     expect(t?.id).toBe("a");

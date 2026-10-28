@@ -92,13 +92,19 @@ campaignState **and** the live stored setting (internal `isXCardActive`,
 `narrator.js`; recaps carry no gate): the move pipeline narrates from a
 snapshot taken before its confirm dialog and Claude calls, so a card played
 meanwhile is only visible in the store. Each gate runs twice — on entry and
-again the moment the Claude reply arrives (`xCardPlayedDuringCall`), before the
+again the moment the Claude reply arrives (`watchXCard(…).interrupted`), before the
 sidecar is applied: a card played while the reply was generated discards it
 (no card, no audio, no ledger facts, no post-narration passes — issue #300
-F13), and the entry point stands down as it would have on entry. A move resolved under the X-Card still
+F13), and the entry point stands down as it would have on entry. The watch
+starts on entry with the live `campaignState.xCardPlays` count (each
+`suppressScene` adds one; resuming never lowers it), so a card played **and
+resumed** before the reply arrives still discards it (issue #306 R01) —
+`persistResolution` keeps the store's count (store-owned). A move resolved under the X-Card still
 posts its result card, then a short "narration paused" notice
 (`narrationPaused` flag, outside the flag family) instead of narration — the
-move-path gate had been lost with the retired assembler (ASSEMBLER-003).
+move-path gate had been lost with the retired assembler (ASSEMBLER-003). When
+the card was played and resumed mid-call, the notice (and `@scene`'s card)
+says the narration was discarded instead.
 
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]

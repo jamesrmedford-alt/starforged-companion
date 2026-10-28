@@ -9,6 +9,11 @@
 // Identity: journal.flags[MODULE_ID].chronicleActorId — the journal belongs to
 // that Actor whatever either is called (issue #301 B03). The name is a label,
 // kept current on write.
+// Writers: one — the canonical GM (issue #306 R11). A Chronicle journal is the
+// GM's document, which a player's client cannot update, so the panel and the
+// automatic writer ask for every change with requestChronicleEdit
+// ("chronicle.edit", applied by applyChronicleEditFromRelay); on the GM, an
+// actor's writes run one at a time (writeChronicle).
 
 import { getPlayerActors } from './actorBridge.js';
 
@@ -29,7 +34,7 @@ const JOURNAL_PREFIX = 'Chronicle — ';
  * @returns {Promise<void>}
  */
 export async function addChronicleEntry(actorId, entry) {
-  await writeChronicle(actorId, entries => [...entries, buildEntry(entry)], { create: true });
+  return writeChronicle(actorId, entries => [...entries, buildEntry(entry)], { create: true });
 }
 
 /**
@@ -49,30 +54,167 @@ export async function getChronicleEntries(actorId) {
  * @returns {Promise<void>}
  */
 export async function updateChronicleEntry(actorId, entryId, newText) {
-  await writeChronicle(actorId, (entries) => {
-    const idx = entries.findIndex(e => e.id === entryId);
+  return changeEntry(actorId, entryId, entry => ({ ...entry, text: newText, playerEdited: true }));
+}
+
+/**
+ * Pin or unpin one chronicle entry (the Chronicle panel's pin button).
+ * @param {string} actorId
+ * @param {string} entryId
+ * @param {boolean} pinned
+ * @returns {Promise<boolean>} true when the entry was found and written
+ */
+export async function setChronicleEntryPinned(actorId, entryId, pinned) {
+  return changeEntry(actorId, entryId, entry => ({ ...entry, pinned: pinned === true }));
+}
+
+/**
+ * Change one chronicle entry's type (the Chronicle panel's GM type select).
+ * @param {string} actorId
+ * @param {string} entryId
+ * @param {string} type  — one of CHRONICLE_ENTRY_TYPES
+ * @returns {Promise<boolean>} true when the entry was found and written
+ */
+export async function setChronicleEntryType(actorId, entryId, type) {
+  if (!CHRONICLE_ENTRY_TYPES.includes(type)) return false;
+  return changeEntry(actorId, entryId, entry => ({ ...entry, type }));
+}
+
+/**
+ * Delete one chronicle entry (the Chronicle panel's GM delete button).
+ * @param {string} actorId
+ * @param {string} entryId
+ * @returns {Promise<boolean>} true when the entry was found and removed
+ */
+export async function deleteChronicleEntry(actorId, entryId) {
+  return changeEntry(actorId, entryId, () => null);
+}
+
+/** The entry types the Chronicle panel's GM type select offers. */
+export const CHRONICLE_ENTRY_TYPES = Object.freeze([
+  'revelation', 'relationship', 'vow', 'scar', 'legacy', 'annotation',
+]);
+
+/**
+ * Change one entry, found by id among the entries as stored when the write
+ * runs (issue #306 R02). The panel used to map its own copy of the entries,
+ * made when it rendered, and save that whole list: an entry written since —
+ * an automatic one after the next narration — was erased by a pin, a delete
+ * or a re-type. `change(entry)` returns the new entry, or null to delete it.
+ *
+ * @returns {Promise<boolean>} true when the entry was found and written
+ */
+async function changeEntry(actorId, entryId, change) {
+  if (!entryId) return false;
+  return writeChronicle(actorId, (entries) => {
+    const idx = entries.findIndex(e => e?.id === entryId);
     if (idx < 0) return null;
     const next = [...entries];
-    next[idx] = {
-      ...entries[idx],
-      text:       newText,
-      playerEdited: true,
-    };
+    const changed = change(entries[idx]);
+    if (changed) next[idx] = changed;
+    else next.splice(idx, 1);
     return next;
   });
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edits through the canonical GM (issue #306 R11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The longest entry text a relayed edit may store. */
+const MAX_ENTRY_TEXT = 4000;
+/** The longest entry type a GM's relayed add may store. */
+const MAX_TYPE_LENGTH = 40;
+
 /**
- * Replace a character's chronicle entries wholesale — the Chronicle panel's
- * delete, re-type and pin. Writes only a chronicle that already exists, through
- * the same identity lookup as every other access (the panel used to find the
- * journal by the actor's current name).
+ * Ask the canonical GM to change a character's chronicle — every Chronicle
+ * write a client starts (the panel's add / text / pin / re-type / delete, the
+ * automatic writer's add). Local on the canonical GM, relayed elsewhere;
+ * with no GM connected requestGmAction warns and nothing is written.
+ *
  * @param {string} actorId
- * @param {Object[]} entries
- * @returns {Promise<boolean>} true when the entries were written
+ * @param {{ op: "add"|"text"|"pin"|"type"|"delete", entryId?: string,
+ *           text?: string, pinned?: boolean, type?: string, entry?: Object }} edit
+ * @returns {Promise<{ ok: boolean, relayed?: boolean, reason?: string,
+ *                     result?: { applied: boolean, reason?: string } }>}
  */
-export async function saveChronicleEntries(actorId, entries) {
-  return writeChronicle(actorId, () => (Array.isArray(entries) ? [...entries] : null));
+export async function requestChronicleEdit(actorId, edit) {
+  const { requestGmAction } = await import('../multiplayer/gmRelay.js');
+  return requestGmAction('chronicle.edit', { ...edit, actorId });
+}
+
+/**
+ * gmRelay handler for "chronicle.edit" — runs on the canonical GM, which can
+ * write every Chronicle journal; a player's client cannot (Foundry gives a
+ * journal's non-creators no ownership, and owning the PC doesn't give its
+ * journal — issue #306 R11). The requester must be a GM or own the actor.
+ * Values are checked against what the panel can produce: a player adds only
+ * an annotation; re-type and delete are a GM's (the panel shows them to GMs
+ * only); text is clamped.
+ *
+ * @param {Object} payload  — see requestChronicleEdit
+ * @param {{ requesterIsGM?: boolean, requester?: User|null }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyChronicleEditFromRelay(payload = {}, ctx = {}) {
+  const actorId = typeof payload.actorId === 'string' ? payload.actorId : '';
+  const actor   = actorId ? game.actors?.get(actorId) : null;
+  if (!actor) return refused('no-actor', payload);
+  const { requesterOwnsActor } = await import('../moves/burnMomentum.js');
+  if (!requesterOwnsActor(actor, ctx)) return refused('not-owner', payload);
+
+  const gm      = ctx.requesterIsGM === true;
+  const entryId = typeof payload.entryId === 'string' ? payload.entryId : '';
+  let applied;
+  switch (payload.op) {
+    case 'add': {
+      const entry = addableEntry(payload.entry, gm);
+      if (!entry) return refused('invalid', payload);
+      applied = await addChronicleEntry(actorId, entry);
+      break;
+    }
+    case 'text': {
+      const text = typeof payload.text === 'string' ? payload.text.trim().slice(0, MAX_ENTRY_TEXT) : '';
+      if (!text) return refused('invalid', payload);
+      applied = await updateChronicleEntry(actorId, entryId, text);
+      break;
+    }
+    case 'pin':
+      applied = await setChronicleEntryPinned(actorId, entryId, payload.pinned === true);
+      break;
+    case 'type':
+      if (!gm) return refused('gm-only', payload);
+      applied = await setChronicleEntryType(actorId, entryId, payload.type);
+      break;
+    case 'delete':
+      if (!gm) return refused('gm-only', payload);
+      applied = await deleteChronicleEntry(actorId, entryId);
+      break;
+    default:
+      return refused('invalid', payload);
+  }
+  return applied ? { applied: true } : refused('no-entry', payload);
+}
+
+/** An add's entry as the panel or the writer can produce it, or null. */
+function addableEntry(raw, gm) {
+  if (!raw || typeof raw !== 'object') return null;
+  const text = typeof raw.text === 'string' ? raw.text.trim().slice(0, MAX_ENTRY_TEXT) : '';
+  if (!text) return null;
+  const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId : '';
+  if (!gm) return { type: 'annotation', text, sessionId, automated: false };
+  const type = typeof raw.type === 'string' && raw.type.trim() ? raw.type.trim().slice(0, MAX_TYPE_LENGTH) : 'annotation';
+  return {
+    type, text, sessionId,
+    moveId:    typeof raw.moveId === 'string' && raw.moveId ? raw.moveId : null,
+    automated: raw.automated === true,
+  };
+}
+
+function refused(reason, payload) {
+  console.warn(`${MODULE_ID} | chronicle: "${payload?.op ?? '?'}" on ${payload?.actorId ?? '?'} not applied (${reason}).`);
+  return { applied: false, reason };
 }
 
 
@@ -123,6 +265,9 @@ function findChronicleJournals(actorId) {
   return [legacy];
 }
 
+// actorId → the tail of that actor's write chain on this client (never rejects).
+const _writeChains = new Map();
+
 /**
  * Read-modify-write a character's chronicle. `mutate(entries)` returns the new
  * list, or null to write nothing. With several journals (a rename split them)
@@ -134,7 +279,18 @@ function findChronicleJournals(actorId) {
  * @param {{ create?: boolean }} [opts] create the journal when there is none
  * @returns {Promise<boolean>} true when the entries were written
  */
-async function writeChronicle(actorId, mutate, { create = false } = {}) {
+async function writeChronicle(actorId, mutate, opts = {}) {
+  // One read-modify-write at a time per actor: two writes that both read the
+  // entries before either landed each saved their own list, and the later
+  // erased the other's entry (issue #306 R02).
+  const run = (_writeChains.get(actorId) ?? Promise.resolve()).then(() => writeChronicleNow(actorId, mutate, opts));
+  const tail = run.catch(() => {});
+  _writeChains.set(actorId, tail);
+  tail.then(() => { if (_writeChains.get(actorId) === tail) _writeChains.delete(actorId); });
+  return run;
+}
+
+async function writeChronicleNow(actorId, mutate, { create = false } = {}) {
   let journals = findChronicleJournals(actorId);
   if (!journals.length && create) {
     const created = await createChronicleJournal(actorId);

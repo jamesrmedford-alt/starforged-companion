@@ -158,7 +158,33 @@ card (`registerNativeProgressRollHook`); the canonical GM applies consequences
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
-across both paths.
+across both paths — and a claim on the vow (its `vowId`), taken before the
+first await, keeps two fulfilments that arrive together (a duplicate sheet
+roll) from both passing the check before the flag lands (issue #306 R04). The
+native Forge a Bond payoff (`payForgedBondNative`) claims its connection the
+same way.
+
+**A payoff step that does not land** (issue #306 R04, option 2):
+`payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
+Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
+filled box's XP awarded only once the write lands), the connection deepen
+(`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
+flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
+earned" only once it lands). Each returns `{ ok }`; each that lands is
+recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`), and
+those that do not go on one card whispered to the GMs
+(`postPayoffFailureCard`, flagged `payoffFailureCard` with the steps a retry
+needs) showing each value as it stands now. Its "↻ Retry these steps"
+(`wirePayoffRetryButton` → relay `payoff.retry` →
+`cardActions.applyPayoffRetry`, GM only, the card GM-authored) claims the
+card (`resolved`) before anything runs, then `retryPayoffSteps` re-runs each
+step the ledger does not mark landed; any that fail again go on a fresh card.
+A refused claim of the reward is step `reward` (nothing given); a refused
+grant after it is step `rewardGrant`, carrying the PC and amount. Each step
+used to log to the console only — a refused legacy still paid its XP, a
+refused grant still said "Reward earned", a deleted connection was skipped
+without a word. The forge's bonds legacy and a won fight's reward report the
+same way (sources `forge`, `fight`).
 
 **Forsake Your Vow** now actually clears the vow (VOW-FORSAKE-COSMETIC fix):
 the `forsakeVow` consequence drives a GM-gated pipeline branch that marks

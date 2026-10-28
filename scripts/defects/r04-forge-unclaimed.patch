@@ -1,0 +1,21 @@
+Defect: issue #306 R04 sibling — payForgedBondNative forges without claiming the bond, so two native Forge a Bond rolls arriving together both pay the bonds legacy
+Tests: tests/unit/nativePayoffOnce.test.js
+Catches: two forgings of one bond that overlap pay the bonds legacy once
+
+diff --git a/src/index.js b/src/index.js
+index 4f66a3a..ffba38f 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -3866,12 +3866,6 @@ export async function payForgedBondNative(connectionName) {
+     // Claimed before the first await, as payFulfilledVowNative does: two
+     // rolls arriving together both found the bond unforged and both paid the
+     // bonds legacy (issue #306 R04's sibling).
+-    if (_nativePayoffsInFlight.has(`bond:${target.__hostId}`)) {
+-      console.debug(`${MODULE_ID} | native-forge: "${target.name ?? connectionName}" is already being forged — not paid twice.`);
+-      return;
+-    }
+-    claim = `bond:${target.__hostId}`;
+-    _nativePayoffsInFlight.add(claim);
+ 
+     await conn.forgeBond(target.__hostId);
+     const ticks = legacyRewardTicks(target.rank, 0);

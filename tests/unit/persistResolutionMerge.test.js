@@ -62,6 +62,20 @@ describe("persistResolution — concurrent writes survive the stale working copy
     expect(stored().sessionLogs["sess-1"].map(e => e.resolutionId)).toEqual(["old", "res-1"]);
   });
 
+  it("keeps the X-Card play count when the card is played and resumed mid-pipeline (issue #306 R01)", async () => {
+    const snapshot = pipelineSnapshot();
+    await runGmAction("xcard.activate", {}, { requesterId: "pl-2" });
+    const { clearXCard } = await import("../../src/context/safety.js");
+    await clearXCard();
+    expect(stored().xCardPlays).toBe(1);
+
+    await persistResolution(resolution(), snapshot);
+
+    // A narration still in flight compares this count; a stale write must not lower it.
+    expect(stored().xCardPlays).toBe(1);
+    expect(stored().xCardActive).toBe(false);
+  });
+
   it("keeps relay / hook writes the pipeline does not own", async () => {
     const snapshot = pipelineSnapshot();
     Object.assign(stored(), {

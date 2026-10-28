@@ -11,6 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TRACK_TYPE_TO_MOVE, rollProgress } from '../../src/ui/progressTracks.js';
+import { wireFinishExpeditionButton } from '../../src/index.js';
+import { parseHTML, setListenerResultSink } from '../helpers/cardDom.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -69,3 +71,32 @@ describe('rollProgress — pipeline bridge', () => {
     expect(chatCalls[0].flags[MODULE_ID].type).toBe('progressRoll');
   });
 });
+
+// Issue #306 R06: the roll named its track by label only, and scoring and
+// completion took the first track with that label.
+describe('the row\'s id rides the roll', () => {
+  it('the panel\'s Roll posts the row id beside its label', async () => {
+    await rollProgress(combatTrack());
+    expect(chatCalls[0].flags[MODULE_ID]).toMatchObject({
+      forcedMoveId: 'take_decisive_action', forcedMoveTarget: 'The pirate boarders', forcedMoveTargetId: 'ct1',
+    });
+  });
+
+  it('an expedition card\'s Finish button forwards the card\'s track id', async () => {
+    const pending = [];
+    setListenerResultSink(p => pending.push(p));
+    try {
+      const message = { flags: { [MODULE_ID]: { expeditionProgressCard: true, trackLabel: 'The Vault', trackId: 'ex-2' } } };
+      const root = parseHTML('<button type="button" data-action="sf-finish-expedition">Finish</button>');
+      wireFinishExpeditionButton(message, root);
+      root.querySelector('[data-action="sf-finish-expedition"]').click();
+      await Promise.all(pending);
+      expect(chatCalls[0].flags[MODULE_ID]).toMatchObject({
+        forcedMoveId: 'finish_an_expedition', forcedMoveTarget: 'The Vault', forcedMoveTargetId: 'ex-2',
+      });
+    } finally {
+      setListenerResultSink(null);
+    }
+  });
+});
+

@@ -10,13 +10,14 @@
 // Gated on the `chronicleAutoEntry` setting (default true; registered in
 // src/ui/settingsPanel.js).
 //
-// GM-only on the writer side — `addChronicleEntry` calls `JournalEntry.create`
-// + `page.setFlag`, both of which need a permitted client. Non-GM clients
-// no-op silently; the GM client picks the entries up on its own narration
-// passes. Same PERSIST-001 constraint as meter writes.
+// GM-only on the writer side: non-GM clients no-op silently; the GM client
+// picks the entries up on its own narration passes. The write itself goes to
+// the canonical GM (`requestChronicleEdit` — local there, relayed from another
+// GM), the Chronicle's one writer, so it can't race a player's edit applied
+// there (issue #306 R11).
 
 import { apiPost } from '../api-proxy.js';
-import { addChronicleEntry } from './chronicle.js';
+import { requestChronicleEdit } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
 import { passesSalience, getSalienceThreshold } from '../world/salience.js';
 
@@ -143,10 +144,14 @@ export async function writeChronicleEntry({
   };
 
   try {
-    await addChronicleEntry(actorId, entry);
+    const res = await requestChronicleEdit(actorId, { op: 'add', entry });
+    if (!res?.ok || res.result?.applied === false) {
+      console.warn(`${MODULE_ID} | chronicle writer: the entry was not written (${res?.reason ?? res?.result?.reason ?? 'unknown'}).`);
+      return null;
+    }
     return entry;
   } catch (err) {
-    console.warn(`${MODULE_ID} | chronicle writer: addChronicleEntry failed:`, err);
+    console.warn(`${MODULE_ID} | chronicle writer: the chronicle edit failed:`, err);
     return null;
   }
 }

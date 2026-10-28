@@ -11,19 +11,23 @@
 //   - Delete entries
 //   - Change entry type
 //   - Mark entries as canon/non-canon
+//
+// Every edit is applied by the canonical GM (requestChronicleEdit): a
+// player's client cannot write the GM's Chronicle journal (issue #306 R11).
+// A relayed edit has no ack, so the open panel re-renders when its
+// chronicle's page changes (registerChroniclePanelHooks).
 
 import {
   getChronicleEntries,
-  addChronicleEntry,
-  updateChronicleEntry,
-  saveChronicleEntries,
+  requestChronicleEdit,
+  CHRONICLE_ENTRY_TYPES,
 } from './chronicle.js';
 
 import { getPlayerActors, getActor } from './actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
-const ENTRY_TYPES = ['revelation', 'relationship', 'vow', 'scar', 'legacy', 'annotation'];
+const ENTRY_TYPES = CHRONICLE_ENTRY_TYPES;
 
 const TYPE_LABELS = {
   revelation:   'Revelation',
@@ -47,6 +51,9 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
     super(options);
     this.#actorId = actorId;
   }
+
+  /** The actor whose chronicle this panel shows. */
+  get actorId() { return this.#actorId; }
 
   static DEFAULT_OPTIONS = {
     id:      'sf-chronicle-panel',
@@ -108,8 +115,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
     const entry = this.#entries.find(en => en.id === entryId);
     if (entry && entry.text !== newText) {
-      await updateChronicleEntry(this.#actorId, entryId, newText);
-      this.#entries = await getChronicleEntries(this.#actorId);
+      await this.#edit('edit', { op: 'text', entryId, text: newText });
     }
   }
 
@@ -119,10 +125,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
     const newType = e.currentTarget.value;
     if (!entryId || !newType) return;
 
-    const updated = this.#entries.map(en =>
-      en.id === entryId ? { ...en, type: newType } : en
-    );
-    await this.#saveEntries(updated);
+    await this.#edit('re-type', { op: 'type', entryId, type: newType });
     this.render();
   }
 
@@ -138,12 +141,12 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
   static #onAddAnnotation(_event, _target) {
     const work = (async () => {
       const sessionId = game.settings?.get(MODULE_ID, 'campaignState')?.currentSessionId ?? '';
-      await addChronicleEntry(this.#actorId, {
+      await this.#edit('note', { op: 'add', entry: {
         type:      'annotation',
         text:      'New annotation — click to edit.',
         sessionId,
         automated: false,
-      });
+      } });
       this.render();
     })();
     this._lastAction = work;
@@ -156,8 +159,7 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
       const entryId = target.dataset.entryId;
       if (!entryId) return;
 
-      const entries = this.#entries.filter(en => en.id !== entryId);
-      await this.#saveEntries(entries);
+      await this.#edit('delete', { op: 'delete', entryId });
       this.render();
     })();
     this._lastAction = work;
@@ -169,10 +171,9 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
       const entryId = target.dataset.entryId;
       if (!entryId) return;
 
-      const updated = this.#entries.map(en =>
-        en.id === entryId ? { ...en, pinned: !en.pinned } : en
-      );
-      await this.#saveEntries(updated);
+      // The pin the row showed, flipped — the write applies it to the stored entry.
+      const shown = this.#entries.find(en => en.id === entryId);
+      await this.#edit('pin', { op: 'pin', entryId, pinned: !shown?.pinned });
       this.render();
     })();
     this._lastAction = work;
@@ -181,15 +182,21 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
 
   // ── Persistence ───────────────────────────────────────────────────────────
 
-  // Through chronicle.js, which finds the journal by the actor's id — this
-  // used to look it up by the actor's current name, so after a rename (or for
-  // a namesake) a delete / re-type / pin saved nowhere or into the wrong
-  // character's chronicle (issue #301 B03).
-  async #saveEntries(entries) {
+  // Each action asks the canonical GM to change one entry, by id, on the
+  // entries as stored when it writes (chronicle.js) — never this panel's
+  // copy, which is as old as its last render: saving that copy erased
+  // entries written since (issue #306 R02). With no GM connected the relay
+  // warns; a refused edit (not the character's owner, a GM-only action, an
+  // entry deleted meanwhile) says so here.
+  async #edit(action, edit) {
     try {
-      if (await saveChronicleEntries(this.#actorId, entries)) this.#entries = entries;
+      const res = await requestChronicleEdit(this.#actorId, edit);
+      if (res?.result?.applied === false) {
+        ui.notifications?.warn?.(`Starforged Companion: the Chronicle ${action} was not saved (${res.result.reason}).`);
+      }
     } catch (err) {
-      console.error(`${MODULE_ID} | chroniclePanel: failed to save entries`, err);
+      console.error(`${MODULE_ID} | chroniclePanel: ${action} failed`, err);
+      ui.notifications?.error?.(`Starforged Companion: the Chronicle ${action} could not be saved.`);
     }
   }
 }
@@ -297,3 +304,22 @@ export function openChroniclePanel(actorId) {
   _chroniclePanelInstance.render({ force: true });
 }
 
+
+/**
+ * Re-render the open Chronicle panel when its actor's chronicle changes on
+ * any client: an automatic entry, another player's or the GM's edit, or this
+ * player's own edit, which the canonical GM applies (a relay has no ack —
+ * issue #306 R11). Local only: it touches this client's panel. Registered
+ * once on ready (index.js).
+ */
+export function registerChroniclePanelHooks() {
+  if (registerChroniclePanelHooks._installed) return;
+  registerChroniclePanelHooks._installed = true;
+  Hooks.on('updateJournalEntryPage', (page, change) => {
+    const panel = _chroniclePanelInstance;
+    if (!panel?.rendered) return;
+    if (!foundry.utils.hasProperty(change ?? {}, `flags.${MODULE_ID}.chronicle`)) return;
+    if (page?.parent?.flags?.[MODULE_ID]?.chronicleActorId !== panel.actorId) return;
+    panel.render();
+  });
+}

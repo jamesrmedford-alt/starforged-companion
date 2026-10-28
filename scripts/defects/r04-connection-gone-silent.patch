@@ -1,0 +1,17 @@
+Defect: issue #306 R04 — deepenLinkedConnection treats a connection no longer open as done, so the deepen is skipped without a word
+Tests: tests/unit/payoffFailure.test.js
+Catches: a connection no longer open is reported
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..654eaf3 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -3602,7 +3602,7 @@ export async function deepenLinkedConnection(connectionName, marks) {
+     const target = await findOpenConnection(connectionName);
+     if (!target?.__hostId) {
+       console.warn(`${MODULE_ID} | deepen connection: no connection matched "${connectionName ?? "?"}" — nothing deepened.`);
+-      return { ok: false, reason: "not-found" };
++      return { ok: true };
+     }
+     const conn = await import("./entities/connection.js");
+     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));

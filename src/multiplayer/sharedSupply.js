@@ -21,10 +21,14 @@ const MODULE_ID = "starforged-companion";
 const MIRROR_OPTION = "sharedSupplyMirror";
 
 // A sync pass is writing siblings; `next` is the newest independent change
-// still to propagate. A change that lands mid-pass becomes the next pass
-// (from its live value) instead of being dropped (issue #300 F05) — a single
-// in-flight flag used to discard every supply update while a sync ran, so a
-// second edit during one never reached the other PCs.
+// still to propagate — its actor and the value that change set. A change that
+// lands mid-pass becomes the next pass instead of being dropped (issue #300
+// F05) — a single in-flight flag used to discard every supply update while a
+// sync ran, so a second edit during one never reached the other PCs. The value
+// is captured with the change, and a pass stops writing once a newer change
+// is queued (issue #306 R03): an older pass's planned write used to land on a
+// PC edited meanwhile, and the queued pass then read that PC's overwritten
+// value, so the older value won.
 const _sync = { running: false, next: null };
 
 /** Read an actor's supply value (system.supply.value), or null if unreadable. */
@@ -41,11 +45,12 @@ function supplyOf(actor) {
  *
  * @param {Actor} source
  * @param {Actor[]} allActors
+ * @param {number} [value]  the value to sync to — the one the change set; the
+ *   source's current supply when omitted
  * @returns {Array<{ actor: Actor, value: number }>}
  */
-export function computeSupplySyncUpdates(source, allActors) {
-  const value = supplyOf(source);
-  if (value === null) return [];
+export function computeSupplySyncUpdates(source, allActors, value = supplyOf(source)) {
+  if (!Number.isFinite(value)) return [];
   const out = [];
   for (const actor of allActors ?? []) {
     if (!actor || actor.id === source?.id) continue;
@@ -71,14 +76,20 @@ export function registerSharedSupplyHook() {
       if (!isPlayerCharacterActor(actor)) return;
       if (change?.system?.supply?.value === undefined) return;  // only supply changes
       if (options?.[MODULE_ID]?.[MIRROR_OPTION]) return;        // our own sibling write
-      _sync.next = actor;
+      const value = Number(change.system.supply.value);
+      if (!Number.isFinite(value)) return;
+      _sync.next = { source: actor, value };
       if (_sync.running) return;                                // the running pass picks it up
       _sync.running = true;
       try {
         while (_sync.next) {
-          const source = _sync.next;
+          const { source, value: target } = _sync.next;
           _sync.next = null;
-          for (const u of computeSupplySyncUpdates(source, getPlayerActors())) {
+          const writes = computeSupplySyncUpdates(source, getPlayerActors(), target);
+          // The source too, when an older pass's write landed after its own edit.
+          if (supplyOf(source) !== target) writes.unshift({ actor: source, value: target });
+          for (const u of writes) {
+            if (_sync.next) break;                              // a newer change: its pass writes everyone
             await u.actor.update({ "system.supply.value": u.value }, { [MODULE_ID]: { [MIRROR_OPTION]: true } });
           }
         }

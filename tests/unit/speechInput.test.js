@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initSpeechInput } from '../../src/input/speechInput.js';
+import { initSpeechInput, disableSpeechInput } from '../../src/input/speechInput.js';
 
 class FakeRecognition {
   static last = null;
@@ -131,3 +131,48 @@ describe('push-to-talk pressed again before the last run has ended', () => {
   });
 });
 
+// Issue #306 R10: switching the Push-to-Talk setting off did nothing until a
+// reload — a capture in progress kept going, and the 🎙 button stayed and
+// kept starting new captures.
+describe('turning push-to-talk off', () => {
+  it('stops a capture in progress, and the existing button can start no other', () => {
+    ptt().start();
+    engine().onstart();
+    const recognition = engine();
+    disableSpeechInput();
+    expect(recognition.calls).toEqual(['start', 'abort']);
+
+    recognition.onend();                       // the aborted run ends
+    ptt().start();                             // the old button's mousedown
+    expect(recognition.calls).toEqual(['start', 'abort']);
+    expect(engine()).toBe(recognition);        // no new engine either
+  });
+
+  it('removes every 🎙 button', () => {
+    const buttons = [{ remove() { this.removed = true; } }, { remove() { this.removed = true; } }];
+    globalThis.document = { querySelector: () => null, querySelectorAll: (sel) => (sel === '.sf-ptt-button' ? buttons : []) };
+    disableSpeechInput();
+    expect(buttons.map(b => b.removed)).toEqual([true, true]);
+  });
+
+  it('turned on again, a fresh controller captures and the old engine stays stopped', () => {
+    ptt().start();
+    engine().onstart();
+    const old = engine();
+    disableSpeechInput();
+    initSpeechInput();
+    expect(engine()).not.toBe(old);
+    ptt().start();
+    expect(engine().calls).toEqual(['start']);
+    expect(old.calls).toEqual(['start', 'abort']);
+  });
+
+  it('initialising again replaces the controller without leaving the old one listening', () => {
+    ptt().start();
+    engine().onstart();
+    const old = engine();
+    initSpeechInput();
+    expect(old.calls).toEqual(['start', 'abort']);
+    expect(engine()).not.toBe(old);
+  });
+});

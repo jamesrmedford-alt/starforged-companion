@@ -516,7 +516,10 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
       }
       return;
     }
-    const volume = Number(getSetting("audio.volume", 0.8)) || 0.8;
+    // The setting as stored: PlaybackSession clamps it to 0..1 (a missing or
+    // unreadable value plays at 0.8). `|| 0.8` here turned a 0% slider into
+    // 80% (issue #306 R09).
+    const volume = getSetting("audio.volume", 0.8);
     session = new PlaybackSession({
       cardId:   message.id,
       segments,

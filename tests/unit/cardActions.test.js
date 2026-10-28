@@ -7,25 +7,32 @@
  *     speaking as the clicker's PC (credit the roller), validated against the
  *     card's own choices and the requester's ownership;
  *   - "fightVow.markMilestone" / "fightVow.deepenBond" — the won-fight card's
- *     actions apply once per card (double-click / two-player idempotency).
+ *     actions apply once per card (double-click / two-player idempotency), and
+ *     only when they land: one that does not stays unapplied and is reported
+ *     to the GMs (issue #306 R04);
+ *   - "payoff.retry" — a payoff failure card's Retry: GM only, the card
+ *     claimed before any step re-runs, once.
  * Plus parseCardButtons and the relayCardAction button-honesty helper.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/index.js', () => ({
-  markLinkedVowMilestone: vi.fn(async () => {}),
-  deepenLinkedConnection: vi.fn(async () => {}),
+  markLinkedVowMilestone: vi.fn(async () => ({ ok: true })),
+  deepenLinkedConnection: vi.fn(async () => ({ ok: true })),
+  postPayoffFailureCard:  vi.fn(async () => {}),
+  retryPayoffSteps:       vi.fn(async () => []),
 }));
 
 import {
   applyConnectionPick,
   applyFightVowMarkMilestone,
   applyFightVowDeepenBond,
+  applyPayoffRetry,
   parseCardButtons,
   relayCardAction,
 } from '../../src/moves/cardActions.js';
-import { markLinkedVowMilestone, deepenLinkedConnection } from '../../src/index.js';
+import { markLinkedVowMilestone, deepenLinkedConnection, postPayoffFailureCard, retryPayoffSteps } from '../../src/index.js';
 import { GM_RELAY_SOCKET, _resetGmRelayForTests } from '../../src/multiplayer/gmRelay.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -42,9 +49,9 @@ function setUsers(users, currentUserId) {
   global.game.user = users.find(u => u.id === currentUserId) ?? null;
 }
 
-function makeCard(id, flags, content = '') {
+function makeCard(id, flags, content = '', author = null) {
   const msg = {
-    id, content,
+    id, content, author,
     flags: { [MODULE_ID]: { ...flags } },
     update: vi.fn(async (changes) => {
       for (const [path, val] of Object.entries(changes)) {
@@ -66,6 +73,8 @@ beforeEach(() => {
   _resetGmRelayForTests();
   markLinkedVowMilestone.mockClear();
   deepenLinkedConnection.mockClear();
+  postPayoffFailureCard.mockClear();
+  retryPayoffSteps.mockClear();
   pcA = makeTestActor({ id: 'pc-a', name: 'Ash' });
   pcB = makeTestActor({ id: 'pc-b', name: 'Bex' });
   pcB.ownership = { 'pl-1': 3 };
@@ -259,6 +268,82 @@ describe('won-fight card actions', () => {
   it('ignores a message that is not a won-fight card', async () => {
     expect((await applyFightVowMarkMilestone({ messageId: 'pick-1' }, GM_CTX)).reason).toBe('not-a-fight-card');
     expect(markLinkedVowMilestone).not.toHaveBeenCalled();
+  });
+
+  it('a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04)', async () => {
+    markLinkedVowMilestone.mockResolvedValueOnce({ ok: false, reason: 'refused', error: 'offline' });
+    const res = await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX);
+    expect(res).toEqual({ applied: false, reason: 'refused' });
+    expect(fight.flags[MODULE_ID].resolvedActions).toBeUndefined();
+    expect(postPayoffFailureCard).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'fightButton', retryable: false, vowName: 'Find the Archive',
+      failures: [expect.objectContaining({ step: 'milestone', reason: 'refused', marks: 2 })],
+    }));
+
+    expect(await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX)).toEqual({ applied: true });
+    expect(markLinkedVowMilestone).toHaveBeenCalledTimes(2);
+  });
+
+  it('a deepen that does not land (the connection gone) stays unapplied and is reported', async () => {
+    deepenLinkedConnection.mockResolvedValueOnce({ ok: false, reason: 'not-found' });
+    const res = await applyFightVowDeepenBond({ messageId: 'fight-1' }, P1_CTX);
+    expect(res).toEqual({ applied: false, reason: 'not-found' });
+    expect(fight.flags[MODULE_ID].resolvedActions).toBeUndefined();
+    expect(postPayoffFailureCard.mock.calls[0][0].failures[0]).toMatchObject({ step: 'deepen', connectionName: 'Kira' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// payoff.retry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a payoff failure card\'s Retry (issue #306 R04)', () => {
+  let card;
+  beforeEach(() => {
+    setUsers([GM, P1], 'gm-1');
+    card = makeCard('payoff-1', {
+      payoffFailureCard: true, retryable: true, resolved: false, source: 'fulfil',
+      vowName: 'Find the Archive', steps: [{ step: 'legacy', track: 'quests', ticks: 2 }],
+    }, '', GM);
+    messages.push(card);
+  });
+
+  it('a GM\'s press claims the card, then re-runs its steps from the card', async () => {
+    const order = [];
+    card.update.mockImplementationOnce(async () => { order.push('claim'); card.flags[MODULE_ID].resolved = true; });
+    retryPayoffSteps.mockImplementationOnce(async () => { order.push('retry'); return []; });
+
+    const res = await applyPayoffRetry({ messageId: 'payoff-1', steps: [{ step: 'legacy', track: 'quests', ticks: 40 }] }, GM_CTX);
+
+    expect(res).toEqual({ applied: true, failed: 0 });
+    expect(order).toEqual(['claim', 'retry']);
+    expect(retryPayoffSteps.mock.calls[0][0].steps).toEqual([{ step: 'legacy', track: 'quests', ticks: 2 }]);
+  });
+
+  it('once: a repeat press, or two at once, re-run nothing more', async () => {
+    await Promise.all([
+      applyPayoffRetry({ messageId: 'payoff-1' }, GM_CTX),
+      applyPayoffRetry({ messageId: 'payoff-1' }, GM_CTX),
+    ]);
+    expect((await applyPayoffRetry({ messageId: 'payoff-1' }, GM_CTX)).reason).toBe('already-resolved');
+    expect(retryPayoffSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused claim re-runs nothing', async () => {
+    card.update.mockRejectedValueOnce(new Error('offline'));
+    expect(await applyPayoffRetry({ messageId: 'payoff-1' }, GM_CTX)).toEqual({ applied: false, reason: 'claim-refused' });
+    expect(retryPayoffSteps).not.toHaveBeenCalled();
+    expect(card.flags[MODULE_ID].resolved).toBe(false);
+  });
+
+  it('refuses a player, a card a player wrote, and a report without a Retry', async () => {
+    expect((await applyPayoffRetry({ messageId: 'payoff-1' }, P1_CTX)).reason).toBe('not-gm');
+    const forged = makeCard('payoff-2', { payoffFailureCard: true, steps: [{ step: 'legacy', track: 'quests', ticks: 40 }] }, '', P1);
+    const report = makeCard('payoff-3', { payoffFailureCard: true, retryable: false, steps: [{ step: 'milestone' }] }, '', GM);
+    messages.push(forged, report);
+    expect((await applyPayoffRetry({ messageId: 'payoff-2' }, GM_CTX)).reason).toBe('not-a-payoff-card');
+    expect((await applyPayoffRetry({ messageId: 'payoff-3' }, GM_CTX)).reason).toBe('not-a-payoff-card');
+    expect(retryPayoffSteps).not.toHaveBeenCalled();
   });
 });
 

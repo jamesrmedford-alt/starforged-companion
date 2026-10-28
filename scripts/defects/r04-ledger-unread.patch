@@ -1,0 +1,16 @@
+Defect: issue #306 R04 — a payoff Retry ignores the vow's ledger, so a step recorded as landed is applied again
+Tests: tests/unit/payoffFailure.test.js
+Catches: a Retry skips a step
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..f07610e 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -4235,7 +4235,6 @@ export async function retryPayoffSteps(card) {
+   const failures = [];
+   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
+     const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
+-    if (fulfil && payoffStepLanded(copies, ledgerStep)) continue;
+     const res = await runPayoffStep(s, card, copies);
+     if (res?.ok) {
+       if (fulfil && !res.skipped) await recordPayoffStep(copies, ledgerStep);

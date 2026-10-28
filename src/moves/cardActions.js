@@ -16,7 +16,8 @@
  *
  * Both now relay through the canonical-GM action relay
  * (src/multiplayer/gmRelay.js — "connection.pick", "fightVow.markMilestone",
- * "fightVow.deepenBond"). The handlers below run on the canonical GM, check
+ * "fightVow.deepenBond"), as does a payoff failure card's Retry
+ * ("payoff.retry", issue #306 R04). The handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
  * effect value from the GM-authored card — never from the client payload
@@ -254,7 +255,8 @@ function connectionPickerChoices(message) {
 export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
     const { markLinkedVowMilestone } = await import("../index.js");
-    await markLinkedVowMilestone(f.vowName ?? null, f.marks, typeof f.actorId === "string" ? f.actorId : null);
+    const res = await markLinkedVowMilestone(f.vowName ?? null, f.marks, typeof f.actorId === "string" ? f.actorId : null);
+    return { ...res, step: "milestone", marks: f.marks ?? 1 };
   });
 }
 
@@ -273,10 +275,17 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       return false;
     }
     const { deepenLinkedConnection } = await import("../index.js");
-    await deepenLinkedConnection(f.connectionName, marksForSourceRank(f.vowRank));
+    const marks = marksForSourceRank(f.vowRank);
+    const res = await deepenLinkedConnection(f.connectionName, marks);
+    return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });
 }
 
+// Apply one won-fight action once per card. `apply` resolves false (nothing to
+// apply), or the step's result: only { ok: true } stamps the card. A step that
+// did not land leaves the action unapplied — its button re-arms, so the press
+// is the retry — and the GMs are told why (issue #306 R04: the stamp used to
+// land whatever happened, so a refused mark could never be retried).
 async function applyFightVowAction(action, payload, ctx, apply) {
   const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
@@ -299,9 +308,75 @@ async function applyFightVowAction(action, payload, ctx, apply) {
   try {
     const out = await apply(f);
     if (out === false) return { applied: false, reason: "nothing-to-apply" };
+    if (out?.ok !== true) {
+      const { postPayoffFailureCard } = await import("../index.js");
+      await postPayoffFailureCard({
+        source: "fightButton", vowName: f.vowName ?? null, actorId: typeof f.actorId === "string" ? f.actorId : null,
+        connectionName: f.connectionName ?? null, failures: [out ?? { step: action, reason: "failed" }], retryable: false,
+      }).catch(err => console.warn(`${MODULE_ID} | fight-vow ${action}: failure card failed:`, err?.message ?? err));
+      return { applied: false, reason: out?.reason ?? "failed" };
+    }
     await message.update({ [`flags.${MODULE_ID}.resolvedActions.${action}`]: true })
       .catch(err => console.warn(`${MODULE_ID} | fight-vow ${action}: resolve update failed:`, err?.message ?? err));
     return { applied: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYOFF FAILURE CARD — gmRelay "payoff.retry"
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "payoff.retry" — runs on the canonical GM (issue #306
+ * R04). Re-runs the steps a payoff failure card lists (src/index.js
+ * retryPayoffSteps), once per card.
+ *
+ * GM only: the card is whispered to the GMs, and a Retry re-applies writes.
+ * The card must be GM-authored, and every value comes from it — never from
+ * the payload beyond which card. One press: the card is claimed (stamped
+ * `resolved`) before any step runs, so a press whose claim is refused applies
+ * nothing and its button re-arms, and a second press finds it claimed. Steps
+ * that fail again go on a fresh card with its own Retry.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string, failed?: number }>}
+ */
+export async function applyPayoffRetry(payload = {}, ctx = {}) {
+  const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | payoff retry: card ${messageId ?? "?"} not found — nothing retried.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.payoffFailureCard || f.retryable === false || message.author?.isGM !== true) {
+    console.warn(`${MODULE_ID} | payoff retry: message ${messageId} is not a GM's payoff failure card — ignored.`);
+    return { applied: false, reason: "not-a-payoff-card" };
+  }
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | payoff retry: user ${ctx?.requesterId ?? "?"} is not a GM — refused.`);
+    return { applied: false, reason: "not-gm" };
+  }
+  const key = `${messageId}:payoffRetry`;
+  if (f.resolved || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | payoff retry: card ${messageId} already retried — ignoring the press.`);
+    return { applied: false, reason: "already-resolved" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | payoff retry: card ${messageId} could not be claimed — nothing retried:`, err?.message ?? err);
+      return { applied: false, reason: "claim-refused" };
+    }
+    const { retryPayoffSteps } = await import("../index.js");
+    const failed = await retryPayoffSteps(f);
+    return { applied: true, failed: failed.length };
   } finally {
     _inFlight.delete(key);
   }

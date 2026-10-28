@@ -76,10 +76,12 @@ passage" drawing.
 `finish_an_expedition` is a progress move scored from the expedition track's
 live ticks (`enrichProgressTicks`, see `decisions.md`). Three entry points:
 typed narration, the Progress Tracks panel's Roll button (bridges with
-`forcedMoveTarget = track.label`), and the progress card's Finish button —
-which since the EXPEDITION-FINISH-TARGET fix forwards the card's own
-`trackLabel` as the target, so the right expedition finishes even with
-several open. Strong hit → `finishExpedition` completes the
+`forcedMoveTarget = track.label` and `forcedMoveTargetId = track.id`), and the
+progress card's Finish button — which since the EXPEDITION-FINISH-TARGET fix
+forwards the card's own `trackLabel` as the target, and since issue #306 R06
+its `trackId` too, so the right expedition finishes even with several open,
+same-named ones included. A track deleted or finished before the roll resolves
+rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes the
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`

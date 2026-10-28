@@ -31,6 +31,9 @@ export function normalizeCombatRank(rank) {
  * Find the combat track most likely associated with a given foe/scene label.
  *
  * Resolution order (mirrors selectExpeditionTrack):
+ *  0. The track's id, when the caller knows it (a Progress Tracks panel row) —
+ *     an open fight with that id, else null: never a same-named sibling
+ *     (issue #306 R06)
  *  1. Exact label match (case-insensitive, ignoring leading "the")
  *  2. Substring in either direction
  *  3. Fallback: single open combat track regardless of label
@@ -38,10 +41,12 @@ export function normalizeCombatRank(rank) {
  *
  * @param {Array<{id,label,type,completed}>} allTracks
  * @param {string|null} label
+ * @param {{ trackId?: string|null }} [opts]
  * @returns {object|null}
  */
-export function selectCombatTrack(allTracks, label) {
+export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
   const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
+  if (typeof trackId === 'string' && trackId) return open.find(t => t.id === trackId) ?? null;
   if (!open.length) return null;
 
   if (label) {
@@ -101,10 +106,10 @@ export async function applyCombatProgress(
  * @param {{ listTracks: Function, completeTrack: Function }} deps
  * @returns {Promise<{track: object}|null>}
  */
-export async function finishCombat({ moveTarget }, deps) {
+export async function finishCombat({ moveTarget, moveTargetId = null }, deps) {
   const { listTracks, completeTrack } = deps;
   const allTracks = await listTracks();
-  const track = selectCombatTrack(allTracks, moveTarget ?? null);
+  const track = selectCombatTrack(allTracks, moveTarget ?? null, { trackId: moveTargetId });
   if (!track) return null;
   const completed = await completeTrack(track.id);
   return { track: completed ?? track };

@@ -86,12 +86,36 @@ function escapeHtml(s) {
 }
 
 /**
+ * The world Actor for a compendium encounter: one already imported from that
+ * compendium entry (`_stats.compendiumSource`, or the older `flags.core.sourceId`),
+ * else a fresh import (`game.actors.importFromCompendium`). A token needs a
+ * world Actor: a compendium Actor's getTokenDocument() names its compendium
+ * id, which no world Actor has (issue #306 R12).
+ *
+ * @param {Object} canonical — the compendium Actor
+ * @returns {Promise<Object|null>} the world Actor, or null when it could not be imported
+ */
+async function worldEncounterActor(canonical) {
+  const uuid = canonical?.uuid ?? null;
+  const imported = uuid
+    ? globalThis.game?.actors?.find?.(a =>
+      a?._stats?.compendiumSource === uuid || a?.flags?.core?.sourceId === uuid) ?? null
+    : null;
+  if (imported) return imported;
+  const pack = canonical?.compendium ?? globalThis.game?.packs?.get?.(canonical?.pack) ?? null;
+  if (!pack || typeof globalThis.game?.actors?.importFromCompendium !== "function") return null;
+  return (await globalThis.game.actors.importFromCompendium(pack, canonical.id ?? canonical._id)) ?? null;
+}
+
+/**
  * Resolve and (optionally) place an encounter Actor.
- *   GM with an active scene → import the actor and create a token at canvas centre.
+ *   GM with an active scene → reuse or import the world Actor and create its
+ *   token at canvas centre.
  *   Otherwise → post a stat-summary chat card.
  *
  * @param {string} name
- * @returns {Promise<{actor: Object|null, placed: boolean}>}
+ * @returns {Promise<{actor: Object|null, placed: boolean}>} `actor` is the
+ *   world Actor when placed, else the compendium Actor
  */
 export async function spawnEncounter(name) {
   const canonical = await getCanonicalEncounterActor(name);
@@ -111,13 +135,15 @@ export async function spawnEncounter(name) {
 
   if (isGm && scene) {
     try {
-      const tokenData = await canonical.getTokenDocument({
+      const actor = await worldEncounterActor(canonical);
+      if (!actor) throw new Error(`"${canonical.name}" could not be imported into the world`);
+      const tokenData = await actor.getTokenDocument({
         x: (scene.width ?? 1000) / 2,
         y: (scene.height ?? 1000) / 2,
         hidden: false,
       });
       await scene.createEmbeddedDocuments("Token", [tokenData.toObject?.() ?? tokenData]);
-      return { actor: canonical, placed: true };
+      return { actor, placed: true };
     } catch (err) {
       console.warn(`${MODULE_ID} | encounterSpawn: token placement failed, falling back to chat card:`, err);
     }

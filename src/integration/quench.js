@@ -4105,6 +4105,30 @@ function registerEncounterSpawnLiveTests(quench) {
           assert.isTrue(out?.actor !== undefined,
             "result.actor field should be present (null acceptable on missing slug)");
         });
+
+        // Issue #306 R12: the token was built from the COMPENDIUM Actor, so its
+        // actorId named no world Actor. A placed token's Actor must be a world Actor.
+        it("a placed encounter token is backed by a world Actor", async function () {
+          this.timeout(20000);
+          const scene = globalThis.canvas?.scene;
+          if (!game.user?.isGM || !scene || !game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
+          const { spawnEncounter } = await import(
+            `/modules/${MODULE_ID}/src/system/encounterSpawn.js`);
+          const actorsBefore = new Set(game.actors.map(a => a.id));
+          const tokensBefore = new Set(scene.tokens.map(t => t.id));
+          const out = await withSilencedNotifications(() => spawnEncounter("Bogfaller"));
+          const newTokens = scene.tokens.filter(t => !tokensBefore.has(t.id));
+          try {
+            if (!out?.placed) { this.skip(); return; }
+            assert.lengthOf(newTokens, 1, "one token placed");
+            const [token] = newTokens;
+            assert.ok(game.actors.get(token.actorId), "the token's actorId names a world Actor");
+            assert.equal(token.baseActor?.id, token.actorId, "the token resolves its base Actor");
+          } finally {
+            if (newTokens.length) await scene.deleteEmbeddedDocuments("Token", newTokens.map(t => t.id)).catch(() => {});
+            for (const actor of game.actors.filter(a => !actorsBefore.has(a.id))) await actor.delete().catch(() => {});
+          }
+        });
       });
     },
     { displayName: "STARFORGED: Encounter Spawn (live)" },
@@ -8779,6 +8803,29 @@ function registerCombatCardButtonTests(quench) {
             "the forced TDA message should bypass the pacing classifier");
         });
 
+        it("a card that names its fight forwards it with the move (TDA-BUTTON-NO-TARGET)", async function () {
+          this.timeout(15000);
+          const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight: Turret</button></div>`;
+          const msg = { id: "quench-tda-named", flags: { [MODULE]: {
+            combatMoveCard: true, combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret",
+          } } };
+
+          wireTakeDecisiveActionButton(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-action="sf-take-decisive-action"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "take_decisive_action");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced take_decisive_action message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+            "the card's fight rides the move by id");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+        });
+
         it("no-ops when the card is not a combat move card", async function () {
           this.timeout(5000);
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
@@ -8818,6 +8865,62 @@ function registerCombatCardButtonTests(quench) {
           if (synthetic) track(synthetic.id);
           assert.isOk(synthetic,
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
+        });
+
+        it("a card that names its track forwards it with the Battle (TDA-BUTTON-NO-TARGET)", async function () {
+          this.timeout(15000);
+          const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+
+          const root = document.createElement("div");
+          root.innerHTML = `<p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p>`;
+          const msg = { id: "quench-battle-named", flags: { [MODULE]: {
+            combatTrackCard: true, created: true, trackId: "quench-fight-turret", trackLabel: "Turret",
+          } } };
+
+          wireCombatTrackCardButtons(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-action="sf-battle"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "battle");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced battle message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+            "the card's track rides the Battle by id");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+        });
+      });
+
+      describe("Which fight? card (a Take Decisive Action that names no fight)", function () {
+        it("a pick posts the move with that fight's id, spoken as the original roller", async function () {
+          this.timeout(15000);
+          const { wireWhichFightButtons } = await import(`${MODULE_PATH}/index.js`);
+          const roller = (game.actors?.contents ?? []).find(a => a.type === "character" && !a.flags?.[MODULE]?.entityType) ?? null;
+
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="sf-milestone-suggest-row">`
+            + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-boarders">Boarders</button>`
+            + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-turret">Turret</button></div>`;
+          const msg = { id: "quench-which-fight", flags: { [MODULE]: {
+            whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
+            actorId: roller?.id ?? null,
+            fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
+          } } };
+
+          wireWhichFightButtons(msg, root);
+          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+          root.querySelector('[data-track-id="quench-fight-turret"]')
+            .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+          const synthetic = await awaitForcedMove(beforeIds, "take_decisive_action");
+          if (synthetic) track(synthetic.id);
+          assert.isOk(synthetic, "expected a forced take_decisive_action message");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+          if (roller) assert.equal(synthetic.speaker?.actor, roller.id, "the move stays the roller's");
+          for (const b of root.querySelectorAll('[data-action="sf-which-fight"]')) {
+            assert.isTrue(b.disabled, "one pick per card: every button disables");
+          }
         });
       });
 

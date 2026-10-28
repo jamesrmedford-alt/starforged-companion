@@ -1,17 +1,37 @@
-# Regression-test sensitivity — issues #300, #301 and #302
+# Regression-test sensitivity — issues #300, #301, #302 and #306
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300 and #301 audits and from issue #302's disturbance matrix (slice B): the
-tests that fail with the fix taken out. It was produced by
-`scripts/fix-sensitivity.mjs` on 2026-10-27; the patch was applied to
-`ec08eb4`. To reproduce:
+#300, #301 and #306 audits and from issue #302's disturbance matrix (slice
+B): the tests that fail with the fix taken out. It was produced by
+`scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to `ec08eb4`)
+and, for issue #306, on 2026-10-28 (the patch applied to `8bee894`; for the
+two follow-ups, the patches applied to `514f5eb`). To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
   632a180 c8e4268 c925f10 3749058 23ee366 ea69ddf ed8d688 f068664 19c5ef0 c958eb0 45b7350 \
   ca5bf5d cdb8c80 e572ebd ec08eb4 \
   --inject scripts/defects/b04-recap-cache-count-only.patch --md details.md
+
+# issue #306
+node scripts/fix-sensitivity.mjs \
+  601889d 059f33b e428b50 e2dac8b c556612 10d0f4b a2644a9 7bf24b9 1054cd8 e1fd5fb 92ca408 70c05d3 \
+  --inject scripts/defects/r04-forge-unclaimed.patch --md details.md
+
+# issue #306 — the follow-ups (TDA-BUTTON-NO-TARGET, R04's third point)
+node scripts/fix-sensitivity.mjs \
+  23b2c8b be61488 514f5eb \
+  --inject scripts/defects/tda-which-fight-unspoken.patch \
+  --inject scripts/defects/tda-which-fight-twice.patch \
+  --inject scripts/defects/r04-xp-before-write.patch \
+  --inject scripts/defects/r04-reward-earned-unearned.patch \
+  --inject scripts/defects/r04-connection-gone-silent.patch \
+  --inject scripts/defects/r04-ledger-unread.patch \
+  --inject scripts/defects/r04-retry-claims-late.patch \
+  --inject scripts/defects/r04-retry-any-user.patch \
+  --inject scripts/defects/r04-retry-repeatable.patch \
+  --inject scripts/defects/r04-fight-stamp-optimistic.patch --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -70,6 +90,27 @@ temporary git worktree; the checkout it is run from is not touched.
 | DRAFT-CONFIRM-TWICE | e572ebd | revert | 1 — `faultMatrix.test.js` (a double-click on Confirm) |
 | SUFFER-PICK-TWICE | ec08eb4 | revert | 4 — `faultMatrix.test.js` (two picks on one client; the player and the GM; the pick-two control, which fails because a player's pick could not be recorded on the GM's card) and `gmRelay.test.js` (the kind is declared); 4 more in `sufferCard.test.js` fail only on the missing export |
 
+### Issue #306 — the post-fix audit
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| R01 XCARD-RESUME-REVIVES | 601889d | revert | 3 — `xcardInFlight.test.js` (the card played and resumed during the call: move narration, and the seven other entry points) and `persistResolutionMerge.test.js` (the play count survives a stale persist) |
+| R02 CHRONICLE-STALE-SAVE | 059f33b | revert | 5 — `chroniclePanel.test.js` (pin, delete, a re-type from the type select, a second pin and a pin after a delete each keep an entry written after the panel opened); 3 more in `chronicle.test.js` / `recap.test.js` fail only on the missing by-id edits |
+| R02 CHRONICLE-APPEND-RACE, R11 CHRONICLE-PLAYER-UNWRITABLE | a2644a9 | revert | 19 — `chronicleRelay.test.js` (overlapping appends; a pin overlapping an append; on a booted table a player's pin and note, the panel's re-render, no GM connected), `chronicleWriter.test.js` (the writer's entry goes to the GM), `chronicle.test.js` (a write reports whether it wrote), `hookGates.test.js`; 5 more fail only on the missing handler |
+| R03 SUPPLY-STALE-PASS | 1054cd8 | revert | 2 — `sharedSupply.test.js` (a newer edit to a PC the pass hasn't reached; an older write landing after a PC's own edit) |
+| R04 FULFIL-PAID-RACE | 7bf24b9 | revert | 2 — `nativePayoffOnce.test.js` (overlapping fulfilments of one vow; a refused legacy write leaves the cached campaign alone) |
+| R04 FORGE-BONDED-RACE | 7bf24b9, test 8bee894 | inject `r04-forge-unclaimed.patch` | 1 — `nativePayoffOnce.test.js` (overlapping forgings). Under revert the forge tests fail only on the missing export; the first version of the test mocked `connection.js` and passed with the defect in (the payoff's second concurrent dynamic import got the real module), so 8bee894 rewrote it on the real store |
+| R05 POSITION-PROJECTION-DROPPED | e428b50 | revert | 2 — `progressTrackSelection.test.js` (a bad spot downgrades Take Decisive Action with another fight open; a Strike's position lands on its own fight) |
+| R06 TRACK-ROLL-BY-LABEL | e1fd5fb | revert | 7 — `progressTrackSelection.test.js` (combat and expedition rolls on the second of two same-named rows; a row deleted before the roll), `combat.test.js` / `expedition.test.js` (the id rule), `progressRollBridge.test.js` (the panel's and the expedition card's flags) |
+| R07 TRANSCRIPT-SESSION-MIX | e2dac8b | revert | 2 — `private-channel.test.js` (a failed batch and an unflushed batch from the last session) |
+| R08 TRANSCRIPT-BY-NAME | 92ca408 | revert | 4 — `private-channel.test.js` (a rename; a split session; another user's same-named journal; an unflagged journal stamped) |
+| R09 VOLUME-ZERO-LOST | c556612 | revert | 2 — `audioCardButton.test.js` (0% on the card), `audio.test.js` (the blob adapter at 0) |
+| R10 PTT-OFF-IGNORED | 10d0f4b | revert | 3 — `speechInputSetting.test.js` (the setting's real onChange, off and on again), `speechInput.test.js` (re-initialising); 3 more fail only on the missing `disableSpeechInput` |
+| R12 ENCOUNTER-COMPENDIUM-TOKEN | 70c05d3 | revert | 4 — `encounterSpawn.test.js` (first use imports; an earlier import is reused, either marker; a failed import posts the card) |
+| TDA-BUTTON-NO-TARGET — a card names its fight | 23b2c8b | revert | 2 — `progressTrackSelection.test.js` (two fights open: a Strike's Finish the Fight scores and finishes its own fight; Battle from an Enter the Fray card ends its own fight) |
+| TDA-BUTTON-NO-TARGET — which fight? | be61488 | revert; inject `tda-which-fight-unspoken.patch`, `tda-which-fight-twice.patch` | 2 under revert — `progressTrackSelection.test.js` (a Take Decisive Action naming no fight posts the card and rolls nothing; one pick per card). By injection: the pick is spoken as the roller (1); the GM's pick stamp holds on another client (1) |
+| R04 NATIVE-PAYOFF-NO-RETRY | 514f5eb | revert; inject the eight `r04-*.patch` follow-up patches | 15 under revert — `payoffFailure.test.js` (13: every step lands; a refused legacy write pays no XP and a Retry pays it once; a refused grant posts no "Reward earned"; a refused claim; a connection gone; a step that fails again; the ledger; a duplicate fulfilment; GM only; a refused claim of the card; the forge; a won fight's reward; the victory card's button) and `cardActions.test.js` (2: a mark or a deepen that does not land stays unapplied). 4 more fail only on the missing `applyPayoffRetry`; injection covers each. By injection: XP before the write (1), "Reward earned" after a refused grant (2), a missing connection skipped silently (1), a Retry that ignores the ledger (1), a late claim (3), any user (2), a repeatable Retry (2), an optimistic victory-card stamp (3) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -94,6 +135,16 @@ ways; each was read and is a control:
 | `developRelationship` › an empty id falls through to the name ladder | a typed move with no picker id (B01) |
 | `developRelationship` › a named bonded connection still resolves to itself | an explicitly named bonded connection (B01) |
 | `cardButtonWiring` › a shared vow (one vowId on every PC) still pays every copy | a vow the party swore together (B02) |
+| `xcardInFlight` › a narration started after the resume is narrated | resuming lets new narrations run (#306 R01) |
+| `xcardInFlight` › a narration started while the X-Card was still active stays paused — no Claude call | the entry gate (#306 R01) |
+| `progressTrackSelection` › in control, the same roll stays a strong hit | no downgrade in control (#306 R05) |
+| `private-channel` › turns in one session still share one batch — one write per flush | batching within a session (#306 R07) |
+| `audioCardButton` › plays at the setting otherwise / plays at 0.8 when the setting is unset | a set volume and the default (#306 R09) |
+| `chronicleRelay` › the GM created the journal, and the player cannot write it directly — Foundry's default | the modelled journal permission (#306 R11) |
+| `nativePayoffOnce` › two different vows that overlap are both paid | independent vows (#306 R04) |
+| `nativePayoffOnce` › a fulfilment after the first has finished pays nothing — the paid flag | the paid flag (#306 R04) |
+| `progressTrackSelection` › an older card that names no fight, one fight open, still rolls that fight | a card without the stamp, one fight open (TDA-BUTTON-NO-TARGET) |
+| `progressTrackSelection` › a typed Take Decisive Action that names its fight rolls it without asking | no question when the fight is named (TDA-BUTTON-NO-TARGET) |
 
 ## Details
 
@@ -450,3 +501,417 @@ Test files: `tests/unit/recap.test.js`, `tests/unit/sessionSummary.test.js`.
 | tests/unit/recap.test.js › getCampaignRecap() — the cache after a chronicle correction (issue #301 B04) with a key, the recap is regenerated from the corrected chronicle, and that cache is then reused | AssertionError: expected 'Vex died.' to be 'Fresh recap.' // Object.is equality |
 | tests/unit/recap.test.js › getCampaignRecap() — the cache after a chronicle correction (issue #301 B04) a cache from before the hash existed is regenerated once, even with a matching count | AssertionError: expected 'Old recap.' to be 'Fresh recap.' // Object.is equality |
 | tests/unit/sessionSummary.test.js › earlier sessions reach every prose mode (issue #286 C3) a cache made from a different chronicle never opens the session (issue #301 B04) | AssertionError: expected 'The campaign so far.' to be '' // Object.is equality |
+
+### 601889d — fix: a resumed X-Card no longer revives the narration it stopped (issue #306 R01)
+
+Test files: `tests/unit/persistResolutionMerge.test.js`, `tests/unit/xcardInFlight.test.js`. Source restored: 3 file(s).
+
+- With the fix: 21 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 18 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/persistResolutionMerge.test.js › persistResolution — concurrent writes survive the stale working copy keeps the X-Card play count when the card is played and resumed mid-pipeline (issue #306 R01) | AssertionError: expected undefined to be 1 // Object.is equality |
+| (new) tests/unit/xcardInFlight.test.js › an X-Card played and resumed while the narration is generated still discards the reply move narration: no narrator card, no sidecar facts, and the notice says it was discarded | AssertionError: expected 'The reactor screams as the hull split…' to be null |
+| (new) tests/unit/xcardInFlight.test.js › an X-Card played and resumed while the narration is generated still discards the reply @scene, paced narration, the oracle follow-up, vignettes, clocks, vow scenes and the inciting incident return nothing | AssertionError: expected [ …(7) ] to deeply equal [ null, null, null, null, null, …(2) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardInFlight.test.js › an X-Card played and resumed while the narration is generated still discards the reply a narration started after the resume is narrated
+- New test passing with and without the fix (a control?): tests/unit/xcardInFlight.test.js › an X-Card played and resumed while the narration is generated still discards the reply a narration started while the X-Card was still active stays paused — no Claude call
+
+### 059f33b — fix: a Chronicle pin, delete or re-type keeps newer entries (issue #306 R02)
+
+Test files: `tests/unit/chronicle.test.js`, `tests/unit/chroniclePanel.test.js`, `tests/unit/recap.test.js`. Source restored: 2 file(s).
+
+- With the fix: 66 passed, 0 failed.
+- Without it: 8 failed (6 new; 3 only for a missing export); 58 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/chronicle.test.js › identity by actor id, not by name (issue #301 B03) an edit and a panel delete reach an entry wherever a split left it — and the delete sticks | TypeError: (0 , deleteChronicleEntry) is not a function |
+| (new) tests/unit/chroniclePanel.test.js › Chronicle panel actions keep entries written after the panel opened (issue #306 R02) pinning an older entry keeps the newer one, and pins only the chosen entry | AssertionError: expected [ 'Original.' ] to deeply equal [ 'Original.', 'New automatic beat.' ] |
+| (new) tests/unit/chroniclePanel.test.js › Chronicle panel actions keep entries written after the panel opened (issue #306 R02) deleting an older entry keeps the newer one | AssertionError: expected [] to deeply equal [ 'New automatic beat.' ] |
+| (new) tests/unit/chroniclePanel.test.js › Chronicle panel actions keep entries written after the panel opened (issue #306 R02) re-typing an older entry from the type select keeps the newer one | AssertionError: expected [ 'Original.' ] to deeply equal [ 'Original.', 'New automatic beat.' ] |
+| (new) tests/unit/chroniclePanel.test.js › Chronicle panel actions keep entries written after the panel opened (issue #306 R02) a second pin click unpins — the write applies the pin the row showed, flipped | AssertionError: expected [ false ] to deeply equal [ false, false ] |
+| (new) tests/unit/chroniclePanel.test.js › Chronicle panel actions keep entries written after the panel opened (issue #306 R02) an entry deleted meanwhile is not brought back by a pin | AssertionError: expected [] to deeply equal [ 'New automatic beat.' ] |
+| (API) tests/unit/recap.test.js › getCampaignRecap() — the cache after a chronicle correction (issue #301 B04) a same-count replacement — the wrong entry deleted, the right one added — invalidates it | TypeError: (0 , deleteChronicleEntry) is not a function |
+| (API) tests/unit/recap.test.js › getCampaignRecap() — the cache after a chronicle correction (issue #301 B04) pinning or re-typing an entry keeps the recap — neither is in it | TypeError: (0 , setChronicleEntryPinned) is not a function |
+
+### e428b50 — fix: with two fights open, a fight's position counts (issue #306 R05)
+
+Test files: `tests/unit/progressTrackSelection.test.js`. Source restored: 2 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTrackSelection.test.js › two fights open: a fight's own position reaches Take Decisive Action (issue #306 R05) in a bad spot, a strong hit without a match counts as a weak hit | AssertionError: expected [ [ 'take_decisive_action', …(1) ] ] to deeply equal [ [ 'take_decisive_action', …(1) ] ] |
+| (new) tests/unit/progressTrackSelection.test.js › two fights open: a fight's own position reaches Take Decisive Action (issue #306 R05) a Strike's position lands on the fight it targeted, not on nothing | AssertionError: expected 'in_control' to be 'bad_spot' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › two fights open: a fight's own position reaches Take Decisive Action (issue #306 R05) in control, the same roll stays a strong hit
+
+### e2dac8b — fix: a new session's Private Channel turns go to its own page (issue #306 R07)
+
+Test files: `tests/unit/private-channel.test.js`. Source restored: 1 file(s).
+
+- With the fix: 49 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 47 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/private-channel.test.js › transcript write/read a new session's turns never join a failed batch from the last session | AssertionError: expected '&lt;p class="pc-turn pc-turn-player">&lt;st…' not to contain 'New session opening.' |
+| (new) tests/unit/private-channel.test.js › transcript write/read a new session's turns never join an unflushed batch from the last session | AssertionError: expected '&lt;p class="pc-turn pc-turn-player">&lt;st…' not to contain 'First words of session two.' |
+
+- New test passing with and without the fix (a control?): tests/unit/private-channel.test.js › transcript write/read turns in one session still share one batch — one write per flush
+
+### c556612 — fix: narrator audio at 0% volume plays silently (issue #306 R09)
+
+Test files: `tests/unit/audio.test.js`, `tests/unit/audioCardButton.test.js`. Source restored: 2 file(s).
+
+- With the fix: 72 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 70 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/audio.test.js › _createSound blob URL adapter keeps a session volume of 0 on the HTMLAudioElement, and clamps the rest | AssertionError: expected 1 to be +0 // Object.is equality |
+| (new) tests/unit/audioCardButton.test.js › narrator card audio volume plays at 0 when the volume setting is 0% | AssertionError: expected 0.8 to be +0 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/audioCardButton.test.js › narrator card audio volume plays at the setting otherwise
+- New test passing with and without the fix (a control?): tests/unit/audioCardButton.test.js › narrator card audio volume plays at 0.8 when the setting is unset
+
+### 10d0f4b — fix: turning Push-to-Talk off takes effect at once (issue #306 R10)
+
+Test files: `tests/unit/speechInput.test.js`, `tests/unit/speechInputSetting.test.js`. Source restored: 2 file(s).
+
+- With the fix: 16 passed, 0 failed.
+- Without it: 6 failed (6 new; 3 only for a missing export); 10 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/speechInput.test.js › turning push-to-talk off stops a capture in progress, and the existing button can start no other | TypeError: (0 , disableSpeechInput) is not a function |
+| (new) (API) tests/unit/speechInput.test.js › turning push-to-talk off removes every 🎙 button | TypeError: (0 , disableSpeechInput) is not a function |
+| (new) (API) tests/unit/speechInput.test.js › turning push-to-talk off turned on again, a fresh controller captures and the old engine stays stopped | TypeError: (0 , disableSpeechInput) is not a function |
+| (new) tests/unit/speechInput.test.js › turning push-to-talk off initialising again replaces the controller without leaving the old one listening | AssertionError: expected [ 'start' ] to deeply equal [ 'start', 'abort' ] |
+| (new) tests/unit/speechInputSetting.test.js › the Push-to-Talk setting takes effect at once off: a capture in progress stops, the button goes, and a stale press starts nothing | AssertionError: expected [ 'start' ] to deeply equal [ 'start', 'abort' ] |
+| (new) tests/unit/speechInputSetting.test.js › the Push-to-Talk setting takes effect at once on again: one fresh controller, and the button is back | AssertionError: expected [] to deeply equal [ 'start' ] |
+
+### a2644a9 — fix: Chronicle edits are applied by the canonical GM, one at a time (issue #306 R11, R02)
+
+Test files: `tests/unit/chronicle.test.js`, `tests/unit/chroniclePanel.test.js`, `tests/unit/chronicleRelay.test.js`, `tests/unit/chronicleWriter.test.js`, `tests/unit/hookGates.test.js`. Source restored: 5 file(s).
+
+- With the fix: 65 passed, 0 failed.
+- Without it: 24 failed (10 new; 5 only for a missing export); 41 still pass (1 new).
+- Verdict: **sensitive** — 19 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/chronicle.test.js › addChronicleEntry does nothing if actor does not exist | AssertionError: expected undefined to be false // Object.is equality |
+| tests/unit/chronicle.test.js › updateChronicleEntry does nothing for unknown entryId | AssertionError: expected undefined to be false // Object.is equality |
+| tests/unit/chronicle.test.js › error path coverage addChronicleEntry returns silently when JournalEntry.create throws | AssertionError: expected undefined to be false // Object.is equality |
+| (new) (API) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) the PC's owner edits text, pins and adds a note | TypeError: (0 , applyChronicleEditFromRelay) is not a function |
+| (new) (API) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) a player who does not own the PC changes nothing | TypeError: (0 , applyChronicleEditFromRelay) is not a function |
+| (new) (API) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) re-type and delete are a GM's; the owner is refused | TypeError: (0 , applyChronicleEditFromRelay) is not a function |
+| (new) (API) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) a player's add is an annotation — never an automated entry or another type | TypeError: (0 , applyChronicleEditFromRelay) is not a function |
+| (new) (API) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) refuses an empty text, an unknown op and a missing entry; clamps a long text | TypeError: (0 , applyChronicleEditFromRelay) is not a function |
+| (new) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) two appends that overlap both survive | AssertionError: expected [ 'Original.', 'First incoming beat.' ] to deeply equal [ 'Original.', …(2) ] |
+| (new) tests/unit/chronicleRelay.test.js › chronicle.edit — the canonical GM's handler (issue #306 R11) a pin that overlaps an append keeps both | AssertionError: expected [ [ 'Original.', false ], …(1) ] to deeply equal [ [ 'Original.', true ], …(1) ] |
+| (new) tests/unit/chronicleRelay.test.js › a player edits their GM-created Chronicle from their own panel (issue #306 R11) a pin and a note from the player's panel are applied by the GM | Error: User Pat lacks permission to update JournalEntryPage [jrn-1-p1] — no OWNER permission on the journal (permission-faithful test stub, tests/helpers/foundr |
+| (new) tests/unit/chronicleRelay.test.js › a player edits their GM-created Chronicle from their own panel (issue #306 R11) the player's open panel re-renders when the GM applies the edit — a relay has no ack | AssertionError: expected 2 to be greater than 2 |
+| (new) tests/unit/chronicleRelay.test.js › a player edits their GM-created Chronicle from their own panel (issue #306 R11) with no GM connected the edit is not saved, and the player is told | AssertionError: expected 'Starforged Companion: the Chronicle p…' to match /no GM is connected/ |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() writes the parsed entry to the first PC in characterIds | AssertionError: expected null to deeply equal { type: 'revelation', …(4) } |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() falls back to the first player-owned character Actor when characterIds is empty | AssertionError: expected null not to be null |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() falls back to "moment" when the model returns an unknown type | AssertionError: expected undefined to be 'moment' // Object.is equality |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() strips JSON markdown fences from the model response | AssertionError: expected undefined to be 'Beat.' // Object.is equality |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() marks the entry as automated and stamps the sessionId + moveId | TypeError: Cannot read properties of undefined (reading '1') |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() records a beat at or above the floor | AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() records an unrated beat (fail-open — never a silent blackout) | AssertionError: expected undefined to be 'A beat with no salience field.' // Object.is equality |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() does not store the salience field on the chronicle entry | TypeError: Cannot convert undefined or null to object |
+| tests/unit/chronicleWriter.test.js › writeChronicleEntry() respects a chronicle floor lowered to "scene" | AssertionError: expected undefined to be 'Kept once the floor is lowered.' // Object.is equality |
+| tests/unit/chronicleWriter.test.js › scheduleChronicleEntry() schedules the API call after the async delay | AssertionError: expected "spy" to be called 1 times, but got 0 times |
+| tests/unit/hookGates.test.js › document hook handlers run their shared writes on one client every LOCAL_ONLY entry still names an ungated handler | AssertionError: src/character/chroniclePanel.js updateJournalEntryPage inline#1 no longer exists — remove it from LOCAL_ONLY: expected false to be true // Objec |
+
+- New test passing with and without the fix (a control?): tests/unit/chronicleRelay.test.js › a player edits their GM-created Chronicle from their own panel (issue #306 R11) the GM created the journal, and the player cannot write it directly — Foundry's default
+
+### 7bf24b9 — fix: a native vow fulfilment or bond forging pays once (issue #306 R04)
+
+Test files: `tests/unit/nativePayoffOnce.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 2 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/nativePayoffOnce.test.js › a native vow fulfilment pays once (issue #306 R04) two fulfilments of one vow that overlap pay the Quests legacy once | AssertionError: expected 4 to be 2 // Object.is equality |
+| (new) tests/unit/nativePayoffOnce.test.js › a native vow fulfilment pays once (issue #306 R04) the legacy is written on a copy — a refused write leaves the cached campaign as it was | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) (API) tests/unit/nativePayoffOnce.test.js › a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`) two forges of one bond that overlap pay the bonds legacy once | TypeError: payForgedBondNative is not a function |
+| (new) (API) tests/unit/nativePayoffOnce.test.js › a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`) a forge after the bond has formed pays nothing | TypeError: payForgedBondNative is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/nativePayoffOnce.test.js › a native vow fulfilment pays once (issue #306 R04) two different vows that overlap are both paid
+- New test passing with and without the fix (a control?): tests/unit/nativePayoffOnce.test.js › a native vow fulfilment pays once (issue #306 R04) a fulfilment after the first has finished pays nothing — the paid flag
+
+### 1054cd8 — fix: the newest shared-supply change wins, whichever PC it was on (issue #306 R03)
+
+Test files: `tests/unit/sharedSupply.test.js`. Source restored: 1 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 10 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sharedSupply.test.js › the updateActor hook (canonical GM) a newer edit to a PC the pass has not reached yet wins | AssertionError: expected [ 2, 2, 2 ] to deeply equal [ 4, 4, 4 ] |
+| (new) tests/unit/sharedSupply.test.js › the updateActor hook (canonical GM) a PC whose own edit an older pass overwrote is set back to its edit | AssertionError: expected [ 2, 2, 2 ] to deeply equal [ 4, 4, 4 ] |
+
+### e1fd5fb — fix: a track rolled from its row is the one scored and completed (issue #306 R06)
+
+Test files: `tests/unit/combat.test.js`, `tests/unit/expedition.test.js`, `tests/unit/progressRollBridge.test.js`, `tests/unit/progressTrackSelection.test.js`. Source restored: 5 file(s).
+
+- With the fix: 55 passed, 0 failed.
+- Without it: 7 failed (7 new; 0 only for a missing export); 48 still pass (0 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/combat.test.js › selectCombatTrack an id picks that open fight; an unknown or finished one picks nothing — never a namesake | AssertionError: expected 'c1' to be 'c2' // Object.is equality |
+| (new) tests/unit/expedition.test.js › selectExpeditionTrack an id picks that open expedition; an unknown or finished one picks nothing — never a namesake | AssertionError: expected 'a' to be 'b' // Object.is equality |
+| (new) tests/unit/progressRollBridge.test.js › the row's id rides the roll the panel's Roll posts the row id beside its label | AssertionError: expected { bypassPacing: true, …(2) } to match object { …(3) } |
+| (new) tests/unit/progressRollBridge.test.js › the row's id rides the roll an expedition card's Finish button forwards the card's track id | AssertionError: expected { bypassPacing: true, …(2) } to match object { …(3) } |
+| (new) tests/unit/progressTrackSelection.test.js › two same-named tracks: the panel's Roll acts on the row clicked (issue #306 R06) a combat roll scores and completes the selected row, not its namesake | AssertionError: expected [ [ 'take_decisive_action', 'miss' ] ] to deeply equal [ [ 'take_decisive_action', …(1) ] ] |
+| (new) tests/unit/progressTrackSelection.test.js › two same-named tracks: the panel's Roll acts on the row clicked (issue #306 R06) a expedition roll scores and completes the selected row, not its namesake | AssertionError: expected [ [ 'finish_an_expedition', 'miss' ] ] to deeply equal [ [ 'finish_an_expedition', …(1) ] ] |
+| (new) tests/unit/progressTrackSelection.test.js › two same-named tracks: the panel's Roll acts on the row clicked (issue #306 R06) a row deleted before the roll resolves rolls nothing — not its namesake, not a 0 score | AssertionError: expected [ { …(4) } ] to deeply equal [] |
+
+### 92ca408 — fix: a renamed player keeps their Private Channel history (issue #306 R08)
+
+Test files: `tests/unit/private-channel.test.js`. Source restored: 1 file(s).
+
+- With the fix: 53 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 49 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/private-channel.test.js › transcript write/read a renamed player still reads their session, and the next write keeps one journal, relabelled | AssertionError: expected '' to contain 'Private record before renaming.' |
+| (new) tests/unit/private-channel.test.js › transcript write/read a session an earlier rename split over two journals reads as one, oldest page first | AssertionError: expected '&lt;p>Later.&lt;/p>' to be '&lt;p>Earlier.&lt;/p>&lt;p>Later.&lt;/p>' // Object.is equality |
+| (new) tests/unit/private-channel.test.js › transcript write/read a journal under the player's name that another user owns is never theirs | AssertionError: expected '&lt;p>Not yours.&lt;/p>' to be '' // Object.is equality |
+| (new) tests/unit/private-channel.test.js › transcript write/read an unflagged journal under the player's name is adopted, and stamped on the next write | TypeError: Cannot read properties of undefined (reading 'privateChannelOwner') |
+
+### 70c05d3 — fix: an encounter token is backed by a world Actor (issue #306 R12)
+
+Test files: `tests/unit/encounterSpawn.test.js`. Source restored: 2 file(s).
+
+- With the fix: 16 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 12 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/encounterSpawn.test.js › spawnEncounter places a token backed by a world Actor (issue #306 R12) imports the foe on first use, and the token names the world Actor | AssertionError: expected "spy" to be called 1 times, but got 0 times |
+| (new) tests/unit/encounterSpawn.test.js › spawnEncounter places a token backed by a world Actor (issue #306 R12) reuses a world Actor already imported from that entry — no second import | AssertionError: expected [ 'compendium-foe' ] to deeply equal [ 'earlier-import' ] |
+| (new) tests/unit/encounterSpawn.test.js › spawnEncounter places a token backed by a world Actor (issue #306 R12) reuses an older import marked with flags.core.sourceId | AssertionError: expected [ 'compendium-foe' ] to deeply equal [ 'legacy-import' ] |
+| (new) tests/unit/encounterSpawn.test.js › spawnEncounter places a token backed by a world Actor (issue #306 R12) when the import fails, posts the stat card instead of a token for a compendium-only id | AssertionError: expected true to be false // Object.is equality |
+
+### `scripts/defects/r04-forge-unclaimed.patch` — issue #306 R04 sibling — payForgedBondNative forges without claiming the bond, so two native Forge a Bond rolls arriving together both pay the bonds legacy
+
+Test files: `tests/unit/nativePayoffOnce.test.js`.
+
+- On HEAD: 6 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/nativePayoffOnce.test.js › a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`) two forgings of one bond that overlap pay the bonds legacy once | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### 23b2c8b — fix: a combat card's Finish the Fight and Battle name their fight
+
+Test files: `tests/unit/progressTrackSelection.test.js`. Source restored: 2 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 7 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) two fights open: a Strike's Finish the Fight scores and finishes the Strike's fight | AssertionError: expected { moveResolution: true, …(2) } to match object { …(2) } |
+| (new) tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) Battle from an Enter the Fray card ends that fight while another is open | AssertionError: expected { Object (combatTrackCard, created) } to match object { created: true, …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a combat card names its fight (TDA-BUTTON-NO-TARGET) an older card that names no fight, one fight open, still rolls that fight
+
+### be61488 — fix: a Take Decisive Action that names no fight asks which
+
+Test files: `tests/unit/progressTrackSelection.test.js`. Source restored: 2 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 10 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) two fights open: nothing is rolled — the card lists them, and a pick rolls that fight for the roller | AssertionError: expected [ { …(4) } ] to deeply equal [] |
+| (new) tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) one pick per card: a second click, on another client, rolls nothing more | AssertionError: a which-fight card: expected undefined to be truthy |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) a typed Take Decisive Action that names its fight rolls it without asking
+
+### 514f5eb — fix: a payoff step that does not land is told to the GMs, with a Retry (issue #306 R04)
+
+Test files: `tests/unit/cardActions.test.js`, `tests/unit/payoffFailure.test.js`. Source restored: 4 file(s).
+
+- With the fix: 42 passed, 0 failed.
+- Without it: 19 failed (19 new; 4 only for a missing export); 23 still pass (0 new).
+- Verdict: **sensitive** — 15 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cardActions.test.js › won-fight card actions a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04) | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'refused' } |
+| (new) tests/unit/cardActions.test.js › won-fight card actions a deepen that does not land (the connection gone) stays unapplied and is reported | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'not-found' } |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a GM's press claims the card, then re-runs its steps from the card | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) once: a repeat press, or two at once, re-run nothing more | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a refused claim re-runs nothing | TypeError: applyPayoffRetry is not a function |
+| (new) (API) tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) refuses a player, a card a player wrote, and a report without a Retry | TypeError: applyPayoffRetry is not a function |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) every step lands: no card, and each step is on the vow's ledger | AssertionError: expected undefined to deeply equal { legacy: true, deepen: true, …(1) } |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward grant: no "Reward earned"; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward claim gives nothing; Retry claims and gives it | AssertionError: expected 5 to be 3 // Object.is equality |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a connection no longer open is reported, not skipped | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a step that fails again goes on a fresh card with its own Retry | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a Retry skips a step the vow's ledger says landed meanwhile | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a duplicate fulfilment after a partial failure pays nothing more | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) only a GM may retry: a player's relayed press applies nothing | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a press whose claim is refused applies nothing, and the button re-arms | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a bond forged on the sheet: a refused bonds legacy goes to the GMs (issue #306 R04) the forge card says the legacy is not yet marked; Retry marks it once | AssertionError: the forge card: expected undefined to be truthy |
+| (new) tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused reward grant after a won fight goes to the GMs; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused milestone mark leaves the victory card's button live and tells the GMs; pressing again marks once | AssertionError: expected true to be undefined |
+
+### `scripts/defects/tda-which-fight-unspoken.patch` — TDA-BUTTON-NO-TARGET — a which-fight pick posts the move with no speaker, so the GM's pick is credited to whoever clicked, not the player who made the move
+
+Test files: `tests/unit/progressTrackSelection.test.js`.
+
+- On HEAD: 12 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) two fights open: nothing is rolled — the card lists them, and a pick rolls that fight for the roller | AssertionError: expected undefined to be 'pc-pat' // Object.is equality |
+
+### `scripts/defects/tda-which-fight-twice.patch` — TDA-BUTTON-NO-TARGET — a which-fight card's buttons ignore the GM's pick stamp, so another client's click rolls a second Take Decisive Action
+
+Test files: `tests/unit/progressTrackSelection.test.js`.
+
+- On HEAD: 12 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) one pick per card: a second click, on another client, rolls nothing more | AssertionError: expected [ 'take_decisive_action', …(1) ] to deeply equal [ 'take_decisive_action' ] |
+
+### `scripts/defects/r04-xp-before-write.patch` — issue #306 R04 — writeLegacyTicks awards a filled box's XP before its write, so a refused legacy write still pays the XP
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected 2 to be +0 // Object.is equality |
+
+### `scripts/defects/r04-reward-earned-unearned.patch` — issue #306 R04 — a refused reward grant is ignored: "Reward earned" is posted and nothing is reported
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 11 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused reward grant: no "Reward earned"; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused reward grant after a won fight goes to the GMs; Retry gives it once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+
+### `scripts/defects/r04-connection-gone-silent.patch` — issue #306 R04 — deepenLinkedConnection treats a connection no longer open as done, so the deepen is skipped without a word
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a connection no longer open is reported, not skipped | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+
+### `scripts/defects/r04-ledger-unread.patch` — issue #306 R04 — a payoff Retry ignores the vow's ledger, so a step recorded as landed is applied again
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 13 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 12 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a Retry skips a step the vow's ledger says landed meanwhile | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-retry-claims-late.patch` — issue #306 R04 — a payoff Retry re-runs its steps before claiming the card, so a press whose claim is refused still applies them, and the next press applies them again
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 39 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a GM's press claims the card, then re-runs its steps from the card | AssertionError: expected [ 'retry', 'claim' ] to deeply equal [ 'claim', 'retry' ] |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) a refused claim re-runs nothing | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a press whose claim is refused applies nothing, and the button re-arms | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-retry-any-user.patch` — issue #306 R04 — a payoff Retry does not check that the requester is a GM
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 40 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) refuses a player, a card a player wrote, and a report without a Retry | AssertionError: expected undefined to be 'not-gm' // Object.is equality |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) only a GM may retry: a player's relayed press applies nothing | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-fight-stamp-optimistic.patch` — issue #306 R04 — a won-fight card action is stamped applied whatever its step reported, so a refused mark can't be retried from the card and nobody is told
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 39 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › won-fight card actions a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04) | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'refused' } |
+| tests/unit/cardActions.test.js › won-fight card actions a deepen that does not land (the connection gone) stays unapplied and is reported | AssertionError: expected { applied: true } to deeply equal { applied: false, reason: 'not-found' } |
+| tests/unit/payoffFailure.test.js › a won fight: its reward and its victory card report what did not land (issue #306 R04) a refused milestone mark leaves the victory card's button live and tells the GMs; pressing again marks once | AssertionError: expected true to be undefined |
+
+### `scripts/defects/r04-retry-repeatable.patch` — issue #306 R04 — a payoff Retry ignores the card's claim, so a second press after the first has finished re-runs its steps
+
+Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`.
+
+- On HEAD: 42 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 40 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) once: a repeat press, or two at once, re-run nothing more | AssertionError: expected undefined to be 'already-resolved' // Object.is equality |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected { applied: true, failed: +0 } to match object { applied: false, …(1) } |

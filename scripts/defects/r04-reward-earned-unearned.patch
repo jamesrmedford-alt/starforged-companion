@@ -1,0 +1,23 @@
+Defect: issue #306 R04 — a refused reward grant is ignored: "Reward earned" is posted and nothing is reported
+Tests: tests/unit/payoffFailure.test.js
+Catches: a refused reward grant
+
+diff --git a/src/index.js b/src/index.js
+index b88a89a..9f57472 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -3787,13 +3787,7 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
+     return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
+   }
+   if (plan.status === "granted") {
+-    const given = await giveReward(pc, reward, plan);
+-    if (!given.ok) {
+-      return {
+-        ...given, step: "rewardGrant", vowId, pcId: pc?.id ?? null,
+-        reward: { description: reward.description ?? null, form: reward.form ?? null }, plan,
+-      };
+-    }
++    await giveReward(pc, reward, plan);
+   }
+   await postRewardGrantCard(reward, plan).catch(err =>
+     console.warn(`${MODULE_ID} | reward grant card failed:`, err?.message ?? err));

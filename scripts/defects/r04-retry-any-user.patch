@@ -1,0 +1,20 @@
+Defect: issue #306 R04 — a payoff Retry does not check that the requester is a GM
+Tests: tests/unit/payoffFailure.test.js tests/unit/cardActions.test.js
+Catches: only a GM may retry
+Catches: refuses a player
+
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 733059c..df86e9f 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -356,10 +356,6 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
+     console.warn(`${MODULE_ID} | payoff retry: message ${messageId} is not a GM's payoff failure card — ignored.`);
+     return { applied: false, reason: "not-a-payoff-card" };
+   }
+-  if (!ctx?.requesterIsGM) {
+-    console.warn(`${MODULE_ID} | payoff retry: user ${ctx?.requesterId ?? "?"} is not a GM — refused.`);
+-    return { applied: false, reason: "not-gm" };
+-  }
+   const key = `${messageId}:payoffRetry`;
+   if (f.resolved || _inFlight.has(key)) {
+     console.debug(`${MODULE_ID} | payoff retry: card ${messageId} already retried — ignoring the press.`);

@@ -61,7 +61,8 @@ relays player clicks). `createCombatTrackFromThreshold` → `applyCombatProgress
 `linkedVowName`, and gets its `combatState` set from the carried position via
 `applyCombatPositionToTrack` (`src/moves/combatTracker.js` — writes the track,
 the actor's sheet field, and the combatant badge). A combat-track card posts
-(stakes line, **Battle instead** button on fresh tracks) and the Foundry Combat
+(stakes line, **Battle instead** button on fresh tracks; flagged with the
+track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges.
 
 **Find another way** posts the way-out card: the `WAY_OUT_PROMPT` nudge plus
@@ -83,7 +84,12 @@ Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
-to the actor + combatant badge (`applyCombatPositionToTrack`). It constrains
+to the actor + combatant badge (`applyCombatPositionToTrack`). The pipeline
+writes it to the move's own fight (`moveFight`): the track its progress marked
+(or created), else `selectCombatTrack` on the move's target, else the sole
+open fight — with several fights open it used to be written only while
+exactly one was open (issue #306 R05). The same `moveFight` is stamped on the
+move card for its Finish the Fight button (§3). It constrains
 which combat moves the interpreter proposes (`constrainMoveToPosition`,
 `src/moves/interpreter.js`) and drives the play-kit Take Decisive Action
 bad-spot downgrade in the resolver. The weak-hit Enter-the-Fray choice ("You
@@ -109,14 +115,33 @@ card, and deletes the Combat doc.
 **Take Decisive Action** is a progress move: `enrichProgressTicks`
 (`src/moves/statEnrichment.js`) copies the resolved combat track's live ticks
 into the roll (score = floor(ticks / 4) vs 2d10), preferring the enriched
-track's own `combatState` for the bad-spot downgrade. Entry points: the
-"⚔ Attempt to Finish the Fight" button on combat move cards, typed narration,
-and the Progress Tracks panel's Roll button (§5). A TDA **weak hit** also rolls
+track's own `combatState` for the bad-spot downgrade — `listProgressTracks`
+carries each fight's `combatState` (it dropped it until issue #306 R05, so
+with two fights open no downgrade applied). Entry points: the
+"⚔ Attempt to Finish the Fight" button on Strike / Clash / Gain Ground / React
+Under Fire cards, typed narration, and the Progress Tracks panel's Roll button
+(§5). The button names the move's own fight: `postMoveResult` stamps the
+pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
+`wireTakeDecisiveActionButton` forwards them as `forcedMoveTargetId` /
+`forcedMoveTarget`, so with two fights open the roll scores that fight — it
+posted no target, scored nothing and was a certain miss
+(TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
+before the stamp) posts no target and resolves the sole open fight. A TDA
+that names no fight while two or more are open — typed narration, or such a
+card — is not rolled: the pipeline posts a **Which fight?** card instead
+(`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
+names, the narration and the roller's `actorId`), and a pick
+(`wireWhichFightButtons`) posts the move again with that fight's id, spoken
+as the original roller. One pick per card: every button disables, and the
+GM's pick is stamped `whichFightPicked`. A TDA
+**weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
 pick). A TDA **miss** does not end the fight — it routes Pay the Price.
 
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
-action move that ends the fight on every outcome.
+action move that ends the fight on every outcome. The button forwards its
+card's `trackId` / `trackLabel`, so Battle ends that fight while another is
+open — without them, two open fights left it ending neither.
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 
@@ -138,8 +163,12 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`deepenLinkedConnection`, scaled by the vow's rank). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
-one-time (`reward.status` flips from "promised"); it lands on the roller's
-copy when they hold one, else on the PC holding the promised reward.
+one-time (`reward.status` flips from "promised" — written first, as the
+grant's claim); it lands on the roller's copy when they hold one, else on the
+PC holding the promised reward. A grant that does not land is not swallowed:
+the GMs get a payoff failure card (`postPayoffFailureCard`, source `fight`)
+with a one-press Retry, and "🎁 Reward earned" is posted only once the grant
+lands (issue #306 R04 — see `vow-flow.md` §4).
 
 Mark milestone and Deepen your bond are one-shot GM writes:
 `wireFightVowButtons` relays a click via `relayCardAction`
@@ -147,8 +176,14 @@ Mark milestone and Deepen your bond are one-shot GM writes:
 `fightVow.deepenBond` → `applyFightVowMarkMilestone` /
 `applyFightVowDeepenBond` on the canonical GM. The handler takes every value
 from the GM-authored card (never the payload), skips an action already in
-flight or stamped, and stamps `flags.resolvedActions.<action>` once applied;
-an applied action renders disabled for everyone, and a click that is not
+flight or stamped, and stamps `flags.resolvedActions.<action>` once applied —
+only when the step reports it landed (`markLinkedVowMilestone` /
+`deepenLinkedConnection` return `{ ok }`): a refused mark, no open vow to
+mark, or a connection no longer open leaves the action unstamped and
+whispers the GMs a report without a Retry (source `fightButton`) — the
+re-armed button is the retry (issue #306 R04; the stamp used to land
+whatever happened). An applied action renders disabled for everyone, and a
+click that is not
 delivered (no GM connected — `requestGmAction` warns), or a card still
 unstamped after `RELAY_RECOVERY_MS` (15 s), re-arms the button. (They used to
 emit raw `vow.markMilestone` / `connection.deepen` socket messages with no
@@ -173,7 +208,13 @@ vow → legacy.
 For `combat` and `expedition` rows (`TRACK_TYPE_TO_MOVE`,
 `src/ui/progressTracks.js`), the panel's Roll button posts the standard
 forced-move bridge (`bypassPacing` + `forcedMoveId` + `forcedMoveTarget` =
-the row's label) so the pipeline rolls, narrates, and applies consequences.
+the row's label + `forcedMoveTargetId` = the row's id) so the pipeline rolls,
+narrates, and applies consequences. The id rides as
+`interpretation.moveTargetId`: tick enrichment, the position, the completion
+and the recommit offer all take that track (`selectCombatTrack` /
+`selectExpeditionTrack` `{ trackId }`), never a same-named sibling, and a row
+deleted or finished before the roll resolves rolls nothing — a "not rolled"
+card (`trackGoneCard`) instead (issue #306 R06).
 Pre-session (the pipeline's session gate would ignore the bridge) and for
 `scene_challenge` rows (no mapped move), it keeps the bespoke instant display
 roll (`type: 'progressRoll'` card — display-only by design).

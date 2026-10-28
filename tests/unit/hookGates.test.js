@@ -66,6 +66,7 @@ const LOCAL_ONLY = {
   'src/ui/entityPanel.js updateActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js deleteActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/progressTracks.js updateJournalEntry inline#1': 're-renders this client\'s Progress Tracks panel',
+  'src/character/chroniclePanel.js updateJournalEntryPage inline#1': 're-renders this client\'s Chronicle panel',
   'src/index.js createItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js updateItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js deleteItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',

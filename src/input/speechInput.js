@@ -70,10 +70,27 @@ export function initSpeechInput() {
   }
 
   const language = readLanguageSetting();
+  // One controller per client: a previous one is torn down first, so its
+  // recognition can't keep running beside the new one.
+  window._sfSpeechInput?.destroy?.();
   const controller = createSpeechController(language);
 
   window._sfSpeechInput = controller;
   console.log(`${MODULE_ID} | Speech input initialised. Language: ${language}`);
+}
+
+/**
+ * Turn push-to-talk off on this client — the Push-to-Talk setting's onChange
+ * (index.js) when it is switched off. Stops a capture in progress, leaves a
+ * no-op controller so a stale button or recognition callback can't start
+ * another, and removes the 🎙 buttons. Turning the setting off used to do
+ * nothing until a reload: the button stayed and kept working (issue #306 R10).
+ */
+export function disableSpeechInput() {
+  window._sfSpeechInput?.destroy?.();
+  window._sfSpeechInput = createNoOpController();
+  for (const button of document.querySelectorAll?.(".sf-ptt-button") ?? []) button.remove?.();
+  console.log(`${MODULE_ID} | Speech input turned off.`);
 }
 
 

@@ -40,6 +40,15 @@ describe("normalizeCombatRank", () => {
 // ─── selectCombatTrack ───────────────────────────────────────────────────────
 
 describe("selectCombatTrack", () => {
+  // Issue #306 R06: a Progress Tracks row's id picks that row, never a namesake.
+  it("an id picks that open fight; an unknown or finished one picks nothing — never a namesake", () => {
+    const tracks = [cbt({ id: "c1", label: "Boarders" }), cbt({ id: "c2", label: "Boarders" }), cbt({ id: "c3", label: "Boarders", completed: true })];
+    expect(selectCombatTrack(tracks, "Boarders", { trackId: "c2" })?.id).toBe("c2");
+    expect(selectCombatTrack(tracks, "Boarders", { trackId: "gone" })).toBeNull();
+    expect(selectCombatTrack(tracks, "Boarders", { trackId: "c3" })).toBeNull();
+    expect(selectCombatTrack([cbt({ id: "c1" })], null, { trackId: "gone" })).toBeNull();   // not the sole open fight either
+  });
+
   it("returns null when no open combat tracks", () => {
     expect(selectCombatTrack([], "Corsair Raiders")).toBeNull();
     expect(selectCombatTrack([cbt({ completed: true })], null)).toBeNull();
