@@ -23,6 +23,7 @@ vi.mock('../../src/pacing/telemetry.js', async () => ({
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
+import { suppressScene, clearXCard } from '../../src/context/safety.js';
 import {
   narrateResolution,
   interrogateScene,
@@ -114,5 +115,64 @@ describe('an X-Card played while the narration is generated discards the reply',
     apiPost.mockResolvedValue(REPLY);
     expect(await narrateResolution(resolution, snapshot())).toBe('The reactor screams as the hull splits.');
     expect(narrationCards()).toHaveLength(1);
+  });
+});
+
+// Issue #306 R01 — the check above saw only whether the X-Card was active when
+// the reply arrived. A GM who resumed before then let the interrupted reply
+// through: resuming must allow new narrations, not revive the old one.
+describe('an X-Card played and resumed while the narration is generated still discards the reply', () => {
+  /** The Claude call: the X-Card is played, and a GM resumes, before the reply arrives. */
+  function xCardPlayedAndResumedDuringCall() {
+    apiPost.mockImplementation(async () => {
+      await suppressScene();
+      await clearXCard();
+      return REPLY;
+    });
+  }
+
+  it('move narration: no narrator card, no sidecar facts, and the notice says it was discarded', async () => {
+    xCardPlayedAndResumedDuringCall();
+    expect(await narrateResolution(resolution, snapshot())).toBeNull();
+    expect(stored().xCardActive).toBe(false);
+    expect(narrationCards()).toEqual([]);
+    const notice = ChatMessage._created.at(-1);
+    expect(notice.flags[MODULE_ID].narrationPaused).toBe(true);
+    expect(notice.content).toContain('Narration discarded — the X-Card was played while it was being written.');
+    expect(notice.content).not.toContain('The reactor screams');
+    await new Promise(r => setTimeout(r, 0));
+    expect(stored().sceneTruths).toEqual([]);
+  });
+
+  it('@scene, paced narration, the oracle follow-up, vignettes, clocks, vow scenes and the inciting incident return nothing', async () => {
+    xCardPlayedAndResumedDuringCall();
+    const results = [
+      await interrogateScene('What do I see?', snapshot()),
+      await narratePacedInput('I look around the hangar.', snapshot()),
+      await narrateOracleFollowup({ kind: 'oracle_yes_no', oracleName: 'Ask the Oracle', rolledLine: 'd100 = 12 → Yes', campaignState: snapshot() }),
+      await narrateSessionVignette({ userMessage: 'The crew in the galley.', campaignState: snapshot() }),
+      await narrateClockAdvancement({ clock: { name: 'Reactor', type: 'scene', filled: 2, segments: 4, triggered: false }, campaignState: snapshot() }),
+      await narrateVowSwearing({ vow: { name: 'Seal the breach' }, campaignState: snapshot() }),
+      await narrateIncitingIncident({ userMessage: 'Open the campaign.', campaignState: snapshot() }),
+    ];
+    expect(results).toEqual([null, null, null, null, null, null, null]);
+    expect(narrationCards()).toEqual([]);
+    expect(stored().xCardPlays).toBe(7);
+  });
+
+  it('a narration started after the resume is narrated', async () => {
+    await suppressScene();
+    await clearXCard();
+    apiPost.mockResolvedValue(REPLY);
+    expect(await narrateResolution(resolution, snapshot())).toBe('The reactor screams as the hull splits.');
+    expect(narrationCards()).toHaveLength(1);
+  });
+
+  it('a narration started while the X-Card was still active stays paused — no Claude call', async () => {
+    await suppressScene();
+    apiPost.mockResolvedValue(REPLY);
+    expect(await narrateResolution(resolution, snapshot())).toBeNull();
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(ChatMessage._created.at(-1).content).toContain('Narration paused — the X-Card is active.');
   });
 });
