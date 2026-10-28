@@ -342,9 +342,9 @@ Pipeline Phase A deliverable, issue #214).
 
 `quench-coverage-audit-plan.md`, `behaviour-coverage-audit.md`,
 `behaviour-coverage-audit-plan.md`, the `vX.Y.Z-playtest-findings.md` logs,
-and `fix-sensitivity.md` (issue #302: for each #300 / #301 fix and each fix
-the #302 disturbance matrix led to, the tests that fail with the fix taken
-out, from `scripts/fix-sensitivity.mjs`).
+and `fix-sensitivity.md` (issue #302: for each #300 / #301 / #306 fix and
+each fix the #302 disturbance matrix led to, the tests that fail with the fix
+taken out, from `scripts/fix-sensitivity.mjs`).
 
 ### `process/`
 

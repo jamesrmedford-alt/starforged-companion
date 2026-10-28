@@ -6,6 +6,81 @@ rejected.
 
 ---
 
+## Issue #306 post-fix audit: one Chronicle writer, rows by id, claims before awaits (2026-10)
+
+**Decision:** (issue #306. The maintainer asked for every finding to be
+addressed on 2026-10-28, after a review that recommended the approaches
+below — the Chronicle relay over granting journal ownership among them.
+Each finding's ID in brackets.)
+- **A narration the X-Card interrupted stays discarded after a resume**
+  [R01]. `suppressScene` counts each play in `campaignState.xCardPlays`,
+  which nothing lowers. Every narrator entry point starts a watch on entry
+  (`watchXCard`, after the entry gate) with the live count and discards its
+  reply when the card is active or the count has moved. The count is
+  store-owned in `persistResolution`'s merge. Resuming lets new narrations
+  run; it never revives an interrupted one.
+- **The Chronicle has one writer: the canonical GM** [R11, R02]. Every write
+  — the panel's add, text, pin, re-type and delete, and the automatic
+  writer's entries — is a `chronicle.edit` relay applied by
+  `applyChronicleEditFromRelay`. The requester must be a GM or own the PC; a
+  player adds only an annotation; re-type and delete are a GM's, as the
+  panel shows them. An actor's writes run one at a time on that client
+  (`writeChronicle`). The panel changes one entry by id on the stored
+  entries — it never saves its own copy [R02] — and re-renders when its
+  chronicle's page changes, since a relay has no ack.
+- **A track row names its track by id** [R06]. The Progress Tracks panel's
+  Roll and an expedition card's Finish carry the track's id as
+  `forcedMoveTargetId` (→ `interpretation.moveTargetId`, as issue #301 B01's
+  connection picker does). Selection, scoring, the fight's position, its
+  completion and the recommit offer take that track or nothing. A track
+  deleted or finished before the roll resolves rolls nothing, and a card
+  says so. A combat move's position is written to the fight the move was
+  about — the track its progress marked, else its target, else the sole open
+  fight [R05] — and `listProgressTracks` carries each fight's `combatState`.
+- **A one-time payoff claims its key before its first await** [R04]. The
+  native vow-fulfilment payoff claims the vow (its `vowId`), the native
+  Forge a Bond payoff the connection; the `fulfilPaid` / `bonded` flags stay
+  the record. Their legacy writes go on a copy of the cached setting value.
+- **A mirrored value is the one its change set** [R03]. A shared-supply pass
+  syncs to the value captured with its change and stops writing once a newer
+  change is queued; the newer pass also resets a PC an older write
+  overwrote.
+- **A Private Channel journal is its player's by the `privateChannelOwner`
+  flag** [R08], as a Chronicle is its actor's (`rules/reachability.md` §6).
+  The name is a label kept current on write; a history a rename split reads
+  merged.
+- **0 is a volume** [R09]; **a client setting takes effect when it changes**
+  [R10] — Push-to-Talk off destroys the controller and removes the 🎙
+  button; **an encounter token's Actor is a world Actor** [R12], imported
+  from the compendium or reused when that entry was imported before.
+
+**Reason:** issue #306 reproduced each defect (fifteen failing probes) on
+the code after the #300 and #301 fixes; the regression tests that came with
+the fixes fail with each fix reverted, or with its defect injected
+(`docs/testing/fix-sensitivity.md`).
+
+**Rejected:**
+- *Give players ownership of their PC's Chronicle journal* (R11) — it needs
+  an ownership sync whenever a PC changes hands and a migration for every
+  existing journal, and writes from several clients would still race; the
+  relay needs neither.
+- *A resume timestamp instead of a play count* (R01) — clients' clocks
+  differ; a counter compares exactly.
+- *Fall back to the label when a row's id no longer matches* (R06) — as B01
+  decided for connections: a same-named track is a different fight.
+- *Roll a vanished track at a score of 0* (R06) — a certain miss with its
+  consequences, for a track the player can no longer see.
+- *Fold a rename-split Private Channel history into one journal* (R08) — it
+  would move or delete a player's private pages; reads merge them instead.
+
+**Trade-offs accepted:** Chronicle edits need a connected GM, like every
+card button: with none, the relay warns and nothing is saved. A native
+payoff step that fails after its paid flag is stamped is still only logged
+(known-issues NATIVE-PAYOFF-NO-RETRY). Importing an encounter adds the foe to
+the world's Actors, once per compendium entry.
+
+---
+
 ## Strict replay for critical playthroughs; regression tests proven sensitive (2026-10)
 
 **Decision:** (issue #302 slices A and B. The maintainer asked for both on
@@ -927,7 +1002,8 @@ Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `factContinuity.command`, `oracle.narrate`, `repair.apply`,
 `payThePrice.advanceClocks`, `move.burnMomentum`, `move.improveResult`,
 `milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
-`fightVow.deepenBond`, `suffer.pick` (issue #302). Four older world-writing socket relays predate it
+`fightVow.deepenBond`, `suffer.pick` (issue #302), `chronicle.edit` (issue #306 — every Chronicle
+write, the automatic writer's included). Four older world-writing socket relays predate it
 (`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
 `vow.linkConnection`) — fold them in when next touched (known-issues
 RELAY-LEGACY-KINDS).
@@ -961,7 +1037,7 @@ never writes the whole snapshot back.
 - `persistResolution` re-reads the stored campaignState immediately before its
   write (no await between read and set) and merges (`mergeWithLatestState`):
   **store-owned** fields always take the store's value (`xCardActive`,
-  `safety`, `safetyFlags`, `nextMoveAdd`, `questFocus` / `connectionFocus`, the
+  `xCardPlays`, `safety`, `safetyFlags`, `nextMoveAdd`, `questFocus` / `connectionFocus`, the
   session-active and session-id fields (`sessionStartedId` included),
   `customOracles`, `recentOracles`,
   `clocks`, `pacing`, `campaignRecapCache`, `dismissedEntities`, `pendingMove`,
@@ -1041,7 +1117,9 @@ Resuming clears the flag, marks every open X-Card card resolved and posts an
 "X-Card cleared" card. While the flag is set every narrator entry point stands
 down — checking the live setting as well as the caller's snapshot, on entry
 and again when each Claude call returns, so a narration in flight when the card
-is played is discarded unposted (issue #300 F13); the relayed activation runs
+is played is discarded unposted (issue #300 F13) — even when a GM resumes before
+its reply arrives: each play counts in `xCardPlays`, and a narration whose
+count moved stays discarded (issue #306 R01); the relayed activation runs
 the moment it reaches the GM, never queued behind other relayed actions — and a
 move resolved meanwhile posts its result card plus a short "narration paused"
 notice (not a narrator card, so it stays out of the recent-narration ring and
