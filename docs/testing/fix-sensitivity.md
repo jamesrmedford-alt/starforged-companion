@@ -42,7 +42,7 @@ node scripts/fix-sensitivity.mjs \
 
 # issue #311
 node scripts/fix-sensitivity.mjs \
-  d1d7826 4b8b3f3 c3e5dbc 52cdc67 2f7afdb 2e2aebc 35f5ecf da75b67 --md details.md
+  d1d7826 4b8b3f3 c3e5dbc 52cdc67 2f7afdb 2e2aebc 97b4438 35f5ecf da75b67 --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -145,7 +145,7 @@ temporary git worktree; the checkout it is run from is not touched.
 | P04 BURN-REFUND-NOMINAL | c3e5dbc | revert | 2 — `resultUpgrade.test.js` (a loss clamped at 0 is not refunded; the solo fallback's loss is) |
 | P05 IMPROVE-PTP-KEPT | 52cdc67 | revert | 3 — `resultUpgrade.test.js` (Improve rewinds the clock and refunds the health; its reversal card), `improveResult.test.js` (the improve card carries the reversals) |
 | P06 UPGRADE-STAMP-REPEAT | 2f7afdb | revert | 6 — `resultUpgrade.test.js` (4: a refused Improve claim, a refused Burn claim, a meter write refused after the claim and its GM Retry, a refused refund after a burn), `actorBridge.test.js` (2: the vow-clock rewind reports what it could not save) |
-| P03 UPGRADE-CHOICES-STALE | 2e2aebc | revert | 8 — `resultUpgrade.test.js` (6: a burned Face Danger's card retired; a refused retirement still refuses the pick; a burned Hearten offers its recovery once; an improved Heal too; a chosen consequence closes the burn; the GM checks the cards when the close stamp is lost), `burnMomentum.test.js` (2: the blocker's "choice-made", the burn card's targets) |
+| P03 UPGRADE-CHOICES-STALE | 2e2aebc, 97b4438 | revert | 8 + 1 — `resultUpgrade.test.js` (6: a burned Face Danger's card retired; a refused retirement still refuses the pick; a burned Hearten offers its recovery once; an improved Heal too; a chosen consequence closes the burn; the GM checks the cards when the close stamp is lost), `burnMomentum.test.js` (2: the blocker's "choice-made", the burn card's targets); 97b4438's own: a pick whose follow-up picker cannot be posted leaves the upgrades open |
 | P07 SHIP-FINALIZE-REPEAT | 35f5ecf | revert | 4 — `finalizeLifecycle.test.js` (a repeat Finalise keeps the edited Notes and calls no one; Regenerate re-stamps), `finalize.test.js` (2: a seeded connection's first Finalise stamps it; a blank one too) |
 | P08 SESSION-BONUS-NO-RETRY | da75b67 | revert | 2 — `sessionMomentum.test.js` (End: the refused PC's award goes to the GMs' Retry, End again names it, the Retry pays it once; Begin's vignette the same) |
 
@@ -1277,3 +1277,15 @@ Test files: `tests/unit/sessionMomentum.test.js`. Source restored: 2 file(s).
 | --- | --- |
 | (new) tests/unit/sessionMomentum.test.js › P08 — a session momentum award that does not land is retried for that PC End: the refused PC's +1 goes to the GMs' Retry; End again pays nothing and says so; the Retry pays it once | TypeError: Cannot read properties of undefined (reading 'flags') |
 | (new) tests/unit/sessionMomentum.test.js › P08 — a session momentum award that does not land is retried for that PC Begin's Spotlight Vignette momentum is reported the same way | TypeError: Cannot read properties of undefined (reading 'flags') |
+
+### 97b4438 — fix: a consequence closes its move's upgrades once its choice stands (issue #311 P03)
+
+Test files: `tests/unit/resultUpgrade.test.js`. Source restored: 1 file(s).
+
+- With the fix: 17 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 16 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a pick whose follow-up picker cannot be posted re-opens its card, and leaves the upgrades open | AssertionError: expected true to be undefined |
