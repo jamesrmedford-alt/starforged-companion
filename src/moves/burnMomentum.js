@@ -473,8 +473,9 @@ async function applyBurnMeterDeltas({ actor, burnState, currentMomentum, newMome
 
 /**
  * Revert the Pay-the-Price side effects that fired on the original miss before
- * the player clicked Burn: clock advances (tension + vow) and simple PC-meter
- * losses from the PtP table's suffer route (health/spirit/supply/momentum).
+ * the player clicked Burn: clock advances (tension + vow) and the PC-meter loss
+ * the PtP route actually caused (health/spirit/supply — the receipt
+ * index.js ptpMeterReceipt records).
  *
  * Complex routes (withstand_damage, companion_takes_a_hit) are not reversed —
  * consistent with the existing policy of not rolling back auto-debility flips.
@@ -503,10 +504,14 @@ async function revertPtpEffects(ptpReversals, actor) {
     }
   }
 
-  // 2. Refund simple PC-meter loss from PtP suffer route
+  // 2. Refund the PtP route's PC-meter loss — the receipt is what landed (the
+  // move that ran, the meter's before and after), never the table's annotation
+  // (issue #311 P04). A burn resets momentum, which already undoes a momentum
+  // loss.
   const delta = ptpReversals.sufferMeterDelta;
-  if (delta?.meterKey && actor) {
-    await applyMeterChanges(actor, { [delta.meterKey]: +delta.amount });
+  const refundTo = (delta?.actorId ? game.actors?.get?.(delta.actorId) : null) ?? actor;
+  if (delta?.meterKey && delta.meterKey !== "momentum" && delta.amount > 0 && refundTo) {
+    await applyMeterChanges(refundTo, { [delta.meterKey]: +delta.amount });
     reverted.push(`${delta.meterKey} +${delta.amount} refunded`);
   }
 

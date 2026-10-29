@@ -4751,19 +4751,15 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
   }
 
   // Dispatch suffer executor first (before clock advance) so meter changes land
-  // before the burn button is visible. Track which route fired so the burn
-  // reversal can undo only what was actually applied.
+  // before the burn button is visible. The receipt is what landed, so the burn
+  // reversal undoes only that.
   let sufferMeterDelta = null;
   if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err =>
-      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
-    // Only track simple PC-meter routes; withstand_damage / companion_takes_a_hit
-    // affect vehicle/companion stats and are excluded from auto-reversal.
-    const { move, amount } = result.sufferRoute;
-    const REVERSIBLE = { endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply", lose_momentum: "momentum" };
-    if (REVERSIBLE[move]) {
-      sufferMeterDelta = { move, amount: amount ?? 1, meterKey: REVERSIBLE[move] };
-    }
+    const landed = await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err => {
+      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err);
+      return null;
+    });
+    sufferMeterDelta = ptpMeterReceipt(landed);
   }
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -4780,6 +4776,26 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
   });
 
   return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDelta };
+}
+
+/**
+ * The PC-meter loss a Pay the Price route actually caused, for the burn
+ * reversal to refund: the move the dispatcher ran — "companion in harm's way"
+ * runs Endure Harm with no companion — and the meter's before and after, so a
+ * loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
+ * Companion Takes a Hit change a vehicle or a companion, which a burn does not
+ * reverse. The table's annotation stood in for it, so a burn raised health a
+ * clamped loss never took and skipped the fallback's real one (issue #311 P04).
+ *
+ * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
+ * @returns {{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number }|null}
+ */
+function ptpMeterReceipt(landed) {
+  const meterKey = SUFFER_METERS[landed?.move];
+  if (!meterKey || landed.skipped) return null;
+  const amount = Number(landed.before) - Number(landed.after);
+  if (!(amount > 0)) return null;
+  return { move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after };
 }
 
 async function postForsakeVowCard(vowName) {
@@ -4837,6 +4853,9 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
  *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
  * @param {string|null} [actorId]
+ * @returns {Promise<Object|undefined>} the executor's result with the move it
+ *   ran (`move` — the fallback, when taken) and the PC (`actorId`); nothing
+ *   for an "any" route, which posts a picker
  */
 async function dispatchPayThePriceSufferRoute(route, actorId = null) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
@@ -4873,11 +4892,12 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null) {
     }
   }
 
-  return executeSuffer(move, actor, {
+  const landed = await executeSuffer(move, actor, {
     amount: route.amount ?? 1,
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
   });
+  return { ...landed, move, actorId: actor.id };
 }
 
 /** !sever <name> — GM-only: mark a connection lost/severed (kept inactive). */
