@@ -1701,7 +1701,11 @@ export function registerChatHook() {
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
-        await persistResolution(resolution, campaignState, speakerActorId);
+        // What the move was made against rides onto its suffer-choice card,
+        // so a choice changes that vehicle (issue #309).
+        await persistResolution(resolution, campaignState, speakerActorId, {
+          vehicleActorId: interpretation.vehicleActorId ?? null,
+        });
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers
         // refuse) until this stamp — a burn clicked during the narration above

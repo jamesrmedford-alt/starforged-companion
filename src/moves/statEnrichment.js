@@ -112,6 +112,12 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 
   const value = resolveStatValue(actor, statUsed, campaignState);
   interpretation.statValue = value;
+  // The vehicle the roll was made against: its consequence card's integrity
+  // choices change that vehicle (issue #309 N02 — they went to the PC's
+  // meters, which have no integrity, and were dropped).
+  if (statUsed === "integrity") {
+    interpretation.vehicleActorId = getCommandVehicleActor(campaignState)?.id ?? null;
+  }
   return value;
 }
 

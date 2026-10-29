@@ -178,3 +178,22 @@ describe('persistResolution — actor attribution', () => {
     expect(out.campaignState.legacyTracks).toBeUndefined();
   });
 });
+
+// Issue #309: what the move was made against rides onto its suffer-choice
+// card, so a choice changes that vehicle (N02), fight (N04) or companion (N03)
+// — not whichever one a lookup finds when the card is clicked.
+describe('persistResolution — the suffer card carries the move\'s targets', () => {
+  it('stamps the targets into the card\'s executorOpts beside the outcome flags', async () => {
+    game.actors._set('pc-1', pc('pc-1'));
+    ChatMessage._reset();
+    const resolution = baseResolution({
+      moveId: 'withstand_damage', outcome: 'strong_hit',
+      consequences: { ...baseResolution().consequences, momentumChange: 0,
+        sufferPrompt: { kind: 'enumerated', options: [{ label: '+1 momentum', momentum: 1 }] } },
+    });
+    await persistResolution(resolution, baseCampaignState(), 'pc-1', { vehicleActorId: 'ship-1' });
+    const card = ChatMessage._created.find(m => m.flags['starforged-companion']?.sufferCard);
+    expect(card.flags['starforged-companion'].executorOpts)
+      .toEqual({ isMiss: false, isMissWithMatch: false, vehicleActorId: 'ship-1' });
+  });
+});

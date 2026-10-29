@@ -8,7 +8,7 @@
  * posting stashes the flags the click handler needs.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   sufferMultiCap,
   renderSufferCard,
@@ -17,6 +17,7 @@ import {
   applySufferPickFromRelay,
 } from "../../src/moves/sufferCard.js";
 import { invalidateActorCache } from "../../src/character/actorBridge.js";
+import { mapConsequences } from "../../src/moves/resolver.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -241,3 +242,84 @@ describe("applySufferPickFromRelay — a pick applies once, on the canonical GM"
   });
 });
 
+// ── Withstand Damage: the integrity choices change the vehicle (issue #309 N02) ──
+
+describe("Withstand Damage — its integrity choices change the vehicle (issue #309 N02)", () => {
+  // The integrity option went to the PC's generic meter write, which has no
+  // integrity and dropped it, and the card said it was applied: the weak-hit
+  // trade still cost momentum. "Not battered" read the PC's impacts.
+  const gm = { requesterId: "gm-1", requesterIsGM: true };
+  let pc, ship;
+  const integrity = () => ship.flags[MODULE_ID].ship.integrity;
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    pc = makeTestActor({ id: "pc-1", name: "Kira", ownership: { "pl-1": 3 } });
+    ship = makeTestActor({ id: "ship-1", name: "Wayfarer", type: "starship", flags: { [MODULE_ID]: {
+      entityType: "ship",
+      ship: { _id: "ship-rec", name: "Wayfarer", isCommandVehicle: true, integrity: 2, integrityMax: 5, battered: false },
+    } } });
+    game.actors._set(pc.id, pc);
+    game.actors._set(ship.id, ship);
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { shipIds: [ship.id] });
+    invalidateActorCache(pc.id);
+  });
+  afterEach(() => { game.settings._store.delete(`${MODULE_ID}.campaignState`); });
+
+  /** Post the move's card as the pipeline does, then pick option `i` on the canonical GM. */
+  async function choose(outcome, i, executorOpts = { vehicleActorId: ship.id }) {
+    const prompt = mapConsequences("withstand_damage", outcome, false).sufferPrompt;
+    const card = await postSufferChoiceCard({ sufferPrompt: prompt, actor: pc, executorOpts, moveId: "withstand_damage" });
+    game.messages = { contents: [card], get: (id) => (id === card.id ? card : null) };
+    const res = await applySufferPickFromRelay({ messageId: card.id, pickKind: "enum", optionIndex: String(i) }, gm);
+    return { card, res };
+  }
+
+  it("strong hit: +1 integrity raises the vehicle's integrity", async () => {
+    const { card, res } = await choose("strong_hit", 0);
+    expect(res).toEqual({ applied: true });
+    expect(integrity()).toBe(3);
+    expect(card.flags[MODULE_ID].resolved).toBe(true);
+    expect(card.content).toContain("Applied: integrity +1");
+  });
+
+  it("weak hit: the trade costs momentum and raises integrity", async () => {
+    await choose("weak_hit", 0);
+    expect({ momentum: pc.system.momentum.value, integrity: integrity() }).toEqual({ momentum: 1, integrity: 3 });
+  });
+
+  it("miss: -1 integrity lowers it", async () => {
+    await choose("miss", 0);
+    expect(integrity()).toBe(1);
+  });
+
+  it("a battered vehicle: its +1 integrity choices are unavailable, and nothing is charged", async () => {
+    ship.system.debility.battered = true;
+    const strong = await choose("strong_hit", 0);
+    expect(strong.card.content).toMatch(/data-option-index="0"[^>]*disabled/);
+    expect(strong.res).toEqual({ applied: false, reason: "not-offered" });
+    const weak = await choose("weak_hit", 0);
+    expect(weak.res).toEqual({ applied: false, reason: "not-offered" });
+    expect({ momentum: pc.system.momentum.value, integrity: integrity() }).toEqual({ momentum: 2, integrity: 2 });
+  });
+
+  it("the PC's own battered impact is not the vehicle's", async () => {
+    pc.system.debility.battered = true;
+    await choose("strong_hit", 0);
+    expect(integrity()).toBe(3);
+  });
+
+  it("a card naming no vehicle (posted before this fix) changes the command vehicle", async () => {
+    await choose("strong_hit", 0, {});
+    expect(integrity()).toBe(3);
+  });
+
+  it("no vehicle at all: +1 integrity is unavailable, and a -1 the card cannot apply says so", async () => {
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { shipIds: [] });
+    expect((await choose("strong_hit", 0, {})).res).toEqual({ applied: false, reason: "not-offered" });
+    const miss = await choose("miss", 0, {});
+    expect(miss.card.content).toContain("Not applied: integrity -1 — no vehicle to change");
+    expect(integrity()).toBe(2);
+  });
+});

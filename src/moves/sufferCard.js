@@ -27,6 +27,7 @@ import {
   isOptionAvailable,
 } from "./sufferDialog.js";
 import { getActor, getPlayerActors } from "../character/actorBridge.js";
+import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
@@ -67,16 +68,42 @@ export function sufferMultiCap(prompt) {
 }
 
 /**
- * Render the choice-card HTML for the current state. Pure — `pickedIndices`
- * tracks already-applied options for a multi-select prompt so they render as
- * done/disabled.
+ * What an option's `requires` is checked against (isOptionAvailable): the PC,
+ * and whether the vehicle is battered — the vehicle the move was rolled
+ * against (the card's `executorOpts.vehicleActorId`), else the command
+ * vehicle; null when there is none, so a "+1 integrity" with no vehicle to
+ * raise is unavailable. The PC's own impacts stood in for the vehicle's
+ * (issue #309 N02).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} [executorOpts] — the card's
+ * @returns {{ actor: Actor|null, vehicleBattered: boolean|null }}
+ */
+function optionContext(actor, executorOpts = {}) {
+  let vehicleBattered = null;
+  try {
+    const vehicleId = executorOpts?.vehicleActorId
+      ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
+    if (vehicleId && getShip(vehicleId)) vehicleBattered = isShipBattered(vehicleId);
+  } catch (err) {
+    console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
+  }
+  return { actor, vehicleBattered };
+}
+
+/**
+ * Render the choice-card HTML for the current state. `pickedIndices` tracks
+ * already-applied options for a multi-select prompt so they render as
+ * done/disabled. Availability reads `ctx` — the card's optionContext (the
+ * vehicle's impacts) unless given.
  *
  * @param {Object} prompt
  * @param {Actor|null} actor          — for requires-filtering
  * @param {number[]} [pickedIndices]
+ * @param {Object} [ctx]              — isOptionAvailable's context
  * @returns {string}
  */
-export function renderSufferCard(prompt, actor, pickedIndices = []) {
+export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = optionContext(actor)) {
   const picked = new Set(pickedIndices);
   let header, buttons;
 
@@ -94,7 +121,7 @@ export function renderSufferCard(prompt, actor, pickedIndices = []) {
       ? `Choose ${prompt.multi === true ? "any combination" : cap}:`
       : "Choose one:";
     buttons = (prompt.options ?? []).map((opt, i) => {
-      const avail    = isOptionAvailable(opt, { actor });
+      const avail    = isOptionAvailable(opt, ctx);
       const isPicked = picked.has(i);
       const disabled = !avail || isPicked;
       const mark     = isPicked ? "✓ " : "";
@@ -147,6 +174,37 @@ export function summarizeSufferCalls(calls) {
   return parts.length ? parts.join(", ") : "no change";
 }
 
+// Why a call's write did not land (a runSufferResolution result with
+// `ok: false`) — said on the resolved card.
+const NOT_APPLIED = {
+  "no-vehicle": "no vehicle to change",
+  "battered":   "the vehicle is battered",
+  "refused":    "the world did not save it",
+};
+
+/**
+ * The resolved card's text: "Applied: …" for the calls whose writes landed and
+ * "Not applied: … — why" for each that did not. The card summarised the calls
+ * it asked for, so a change that was dropped read as applied (issue #309 N02).
+ *
+ * @param {Array<Object>} calls
+ * @param {Array<Object>} results — runSufferResolution's, one per call
+ * @returns {string}
+ */
+function summarizeSufferResults(calls, results) {
+  const landed = [];
+  const missed = [];
+  (calls ?? []).forEach((c, i) => {
+    const r = results?.[i];
+    if (r?.ok === false) missed.push(`${summarizeSufferCalls([c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`);
+    else landed.push(c);
+  });
+  const parts = [];
+  if (landed.length || !missed.length) parts.push(`Applied: ${summarizeSufferCalls(landed)}`);
+  if (missed.length) parts.push(`Not applied: ${missed.join("; ")}`);
+  return parts.join(". ");
+}
+
 // The four PC meters the system localises. An option's numeric field can name
 // something else (e.g. a companion/vehicle value) — those keep their raw key
 // rather than tripping i18n's unknown-slug warning.
@@ -172,7 +230,7 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
   if (!sufferPrompt) return null;
   try {
     return await globalThis.ChatMessage?.create?.({
-      content: renderSufferCard(sufferPrompt, actor, []),
+      content: renderSufferCard(sufferPrompt, actor, [], optionContext(actor, executorOpts)),
       flags: {
         [MODULE_ID]: {
           sufferCard:    true,
@@ -296,7 +354,7 @@ function offeredPick(flags, payload, actor) {
     const i      = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
     const option = Number.isInteger(i) ? prompt.options?.[i] : null;
     const picked = Array.isArray(flags.pickedIndices) ? flags.pickedIndices : [];
-    return option && isOptionAvailable(option, { actor }) && !picked.includes(i)
+    return option && isOptionAvailable(option, optionContext(actor, flags.executorOpts)) && !picked.includes(i)
       ? { pickKind: "enum", optionIndex: String(i) }
       : null;
   }
@@ -341,7 +399,7 @@ async function handleSufferPick(message, dataset) {
     return;
   }
 
-  await runSufferResolution(calls, actor, executorOpts);
+  const results = await runSufferResolution(calls, actor, executorOpts);
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
   const cap = sufferMultiCap(prompt);
@@ -350,7 +408,7 @@ async function handleSufferPick(message, dataset) {
     if (picked.length < cap) {
       await message.update({
         [`flags.${MODULE_ID}.pickedIndices`]: picked,
-        content: renderSufferCard(prompt, actor, picked),
+        content: renderSufferCard(prompt, actor, picked, optionContext(actor, executorOpts)),
       }).catch(err => console.warn(`${MODULE_ID} | sufferCard: multi update failed:`, err?.message ?? err));
       return;
     }
@@ -358,7 +416,7 @@ async function handleSufferPick(message, dataset) {
     return;
   }
 
-  await finalizeResolved(message, `Applied: ${summarizeSufferCalls(calls)}`);
+  await finalizeResolved(message, summarizeSufferResults(calls, results));
 }
 
 async function finalizeResolved(message, summary) {

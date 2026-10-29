@@ -117,6 +117,20 @@ describe('resolveStatValue — vehicle integrity', () => {
     expect(resolveStatValue(makeActor(), 'integrity', { shipIds: [] })).toBe(0);
     expect(warn).toHaveBeenCalled();
   });
+
+  // Issue #309 N02: the roll's vehicle rides to its consequence card.
+  it('an integrity roll names the vehicle it was made against', () => {
+    global.game.actors._set('ship-2', { id: 'ship-2', type: 'starship', system: {},
+      flags: { [MODULE_ID]: { ship: { isCommandVehicle: true, integrity: 3 } } } });
+    const interp = { moveId: 'withstand_damage', statUsed: 'integrity' };
+    enrichInterpretationStatValue(makeActor(), interp, { shipIds: ['ship-2'] });
+    expect(interp).toMatchObject({ statValue: 3, vehicleActorId: 'ship-2' });
+
+    const none = { moveId: 'withstand_damage', statUsed: 'integrity' };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    enrichInterpretationStatValue(makeActor(), none, { shipIds: [] });
+    expect(none.vehicleActorId).toBeNull();
+  });
 });
 
 

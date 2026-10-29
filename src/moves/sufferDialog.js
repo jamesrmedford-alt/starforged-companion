@@ -239,6 +239,13 @@ export async function runSufferResolution(calls, actor, opts = {}) {
         break;
       }
       case "meter": {
+        // A vehicle's integrity is no PC meter: the generic write dropped it,
+        // and the card reported it applied (issue #309 N02).
+        if (call.meterKey === "integrity") {
+          results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta,
+            ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) });
+          break;
+        }
         await applyMeterChanges(actor, { [call.meterKey]: call.delta });
         results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta });
         break;
@@ -373,6 +380,42 @@ export async function runSufferResolution(calls, actor, opts = {}) {
   return results;
 }
 
+/**
+ * Change a vehicle's integrity — a consequence's "+1 integrity" / "-1
+ * integrity" (Withstand Damage): the vehicle the move was rolled against,
+ * else the command vehicle. Integrity lives on the ship record
+ * (entities/ship.js — updateShip keeps it within 0..integrityMax); raising
+ * it is refused while the vehicle is battered, read from its canonical
+ * native impact (isShipBattered).
+ *
+ * @param {string|null} vehicleActorId
+ * @param {number} delta
+ * @returns {Promise<{ ok: boolean, vehicleActorId?: string, name?: string, before?: number, after?: number, reason?: string, error?: string }>}
+ */
+async function applyVehicleIntegrity(vehicleActorId, delta) {
+  const { getShip, getCommandVehicleActorId, isShipBattered, updateShip } = await import("../entities/ship.js");
+  const id = vehicleActorId
+    ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
+  const ship = id ? getShip(id) : null;
+  if (!ship) {
+    console.warn(`${MODULE_ID} | integrity change: no vehicle found — ${delta >= 0 ? "+" : ""}${delta} integrity not applied.`);
+    return { ok: false, reason: "no-vehicle" };
+  }
+  const before = Number(ship.integrity ?? 0);
+  const at = { vehicleActorId: id, name: ship.name ?? null, before };
+  if (delta > 0 && isShipBattered(id)) {
+    console.warn(`${MODULE_ID} | integrity change: ${ship.name ?? id} is battered — integrity not raised.`);
+    return { ok: false, reason: "battered", ...at };
+  }
+  try {
+    const updated = await updateShip(id, { integrity: before + delta });
+    return { ok: true, ...at, after: Number(updated?.integrity ?? before + delta) };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | integrity change on ${ship.name ?? id} failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err), ...at };
+  }
+}
+
 async function postDeferredCard(title, body, flags = {}) {
   try {
     return await globalThis.ChatMessage?.create?.({
@@ -396,13 +439,16 @@ async function postDeferredCard(title, body, flags = {}) {
  *
  *   "!wounded"            → actor.system.debility.wounded === false
  *   "!shaken"             → actor.system.debility.shaken === false
- *   "!battered"           → actor.system.debility.battered === false
+ *   "!battered"           → the vehicle is not battered (caller passes
+ *                           ctx.vehicleBattered — null: no vehicle, so none
+ *                           to raise); without it, the actor's own impact
  *   "companionHealth>0"   → companion health > 0 (caller passes context)
  *
  * Returns `true` if the option is selectable, `false` if greyed out.
  *
  * @param {Object} opt           — sufferPrompt option entry
- * @param {Object} ctx           — { actor, companionHealth?, … }
+ * @param {Object} ctx           — { actor, companionHealth?, vehicleBattered?, … }
+ *   (sufferCard.js optionContext builds it from the card)
  */
 export function isOptionAvailable(opt, ctx = {}) {
   if (!opt?.requires) return true;
@@ -412,7 +458,12 @@ export function isOptionAvailable(opt, ctx = {}) {
 
   if (req === "!wounded")    return !debility.wounded;
   if (req === "!shaken")     return !debility.shaken;
-  if (req === "!battered")   return !debility.battered;
+  if (req === "!battered") {
+    // The vehicle's own impact — its +integrity is what the option gives
+    // (issue #309 N02: the PC's impacts were read instead).
+    if ("vehicleBattered" in ctx) return ctx.vehicleBattered === false;
+    return !debility.battered;
+  }
   if (req === "!unprepared") return !debility.unprepared;
   if (req === "wounded")     return !!debility.wounded;
   if (req === "shaken")      return !!debility.shaken;
