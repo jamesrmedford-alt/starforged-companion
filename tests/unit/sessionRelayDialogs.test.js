@@ -223,6 +223,31 @@ describe("Begin a Session", () => {
     expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
   });
 
+  // Issue #309 N09: Begin set its fields on the cached campaignState before
+  // saving it. A refused save left this client's cache saying "begun", so
+  // the retry stopped at the already-begun gate: the session never started
+  // and its momentum was never paid.
+  it("a refused save leaves the cached state as it was, and a retry begins the session", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      sessionActive: false, currentSessionId: "s1", sessionStartedId: null,
+      lastSessionTimestamp: new Date().toISOString(),
+    });
+    const cached = state();
+    vi.spyOn(game.settings, "set").mockRejectedValueOnce(new Error("refused by the test"));
+    await applyBeginSession({ vignetteRolled: true, includeGalley: false }, {});
+    expect(state()).toBe(cached);
+    expect(cached).toEqual({
+      sessionActive: false, currentSessionId: "s1", sessionStartedId: null,
+      lastSessionTimestamp: cached.lastSessionTimestamp,
+    });
+    expect(calls).toEqual([]);
+
+    await applyBeginSession({ vignetteRolled: true, includeGalley: false }, {});
+    expect(state()).toMatchObject({ sessionActive: true, currentSessionId: "s1", sessionStartedId: "s1" });
+    expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
+  });
+
   it("End then Begin applies the next session's start effects", async () => {
     setUsers([GM], "gm-1");
     await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});

@@ -184,11 +184,15 @@ async function beginSessionOnce(payload) {
   // Begin's own fields are merged onto the latest store. `sessionStartedId`
   // marks the session's start effects applied: a second Begin for the same
   // session used to advance its clocks and grant the momentum again (F11).
+  // All of it on a copy (rules/foundry-api.md): get() returns the cached
+  // value, and a refused write left it marked begun — this client then
+  // refused every retry as "already begun" while the world said the session
+  // had not started (issue #309 N09).
   let begun = false;
   try {
     const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
     const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-    const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     await rollSessionIfDue(cs);
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
       console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
