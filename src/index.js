@@ -81,7 +81,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -1053,7 +1053,11 @@ export function registerChatHook() {
       // current location is a vault or derelict, explore_a_waypoint rolls
       // that site's canonical interior tables.
       const currentSite = getCurrentSiteKind(campaignState);
-      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite });
+      // The roller's momentum as the dice are rolled: negative and matching the
+      // action die, it cancels the die (resolver cancelsActionDie). Never read,
+      // a -3 momentum never cancelled a 3 (issue #311 P01).
+      const momentum = rollerActor ? readMomentumState(rollerActor).value : null;
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum });
       // resolveMove leaves the id to its caller. The move card's Burn / Improve
       // flags and the narration card both carry it, and superseding the
       // original narration after an upgrade finds that card by it — with no id
@@ -5365,7 +5369,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
     ? `Progress: <strong>${resolution.progressScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`
-    : `Action: ${resolution.actionDie} + ${resolution.statValue}${addsStr}
+    : `Action: ${resolution.actionDieCancelled
+          ? `<s>${resolution.actionDie}</s> (cancelled by momentum -${resolution.actionDie})`
+          : resolution.actionDie} + ${resolution.statValue}${addsStr}
         = <strong>${resolution.actionScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`;

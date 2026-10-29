@@ -49,6 +49,22 @@ export function calcActionScore(actionDie, statValue, adds = 0) {
 }
 
 /**
+ * Negative momentum cancels a matching action die: with momentum below zero,
+ * an action die showing its absolute value counts 0, and the action score is
+ * the stat plus adds. A burn never meets this (it needs positive momentum),
+ * and a progress roll has no action die.
+ * Source: Reference Guide p.8 / Rules Summary p.117
+ *
+ * @param {number} actionDie
+ * @param {number|null|undefined} momentum — the roller's momentum when rolling
+ * @returns {boolean}
+ */
+export function cancelsActionDie(actionDie, momentum) {
+  const m = Number(momentum);
+  return Number.isFinite(m) && m < 0 && actionDie === -m;
+}
+
+/**
  * Determine the outcome of an action roll.
  * Score must beat (not equal) a challenge die to count as a hit.
  * Ties go to the challenge dice.
@@ -1041,6 +1057,12 @@ const CONSEQUENCE_MAP = {
  *
  * @param {Object} interpretation  — from moves/interpreter.js
  * @param {Object} campaignState   — current CampaignStateSchema
+ * @param {Object} [options]
+ * @param {string} [options.combatPosition] — the fight's position (Take Decisive Action)
+ * @param {Object} [options.currentSite]    — the site the crew is in (waypoint seeds)
+ * @param {number} [options.momentum]       — the roller's momentum: a negative
+ *   value matching the action die cancels it (cancelsActionDie). Omitted, no
+ *   die is cancelled.
  * @returns {Object}               — MoveResolutionSchema (minus _id/timestamp, set by caller)
  */
 export function resolveMove(interpretation, campaignState, options = {}) {
@@ -1063,6 +1085,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   const isProgressMove = moveData.progressMove === true;
 
   let actionDie    = 0;
+  let actionDieCancelled = false;
   let actionScore  = 0;
   let progressScore = 0;
   const challengeDice = rollChallengeDice();
@@ -1078,7 +1101,10 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     ({ progressScore, outcome, isMatch } = calcProgressOutcome(ticks, challengeDice));
   } else {
     actionDie   = rollActionDie();
-    actionScore = calcActionScore(actionDie, statValue, adds);
+    // The die stays on the record (the card shows it struck through); a
+    // cancelled one adds nothing to the score.
+    actionDieCancelled = cancelsActionDie(actionDie, options.momentum);
+    actionScore = calcActionScore(actionDieCancelled ? 0 : actionDie, statValue, adds);
     ({ outcome, isMatch } = calcOutcome(actionScore, challengeDice));
   }
 
@@ -1106,7 +1132,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   }
   const loremasterContext = buildLoremasterContext({
     moveName, statUsed, statValue, adds,
-    actionDie, actionScore, challengeDice,
+    actionDie, actionDieCancelled, actionScore, challengeDice,
     outcome, outcomeLabel, isMatch,
     isProgressMove, progressScore,
     consequences,
@@ -1130,6 +1156,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     mischiefApplied,
     playerConfirmed: true,
     actionDie,
+    actionDieCancelled,
     actionScore,
     challengeDice,
     isMatch,
@@ -1386,9 +1413,10 @@ function safeRollPaired(t1, t2) {
  * Gives Loremaster the full mechanical picture so narration is coherent.
  */
 function buildLoremasterContext(r) {
+  const dieStr = r.actionDieCancelled ? `${r.actionDie} (cancelled by momentum -${r.actionDie})` : `${r.actionDie}`;
   const diceStr = r.isProgressMove
     ? `Progress score: ${r.progressScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`
-    : `Action: ${r.actionDie} + ${r.statValue}${r.adds ? ` + ${r.adds}` : ""} = ${r.actionScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`;
+    : `Action: ${dieStr} + ${r.statValue}${r.adds ? ` + ${r.adds}` : ""} = ${r.actionScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`;
 
   const matchStr = r.isMatch ? " [MATCH]" : "";
 
