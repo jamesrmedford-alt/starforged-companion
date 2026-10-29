@@ -55,6 +55,7 @@ import {
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction }     from "../multiplayer/gmRelay.js";
+import { revertPayThePrice }   from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -426,7 +427,7 @@ async function handleBurnClick(message, { narrate, persist }) {
   // -1 from a PtP table roll on the original miss). Best-effort; failures are
   // warned and do not block the rest of the burn flow.
   if (burn.ptpReversals) {
-    await revertPtpEffects(burn.ptpReversals, actor).catch(err =>
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn" }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
 
@@ -469,59 +470,6 @@ async function applyBurnMeterDeltas({ actor, burnState, currentMomentum, newMome
     spirit:   swap("spiritChange"),
     supply:   swap("supplyChange"),
   });
-}
-
-/**
- * Revert the Pay-the-Price side effects that fired on the original miss before
- * the player clicked Burn: clock advances (tension + vow) and the PC-meter loss
- * the PtP route actually caused (health/spirit/supply — the receipt
- * index.js ptpMeterReceipt records).
- *
- * Complex routes (withstand_damage, companion_takes_a_hit) are not reversed —
- * consistent with the existing policy of not rolling back auto-debility flips.
- *
- * Posts a brief "⏰ Burn reversal" chat card listing what was unwound.
- */
-async function revertPtpEffects(ptpReversals, actor) {
-  const reverted = [];
-
-  // 1. Rewind clock advances
-  const tensionIds = (ptpReversals.clocksAdvanced ?? []).filter(c => c.type === "tension" && c._id).map(c => c._id);
-  const vowEntries = (ptpReversals.clocksAdvanced ?? []).filter(c => c.type === "vow" && c.actorId && c.itemId);
-
-  if (tensionIds.length) {
-    const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-    await revertTensionClocksForBurn(tensionIds);
-    for (const c of ptpReversals.clocksAdvanced.filter(c => c.type === "tension" && c._id)) {
-      reverted.push(`${c.name} clock rewound`);
-    }
-  }
-  if (vowEntries.length) {
-    const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
-    await revertVowClocksForBurn(vowEntries);
-    for (const v of vowEntries) {
-      reverted.push(`${v.name} clock rewound`);
-    }
-  }
-
-  // 2. Refund the PtP route's PC-meter loss — the receipt is what landed (the
-  // move that ran, the meter's before and after), never the table's annotation
-  // (issue #311 P04). A burn resets momentum, which already undoes a momentum
-  // loss.
-  const delta = ptpReversals.sufferMeterDelta;
-  const refundTo = (delta?.actorId ? game.actors?.get?.(delta.actorId) : null) ?? actor;
-  if (delta?.meterKey && delta.meterKey !== "momentum" && delta.amount > 0 && refundTo) {
-    await applyMeterChanges(refundTo, { [delta.meterKey]: +delta.amount });
-    reverted.push(`${delta.meterKey} +${delta.amount} refunded`);
-  }
-
-  if (!reverted.length) return;
-
-  const lines = reverted.map(r => `<li>${r}</li>`).join("");
-  await ChatMessage.create({
-    content: `<div class="sf-clock-card"><strong>⏰ Burn reversal</strong><p>Momentum burned — the Price reverts:</p><ul>${lines}</ul></div>`,
-    flags:   { [MODULE_ID]: { clockCard: true, burnReversal: true } },
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: revert card failed:`, err));
 }
 
 async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, narrate, persist }) {

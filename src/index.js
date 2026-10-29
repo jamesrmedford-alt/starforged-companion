@@ -1674,7 +1674,8 @@ export function registerChatHook() {
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
-      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor);
+      // A miss's Pay the Price is undone by either upgrade (issue #311 P05).
+      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals);
       // "Reach a Milestone" suggestion (playtest: surface vow progress on a
       // success). Eligible on a quest-advancing hit when the PC has an open vow;
       // clicking marks progress without retyping the move. See moves/milestone.js.

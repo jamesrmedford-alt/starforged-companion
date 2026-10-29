@@ -37,6 +37,7 @@
 import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
 import { getActor, applyMeterChanges }   from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
+import { revertPayThePrice }             from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
   relayCardButtonClick,
@@ -66,9 +67,11 @@ let _deps = { narrate: null, persist: null };
  * @param {Object} resolution             — the resolved move
  * @param {Array}  applicableAbilities     — scanForApplicableAbilities output
  * @param {Actor}  actor                    — active character
+ * @param {Object|null} [ptpReversals]     — what the miss's Pay the Price did
+ *   (the pipeline's, as for buildBurnState): the improvement undoes it
  * @returns {Object|null}
  */
-export function buildImproveState(resolution, applicableAbilities, actor) {
+export function buildImproveState(resolution, applicableAbilities, actor, ptpReversals = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
   if (!Array.isArray(applicableAbilities) || !applicableAbilities.length) return null;
@@ -89,6 +92,7 @@ export function buildImproveState(resolution, applicableAbilities, actor) {
     originalApplied:      false,            // flipped true once persistResolution writes
     actorId:              actor.id,
     resolutionId:         resolution._id ?? null,
+    ptpReversals:         ptpReversals ?? null,   // the superseded miss's Pay the Price, undone on improve
     // The cost: the ability's own clock.
     assetId:              ability.assetId ?? null,
     abilityIndex:         Number.isInteger(ability.abilityIndex) ? ability.abilityIndex : null,
@@ -272,6 +276,14 @@ async function handleImproveClick(message, { narrate, persist }) {
   const newConsequences = mapConsequences(improve.moveId, improve.improveTo, improve.isMatch);
 
   await applyImproveMeterDeltas({ actor, improve, newConsequences });
+
+  // The strong hit replaces a miss whose Pay the Price already landed: rewind
+  // its clocks and refund its meter loss, as a burn does — the improvement
+  // kept them on top of its own cost (issue #311 P05).
+  if (improve.ptpReversals) {
+    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve" }).catch(err =>
+      console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
+  }
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);

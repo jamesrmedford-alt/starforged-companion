@@ -11,6 +11,8 @@
  * at their boundaries.
  *
  *   P04 — a burn refunds the Pay the Price meter loss that landed.
+ *   P05 — an improvement undoes the superseded miss's Pay the Price, as a
+ *         burn does.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -121,5 +123,46 @@ describe("P04 — a burn refunds the Pay the Price loss that landed", () => {
     expect(pc.system.health.value).toBe(4);
     await click(card, '[data-action="sf-burn-momentum"]');
     expect(pc.system.health.value).toBe(5);
+  });
+});
+
+describe("P05 — both upgrades undo the superseded miss's Pay the Price", () => {
+  // Fugitive-style: improve to a strong hit, its cost a note (no clock).
+  const FUGITIVE = [{ assetId: null, abilityIndex: null, assetName: "Fugitive",
+    text: "improve the result to a strong hit", resultImprovement: { improveTo: "strong_hit" }, hasClock: false }];
+
+  async function missWithPursuit() {
+    control.abilities = FUGITIVE;
+    await table.client("gm-1").run(() => game.settings.set(MODULE_ID, "campaignState", { ...world(), clocks: [
+      { _id: "pursuit", name: "Pursuit", type: "tension", segments: 4, filled: 0, active: true },
+    ] }));
+    const card = await roll("face_danger");   // iron 3 + 1 against 6 and 7: a miss; Pay the Price 78
+    expect(lastLog().outcome).toBe("miss");
+    expect(pc.system.health.value).toBe(4);
+    expect(world().clocks[0].filled).toBe(1);
+    return card;
+  }
+
+  for (const [label, selector, upgrade] of [
+    ["Improve Result", '[data-action="sf-improve-result"]', "improve"],
+    ["Burn Momentum",  '[data-action="sf-burn-momentum"]',  "burn"],
+  ]) {
+    it(`${label} to a strong hit: the clock rewinds to 0/4 and health 4 → 5`, async () => {
+      const card = await missWithPursuit();
+
+      await click(card, selector);
+
+      expect(flags(card._id)[upgrade].consumed).toBe(true);
+      expect(lastLog().outcome).toBe("strong_hit");
+      expect(world().clocks[0].filled).toBe(0);
+      expect(pc.system.health.value).toBe(5);
+    });
+  }
+
+  it("the improvement's own cost still stands: its note is on the card", async () => {
+    const card = await missWithPursuit();
+    await click(card, '[data-action="sf-improve-result"]');
+    expect(table.world.message(card._id).content).toContain("Fugitive: apply the ability's stated cost.");
+    expect(table.cards(f => f.improveReversal).at(-1)?.content).toMatch(/Pursuit clock rewound[\s\S]*health \+1 refunded/);
   });
 });
