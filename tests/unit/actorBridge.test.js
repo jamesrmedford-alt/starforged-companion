@@ -456,10 +456,13 @@ describe('awardXP', () => {
     expect(actor._updateHistory[0]['system.xp']).toBe(6);
   });
 
-  it('does not exceed xp max (30)', async () => {
-    const actor = freshActor({ system: { xp: 28 } });
-    await awardXP(actor, 5);
-    expect(actor._updateHistory[0]['system.xp']).toBe(30);
+  // Issue #309 N01: the vendor's system.xp has no maximum. A 30-point cap
+  // wrote 30 over 42 XP and stopped every award at 30.
+  it.each([[28, 5, 33], [29, 2, 31], [42, 2, 44]])('has no 30-point cap: %s + %s XP is %s', async (before, amount, after) => {
+    const actor = freshActor({ system: { xp: before } });
+    await awardXP(actor, amount);
+    expect(actor._updateHistory[0]['system.xp']).toBe(after);
+    expect(actor.system.xp).toBe(after);
   });
 
   it('does not call update if amount is zero or negative', async () => {

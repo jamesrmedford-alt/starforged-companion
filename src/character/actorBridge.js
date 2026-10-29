@@ -408,7 +408,10 @@ export async function setCombatPosition(actor, position) {
 }
 
 /**
- * Award XP to the Actor, clamped to xp.max.
+ * Award XP to the Actor. `system.xp` is a non-negative integer with no maximum
+ * in the vendor schema (subtypes/character.ts): a 30-point cap here once
+ * wrote 30 over a character's 42 XP, and stopped every award at 30 (issue
+ * #309 N01).
  * @param {Actor} actor
  * @param {number} amount
  * @returns {Promise<void>}
@@ -416,15 +419,10 @@ export async function setCombatPosition(actor, position) {
 export async function awardXP(actor, amount) {
   if (!actor || amount <= 0) return;
 
-  const sys    = actor.system ?? {};
-  const current = sys.xp ?? 0;
-  const max     = 30;
-  const next    = Math.min(current + amount, max);
-
-  if (next !== current) {
-    await actor.update({ 'system.xp': next });
-    invalidateActorCache(actor.id);
-  }
+  const sys     = actor.system ?? {};
+  const current = Number(sys.xp ?? 0) || 0;
+  await actor.update({ 'system.xp': current + amount });
+  invalidateActorCache(actor.id);
 }
 
 /**

@@ -44,6 +44,19 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     }));
   });
 
+  // Issue #309 N01: a legacy box's XP crossed or started above 30 — the old
+  // 30-point cap wrote 30, erasing earned XP.
+  it("awards a box's XP past 30, and never lowers XP already above it", async () => {
+    const a1 = makeTestActor({ id: "xp30a", type: "character", system: { xp: 29 } });
+    const a2 = makeTestActor({ id: "xp30b", type: "character", system: { xp: 42 } });
+    game.actors._setAll([a1, a2]);
+    expect(addLegacyTicks({}, "quests", 4)).toBe(1);
+    await vi.waitFor(() => {
+      expect(a1.system.xp).toBe(31);
+      expect(a2.system.xp).toBe(44);
+    });
+  });
+
   it("awards nothing when no box fills", async () => {
     game.actors._setAll([makeTestActor({ id: "xp3", type: "character", system: { xp: 0 } })]);
     const cs = { legacyTracks: { quests: { ticks: 2, cleared: false } } };
