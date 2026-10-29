@@ -1,12 +1,13 @@
-# Regression-test sensitivity — issues #300, #301, #302 and #306
+# Regression-test sensitivity — issues #300, #301, #302, #306 and #309
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301 and #306 audits and from issue #302's disturbance matrix (slice
-B): the tests that fail with the fix taken out. It was produced by
-`scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to `ec08eb4`)
-and, for issue #306, on 2026-10-28 (the patch applied to `8bee894`; for the
-two follow-ups, the patches applied to `514f5eb`). To reproduce:
+#300, #301, #306 and #309 audits and from issue #302's disturbance matrix
+(slice B): the tests that fail with the fix taken out. It was produced by
+`scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to `ec08eb4`),
+for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for the two
+follow-ups, the patches applied to `514f5eb`) and for issue #309 on
+2026-10-29 (the patch applied to `fd17788`). To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -32,6 +33,11 @@ node scripts/fix-sensitivity.mjs \
   --inject scripts/defects/r04-retry-any-user.patch \
   --inject scripts/defects/r04-retry-repeatable.patch \
   --inject scripts/defects/r04-fight-stamp-optimistic.patch --md details.md
+
+# issue #309
+node scripts/fix-sensitivity.mjs \
+  84390ef fa9290a d4c648c b40abbc 9d65ac9 0da44e1 611979e 1f0584c fd17788 \
+  --inject scripts/defects/n02-integrity-to-pc.patch --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -111,6 +117,20 @@ temporary git worktree; the checkout it is run from is not touched.
 | TDA-BUTTON-NO-TARGET — which fight? | be61488 | revert; inject `tda-which-fight-unspoken.patch`, `tda-which-fight-twice.patch` | 2 under revert — `progressTrackSelection.test.js` (a Take Decisive Action naming no fight posts the card and rolls nothing; one pick per card). By injection: the pick is spoken as the roller (1); the GM's pick stamp holds on another client (1) |
 | R04 NATIVE-PAYOFF-NO-RETRY | 514f5eb | revert; inject the eight `r04-*.patch` follow-up patches | 15 under revert — `payoffFailure.test.js` (13: every step lands; a refused legacy write pays no XP and a Retry pays it once; a refused grant posts no "Reward earned"; a refused claim; a connection gone; a step that fails again; the ledger; a duplicate fulfilment; GM only; a refused claim of the card; the forge; a won fight's reward; the victory card's button) and `cardActions.test.js` (2: a mark or a deepen that does not land stays unapplied). 4 more fail only on the missing `applyPayoffRetry`; injection covers each. By injection: XP before the write (1), "Reward earned" after a refused grant (2), a missing connection skipped silently (1), a Retry that ignores the ledger (1), a late claim (3), any user (2), a repeatable Retry (2), an optimistic victory-card stamp (3) |
 
+### Issue #309 — the audit after #307
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| N01 XP-30-TRUNCATION | 84390ef | revert | 4 — `actorBridge.test.js` (28 + 5, 29 + 2 and 42 + 2 XP), `flowDefectFixes.test.js` (a legacy box's XP past 30, and above it) |
+| N02 WITHSTAND-RECOVERY-NOOP | 0da44e1 | revert; inject `n02-integrity-to-pc.patch` | 9 under revert — `sufferCard.test.js` (7: strong hit, weak-hit trade, miss, a battered ship, the PC's own battered, a card naming no vehicle, no vehicle at all), `statEnrichment.test.js` (the roll names its vehicle), `persistResolution.test.js` (the card carries the targets). By injection, 9 — six of those card tests (the battered-ship one checks availability, which the patch leaves alone) and the three pipeline tests `consequenceTargets.test.js` gained in 611979e / fd17788 |
+| N03 COMPANION-CONSEQUENCES-NOOP | 611979e | revert | 7 — `consequenceTargets.test.js` (a strong hit heals the rolled companion; the weak hit's recovery offered and applied, through the pipeline), `sufferCard.test.js` (weak-hit trade, miss, two companions, none), `statEnrichment.test.js` (the roll names its companion); 4 more in `actorBridge.test.js` fail only on the missing companion helpers |
+| N04 GAIN-GROUND-TARGET-LOST | 1f0584c | revert | 6 — `consequenceTargets.test.js` (two fights open: the named fight gains; an old choice after its fight finished marks nothing), `sufferDialog.test.js` (4: the card's own fight; finished; gone or unnamed; an older card's sole-open reading) |
+| N05 FULFIL-CLAIM-REFUSED | b40abbc | revert | 2 — `payoffFailure.test.js` (a refused paid flag pays nothing, then a duplicate pays once and the Retry nothing; a Retry after a refused paid flag, then duplicates, pay once) |
+| N06 LEGACY-XP-FAILURE-HIDDEN | 9d65ac9 | revert | 4 — `payoffFailure.test.js` (a PC's refused box XP and its Retry; every PC refused, then a Retry refused again; the forge; a box filled in the move pipeline) |
+| N07 SUFFER-STAMP-REPEAT | fd17788 | revert | 5 — `sufferCard.test.js` (a refused claim, single and multi-select; a follow-up picker that cannot be posted; a write refused after the claim and its Retry), `consequenceTargets.test.js` (a refused write in a chained choice, its GM Retry on a booted table) |
+| N08 END-SESSION-REPEAT | d4c648c | revert | 7 — `sessionRelayDialogs.test.js` (a second End; two at once; the first focus noted; a refused save then a retry; the dialog's wording; on a booted table, two players at once and one after the other) |
+| N09 BEGIN-SESSION-CACHE-WEDGE | fa9290a | revert | 1 — `sessionRelayDialogs.test.js` (a refused save leaves the cache as it was, and a retry begins the session) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -145,6 +165,12 @@ ways; each was read and is a control:
 | `nativePayoffOnce` › a fulfilment after the first has finished pays nothing — the paid flag | the paid flag (#306 R04) |
 | `progressTrackSelection` › an older card that names no fight, one fight open, still rolls that fight | a card without the stamp, one fight open (TDA-BUTTON-NO-TARGET) |
 | `progressTrackSelection` › a typed Take Decisive Action that names its fight rolls it without asking | no question when the fight is named (TDA-BUTTON-NO-TARGET) |
+| `sufferCard` › weak hit: unavailable — and nothing charged — when the companion is at 0 | the recovery's own rule: no health, no trade (#309 N03) |
+
+Two more passed both ways under 611979e's revert because they cover N02,
+fixed in the commit before it: `consequenceTargets` › a strong hit's +1
+integrity raises it / a weak hit's trade costs a momentum and raises it.
+Injecting N02's defect (`n02-integrity-to-pc.patch`) fails both.
 
 ## Details
 
@@ -915,3 +941,175 @@ Test files: `tests/unit/payoffFailure.test.js`, `tests/unit/cardActions.test.js`
 | --- | --- |
 | tests/unit/cardActions.test.js › a payoff failure card's Retry (issue #306 R04) once: a repeat press, or two at once, re-run nothing more | AssertionError: expected undefined to be 'already-resolved' // Object.is equality |
 | tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected { applied: true, failed: +0 } to match object { applied: false, …(1) } |
+
+### 84390ef — fix: XP awards have no 30-point cap (issue #309 N01)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/flowDefectFixes.test.js`. Source restored: 2 file(s).
+
+- With the fix: 99 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 95 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/actorBridge.test.js › awardXP has no 30-point cap: 28 + 5 XP is 33 | AssertionError: expected 30 to be 33 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › awardXP has no 30-point cap: 29 + 2 XP is 31 | AssertionError: expected 30 to be 31 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › awardXP has no 30-point cap: 42 + 2 XP is 44 | AssertionError: expected 30 to be 44 // Object.is equality |
+| (new) tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) awards a box's XP past 30, and never lowers XP already above it | AssertionError: expected 30 to be 31 // Object.is equality |
+
+### fa9290a — fix: a refused Begin a Session save no longer blocks its retry (issue #309 N09)
+
+Test files: `tests/unit/sessionRelayDialogs.test.js`. Source restored: 1 file(s).
+
+- With the fix: 29 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 28 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sessionRelayDialogs.test.js › Begin a Session a refused save leaves the cached state as it was, and a retry begins the session | AssertionError: expected { sessionActive: true, …(6) } to deeply equal { sessionActive: false, …(3) } |
+
+### d4c648c — fix: End a Session ends a session once (issue #309 N08)
+
+Test files: `tests/unit/sessionRelayDialogs.test.js`. Source restored: 1 file(s).
+
+- With the fix: 36 passed, 0 failed.
+- Without it: 7 failed (7 new; 0 only for a missing export); 29 still pass (0 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sessionRelayDialogs.test.js › End a Session ends a session once (issue #309 N08) a second End repeats nothing and pays no momentum; its focus replaces the one noted | AssertionError: expected undefined to deeply equal { alreadyEnded: false } |
+| (new) tests/unit/sessionRelayDialogs.test.js › End a Session ends a session once (issue #309 N08) two Ends at once close the session and pay the momentum once | TypeError: Cannot read properties of undefined (reading 'alreadyEnded') |
+| (new) tests/unit/sessionRelayDialogs.test.js › End a Session ends a session once (issue #309 N08) the first focus noted pays the momentum once, even when the ending noted none | AssertionError: expected undefined to deeply equal { alreadyEnded: true } |
+| (new) tests/unit/sessionRelayDialogs.test.js › End a Session ends a session once (issue #309 N08) a refused save leaves the cached state as it was, and a retry ends the session | AssertionError: expected { sessionActive: false, …(5) } to match object { sessionActive: true, …(1) } |
+| (new) tests/unit/sessionRelayDialogs.test.js › End a Session ends a session once (issue #309 N08) the dialog on an ended session says a new focus corrects the old one | AssertionError: expected '\n    &lt;form class="sf-end-session-for…' to match /already ended/ |
+| (new) tests/unit/sessionRelayDialogs.test.js › across a booted table End a Session two players end the same session (issue #309 N08) at once: the GM closes it and pays the momentum once; the second focus corrects the first | AssertionError: expected [ 'gm-1 momentum:a1', …(3) ] to deeply equal [ 'gm-1 momentum:a1', …(1) ] |
+| (new) tests/unit/sessionRelayDialogs.test.js › across a booted table End a Session two players end the same session (issue #309 N08) one after the other: the second ends nothing and pays nothing — the GM's note is its only card | AssertionError: expected [ 'gm-1 momentum:a1', …(3) ] to deeply equal [ 'gm-1 momentum:a1', …(1) ] |
+
+### b40abbc — fix: a refused paid flag no longer lets a vow's payoff repeat (issue #309 N05)
+
+Test files: `tests/unit/payoffFailure.test.js`. Source restored: 1 file(s).
+
+- With the fix: 15 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 13 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused paid flag applies nothing and tells the GMs; a duplicate then pays once, and the Retry nothing more | AssertionError: expected { quests: 4, deepen: 8, …(2) } to deeply equal { quests: 2, deepen: +0, …(2) } |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) after a refused paid flag, the Retry pays once and a later duplicate pays nothing | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+
+### 9d65ac9 — fix: a refused legacy XP award is reported and retryable (issue #309 N06)
+
+Test files: `tests/unit/payoffFailure.test.js`. Source restored: 1 file(s).
+
+- With the fix: 19 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 15 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a PC's refused box XP goes to the GMs; Retry gives that PC's XP alone, once | AssertionError: expected [ Array(1) ] to deeply equal [ StringContaining{…} ] |
+| (new) tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused box XP with every PC refused posts no "XP earned"; a Retry refused again goes on a fresh card | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/payoffFailure.test.js › a bond forged on the sheet: a refused bonds legacy goes to the GMs (issue #306 R04) a refused box XP is reported with the bond forged and its legacy marked; Retry gives the XP once | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/payoffFailure.test.js › a legacy box filled in the move pipeline: a refused XP award goes to the GMs Retry gives that PC's XP once | AssertionError: one payoff failure card: expected [] to have a length of 1 but got +0 |
+
+### 0da44e1 — fix: Withstand Damage's integrity choices change the vehicle (issue #309 N02)
+
+Test files: `tests/unit/persistResolution.test.js`, `tests/unit/statEnrichment.test.js`, `tests/unit/sufferCard.test.js`. Source restored: 6 file(s).
+
+- With the fix: 75 passed, 0 failed.
+- Without it: 9 failed (9 new; 0 only for a missing export); 66 still pass (0 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/persistResolution.test.js › persistResolution — the suffer card carries the move's targets stamps the targets into the card's executorOpts beside the outcome flags | AssertionError: expected { isMiss: false, …(1) } to deeply equal { isMiss: false, …(2) } |
+| (new) tests/unit/statEnrichment.test.js › resolveStatValue — vehicle integrity an integrity roll names the vehicle it was made against | AssertionError: expected { moveId: 'withstand_damage', …(2) } to match object { statValue: 3, …(1) } |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) strong hit: +1 integrity raises the vehicle's integrity | AssertionError: expected 2 to be 3 // Object.is equality |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) weak hit: the trade costs momentum and raises integrity | AssertionError: expected { momentum: 1, integrity: 2 } to deeply equal { momentum: 1, integrity: 3 } |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) miss: -1 integrity lowers it | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) a battered vehicle: its +1 integrity choices are unavailable, and nothing is charged | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to match /data-option-index="0"[^>]*disabled/ |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) the PC's own battered impact is not the vehicle's | AssertionError: expected 2 to be 3 // Object.is equality |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) a card naming no vehicle (posted before this fix) changes the command vehicle | AssertionError: expected 2 to be 3 // Object.is equality |
+| (new) tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) no vehicle at all: +1 integrity is unavailable, and a -1 the card cannot apply says so | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+
+### 611979e — fix: Companion Takes a Hit changes the companion's health (issue #309 N03)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/consequenceTargets.test.js`, `tests/unit/statEnrichment.test.js`, `tests/unit/sufferCard.test.js`. Source restored: 6 file(s).
+
+- With the fix: 167 passed, 0 failed.
+- Without it: 11 failed (11 new; 4 only for a missing export); 156 still pass (3 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/actorBridge.test.js › companion health — the Companion asset's track lists Companion-category assets with an enabled track — not other assets | TypeError: (0 , listCompanionAssets) is not a function |
+| (new) (API) tests/unit/actorBridge.test.js › companion health — the Companion asset's track getCompanionAsset: the one named, else the only one — none when several and none named | TypeError: (0 , getCompanionAsset) is not a function |
+| (new) (API) tests/unit/actorBridge.test.js › companion health — the Companion asset's track applyCompanionHealthChange writes the track, kept within min..max | TypeError: (0 , applyCompanionHealthChange) is not a function |
+| (new) (API) tests/unit/actorBridge.test.js › companion health — the Companion asset's track reports a refused write and a missing companion instead of dropping them | TypeError: (0 , applyCompanionHealthChange) is not a function |
+| (new) tests/unit/consequenceTargets.test.js › Companion Takes a Hit — the companion the roll was made for (issue #309 N03) a strong hit gives that companion +1 health | AssertionError: expected { glow: 2, drone: 1 } to deeply equal { glow: 3, drone: 1 } |
+| (new) tests/unit/consequenceTargets.test.js › Companion Takes a Hit — the companion the roll was made for (issue #309 N03) a weak hit offers the recovery, and the trade heals that companion for a momentum | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' not to match /data-option-index="0"[^>]*disabled/ |
+| (new) tests/unit/statEnrichment.test.js › resolveStatValue — vehicle integrity a companion_health roll names the companion it was made for — the one it read | AssertionError: expected { …(3) } to match object { statValue: 3, …(1) } |
+| (new) tests/unit/sufferCard.test.js › Companion Takes a Hit — its health choices change the companion (issue #309 N03) weak hit: the recovery is offered while the companion has health, and heals it for a momentum | AssertionError: expected { applied: false, …(1) } to deeply equal { applied: true } |
+| (new) tests/unit/sufferCard.test.js › Companion Takes a Hit — its health choices change the companion (issue #309 N03) miss: -1 companion health lowers the companion's track | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/sufferCard.test.js › Companion Takes a Hit — its health choices change the companion (issue #309 N03) with two companions, the card's own companion is the one changed | AssertionError: expected { glow: 2, drone: 1 } to deeply equal { glow: 2, drone: +0 } |
+| (new) tests/unit/sufferCard.test.js › Companion Takes a Hit — its health choices change the companion (issue #309 N03) no companion to change: the card says the change was not applied | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to contain 'Not applied: companion health -1 — no…' |
+
+- New test passing with and without the fix (a control?): tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a strong hit's +1 integrity raises it
+- New test passing with and without the fix (a control?): tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a weak hit's trade costs a momentum and raises it
+- New test passing with and without the fix (a control?): tests/unit/sufferCard.test.js › Companion Takes a Hit — its health choices change the companion (issue #309 N03) weak hit: unavailable — and nothing charged — when the companion is at 0
+
+### 1f0584c — fix: Gain Ground's progress choice marks its own fight (issue #309 N04)
+
+Test files: `tests/unit/consequenceTargets.test.js`, `tests/unit/sufferDialog.test.js`. Source restored: 4 file(s).
+
+- With the fix: 48 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 42 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/consequenceTargets.test.js › Gain Ground — "Mark progress" marks the fight the move was about (issue #309 N04) with two fights open, the named fight gains the progress | AssertionError: expected undefined to be 'scNtXKta77YWlrGk' // Object.is equality |
+| (new) tests/unit/consequenceTargets.test.js › Gain Ground — "Mark progress" marks the fight the move was about (issue #309 N04) an old choice marks nothing once its fight is over — not a fight opened since | AssertionError: expected 8 to be +0 // Object.is equality |
+| (new) tests/unit/sufferDialog.test.js › runSufferResolution — combat-progress marks the card's own fight (issue #309 N04) marks the card's fight while another is open too | AssertionError: expected [] to deeply equal [ 'boarders' ] |
+| (new) tests/unit/sufferDialog.test.js › runSufferResolution — combat-progress marks the card's own fight (issue #309 N04) marks nothing once its fight is over — not the fight that is open now | AssertionError: expected [ 'turret' ] to deeply equal [] |
+| (new) tests/unit/sufferDialog.test.js › runSufferResolution — combat-progress marks the card's own fight (issue #309 N04) marks nothing when its fight is gone, or when the move named none | AssertionError: expected [ 'turret', 'turret' ] to deeply equal [] |
+| (new) tests/unit/sufferDialog.test.js › runSufferResolution — combat-progress marks the card's own fight (issue #309 N04) a card naming no fight (posted before the card carried one) marks the sole open fight | AssertionError: expected { kind: 'combat-progress', …(2) } to match object { ok: false, reason: 'ambiguous' } |
+
+### fd17788 — fix: a suffer pick is claimed before its effects (issue #309 N07)
+
+Test files: `tests/unit/consequenceTargets.test.js`, `tests/unit/sufferCard.test.js`. Source restored: 3 file(s).
+
+- With the fix: 39 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 34 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a refused write in the trade is told on the card, and the GMs' Retry applies it once | AssertionError: expected { integrity: 2, momentum: 2 } to deeply equal { integrity: 3, momentum: 2 } |
+| (new) tests/unit/sufferCard.test.js › a pick is claimed before its effects (issue #309 N07) a refused claim applies nothing; the next press applies the cost once | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+| (new) tests/unit/sufferCard.test.js › a pick is claimed before its effects (issue #309 N07) a multi-select pick is claimed too: refused, nothing applies and it can be made again | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+| (new) tests/unit/sufferCard.test.js › a pick is claimed before its effects (issue #309 N07) a nested suffer move whose follow-up picker cannot be posted re-opens the card | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+| (new) tests/unit/sufferCard.test.js › a pick is claimed before its effects (issue #309 N07) a write refused after the claim: the card says so, and the GMs' Retry applies it once | Error: promise rejected "Error: refused by the test" instead of resolving |
+
+### `scripts/defects/n02-integrity-to-pc.patch` — issue #309 N02 — a consequence card's integrity change goes to the PC's meters again, which have no integrity: dropped
+
+Test files: `tests/unit/consequenceTargets.test.js`, `tests/unit/sufferCard.test.js`.
+
+- On HEAD: 39 passed, 0 failed.
+- With the defect: 9 failed (0 only for a missing export); 30 still pass.
+- Verdict: **sensitive** — 9 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a strong hit's +1 integrity raises it | AssertionError: expected 2 to be 3 // Object.is equality |
+| tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a weak hit's trade costs a momentum and raises it | AssertionError: expected { integrity: 2, momentum: 1 } to deeply equal { integrity: 3, momentum: 1 } |
+| tests/unit/consequenceTargets.test.js › Withstand Damage — the vehicle the roll was made against (issue #309 N02) a refused write in the trade is told on the card, and the GMs' Retry applies it once | AssertionError: expected { integrity: 2, momentum: 2 } to deeply equal { integrity: 3, momentum: 2 } |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) strong hit: +1 integrity raises the vehicle's integrity | AssertionError: expected 2 to be 3 // Object.is equality |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) weak hit: the trade costs momentum and raises integrity | AssertionError: expected { momentum: 1, integrity: 2 } to deeply equal { momentum: 1, integrity: 3 } |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) miss: -1 integrity lowers it | AssertionError: expected 2 to be 1 // Object.is equality |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) the PC's own battered impact is not the vehicle's | AssertionError: expected 2 to be 3 // Object.is equality |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) a card naming no vehicle (posted before this fix) changes the command vehicle | AssertionError: expected 2 to be 3 // Object.is equality |
+| tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) no vehicle at all: +1 integrity is unavailable, and a -1 the card cannot apply says so | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to contain 'Not applied: integrity -1 — no vehicl…' |

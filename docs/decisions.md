@@ -6,6 +6,83 @@ rejected.
 
 ---
 
+## Issue #309 audit: a consequence changes what its move was about; claims before effects; a session ends once (2026-10)
+
+**Decision:** (issue #309. The maintainer asked for every verified finding to
+be fixed on 2026-10-29. Each finding's ID in brackets.)
+- **XP has no ceiling** [N01]. `awardXP` adds: the vendor's `system.xp` is a
+  non-negative integer with no maximum. The 30 was the classic Ironsworn
+  sheet's track, never a Starforged rule.
+- **A move's consequence card carries what the move was about** [N02, N03,
+  N04]. Stat enrichment stamps the vehicle an integrity roll read
+  (`vehicleActorId`) and the companion a `companion_health` roll read
+  (`companionItemId`); the pipeline adds the move's fight (`moveFight` →
+  `combatTrackId`). `persistResolution`'s `targets` puts them on the suffer
+  card's `executorOpts`, and its choices change exactly those: integrity on
+  the ship record (`updateShip`; a raise refused while the ship's native
+  impact says battered), companion health on the asset's track
+  (`actorBridge.applyCompanionHealthChange`), progress on that fight — gone or
+  finished by click time, nothing. A card without the vehicle or companion
+  falls back to the command vehicle / the PC's only companion; a card
+  without a fight (posted before this) to the sole open fight.
+- **Availability reads the card's targets** [N02, N03]: "not battered" is the
+  vehicle's impact (null with no vehicle — the raise is unavailable), and
+  "companion health > 0" the companion's live track.
+- **A card says what landed** [N02]. Its resolved text lists the calls whose
+  writes landed and, apart, each that did not and why (`ok: false` results).
+- **A suffer pick is claimed before its effects** [N07]: the card resolved,
+  or the option marked picked, is saved first; refused, nothing applies and
+  the buttons re-arm. A write refused after the claim goes on the GMs'
+  payoff failure card as a `suffer` step (`isRetryableSufferCall` checks what
+  it re-applies), with the #306 Retry.
+- **A one-time payoff's claim must land** [N05]. The native fulfilment pays
+  nothing until `fulfilPaid` has landed on a copy; refused on every copy, its
+  steps go unapplied onto the GMs' card (`unclaimed`). The native path, like
+  a Retry, skips steps the `fulfilPayoff` ledger records.
+- **Each PC's legacy XP is its own step** [N06]. `awardLegacyBoxXP` returns
+  the awards that did not land; they go on the GMs' card as `xp` steps
+  (outside the ledger — only that card's Retry gives them), and a box filled
+  inside the move pipeline posts a `legacyXp` card of its own. "XP earned"
+  follows the awards that landed, naming the PCs when not everyone was given
+  it. This refines "Legacy XP pays at the tick write": failures no longer
+  only warn.
+- **A session ends once** [N08]. End a Session runs one at a time on the
+  canonical GM, keyed by `currentSessionId` / `sessionEndedId`. An End on a
+  session already ended is a focus correction: it replaces the noted focus,
+  repeats nothing else, posts a note, and pays the momentum only when no
+  focus had been noted — the momentum is for the session's first focus.
+- **Session lifecycle writes go on a copy** [N09, and End's twin]: Begin and
+  End read `game.settings.get`'s value through `deepClone` before changing
+  it (rules/foundry-api.md).
+
+**Reason:** issue #309 reproduced each defect (fourteen failing probes) on
+`6e56de4`; the regression tests that came with the fixes fail with each fix
+taken out (`docs/testing/fix-sensitivity.md`).
+
+**Rejected:**
+- *Re-arm the suffer card for a refused write, the press being the retry*
+  (N07) — a chained choice whose first write landed would charge that one
+  again, unless the card kept per-call state; the GMs' Retry already exists
+  and shows the value as it stands.
+- *Run a refused-claim payoff anyway and rely on the ledger* (N05) — the
+  issue's direction, and #306's "`fulfilPaid` means payoff started": an
+  unclaimed payoff is one a duplicate can still pay.
+- *Refuse a second End a Session outright* (N08) — correcting the focus after
+  ending is legitimate; *a separate "bonus paid" field* — between End and the
+  next Begin, a noted focus already records it.
+- *Mark the sole open fight when the card's fight is gone* (N04) — as #306
+  R06 decided for track rows: another fight is not this one.
+- *Wire `sufferDamage` for "-1 integrity"* (N02) — it is #216 Phase D's
+  pre-built API; `updateShip` is the live writer and already clamps.
+- *Fix the suffer-move executors' asset schema in the same change* — outside
+  the audited paths; recorded as SUFFER-EXECUTOR-ASSET-SCHEMA.
+
+**Trade-offs accepted:** a suffer pick's refused write is re-applied by a
+GM's Retry, not by the player pressing again. A Gain Ground card posted
+before this change keeps the sole-open-fight reading. Between End a Session
+and the next Begin, the first focus noted pays the momentum once, whichever
+End noted it.
+
 ## Issue #306 post-fix audit: one Chronicle writer, rows by id, claims before awaits (2026-10)
 
 **Decision:** (issue #306. The maintainer asked for every finding to be
@@ -1666,8 +1743,9 @@ destinations.
 entrance and now awards XP itself: 2 XP per newly filled box (1 once the track
 is `cleared`, play kit rule 1.12), granted to **every player character**, with
 an earned-XP chat card. The award is fire-and-forget (call sites stay
-synchronous; failures warn). `!bond`'s formerly inline tick bump routes
-through it too.
+synchronous; failures warn — and, since issue #309 N06, go on the GMs'
+payoff card with a Retry for that PC's XP). `!bond`'s formerly inline tick
+bump routes through it too.
 
 **Reason:** LEGACY-XP-DEAD (2026-07 flow audit) — legacy ticks accrued but no
 XP was ever awarded: the awarding path (`persistResolution.markLegacyProgress`)

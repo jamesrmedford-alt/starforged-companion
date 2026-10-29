@@ -11,6 +11,54 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #307 (issue #309) — all nine fixed in the v1.7.36 cycle
+
+Found by the 2026-10-28 audit of `6e56de4` (the merge of PR #307): fourteen
+failing probes, all reproduced locally before the fixes. Each fix's tests fail
+with the fix taken out (`docs/testing/fix-sensitivity.md`). None has been
+checked in a live Foundry world yet. The ones to try: a Withstand Damage or
+Companion Takes a Hit roll against a real starship / Companion asset (N02,
+N03); Gain Ground's choice with two fights open (N04); two players ending the
+same session (N08).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| N01 XP-30-TRUNCATION | LOSE-STATE | `awardXP` capped XP at a hardcoded 30, so a legacy box's XP took a character at 42 XP to 30 and no award passed 30; the vendor's `system.xp` has no maximum → awards add |
+| N02 WITHSTAND-RECOVERY-NOOP | WRONG-DETAIL | Withstand Damage's integrity choices were a generic meter write against the PC, which has no integrity: dropped, reported applied — the weak-hit trade still spent its momentum; "not battered" read the PC's impacts → the roll's vehicle rides onto the card (`executorOpts.vehicleActorId`); integrity changes the ship record (`updateShip`), a raise refused while the ship is battered (`isShipBattered`); the card lists what did not land |
+| N03 COMPANION-CONSEQUENCES-NOOP | WRONG-DETAIL | Companion Takes a Hit's strong-hit +1 and miss -1 health went to the PC's meters and were dropped; the weak hit's recovery read a companion health never supplied, so was always unavailable → health is the Companion asset's track (`applyCompanionHealthChange`, actorBridge); the roll's companion rides onto the card (`companionItemId`) and the strong hit heals it; availability reads its live health |
+| N04 GAIN-GROUND-TARGET-LOST | WRONG-DETAIL | Gain Ground's "Mark progress" choice re-selected the sole open fight at click time: with two open it marked nothing, and an old choice marked a fight opened after its own finished → the move's fight (`moveFight`) rides onto the card (`combatTrackId`); gone or finished by click time, nothing is marked and the card says so |
+| N05 FULFIL-CLAIM-REFUSED | DUPLICATE | A refused `fulfilPaid` write was swallowed and the payoff ran anyway; with the in-flight claim released, a later fulfilment of the same vow paid every step again → nothing is paid until the paid flag lands; refused, the steps go to the GMs' payoff card (`unclaimed`) whose Retry pays them once; the native path skips steps the `fulfilPayoff` ledger records |
+| N06 LEGACY-XP-FAILURE-HIDDEN | LOSE-STATE | `awardLegacyBoxXP` caught each PC's refused XP write and posted "XP earned"; the legacy step reported complete with no recovery → each PC's award stands alone; a refused one is an `xp` step on the GMs' card whose Retry gives that PC's XP alone (never the ticks again) — from a native payoff, a forge, or a legacy marked inside the move pipeline (`legacyXp` card) |
+| N07 SUFFER-STAMP-REPEAT | DUPLICATE | A suffer pick applied its writes, then stamped the card — a refused stamp was swallowed, so the next press applied the same cost again → the pick is claimed (resolved / picked) before any effect; refused, nothing applies and the buttons re-arm; a write refused after the claim is listed on the card and goes to the GMs' card as a `suffer` step with a Retry |
+| N08 END-SESSION-REPEAT | DUPLICATE | `applyEndSession` never read `sessionEndedId`: every End paid the party momentum again and repeated the scene close, summary, Session Log and vignette → Ends run one at a time on the GM, on a copy; an End on an ended session only corrects the focus (the momentum is paid for the first focus noted) and posts a note |
+| N09 BEGIN-SESSION-CACHE-WEDGE | LOSE-STATE | Begin a Session minted and stamped the cached `campaignState` before saving it; a refused save left the GM's cache "begun", so every retry stopped at the already-begun gate → Begin works on a copy (rules/foundry-api.md) |
+
+Open — found while fixing, not fixed (outside the audited paths):
+
+- **SUFFER-EXECUTOR-ASSET-SCHEMA** (WRONG-DETAIL). The Companion Takes a
+  Hit and Withstand Damage *suffer-move executors*
+  (`sufferExecutor.companionTakesAHit` / `withstandDamage` — the "any" suffer
+  picker's two buttons, and Pay the Price's "companion in harm's way" route)
+  read and write `system.condition` / `system.health` / `system.integrity` on
+  an asset Item — not the vendor's asset `system.track`, nor the module's
+  starship record — and the picker passes no item id, so they post "not
+  found". N02/N03 fixed the consequence card's choices and the strong hit,
+  not these. Proposed: route both through `applyCompanionHealthChange` and
+  the card's vehicle integrity write (`sufferDialog` applyVehicleIntegrity),
+  with the at-0 vehicle-damage roll kept.
+- **DELAYED-CHOICE-IDENTITY** (WRONG-DETAIL). N04's discipline, not yet
+  applied to the other delayed choices: Enter the Fray's weak-hit "You are in
+  control" still resolves the sole open fight (or the newest threshold card)
+  at click time, and Explore a Waypoint's "Mark expedition progress" the sole
+  open expedition. The fight a weak-hit Enter the Fray is about may not exist
+  until its threshold card is answered, so carrying it needs the threshold
+  card's id.
+- **SUMMARY-PERSIST-CACHED** (LOSE-STATE, low). The rolling session summary's
+  persist (`narrator.getRollingSessionSummary`) sets `sessionSummary` on the
+  value `game.settings.get` returned before saving it — the N09 pattern
+  rules/foundry-api.md forbids. A refused write leaves the GM's cache with a
+  summary the world lacks until the next refresh rewrites it.
+
 ### Post-fix bug audit (issue #306) — all twelve fixed in the v1.7.36 cycle, with the two follow-ups
 
 Found by the 2026-10-27 audit of `ac1da10`, after the #300 / #301 fixes:

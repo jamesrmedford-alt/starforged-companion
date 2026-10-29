@@ -1,0 +1,21 @@
+Defect: issue #309 N02 — a consequence card's integrity change goes to the PC's meters again, which have no integrity: dropped
+Tests: tests/unit/consequenceTargets.test.js tests/unit/sufferCard.test.js
+Catches: a strong hit's +1 integrity raises it
+Catches: a weak hit's trade costs a momentum and raises it
+Catches: strong hit: +1 integrity raises the vehicle's integrity
+
+diff --git a/src/moves/sufferDialog.js b/src/moves/sufferDialog.js
+index fa01cdc..0495492 100644
+--- a/src/moves/sufferDialog.js
++++ b/src/moves/sufferDialog.js
+@@ -288,10 +288,6 @@ async function runSufferCall(call, actor, opts) {
+       // A vehicle's integrity and a companion's health are no PC meters: the
+       // generic write dropped them, and the card reported them applied
+       // (issue #309 N02 / N03).
+-      if (call.meterKey === "integrity") {
+-        return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
+-          ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) };
+-      }
+       if (call.meterKey === "companionHealth") {
+         const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
