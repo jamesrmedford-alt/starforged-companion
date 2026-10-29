@@ -11,6 +11,50 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #310 (issue #311) — all eight fixed in the v1.7.36 cycle
+
+Found by the 2026-10-29 audit of `62bc92d` (the merge of PR #310): its twelve
+probes (eleven defect scenarios and a control) reproduced locally before the
+fixes, and pass inverted to the expected behaviour after them. Each fix's
+tests fail with the fix taken out (`docs/testing/fix-sensitivity.md`). None
+has been checked in a live Foundry world yet. The ones to try: a move at
+negative momentum (P01); a weak Heal on a wounded PC (P02); Burn Momentum on
+a weak Face Danger with its suffer card still waiting, and on a weak Hearten
+(P03); Improve Result on a miss that ticked a clock (P05); a ship's Finalise
+pressed twice (P07).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| P01 NEG-MOMENTUM-IGNORED | WRONG-DETAIL | `resolveMove` had no momentum input: at -3 momentum a rolled 3 counted in full, so iron 3 against 4 and 5 was a strong hit (+1 momentum) where the rules make it a miss; the coverage audit and a Quench comment said it was done → the pipeline passes the roller's live momentum, `cancelsActionDie` cancels a matching die (the score is stat + adds; `actionDieCancelled`, the die struck through on the card); `!bond` applies it to its roller |
+| P02 WEAK-RECOVERY-COST-ONLY | WRONG-DETAIL | A weak Heal's choice was its two costs and a weak Hearten a bare `momentumChange: -1`: the cost was charged and the PC stayed wounded / shaken at the same health / spirit → the strong hit's recovery is written once and the weak hit chains it with each cost (`withCost`) |
+| P03 UPGRADE-CHOICES-STALE | WRONG-DETAIL | Burn applied the meter deltas and logged a consequence-free resolution: the original outcome's pending suffer card still applied (a burned strong Face Danger charged its weak Endure Harm), and the upgraded outcome's own choice was never posted (a burned weak Hearten offered no recovery); Improve the same → choice cards carry their `resolutionId`; an upgrade retires the superseded outcome's pending card (a pick that reaches it anyway is refused and retires it) and posts the upgraded outcome's choice once, with the move's targets. A consequence already chosen closes both upgrades |
+| P04 BURN-REFUND-NOMINAL | WRONG-DETAIL | The burn's Pay the Price refund was the table annotation, not what landed: a loss clamped at 0 health was refunded (0 → 1), and the solo fallback of "a companion in harm's way" (Endure Harm, no companion) refunded nothing → the dispatcher returns the move it ran and the meter's before / after (`ptpMeterReceipt`); only the landed loss is refunded, to its PC; a burn refunds no momentum (its reset replaces it) |
+| P05 IMPROVE-PTP-KEPT | WRONG-DETAIL | `ptpReversals` rode the burn's card only: improving a Face Danger miss to a strong hit kept its Pay the Price harm (health 5 → 4) and the tension clock's tick, on top of the asset's own cost → shared `revertPayThePrice` (resultUpgrade.js), the improve card carries the reversals |
+| P06 UPGRADE-STAMP-REPEAT | DUPLICATE | Improve wrote its benefit and cost, then stamped `consumed`, a refusal only warned: a fresh render rebuilt the button and the next press applied the benefit again (momentum 3 → 4 → 5); Burn the same boundary → both claim the card first (refused: nothing applied); each later write's refusal goes to the GMs' payoff card as an `upgrade` step with a Retry |
+| P07 SHIP-FINALIZE-REPEAT | LOSE-PLOT | Ships finalize through their seed, before the generic `finalizedAt` guard and stamp: a repeat Finalise wrote a fresh introduction over GM-edited Notes (another narrator call), and the panel never switched to Regenerate → the seed path takes the same contract: finalized and not forced → `already-finalized`; a successful seed stamps `finalizedAt`; connections too (a seeded card's first Finalise stamps it, nothing else) |
+| P08 SESSION-BONUS-NO-RETRY | LOSE-STATE | End a Session saved the session ended before paying, and a PC's refused momentum write was only logged: the bonus counted as paid, a second End paid nothing and said it "was taken" → each PC's award is its own step; a refused one goes to the GMs' payoff card as a `momentum` step whose Retry pays that PC alone; an End on the ended session names who is still owed; Begin's vignette momentum the same |
+
+Open — found while fixing, not fixed (outside the audited paths):
+
+- **UPGRADE-PIPELINE-EFFECTS** (WRONG-DETAIL). Burn Momentum and Improve
+  Result swap the move's meters, revert the miss's Pay the Price and (now)
+  reconcile its choice card — but no other consequence of the upgraded
+  outcome runs: a Strike or Clash burned from a miss to a strong hit marks no
+  combat progress, a combat move's position stays the miss's bad spot, and
+  an Undertake an Expedition / Make a Discovery upgrade marks no expedition
+  progress or legacy. Found by reading `handleBurnClick` / `handleImproveClick`
+  (only the meters, the reversal and the choice card use the upgraded
+  consequences) while fixing P03. Proposed: run the pipeline's consequence
+  branches (index.js) for what the upgraded outcome adds over the original,
+  through one shared applier.
+- **SAA-WEAK-DOUBLE-MOMENTUM** (WRONG-DETAIL). Secure an Advantage's weak hit
+  applies `momentumChange: 2` directly *and* offers "+2 momentum" on its
+  choice card (the map's comment kept the delta for old test fixtures): the
+  pick gives +4, and "+1 on your next move" still keeps the +2 — the strong
+  hit's "both". Reproduced on a booted table: momentum 2 → 4 on the roll, 6
+  after the pick. Proposed: drop the direct delta (the choice carries it),
+  checking the burn / improve diffs that read `originalConsequences`.
+
 ### Bug audit after #307 (issue #309) — all nine fixed in the v1.7.36 cycle
 
 Found by the 2026-10-28 audit of `6e56de4` (the merge of PR #307): fourteen

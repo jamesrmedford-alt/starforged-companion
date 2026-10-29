@@ -111,7 +111,7 @@ chapter.
 | 1.2 | Action score capped at 10 | MECHANIC | PINNED | `coreResolverMatrix` — 10-cap boundary fixtured | — | done |
 | 1.3 | Momentum cap at +10 (even after a hit award) | MECHANIC | PINNED | `momentumMath` batch (commit `943265e`) | — | done |
 | 1.4 | Momentum reset to +2 after burn | MECHANIC | PINNED | `momentumMath` + `movePipelineExtended` | — | done |
-| 1.5 | Negative momentum cancellation when action die matches `abs(momentum)` | MECHANIC | PINNED | `momentumMath` batch | — | done |
+| 1.5 | Negative momentum cancellation when action die matches `abs(momentum)` | MECHANIC | PINNED + FIXED | `momentumMath` batch pins `cancelsActionDie`; `resolver.test.js` (resolveMove with the roller's momentum) and `moveRules.test.js` (through the pipeline). Was marked done with nothing implementing it — the resolver had no momentum input (issue #311 P01) | — | done |
 | 1.6 | Max momentum reduction per impact (−1 per mark) | MECHANIC | PINNED + FIXED | `momentumImpactMath` pins `momentumMax = Math.max(0, 10 - impactCount)`; the §3.1.2 filter bug is fixed (verified `actorBridge.js`) | — | done |
 | 1.7 | Momentum reset reduction per impact (+2 → +1 → 0) | MECHANIC | PINNED + FIXED | `momentumImpactMath` pins `momentumReset = Math.max(0, 2 - impactCount)`; the §3.1.1 inverted formula is fixed (verified `actorBridge.js:103`) | — | done |
 | 1.8 | Match detection (both challenge dice equal) | MECHANIC | PINNED | `coreResolverMatrix` — `(A == B) → isMatch` | — | done |
@@ -259,7 +259,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED but per-move outcome shape not | Medium | NEEDS-TEST — one batch covers all four (mirror suffer-batch shape) |
+| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED; Heal and Hearten's outcome shapes pinned in `resolver.test.js` and through the pipeline in `moveRules.test.js` — a weak hit is the strong hit's recovery plus its cost (issue #311 P02 — the weak hits recovered nothing). Resupply / Repair not | Medium | NEEDS-TEST — Resupply / Repair |
 | 3.38 | Sojourn: extended rest, multiple meter restoration | MOVE | GAP | none | Medium | NEEDS-TEST |
 | 3.39 | Repair: vehicle point spends | PIPELINE | GAP NEEDS-FEATURE | per playkit §3.3.6 — point spends not auto-applied | Low | feature backlog |
 

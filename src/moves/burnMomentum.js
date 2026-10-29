@@ -33,6 +33,11 @@
  * update silently failed, the button stayed live, and a second click
  * re-applied the deltas.
  *
+ * Besides the move's own meters, a burn reverts the miss's Pay the Price and
+ * reconciles the move's choice cards — retiring the superseded outcome's,
+ * posting the burned outcome's — through resultUpgrade.js, shared with
+ * Improve Result (issue #311). A consequence already chosen closes the burn.
+ *
  * Limitations of this implementation:
  *   - Only meter consequences (health/spirit/supply/momentum) reverse on
  *     burn. Progress-track marking and auto-debility flips from suffer
@@ -40,6 +45,8 @@
  *     strong hits for the same move, and the rules-correct reversal
  *     would require more state than we currently track. If a player
  *     reports a case where this matters, we can extend.
+ *   - Nor does the burned outcome's own progress or combat position apply
+ *     (known-issues UPGRADE-PIPELINE-EFFECTS).
  */
 
 import {
