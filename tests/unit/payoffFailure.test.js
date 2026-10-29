@@ -290,6 +290,48 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
     expect(supply()).toBe(5);
   });
 
+  // Issue #309 N05: a refused paid flag was swallowed and the steps ran
+  // anyway; once this client's in-flight claim was released, a duplicate
+  // fulfilment found no paid flag and paid every step again.
+  const paidOut = () => ({ quests: quests(), deepen: rookTicks(), supply: supply(), xp: pat.system.xp });
+
+  it('a refused paid flag applies nothing and tells the GMs; a duplicate then pays once, and the Retry nothing more', async () => {
+    vow.refuse.add('fulfilPaid');
+    await fulfilOnSheet();
+
+    expect(paidOut()).toEqual({ quests: 2, deepen: 0, supply: 3, xp: 0 });
+    const card = theFailCard();
+    expect(card.flags[MODULE_ID].steps).toEqual([
+      { step: 'legacy', track: 'quests', ticks: 2 },
+      { step: 'deepen', connectionName: 'Rook', marks: 1 },
+      { step: 'reward' },
+    ]);
+    expect(card.content).toContain('could not be marked paid');
+
+    await fulfilOnSheet();                                  // a duplicate: its claim lands
+    expect(vow.flags[MODULE_ID].fulfilPaid).toBe(true);
+    expect(paidOut()).toEqual({ quests: 4, deepen: 8, supply: 5, xp: 2 });
+
+    await retry(card);                                      // every step is on the ledger now
+    await fulfilOnSheet();
+    expect(paidOut()).toEqual({ quests: 4, deepen: 8, supply: 5, xp: 2 });
+    expect(rewardCards()).toHaveLength(1);
+    expect(failCards()).toHaveLength(1);
+  });
+
+  it('after a refused paid flag, the Retry pays once and a later duplicate pays nothing', async () => {
+    vow.refuse.add('fulfilPaid');
+    await fulfilOnSheet();
+    await retry(theFailCard());
+    expect(paidOut()).toEqual({ quests: 4, deepen: 8, supply: 5, xp: 2 });
+
+    await fulfilOnSheet();
+    await fulfilOnSheet();
+    expect(paidOut()).toEqual({ quests: 4, deepen: 8, supply: 5, xp: 2 });
+    expect(rewardCards()).toHaveLength(1);
+    expect(failCards()).toHaveLength(1);
+  });
+
   it('only a GM may retry: a player\'s relayed press applies nothing', async () => {
     refuseNext(legacyWrite);
     await fulfilOnSheet();

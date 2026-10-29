@@ -3896,44 +3896,71 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
 
 /** payFulfilledVowNative's payoff, once its claim is held. */
 async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLegacy, actorId }) {
+  // The paid flag is the durable claim: nothing is paid until it has landed
+  // on a copy (issue #309 N05). A refusal used to be swallowed and the steps
+  // ran anyway; with this client's in-flight claim released afterwards, a
+  // later duplicate fulfilment found no paid flag and paid it all again.
+  let claimed = false;
   for (const { item: i } of allCopies) {
-    await i.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
+    if (typeof i?.setFlag !== "function") continue;
+    try {
+      await i.setFlag(MODULE_ID, "fulfilPaid", true);
+      claimed = true;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | native-fulfil: "${i.name ?? i.id}" could not be marked paid:`, err?.message ?? err);
+    }
   }
 
   const rank      = item.system?.rank ?? null;
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
+  const legacyTicks    = skipLegacy ? 0 : legacyRewardTicks(rank, ranksDown);
+  const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+  const marks          = marksForSourceRank(rank);
+  // A step the vow's ledger records as landed is never paid again — the
+  // ledger a Retry reads (issue #309 N05: a fulfilment that ran after a Retry,
+  // or after a refused claim, paid every step again).
+  const owed = (step) => !payoffStepLanded(allCopies, step);
 
   // Each step that lands is recorded on every copy (the Retry's ledger); each
   // that does not is told to the GMs on one card (issue #306 R04 — every
   // failure here went to the console only, and could not be retried).
   const failures = [];
-  const settle = async (step, res, detail) => {
-    if (res?.ok) {
-      if (!res.skipped) await recordPayoffStep(allCopies, step);
-    } else {
-      failures.push({ ...detail, ...res, step: res?.step ?? step });
+  if (!claimed) {
+    // Unclaimed, nothing is applied: the GMs' Retry applies the steps, once.
+    if (legacyTicks > 0 && owed("legacy")) failures.push({ step: "legacy", track: "quests", ticks: legacyTicks, reason: "unclaimed" });
+    if (connectionName && owed("deepen"))  failures.push({ step: "deepen", connectionName, marks, reason: "unclaimed" });
+    const promised = allCopies.find(({ item: i }) => i?.flags?.[MODULE_ID]?.reward?.status === "promised");
+    if (promised && owed("reward")) {
+      failures.push({ step: "reward", reason: "unclaimed", rewardDescription: promised.item.flags[MODULE_ID].reward.description ?? null });
     }
-  };
+  } else {
+    const settle = async (step, res, detail) => {
+      if (res?.ok) {
+        if (!res.skipped) await recordPayoffStep(allCopies, step);
+      } else {
+        failures.push({ ...detail, ...res, step: res?.step ?? step });
+      }
+    };
 
-  // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
-  // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
-  // object (persisted once at pipeline end) and passes true so this fresh
-  // read-modify-write can't race/clobber that persist.
-  if (!skipLegacy) {
-    const ticks = legacyRewardTicks(rank, ranksDown);
-    if (ticks > 0) await settle("legacy", await runLegacyStep("quests", ticks), { track: "quests", ticks });
+    // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
+    // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
+    // object (persisted once at pipeline end) and passes true so this fresh
+    // read-modify-write can't race/clobber that persist.
+    if (legacyTicks > 0 && owed("legacy")) {
+      await settle("legacy", await runLegacyStep("quests", legacyTicks), { track: "quests", ticks: legacyTicks });
+    }
+
+    // Deepen the linked connection (scaled by the vow's rank).
+    if (connectionName && owed("deepen")) {
+      await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
+    }
+
+    // Grant the promised reward (one-time; scaled by outcome). The fulfil path
+    // surfaces a note when no reward was ever chosen.
+    if (owed("reward")) {
+      await settle("reward", await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }), {});
+    }
   }
-
-  // Deepen the linked connection (scaled by the vow's rank).
-  const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
-  if (connectionName) {
-    const marks = marksForSourceRank(rank);
-    await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
-  }
-
-  // Grant the promised reward (one-time; scaled by outcome). The fulfil path
-  // surfaces a note when no reward was ever chosen.
-  await settle("reward", await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }), {});
 
   if (failures.length) {
     await postPayoffFailureCard({
@@ -4121,6 +4148,7 @@ const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u 
 
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
+  "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
   "no-pc":     "no player character to receive it",
