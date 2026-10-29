@@ -17,6 +17,10 @@ import {
   applyMeterChanges,
   setDebility,
   awardXP,
+  listCompanionAssets,
+  getCompanionAsset,
+  readCompanionHealth,
+  applyCompanionHealthChange,
   invalidateActorCache,
   createCharacterBondItem,
   createCharacterVowItem,
@@ -456,10 +460,13 @@ describe('awardXP', () => {
     expect(actor._updateHistory[0]['system.xp']).toBe(6);
   });
 
-  it('does not exceed xp max (30)', async () => {
-    const actor = freshActor({ system: { xp: 28 } });
-    await awardXP(actor, 5);
-    expect(actor._updateHistory[0]['system.xp']).toBe(30);
+  // Issue #309 N01: the vendor's system.xp has no maximum. A 30-point cap
+  // wrote 30 over 42 XP and stopped every award at 30.
+  it.each([[28, 5, 33], [29, 2, 31], [42, 2, 44]])('has no 30-point cap: %s + %s XP is %s', async (before, amount, after) => {
+    const actor = freshActor({ system: { xp: before } });
+    await awardXP(actor, amount);
+    expect(actor._updateHistory[0]['system.xp']).toBe(after);
+    expect(actor.system.xp).toBe(after);
   });
 
   it('does not call update if amount is zero or negative', async () => {
@@ -471,6 +478,60 @@ describe('awardXP', () => {
 
   it('does not throw if actor is null', async () => {
     await expect(awardXP(null, 2)).resolves.toBeUndefined();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Companions — health is the Companion asset's track (issue #309 N03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('companion health — the Companion asset\'s track', () => {
+  /** A vendor-shaped Companion asset (subtypes/asset.ts): category + track. */
+  function companion(id, value, { max = 3, enabled = true, refuse = false } = {}) {
+    const item = {
+      id, name: id, type: 'asset',
+      system: { category: 'Companion', track: { enabled, name: 'Health', value, min: 0, max } },
+      update: async (changes) => {
+        if (refuse) throw new Error('refused by the test');
+        if ('system.track.value' in changes) item.system.track.value = changes['system.track.value'];
+      },
+    };
+    return item;
+  }
+  const withItems = (...items) => freshActor({ items: { contents: items } });
+
+  it('lists Companion-category assets with an enabled track — not other assets', () => {
+    const glow = companion('glowcat', 2);
+    const off  = companion('drone', 1, { enabled: false });
+    const ship = { id: 'mod', type: 'asset', system: { category: 'Module', track: { enabled: true, value: 3 } } };
+    expect(listCompanionAssets(withItems(glow, off, ship))).toEqual([glow]);
+  });
+
+  it('getCompanionAsset: the one named, else the only one — none when several and none named', () => {
+    const a = companion('a', 1);
+    const b = companion('b', 2);
+    expect(getCompanionAsset(withItems(a, b), 'b')).toBe(b);
+    expect(getCompanionAsset(withItems(a, b))).toBeNull();
+    expect(getCompanionAsset(withItems(a))).toBe(a);
+    expect(readCompanionHealth(withItems(a, b), 'b')).toBe(2);
+    expect(readCompanionHealth(withItems())).toBeNull();
+  });
+
+  it('applyCompanionHealthChange writes the track, kept within min..max', async () => {
+    const glow = companion('glowcat', 2);
+    const actor = withItems(glow);
+    await expect(applyCompanionHealthChange(actor, 1)).resolves.toMatchObject({ ok: true, before: 2, after: 3 });
+    await expect(applyCompanionHealthChange(actor, 1)).resolves.toMatchObject({ ok: true, before: 3, after: 3 });
+    await expect(applyCompanionHealthChange(actor, -5, { itemId: 'glowcat' })).resolves.toMatchObject({ ok: true, after: 0 });
+    expect(glow.system.track.value).toBe(0);
+    expect(actor._updateHistory).toEqual([]);   // the asset, never the PC's meters
+  });
+
+  it('reports a refused write and a missing companion instead of dropping them', async () => {
+    await expect(applyCompanionHealthChange(withItems(companion('glowcat', 2, { refuse: true })), 1))
+      .resolves.toMatchObject({ ok: false, reason: 'refused', before: 2 });
+    await expect(applyCompanionHealthChange(withItems(), 1)).resolves.toEqual({ ok: false, reason: 'no-companion' });
   });
 });
 

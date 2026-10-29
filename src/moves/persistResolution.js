@@ -48,9 +48,15 @@ const MODULE_ID  = 'starforged-companion';
  *
  * @param {Object} resolution    — MoveResolutionSchema from resolver.js
  * @param {Object} campaignState — CampaignStateSchema from game.settings
+ * @param {string|null} [speakerActorId] — the roller
+ * @param {Object} [targets] — what the move was made against, carried onto its
+ *   suffer-choice card for the choices that change it (issue #309): the
+ *   vehicle (`vehicleActorId`, Withstand Damage's integrity), the
+ *   companion (`companionItemId`, Companion Takes a Hit's health) and the
+ *   fight (`combatTrackId`, Gain Ground's "mark progress")
  * @returns {Promise<{ actor: Actor|null, campaignState: Object }>}
  */
-export async function persistResolution(resolution, campaignState, speakerActorId = null) {
+export async function persistResolution(resolution, campaignState, speakerActorId = null, targets = {}) {
   // 2–4: Apply mechanical consequences to the rolling player's Actor.
   //
   // Prefer `speakerActorId` — the actor whose roll this was, resolved upstream
@@ -83,7 +89,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     //    card that resolves the rulebook-mandated player choice into one or
     //    more executor calls on click (see resolveSufferPrompt below).
     if (resolution.consequences.sufferPrompt) {
-      await resolveSufferPrompt(resolution, actor);
+      await resolveSufferPrompt(resolution, actor, targets);
     }
   }
 
@@ -312,17 +318,21 @@ function appendToSessionLog(resolution, campaignState) {
  *
  * @param {Object} resolution
  * @param {Actor} actor
+ * @param {Object} [targets] — persistResolution's: what the choices change
  */
-async function resolveSufferPrompt(resolution, actor) {
+async function resolveSufferPrompt(resolution, actor, targets = {}) {
   const prompt = resolution.consequences.sufferPrompt;
   if (!prompt) return;
 
   // Map the triggering move's outcome class onto executor opts so the
   // mortal-wound / desolation / vehicle-damage d100 fires only on
-  // miss-at-0. The executor handles the at-0 check itself.
+  // miss-at-0. The executor handles the at-0 check itself. The move's
+  // targets ride along: a choice changes the vehicle (or fight, or
+  // companion) the move was about, resolved when it was rolled — not
+  // whichever one a lookup finds when the card is clicked (issue #309).
   const isMiss = resolution.outcome === 'miss';
   const isMissWithMatch = isMiss && !!resolution.isMatch;
-  const executorOpts = { isMiss, isMissWithMatch };
+  const executorOpts = { isMiss, isMissWithMatch, ...targets };
 
   // Non-blocking: post a choice card the player taps, instead of awaiting a
   // modal dialog INSIDE the move-concurrency lock. A dialog that failed to

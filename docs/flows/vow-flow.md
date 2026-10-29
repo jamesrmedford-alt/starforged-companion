@@ -161,13 +161,21 @@ the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
 across both paths — and a claim on the vow (its `vowId`), taken before the
 first await, keeps two fulfilments that arrive together (a duplicate sheet
 roll) from both passing the check before the flag lands (issue #306 R04). The
-native Forge a Bond payoff (`payForgedBondNative`) claims its connection the
-same way.
+flag is also the durable claim: nothing is paid until it has landed on a copy
+— refused on every copy, the steps go unapplied onto the GMs' failure card
+(reason `unclaimed`), whose Retry pays them once (issue #309 N05: a refusal
+was swallowed and the steps ran anyway, so a later duplicate, finding no paid
+flag, paid again). The native path, like a Retry, skips any step the vow's
+`fulfilPayoff` ledger records as landed. The native Forge a Bond payoff
+(`payForgedBondNative`) claims its connection the same way.
 
 **A payoff step that does not land** (issue #306 R04, option 2):
 `payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
 Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
-filled box's XP awarded only once the write lands), the connection deepen
+filled box's XP awarded only once the write lands — each PC's award on its
+own, `awardLegacyBoxXP`; one that is refused is an `xp` step of its own,
+for that PC alone, since re-running the legacy would add its ticks again,
+issue #309 N06), the connection deepen
 (`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is

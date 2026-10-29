@@ -25,8 +25,10 @@ import {
   resolveSufferSelection,
   runSufferResolution,
   isOptionAvailable,
+  isRetryableSufferCall,
 } from "./sufferDialog.js";
-import { getActor, getPlayerActors } from "../character/actorBridge.js";
+import { getActor, getPlayerActors, readCompanionHealth } from "../character/actorBridge.js";
+import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
@@ -67,16 +69,47 @@ export function sufferMultiCap(prompt) {
 }
 
 /**
- * Render the choice-card HTML for the current state. Pure — `pickedIndices`
- * tracks already-applied options for a multi-select prompt so they render as
- * done/disabled.
+ * What an option's `requires` is checked against (isOptionAvailable): the PC;
+ * the companion's health — the companion the move was rolled for (the card's
+ * `executorOpts.companionItemId`), else the PC's only companion, 0 with none;
+ * and whether the vehicle is battered — the vehicle the move was rolled
+ * against (`executorOpts.vehicleActorId`), else the command vehicle; null when
+ * there is none, so a "+1 integrity" with no vehicle to raise is unavailable.
+ * Companion health was never supplied, so "companion health > 0" always read
+ * 0 (issue #309 N03); the PC's own impacts stood in for the vehicle's (N02).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} [executorOpts] — the card's
+ * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null }}
+ */
+function optionContext(actor, executorOpts = {}) {
+  const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
+  let vehicleBattered = null;
+  try {
+    const vehicleId = executorOpts?.vehicleActorId
+      ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
+    if (vehicleId && getShip(vehicleId)) vehicleBattered = isShipBattered(vehicleId);
+  } catch (err) {
+    console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
+  }
+  return { actor, companionHealth, vehicleBattered };
+}
+
+/**
+ * Render the choice-card HTML for the current state. `pickedIndices` tracks
+ * already-applied options for a multi-select prompt so they render as
+ * done/disabled; `notApplied` lists what an earlier pick could not apply.
+ * Availability reads `ctx` — the card's optionContext (the companion's health,
+ * the vehicle's impacts) unless given.
  *
  * @param {Object} prompt
  * @param {Actor|null} actor          — for requires-filtering
  * @param {number[]} [pickedIndices]
+ * @param {Object} [ctx]              — isOptionAvailable's context
+ * @param {string[]} [notApplied]
  * @returns {string}
  */
-export function renderSufferCard(prompt, actor, pickedIndices = []) {
+export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = optionContext(actor), notApplied = []) {
   const picked = new Set(pickedIndices);
   let header, buttons;
 
@@ -94,7 +127,7 @@ export function renderSufferCard(prompt, actor, pickedIndices = []) {
       ? `Choose ${prompt.multi === true ? "any combination" : cap}:`
       : "Choose one:";
     buttons = (prompt.options ?? []).map((opt, i) => {
-      const avail    = isOptionAvailable(opt, { actor });
+      const avail    = isOptionAvailable(opt, ctx);
       const isPicked = picked.has(i);
       const disabled = !avail || isPicked;
       const mark     = isPicked ? "✓ " : "";
@@ -105,10 +138,13 @@ export function renderSufferCard(prompt, actor, pickedIndices = []) {
     }).join("");
   }
 
+  const notes = notApplied.length
+    ? `<p class="sf-card-hint">${escapeHtml(`Not applied: ${notApplied.join("; ")}`)}</p>`
+    : "";
   return `<div class="sf-card sf-suffer-choice-card">` +
     `<div class="sf-card-header">◈ Resolve consequence</div>` +
     `<div class="sf-card-body"><p>${escapeHtml(header)}</p>` +
-    `<div class="sf-suffer-card-buttons">${buttons}</div></div></div>`;
+    `<div class="sf-suffer-card-buttons">${buttons}</div>${notes}</div></div>`;
 }
 
 function renderResolvedCard(summary) {
@@ -147,14 +183,65 @@ export function summarizeSufferCalls(calls) {
   return parts.length ? parts.join(", ") : "no change";
 }
 
+// Why a call's write did not land (a runSufferResolution result with
+// `ok: false`) — said on the resolved card.
+const NOT_APPLIED = {
+  "no-vehicle":   "no vehicle to change",
+  "battered":     "the vehicle is battered",
+  "no-companion": "no companion to change",
+  "no-fight":     "no open fight was named",
+  "fight-gone":   "its fight is gone",
+  "fight-over":   "its fight is over",
+  "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
+  "refused":      "the world did not save it",
+};
+
+/**
+ * "… — why" for each call whose write did not land (a runSufferResolution
+ * result with `ok: false`).
+ *
+ * @param {Array<Object>} calls
+ * @param {Array<Object>} results — runSufferResolution's, one per call
+ * @returns {string[]}
+ */
+function notAppliedLines(calls, results) {
+  return (calls ?? []).flatMap((c, i) => {
+    const r = results?.[i];
+    return r?.ok === false ? [`${summarizeSufferCalls([c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`] : [];
+  });
+}
+
+/**
+ * The resolved card's text: "Applied: …" for the calls whose writes landed and
+ * "Not applied: … — why" for each that did not. The card summarised the calls
+ * it asked for, so a change that was dropped read as applied (issue #309 N02).
+ *
+ * @param {Array<Object>} calls
+ * @param {Array<Object>} results — runSufferResolution's, one per call
+ * @returns {string}
+ */
+function summarizeSufferResults(calls, results) {
+  const landed = (calls ?? []).filter((_c, i) => results?.[i]?.ok !== false);
+  const missed = notAppliedLines(calls, results);
+  return withNotApplied(landed.length || !missed.length ? `Applied: ${summarizeSufferCalls(landed)}` : "", missed);
+}
+
+/** `text`, then "Not applied: …" for `missed`. */
+function withNotApplied(text, missed) {
+  return [text, missed.length ? `Not applied: ${missed.join("; ")}` : ""].filter(Boolean).join(". ");
+}
+
 // The four PC meters the system localises. An option's numeric field can name
 // something else (e.g. a companion/vehicle value) — those keep their raw key
-// rather than tripping i18n's unknown-slug warning.
+// (companion health spelled out) rather than tripping i18n's unknown-slug
+// warning.
 const LOCALIZED_METERS = new Set(["health", "spirit", "supply", "momentum"]);
+const OTHER_METER_LABELS = { companionHealth: "companion health" };
 
 /** System-localised meter label ("Momentum", "Élan", …); raw key otherwise. */
 function meterLabel(key) {
-  return LOCALIZED_METERS.has(key) ? localizeMeter(key) : String(key ?? "");
+  if (LOCALIZED_METERS.has(key)) return localizeMeter(key);
+  return OTHER_METER_LABELS[key] ?? String(key ?? "");
 }
 
 function labelForSuffer(id) {
@@ -172,7 +259,7 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
   if (!sufferPrompt) return null;
   try {
     return await globalThis.ChatMessage?.create?.({
-      content: renderSufferCard(sufferPrompt, actor, []),
+      content: renderSufferCard(sufferPrompt, actor, [], optionContext(actor, executorOpts)),
       flags: {
         [MODULE_ID]: {
           sufferCard:    true,
@@ -275,8 +362,7 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   }
   _picksInFlight.add(messageId);
   try {
-    await handleSufferPick(message, pick);
-    return { applied: true };
+    return await handleSufferPick(message, pick);
   } finally {
     _picksInFlight.delete(messageId);
   }
@@ -296,7 +382,7 @@ function offeredPick(flags, payload, actor) {
     const i      = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
     const option = Number.isInteger(i) ? prompt.options?.[i] : null;
     const picked = Array.isArray(flags.pickedIndices) ? flags.pickedIndices : [];
-    return option && isOptionAvailable(option, { actor }) && !picked.includes(i)
+    return option && isOptionAvailable(option, optionContext(actor, flags.executorOpts)) && !picked.includes(i)
       ? { pickKind: "enum", optionIndex: String(i) }
       : null;
   }
@@ -305,14 +391,12 @@ function offeredPick(flags, payload, actor) {
 
 async function handleSufferPick(message, dataset) {
   const f = message?.flags?.[MODULE_ID] ?? {};
-  if (!f.sufferCard || f.resolved) return;
-
   const prompt = f.sufferPrompt;
-  if (!prompt) return;
+  if (!f.sufferCard || f.resolved || !prompt) return { applied: false, reason: "already-resolved" };
   const actor = getActor(f.actorId) ?? getPlayerActors()[0] ?? null;
   if (!actor) {
     console.warn(`${MODULE_ID} | sufferCard: no actor to apply suffer against`);
-    return;
+    return { applied: false, reason: "no-actor" };
   }
   const executorOpts = f.executorOpts ?? {};
 
@@ -328,42 +412,85 @@ async function handleSufferPick(message, dataset) {
   }
 
   const calls = resolveSufferSelection(prompt, selection);
-
   // A nested "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)"):
-  // post a fresh B1 picker card rather than applying a default.
+  // a fresh B1 picker card follows rather than a default being applied.
   const needsAny = calls.find(c => c.kind === "needs-any");
+
+  // Multi-select: accumulate picks until the cap is reached, then resolve.
+  const cap    = sufferMultiCap(prompt);
+  const multi  = prompt.kind === "enumerated" && cap > 1 && idx != null;
+  const picked = multi ? [...(Array.isArray(f.pickedIndices) ? f.pickedIndices : []), idx] : null;
+  const done   = !multi || picked.length >= cap;
+  const notes  = Array.isArray(f.notApplied) ? f.notApplied : [];
+  const ctx    = optionContext(actor, executorOpts);
+  const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
+    : multi ? "Applied your selections."
+    : `Applied: ${summarizeSufferCalls(calls)}`;
+
+  // The pick is claimed — the card resolved, or this option marked picked —
+  // before any effect runs (issue #309 N07). The stamp used to follow the
+  // effects, its refusal swallowed: the card stayed live and a second press
+  // applied the same cost again. A refused claim applies nothing and the
+  // buttons re-arm (relayCardAction).
+  const claim = done
+    ? { [`flags.${MODULE_ID}.resolved`]: true, content: renderResolvedCard(withNotApplied(doneText, notes)) }
+    : { content: renderSufferCard(prompt, actor, picked, ctx, notes) };
+  if (multi) claim[`flags.${MODULE_ID}.pickedIndices`] = picked;
+  try {
+    await message.update(claim);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${message.id} could not be claimed — nothing applied:`, err?.message ?? err);
+    return { applied: false, reason: "claim-refused" };
+  }
+
   if (needsAny) {
-    await postSufferChoiceCard({
+    const followUp = await postSufferChoiceCard({
       sufferPrompt: { kind: "any", amount: needsAny.amount, count: needsAny.count },
       actor, executorOpts, moveId: f.moveId,
     });
-    await finalizeResolved(message, "Suffer move chosen — resolve it on the follow-up card.");
-    return;
+    if (followUp) return { applied: true };
+    // No picker to make the choice on: nothing was applied, so the card
+    // re-opens for the pick to be made again.
+    await message.update({
+      [`flags.${MODULE_ID}.resolved`]: false,
+      ...(multi ? { [`flags.${MODULE_ID}.pickedIndices`]: f.pickedIndices ?? [] } : {}),
+      content: renderSufferCard(prompt, actor, f.pickedIndices ?? [], ctx, notes),
+    }).catch(err => console.warn(`${MODULE_ID} | sufferCard: card ${message.id} could not re-open:`, err?.message ?? err));
+    return { applied: false, reason: "no-follow-up" };
   }
 
-  await runSufferResolution(calls, actor, executorOpts);
-
-  // Multi-select: accumulate picks until the cap is reached, then resolve.
-  const cap = sufferMultiCap(prompt);
-  if (prompt.kind === "enumerated" && cap > 1 && idx != null) {
-    const picked = Array.isArray(f.pickedIndices) ? [...f.pickedIndices, idx] : [idx];
-    if (picked.length < cap) {
-      await message.update({
-        [`flags.${MODULE_ID}.pickedIndices`]: picked,
-        content: renderSufferCard(prompt, actor, picked),
-      }).catch(err => console.warn(`${MODULE_ID} | sufferCard: multi update failed:`, err?.message ?? err));
-      return;
-    }
-    await finalizeResolved(message, "Applied your selections.");
-    return;
+  const results = await runSufferResolution(calls, actor, executorOpts);
+  const missed  = notAppliedLines(calls, results);
+  if (missed.length) {
+    // The card says what did not land; a write the world refused goes to the
+    // GMs, with a Retry.
+    const update = done
+      ? { content: renderResolvedCard(multi ? withNotApplied(doneText, [...notes, ...missed]) : summarizeSufferResults(calls, results)) }
+      : { [`flags.${MODULE_ID}.notApplied`]: [...notes, ...missed], content: renderSufferCard(prompt, actor, picked, ctx, [...notes, ...missed]) };
+    await message.update(update).catch(err =>
+      console.warn(`${MODULE_ID} | sufferCard: card ${message.id} note failed:`, err?.message ?? err));
+    await reportRefusedCalls(actor, calls, results, executorOpts);
   }
-
-  await finalizeResolved(message, `Applied: ${summarizeSufferCalls(calls)}`);
+  return { applied: true };
 }
 
-async function finalizeResolved(message, summary) {
-  await message.update({
-    [`flags.${MODULE_ID}.resolved`]: true,
-    content: renderResolvedCard(summary),
-  }).catch(err => console.warn(`${MODULE_ID} | sufferCard: resolve update failed:`, err?.message ?? err));
+/**
+ * A pick's writes the world refused, on the GMs' payoff failure card — each
+ * a `suffer` step its Retry applies once (index.js runPayoffStep). Claimed
+ * before its effects, the pick cannot be pressed again (issue #309 N07).
+ */
+async function reportRefusedCalls(actor, calls, results, executorOpts) {
+  const failures = calls.flatMap((call, i) => {
+    const r = results[i];
+    return r?.ok === false && r.reason === "refused" && isRetryableSufferCall(call)
+      ? [{ step: "suffer", call, opts: executorOpts, reason: "refused", error: r.error ?? null }]
+      : [];
+  });
+  if (!failures.length) return;
+  try {
+    const { postPayoffFailureCard } = await import("../index.js");
+    await postPayoffFailureCard({ source: "suffer", actorId: actor?.id ?? null, failures });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferCard: failure card failed:`, err?.message ?? err);
+  }
 }

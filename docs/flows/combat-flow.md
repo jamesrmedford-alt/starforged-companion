@@ -82,6 +82,14 @@ Progress marks come only from move consequences (`combatProgress` in
 Ground marks only when the player picks that option in its choose-one; React
 Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 8
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
+Gain Ground's pick is made later, on its suffer-choice card: the card carries
+the move's own fight (`moveFight`, below — `executorOpts.combatTrackId`, via
+`persistResolution`'s targets), and the `combat-progress` call marks that
+fight or, gone or finished by then, nothing — the card says so. It used to
+re-select the sole open fight at click time: with two open it marked nothing,
+and an old choice marked a fight opened after its own finished (issue #309
+N04). A card posted before the card carried its fight keeps the sole-open
+reading.
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
 to the actor + combatant badge (`applyCombatPositionToTrack`). The pipeline

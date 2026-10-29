@@ -223,6 +223,31 @@ describe("Begin a Session", () => {
     expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
   });
 
+  // Issue #309 N09: Begin set its fields on the cached campaignState before
+  // saving it. A refused save left this client's cache saying "begun", so
+  // the retry stopped at the already-begun gate: the session never started
+  // and its momentum was never paid.
+  it("a refused save leaves the cached state as it was, and a retry begins the session", async () => {
+    setUsers([GM], "gm-1");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, {
+      sessionActive: false, currentSessionId: "s1", sessionStartedId: null,
+      lastSessionTimestamp: new Date().toISOString(),
+    });
+    const cached = state();
+    vi.spyOn(game.settings, "set").mockRejectedValueOnce(new Error("refused by the test"));
+    await applyBeginSession({ vignetteRolled: true, includeGalley: false }, {});
+    expect(state()).toBe(cached);
+    expect(cached).toEqual({
+      sessionActive: false, currentSessionId: "s1", sessionStartedId: null,
+      lastSessionTimestamp: cached.lastSessionTimestamp,
+    });
+    expect(calls).toEqual([]);
+
+    await applyBeginSession({ vignetteRolled: true, includeGalley: false }, {});
+    expect(state()).toMatchObject({ sessionActive: true, currentSessionId: "s1", sessionStartedId: "s1" });
+    expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "clocks"]);
+  });
+
   it("End then Begin applies the next session's start effects", async () => {
     setUsers([GM], "gm-1");
     await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
@@ -330,6 +355,85 @@ describe("End a Session", () => {
     await applyEndSession({ questFocus: "", connectionFocus: "" }, {});
     expect(calls).toEqual(["endScene", "summary"]);
     expect(applyMeterChanges).not.toHaveBeenCalled();
+  });
+
+  // Issue #309 N08: End a Session never checked sessionEndedId — every
+  // submission paid the party momentum again, and closed the scene, wrote the
+  // Session Log and scheduled the closing vignette again.
+  describe("ends a session once (issue #309 N08)", () => {
+    const live = () => ({ sessionActive: true, currentSessionId: "s1", lastSessionTimestamp: new Date().toISOString() });
+
+    it("a second End repeats nothing and pays no momentum; its focus replaces the one noted", async () => {
+      setUsers([GM], "gm-1");
+      game.settings._store.set(`${MODULE_ID}.campaignState`, live());
+      await expect(applyEndSession({ questFocus: "Find the archive" }, {}))
+        .resolves.toEqual({ alreadyEnded: false });
+      expect(calls).toEqual(["endScene", "summary", "sessionLog", "momentum:a1:1", "momentum:a2:1"]);
+      expect(vi.getTimerCount()).toBe(1);
+
+      calls.length = 0;
+      await expect(applyEndSession({ questFocus: "Find the beacon" }, {}))
+        .resolves.toEqual({ alreadyEnded: true });
+      expect(calls).toEqual([]);
+      expect(vi.getTimerCount()).toBe(1);
+      expect(state()).toMatchObject({ sessionActive: false, sessionEndedId: "s1", questFocus: "Find the beacon" });
+      expect(ChatMessage._created.at(-1).content).toMatch(/already ended/);
+      expect(ChatMessage._created.at(-1).content).toMatch(/No momentum/);
+    });
+
+    it("two Ends at once close the session and pay the momentum once", async () => {
+      setUsers([GM], "gm-1");
+      game.settings._store.set(`${MODULE_ID}.campaignState`, live());
+      const results = await Promise.all([
+        applyEndSession({ questFocus: "Find the archive" }, {}),
+        applyEndSession({ connectionFocus: "Mara" }, {}),
+      ]);
+      expect(results.map(r => r.alreadyEnded)).toEqual([false, true]);
+      expect(calls).toEqual(["endScene", "summary", "sessionLog", "momentum:a1:1", "momentum:a2:1"]);
+      expect(state()).toMatchObject({ questFocus: "Find the archive", connectionFocus: "Mara" });
+    });
+
+    it("the first focus noted pays the momentum once, even when the ending noted none", async () => {
+      setUsers([GM], "gm-1");
+      game.settings._store.set(`${MODULE_ID}.campaignState`, live());
+      await applyEndSession({}, {});
+      expect(applyMeterChanges).not.toHaveBeenCalled();
+      calls.length = 0;
+      await expect(applyEndSession({ questFocus: "Find the archive" }, {}))
+        .resolves.toEqual({ alreadyEnded: true });
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1"]);
+      expect(ChatMessage._created.at(-1).content).toMatch(/first focus noted/);
+      await expect(applyEndSession({ questFocus: "Find the beacon" }, {}))
+        .resolves.toEqual({ alreadyEnded: true });
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1"]);
+    });
+
+    it("a refused save leaves the cached state as it was, and a retry ends the session", async () => {
+      setUsers([GM], "gm-1");
+      game.settings._store.set(`${MODULE_ID}.campaignState`, live());
+      const cached = state();
+      vi.spyOn(game.settings, "set").mockRejectedValueOnce(new Error("refused by the test"));
+      await expect(applyEndSession({ questFocus: "Find the archive" }, {})).rejects.toThrow(/refused/);
+      expect(state()).toBe(cached);
+      expect(cached).toMatchObject({ sessionActive: true, currentSessionId: "s1" });
+      expect(cached.sessionEndedId).toBeUndefined();
+      expect(cached.questFocus).toBeUndefined();
+
+      calls.length = 0;
+      await expect(applyEndSession({ questFocus: "Find the archive" }, {}))
+        .resolves.toEqual({ alreadyEnded: false });
+      expect(state()).toMatchObject({ sessionActive: false, sessionEndedId: "s1", questFocus: "Find the archive" });
+      expect(calls).toContain("momentum:a1:1");
+    });
+
+    it("the dialog on an ended session says a new focus corrects the old one", async () => {
+      setUsers([GM, PLAYER], "pl-1");
+      game.settings._store.set(`${MODULE_ID}.campaignState`, { ...live(), sessionEndedId: "s1", questFocus: "Find the archive" });
+      const prompts = installDialog({ form: fakeForm({}) });
+      await openEndSessionDialog();
+      expect(prompts[0].content).toMatch(/already ended/);
+      expect(prompts[0].content).not.toMatch(/grants <strong>\+1 momentum/);
+    });
   });
 
   it("a handler error on the canonical GM is surfaced and the card stays honest", async () => {
@@ -526,6 +630,40 @@ describe("across a booted table", () => {
       await type("pl-2", "!end-session");
       expect(cs().sessionActive).toBe(true);
       expect(sessionCards()[0].content).toMatch(/No GM is connected — the session was not ended/);
+    });
+
+    // Issue #309 N08: two players ending the same session both reached the
+    // GM's handler, and each paid the party momentum.
+    describe("two players end the same session (issue #309 N08)", () => {
+      beforeEach(() => table.world.setSetting("campaignState", {
+        sessionActive: true, currentSessionId: "s1", lastSessionTimestamp: new Date().toISOString(),
+      }));
+
+      it("at once: the GM closes it and pays the momentum once; the second focus corrects the first", async () => {
+        table.client("pl-1").answerDialogs(d => d.submit({ 'input[name="questFocus"]': "Find the archive" }));
+        table.client("pl-2").answerDialogs(d => d.submit(values));
+        await Promise.all([table.client("pl-1").chat("!end-session"), table.client("pl-2").chat("!end-session")]);
+        await table.settle();
+        expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2"]);
+        expect(calls.filter(c => c === "endScene" || c === "sessionLog")).toEqual(["endScene", "sessionLog"]);
+        expect(cs()).toMatchObject({ sessionActive: false, sessionEndedId: "s1" });
+        const note = sessionCards().filter(c => c.author === "gm-1");
+        expect(note).toHaveLength(1);
+        expect(note[0].content).toMatch(/already ended/);
+      });
+
+      it("one after the other: the second ends nothing and pays nothing — the GM's note is its only card", async () => {
+        table.client("pl-2").answerDialogs(d => d.submit(values));
+        await type("pl-2", "!end-session");
+        expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2"]);
+
+        table.client("pl-1").answerDialogs(d => d.submit({ 'input[name="questFocus"]': "Find the archive" }));
+        await type("pl-1", "!end-session");
+        expect(ranOn).toEqual(["gm-1 momentum:a1", "gm-1 momentum:a2"]);
+        expect(cs()).toMatchObject({ questFocus: "Find the archive", connectionFocus: "Mara" });
+        expect(sessionCards().map(c => c.author)).toEqual(["pl-2", "gm-1"]);
+        expect(sessionCards()[1].content).toMatch(/already ended/);
+      });
     });
 
     it("one player's End-Session foci greet the next player's Begin, which clears them", async () => {

@@ -232,8 +232,8 @@ Hooks.on("quenchReady", (quench) => {
   // tick-to-box floor.
   registerProgressMechanicsTests(quench);
   // XP economy — rule 1.12 (2 XP per legacy box; 1 XP after clear).
-  // Priority 9 of the rulebook audit. Pins awardXP delta and the
-  // xp.max clamp at 30.
+  // Priority 9 of the rulebook audit. Pins the awardXP delta, with no
+  // ceiling at 30 (issue #309 N01).
   registerXpEconomyTests(quench);
   // Move outcome matrix — rules 3.7 / 3.9–3.12 / 3.13–3.16 / 3.17–3.21
   // / 3.23–3.29 / 3.30–3.36 / 3.37–3.39 / 3.43. Priorities 10/11/12/
@@ -10140,9 +10140,10 @@ function registerProgressMechanicsTests(quench) {
 // XP ECONOMY — Priority 9 of the rulebook coverage audit
 //
 // Rule 1.12 — Legacy box → 2 XP (1 XP after track cleared). The per-box
-// math lives inline in src/moves/persistResolution.js:markLegacyProgress;
-// the XP-write surface is `awardXP(actor, amount)` in actorBridge.js.
-// This batch pins awardXP — the delta and the xp-cap (30).
+// math lives in src/index.js addLegacyTicks (legacyBoxXp); the XP-write
+// surface is `awardXP(actor, amount)` in actorBridge.js. This batch pins
+// awardXP — the delta, and that XP has no ceiling: the vendor's system.xp has
+// no maximum (issue #309 N01 — a 30 cap erased XP above it).
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerXpEconomyTests(quench) {
@@ -10197,15 +10198,18 @@ function registerXpEconomyTests(quench) {
             "awardXP(actor, 1) should set xp from 5 to 6 — the post-clear per-box rate");
         });
 
-        it("awardXP clamps at xp max (30) — never overflows", async function () {
+        it("awardXP has no 30-point ceiling (issue #309 N01)", async function () {
           if (!testActor) { this.skip(); return; }
           this.timeout(10000);
           const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
           await testActor.update({ "system.xp": 28 });
-          await awardXP(testActor, 5);   // would push to 33 without the cap
-          const fresh = game.actors.get(testActor.id);
-          assert.equal(fresh.system.xp, 30,
-            "awardXP must clamp to xp.max (30); cannot exceed");
+          await awardXP(testActor, 5);
+          assert.equal(game.actors.get(testActor.id).system.xp, 33,
+            "awardXP(actor, 5) should take xp from 28 to 33 — the system schema has no maximum");
+          await testActor.update({ "system.xp": 42 });
+          await awardXP(testActor, 2);
+          assert.equal(game.actors.get(testActor.id).system.xp, 44,
+            "awardXP must never lower XP already above 30");
         });
 
         it("awardXP(actor, 0) is a no-op", async function () {

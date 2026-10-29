@@ -38,7 +38,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { registerSufferCardHook } from "./moves/sufferCard.js";
+import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
@@ -81,7 +81,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -1179,15 +1179,14 @@ export function registerChatHook() {
         }
       }
 
-      // Companion Takes a Hit strong hit — direct +1 companion health, no dialog.
-      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM) {
-        try {
-          const { applyMeterChanges } = await import("./character/actorBridge.js");
-          if (rollerActor) {
-            await applyMeterChanges(rollerActor, { companionHealth: resolution.consequences.companionHealthChange });
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | companion health change failed:`, err?.message ?? err);
+      // Companion Takes a Hit strong hit — direct +1 health to the companion
+      // the roll was made for (its asset's track). It went to the PC's meters,
+      // which have no companion health, and was dropped (issue #309 N03).
+      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM && rollerActor) {
+        const healed = await applyCompanionHealthChange(rollerActor, resolution.consequences.companionHealthChange,
+          { itemId: interpretation.companionItemId ?? null });
+        if (!healed.ok) {
+          ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
         }
       }
 
@@ -1701,7 +1700,13 @@ export function registerChatHook() {
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
-        await persistResolution(resolution, campaignState, speakerActorId);
+        // What the move was made against rides onto its suffer-choice card,
+        // so a choice changes that vehicle, companion or fight (issue #309).
+        await persistResolution(resolution, campaignState, speakerActorId, {
+          vehicleActorId:  interpretation.vehicleActorId ?? null,
+          companionItemId: interpretation.companionItemId ?? null,
+          combatTrackId:   moveFight?.id ?? null,
+        });
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers
         // refuse) until this stamp — a burn clicked during the narration above
@@ -3282,8 +3287,11 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
   const newBoxes = Math.floor(t.ticks / 4) - boxesBefore;
   campaignState.legacyTracks[key] = t;
   if (newBoxes > 0 && awardXp) {
-    awardLegacyBoxXP(key, newBoxes, legacyBoxXp(t, newBoxes)).catch(err =>
-      console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
+    // A PC whose award is refused is told to the GMs, with a Retry for that
+    // award alone (issue #309 N06).
+    awardLegacyBoxXP(key, newBoxes, legacyBoxXp(t, newBoxes))
+      .then(failed => failed.length ? postPayoffFailureCard({ source: "legacyXp", failures: failed }) : null)
+      .catch(err => console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
   }
   return newBoxes;
 }
@@ -3301,27 +3309,58 @@ const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
  *
  * @param {"quests"|"bonds"|"discoveries"} key
  * @param {number} ticks
- * @returns {Promise<void>} rejects when the world refuses the write
+ * @returns {Promise<Array<Object>>} the box XP awards that did not land
+ *   (awardLegacyBoxXP) — the ticks did; rejects when the world refuses the
+ *   legacy write itself
  */
 async function writeLegacyTicks(key, ticks) {
   const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
   const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
   await game.settings.set(MODULE_ID, "campaignState", cs);
-  if (newBoxes > 0) await awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
+  if (newBoxes <= 0) return [];
+  return awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
 }
 
-/** Award legacy-box XP to every player character and post the earned-XP note. */
-async function awardLegacyBoxXP(key, boxes, xp) {
-  for (const actor of getPlayerActors()) {
-    await awardXP(actor, xp).catch(err =>
-      console.warn(`${MODULE_ID} | awardXP failed for ${actor?.name ?? actor?.id}:`, err?.message ?? err));
+/**
+ * Award legacy-box XP to each player character — or to `pcs`, a Retry's —
+ * and post the earned-XP note once any award has landed. Each award stands
+ * alone: a refused one is returned as a failed step (`xp`, its PC and
+ * amount), which the payoff puts on the GMs' failure card, whose Retry gives
+ * that PC's XP alone — never the ticks again. Each refusal used to be logged
+ * and dropped, the payoff reported complete (issue #309 N06).
+ *
+ * @param {"quests"|"bonds"|"discoveries"} key
+ * @param {number} boxes — newly filled boxes
+ * @param {number} xp — per PC
+ * @param {{ pcs?: Actor[]|null }} [opts] — a Retry's PC; every PC when absent
+ * @returns {Promise<Array<{ step: "xp", pcId: string|null, xp: number, track: string, boxes: number, reason: string, error: string }>>}
+ */
+async function awardLegacyBoxXP(key, boxes, xp, { pcs = null } = {}) {
+  const recipients = pcs ?? getPlayerActors();
+  const failed = [];
+  const given  = [];
+  for (const actor of recipients) {
+    try {
+      await awardXP(actor, xp);
+      given.push(actor);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | awardXP failed for ${actor?.name ?? actor?.id}:`, err?.message ?? err);
+      failed.push({ step: "xp", pcId: actor?.id ?? null, xp, track: key, boxes, reason: "refused", error: errText(err) });
+    }
   }
+  if (recipients.length && !given.length) return failed;
   const label = LEGACY_LABELS[key] ?? key;
+  // Named when not every PC was given it: a Retry's PC, or the PCs whose
+  // awards landed beside a refused one.
+  const who = pcs || failed.length
+    ? given.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
+    : [];
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned (${boxes} box${boxes === 1 ? "" : "es"} filled). Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled). Spend it on new assets or upgrades (Earn Experience).</p></div>`,
     flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp } },
   }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
+  return failed;
 }
 
 /** Feedback for a Make a Discovery / Confront Chaos legacy mark. */
@@ -3896,44 +3935,72 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
 
 /** payFulfilledVowNative's payoff, once its claim is held. */
 async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLegacy, actorId }) {
+  // The paid flag is the durable claim: nothing is paid until it has landed
+  // on a copy (issue #309 N05). A refusal used to be swallowed and the steps
+  // ran anyway; with this client's in-flight claim released afterwards, a
+  // later duplicate fulfilment found no paid flag and paid it all again.
+  let claimed = false;
   for (const { item: i } of allCopies) {
-    await i.setFlag?.(MODULE_ID, "fulfilPaid", true).catch(() => {});
+    if (typeof i?.setFlag !== "function") continue;
+    try {
+      await i.setFlag(MODULE_ID, "fulfilPaid", true);
+      claimed = true;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | native-fulfil: "${i.name ?? i.id}" could not be marked paid:`, err?.message ?? err);
+    }
   }
 
   const rank      = item.system?.rank ?? null;
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
+  const legacyTicks    = skipLegacy ? 0 : legacyRewardTicks(rank, ranksDown);
+  const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
+  const marks          = marksForSourceRank(rank);
+  // A step the vow's ledger records as landed is never paid again — the
+  // ledger a Retry reads (issue #309 N05: a fulfilment that ran after a Retry,
+  // or after a refused claim, paid every step again).
+  const owed = (step) => !payoffStepLanded(allCopies, step);
 
   // Each step that lands is recorded on every copy (the Retry's ledger); each
   // that does not is told to the GMs on one card (issue #306 R04 — every
   // failure here went to the console only, and could not be retried).
   const failures = [];
-  const settle = async (step, res, detail) => {
-    if (res?.ok) {
-      if (!res.skipped) await recordPayoffStep(allCopies, step);
-    } else {
-      failures.push({ ...detail, ...res, step: res?.step ?? step });
+  if (!claimed) {
+    // Unclaimed, nothing is applied: the GMs' Retry applies the steps, once.
+    if (legacyTicks > 0 && owed("legacy")) failures.push({ step: "legacy", track: "quests", ticks: legacyTicks, reason: "unclaimed" });
+    if (connectionName && owed("deepen"))  failures.push({ step: "deepen", connectionName, marks, reason: "unclaimed" });
+    const promised = allCopies.find(({ item: i }) => i?.flags?.[MODULE_ID]?.reward?.status === "promised");
+    if (promised && owed("reward")) {
+      failures.push({ step: "reward", reason: "unclaimed", rewardDescription: promised.item.flags[MODULE_ID].reward.description ?? null });
     }
-  };
+  } else {
+    const settle = async (step, res, detail) => {
+      if (res?.ok) {
+        if (!res.skipped) await recordPayoffStep(allCopies, step);
+        failures.push(...(res.xpFailures ?? []));   // the legacy's box XP that did not land (issue #309 N06)
+      } else {
+        failures.push({ ...detail, ...res, step: res?.step ?? step });
+      }
+    };
 
-  // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
-  // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
-  // object (persisted once at pipeline end) and passes true so this fresh
-  // read-modify-write can't race/clobber that persist.
-  if (!skipLegacy) {
-    const ticks = legacyRewardTicks(rank, ranksDown);
-    if (ticks > 0) await settle("legacy", await runLegacyStep("quests", ticks), { track: "quests", ticks });
+    // Quests legacy — the vendor's native fulfil doesn't credit our legacy tracks.
+    // skipLegacy: the pipeline fulfil branch pays legacy on its own campaignState
+    // object (persisted once at pipeline end) and passes true so this fresh
+    // read-modify-write can't race/clobber that persist.
+    if (legacyTicks > 0 && owed("legacy")) {
+      await settle("legacy", await runLegacyStep("quests", legacyTicks), { track: "quests", ticks: legacyTicks });
+    }
+
+    // Deepen the linked connection (scaled by the vow's rank).
+    if (connectionName && owed("deepen")) {
+      await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
+    }
+
+    // Grant the promised reward (one-time; scaled by outcome). The fulfil path
+    // surfaces a note when no reward was ever chosen.
+    if (owed("reward")) {
+      await settle("reward", await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }), {});
+    }
   }
-
-  // Deepen the linked connection (scaled by the vow's rank).
-  const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
-  if (connectionName) {
-    const marks = marksForSourceRank(rank);
-    await settle("deepen", await deepenLinkedConnection(connectionName, marks), { connectionName, marks });
-  }
-
-  // Grant the promised reward (one-time; scaled by outcome). The fulfil path
-  // surfaces a note when no reward was ever chosen.
-  await settle("reward", await grantLinkedVowReward(vowName, outcome, { noteIfAbsent: true, actorId, copies: allCopies }), {});
 
   if (failures.length) {
     await postPayoffFailureCard({
@@ -4048,10 +4115,11 @@ export async function payForgedBondNative(connectionName) {
     const legacy = ticks > 0 ? await runLegacyStep("bonds", ticks) : { ok: true };
     await postForgeABondCard(target, ticks, { legacyPending: !legacy.ok }).catch(err =>
       console.warn(`${MODULE_ID} | native-forge card failed:`, err?.message ?? err));
-    if (!legacy.ok) {
+    // A refused legacy, or a box XP award that did not land (issue #309 N06).
+    const failures = legacy.ok ? (legacy.xpFailures ?? []) : [{ step: "legacy", track: "bonds", ticks, ...legacy }];
+    if (failures.length) {
       await postPayoffFailureCard({
-        source: "forge", connectionName: target.name ?? connectionName ?? null,
-        failures: [{ step: "legacy", track: "bonds", ticks, ...legacy }],
+        source: "forge", connectionName: target.name ?? connectionName ?? null, failures,
       }).catch(err => console.warn(`${MODULE_ID} | native-forge: failure card failed:`, err?.message ?? err));
     }
   } catch (err) {
@@ -4076,15 +4144,21 @@ export async function payForgedBondNative(connectionName) {
 
 const errText = (err) => String(err?.message ?? err ?? "unknown error");
 
-/** A legacy mark as a payoff step (writeLegacyTicks); reports, never throws. */
+/**
+ * A legacy mark as a payoff step (writeLegacyTicks); reports, never throws.
+ * Once the ticks land the step is done: a box XP award that did not land
+ * rides along as `xpFailures`, a step of its own per PC — re-running the
+ * legacy would add its ticks again (issue #309 N06).
+ */
 async function runLegacyStep(track, ticks) {
+  let xpFailures;
   try {
-    await writeLegacyTicks(track, ticks);
-    return { ok: true };
+    xpFailures = await writeLegacyTicks(track, ticks);
   } catch (err) {
     console.warn(`${MODULE_ID} | ${track} legacy write failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: errText(err) };
   }
+  return xpFailures.length ? { ok: true, xpFailures } : { ok: true };
 }
 
 // A fulfilment's ledger — has `step` landed? (any copy recording it counts)
@@ -4119,8 +4193,12 @@ function payoffVowCopies({ vowId = null, vowName = null, actorId = null } = {}) 
 
 const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
 
+// The PC meter each suffer move changes — a failure card line shows it as it stands.
+const SUFFER_METERS = { lose_momentum: "momentum", endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply" };
+
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
+  "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
   "no-pc":     "no player character to receive it",
@@ -4131,6 +4209,8 @@ const PAYOFF_TITLES = {
   fight:       (c) => `Victory reward incomplete — “${c.vowName ?? "your vow"}”`,
   forge:       (c) => `Bond payoff incomplete — ${c.connectionName ?? "the bond"}`,
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
+  legacyXp:    ()  => `Legacy experience not given`,
+  suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -4143,7 +4223,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4177,6 +4257,8 @@ function payoffStepRecord(f) {
     case "deepen":      return { step: "deepen", connectionName: f.connectionName ?? null, marks: f.marks ?? 1 };
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
+    case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
+    case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4196,6 +4278,20 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const target = await findOpenConnection(f.connectionName);
         const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
         return `Your bond with ${escapeChatHtml(f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
+      }
+      case "suffer": {
+        // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
+        const pc    = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        const meter = f.call?.kind === "meter" ? f.call.meterKey : SUFFER_METERS[f.call?.sufferId];
+        const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
+        const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
+        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+      }
+      case "xp": {
+        const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who = escapeChatHtml(pc?.name ?? "a character");
+        const now = pc ? ` ${who} has ${readCharacterSnapshot(pc)?.xp?.value ?? 0} XP now.` : "";
+        return `+${f.xp} XP for ${who}, earned by a filled ${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy box — ${why}.${now}`;
       }
       case "milestone": {
         const vow = readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
@@ -4235,10 +4331,13 @@ export async function retryPayoffSteps(card) {
   const failures = [];
   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
     const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
-    if (fulfil && payoffStepLanded(copies, ledgerStep)) continue;
+    // A PC's box XP is on no ledger: only this card's Retry gives it.
+    const onLedger = fulfil && s?.step !== "xp";
+    if (onLedger && payoffStepLanded(copies, ledgerStep)) continue;
     const res = await runPayoffStep(s, card, copies);
     if (res?.ok) {
-      if (fulfil && !res.skipped) await recordPayoffStep(copies, ledgerStep);
+      if (onLedger && !res.skipped) await recordPayoffStep(copies, ledgerStep);
+      failures.push(...(res.xpFailures ?? []));
     } else {
       failures.push({ ...s, ...res, step: res?.step ?? s?.step });
     }
@@ -4266,6 +4365,24 @@ async function runPayoffStep(s, card, copies) {
     case "reward":
       if (!copies.length) return { ok: false, reason: "no-vow" };
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
+    case "suffer": {
+      // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
+      const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+      const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
+      if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
+      return res?.ok === false ? { ...res, ok: false } : { ok: true };
+    }
+    case "xp": {
+      // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
+      const xp = Math.floor(Number(s.xp));
+      if (!LEGACY_LABELS[s.track] || !(xp > 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
+      const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      const [failed] = await awardLegacyBoxXP(s.track, Math.max(1, Math.floor(Number(s.boxes)) || 1), xp, { pcs: [pc] });
+      return failed ? { ...failed, ok: false } : { ok: true };
+    }
     case "rewardGrant": {
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       const given = await giveReward(pc, s.reward, s.plan);

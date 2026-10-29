@@ -408,7 +408,10 @@ export async function setCombatPosition(actor, position) {
 }
 
 /**
- * Award XP to the Actor, clamped to xp.max.
+ * Award XP to the Actor. `system.xp` is a non-negative integer with no maximum
+ * in the vendor schema (subtypes/character.ts): a 30-point cap here once
+ * wrote 30 over a character's 42 XP, and stopped every award at 30 (issue
+ * #309 N01).
  * @param {Actor} actor
  * @param {number} amount
  * @returns {Promise<void>}
@@ -416,35 +419,85 @@ export async function setCombatPosition(actor, position) {
 export async function awardXP(actor, amount) {
   if (!actor || amount <= 0) return;
 
-  const sys    = actor.system ?? {};
-  const current = sys.xp ?? 0;
-  const max     = 30;
-  const next    = Math.min(current + amount, max);
-
-  if (next !== current) {
-    await actor.update({ 'system.xp': next });
-    invalidateActorCache(actor.id);
-  }
+  const sys     = actor.system ?? {};
+  const current = Number(sys.xp ?? 0) || 0;
+  await actor.update({ 'system.xp': current + amount });
+  invalidateActorCache(actor.id);
 }
 
 /**
- * Apply changes to a companion or starship asset embedded on the Actor.
- * @param {Actor} actor
- * @param {'starship'|'companion'} assetType
- * @param {Object} changes
- * @returns {Promise<void>}
+ * The character's companions: `asset` Items whose `system.category` names
+ * Companion, with an enabled condition track. A companion's health is that
+ * track — `system.track.value` within `track.min..track.max` (vendor
+ * src/module/item/subtypes/asset.ts: AssetConditionMeterField).
+ *
+ * @param {Actor|null} actor
+ * @returns {Item[]}
  */
-export async function applyAssetChanges(actor, assetType, changes) {
-  if (!actor) return;
+export function listCompanionAssets(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const list  = Array.isArray(items) ? items : [];
+  return list.filter(i => i?.type === 'asset'
+    && String(i.system?.category ?? '').toLowerCase().includes('companion')
+    && i.system?.track?.enabled !== false);
+}
 
-  const item = actor.items?.find(i => i.type === assetType);
-  if (!item) {
-    console.warn(`actorBridge | applyAssetChanges: no ${assetType} found on actor ${actor.id}`);
-    return;
+/**
+ * One companion: the one `itemId` names, else the character's only one —
+ * null when there is none, or several and none named.
+ *
+ * @param {Actor|null} actor
+ * @param {string|null} [itemId]
+ * @returns {Item|null}
+ */
+export function getCompanionAsset(actor, itemId = null) {
+  const companions = listCompanionAssets(actor);
+  if (itemId) return companions.find(i => i.id === itemId) ?? null;
+  return companions.length === 1 ? companions[0] : null;
+}
+
+/**
+ * A companion's health (getCompanionAsset), or null when there is no such
+ * companion.
+ *
+ * @param {Actor|null} actor
+ * @param {string|null} [itemId]
+ * @returns {number|null}
+ */
+export function readCompanionHealth(actor, itemId = null) {
+  const companion = getCompanionAsset(actor, itemId);
+  return companion ? Number(companion.system?.track?.value ?? 0) : null;
+}
+
+/**
+ * Change a companion's health — its asset track — by `delta`, kept within
+ * the track's min..max. Companion health went to applyMeterChanges, which
+ * has no such meter and dropped it (issue #309 N03).
+ *
+ * @param {Actor} actor
+ * @param {number} delta
+ * @param {{ itemId?: string|null }} [opts] — the companion (getCompanionAsset)
+ * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: string, error?: string }>}
+ */
+export async function applyCompanionHealthChange(actor, delta, { itemId = null } = {}) {
+  const companion = getCompanionAsset(actor, itemId);
+  if (!companion) {
+    console.warn(`actorBridge | companion health: no companion${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
+    return { ok: false, reason: 'no-companion' };
   }
-
-  await item.update(changes);
+  const track  = companion.system?.track ?? {};
+  const before = Number(track.value ?? 0);
+  const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
+  const at     = { itemId: companion.id, name: companion.name ?? null, before };
+  if (after === before) return { ok: true, ...at, after };
+  try {
+    await companion.update({ 'system.track.value': after });
+  } catch (err) {
+    console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
+    return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
+  }
   invalidateActorCache(actor.id);
+  return { ok: true, ...at, after };
 }
 
 /**
