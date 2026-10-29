@@ -429,6 +429,11 @@ function generateId() {
  * @param {Object} campaignState — current campaign state (used for region
  *                                 and to thread campaignState through the
  *                                 art pipeline)
+ * @param {Object} [opts]
+ * @param {number} [opts.moduleLimit] — cap on the modules installed
+ * @param {string} [opts.finalizedAt] — the Entity Panel's Finalise
+ *   (finalize.js): stamped into the payload this seed writes, so the panel
+ *   switches to Regenerate and a repeat Finalise leaves Notes alone
  * @returns {Promise<Object|null>} — the resulting ship payload, or null
  *                                   on a non-fatal failure
  */
@@ -523,6 +528,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     isCommandVehicle: existing.isCommandVehicle || actorHasCommandVehicleAsset(actor),
     description:               existing.description ?? "",
     portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
+    ...(opts.finalizedAt ? { finalizedAt: opts.finalizedAt } : {}),
     createdAt:  existing.createdAt ?? now,
     updatedAt:  now,
   };

@@ -90,6 +90,32 @@ describe('handleBondCommand — author client', () => {
     expect(relayed).toMatchObject({ momentumChange: 2, ticksOnBonds: 0, actorId: 'pc-b' });
   });
 
+  // Issue #311 P01: an action roll, so the roller's negative momentum cancels a
+  // matching die — the full 3 counted, a strong hit where the score is 2.
+  it("the roller's negative momentum cancels a matching action die", async () => {
+    setUsers([GM, P1], 'pl-1');
+    pcB.system.momentum.value = -3;
+    rollActionDie.mockReturnValue(3);          // cancelled: 0 + 2 (dangerous) = 2
+    rollChallengeDice.mockReturnValue([1, 4]); // beats 1 only → weak hit (5 would beat both)
+    await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' }, speaker: { actor: 'pc-b' } });
+
+    const card = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard);
+    expect(card.content).toMatch(/<s>3<\/s> \(cancelled by momentum -3\) \+ 2 = <strong>2<\/strong>/);
+    expect(card.content).toMatch(/Weak hit/);
+    expect(game.socket._emitted[0].payload.payload).toMatchObject({ momentumChange: 2, actorId: 'pc-b' });
+  });
+
+  it("a negative momentum that does not match the die leaves it", async () => {
+    setUsers([GM, P1], 'pl-1');
+    pcB.system.momentum.value = -2;
+    rollActionDie.mockReturnValue(3);
+    rollChallengeDice.mockReturnValue([1, 4]);
+    await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' }, speaker: { actor: 'pc-b' } });
+    const card = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard);
+    expect(card.content).toMatch(/Action: 3 \+ 2 = <strong>5<\/strong>/);
+    expect(card.content).toMatch(/Strong hit/);
+  });
+
   it('a hit with a match relays the rank raise with the target host id', async () => {
     setUsers([GM, P1], 'pl-1');
     rollChallengeDice.mockReturnValue([3, 3]);

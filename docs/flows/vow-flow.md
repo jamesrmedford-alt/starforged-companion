@@ -111,8 +111,9 @@ All real progress lands on **item ticks** (`system.current`) via
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
   the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
-  so the clocks advance once, on the GM. Burn-momentum undo reverts via
-  `revertVowClocksForBurn`.
+  so the clocks advance once, on the GM. A Burn Momentum or Improve Result
+  that upgrades the miss reverts them via `revertVowClocksForBurn`
+  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05).
 
 ## 3. Narrator awareness
 

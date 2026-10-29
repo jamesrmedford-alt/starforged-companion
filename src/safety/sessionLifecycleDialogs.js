@@ -189,6 +189,7 @@ async function beginSessionOnce(payload) {
   // refused every retry as "already begun" while the world said the session
   // had not started (issue #309 N09).
   let begun = false;
+  let sessionId = null;
   try {
     const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
     const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
@@ -201,6 +202,7 @@ async function beginSessionOnce(payload) {
     }
     beginSession(cs);
     cs.sessionStartedId = cs.currentSessionId ?? null;
+    sessionId = cs.currentSessionId ?? null;
     // The foci go on to the narrator for this session (issue #286 C5).
     const quest      = cleanFocus(cs.questFocus);
     const connection = cleanFocus(cs.connectionFocus);
@@ -216,7 +218,7 @@ async function beginSessionOnce(payload) {
   if (!begun) return;
 
   if (vignetteRolled) {
-    await applyMomentumToAllPlayers(1);
+    await applyMomentumToAllPlayers(1, { sessionId, award: "Begin a Session — the Spotlight Vignette" });
   }
 
   // Campaign clocks — roll Ask the Oracle for each at session start (play
@@ -511,7 +513,7 @@ async function endSessionOnce(payload) {
 
   const bonus = !!(questFocus || connectionFocus);
   if (bonus) {
-    await applyMomentumToAllPlayers(1);
+    await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
   }
 
   // Fire-and-forget closing vignette — narrator-generated slice-of-life
@@ -568,17 +570,22 @@ async function correctEndedSession(state, { questFocus, connectionFocus }) {
     await game.settings.set(MODULE_ID, "campaignState",
       mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
   }
-  if (bonus) await applyMomentumToAllPlayers(1);
+  if (bonus) await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — the first focus noted" });
   console.debug?.(`${MODULE_ID} | End a Session: session ${state.currentSessionId} has already ended — ${given ? "focus updated" : "nothing changed"}${bonus ? ", first focus: +1 momentum" : ""}.`);
 
   const lines = [];
   if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
   if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
+  // An award that did not land waits on the GMs' Retry — never "taken".
+  const owed = outstandingSessionMomentum(state.currentSessionId ?? null);
+  const owedLine = owed.length
+    ? ` Momentum that did not reach ${owed.map(escapeHtml).join(", ")} waits on a GM's Retry.`
+    : "";
   const focusBlock = !given ? ""
     : `<p>Focus for next session updated:</p><ul>${lines.join("")}</ul>`
       + (bonus
         ? `<p>The first focus noted for this session: you take <strong>+1 momentum</strong>.</p>`
-        : `<p class="muted"><em>No momentum — it was taken when the session ended with a focus.</em></p>`);
+        : `<p class="muted"><em>No momentum — it was taken when the session ended with a focus.${owedLine}</em></p>`);
   await ChatMessage.create({
     content: `<div class="sf-session-card"><strong>End a Session</strong>`
       + `<p>This session has already ended — it is not closed again, and its Session Log and closing scene are not repeated.</p>`
@@ -630,14 +637,59 @@ function renderLastSessionFoci(state) {
   return `<div class="sf-last-session-foci"><p><strong>Focus from last session:</strong></p><ul>${items.join("")}</ul></div>`;
 }
 
-async function applyMomentumToAllPlayers(delta) {
-  const { getPlayerActors }   = await import("../character/actorBridge.js");
-  const { applyMeterChanges } = await import("../character/actorBridge.js");
-  const actors = getPlayerActors();
-  for (const a of actors) {
-    try { await applyMeterChanges(a, { momentum: delta }); }
-    catch (err) { console.warn(`${MODULE_ID} | momentum delta failed for ${a.name}:`, err); }
+/**
+ * Give every PC `delta` momentum — each PC's award its own write. One the world
+ * refuses goes on the GMs' payoff failure card as a `momentum` step, whose
+ * Retry gives that PC alone the momentum (index.js runPayoffStep): it was only
+ * logged, while the session counted the award paid, so no End repaired it
+ * (issue #311 P08).
+ *
+ * @param {number} delta
+ * @param {{ sessionId?: string|null, award?: string }} [why] — for the GMs' card
+ * @returns {Promise<Array<Object>>} the awards that did not land
+ */
+async function applyMomentumToAllPlayers(delta, { sessionId = null, award = null } = {}) {
+  const { getPlayerActors, applyMeterChanges } = await import("../character/actorBridge.js");
+  const failures = [];
+  for (const a of getPlayerActors()) {
+    try {
+      await applyMeterChanges(a, { momentum: delta });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | momentum delta failed for ${a.name}:`, err?.message ?? err);
+      failures.push({ step: "momentum", pcId: a.id, amount: delta, sessionId, award,
+        reason: "refused", error: String(err?.message ?? err) });
+    }
   }
+  if (failures.length) {
+    try {
+      const { postPayoffFailureCard } = await import("../index.js");
+      await postPayoffFailureCard({ source: "session", failures });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | session momentum: failure card failed:`, err?.message ?? err);
+    }
+  }
+  return failures;
+}
+
+/**
+ * The PCs whose session momentum is still on an unretried GMs' card for
+ * `sessionId` (applyMomentumToAllPlayers) — named on End a Session's
+ * correction note, which would otherwise say the momentum was taken.
+ *
+ * @param {string|null} sessionId
+ * @returns {string[]}
+ */
+function outstandingSessionMomentum(sessionId) {
+  if (!sessionId) return [];
+  const names = new Set();
+  for (const m of game.messages?.contents ?? []) {
+    const f = m?.flags?.[MODULE_ID];
+    if (!f?.payoffFailureCard || f.resolved || f.source !== "session") continue;
+    for (const s of f.steps ?? []) {
+      if (s?.step === "momentum" && s.sessionId === sessionId) names.add(game.actors?.get?.(s.pcId)?.name ?? "a character");
+    }
+  }
+  return [...names];
 }
 
 function escapeHtml(s) {

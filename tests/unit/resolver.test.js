@@ -28,6 +28,7 @@ import {
   rollChallengeDice,
   resolveMove,
   buildOracleSeeds,
+  cancelsActionDie,
 } from "../../src/moves/resolver.js";
 import { rollOracle, rollPaired } from "../../src/oracles/roller.js";
 import { enrichProgressTicks } from "../../src/moves/statEnrichment.js";
@@ -532,10 +533,10 @@ const HANDLER_CASES = [
   ["sojourn",  "weak_hit",   false, { match: /Time short|recover/i }],
   ["sojourn",  "miss",       false, { match: /community|Pay the Price/i }],
   ["heal",     "strong_hit", false, { match: /wounded|health/i, sufferPrompt: { kind: "enumerated" } }],
-  ["heal",     "weak_hit",   false, { match: /Lose Momentum|Sacrifice/i }],
+  ["heal",     "weak_hit",   false, { match: /Lose Momentum|Sacrifice/i, sufferPrompt: { kind: "enumerated" } }],
   ["heal",     "miss",       false, { match: /Pay the Price/i }],
   ["hearten",  "strong_hit", false, { match: /shaken|spirit/i, sufferPrompt: { kind: "enumerated" } }],
-  ["hearten",  "weak_hit",   false, { momentumChange: -1 }],
+  ["hearten",  "weak_hit",   false, { momentumChange: 0, match: /Lose Momentum/i, sufferPrompt: { kind: "enumerated" } }],
   ["hearten",  "miss",       false, { match: /Pay the Price/i }],
   ["resupply", "strong_hit", false, { match: /unprepared|supply|item/i, sufferPrompt: { kind: "enumerated" } }],
   ["resupply", "weak_hit",   false, { match: /cost|supply/i, sufferPrompt: { kind: "enumerated" } }],
@@ -839,6 +840,64 @@ describe("resolveMove", () => {
   });
 
   // ── Take Decisive Action bad-spot downgrade (play kit p. 5) ────────────
+  // Issue #311 P01: the roller's momentum was never an input, so a -3 momentum
+  // never cancelled a 3 and the full die always counted.
+  describe("negative momentum cancels a matching action die", () => {
+    const faceDanger = (momentum) => resolveMove({
+      moveId: "face_danger", moveName: "Face Danger", statUsed: "iron", statValue: 3, adds: 0,
+      mischiefApplied: false, playerNarration: "I push on.",
+    }, { currentSessionId: "s1" }, momentum === undefined ? {} : { momentum });
+
+    it("momentum -3 cancels a 3: the score is the stat alone, a miss against 4 and 5", () => {
+      fixDiceSequence([0.35, 0.45, 0.4]);   // challenge [4, 5]; action die 3
+      const r = faceDanger(-3);
+      expect(r.actionDie).toBe(3);
+      expect(r.actionDieCancelled).toBe(true);
+      expect(r.actionScore).toBe(3);
+      expect(r.outcome).toBe("miss");
+      expect(r.loremasterContext).toContain("Action: 3 (cancelled by momentum -3) + 3 = 3");
+    });
+
+    it("adds still count with the die cancelled", () => {
+      fixDiceSequence([0.35, 0.45, 0.4]);
+      const r = resolveMove({ moveId: "face_danger", moveName: "Face Danger", statUsed: "iron", statValue: 3, adds: 2 },
+        { currentSessionId: "s1" }, { momentum: -3 });
+      expect(r.actionScore).toBe(5);
+      expect(r.outcome).toBe("weak_hit");
+    });
+
+    it("a negative momentum that does not match leaves the die: -2 with a 3 scores 6", () => {
+      fixDiceSequence([0.35, 0.45, 0.4]);
+      const r = faceDanger(-2);
+      expect(r.actionDieCancelled).toBe(false);
+      expect(r.actionScore).toBe(6);
+      expect(r.outcome).toBe("strong_hit");
+    });
+
+    it("positive momentum, or none given, cancels nothing", () => {
+      fixDiceSequence([0.35, 0.45, 0.4, 0.35, 0.45, 0.4]);
+      expect(faceDanger(3).actionScore).toBe(6);
+      expect(faceDanger().actionScore).toBe(6);
+    });
+
+    it("a progress roll has no action die to cancel", () => {
+      fixDiceSequence([0.25, 0.45]);   // challenge [3, 5]
+      const r = resolveMove({ moveId: "fulfill_your_vow", moveName: "Fulfill Your Vow", statUsed: "progress", statValue: 24 },
+        { currentSessionId: "s1" }, { momentum: -6 });
+      expect(r.actionDieCancelled).toBe(false);
+      expect(r.progressScore).toBe(6);
+      expect(r.outcome).toBe("strong_hit");
+    });
+
+    it("cancelsActionDie matches the die to the momentum's absolute value", () => {
+      expect(cancelsActionDie(1, -1)).toBe(true);
+      expect(cancelsActionDie(6, -6)).toBe(true);
+      expect(cancelsActionDie(3, -4)).toBe(false);
+      expect(cancelsActionDie(3, 0)).toBe(false);
+      expect(cancelsActionDie(3, undefined)).toBe(false);
+    });
+  });
+
   describe("Take Decisive Action — bad-spot downgrade", () => {
     function takeDecisiveAction(ticks, { combatPosition } = {}) {
       return resolveMove(
@@ -1389,6 +1448,37 @@ describe("recover-move dialog prompts", () => {
     expect(shakenOpt?.chain).toContainEqual(expect.objectContaining({ clearImpact: "shaken" }));
     const notShakenOpt = c.sufferPrompt.options.find(o => o.requires === "!shaken");
     expect(notShakenOpt?.spirit).toBe(2);
+  });
+
+  // Issue #311 P02: the weak hits' choice was their cost alone, so a weak Heal
+  // or Hearten charged it and recovered nothing.
+  it("heal:weak_hit offers the strong hit's recovery, then each cost", () => {
+    const strong = mapConsequences("heal", "strong_hit", false).sufferPrompt.options;
+    const weak   = mapConsequences("heal", "weak_hit", false).sufferPrompt.options;
+    expect(weak).toHaveLength(4);
+    expect(weak.map(o => o.requires)).toEqual(["wounded", "wounded", "!wounded", "!wounded"]);
+    expect(weak[0].chain).toEqual([{ clearImpact: "wounded" }, { health: 2 }, { suffer: "lose_momentum", amount: 2 }]);
+    expect(weak[1].chain).toEqual([{ clearImpact: "wounded" }, { health: 2 }, { suffer: "sacrifice_resources", amount: 2 }]);
+    expect(weak[2].chain).toEqual([{ health: 3 }, { suffer: "lose_momentum", amount: 2 }]);
+    expect(weak[3].chain).toEqual([{ health: 3 }, { suffer: "sacrifice_resources", amount: 2 }]);
+    expect(weak[0].label).toBe(`${strong[0].label}, then Lose Momentum (-2)`);
+  });
+
+  it("hearten:weak_hit offers the strong hit's recovery, then Lose Momentum (-1) — not a bare -1", () => {
+    const c = mapConsequences("hearten", "weak_hit", false);
+    expect(c.momentumChange).toBe(0);
+    expect(c.sufferPrompt.options.map(o => [o.requires, o.chain])).toEqual([
+      ["shaken",  [{ clearImpact: "shaken" }, { spirit: 1 }, { suffer: "lose_momentum", amount: 1 }]],
+      ["!shaken", [{ spirit: 2 }, { suffer: "lose_momentum", amount: 1 }]],
+    ]);
+  });
+
+  it("each call returns its own options — a prompt stored on one card is not another's", () => {
+    const a = mapConsequences("heal", "weak_hit", false).sufferPrompt.options;
+    const b = mapConsequences("heal", "weak_hit", false).sufferPrompt.options;
+    a[0].chain.push({ health: 9 });
+    expect(b[0].chain).toHaveLength(3);
+    expect(mapConsequences("heal", "strong_hit", false).sufferPrompt.options[0].chain).toHaveLength(2);
   });
 
   it("resupply:strong_hit emits clearImpact:'unprepared' option and direct supply option", () => {

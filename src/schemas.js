@@ -309,7 +309,10 @@ export const ConnectionSchema = {
  * @property {string}   rationale        internal only — why this move was chosen
  * @property {boolean}  mischiefApplied  internal only — whether mischief reframed it
  * @property {number}   actionDie        d6 (1–6); 0 for progress moves
+ * @property {boolean}  actionDieCancelled the roller's negative momentum matched
+ *                                     the action die, which then counts 0
  * @property {number}   actionScore      actionDie + statValue + adds, capped at 10
+ *                                     (the die counts 0 when cancelled)
  * @property {number[]} challengeDice    two d10 results
  * @property {boolean}  isMatch          both challenge dice equal
  * @property {boolean}  momentumBurned

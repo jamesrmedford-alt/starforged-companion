@@ -87,6 +87,17 @@ describe("buildImproveState", () => {
     expect(state.originalConsequences.momentumChange).toBe(-1);
     expect(state.originalApplied).toBe(false);
   });
+
+  // Issue #311 P05: the miss's Pay the Price reversals rode the burn's card only.
+  it("carries the miss's Pay the Price reversals, as the burn's card does", () => {
+    const ptpReversals = {
+      clocksAdvanced: [{ _id: "t1", name: "Pursuit", type: "tension" }],
+      sufferMeterDelta: { move: "endure_harm", meterKey: "health", amount: 1, actorId: "pc-1", before: 5, after: 4 },
+    };
+    const state = buildImproveState(resolution({ outcome: "miss" }), [fugitiveAbility()], actor, ptpReversals);
+    expect(state.ptpReversals).toEqual(ptpReversals);
+    expect(buildImproveState(resolution(), [fugitiveAbility()], actor).ptpReversals).toBeNull();
+  });
 });
 
 describe("renderImproveButtonHtml", () => {

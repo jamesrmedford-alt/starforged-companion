@@ -957,7 +957,21 @@ describe('revertVowClocksForBurn', () => {
   });
 
   it('is a no-op for empty input', async () => {
-    await revertVowClocksForBurn([]);
+    await expect(revertVowClocksForBurn([])).resolves.toEqual([]);
+  });
+
+  // Issue #311 P06: a refused rewind was only logged — the upgrade's GM card needs it.
+  it('returns the entries whose write was refused', async () => {
+    const ok      = clockVow({ id: 'v1', ticks: 2 });
+    const refused = clockVow({ id: 'v2', ticks: 2 });
+    refused.update = async () => { throw new Error('refused'); };
+    const actor = freshActor({ items: { contents: [ok, refused] } });
+    game.actors._set(actor.id, actor);
+
+    const failed = await revertVowClocksForBurn([{ actorId: actor.id, itemId: 'v1' }, { actorId: actor.id, itemId: 'v2', name: 'B' }]);
+
+    expect(ok.system.clockTicks).toBe(1);
+    expect(failed).toEqual([{ actorId: actor.id, itemId: 'v2', name: 'B' }]);
   });
 });
 

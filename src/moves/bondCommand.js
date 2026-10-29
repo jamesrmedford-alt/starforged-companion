@@ -22,10 +22,10 @@
  * momentum landed on the GM's character (or the first PC), not the roller's.
  */
 
-import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome } from "./resolver.js";
+import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie } from "./resolver.js";
 import { selectConnection, nextRank } from "./developRelationship.js";
 import { showActionRoll } from "../dice/diceAnimation.js";
-import { getPlayerActors, applyMeterChanges, setBondItemRank } from "../character/actorBridge.js";
+import { getPlayerActors, applyMeterChanges, setBondItemRank, readMomentumState } from "../character/actorBridge.js";
 import { resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
@@ -81,10 +81,15 @@ export async function handleBondCommand(message) {
     return;
   }
 
+  // The roller: credited with the momentum, and whose negative momentum
+  // cancels a matching action die, as on every action roll (issue #311 P01).
+  const rollerId      = resolveSpeakerActorId(message, campaignState);
+  const roller        = rollerId ? (game.actors?.get?.(rollerId) ?? null) : null;
   const adds          = BOND_ROLL_ADDS[rank];
   const actionDie     = rollActionDie();
   const challengeDice = rollChallengeDice();
-  const actionScore   = calcActionScore(actionDie, 0, adds);
+  const dieCancelled  = cancelsActionDie(actionDie, roller ? readMomentumState(roller).value : null);
+  const actionScore   = calcActionScore(dieCancelled ? 0 : actionDie, 0, adds);
   const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
 
   // 3D dice for the bond roll (fire-and-forget, fail-open).
@@ -118,7 +123,7 @@ export async function handleBondCommand(message) {
     ? `Develop Your Relationship (bonded: ${escapeHtml(target.name)}, ${escapeHtml(rank)})`
     : `Develop Your Relationship (bonded, ${escapeHtml(rank)})`;
   await ChatMessage.create({
-    content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
+    content: `<div class="sf-bond-card"><strong>${title}</strong><p>Action: ${dieCancelled ? `<s>${actionDie}</s> (cancelled by momentum -${actionDie})` : actionDie} + ${adds} = <strong>${actionScore}</strong> vs Challenge ${challengeDice[0]}, ${challengeDice[1]}</p><p>${body}</p></div>`,
     flags:   { [MODULE_ID]: { bondCommandCard: true } },
   });
 
@@ -137,7 +142,7 @@ export async function handleBondCommand(message) {
     targetHostId: raiseRank ? (target.__hostId ?? null) : null,
     targetName:   raiseRank ? (target.name ?? null)     : null,
     raisedRank,
-    actorId:      resolveSpeakerActorId(message, campaignState),
+    actorId:      rollerId,
   });
 }
 

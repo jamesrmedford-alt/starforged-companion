@@ -33,6 +33,11 @@
  * update silently failed, the button stayed live, and a second click
  * re-applied the deltas.
  *
+ * Besides the move's own meters, a burn reverts the miss's Pay the Price and
+ * reconciles the move's choice cards — retiring the superseded outcome's,
+ * posting the burned outcome's — through resultUpgrade.js, shared with
+ * Improve Result (issue #311). A consequence already chosen closes the burn.
+ *
  * Limitations of this implementation:
  *   - Only meter consequences (health/spirit/supply/momentum) reverse on
  *     burn. Progress-track marking and auto-debility flips from suffer
@@ -40,6 +45,8 @@
  *     strong hits for the same move, and the rules-correct reversal
  *     would require more state than we currently track. If a player
  *     reports a case where this matters, we can extend.
+ *   - Nor does the burned outcome's own progress or combat position apply
+ *     (known-issues UPGRADE-PIPELINE-EFFECTS).
  */
 
 import {
@@ -50,11 +57,18 @@ import {
 import {
   getActor,
   getPlayerActors,
-  applyMeterChanges,
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction }     from "../multiplayer/gmRelay.js";
+import {
+  revertPayThePrice,
+  claimUpgradeCard,
+  applyUpgradeStep,
+  reportUpgradeFailures,
+  reconcileChoices,
+  consequenceChosen,
+} from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -98,20 +112,35 @@ export function releaseResultUpgrade(messageId) {
 
 /**
  * Why a card's result can't be upgraded right now, or null when it can: the
- * original outcome is not recorded yet ("original-pending"), or the other
- * upgrade already changed the result ("already-upgraded").
+ * original outcome is not recorded yet ("original-pending"), the other
+ * upgrade already changed the result ("already-upgraded"), or the move's
+ * consequence was already chosen on its choice card ("choice-made" — what the
+ * choice applied stands, so upgrading would stack two outcomes' choices;
+ * issue #311 P03). The GM handlers also check the choice cards themselves
+ * (resultUpgrade.js consequenceChosen).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|null}
+ * @returns {"original-pending"|"already-upgraded"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
+  if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
   return null;
 }
 
+/** Tooltip on a burn / improve button closed by the move's chosen consequence. */
+export const UPGRADE_CHOSEN_TITLE = "The consequence was already chosen — upgrade the result before choosing";
+
 /** Tooltip on a burn / improve button waiting for the original outcome to be recorded. */
 export const UPGRADE_PENDING_TITLE = "Available once the move's result is recorded";
+
+/** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
+export const UPGRADE_REFUSALS = {
+  "original-pending": "the original outcome is not recorded yet",
+  "already-upgraded": "the result was already upgraded",
+  "choice-made":      "the move's consequence was already chosen",
+};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,9 +161,12 @@ export const UPGRADE_PENDING_TITLE = "Available once the move's result is record
  *
  * @param {Object} resolution
  * @param {Actor}  actor       — active character; needed for momentum + impacts
+ * @param {Object|null} [ptpReversals] — what the miss's Pay the Price did, undone on burn
+ * @param {Object|null} [targets] — the move's vehicle, companion and fight
+ *   (persistResolution's): the upgraded outcome's choice card changes them
  * @returns {Object|null}
  */
-export function buildBurnState(resolution, actor, ptpReversals = null) {
+export function buildBurnState(resolution, actor, ptpReversals = null, targets = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
 
@@ -164,6 +196,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null) {
     actorId:            actor.id,
     resolutionId:       resolution._id ?? null,  // links to the original narration card (F13a)
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
+    targets:            targets ?? null,          // for the upgraded outcome's choice card
   };
 }
 
@@ -231,6 +264,12 @@ export function registerBurnMomentumHook({ narrate, persist } = {}) {
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
+      return;
+    }
+    if (blocker === "choice-made") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — the consequence was already chosen";
+      btn.title       = UPGRADE_CHOSEN_TITLE;
       return;
     }
     if (blocker === "original-pending") {
@@ -364,10 +403,10 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | burnMomentum: card ${messageId} already burned — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(burn, flags.improve);
+  const blocker = resultUpgradeBlocker(burn, flags.improve)
+    ?? (consequenceChosen(burn.resolutionId) ? "choice-made" : null);
   if (blocker) {
-    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${blocker === "original-pending"
-      ? "the original outcome is not recorded yet" : "the result was already improved"}; burn refused.`);
+    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);
     return { applied: false, reason: blocker };
   }
   const actor = resolveActor(burn.actorId);
@@ -413,29 +452,40 @@ async function handleBurnClick(message, { narrate, persist }) {
 
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
 
-  await applyBurnMeterDeltas({
-    actor,
-    burnState: burn,
+  // Claimed before any effect (issue #311 P06): the consumed stamp followed
+  // the writes, its refusal only warned, so a fresh render of the card offered
+  // the burn again and a second press applied it again. Refused, nothing is
+  // applied and the button re-arms.
+  if (!(await claimUpgradeCard(message, "burn"))) return { applied: false, reason: "claim-refused" };
+
+  // Each write after the claim: one the world refuses goes to the GMs, with a
+  // Retry (resultUpgrade.js applyUpgradeStep).
+  const failures = [];
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
+    burnState:        burn,
     currentMomentum:  momentum.value,
     newMomentumReset: momentum.reset,
     newConsequences,
-  });
+  }) }, failures);
 
   // Revert Pay-the-Price side effects that fired before the burn button was
   // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss). Best-effort; failures are
-  // warned and do not block the rest of the burn flow.
+  // -1 from a PtP table roll on the original miss).
   if (burn.ptpReversals) {
-    await revertPtpEffects(burn.ptpReversals, actor).catch(err =>
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
 
-  // Mark the card as consumed so the button disables on re-render and so
-  // the renderChatMessage re-runs cannot fire a second burn.
-  await message.update({
-    [`flags.${MODULE_ID}.burn.consumed`]: true,
-    content: buildBurnedCardContent(message.content, burnResult, newConsequences),
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: message.update failed:`, err));
+  // The original outcome's pending choice is retired and the burned outcome's
+  // offered once (issue #311 P03).
+  await reconcileChoices({
+    resolutionId: burn.resolutionId, kind: "burn", actor, moveId: burn.moveId,
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures,
+  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err));
+
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences) })
+    .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
+  await reportUpgradeFailures(actor, failures);
 
   // Supersede the original narration card (F13a): the burn changed the outcome,
   // so the prose describing the pre-burn result is now stale. Strike it through
@@ -453,70 +503,22 @@ async function handleBurnClick(message, { narrate, persist }) {
   return { applied: true };
 }
 
-async function applyBurnMeterDeltas({ actor, burnState, currentMomentum, newMomentumReset, newConsequences }) {
+/**
+ * The meter changes a burn makes. The original outcome is on the sheet (a burn
+ * is accepted only once it is recorded): momentum goes to the reset value plus
+ * the upgraded outcome's momentum; health / spirit / supply swap the original's
+ * change for the upgraded one's.
+ */
+function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences }) {
   const orig = burnState.originalConsequences ?? {};
-
-  // The original outcome is on the sheet (a burn is accepted only once it is
-  // recorded): momentum goes to the reset value plus the upgraded outcome's
-  // momentum; health / spirit / supply swap the original's change for the
-  // upgraded one's.
   const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
   const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
-
-  await applyMeterChanges(actor, {
+  return {
     momentum: targetMomentum - currentMomentum,
     health:   swap("healthChange"),
     spirit:   swap("spiritChange"),
     supply:   swap("supplyChange"),
-  });
-}
-
-/**
- * Revert the Pay-the-Price side effects that fired on the original miss before
- * the player clicked Burn: clock advances (tension + vow) and simple PC-meter
- * losses from the PtP table's suffer route (health/spirit/supply/momentum).
- *
- * Complex routes (withstand_damage, companion_takes_a_hit) are not reversed —
- * consistent with the existing policy of not rolling back auto-debility flips.
- *
- * Posts a brief "⏰ Burn reversal" chat card listing what was unwound.
- */
-async function revertPtpEffects(ptpReversals, actor) {
-  const reverted = [];
-
-  // 1. Rewind clock advances
-  const tensionIds = (ptpReversals.clocksAdvanced ?? []).filter(c => c.type === "tension" && c._id).map(c => c._id);
-  const vowEntries = (ptpReversals.clocksAdvanced ?? []).filter(c => c.type === "vow" && c.actorId && c.itemId);
-
-  if (tensionIds.length) {
-    const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-    await revertTensionClocksForBurn(tensionIds);
-    for (const c of ptpReversals.clocksAdvanced.filter(c => c.type === "tension" && c._id)) {
-      reverted.push(`${c.name} clock rewound`);
-    }
-  }
-  if (vowEntries.length) {
-    const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
-    await revertVowClocksForBurn(vowEntries);
-    for (const v of vowEntries) {
-      reverted.push(`${v.name} clock rewound`);
-    }
-  }
-
-  // 2. Refund simple PC-meter loss from PtP suffer route
-  const delta = ptpReversals.sufferMeterDelta;
-  if (delta?.meterKey && actor) {
-    await applyMeterChanges(actor, { [delta.meterKey]: +delta.amount });
-    reverted.push(`${delta.meterKey} +${delta.amount} refunded`);
-  }
-
-  if (!reverted.length) return;
-
-  const lines = reverted.map(r => `<li>${r}</li>`).join("");
-  await ChatMessage.create({
-    content: `<div class="sf-clock-card"><strong>⏰ Burn reversal</strong><p>Momentum burned — the Price reverts:</p><ul>${lines}</ul></div>`,
-    flags:   { [MODULE_ID]: { clockCard: true, burnReversal: true } },
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: revert card failed:`, err));
+  };
 }
 
 async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, narrate, persist }) {
@@ -560,7 +562,7 @@ async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, na
   const speakerActorId = burn.actorId ?? null;
   await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
-    // Don't double-persist meters — applyBurnMeterDeltas above already did
+    // Don't double-persist meters — the burn's meter step above already did
     // that. Just append the upgraded resolution to the session log via a
     // minimal resolution that carries no consequences.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };

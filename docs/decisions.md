@@ -6,6 +6,87 @@ rejected.
 
 ---
 
+## Issue #311 audit: a weak recovery is the strong one plus its cost; an upgrade owns what its outcome set off; completions are stamped (2026-10)
+
+**Decision:** (issue #311. The maintainer asked for the issue to be tackled
+on 2026-10-29. Each finding's ID in brackets.)
+- **Negative momentum cancels a matching action die** [P01]. The roller's
+  momentum is read as the dice are rolled — the pipeline passes
+  `readMomentumState(rollerActor).value` to `resolveMove`, and `!bond` reads
+  its roller's — and `cancelsActionDie` cancels the die when the momentum is
+  negative and equals it: the score is the stat plus adds. The die stays on
+  the record (`actionDieCancelled`), struck through on the card. A burn never
+  meets this (it needs positive momentum); progress rolls have no die.
+- **A weak recovery is the strong hit's plus its cost** [P02]. Heal's and
+  Hearten's recovery is written once (`healRecovery` / `heartenRecovery`);
+  a weak hit chains each recovery option with each cost (`withCost`). The
+  cost rides the choice: Hearten's Lose Momentum (-1) is no longer a direct
+  delta, so it lands with the recovery it pays for.
+- **An upgrade is claimed before its effects** [P06], as a suffer pick is
+  (#309 N07): Burn Momentum and Improve Result save the card's `consumed`
+  first, and a refused claim applies nothing. Every write after the claim —
+  the meter swap, the Pay the Price refund and clock rewinds, the upgraded
+  choice card — runs through `applyUpgradeStep`; a refused one goes on the
+  GMs' payoff failure card as an `upgrade` step, its Retry applying it once.
+- **Both upgrades undo the superseded miss's Pay the Price, from what
+  landed** [P04, P05]. The dispatcher returns the move it ran and the
+  meter's before / after; the receipt (`ptpMeterReceipt`) is the landed
+  loss, nothing when it was clamped. `revertPayThePrice` (resultUpgrade.js)
+  rewinds the clocks and refunds the receipt for either upgrade. A burn
+  refunds no momentum — its reset already replaces it.
+- **An upgrade reconciles its move's choice cards** [P03]. Choice cards
+  carry their move's `resolutionId`. After its claim an upgrade retires the
+  superseded outcome's pending card and posts the upgraded outcome's choice
+  once, for the move's vehicle, companion and fight (`targets` on both
+  upgrades' card state). A pick on a superseded card is refused whether or
+  not the retirement landed — the move card's claimed upgrade is the check.
+- **A chosen consequence closes both upgrades** [P03]. The rules burn
+  momentum "before applying any other effects of the move", and what a
+  choice applied is not undone: upgrading after it would stack two
+  outcomes' choices (a weak Heal's recovery, then the strong hit's again). A
+  claimed pick stamps the move card `choiceMade`, whose buttons say why; the
+  GM handlers check the choice cards themselves (`consequenceChosen`).
+- **A seed-based Finalise keeps the completion contract** [P07]. Ships and
+  connections finalize through their seed, which now runs only when the
+  record has no `finalizedAt` or `force` is set, and stamps it in the
+  payload it writes. A connection the creation hook already seeded gets the
+  stamp as its only write. Regenerate flavour (force) still rewrites a
+  ship's introduction in its Notes, as decided for the T1 lifecycle (D2).
+- **Each PC's session momentum is its own step** [P08]. A refused award
+  goes on the GMs' payoff card as a `momentum` step (with its session), whose
+  Retry gives that PC alone the momentum; the session still ends once. An End
+  on the ended session names the PCs still owed instead of "it was taken".
+  Begin a Session's vignette momentum shares the helper.
+
+**Reason:** issue #311 reproduced each defect (eleven probes and a control)
+on `62bc92d`; the probes pass inverted after the fixes, and the regression
+tests that came with the fixes fail with each fix taken out
+(`docs/testing/fix-sensitivity.md`).
+
+**Rejected:**
+- *Post the upgraded outcome's choice even after the original's was chosen*
+  (P03) — a weak Heal's recovery would be given twice; *skip it then* — a
+  miss's cost card resolved before a burn would lose the strong hit's
+  benefit; *reverse the chosen card's effects* — its impacts and at-0
+  escalations (a mortal wound roll, a marked impact) are not invertible.
+  Closing both upgrades once a consequence is chosen is the rules' order.
+- *Retire the old card only* (P03) — a refused retirement would leave it
+  live; the pick-time check doesn't depend on that write.
+- *Re-apply Hearten's -1 directly and offer only the recovery* (P02) — the
+  cost would land whether or not the recovery was ever taken.
+- *Let a repeat End a Session pay a missing award* (P08) — a second retry
+  route beside the GMs' card, which could pay it twice; as for every payoff
+  step, the card's Retry is the one.
+- *Re-check the stamp after the effects, as before, and retry the whole
+  upgrade on refusal* (P06) — a partly applied upgrade would apply its
+  landed writes again; claiming first is #309 N07's rule.
+
+**Trade-offs accepted:** a player who chooses the consequence before
+upgrading can no longer upgrade. A choice card posted before this change
+carries no `resolutionId` and is not reconciled. An upgraded outcome's other
+pipeline effects — combat or expedition progress, a combat position, legacy
+marks — still don't run (known-issues UPGRADE-PIPELINE-EFFECTS).
+
 ## Issue #309 audit: a consequence changes what its move was about; claims before effects; a session ends once (2026-10)
 
 **Decision:** (issue #309. The maintainer asked for every verified finding to
@@ -2615,6 +2696,12 @@ separate one-time portrait regen owns that.
 `faction`/`creature` are journal-backed and sparse; none are in the affordance.
 Extending to them later is just adding entries to the `GETTERS`/`UPDATERS` maps.
 
+**Update (FOLDER-002, issue #311 P07):** ship and connection Finalise run their
+seed (oracles, modules, Notes, art) instead of the flavour pass, under the same
+contract: finalized and not forced is left as it is, and a successful seed
+stamps `finalizedAt`. The seed path skipped both, so a ship's repeat Finalise
+rewrote its Notes.
+
 **Fail-safe:** with no Claude key, `finalizeEntity` returns `{ ok:false,
 reason:"no-flavor" }` and writes nothing; the panel surfaces a notification.
 Generation is grounded strictly in stored fields with an explicit "do not invent
@@ -3100,6 +3187,11 @@ abilities); offered only when the rolled outcome is below a strong hit. The
 asset clock is advanced mechanically when present; a non-clock cost is surfaced
 as a card note for the player to apply.
 
+**Update (issue #311):** an improvement does what a burn does to the
+superseded outcome — reverts its miss's Pay the Price (P05), retires its
+pending choice card and posts the strong hit's (P03) — and both claim the
+card before any effect (P06). See "Issue #311 audit".
+
 ---
 
 ## Sector scene padding: never zero (2026-06-13)
@@ -3526,6 +3618,12 @@ those touch vehicle/companion stats and at-zero escalations (vehicle-damage
 d100, companion destruction) that are not cleanly invertible. Consistent with
 the pre-existing policy of not rolling back auto-debility flips on burn; if a
 playtest shows it matters we extend.
+
+**Update (issue #311 P04, P05):** the refund is what the route landed — the
+move the dispatcher ran and the meter's before / after — not the table's
+annotation, and the reversal (`revertPayThePrice`, `src/moves/resultUpgrade.js`)
+is shared with Improve Result. A burn refunds no momentum: its reset
+replaces it.
 
 ## Reach a Milestone marks the vow; result cards suggest it (2026-06-22)
 

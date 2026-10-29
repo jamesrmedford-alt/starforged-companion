@@ -1,13 +1,14 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306 and #309
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309 and #311
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306 and #309 audits and from issue #302's disturbance matrix
-(slice B): the tests that fail with the fix taken out. It was produced by
-`scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to `ec08eb4`),
-for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for the two
-follow-ups, the patches applied to `514f5eb`) and for issue #309 on
-2026-10-29 (the patch applied to `fd17788`). To reproduce:
+#300, #301, #306, #309 and #311 audits and from issue #302's disturbance
+matrix (slice B): the tests that fail with the fix taken out. It was produced
+by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
+`ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
+the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
+2026-10-29 (the patch applied to `fd17788`) and for issue #311 on 2026-10-29.
+To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -38,6 +39,10 @@ node scripts/fix-sensitivity.mjs \
 node scripts/fix-sensitivity.mjs \
   84390ef fa9290a d4c648c b40abbc 9d65ac9 0da44e1 611979e 1f0584c fd17788 \
   --inject scripts/defects/n02-integrity-to-pc.patch --md details.md
+
+# issue #311
+node scripts/fix-sensitivity.mjs \
+  d1d7826 4b8b3f3 c3e5dbc 52cdc67 2f7afdb 2e2aebc 97b4438 35f5ecf da75b67 --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -131,6 +136,23 @@ temporary git worktree; the checkout it is run from is not touched.
 | N08 END-SESSION-REPEAT | d4c648c | revert | 7 — `sessionRelayDialogs.test.js` (a second End; two at once; the first focus noted; a refused save then a retry; the dialog's wording; on a booted table, two players at once and one after the other) |
 | N09 BEGIN-SESSION-CACHE-WEDGE | fa9290a | revert | 1 — `sessionRelayDialogs.test.js` (a refused save leaves the cache as it was, and a retry begins the session) |
 
+### Issue #311 — the audit after #310
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| P01 NEG-MOMENTUM-IGNORED | d1d7826 | revert | 6 — `resolver.test.js` (-3 cancels a 3; adds still count; -2 leaves a 3; a progress roll has no die), `moveRules.test.js` (through the pipeline: a miss, not a strong hit), `bondCommand.test.js` (a `!bond` roll); 1 more fails only on the missing `cancelsActionDie` |
+| P02 WEAK-RECOVERY-COST-ONLY | 4b8b3f3 | revert | 9 — `moveRules.test.js` (5: weak Heal wounded paying momentum and paying supply, unwounded; weak Hearten shaken and not), `resolver.test.js` (4: the composed Heal and Hearten options, fresh copies per call, Hearten's table row) |
+| P04 BURN-REFUND-NOMINAL | c3e5dbc | revert | 2 — `resultUpgrade.test.js` (a loss clamped at 0 is not refunded; the solo fallback's loss is) |
+| P05 IMPROVE-PTP-KEPT | 52cdc67 | revert | 3 — `resultUpgrade.test.js` (Improve rewinds the clock and refunds the health; its reversal card), `improveResult.test.js` (the improve card carries the reversals) |
+| P06 UPGRADE-STAMP-REPEAT | 2f7afdb | revert | 6 — `resultUpgrade.test.js` (4: a refused Improve claim, a refused Burn claim, a meter write refused after the claim and its GM Retry, a refused refund after a burn), `actorBridge.test.js` (2: the vow-clock rewind reports what it could not save) |
+| P03 UPGRADE-CHOICES-STALE | 2e2aebc, 97b4438 | revert | 8 + 1 — `resultUpgrade.test.js` (6: a burned Face Danger's card retired; a refused retirement still refuses the pick; a burned Hearten offers its recovery once; an improved Heal too; a chosen consequence closes the burn; the GM checks the cards when the close stamp is lost), `burnMomentum.test.js` (2: the blocker's "choice-made", the burn card's targets); 97b4438's own: a pick whose follow-up picker cannot be posted leaves the upgrades open |
+| P07 SHIP-FINALIZE-REPEAT | 35f5ecf | revert | 4 — `finalizeLifecycle.test.js` (a repeat Finalise keeps the edited Notes and calls no one; Regenerate re-stamps), `finalize.test.js` (2: a seeded connection's first Finalise stamps it; a blank one too) |
+| P08 SESSION-BONUS-NO-RETRY | da75b67 | revert | 2 — `sessionMomentum.test.js` (End: the refused PC's award goes to the GMs' Retry, End again names it, the Retry pays it once; Begin's vignette the same) |
+
+The audit's own probes (issue #311 appendices A and B), with their
+assertions inverted to the expected behaviour, pass on the fixed code: all
+twelve.
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -166,6 +188,11 @@ ways; each was read and is a control:
 | `progressTrackSelection` › an older card that names no fight, one fight open, still rolls that fight | a card without the stamp, one fight open (TDA-BUTTON-NO-TARGET) |
 | `progressTrackSelection` › a typed Take Decisive Action that names its fight rolls it without asking | no question when the fight is named (TDA-BUTTON-NO-TARGET) |
 | `sufferCard` › weak hit: unavailable — and nothing charged — when the companion is at 0 | the recovery's own rule: no health, no trade (#309 N03) |
+| `moveRules` › a negative momentum that does not match leaves the die: -2 with a 3 is a strong hit | a nonmatching negative momentum (#311 P01) |
+| `resolver` › positive momentum, or none given, cancels nothing | no momentum input, as Quench's calls (#311 P01) |
+| `bondCommand` › a negative momentum that does not match the die leaves it | the same on `!bond` (#311 P01) |
+| `resultUpgrade` › the ordinary route still refunds its loss: Endure Harm, health 5 → 4 → 5 | the refund that already worked (#311 P04) |
+| `resultUpgrade` › Burn Momentum to a strong hit: the clock rewinds to 0/4 and health 4 → 5 | the burn's reversal, which Improve now shares (#311 P05) |
 
 Two more passed both ways under 611979e's revert because they cover N02,
 fixed in the commit before it: `consequenceTargets` › a strong hit's +1
@@ -1113,3 +1140,152 @@ Test files: `tests/unit/consequenceTargets.test.js`, `tests/unit/sufferCard.test
 | tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) the PC's own battered impact is not the vehicle's | AssertionError: expected 2 to be 3 // Object.is equality |
 | tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) a card naming no vehicle (posted before this fix) changes the command vehicle | AssertionError: expected 2 to be 3 // Object.is equality |
 | tests/unit/sufferCard.test.js › Withstand Damage — its integrity choices change the vehicle (issue #309 N02) no vehicle at all: +1 integrity is unavailable, and a -1 the card cannot apply says so | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to contain 'Not applied: integrity -1 — no vehicl…' |
+
+### d1d7826 — fix: negative momentum cancels a matching action die (issue #311 P01)
+
+Test files: `tests/unit/bondCommand.test.js`, `tests/unit/moveRules.test.js`, `tests/unit/resolver.test.js`. Source restored: 5 file(s).
+
+- With the fix: 293 passed, 0 failed.
+- Without it: 7 failed (7 new; 1 only for a missing export); 286 still pass (3 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/bondCommand.test.js › handleBondCommand — author client the roller's negative momentum cancels a matching action die | AssertionError: expected '&lt;div class="sf-bond-card">&lt;strong>Dev…' to match /…/s> \(cancelled by momentum -3\) \+ 2 = &lt;strong>2&lt;\ |
+| (new) tests/unit/moveRules.test.js › P01 — negative momentum cancels a matching action die momentum -3 cancels a 3: iron 3 against 4 and 5 is a miss, not a strong hit | AssertionError: expected 'strong_hit' to be 'miss' // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die momentum -3 cancels a 3: the score is the stat alone, a miss against 4 and 5 | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die adds still count with the die cancelled | AssertionError: expected 8 to be 5 // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die a negative momentum that does not match leaves the die: -2 with a 3 scores 6 | AssertionError: expected undefined to be false // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die a progress roll has no action die to cancel | AssertionError: expected undefined to be false // Object.is equality |
+| (new) (API) tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die cancelsActionDie matches the die to the momentum's absolute value | TypeError: cancelsActionDie is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/bondCommand.test.js › handleBondCommand — author client a negative momentum that does not match the die leaves it
+- New test passing with and without the fix (a control?): tests/unit/moveRules.test.js › P01 — negative momentum cancels a matching action die a negative momentum that does not match leaves the die: -2 with a 3 is a strong hit
+- New test passing with and without the fix (a control?): tests/unit/resolver.test.js › resolveMove negative momentum cancels a matching action die positive momentum, or none given, cancels nothing
+
+### 4b8b3f3 — fix: a weak Heal or Hearten recovers, then pays its cost (issue #311 P02)
+
+Test files: `tests/unit/moveRules.test.js`, `tests/unit/resolver.test.js`. Source restored: 1 file(s).
+
+- With the fix: 282 passed, 0 failed.
+- Without it: 9 failed (8 new; 0 only for a missing export); 273 still pass (0 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/moveRules.test.js › P02 — a weak recovery is the strong hit's, plus its cost weak Heal, wounded, paying momentum: wounded cleared, health 1 → 3, momentum 8 → 6 | AssertionError: expected { health: 1, spirit: 5, …(4) } to match object { health: 3, wounded: false, …(2) } |
+| (new) tests/unit/moveRules.test.js › P02 — a weak recovery is the strong hit's, plus its cost weak Heal, wounded, paying supply: wounded cleared, health 1 → 3, supply 3 → 1 | AssertionError: expected { health: 1, spirit: 5, …(4) } to match object { health: 3, wounded: false, …(2) } |
+| (new) tests/unit/moveRules.test.js › P02 — a weak recovery is the strong hit's, plus its cost weak Heal, not wounded: +3 health then the cost; the wounded options are unavailable | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to match /data-option-index="0" disabled/ |
+| (new) tests/unit/moveRules.test.js › P02 — a weak recovery is the strong hit's, plus its cost weak Hearten, shaken: shaken cleared, spirit 1 → 2, momentum 8 → 7 — paid with the recovery | AssertionError: expected 7 to be 8 // Object.is equality |
+| (new) tests/unit/moveRules.test.js › P02 — a weak recovery is the strong hit's, plus its cost weak Hearten, not shaken: spirit 1 → 3, momentum 8 → 7 | TypeError: Cannot read properties of undefined (reading '_id') |
+| tests/unit/resolver.test.js › mapConsequences — full handler coverage hearten:weak_hit returns a complete consequences object | AssertionError: expected -1 to be +0 // Object.is equality |
+| (new) tests/unit/resolver.test.js › recover-move dialog prompts heal:weak_hit offers the strong hit's recovery, then each cost | AssertionError: expected [ { …(3) }, { …(3) } ] to have a length of 4 but got 2 |
+| (new) tests/unit/resolver.test.js › recover-move dialog prompts hearten:weak_hit offers the strong hit's recovery, then Lose Momentum (-1) — not a bare -1 | AssertionError: expected -1 to be +0 // Object.is equality |
+| (new) tests/unit/resolver.test.js › recover-move dialog prompts each call returns its own options — a prompt stored on one card is not another's | TypeError: Cannot read properties of undefined (reading 'push') |
+
+### c3e5dbc — fix: a burn refunds the Pay the Price loss that landed (issue #311 P04)
+
+Test files: `tests/unit/resultUpgrade.test.js`. Source restored: 2 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed a loss clamped at 0 health is not refunded: health stays 0 | AssertionError: expected { Object (move, amount, ...) } to be null |
+| (new) tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed the solo fallback's real loss is refunded: companion route → Endure Harm, health 5 → 4 → 5 | AssertionError: expected null to match object { move: 'endure_harm', …(5) } |
+
+- New test passing with and without the fix (a control?): tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed the ordinary route still refunds its loss: Endure Harm, health 5 → 4 → 5
+
+### 52cdc67 — fix: Improve Result undoes the miss's Pay the Price, as a burn does (issue #311 P05)
+
+Test files: `tests/unit/improveResult.test.js`, `tests/unit/resultUpgrade.test.js`. Source restored: 4 file(s).
+
+- With the fix: 19 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 16 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/improveResult.test.js › buildImproveState carries the miss's Pay the Price reversals, as the burn's card does | AssertionError: expected undefined to deeply equal { clocksAdvanced: [ { …(3) } ], …(1) } |
+| (new) tests/unit/resultUpgrade.test.js › P05 — both upgrades undo the superseded miss's Pay the Price Improve Result to a strong hit: the clock rewinds to 0/4 and health 4 → 5 | AssertionError: expected 1 to be +0 // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P05 — both upgrades undo the superseded miss's Pay the Price the improvement's own cost still stands: its note is on the card | TypeError: .toMatch() expects to receive a string, but got undefined |
+
+- New test passing with and without the fix (a control?): tests/unit/resultUpgrade.test.js › P05 — both upgrades undo the superseded miss's Pay the Price Burn Momentum to a strong hit: the clock rewinds to 0/4 and health 4 → 5
+
+### 2f7afdb — fix: a burn or improvement is claimed before its effects (issue #311 P06)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/resultUpgrade.test.js`. Source restored: 5 file(s).
+
+- With the fix: 102 passed, 0 failed.
+- Without it: 6 failed (5 new; 0 only for a missing export); 96 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/actorBridge.test.js › revertVowClocksForBurn is a no-op for empty input | AssertionError: expected undefined to deeply equal [] |
+| (new) tests/unit/actorBridge.test.js › revertVowClocksForBurn returns the entries whose write was refused | AssertionError: expected undefined to deeply equal [ { …(3) } ] |
+| (new) tests/unit/resultUpgrade.test.js › P06 — an upgrade is claimed before its effects a refused Improve Result claim applies nothing; the press after a fresh render applies it once | AssertionError: expected 4 to be 3 // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P06 — an upgrade is claimed before its effects a refused Burn Momentum claim applies nothing; the press after a fresh render burns once | AssertionError: expected 4 to be 8 // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P06 — an upgrade is claimed before its effects a meter write refused after the claim is told to the GMs, and their Retry applies it once | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P06 — an upgrade is claimed before its effects a Pay the Price refund refused after a burn's claim is retried for that PC alone | TypeError: Cannot read properties of undefined (reading 'flags') |
+
+### 2e2aebc — fix: an upgraded result's choice cards follow it (issue #311 P03)
+
+Test files: `tests/unit/burnMomentum.test.js`, `tests/unit/resultUpgrade.test.js`. Source restored: 6 file(s).
+
+- With the fix: 38 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 30 still pass (0 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/burnMomentum.test.js › resultUpgradeBlocker names the reason in order: already upgraded, consequence chosen, original pending | AssertionError: expected null to be 'choice-made' // Object.is equality |
+| (new) tests/unit/burnMomentum.test.js › buildBurnState — the move's targets carries them for the upgraded outcome's choice card | AssertionError: expected undefined to deeply equal { vehicleActorId: 'ship-1', …(2) } |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a weak Face Danger burned to a strong hit retires its suffer card — the obsolete cost is not charged | AssertionError: expected undefined to be 'UzaCFccB34I1Wb61' // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a pick still refuses when the card could not be retired, and retires it then | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a weak Hearten burned to a strong hit offers the strong hit's recovery, once | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a weak Heal improved to a strong hit offers the strong hit's recovery, with no cost | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a consequence chosen first closes Burn Momentum — the button says so, and the GM refuses it | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards the GM checks the choice cards themselves, so a lost close stamp does not reopen the upgrade | AssertionError: expected true to be falsy |
+
+### 35f5ecf — fix: a ship's Finalise completes once (issue #311 P07)
+
+Test files: `tests/unit/finalize.test.js`, `tests/unit/finalizeLifecycle.test.js`. Source restored: 3 file(s).
+
+- With the fix: 28 passed, 0 failed.
+- Without it: 4 failed (3 new; 0 only for a missing export); 24 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/finalize.test.js › finalizeEntity — connection runs the seed (finalize-first) seeds a blank connection card: oracles → Characteristics, marks seeded | AssertionError: expected undefined to deeply equal Any&lt;String> |
+| (new) tests/unit/finalize.test.js › finalizeEntity — connection runs the seed (finalize-first) on a card the creation hook seeded, Finalise records completion only — Notes kept | AssertionError: expected undefined to deeply equal Any&lt;String> |
+| (new) tests/unit/finalizeLifecycle.test.js › P07 — a ship's Finalise completes once; Regenerate is the way to write it again the first Finalise stamps finalizedAt; a second ordinary one keeps the edited Notes and asks the narrator nothing | AssertionError: expected undefined to deeply equal Any&lt;String> |
+| (new) tests/unit/finalizeLifecycle.test.js › P07 — a ship's Finalise completes once; Regenerate is the way to write it again Regenerate (force) writes the introduction again and re-stamps completion | AssertionError: expected false to be true // Object.is equality |
+
+### da75b67 — fix: a session momentum award that does not land can be retried (issue #311 P08)
+
+Test files: `tests/unit/sessionMomentum.test.js`. Source restored: 2 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sessionMomentum.test.js › P08 — a session momentum award that does not land is retried for that PC End: the refused PC's +1 goes to the GMs' Retry; End again pays nothing and says so; the Retry pays it once | TypeError: Cannot read properties of undefined (reading 'flags') |
+| (new) tests/unit/sessionMomentum.test.js › P08 — a session momentum award that does not land is retried for that PC Begin's Spotlight Vignette momentum is reported the same way | TypeError: Cannot read properties of undefined (reading 'flags') |
+
+### 97b4438 — fix: a consequence closes its move's upgrades once its choice stands (issue #311 P03)
+
+Test files: `tests/unit/resultUpgrade.test.js`. Source restored: 1 file(s).
+
+- With the fix: 17 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 16 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a pick whose follow-up picker cannot be posted re-opens its card, and leaves the upgrades open | AssertionError: expected true to be undefined |

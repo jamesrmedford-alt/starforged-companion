@@ -24,7 +24,15 @@ Two cross-cutting facts to hold onto:
   recorded original for the upgraded outcome, burns the PC's live momentum
   (bounds from `actorBridge.readMomentumState`), and spends the other, so one
   card is upgraded at most once. The pipeline gives each resolution an `_id`
-  so the upgrade can strike the original narration card. The
+  so the upgrade can strike the original narration card. Each upgrade claims
+  the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
+  it reverts the miss's Pay the Price from what the route landed, retires the
+  move's pending choice card (bound by `resolutionId`) and posts the upgraded
+  outcome's choice for the move's fight, vehicle and companion; a write that
+  does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
+  A consequence chosen first closes both. The upgraded outcome's other
+  effects — a Strike's progress, a combat position — do not run
+  (known-issues UPGRADE-PIPELINE-EFFECTS). The
   threshold card's **Enter the Fray** still uses its older ad-hoc relay
   (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
   the canonical GM — no no-GM warning).

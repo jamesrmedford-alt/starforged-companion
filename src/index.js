@@ -38,6 +38,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
@@ -81,7 +82,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -1053,7 +1054,11 @@ export function registerChatHook() {
       // current location is a vault or derelict, explore_a_waypoint rolls
       // that site's canonical interior tables.
       const currentSite = getCurrentSiteKind(campaignState);
-      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite });
+      // The roller's momentum as the dice are rolled: negative and matching the
+      // action die, it cancels the die (resolver cancelsActionDie). Never read,
+      // a -3 momentum never cancelled a 3 (issue #311 P01).
+      const momentum = rollerActor ? readMomentumState(rollerActor).value : null;
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum });
       // resolveMove leaves the id to its caller. The move card's Burn / Improve
       // flags and the narration card both carry it, and superseding the
       // original narration after an upgrade finds that card by it — with no id
@@ -1665,12 +1670,21 @@ export function registerChatHook() {
       // Step 9: post move result card. Determine burn eligibility against the
       // active character so the card can carry a 🔥 Burn Momentum button when
       // the dice would actually improve under burn.
+      // What the move was made against: its suffer-choice card changes that
+      // vehicle, companion or fight (issue #309), and so does the choice card
+      // an upgrade of its result posts (issue #311 P03).
+      const moveTargets = {
+        vehicleActorId:  interpretation.vehicleActorId ?? null,
+        companionItemId: interpretation.companionItemId ?? null,
+        combatTrackId:   moveFight?.id ?? null,
+      };
       const burnActor   = rollerActor;
-      const burnState   = buildBurnState(resolution, burnActor, ptpReversals);
+      const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
-      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor);
+      // A miss's Pay the Price is undone by either upgrade (issue #311 P05).
+      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals, moveTargets);
       // "Reach a Milestone" suggestion (playtest: surface vow progress on a
       // success). Eligible on a quest-advancing hit when the PC has an open vow;
       // clicking marks progress without retyping the move. See moves/milestone.js.
@@ -1702,11 +1716,7 @@ export function registerChatHook() {
       if (game.user.isGM) {
         // What the move was made against rides onto its suffer-choice card,
         // so a choice changes that vehicle, companion or fight (issue #309).
-        await persistResolution(resolution, campaignState, speakerActorId, {
-          vehicleActorId:  interpretation.vehicleActorId ?? null,
-          companionItemId: interpretation.companionItemId ?? null,
-          combatTrackId:   moveFight?.id ?? null,
-        });
+        await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers
         // refuse) until this stamp — a burn clicked during the narration above
@@ -4211,6 +4221,8 @@ const PAYOFF_TITLES = {
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
   legacyXp:    ()  => `Legacy experience not given`,
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  session:     ()  => `Session momentum not given`,
 };
 
 /**
@@ -4223,7 +4235,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4259,6 +4271,8 @@ function payoffStepRecord(f) {
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
+    case "upgrade":     return upgradeStepRecord(f);
+    case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4286,6 +4300,16 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
         return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+      }
+      case "upgrade":
+        // A burn's or an improvement's write after its claim (issue #311 P06).
+        return describeUpgradeStep(f, why);
+      case "momentum": {
+        // A PC's Begin / End a Session momentum (issue #311 P08).
+        const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who = escapeChatHtml(pc?.name ?? "a character");
+        const now = pc ? ` ${who}'s momentum stands at ${readCharacterSnapshot(pc)?.meters?.momentum ?? "?"} now.` : "";
+        return `+${f.amount ?? 1} momentum for ${who}${f.award ? ` (${escapeChatHtml(f.award)})` : ""} — ${why}.${now}`;
       }
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
@@ -4373,6 +4397,23 @@ async function runPayoffStep(s, card, copies) {
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
       const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
+    }
+    case "upgrade":
+      // A burn's or an improvement's write refused after its claim (issue #311 P06).
+      return retryUpgradeStep(s);
+    case "momentum": {
+      // A PC's session momentum the world refused — that PC's alone (issue #311 P08).
+      const amount = Math.floor(Number(s.amount));
+      if (!(amount >= 1 && amount <= 2)) return { ok: false, reason: "invalid step" };
+      const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      try {
+        await applyMeterChanges(pc, { momentum: amount });
+        return { ok: true };
+      } catch (err) {
+        console.warn(`${MODULE_ID} | payoff retry: momentum for ${pc.name} refused again:`, err?.message ?? err);
+        return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+      }
     }
     case "xp": {
       // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
@@ -4747,19 +4788,15 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
   }
 
   // Dispatch suffer executor first (before clock advance) so meter changes land
-  // before the burn button is visible. Track which route fired so the burn
-  // reversal can undo only what was actually applied.
+  // before the burn button is visible. The receipt is what landed, so the burn
+  // reversal undoes only that.
   let sufferMeterDelta = null;
   if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err =>
-      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err));
-    // Only track simple PC-meter routes; withstand_damage / companion_takes_a_hit
-    // affect vehicle/companion stats and are excluded from auto-reversal.
-    const { move, amount } = result.sufferRoute;
-    const REVERSIBLE = { endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply", lose_momentum: "momentum" };
-    if (REVERSIBLE[move]) {
-      sufferMeterDelta = { move, amount: amount ?? 1, meterKey: REVERSIBLE[move] };
-    }
+    const landed = await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err => {
+      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err);
+      return null;
+    });
+    sufferMeterDelta = ptpMeterReceipt(landed);
   }
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -4776,6 +4813,26 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
   });
 
   return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDelta };
+}
+
+/**
+ * The PC-meter loss a Pay the Price route actually caused, for the burn
+ * reversal to refund: the move the dispatcher ran — "companion in harm's way"
+ * runs Endure Harm with no companion — and the meter's before and after, so a
+ * loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
+ * Companion Takes a Hit change a vehicle or a companion, which a burn does not
+ * reverse. The table's annotation stood in for it, so a burn raised health a
+ * clamped loss never took and skipped the fallback's real one (issue #311 P04).
+ *
+ * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
+ * @returns {{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number }|null}
+ */
+function ptpMeterReceipt(landed) {
+  const meterKey = SUFFER_METERS[landed?.move];
+  if (!meterKey || landed.skipped) return null;
+  const amount = Number(landed.before) - Number(landed.after);
+  if (!(amount > 0)) return null;
+  return { move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after };
 }
 
 async function postForsakeVowCard(vowName) {
@@ -4833,6 +4890,9 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
  *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
  * @param {string|null} [actorId]
+ * @returns {Promise<Object|undefined>} the executor's result with the move it
+ *   ran (`move` — the fallback, when taken) and the PC (`actorId`); nothing
+ *   for an "any" route, which posts a picker
  */
 async function dispatchPayThePriceSufferRoute(route, actorId = null) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
@@ -4869,11 +4929,12 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null) {
     }
   }
 
-  return executeSuffer(move, actor, {
+  const landed = await executeSuffer(move, actor, {
     amount: route.amount ?? 1,
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
   });
+  return { ...landed, move, actorId: actor.id };
 }
 
 /** !sever <name> — GM-only: mark a connection lost/severed (kept inactive). */
@@ -5365,7 +5426,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
     ? `Progress: <strong>${resolution.progressScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`
-    : `Action: ${resolution.actionDie} + ${resolution.statValue}${addsStr}
+    : `Action: ${resolution.actionDieCancelled
+          ? `<s>${resolution.actionDie}</s> (cancelled by momentum -${resolution.actionDie})`
+          : resolution.actionDie} + ${resolution.statValue}${addsStr}
         = <strong>${resolution.actionScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`;

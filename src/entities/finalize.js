@@ -110,25 +110,33 @@ export function buildEntityFlavorPrompt(typeKey, record, tone = "wry") {
 }
 
 /**
-/**
  * Run the oracle/module/art seed for a ship or connection Actor as its Finalise
- * action. The seed functions are idempotent; `force` re-runs an already-seeded
- * card. Never throws.
+ * action, under the generic path's completion contract: a finalized record is
+ * left untouched unless `force` (Regenerate) is set, and a successful seed
+ * stamps `finalizedAt` in the record it writes. A ship's Finalise re-ran its
+ * seed on every press — a fresh introduction written over Notes the GM had
+ * edited, and another narrator call — and stamped nothing, so the Entity Panel
+ * kept offering Finalise instead of Regenerate (issue #311 P07). Never throws.
  */
 async function finalizeViaSeed(typeKey, hostId, campaignState, force) {
   const actor = globalThis.game?.actors?.get?.(hostId) ?? null;
   if (!actor) return { ok: false, reason: "not-found" };
+  const existing = actor.flags?.[MODULE_ID]?.[typeKey] ?? null;
+  if (existing?.finalizedAt && !force) {
+    return { ok: true, reason: "already-finalized", record: existing };
+  }
+  const finalizedAt = new Date().toISOString();
   try {
     if (typeKey === "ship") {
       const { seedStarshipActor } = await import("./ship.js");
-      const ship = await seedStarshipActor(actor, campaignState ?? {});
+      const ship = await seedStarshipActor(actor, campaignState ?? {}, { finalizedAt });
       return ship
         ? { ok: true, reason: force ? "regenerated" : "finalized", record: ship, artTriggered: true }
         : { ok: false, reason: "seed-failed" };
     }
     // connection
     const { seedConnectionActor } = await import("./connection.js");
-    const conn = await seedConnectionActor(actor, campaignState ?? {}, { force });
+    const conn = await seedConnectionActor(actor, campaignState ?? {}, { force, finalizedAt });
     return conn
       ? { ok: true, reason: force ? "regenerated" : "finalized", record: conn, artTriggered: true }
       : { ok: false, reason: "seed-failed" };

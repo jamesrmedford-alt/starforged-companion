@@ -162,10 +162,10 @@ rolls". Their consequences are where the actual meter writes happen.
 | `sojourn` weak | 1 each; max 3 group | text | **TEXT** |
 | `sojourn` miss | community demand OR Pay the Price | text | **B2** `{ kind: "enumerated", options: [{label:"Community demand (Swear an Iron Vow)", route:"swear_an_iron_vow"}, {label:"Pay the Price", route:"pay_the_price"}] }` |
 | `heal` strong | clear wounded + +2 health (or +3 if not wounded) | text | **A** — explicit meter writes per branch |
-| `heal` weak | as strong, Lose Momentum (−2) OR Sacrifice Resources (−2) | text | **B2** `{ kind: "enumerated", options: [{label:"Lose Momentum (-2)", suffer:"lose_momentum", amount:2}, {label:"Sacrifice Resources (-2)", suffer:"sacrifice_resources", amount:2}], chain:[/* + the heal write */] }` |
+| `heal` weak | as strong, Lose Momentum (−2) OR Sacrifice Resources (−2) | **B2** — the strong hit's recovery options, each chained with each cost (`withCost(healRecovery(), costs)`: four options, two available) | **B2** (issue #311 P02 — the options were the two costs alone, so a weak hit healed nothing) |
 | `heal` miss | Pay the Price | text | **PtP** |
 | `hearten` strong | clear shaken + +1 spirit (or +2 if not shaken) | text | **A** |
-| `hearten` weak | as strong, Lose Momentum (−1) | `momentumChange:-1` | **A** (unchanged) |
+| `hearten` weak | as strong, Lose Momentum (−1) | **B2** — the strong hit's recovery options, each chained with `{suffer:"lose_momentum", amount:1}` (`withCost(heartenRecovery(), …)`) | **B2** (issue #311 P02 — a bare `momentumChange:-1` took the cost and gave no recovery) |
 | `hearten` miss | Pay the Price | text | **PtP** |
 | `resupply` strong | clear unprepared + +1 supply (or +2 if not unprepared); may acquire item + +1 momentum | text | **B2** `{ kind: "enumerated", options: [{label:"Clear unprepared + supply", chain:[clear, supply]}, {label:"Acquire specific item + momentum", chain:[item, momentum]}] }` |
 | `resupply` weak | as strong with cost/complication | text | **TEXT** (narrative cost — no specific meter delta) |

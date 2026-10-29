@@ -9933,10 +9933,12 @@ function registerMomentumImpactMathTests(quench) {
 //
 // Rules 1.3 (cap at +10), 1.4 (reset to +2 after burn), 1.5 (negative
 // cancellation when action die matches abs(momentum)). The burn-formula
-// surface is `applyMomentumBurn` / `canBurnMomentum`. The negative-die
-// cancellation is implemented at the resolver layer and surfaces in
-// `tests/unit/burnMomentum.test.js`; this batch re-pins the burn shape
-// in the live-Foundry context.
+// surface is `applyMomentumBurn` / `canBurnMomentum`; the cancellation is
+// `cancelsActionDie`, which `resolveMove` applies with the roller's momentum
+// (the pipeline passes it — issue #311 P01: nothing did, and this comment
+// claimed unit tests that only covered burning). Its unit and pipeline
+// tests are `tests/unit/resolver.test.js` and `tests/unit/moveRules.test.js`;
+// this batch re-pins the shapes in the live-Foundry context.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerMomentumMathTests(quench) {
@@ -10012,6 +10014,17 @@ function registerMomentumMathTests(quench) {
           const { canBurnMomentum } = await import(`${MODULE_PATH}/moves/resolver.js`);
           // Original action score made this a weak_hit; momentum=8 beats both [3, 5] → strong_hit
           assert.isTrue(canBurnMomentum(8, "weak_hit", [3, 5], false));
+        });
+      });
+
+      describe("cancelsActionDie — negative momentum (rule 1.5)", function () {
+        it("cancels only the die that matches the negative momentum", async function () {
+          const { cancelsActionDie } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          assert.isTrue(cancelsActionDie(3, -3), "momentum -3 cancels a 3");
+          assert.isTrue(cancelsActionDie(6, -6), "momentum -6 cancels a 6");
+          assert.isFalse(cancelsActionDie(3, -2), "momentum -2 leaves a 3");
+          assert.isFalse(cancelsActionDie(3, 3), "positive momentum cancels nothing");
+          assert.isFalse(cancelsActionDie(3, null), "no momentum read cancels nothing");
         });
       });
     },

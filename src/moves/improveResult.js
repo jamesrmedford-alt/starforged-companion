@@ -35,8 +35,16 @@
  */
 
 import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
-import { getActor, applyMeterChanges }   from "../character/actorBridge.js";
+import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
+import {
+  revertPayThePrice,
+  claimUpgradeCard,
+  applyUpgradeStep,
+  reportUpgradeFailures,
+  reconcileChoices,
+  consequenceChosen,
+} from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
   relayCardButtonClick,
@@ -45,6 +53,8 @@ import {
   releaseResultUpgrade,
   resultUpgradeBlocker,
   UPGRADE_PENDING_TITLE,
+  UPGRADE_CHOSEN_TITLE,
+  UPGRADE_REFUSALS,
 } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
@@ -66,9 +76,13 @@ let _deps = { narrate: null, persist: null };
  * @param {Object} resolution             — the resolved move
  * @param {Array}  applicableAbilities     — scanForApplicableAbilities output
  * @param {Actor}  actor                    — active character
+ * @param {Object|null} [ptpReversals]     — what the miss's Pay the Price did
+ *   (the pipeline's, as for buildBurnState): the improvement undoes it
+ * @param {Object|null} [targets]          — the move's vehicle, companion and
+ *   fight, for the strong hit's choice card (as for buildBurnState)
  * @returns {Object|null}
  */
-export function buildImproveState(resolution, applicableAbilities, actor) {
+export function buildImproveState(resolution, applicableAbilities, actor, ptpReversals = null, targets = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
   if (!Array.isArray(applicableAbilities) || !applicableAbilities.length) return null;
@@ -89,6 +103,8 @@ export function buildImproveState(resolution, applicableAbilities, actor) {
     originalApplied:      false,            // flipped true once persistResolution writes
     actorId:              actor.id,
     resolutionId:         resolution._id ?? null,
+    ptpReversals:         ptpReversals ?? null,   // the superseded miss's Pay the Price, undone on improve
+    targets:              targets ?? null,        // for the strong hit's choice card
     // The cost: the ability's own clock.
     assetId:              ability.assetId ?? null,
     abilityIndex:         Number.isInteger(ability.abilityIndex) ? ability.abilityIndex : null,
@@ -162,6 +178,12 @@ export function registerImproveResultHook({ narrate, persist } = {}) {
       btn.textContent = "✦ Improve Result — momentum was already burned";
       return;
     }
+    if (blocker === "choice-made") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — the consequence was already chosen";
+      btn.title       = UPGRADE_CHOSEN_TITLE;
+      return;
+    }
     if (blocker === "original-pending") {
       // Re-rendered with the button live once the pipeline stamps the card.
       btn.disabled = true;
@@ -225,10 +247,10 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | improveResult: card ${messageId} already improved — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(improve, flags.burn);
+  const blocker = resultUpgradeBlocker(improve, flags.burn)
+    ?? (consequenceChosen(improve.resolutionId) ? "choice-made" : null);
   if (blocker) {
-    console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${blocker === "original-pending"
-      ? "the original outcome is not recorded yet" : "momentum was already burned"}; improvement refused.`);
+    console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);
     return { applied: false, reason: blocker };
   }
   const actor = getActor(improve.actorId);
@@ -271,15 +293,38 @@ async function handleImproveClick(message, { narrate, persist }) {
 
   const newConsequences = mapConsequences(improve.moveId, improve.improveTo, improve.isMatch);
 
-  await applyImproveMeterDeltas({ actor, improve, newConsequences });
+  // Claimed before any effect (issue #311 P06): the consumed stamp followed
+  // the benefit and the cost, its refusal only warned, so a fresh render of the
+  // card offered the improvement again and a second press applied it again.
+  // Refused, nothing is applied and the button re-arms.
+  if (!(await claimUpgradeCard(message, "improve"))) return { applied: false, reason: "claim-refused" };
+
+  // Each write after the claim: one the world refuses goes to the GMs, with a
+  // Retry (resultUpgrade.js applyUpgradeStep).
+  const failures = [];
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences) }, failures);
+
+  // The strong hit replaces a miss whose Pay the Price already landed: rewind
+  // its clocks and refund its meter loss, as a burn does — the improvement
+  // kept them on top of its own cost (issue #311 P05).
+  if (improve.ptpReversals) {
+    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures }).catch(err =>
+      console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
+  }
+
+  // The original outcome's pending choice is retired and the strong hit's
+  // offered once (issue #311 P03).
+  await reconcileChoices({
+    resolutionId: improve.resolutionId, kind: "improve", actor, moveId: improve.moveId,
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures,
+  }).catch(err => console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err));
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({
-    [`flags.${MODULE_ID}.improve.consumed`]: true,
-    content: buildImprovedCardContent(message.content, clockNote),
-  }).catch(err => console.warn(`${MODULE_ID} | improveResult: message.update failed:`, err));
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote) })
+    .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
+  await reportUpgradeFailures(actor, failures);
 
   // The pre-improvement prose is now stale — strike it through, keep history.
   await supersedeOriginalNarration(improve).catch(err =>
@@ -292,20 +337,20 @@ async function handleImproveClick(message, { narrate, persist }) {
 }
 
 /**
- * Swap the recorded original outcome's meter consequences for the strong-hit
- * ones (an improvement is accepted only once the original is on the sheet).
- * No momentum reset — unlike burn, the dice don't change; only the outcome
- * does.
+ * The meter changes an improvement makes: the recorded original outcome's
+ * consequences swapped for the strong hit's (an improvement is accepted only
+ * once the original is on the sheet). No momentum reset — unlike burn, the
+ * dice don't change; only the outcome does.
  */
-async function applyImproveMeterDeltas({ actor, improve, newConsequences }) {
+function improveMeterChanges(improve, newConsequences) {
   const orig  = improve.originalConsequences ?? {};
   const delta = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
-  await applyMeterChanges(actor, {
+  return {
     momentum: delta("momentumChange"),
     health:   delta("healthChange"),
     spirit:   delta("spiritChange"),
     supply:   delta("supplyChange"),
-  });
+  };
 }
 
 /**
@@ -384,7 +429,7 @@ async function renarrate({ improve, newConsequences, narrate, persist }) {
   const speakerActorId = improve.actorId ?? null;
   await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
-    // Meters were already applied by applyImproveMeterDeltas — log only.
+    // Meters were already applied (improveMeterChanges) — log only.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };
     await persist(logOnly, campaignState, speakerActorId).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: persist (log) failed:`, err));
