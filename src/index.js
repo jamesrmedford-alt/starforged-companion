@@ -4222,6 +4222,7 @@ const PAYOFF_TITLES = {
   legacyXp:    ()  => `Legacy experience not given`,
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  session:     ()  => `Session momentum not given`,
 };
 
 /**
@@ -4234,7 +4235,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4271,6 +4272,7 @@ function payoffStepRecord(f) {
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "upgrade":     return upgradeStepRecord(f);
+    case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4302,6 +4304,13 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       case "upgrade":
         // A burn's or an improvement's write after its claim (issue #311 P06).
         return describeUpgradeStep(f, why);
+      case "momentum": {
+        // A PC's Begin / End a Session momentum (issue #311 P08).
+        const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who = escapeChatHtml(pc?.name ?? "a character");
+        const now = pc ? ` ${who}'s momentum stands at ${readCharacterSnapshot(pc)?.meters?.momentum ?? "?"} now.` : "";
+        return `+${f.amount ?? 1} momentum for ${who}${f.award ? ` (${escapeChatHtml(f.award)})` : ""} — ${why}.${now}`;
+      }
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who = escapeChatHtml(pc?.name ?? "a character");
@@ -4392,6 +4401,20 @@ async function runPayoffStep(s, card, copies) {
     case "upgrade":
       // A burn's or an improvement's write refused after its claim (issue #311 P06).
       return retryUpgradeStep(s);
+    case "momentum": {
+      // A PC's session momentum the world refused — that PC's alone (issue #311 P08).
+      const amount = Math.floor(Number(s.amount));
+      if (!(amount >= 1 && amount <= 2)) return { ok: false, reason: "invalid step" };
+      const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      try {
+        await applyMeterChanges(pc, { momentum: amount });
+        return { ok: true };
+      } catch (err) {
+        console.warn(`${MODULE_ID} | payoff retry: momentum for ${pc.name} refused again:`, err?.message ?? err);
+        return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+      }
+    }
     case "xp": {
       // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
       const xp = Math.floor(Number(s.xp));
