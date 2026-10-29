@@ -75,6 +75,31 @@ describe('finalizeEntity — connection runs the seed (finalize-first)', () => {
     expect(result.ok).toBe(true);
     expect(actor.flags[MODULE_ID].connection.seeded).toBe(true);
     expect(actor.system.biography).toMatch(/Smuggler/);
+    // Completion is recorded, so the panel offers Regenerate (issue #311 P07).
+    expect(actor.flags[MODULE_ID].connection.finalizedAt).toEqual(expect.any(String));
+  });
+
+  // Issue #311 P07: the seed path never stamped finalizedAt — Finalise stayed on
+  // the panel, and on a card the creation hook had seeded it changed nothing.
+  it('on a card the creation hook seeded, Finalise records completion only — Notes kept', async () => {
+    global.game.actors._reset();
+    const actor = global.makeTestActor({
+      id: 'npc-seeded', type: 'character', name: 'Maren',
+      system: { notes: '<p>GM: owes Kira a favour.</p>' },
+      flags: { [MODULE_ID]: { entityType: 'connection', entityId: 'c2', connection: {
+        _id: 'c2', name: 'Maren', role: 'Smuggler', seeded: true,
+      } } },
+    });
+    global.game.actors._set('npc-seeded', actor);
+
+    const first = await finalizeEntity('connection', 'npc-seeded', {});
+    expect(first).toMatchObject({ ok: true, reason: 'finalized' });
+    expect(actor.flags[MODULE_ID].connection.finalizedAt).toEqual(expect.any(String));
+    expect(actor.system.notes).toBe('<p>GM: owes Kira a favour.</p>');
+    expect(apiPost).not.toHaveBeenCalled();
+
+    const second = await finalizeEntity('connection', 'npc-seeded', {});
+    expect(second).toMatchObject({ ok: true, reason: 'already-finalized' });
   });
 
   it('returns not-found when the host actor is missing', async () => {

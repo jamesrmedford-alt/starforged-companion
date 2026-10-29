@@ -388,15 +388,29 @@ export function connectionNeedsSeed(actor) {
  * silent portrait generation. Idempotent — a card already marked `seeded` is
  * returned unchanged. Never throws; population failures are logged.
  *
+ * `finalizedAt` is the Entity Panel's Finalise (finalize.js): stamped into the
+ * record this writes — on a card the creation hook already seeded, it is the
+ * only write — so the panel switches to Regenerate (issue #311 P07).
+ *
  * @param {Actor} actor — a `character` Actor carrying a connection flag payload
  * @param {Object} [campaignState]
+ * @param {{ force?: boolean, finalizedAt?: string|null }} [opts]
  * @returns {Promise<Object|null>} the updated connection record, or null
  */
-export async function seedConnectionActor(actor, campaignState, { force = false } = {}) {
+export async function seedConnectionActor(actor, campaignState, { force = false, finalizedAt = null } = {}) {
   if (!actor || actor.type !== "character") return null;
   const existing = actor.flags?.[MODULE_ID]?.[FLAG_KEY];
   if (!existing) return null;                    // not a connection card
-  if (existing.seeded && !force) return existing; // already populated — idempotent
+  if (existing.seeded && !force) {               // already populated — idempotent
+    if (!finalizedAt || existing.finalizedAt) return existing;
+    try {
+      await actor.update({ [`flags.${MODULE_ID}.${FLAG_KEY}.finalizedAt`]: finalizedAt });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | seedConnectionActor: finalise stamp failed:`, err?.message ?? err);
+      return null;
+    }
+    return { ...existing, finalizedAt };
+  }
 
   const { rollOracle } = await import("../oracles/roller.js");
   // A title baked into the name is the established role (finding D): a vow
@@ -425,6 +439,7 @@ export async function seedConnectionActor(actor, campaignState, { force = false 
     pronouns,
     portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
     seeded:      true,
+    ...(finalizedAt ? { finalizedAt } : {}),
     updatedAt:   new Date().toISOString(),
   };
 
