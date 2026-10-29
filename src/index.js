@@ -1701,10 +1701,11 @@ export function registerChatHook() {
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
         // What the move was made against rides onto its suffer-choice card,
-        // so a choice changes that vehicle or companion (issue #309).
+        // so a choice changes that vehicle, companion or fight (issue #309).
         await persistResolution(resolution, campaignState, speakerActorId, {
           vehicleActorId:  interpretation.vehicleActorId ?? null,
           companionItemId: interpretation.companionItemId ?? null,
+          combatTrackId:   moveFight?.id ?? null,
         });
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers

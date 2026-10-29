@@ -272,17 +272,17 @@ export async function runSufferResolution(calls, actor, opts = {}) {
         break;
       case "combat-progress": {
         const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
-        const allTracks = await listProgressTracks();
-        const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
-        if (open.length === 1) {
-          for (let i = 0; i < (call.count ?? 1); i++) {
-            await markProgressById(open[0].id).catch(err =>
-              console.warn("starforged-companion | combat-progress executor:", err));
-          }
-          results.push({ kind: "combat-progress", count: call.count, trackId: open[0].id });
-        } else {
-          results.push({ kind: "combat-progress", count: call.count, skipped: true });
+        const { fight, reason } = progressFight(await listProgressTracks(), opts);
+        if (!fight) {
+          console.warn(`${MODULE_ID} | combat-progress executor: ${reason} — progress not marked.`);
+          results.push({ kind: "combat-progress", count: call.count, skipped: true, ok: false, reason });
+          break;
         }
+        for (let i = 0; i < (call.count ?? 1); i++) {
+          await markProgressById(fight.id).catch(err =>
+            console.warn("starforged-companion | combat-progress executor:", err));
+        }
+        results.push({ kind: "combat-progress", count: call.count, trackId: fight.id });
         break;
       }
       case "expedition-progress": {
@@ -385,6 +385,33 @@ export async function runSufferResolution(calls, actor, opts = {}) {
     }
   }
   return results;
+}
+
+/**
+ * The fight a delayed "mark progress" choice (Gain Ground's) marks: the fight
+ * the move was about — the pipeline's `moveFight`, carried on the card as
+ * `opts.combatTrackId` — checked when the choice is made. Gone or finished by
+ * then, nothing is marked: never whichever other fight is the only one open
+ * (issue #309 N04 — the choice re-selected the sole open fight at click time,
+ * so with two open it marked nothing, and an old choice marked a fight opened
+ * after its own had finished). A card that names no fight (posted before the
+ * card carried one) keeps the sole-open-fight reading.
+ *
+ * @param {Array<Object>} tracks — listProgressTracks()
+ * @param {Object} opts — the card's executorOpts
+ * @returns {{ fight: Object|null, reason?: string }}
+ */
+function progressFight(tracks, opts) {
+  if (!("combatTrackId" in opts)) {
+    const open = tracks.filter(t => t.type === "combat" && !t.completed);
+    if (open.length === 1) return { fight: open[0] };
+    return { fight: null, reason: open.length ? "ambiguous" : "no-fight" };
+  }
+  if (!opts.combatTrackId) return { fight: null, reason: "no-fight" };
+  const fight = tracks.find(t => t.id === opts.combatTrackId && t.type === "combat") ?? null;
+  if (!fight)              return { fight: null, reason: "fight-gone" };
+  if (fight.completed)     return { fight: null, reason: "fight-over" };
+  return { fight };
 }
 
 /**

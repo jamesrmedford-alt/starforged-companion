@@ -183,6 +183,10 @@ const NOT_APPLIED = {
   "no-vehicle":   "no vehicle to change",
   "battered":     "the vehicle is battered",
   "no-companion": "no companion to change",
+  "no-fight":     "no open fight was named",
+  "fight-gone":   "its fight is gone",
+  "fight-over":   "its fight is over",
+  "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
   "refused":      "the world did not save it",
 };
 

@@ -422,6 +422,51 @@ describe("runSufferResolution — combat-position", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// runSufferResolution — combat-progress executor (Gain Ground's "Mark progress")
+// Issue #309 N04: the choice re-selected the sole open fight at click time —
+// with two open it marked nothing, and an old choice marked a fight opened
+// after its own had finished. The card now carries its fight.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runSufferResolution — combat-progress marks the card's own fight (issue #309 N04)", () => {
+  const fight = (id, over = {}) => ({ id, type: "combat", completed: false, ...over });
+
+  it("marks the card's fight while another is open too", async () => {
+    trackState.tracks = [fight("boarders"), fight("turret")];
+    const r = await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" }, { combatTrackId: "boarders" });
+    expect(trackState.marked).toEqual(["boarders"]);
+    expect(r[0]).toEqual({ kind: "combat-progress", count: 1, trackId: "boarders" });
+  });
+
+  it("marks nothing once its fight is over — not the fight that is open now", async () => {
+    trackState.tracks = [fight("boarders", { completed: true }), fight("turret")];
+    const r = await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" }, { combatTrackId: "boarders" });
+    expect(trackState.marked).toEqual([]);
+    expect(r[0]).toMatchObject({ ok: false, reason: "fight-over" });
+  });
+
+  it("marks nothing when its fight is gone, or when the move named none", async () => {
+    trackState.tracks = [fight("turret")];
+    const gone = await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" }, { combatTrackId: "boarders" });
+    const none = await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" }, { combatTrackId: null });
+    expect(trackState.marked).toEqual([]);
+    expect([gone[0].reason, none[0].reason]).toEqual(["fight-gone", "no-fight"]);
+  });
+
+  it("a card naming no fight (posted before the card carried one) marks the sole open fight", async () => {
+    trackState.tracks = [fight("turret")];
+    await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" });
+    expect(trackState.marked).toEqual(["turret"]);
+
+    trackState.tracks = [fight("a"), fight("b")];
+    const r = await runSufferResolution([{ kind: "combat-progress", count: 1 }], { id: "pc1" });
+    expect(r[0]).toMatchObject({ ok: false, reason: "ambiguous" });
+    expect(trackState.marked).toEqual(["turret"]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // runSufferResolution — expedition-progress executor (Explore a Waypoint pick)
 // WAYPOINT-PROGRESS-NOOP regression: picking "mark expedition progress" with no
 // open expedition used to skip silently. It now resolve-or-creates.

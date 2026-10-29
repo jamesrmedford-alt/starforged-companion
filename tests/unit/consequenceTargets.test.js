@@ -13,6 +13,11 @@
  *   - N03: Companion Takes a Hit's health changes went the same way, and the
  *     weak hit's recovery was always unavailable. The companion the roll read
  *     now rides onto the card, and the strong hit heals that one.
+ *   - N04: Gain Ground's "Mark progress" re-selected the sole open fight when
+ *     clicked: with two open it marked nothing, and an old choice marked a
+ *     fight opened after its own had finished. The move's fight (the
+ *     pipeline's moveFight) now rides onto the card. Tracks are written by
+ *     the real store (src/ui/progressTracks.js) on the GM's client.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -60,8 +65,32 @@ const REPLY = 'Sparks fly across the deck.\n```json\n{"newTruths":[],"stateChang
 const STRONG = [0.25, 0.35, 0.9];
 const WEAK   = [0.25, 0.35, 0.2];
 
-let table, pat;
+let table, pat, journal;
 const world = () => table.world.campaignState();
+const tracks = () => journal.getFlag(MODULE_ID, 'tracks') ?? [];
+const track = (id) => tracks().find(t => t.id === id);
+
+/** The "Starforged Progress Tracks" journal: a document-level flag store, as progressTracks.js writes it. */
+function makeTracksJournal() {
+  const flags = {};
+  return {
+    id:      'tracks-journal',
+    name:    'Starforged Progress Tracks',
+    getFlag: (mod, key) => flags[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flags[`${mod}.${key}`] = structuredClone(value); },
+  };
+}
+
+/** Open (or update) a track through the real store on the GM's client. */
+async function openTrack(label, { type = 'combat', rank = 'dangerous', ...fields } = {}) {
+  const gm = table.client('gm-1');
+  const store = await gm.import('../../src/ui/progressTracks.js');
+  return gm.run(async () => {
+    const created = await store.addProgressTrack({ label, type, rank });
+    await store.updateTrackFields(created.id, fields);
+    return created;
+  });
+}
 const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
 const sufferCards = (moveId) => table.cards(f => f.sufferCard && f.moveId === moveId);
 
@@ -112,6 +141,8 @@ beforeEach(async () => {
     },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
+  journal = makeTracksJournal();
+  table.journal._set(journal);
   scriptClaude(table, { fallback: () => REPLY });
 });
 
@@ -167,5 +198,36 @@ describe('Withstand Damage — the vehicle the roll was made against (issue #309
     await typedMove(move, WEAK);
     await choose('withstand_damage', 0);
     expect({ integrity: integrity(), momentum: pat.system.momentum.value }).toEqual({ integrity: 3, momentum: 1 });
+  });
+});
+
+describe('Gain Ground — "Mark progress" marks the fight the move was about (issue #309 N04)', () => {
+  beforeEach(() => {
+    pat = table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
+  });
+  const move = { moveId: 'gain_ground', statUsed: 'edge', statValue: 2, adds: 0, moveTarget: 'Boarders', confidence: 1 };
+
+  it('with two fights open, the named fight gains the progress', async () => {
+    const boarders = await openTrack('Boarders', { ticks: 0 });
+    const turret   = await openTrack('Turret', { ticks: 0 });
+    await typedMove(move, STRONG);
+    expect(sufferCards('gain_ground')[0].flags[MODULE_ID].executorOpts.combatTrackId).toBe(boarders.id);
+
+    const resolved = await choose('gain_ground', 0);
+    expect({ boarders: track(boarders.id).ticks, turret: track(turret.id).ticks }).toEqual({ boarders: 8, turret: 0 });
+    expect(resolved.flags[MODULE_ID].pickedIndices).toEqual([0]);
+  });
+
+  it('an old choice marks nothing once its fight is over — not a fight opened since', async () => {
+    const boarders = await openTrack('Boarders', { ticks: 0 });
+    await typedMove(move, WEAK);
+    const gm = table.client('gm-1');
+    const store = await gm.import('../../src/ui/progressTracks.js');
+    await gm.run(() => store.updateTrackFields(boarders.id, { completed: true }));
+    const turret = await openTrack('Turret', { ticks: 0 });
+
+    const resolved = await choose('gain_ground', 0);
+    expect(track(turret.id).ticks).toBe(0);
+    expect(resolved.content).toContain('Not applied: combat progress ×1 — its fight is over');
   });
 });
