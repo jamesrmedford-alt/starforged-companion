@@ -35,9 +35,14 @@
  */
 
 import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
-import { getActor, applyMeterChanges }   from "../character/actorBridge.js";
+import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
-import { revertPayThePrice }             from "./resultUpgrade.js";
+import {
+  revertPayThePrice,
+  claimUpgradeCard,
+  applyUpgradeStep,
+  reportUpgradeFailures,
+} from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
   relayCardButtonClick,
@@ -275,23 +280,31 @@ async function handleImproveClick(message, { narrate, persist }) {
 
   const newConsequences = mapConsequences(improve.moveId, improve.improveTo, improve.isMatch);
 
-  await applyImproveMeterDeltas({ actor, improve, newConsequences });
+  // Claimed before any effect (issue #311 P06): the consumed stamp followed
+  // the benefit and the cost, its refusal only warned, so a fresh render of the
+  // card offered the improvement again and a second press applied it again.
+  // Refused, nothing is applied and the button re-arms.
+  if (!(await claimUpgradeCard(message, "improve"))) return { applied: false, reason: "claim-refused" };
+
+  // Each write after the claim: one the world refuses goes to the GMs, with a
+  // Retry (resultUpgrade.js applyUpgradeStep).
+  const failures = [];
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences) }, failures);
 
   // The strong hit replaces a miss whose Pay the Price already landed: rewind
   // its clocks and refund its meter loss, as a burn does — the improvement
   // kept them on top of its own cost (issue #311 P05).
   if (improve.ptpReversals) {
-    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve" }).catch(err =>
+    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures }).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
   }
 
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({
-    [`flags.${MODULE_ID}.improve.consumed`]: true,
-    content: buildImprovedCardContent(message.content, clockNote),
-  }).catch(err => console.warn(`${MODULE_ID} | improveResult: message.update failed:`, err));
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote) })
+    .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
+  await reportUpgradeFailures(actor, failures);
 
   // The pre-improvement prose is now stale — strike it through, keep history.
   await supersedeOriginalNarration(improve).catch(err =>
@@ -304,20 +317,20 @@ async function handleImproveClick(message, { narrate, persist }) {
 }
 
 /**
- * Swap the recorded original outcome's meter consequences for the strong-hit
- * ones (an improvement is accepted only once the original is on the sheet).
- * No momentum reset — unlike burn, the dice don't change; only the outcome
- * does.
+ * The meter changes an improvement makes: the recorded original outcome's
+ * consequences swapped for the strong hit's (an improvement is accepted only
+ * once the original is on the sheet). No momentum reset — unlike burn, the
+ * dice don't change; only the outcome does.
  */
-async function applyImproveMeterDeltas({ actor, improve, newConsequences }) {
+function improveMeterChanges(improve, newConsequences) {
   const orig  = improve.originalConsequences ?? {};
   const delta = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
-  await applyMeterChanges(actor, {
+  return {
     momentum: delta("momentumChange"),
     health:   delta("healthChange"),
     spirit:   delta("spiritChange"),
     supply:   delta("supplyChange"),
-  });
+  };
 }
 
 /**
@@ -396,7 +409,7 @@ async function renarrate({ improve, newConsequences, narrate, persist }) {
   const speakerActorId = improve.actorId ?? null;
   await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
-    // Meters were already applied by applyImproveMeterDeltas — log only.
+    // Meters were already applied (improveMeterChanges) — log only.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };
     await persist(logOnly, campaignState, speakerActorId).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: persist (log) failed:`, err));

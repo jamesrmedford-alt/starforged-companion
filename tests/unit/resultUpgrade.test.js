@@ -13,6 +13,8 @@
  *   P04 — a burn refunds the Pay the Price meter loss that landed.
  *   P05 — an improvement undoes the superseded miss's Pay the Price, as a
  *         burn does.
+ *   P06 — an upgrade is claimed before its effects; a write refused after
+ *         the claim goes to the GMs with a Retry.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -164,5 +166,112 @@ describe("P05 — both upgrades undo the superseded miss's Pay the Price", () =>
     await click(card, '[data-action="sf-improve-result"]');
     expect(table.world.message(card._id).content).toContain("Fugitive: apply the ability's stated cost.");
     expect(table.cards(f => f.improveReversal).at(-1)?.content).toMatch(/Pursuit clock rewound[\s\S]*health \+1 refunded/);
+  });
+});
+
+describe("P06 — an upgrade is claimed before its effects", () => {
+  const FUGITIVE = [{ assetId: null, assetName: "Fugitive", resultImprovement: { improveTo: "strong_hit" }, hasClock: false }];
+  const WEAK = [0.25, 0.65, 0.5];   // challenge 3, 7; action die 4 — wits 2 is a weak hit
+
+  /** Refuse the first card update that stamps `<kind>.consumed`. */
+  function refuseClaim(card, kind) {
+    const seen = { refused: false };
+    table.interceptWrites(w => {
+      if (!seen.refused && w.kind === "message.update" && w.id === card._id
+          && w.changes?.[`flags.${MODULE_ID}.${kind}.consumed`] === true) {
+        seen.refused = true;
+        return new Error("test: refused claim");
+      }
+    });
+    return seen;
+  }
+
+  it("a refused Improve Result claim applies nothing; the press after a fresh render applies it once", async () => {
+    control.abilities = FUGITIVE;
+    pc.system.momentum.value = 2;
+    const card = await roll("gather_information", { statUsed: "wits", dice: WEAK });
+    expect(pc.system.momentum.value).toBe(3);   // the weak hit's +1
+    const claim = refuseClaim(card, "improve");
+
+    await click(card, '[data-action="sf-improve-result"]');
+    expect(claim.refused).toBe(true);
+    expect(pc.system.momentum.value).toBe(3);
+    expect(flags(card._id).improve.consumed).toBeFalsy();
+
+    table.client("pl-1").render(card._id);
+    await click(card, '[data-action="sf-improve-result"]');
+    expect(flags(card._id).improve.consumed).toBe(true);
+    expect(pc.system.momentum.value).toBe(4);   // the strong hit's +2, once
+
+    table.client("pl-1").render(card._id);
+    await click(card, '[data-action="sf-improve-result"]');
+    expect(pc.system.momentum.value).toBe(4);
+  });
+
+  it("a refused Burn Momentum claim applies nothing; the press after a fresh render burns once", async () => {
+    pc.system.momentum.value = 7;
+    const card = await roll("gather_information", { statUsed: "wits", dice: WEAK });
+    expect(pc.system.momentum.value).toBe(8);
+    const claim = refuseClaim(card, "burn");
+
+    await click(card, '[data-action="sf-burn-momentum"]');
+    expect(claim.refused).toBe(true);
+    expect(pc.system.momentum.value).toBe(8);
+    expect(lastLog().outcome).toBe("weak_hit");
+
+    table.client("pl-1").render(card._id);
+    await click(card, '[data-action="sf-burn-momentum"]');
+    expect(flags(card._id).burn.consumed).toBe(true);
+    expect(pc.system.momentum.value).toBe(4);   // reset 2 + the strong hit's +2
+    expect(lastLog().outcome).toBe("strong_hit");
+  });
+
+  it("a meter write refused after the claim is told to the GMs, and their Retry applies it once", async () => {
+    control.abilities = FUGITIVE;
+    pc.system.momentum.value = 2;
+    const card = await roll("gather_information", { statUsed: "wits", dice: WEAK });
+    let refused = false;
+    table.interceptWrites(w => {
+      if (!refused && w.kind === "actor.update" && w.id === pc.id && w.changes?.["system.momentum.value"] === 4) {
+        refused = true;
+        return new Error("test: refused momentum");
+      }
+    });
+
+    await click(card, '[data-action="sf-improve-result"]');
+    expect(refused).toBe(true);
+    expect(flags(card._id).improve.consumed).toBe(true);
+    expect(pc.system.momentum.value).toBe(3);
+    const failure = table.cards(f => f.payoffFailureCard && f.source === "upgrade").at(-1);
+    expect(failure.flags[MODULE_ID].steps).toEqual([{ step: "upgrade", effect: "meters", pcId: pc.id, changes: { momentum: 1, health: 0, spirit: 0, supply: 0 } }]);
+    expect(failure.content).toMatch(/momentum \+1 for Kira, from the upgraded result — the world did not save it[^.]*\. Kira's momentum stands at 3 now/);
+
+    await table.client("gm-1").click(failure._id, '[data-action="sf-payoff-retry"]');
+    await table.settle(); await table.drain();
+    expect(pc.system.momentum.value).toBe(4);
+    await table.client("gm-1").click(failure._id, '[data-action="sf-payoff-retry"]');
+    await table.settle(); await table.drain();
+    expect(pc.system.momentum.value).toBe(4);
+  });
+
+  it("a Pay the Price refund refused after a burn's claim is retried for that PC alone", async () => {
+    const card = await roll("gather_information", { statUsed: "wits" });   // a miss; Endure Harm 5 → 4
+    let refused = false;
+    table.interceptWrites(w => {
+      if (!refused && w.kind === "actor.update" && w.id === pc.id && w.changes?.["system.health.value"] === 5) {
+        refused = true;
+        return new Error("test: refused refund");
+      }
+    });
+
+    await click(card, '[data-action="sf-burn-momentum"]');
+    expect(refused).toBe(true);
+    expect(pc.system.health.value).toBe(4);
+    const failure = table.cards(f => f.payoffFailureCard && f.source === "upgrade").at(-1);
+    expect(failure.flags[MODULE_ID].steps).toEqual([{ step: "upgrade", effect: "meters", pcId: pc.id, changes: { health: 1 } }]);
+
+    await table.client("gm-1").click(failure._id, '[data-action="sf-payoff-retry"]');
+    await table.settle(); await table.drain();
+    expect(pc.system.health.value).toBe(5);
   });
 });

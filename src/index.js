@@ -38,6 +38,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
@@ -4216,6 +4217,7 @@ const PAYOFF_TITLES = {
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
   legacyXp:    ()  => `Legacy experience not given`,
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -4228,7 +4230,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4264,6 +4266,7 @@ function payoffStepRecord(f) {
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
+    case "upgrade":     return upgradeStepRecord(f);
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4292,6 +4295,9 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
         return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
       }
+      case "upgrade":
+        // A burn's or an improvement's write after its claim (issue #311 P06).
+        return describeUpgradeStep(f, why);
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who = escapeChatHtml(pc?.name ?? "a character");
@@ -4379,6 +4385,9 @@ async function runPayoffStep(s, card, copies) {
       const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
     }
+    case "upgrade":
+      // A burn's or an improvement's write refused after its claim (issue #311 P06).
+      return retryUpgradeStep(s);
     case "xp": {
       // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
       const xp = Math.floor(Number(s.xp));

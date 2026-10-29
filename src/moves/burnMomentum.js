@@ -50,12 +50,16 @@ import {
 import {
   getActor,
   getPlayerActors,
-  applyMeterChanges,
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction }     from "../multiplayer/gmRelay.js";
-import { revertPayThePrice }   from "./resultUpgrade.js";
+import {
+  revertPayThePrice,
+  claimUpgradeCard,
+  applyUpgradeStep,
+  reportUpgradeFailures,
+} from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -414,29 +418,33 @@ async function handleBurnClick(message, { narrate, persist }) {
 
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
 
-  await applyBurnMeterDeltas({
-    actor,
-    burnState: burn,
+  // Claimed before any effect (issue #311 P06): the consumed stamp followed
+  // the writes, its refusal only warned, so a fresh render of the card offered
+  // the burn again and a second press applied it again. Refused, nothing is
+  // applied and the button re-arms.
+  if (!(await claimUpgradeCard(message, "burn"))) return { applied: false, reason: "claim-refused" };
+
+  // Each write after the claim: one the world refuses goes to the GMs, with a
+  // Retry (resultUpgrade.js applyUpgradeStep).
+  const failures = [];
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
+    burnState:        burn,
     currentMomentum:  momentum.value,
     newMomentumReset: momentum.reset,
     newConsequences,
-  });
+  }) }, failures);
 
   // Revert Pay-the-Price side effects that fired before the burn button was
   // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss). Best-effort; failures are
-  // warned and do not block the rest of the burn flow.
+  // -1 from a PtP table roll on the original miss).
   if (burn.ptpReversals) {
-    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn" }).catch(err =>
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
 
-  // Mark the card as consumed so the button disables on re-render and so
-  // the renderChatMessage re-runs cannot fire a second burn.
-  await message.update({
-    [`flags.${MODULE_ID}.burn.consumed`]: true,
-    content: buildBurnedCardContent(message.content, burnResult, newConsequences),
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: message.update failed:`, err));
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences) })
+    .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
+  await reportUpgradeFailures(actor, failures);
 
   // Supersede the original narration card (F13a): the burn changed the outcome,
   // so the prose describing the pre-burn result is now stale. Strike it through
@@ -454,22 +462,22 @@ async function handleBurnClick(message, { narrate, persist }) {
   return { applied: true };
 }
 
-async function applyBurnMeterDeltas({ actor, burnState, currentMomentum, newMomentumReset, newConsequences }) {
+/**
+ * The meter changes a burn makes. The original outcome is on the sheet (a burn
+ * is accepted only once it is recorded): momentum goes to the reset value plus
+ * the upgraded outcome's momentum; health / spirit / supply swap the original's
+ * change for the upgraded one's.
+ */
+function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences }) {
   const orig = burnState.originalConsequences ?? {};
-
-  // The original outcome is on the sheet (a burn is accepted only once it is
-  // recorded): momentum goes to the reset value plus the upgraded outcome's
-  // momentum; health / spirit / supply swap the original's change for the
-  // upgraded one's.
   const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
   const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
-
-  await applyMeterChanges(actor, {
+  return {
     momentum: targetMomentum - currentMomentum,
     health:   swap("healthChange"),
     spirit:   swap("spiritChange"),
     supply:   swap("supplyChange"),
-  });
+  };
 }
 
 async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, narrate, persist }) {
@@ -513,7 +521,7 @@ async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, na
   const speakerActorId = burn.actorId ?? null;
   await narrate(synthResolution, campaignState, { speakerActorId });
   if (typeof persist === "function" && game.user?.isGM) {
-    // Don't double-persist meters — applyBurnMeterDeltas above already did
+    // Don't double-persist meters — the burn's meter step above already did
     // that. Just append the upgraded resolution to the session log via a
     // minimal resolution that carries no consequences.
     const logOnly = { ...synthResolution, consequences: emptyConsequences() };

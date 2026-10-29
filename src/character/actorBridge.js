@@ -864,15 +864,19 @@ export async function advanceVowClocks(actor, { by = 1 } = {}) {
 
 /**
  * Revert vow-clock ticks advanced by a Pay the Price that was subsequently
- * undone by burning momentum. Each entry specifies `{ actorId, itemId }`.
- * Silently skips entries where the actor or item cannot be found, or the
- * clock is already at zero. GM-gated at the call site.
+ * undone by a result upgrade (Burn Momentum, Improve Result). Each entry
+ * specifies `{ actorId, itemId }`. Silently skips entries where the actor or
+ * item cannot be found, or the clock is already at zero. GM-gated at the call
+ * site.
  *
  * @param {Array<{actorId:string, itemId:string}>} entries
+ * @returns {Promise<Array<Object>>} the entries whose write was refused — the
+ *   upgrade reports them to the GMs with a Retry (issue #311 P06)
  */
 export async function revertVowClocksForBurn(entries) {
-  if (!entries?.length) return;
-  for (const { actorId, itemId } of entries) {
+  const failed = [];
+  for (const entry of entries ?? []) {
+    const { actorId, itemId } = entry;
     const actor = globalThis.game?.actors?.get?.(actorId);
     const item  = actor?.items?.find?.(i => i.id === itemId);
     if (!item) continue;
@@ -882,9 +886,11 @@ export async function revertVowClocksForBurn(entries) {
       await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
       invalidateActorCache(actorId);
     } catch (err) {
-      console.error(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err);
+      console.warn(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err?.message ?? err);
+      failed.push(entry);
     }
   }
+  return failed;
 }
 
 
