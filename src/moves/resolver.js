@@ -266,6 +266,45 @@ function emptyConsequences() {
   };
 }
 
+// Recover moves: a weak hit is the strong hit's recovery plus a cost (play kit:
+// Heal "as strong, Lose Momentum (-2) OR Sacrifice Resources (-2)", Hearten
+// "as strong, Lose Momentum (-1)"). Each recovery is written once and both
+// outcomes use it; a fresh copy per call, since a prompt is stored on its card.
+
+/** Heal's recovery: clear wounded + 2 health, else 3 health. */
+function healRecovery() {
+  return [
+    { label: "Clear wounded + take/give +2 health", chain: [{ clearImpact: "wounded" }, { health: 2 }], requires: "wounded" },
+    { label: "Take/give +3 health",                 health: 3, requires: "!wounded" },
+  ];
+}
+
+/** Hearten's recovery: clear shaken + 1 spirit, else 2 spirit. */
+function heartenRecovery() {
+  return [
+    { label: "Clear shaken + take +1 spirit", chain: [{ clearImpact: "shaken" }, { spirit: 1 }], requires: "shaken" },
+    { label: "Take +2 spirit",                spirit: 2, requires: "!shaken" },
+  ];
+}
+
+/**
+ * Compose a weak hit's choice: every recovery option followed by each cost, as
+ * one chained option keeping the recovery's `requires`. With one cost the
+ * options mirror the recovery's; with two, each recovery comes in both.
+ *
+ * @param {Object[]} recovery — enumerated options (healRecovery / heartenRecovery)
+ * @param {Object[]} costs    — enumerated options, e.g. `{ label, suffer, amount }`
+ * @returns {Object[]}
+ */
+function withCost(recovery, costs) {
+  const steps = ({ label: _label, requires: _requires, ...write }) => write.chain ?? [write];
+  return recovery.flatMap(r => costs.map(c => ({
+    label: `${r.label}, then ${c.label}`,
+    chain: [...steps(r), ...steps(c)],
+    ...(r.requires ? { requires: r.requires } : {}),
+  })));
+}
+
 /**
  * Full consequence map keyed by move ID.
  * Each entry is a function(outcome, isMatch) → consequences object.
@@ -892,18 +931,17 @@ const CONSEQUENCE_MAP = {
   heal: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
-        sufferPrompt: { kind: "enumerated", options: [
-          { label: "Clear wounded + take/give +2 health", chain: [{ clearImpact: "wounded" }, { health: 2 }], requires: "wounded" },
-          { label: "Take/give +3 health",                 health: 3, requires: "!wounded" },
-        ]},
+        sufferPrompt: { kind: "enumerated", options: healRecovery() },
         otherEffect: "If wounded, clear impact and take/give +2 health. Otherwise take/give +3 health." };
       case "weak_hit": return {
         ...emptyConsequences(),
-        sufferPrompt: { kind: "enumerated", options: [
+        // The strong hit's recovery, then the cost (issue #311 P02 — the cost
+        // was the whole choice, so a weak hit healed nothing).
+        sufferPrompt: { kind: "enumerated", options: withCost(healRecovery(), [
           { label: "Lose Momentum (-2)",       suffer: "lose_momentum",       amount: 2 },
           { label: "Sacrifice Resources (-2)", suffer: "sacrifice_resources", amount: 2 },
-        ]},
-        otherEffect: "Recovery costs extra time or resources. Choose: Lose Momentum (-2) OR Sacrifice Resources (-2)."
+        ]) },
+        otherEffect: "As a strong hit, but recovery costs extra time or resources: Lose Momentum (-2) OR Sacrifice Resources (-2)."
       };
       case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Aid ineffective and situation worsens. Pay the Price." };
@@ -913,12 +951,14 @@ const CONSEQUENCE_MAP = {
   hearten: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
-        sufferPrompt: { kind: "enumerated", options: [
-          { label: "Clear shaken + take +1 spirit", chain: [{ clearImpact: "shaken" }, { spirit: 1 }], requires: "shaken" },
-          { label: "Take +2 spirit",                spirit: 2, requires: "!shaken" },
-        ]},
+        sufferPrompt: { kind: "enumerated", options: heartenRecovery() },
         otherEffect: "If shaken, clear impact and take +1 spirit. Otherwise take +2 spirit. (+1 more if via Sojourn)." };
-      case "weak_hit": return { ...emptyConsequences(), momentumChange: -1,
+      // The strong hit's recovery, then Lose Momentum (-1) — the -1 alone was
+      // the weak hit, so it recovered nothing (issue #311 P02).
+      case "weak_hit": return { ...emptyConsequences(),
+        sufferPrompt: { kind: "enumerated", options: withCost(heartenRecovery(), [
+          { label: "Lose Momentum (-1)", suffer: "lose_momentum", amount: 1 },
+        ]) },
         otherEffect: "As strong hit but fleeting — envision interruption or complication. Lose Momentum (-1)." };
       case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "No comfort and situation worsens. Pay the Price." };

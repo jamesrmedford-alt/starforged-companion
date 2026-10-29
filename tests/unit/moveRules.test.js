@@ -8,6 +8,8 @@
  * dice and the Pay the Price roll scripted at their boundaries.
  *
  *   P01 — the roller's negative momentum cancels a matching action die.
+ *   P02 — a weak Heal or Hearten recovers as a strong hit does, then pays its
+ *         cost.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -50,9 +52,13 @@ import { CampaignStateSchema } from "../../src/schemas.js";
 let table, pc;
 const world   = () => table.world.campaignState();
 const lastLog = () => world().sessionLogs["rules-s1"].at(-1);
+const choices = () => table.cards(f => f.sufferCard && f.sufferPrompt);
+const meters  = () => ({ health: pc.system.health.value, spirit: pc.system.spirit.value, supply: pc.system.supply.value,
+  momentum: pc.system.momentum.value, wounded: pc.system.debility.wounded, shaken: pc.system.debility.shaken });
+const WEAK = [0.25, 0.65, 0.5];   // challenge 3, 7; action die 4 — iron 3 or heart 2 is a weak hit
 
 /** Narrate a move as the player; dice are [challenge, challenge, action] Math.random values. */
-async function roll(moveId, { statUsed = "iron", dice }) {
+async function roll(moveId, { statUsed = "iron", dice = WEAK } = {}) {
   control.interpretation = { moveId, moveName: moveId, statUsed, adds: 0, rationale: "test", mischiefApplied: false };
   control.dice = dice;
   await table.client("pl-1").chat(`I attempt ${moveId}.`, { speaker: { actor: pc.id } });
@@ -94,5 +100,60 @@ describe("P01 — negative momentum cancels a matching action die", () => {
     expect(lastLog().outcome).toBe("strong_hit");
     expect(pc.system.momentum.value).toBe(-1);
     expect(pc.system.health.value).toBe(5);
+  });
+});
+
+describe("P02 — a weak recovery is the strong hit's, plus its cost", () => {
+  async function pick(index) {
+    const card = choices().at(-1);
+    await table.client("pl-1").click(card._id, `[data-option-index="${index}"]`);
+    await table.settle(); await table.drain();
+    return card;
+  }
+
+  it("weak Heal, wounded, paying momentum: wounded cleared, health 1 → 3, momentum 8 → 6", async () => {
+    pc.system.health.value = 1; pc.system.momentum.value = 8;
+    pc.system.debility.wounded = true;
+    await roll("heal");
+    expect(choices()).toHaveLength(1);
+    await pick(0);
+    expect(meters()).toMatchObject({ health: 3, wounded: false, momentum: 6, supply: 3 });
+  });
+
+  it("weak Heal, wounded, paying supply: wounded cleared, health 1 → 3, supply 3 → 1", async () => {
+    pc.system.health.value = 1; pc.system.momentum.value = 8;
+    pc.system.debility.wounded = true;
+    await roll("heal");
+    await pick(1);
+    expect(meters()).toMatchObject({ health: 3, wounded: false, momentum: 8, supply: 1 });
+  });
+
+  it("weak Heal, not wounded: +3 health then the cost; the wounded options are unavailable", async () => {
+    pc.system.health.value = 2; pc.system.momentum.value = 8;
+    await roll("heal");
+    const card = choices().at(-1);
+    expect(card.content).toMatch(/data-option-index="0" disabled/);
+    expect(card.content).toMatch(/data-option-index="1" disabled/);
+    await pick(2);
+    expect(meters()).toMatchObject({ health: 5, momentum: 6 });
+  });
+
+  it("weak Hearten, shaken: shaken cleared, spirit 1 → 2, momentum 8 → 7 — paid with the recovery", async () => {
+    pc.system.spirit.value = 1; pc.system.momentum.value = 8;
+    pc.system.debility.shaken = true;
+    await roll("hearten", { statUsed: "heart" });
+    expect(lastLog().outcome).toBe("weak_hit");
+    // The cost rides the choice: nothing is taken until the recovery is.
+    expect(pc.system.momentum.value).toBe(8);
+    expect(choices()).toHaveLength(1);
+    await pick(0);
+    expect(meters()).toMatchObject({ spirit: 2, shaken: false, momentum: 7 });
+  });
+
+  it("weak Hearten, not shaken: spirit 1 → 3, momentum 8 → 7", async () => {
+    pc.system.spirit.value = 1; pc.system.momentum.value = 8;
+    await roll("hearten", { statUsed: "heart" });
+    await pick(1);
+    expect(meters()).toMatchObject({ spirit: 3, shaken: false, momentum: 7 });
   });
 });
