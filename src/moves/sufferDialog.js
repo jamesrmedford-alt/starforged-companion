@@ -25,7 +25,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -182,6 +182,38 @@ function optionToCalls(opt, selection) {
 }
 
 
+// Meters a "meter" call may change: the PC's four, the vehicle's integrity and
+// a companion's health.
+const RETRY_METERS = new Set(["health", "spirit", "supply", "momentum", "integrity", "companionHealth"]);
+const smallInt = (n, max) => Number.isInteger(n) && n >= 1 && n <= max;
+
+/**
+ * True when a GM's Retry may run `call` again: a write runSufferResolution
+ * makes, with its values in range. A suffer pick's refused write goes on the
+ * GMs' payoff failure card as a `suffer` step (issue #309 N07) — the card is
+ * GM-authored, but what a Retry re-applies is still checked.
+ *
+ * @param {Object} call — a resolveSufferSelection call
+ * @returns {boolean}
+ */
+export function isRetryableSufferCall(call) {
+  switch (call?.kind) {
+    case "suffer":
+      return Object.prototype.hasOwnProperty.call(SUFFER_EXECUTORS, call.sufferId) && smallInt(call.amount, 6);
+    case "meter":
+      return RETRY_METERS.has(call.meterKey) && Number.isInteger(call.delta) && smallInt(Math.abs(call.delta), 6);
+    case "mark":
+    case "clear-impact":
+      return typeof call.debility === "string" && /^[a-z0-9]+$/i.test(call.debility);
+    case "combat-progress":
+    case "expedition-progress":
+      return smallInt(call.count ?? 1, 4);
+    default:
+      return false;
+  }
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Async runner — turns a resolved selection into actual writes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,166 +257,146 @@ async function stashPositionOnThresholdCard(position) {
  * @returns {Promise<Array<Object>>} list of per-call results
  */
 export async function runSufferResolution(calls, actor, opts = {}) {
-  const { applyMeterChanges, setDebility } = await import("../character/actorBridge.js");
   const results = [];
   for (const call of calls) {
-    switch (call.kind) {
-      case "suffer": {
-        const r = await executeSuffer(call.sufferId, actor, {
-          amount: call.amount,
-          itemId: call.itemId,
-          ...opts,
-        });
-        results.push({ kind: "suffer", sufferId: call.sufferId, ...r });
-        break;
-      }
-      case "meter": {
-        // A vehicle's integrity and a companion's health are no PC meters: the
-        // generic write dropped them, and the card reported them applied
-        // (issue #309 N02 / N03).
-        if (call.meterKey === "integrity") {
-          results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta,
-            ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) });
-          break;
-        }
-        if (call.meterKey === "companionHealth") {
-          const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
-          results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta,
-            ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null })) });
-          break;
-        }
-        await applyMeterChanges(actor, { [call.meterKey]: call.delta });
-        results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta });
-        break;
-      }
-      case "mark": {
-        await setDebility(actor, call.debility, true);
-        results.push({ kind: "mark", debility: call.debility });
-        break;
-      }
-      case "clear-impact": {
-        await setDebility(actor, call.debility, false);
-        results.push({ kind: "clear-impact", debility: call.debility });
-        break;
-      }
-      case "noop":
-        results.push({ kind: "noop" });
-        break;
-      case "combat-progress": {
-        const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
-        const { fight, reason } = progressFight(await listProgressTracks(), opts);
-        if (!fight) {
-          console.warn(`${MODULE_ID} | combat-progress executor: ${reason} — progress not marked.`);
-          results.push({ kind: "combat-progress", count: call.count, skipped: true, ok: false, reason });
-          break;
-        }
-        for (let i = 0; i < (call.count ?? 1); i++) {
-          await markProgressById(fight.id).catch(err =>
-            console.warn("starforged-companion | combat-progress executor:", err));
-        }
-        results.push({ kind: "combat-progress", count: call.count, trackId: fight.id });
-        break;
-      }
-      case "expedition-progress": {
-        const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
-        const allTracks = await listProgressTracks();
-        const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
-        if (open.length === 1) {
-          for (let i = 0; i < (call.count ?? 1); i++) {
-            await markProgressById(open[0].id).catch(err =>
-              console.warn(`${MODULE_ID} | expedition-progress executor:`, err));
-          }
-          results.push({ kind: "expedition-progress", count: call.count, trackId: open[0].id });
-        } else if (open.length === 0) {
-          // Explore a Waypoint's "mark progress" pick used to silently skip
-          // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
-          // applyExpeditionProgress's resolve-or-create: begin a default
-          // expedition and mark it, so the chosen reward always lands.
-          try {
-            const created = await addProgressTrack({ label: "Expedition", type: "expedition", rank: "dangerous" });
-            for (let i = 0; i < (call.count ?? 1); i++) {
-              await markProgressById(created.id).catch(err =>
-                console.warn(`${MODULE_ID} | expedition-progress executor:`, err));
-            }
-            results.push({ kind: "expedition-progress", count: call.count, trackId: created.id, created: true });
-          } catch (err) {
-            console.warn(`${MODULE_ID} | expedition-progress executor: create failed:`, err?.message ?? err);
-            results.push({ kind: "expedition-progress", count: call.count, skipped: true });
-          }
-        } else {
-          console.warn(`${MODULE_ID} | expedition-progress executor: ${open.length} open expeditions — ambiguous, progress not marked. Name the expedition or mark it in the Progress Tracks panel.`);
-          results.push({ kind: "expedition-progress", count: call.count, skipped: true });
-        }
-        break;
-      }
-      case "combat-position": {
-        const { listProgressTracks } = await import("../ui/progressTracks.js");
-        const allTracks = await listProgressTracks();
-        const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
-        if (open.length === 1) {
-          const { applyCombatPositionToTrack } = await import("./combatTracker.js");
-          await applyCombatPositionToTrack(open[0].id, call.position, actor).catch(err =>
-            console.warn(`${MODULE_ID} | combat-position executor:`, err));
-          results.push({ kind: "combat-position", position: call.position, trackId: open[0].id });
-        } else if (open.length === 0) {
-          // Enter the Fray's threshold card may still be waiting for its
-          // Enter-the-Fray click (the suffer choice and the threshold card can
-          // be resolved in either order). Stash the position on the newest
-          // threshold card so createCombatTrackFromThreshold applies it when
-          // the track is created.
-          const stashed = await stashPositionOnThresholdCard(call.position);
-          if (!stashed) {
-            console.warn(`${MODULE_ID} | combat-position executor: no open combat track or pending threshold card to receive "${call.position}".`);
-          }
-          results.push({ kind: "combat-position", position: call.position, stashed, skipped: !stashed });
-        } else {
-          console.warn(`${MODULE_ID} | combat-position executor: ${open.length} open combat tracks — position "${call.position}" not applied.`);
-          results.push({ kind: "combat-position", position: call.position, skipped: true });
-        }
-        break;
-      }
-      case "next-bonus":
-        await postDeferredCard(
-          `+${call.amount} on your next move`,
-          `Remember to add +${call.amount} to your action die result on the next roll.`,
-          { nextBonus: true, amount: call.amount },
-        );
-        results.push({ kind: "next-bonus", amount: call.amount });
-        break;
-      case "complication":
-        // Surface a chat card; the narrator picks it up on next scene
-        // transition. The actual `pendingComplication` flag write is
-        // the narrator's responsibility (Phase F for set_a_course; the
-        // rest is GM adjudication).
-        await postDeferredCard(
-          `Pending complication (${call.scope})`,
-          `Narrator will surface this complication on the next scene transition or appropriate beat.`,
-          { complication: true, scope: call.scope },
-        );
-        results.push({ kind: "complication", scope: call.scope });
-        break;
-      case "route":
-        // Surface a chat card prompting the player/GM to trigger the
-        // follow-up move themselves. Auto-firing Swear an Iron Vow /
-        // Pay the Price from here would lose the player's narration.
-        await postDeferredCard(
-          `Trigger: ${call.route}`,
-          `Resolve this by typing the move's chat command or using its panel.${call.rank ? ` (rank: ${call.rank})` : ""}`,
-          { route: call.route, rank: call.rank ?? null },
-        );
-        results.push({ kind: "route", route: call.route, rank: call.rank });
-        break;
-      case "needs-any":
-        // Caller didn't pre-supply an `anyChoice` for a B2 option that
-        // embeds a B1-style sub-prompt. Defer to a recursive prompt —
-        // the dialog handles this by re-opening with the sub-prompt.
-        results.push({ kind: "needs-any", amount: call.amount, count: call.count });
-        break;
-      default:
-        results.push({ kind: "unknown", call });
+    try {
+      results.push(await runSufferCall(call, actor, opts));
+    } catch (err) {
+      // A write the world refused is reported, never thrown past the card:
+      // its pick is claimed before any effect runs (issue #309 N07), so the
+      // card says this one was not applied and the GMs can retry it.
+      console.warn(`${MODULE_ID} | suffer ${call?.kind ?? "call"} not applied:`, err?.message ?? err);
+      results.push({ kind: call?.kind ?? "unknown", ok: false, reason: "refused", error: String(err?.message ?? err) });
     }
   }
   return results;
+}
+
+/** One call of runSufferResolution — its result; a refused write throws. */
+async function runSufferCall(call, actor, opts) {
+  const { applyMeterChanges, setDebility } = await import("../character/actorBridge.js");
+  switch (call.kind) {
+    case "suffer": {
+      const r = await executeSuffer(call.sufferId, actor, {
+        amount: call.amount,
+        itemId: call.itemId,
+        ...opts,
+      });
+      return { kind: "suffer", sufferId: call.sufferId, ...r };
+    }
+    case "meter": {
+      // A vehicle's integrity and a companion's health are no PC meters: the
+      // generic write dropped them, and the card reported them applied
+      // (issue #309 N02 / N03).
+      if (call.meterKey === "integrity") {
+        return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
+          ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) };
+      }
+      if (call.meterKey === "companionHealth") {
+        const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+        return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
+          ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null })) };
+      }
+      await applyMeterChanges(actor, { [call.meterKey]: call.delta });
+      return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
+    }
+    case "mark":
+      await setDebility(actor, call.debility, true);
+      return { kind: "mark", debility: call.debility };
+    case "clear-impact":
+      await setDebility(actor, call.debility, false);
+      return { kind: "clear-impact", debility: call.debility };
+    case "noop":
+      return { kind: "noop" };
+    case "combat-progress": {
+      const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
+      const { fight, reason } = progressFight(await listProgressTracks(), opts);
+      if (!fight) {
+        console.warn(`${MODULE_ID} | combat-progress executor: ${reason} — progress not marked.`);
+        return { kind: "combat-progress", count: call.count, skipped: true, ok: false, reason };
+      }
+      for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(fight.id);
+      return { kind: "combat-progress", count: call.count, trackId: fight.id };
+    }
+    case "expedition-progress": {
+      const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
+      const allTracks = await listProgressTracks();
+      const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
+      if (open.length === 1) {
+        for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(open[0].id);
+        return { kind: "expedition-progress", count: call.count, trackId: open[0].id };
+      }
+      if (open.length === 0) {
+        // Explore a Waypoint's "mark progress" pick used to silently skip
+        // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
+        // applyExpeditionProgress's resolve-or-create: begin a default
+        // expedition and mark it, so the chosen reward always lands.
+        const created = await addProgressTrack({ label: "Expedition", type: "expedition", rank: "dangerous" });
+        for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(created.id);
+        return { kind: "expedition-progress", count: call.count, trackId: created.id, created: true };
+      }
+      console.warn(`${MODULE_ID} | expedition-progress executor: ${open.length} open expeditions — ambiguous, progress not marked. Name the expedition or mark it in the Progress Tracks panel.`);
+      return { kind: "expedition-progress", count: call.count, skipped: true, ok: false, reason: "ambiguous" };
+    }
+    case "combat-position": {
+      const { listProgressTracks } = await import("../ui/progressTracks.js");
+      const allTracks = await listProgressTracks();
+      const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
+      if (open.length === 1) {
+        const { applyCombatPositionToTrack } = await import("./combatTracker.js");
+        await applyCombatPositionToTrack(open[0].id, call.position, actor);
+        return { kind: "combat-position", position: call.position, trackId: open[0].id };
+      }
+      if (open.length === 0) {
+        // Enter the Fray's threshold card may still be waiting for its
+        // Enter-the-Fray click (the suffer choice and the threshold card can
+        // be resolved in either order). Stash the position on the newest
+        // threshold card so createCombatTrackFromThreshold applies it when
+        // the track is created.
+        const stashed = await stashPositionOnThresholdCard(call.position);
+        if (stashed) return { kind: "combat-position", position: call.position, stashed, skipped: false };
+        console.warn(`${MODULE_ID} | combat-position executor: no open combat track or pending threshold card to receive "${call.position}".`);
+        return { kind: "combat-position", position: call.position, stashed, skipped: true, ok: false, reason: "no-fight" };
+      }
+      console.warn(`${MODULE_ID} | combat-position executor: ${open.length} open combat tracks — position "${call.position}" not applied.`);
+      return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: "ambiguous" };
+    }
+    case "next-bonus":
+      await postDeferredCard(
+        `+${call.amount} on your next move`,
+        `Remember to add +${call.amount} to your action die result on the next roll.`,
+        { nextBonus: true, amount: call.amount },
+      );
+      return { kind: "next-bonus", amount: call.amount };
+    case "complication":
+      // Surface a chat card; the narrator picks it up on next scene
+      // transition. The actual `pendingComplication` flag write is
+      // the narrator's responsibility (Phase F for set_a_course; the
+      // rest is GM adjudication).
+      await postDeferredCard(
+        `Pending complication (${call.scope})`,
+        `Narrator will surface this complication on the next scene transition or appropriate beat.`,
+        { complication: true, scope: call.scope },
+      );
+      return { kind: "complication", scope: call.scope };
+    case "route":
+      // Surface a chat card prompting the player/GM to trigger the
+      // follow-up move themselves. Auto-firing Swear an Iron Vow /
+      // Pay the Price from here would lose the player's narration.
+      await postDeferredCard(
+        `Trigger: ${call.route}`,
+        `Resolve this by typing the move's chat command or using its panel.${call.rank ? ` (rank: ${call.rank})` : ""}`,
+        { route: call.route, rank: call.rank ?? null },
+      );
+      return { kind: "route", route: call.route, rank: call.rank };
+    case "needs-any":
+      // Caller didn't pre-supply an `anyChoice` for a B2 option that
+      // embeds a B1-style sub-prompt. Defer to a recursive prompt —
+      // the dialog handles this by re-opening with the sub-prompt.
+      return { kind: "needs-any", amount: call.amount, count: call.count };
+    default:
+      return { kind: "unknown", call };
+  }
 }
 
 /**

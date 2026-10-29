@@ -13,6 +13,9 @@
  *   - N03: Companion Takes a Hit's health changes went the same way, and the
  *     weak hit's recovery was always unavailable. The companion the roll read
  *     now rides onto the card, and the strong hit heals that one.
+ *   - N07: a pick is claimed before its effects; a write the world refuses
+ *     after the claim is told on the card and goes to the GMs, whose Retry
+ *     applies it once — the pick itself cannot be pressed again.
  *   - N04: Gain Ground's "Mark progress" re-selected the sole open fight when
  *     clicked: with two open it marked nothing, and an old choice marked a
  *     fight opened after its own had finished. The move's fight (the
@@ -197,6 +200,44 @@ describe('Withstand Damage — the vehicle the roll was made against (issue #309
   it('a weak hit\'s trade costs a momentum and raises it', async () => {
     await typedMove(move, WEAK);
     await choose('withstand_damage', 0);
+    expect({ integrity: integrity(), momentum: pat.system.momentum.value }).toEqual({ integrity: 3, momentum: 1 });
+  });
+
+  // Issue #309 N07: the trade's momentum write is refused after the pick is
+  // claimed. The integrity lands; the card says the momentum did not; the
+  // GMs' Retry charges it once; the card's button stays spent.
+  it('a refused write in the trade is told on the card, and the GMs\' Retry applies it once', async () => {
+    await typedMove(move, WEAK);
+    let spent = false;
+    table.interceptWrites((w) => {
+      if (spent || w.kind !== 'actor.update' || w.id !== 'pc-pat'
+        || !Object.keys(w.changes ?? {}).some(k => k.includes('momentum'))) return undefined;
+      spent = true;
+      return new Error('refused by the test');
+    });
+    const resolved = await choose('withstand_damage', 0);
+    expect({ integrity: integrity(), momentum: pat.system.momentum.value }).toEqual({ integrity: 3, momentum: 2 });
+    expect(resolved.flags[MODULE_ID].resolved).toBe(true);
+    expect(resolved.content).toContain('Not applied: Lose Momentum (-1) — the world did not save it');
+
+    const [failCard] = table.cards(f => f.payoffFailureCard);
+    expect(failCard.flags[MODULE_ID]).toMatchObject({ source: 'suffer', actorId: 'pc-pat' });
+    expect(failCard.whisper).toEqual(['gm-1']);
+    table.client('gm-1').click(failCard._id, '[data-action="sf-payoff-retry"]');
+    await table.settle();
+    await table.drain();
+    expect(pat.system.momentum.value).toBe(1);
+
+    // The resolved card shows no buttons; a stale client's press, and a
+    // second Retry, apply nothing.
+    expect(resolved.content).not.toContain('data-option-index');
+    const gm = table.client('gm-1');
+    const { requestGmAction } = await gm.import('../../src/multiplayer/gmRelay.js');
+    const again = await gm.run(() => requestGmAction('suffer.pick', { messageId: resolved._id, pickKind: 'enum', optionIndex: '0' }));
+    expect(again.result).toEqual({ applied: false, reason: 'already-resolved' });
+    table.client('gm-1').click(failCard._id, '[data-action="sf-payoff-retry"]');
+    await table.settle();
+    await table.drain();
     expect({ integrity: integrity(), momentum: pat.system.momentum.value }).toEqual({ integrity: 3, momentum: 1 });
   });
 });

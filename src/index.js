@@ -38,7 +38,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { registerSufferCardHook } from "./moves/sufferCard.js";
+import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
@@ -4193,6 +4193,9 @@ function payoffVowCopies({ vowId = null, vowName = null, actorId = null } = {}) 
 
 const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u => u.id);
 
+// The PC meter each suffer move changes — a failure card line shows it as it stands.
+const SUFFER_METERS = { lose_momentum: "momentum", endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply" };
+
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
@@ -4207,6 +4210,7 @@ const PAYOFF_TITLES = {
   forge:       (c) => `Bond payoff incomplete — ${c.connectionName ?? "the bond"}`,
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
   legacyXp:    ()  => `Legacy experience not given`,
+  suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -4219,7 +4223,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4254,6 +4258,7 @@ function payoffStepRecord(f) {
     case "rewardGrant": return { step: "rewardGrant", pcId: f.pcId ?? null, reward: f.reward ?? null, plan: f.plan ?? null };
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
+    case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4273,6 +4278,14 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const target = await findOpenConnection(f.connectionName);
         const now = target ? ` It stands at ${Number(target.relationshipTicks ?? 0)}/40 ticks now.` : "";
         return `Your bond with ${escapeChatHtml(f.connectionName ?? "your connection")}: +${plural(f.marks, "milestone")} of relationship progress — ${why}.${now}`;
+      }
+      case "suffer": {
+        // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
+        const pc    = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        const meter = f.call?.kind === "meter" ? f.call.meterKey : SUFFER_METERS[f.call?.sufferId];
+        const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
+        const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
+        return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
       }
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
@@ -4352,6 +4365,15 @@ async function runPayoffStep(s, card, copies) {
     case "reward":
       if (!copies.length) return { ok: false, reason: "no-vow" };
       return grantLinkedVowReward(card.vowName ?? null, card.outcome ?? null, { actorId: card.actorId ?? null, copies });
+    case "suffer": {
+      // A suffer pick's refused write, applied for the card's PC (issue #309 N07).
+      const { runSufferResolution, isRetryableSufferCall } = await import("./moves/sufferDialog.js");
+      const pc = card?.actorId ? (game.actors?.get?.(card.actorId) ?? null) : null;
+      if (!isRetryableSufferCall(s.call)) return { ok: false, reason: "invalid step" };
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
+      return res?.ok === false ? { ...res, ok: false } : { ok: true };
+    }
     case "xp": {
       // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
       const xp = Math.floor(Number(s.xp));

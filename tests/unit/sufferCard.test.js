@@ -395,3 +395,104 @@ describe("Companion Takes a Hit — its health choices change the companion (iss
     expect(card.content).toContain("Not applied: companion health -1 — no companion to change");
   });
 });
+
+// ── A pick is claimed before its effects (issue #309 N07) ─────────────────────
+
+describe("a pick is claimed before its effects (issue #309 N07)", () => {
+  // The resolved stamp followed the effects, its refusal swallowed: the card
+  // stayed live, so the next press charged the same cost again.
+  const gm = { requesterId: "gm-1", requesterIsGM: true };
+  let pc;
+
+  function card(prompt) {
+    const msg = makeTestMessage({
+      content: renderSufferCard(prompt, pc, []),
+      flags: { [MODULE_ID]: { sufferCard: true, sufferPrompt: prompt, executorOpts: {}, actorId: pc.id, moveId: "face_danger", pickedIndices: [], resolved: false } },
+    }, { author: "test-user-gm" });
+    game.messages = { contents: [msg], get: (id) => (id === msg.id ? msg : null) };
+    return msg;
+  }
+  /** Refuse `doc.update`'s next call — once. */
+  function refuseNextUpdate(doc) {
+    const update = doc.update.bind(doc);
+    let refuse = true;
+    doc.update = async (changes) => {
+      if (refuse) { refuse = false; throw new Error("refused by the test"); }
+      return update(changes);
+    };
+  }
+  const pick = (msg, payload) => applySufferPickFromRelay({ messageId: msg.id, ...payload }, gm);
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    pc = makeTestActor({ id: "pc-1", name: "Kira", ownership: { "pl-1": 3 } });
+    game.actors._set(pc.id, pc);
+    invalidateActorCache(pc.id);
+  });
+
+  it("a refused claim applies nothing; the next press applies the cost once", async () => {
+    const msg = card({ kind: "any", amount: 1, count: 1 });
+    refuseNextUpdate(msg);
+    await expect(pick(msg, { pickKind: "any", sufferId: "lose_momentum" })).resolves.toEqual({ applied: false, reason: "claim-refused" });
+    expect(pc.system.momentum.value).toBe(2);
+    expect(msg.flags[MODULE_ID].resolved).toBe(false);
+
+    await expect(pick(msg, { pickKind: "any", sufferId: "lose_momentum" })).resolves.toEqual({ applied: true });
+    await expect(pick(msg, { pickKind: "any", sufferId: "lose_momentum" })).resolves.toEqual({ applied: false, reason: "already-resolved" });
+    expect(pc.system.momentum.value).toBe(1);
+    expect(msg.content).toContain("Applied: Lose Momentum (-1)");
+  });
+
+  it("a multi-select pick is claimed too: refused, nothing applies and it can be made again", async () => {
+    const msg = card({ kind: "enumerated", multi: 2, options: [
+      { label: "+2 momentum", momentum: 2 }, { label: "+1 health", health: 1 }, { label: "Press on", noop: true },
+    ] });
+    refuseNextUpdate(msg);
+    await expect(pick(msg, { pickKind: "enum", optionIndex: "0" })).resolves.toEqual({ applied: false, reason: "claim-refused" });
+    expect(pc.system.momentum.value).toBe(2);
+    expect(msg.flags[MODULE_ID].pickedIndices).toEqual([]);
+
+    await pick(msg, { pickKind: "enum", optionIndex: "0" });
+    await expect(pick(msg, { pickKind: "enum", optionIndex: "0" })).resolves.toEqual({ applied: false, reason: "not-offered" });
+    expect(pc.system.momentum.value).toBe(4);
+  });
+
+  it("a nested suffer move whose follow-up picker cannot be posted re-opens the card", async () => {
+    const msg = card({ kind: "enumerated", options: [
+      { label: "One suffer move (-2)", kind: "any", amount: 2, count: 1 }, { label: "Press on", noop: true },
+    ] });
+    const create = ChatMessage.create;
+    ChatMessage.create = async () => { throw new Error("refused by the test"); };
+    try {
+      await expect(pick(msg, { pickKind: "enum", optionIndex: "0" })).resolves.toEqual({ applied: false, reason: "no-follow-up" });
+    } finally {
+      ChatMessage.create = create;
+    }
+    expect(msg.flags[MODULE_ID].resolved).toBe(false);
+    expect(msg.content).toContain('data-option-index="0"');
+
+    await expect(pick(msg, { pickKind: "enum", optionIndex: "0" })).resolves.toEqual({ applied: true });
+    expect(ChatMessage._created.filter(m => m.flags[MODULE_ID]?.sufferCard)).toHaveLength(1);
+  });
+
+  it("a write refused after the claim: the card says so, and the GMs' Retry applies it once", async () => {
+    const msg = card({ kind: "any", amount: 1, count: 1 });
+    refuseNextUpdate(pc);
+    await expect(pick(msg, { pickKind: "any", sufferId: "lose_momentum" })).resolves.toEqual({ applied: true });
+    expect(pc.system.momentum.value).toBe(2);
+    expect(msg.flags[MODULE_ID].resolved).toBe(true);
+    expect(msg.content).toContain("Not applied: Lose Momentum (-1) — the world did not save it");
+
+    const failCard = ChatMessage._created.find(m => m.flags[MODULE_ID]?.payoffFailureCard);
+    expect(failCard.flags[MODULE_ID]).toMatchObject({
+      source: "suffer", actorId: "pc-1",
+      steps: [{ step: "suffer", call: { kind: "suffer", sufferId: "lose_momentum", amount: 1 } }],
+    });
+    expect(failCard.content).toContain("Kira's momentum stands at 2 now");
+
+    const { retryPayoffSteps } = await import("../../src/index.js");
+    await expect(retryPayoffSteps(failCard.flags[MODULE_ID])).resolves.toEqual([]);
+    expect(pc.system.momentum.value).toBe(1);
+  });
+});
