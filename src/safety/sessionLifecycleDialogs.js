@@ -318,6 +318,15 @@ async function postSessionAlreadyBegunCard() {
 export async function openEndSessionDialog() {
   const { DialogV2 } = foundry.applications.api;
 
+  // A session ends once (issue #309 N08). Ending it again only corrects the
+  // focus for next session; the momentum is paid for the first focus noted.
+  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const bonusHint = !sessionAlreadyEnded(state)
+    ? `Setting at least one focus grants <strong>+1 momentum</strong>.`
+    : hasFocus(state)
+      ? `This session has already ended. A focus set now replaces the one noted; its momentum was already taken.`
+      : `This session has already ended. Setting a focus now still grants <strong>+1 momentum</strong>, once.`;
+
   const content = `
     <form class="sf-end-session-form">
       <p class="hint">Reflect on the events of the game and identify any missed
@@ -331,7 +340,7 @@ export async function openEndSessionDialog() {
         <span>Connection focus for next session (optional)</span>
         <input type="text" name="connectionFocus" maxlength="120">
       </label>
-      <p class="hint">Setting at least one focus grants <strong>+1 momentum</strong>.</p>
+      <p class="hint">${bonusHint}</p>
     </form>
   `;
 
@@ -357,10 +366,14 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   const focusBlock = lines.length
     ? `<ul>${lines.join("")}</ul><p>You take <strong>+1 momentum</strong>.</p>`
     : `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`;
+  const endedBefore = sessionAlreadyEnded(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
   // The world writes (foci, session-active flip, scene close, summary, log,
   // momentum) run on the canonical GM; the card follows on this client.
   const res = await requestGmActionSafely("session.end", { questFocus, connectionFocus });
+  // Ended already (issue #309 N08): the GM's note card says what changed — a
+  // second card here would promise momentum that is not paid again.
+  if (res?.ok !== false && (res?.result?.alreadyEnded === true || (endedBefore && res?.relayed))) return;
   const notRecorded = res?.ok === false
     ? `<p class="muted sf-not-recorded"><em>${res.reason === "no-gm"
         ? "No GM is connected — the session was not ended, and no focus or momentum was recorded. Try again once a GM has joined."
@@ -377,6 +390,29 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
 const END_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sessionActive", "sessionActiveStartedAt", "sessionEndedId"]);
 
 /**
+ * True when End a Session already ended the current session: it is marked
+ * ended and nothing has started a new one (the next Begin a Session or world
+ * load does).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function sessionAlreadyEnded(campaignState) {
+  const id = campaignState?.currentSessionId;
+  return !!id && campaignState.sessionEndedId === id;
+}
+
+/** A focus for next session is noted (End a Session saved it; Begin clears it). */
+function hasFocus(campaignState) {
+  return !!(cleanFocus(campaignState?.questFocus) || cleanFocus(campaignState?.connectionFocus));
+}
+
+// One End a Session at a time on this client, as for Begin: two players
+// ending the same session reach this handler together, and both found it
+// not yet ended (issue #309 N08).
+let _endChain = Promise.resolve();
+
+/**
  * GM-relay handler for `"session.end"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
  * order: persist foci → session-active flip OFF and mark the session ended →
@@ -385,19 +421,36 @@ const END_SESSION_FIELDS = Object.freeze(["questFocus", "connectionFocus", "sess
  * Session Log write → +1 momentum to all players when a focus was set →
  * closing NPC vignette, then a campaign-recap refresh.
  *
+ * A session ends once (issue #309 N08 — every End paid the party momentum
+ * again, and closed the session, wrote its log and scheduled its vignette
+ * again). End again on a session already ended only corrects the focus for
+ * next session, and posts a note: the momentum is paid for the first focus
+ * the session's ending notes, never again.
+ *
  * @param {{ questFocus?: string, connectionFocus?: string }} payload
  * @param {Object} [_ctx]
- * @returns {Promise<void>}
+ * @returns {Promise<{ alreadyEnded: boolean }>} alreadyEnded: the session had
+ *   ended — only the focus was corrected (postEndSessionCard posts no card)
  */
-export async function applyEndSession(payload = {}, _ctx = {}) {
+export function applyEndSession(payload = {}, _ctx = {}) {
+  const run = _endChain.then(() => endSessionOnce(payload));
+  _endChain = run.catch(() => {});
+  return run;
+}
+
+async function endSessionOnce(payload) {
   const questFocus      = cleanFocus(payload.questFocus);
   const connectionFocus = cleanFocus(payload.connectionFocus);
 
   // Persist the foci to campaignState so the next Begin a Session can surface
   // them (openBeginSessionDialog / postBeginSessionCard read them;
   // applyBeginSession clears them). Also flip the session-active gate OFF and
-  // award the +1 momentum to all players if a focus was set.
-  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  // award the +1 momentum to all players if a focus was set. On a copy
+  // (rules/foundry-api.md): get() returns the cached value, and a refused
+  // write must leave it as it was — marked ended on this client alone, every
+  // retry would be taken for a second End.
+  const state = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  if (sessionAlreadyEnded(state)) return correctEndedSession(state, { questFocus, connectionFocus });
   if (questFocus)      state.questFocus      = questFocus;
   if (connectionFocus) state.connectionFocus = connectionFocus;
   try {
@@ -456,7 +509,8 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
     }
   }
 
-  if (questFocus || connectionFocus) {
+  const bonus = !!(questFocus || connectionFocus);
+  if (bonus) {
     await applyMomentumToAllPlayers(1);
   }
 
@@ -490,6 +544,48 @@ export async function applyEndSession(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err);
     }
   }, 0);
+  return { alreadyEnded: false };
+}
+
+/**
+ * End a Session on a session already ended (issue #309 N08) — a correction.
+ * A focus it gives replaces the one noted; nothing else runs again (no scene
+ * close, summary, Session Log or closing vignette). The momentum is paid only
+ * when the ending noted no focus and this does: it is for the first focus
+ * noted, once. A note card says what changed.
+ *
+ * @param {Object} state — a copy of the stored campaignState
+ * @param {{ questFocus: string, connectionFocus: string }} foci — cleaned
+ * @returns {Promise<{ alreadyEnded: true }>}
+ */
+async function correctEndedSession(state, { questFocus, connectionFocus }) {
+  const given = !!(questFocus || connectionFocus);
+  const bonus = given && !hasFocus(state);
+  if (given) {
+    if (questFocus)      state.questFocus      = questFocus;
+    if (connectionFocus) state.connectionFocus = connectionFocus;
+    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    await game.settings.set(MODULE_ID, "campaignState",
+      mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+  }
+  if (bonus) await applyMomentumToAllPlayers(1);
+  console.debug?.(`${MODULE_ID} | End a Session: session ${state.currentSessionId} has already ended — ${given ? "focus updated" : "nothing changed"}${bonus ? ", first focus: +1 momentum" : ""}.`);
+
+  const lines = [];
+  if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
+  if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
+  const focusBlock = !given ? ""
+    : `<p>Focus for next session updated:</p><ul>${lines.join("")}</ul>`
+      + (bonus
+        ? `<p>The first focus noted for this session: you take <strong>+1 momentum</strong>.</p>`
+        : `<p class="muted"><em>No momentum — it was taken when the session ended with a focus.</em></p>`);
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>End a Session</strong>`
+      + `<p>This session has already ended — it is not closed again, and its Session Log and closing scene are not repeated.</p>`
+      + `${focusBlock}</div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | End a Session: note card failed:`, err?.message ?? err));
+  return { alreadyEnded: true };
 }
 
 

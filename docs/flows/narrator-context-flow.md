@@ -184,7 +184,14 @@ an unended session's summary is brought up to date
 id. Begin a Session's start effects (Spotlight momentum, campaign clocks, the
 galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead
-(the dialog does not open for it) — issue #300 F11. What carries over to the new session's prompts: LAST SESSION ([4c], every
+(the dialog does not open for it) — issue #300 F11. Begin works on a copy of
+the stored value, so a refused save leaves the GM's cache unbegun and a retry
+starts the session (issue #309 N09). End a Session's effects (scene close,
+summary, Session Log, the focus momentum, the closing vignette) run once per
+session id too: `applyEndSession` runs one End at a time on the canonical GM,
+and an End on a session already ended only replaces the focus for next
+session and posts a note — its momentum is paid for the first focus noted,
+once (issue #309 N08). What carries over to the new session's prompts: LAST SESSION ([4c], every
 prose mode), the campaign recap ([0b], the session's first narration — no
 narrator card of the session yet — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
