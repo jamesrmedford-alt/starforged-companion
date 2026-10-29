@@ -59,6 +59,8 @@ import {
   claimUpgradeCard,
   applyUpgradeStep,
   reportUpgradeFailures,
+  reconcileChoices,
+  consequenceChosen,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -103,20 +105,35 @@ export function releaseResultUpgrade(messageId) {
 
 /**
  * Why a card's result can't be upgraded right now, or null when it can: the
- * original outcome is not recorded yet ("original-pending"), or the other
- * upgrade already changed the result ("already-upgraded").
+ * original outcome is not recorded yet ("original-pending"), the other
+ * upgrade already changed the result ("already-upgraded"), or the move's
+ * consequence was already chosen on its choice card ("choice-made" — what the
+ * choice applied stands, so upgrading would stack two outcomes' choices;
+ * issue #311 P03). The GM handlers also check the choice cards themselves
+ * (resultUpgrade.js consequenceChosen).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|null}
+ * @returns {"original-pending"|"already-upgraded"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
+  if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
   return null;
 }
 
+/** Tooltip on a burn / improve button closed by the move's chosen consequence. */
+export const UPGRADE_CHOSEN_TITLE = "The consequence was already chosen — upgrade the result before choosing";
+
 /** Tooltip on a burn / improve button waiting for the original outcome to be recorded. */
 export const UPGRADE_PENDING_TITLE = "Available once the move's result is recorded";
+
+/** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
+export const UPGRADE_REFUSALS = {
+  "original-pending": "the original outcome is not recorded yet",
+  "already-upgraded": "the result was already upgraded",
+  "choice-made":      "the move's consequence was already chosen",
+};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,9 +154,12 @@ export const UPGRADE_PENDING_TITLE = "Available once the move's result is record
  *
  * @param {Object} resolution
  * @param {Actor}  actor       — active character; needed for momentum + impacts
+ * @param {Object|null} [ptpReversals] — what the miss's Pay the Price did, undone on burn
+ * @param {Object|null} [targets] — the move's vehicle, companion and fight
+ *   (persistResolution's): the upgraded outcome's choice card changes them
  * @returns {Object|null}
  */
-export function buildBurnState(resolution, actor, ptpReversals = null) {
+export function buildBurnState(resolution, actor, ptpReversals = null, targets = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
 
@@ -169,6 +189,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null) {
     actorId:            actor.id,
     resolutionId:       resolution._id ?? null,  // links to the original narration card (F13a)
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
+    targets:            targets ?? null,          // for the upgraded outcome's choice card
   };
 }
 
@@ -236,6 +257,12 @@ export function registerBurnMomentumHook({ narrate, persist } = {}) {
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
+      return;
+    }
+    if (blocker === "choice-made") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — the consequence was already chosen";
+      btn.title       = UPGRADE_CHOSEN_TITLE;
       return;
     }
     if (blocker === "original-pending") {
@@ -369,10 +396,10 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | burnMomentum: card ${messageId} already burned — ignoring repeat click.`);
     return { applied: false, reason: "already-consumed" };
   }
-  const blocker = resultUpgradeBlocker(burn, flags.improve);
+  const blocker = resultUpgradeBlocker(burn, flags.improve)
+    ?? (consequenceChosen(burn.resolutionId) ? "choice-made" : null);
   if (blocker) {
-    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${blocker === "original-pending"
-      ? "the original outcome is not recorded yet" : "the result was already improved"}; burn refused.`);
+    console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);
     return { applied: false, reason: blocker };
   }
   const actor = resolveActor(burn.actorId);
@@ -441,6 +468,13 @@ async function handleBurnClick(message, { narrate, persist }) {
     await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
+
+  // The original outcome's pending choice is retired and the burned outcome's
+  // offered once (issue #311 P03).
+  await reconcileChoices({
+    resolutionId: burn.resolutionId, kind: "burn", actor, moveId: burn.moveId,
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures,
+  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err));
 
   await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));

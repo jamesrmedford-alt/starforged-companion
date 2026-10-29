@@ -15,6 +15,19 @@
  *     are not reversed (decisions.md → "Burn Momentum reverses Pay-the-Price
  *     side effects").
  *
+ *   - reconcileChoices — the move's choice card. A pending card of the
+ *     superseded outcome is retired (and a pick that reaches it anyway is
+ *     refused: sufferCard.js checks upgradeKindFor), and the upgraded
+ *     outcome's own choice is posted, once (issue #311 P03 — the old card kept
+ *     charging the weak hit's cost under a strong hit, and the new outcome's
+ *     choice was never offered). Choice cards carry their move's
+ *     `resolutionId` for this.
+ *
+ * A consequence already chosen closes both upgrades: the rules burn momentum
+ * "before applying any other effects of the move", and a choice's effects are
+ * not undone — an upgrade after it would stack two outcomes' choices
+ * (consequenceChosen, closeUpgradesForChoice).
+ *
  * An upgrade is claimed before any of its effects (claimUpgradeCard), and each
  * write after the claim runs through applyUpgradeStep: one the world refuses
  * goes on the GMs' payoff failure card as an `upgrade` step, which its Retry
@@ -60,7 +73,8 @@ export async function claimUpgradeCard(message, kind) {
  *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
- *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }} step
+ *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
+ *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
  * @returns {Promise<boolean>} whether it landed
  */
@@ -95,6 +109,16 @@ async function runUpgradeStep(step) {
       const failed = await revertVowClocksForBurn(step.entries);
       return failed.length ? { ok: false, reason: "refused" } : { ok: true };
     }
+    case "choiceCard": {
+      const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
+      if (!pc) return { ok: false, reason: "no-pc" };
+      const { postSufferChoiceCard } = await import("./sufferCard.js");
+      const card = await postSufferChoiceCard({
+        sufferPrompt: step.sufferPrompt, actor: pc, executorOpts: step.executorOpts ?? {},
+        moveId: step.moveId ?? null, resolutionId: step.resolutionId ?? null, upgraded: true,
+      });
+      return card ? { ok: true } : { ok: false, reason: "refused" };
+    }
     default:
       return { ok: false, reason: "invalid step" };
   }
@@ -126,6 +150,12 @@ export async function retryUpgradeStep(s) {
         return { ok: false, reason: "invalid step" };
       }
       break;
+    case "choiceCard": {
+      const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
+      break;
+    }
     default:
       return { ok: false, reason: "invalid step" };
   }
@@ -140,6 +170,8 @@ export function upgradeStepRecord(f) {
     ...(f.effect === "meters"        ? { pcId: f.pcId ?? null, changes: f.changes ?? {} } : {}),
     ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({ actorId: e.actorId, itemId: e.itemId, name: e.name ?? null })) } : {}),
+    ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
+      moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
   };
 }
 
@@ -172,6 +204,10 @@ export function describeUpgradeStep(f, why) {
     }
     case "vowClocks":
       return (f.entries ?? []).map(e => `Rewind the ${escapeHtml(e.name ?? "vow")} clock one segment — ${why}.`).join("<br>");
+    case "choiceCard": {
+      const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
+      return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
+    }
     default:
       return `An upgrade step — ${why}.`;
   }
@@ -248,4 +284,120 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     flags:   { [MODULE_ID]: { clockCard: true, [card.flag]: true } },
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: reversal card failed:`, err));
   return reverted;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The move's choice cards (issue #311 P03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const allMessages = () => globalThis.game?.messages?.contents ?? [];
+
+/** A resolution's move card — the one carrying its Burn / Improve. */
+function moveCardFor(resolutionId) {
+  if (!resolutionId) return null;
+  return allMessages().find(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.moveResolution === true && f.resolutionId === resolutionId;
+  }) ?? null;
+}
+
+/** The choice cards of a resolution's own outcome — not an upgrade's, not one already retired. */
+function outcomeChoiceCards(resolutionId) {
+  if (!resolutionId) return [];
+  return allMessages().filter(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return f?.sufferCard === true && f.sufferPrompt && f.resolutionId === resolutionId
+      && f.upgraded !== true && f.superseded !== true;
+  });
+}
+
+const chosen = (f) => f.resolved === true || (Array.isArray(f.pickedIndices) && f.pickedIndices.length > 0);
+
+/**
+ * True when the move's consequence was chosen: a choice card of its outcome is
+ * resolved, or has a pick. Both upgrades are then closed — what the choice
+ * applied is not undone, and the upgraded outcome's choice would stack on it.
+ *
+ * @param {string|null} resolutionId
+ * @returns {boolean}
+ */
+export function consequenceChosen(resolutionId) {
+  return outcomeChoiceCards(resolutionId).some(m => chosen(m.flags[MODULE_ID]));
+}
+
+/**
+ * Which upgrade replaced a resolution's result — its move card's claimed burn
+ * or improvement — or null. A pick on a choice card of the superseded outcome
+ * is then refused (sufferCard.js), whether or not the card was retired.
+ *
+ * @param {string|null} resolutionId
+ * @returns {"burn"|"improve"|null}
+ */
+export function upgradeKindFor(resolutionId) {
+  const f = moveCardFor(resolutionId)?.flags?.[MODULE_ID];
+  return f?.burn?.consumed ? "burn" : f?.improve?.consumed ? "improve" : null;
+}
+
+/**
+ * The move card's Burn / Improve are closed once its consequence is chosen —
+ * stamped (`choiceMade`) so the buttons say so; consequenceChosen is the check
+ * the GM handlers make. Best effort.
+ *
+ * @param {string|null} resolutionId
+ */
+export async function closeUpgradesForChoice(resolutionId) {
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f) return;
+  const open = ["burn", "improve"].filter(k => f[k] && !f[k].consumed && !f[k].choiceMade);
+  if (!open.length) return;
+  await card.update(Object.fromEntries(open.map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true])))
+    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+}
+
+const RETIRED_BY = { burn: "momentum was burned", improve: "the result was improved" };
+
+/**
+ * Retire a pending choice card of the superseded outcome: resolved and
+ * superseded, so its buttons go. Best effort — a pick that reaches it anyway is
+ * refused (upgradeKindFor).
+ *
+ * @param {ChatMessage} message
+ * @param {"burn"|"improve"} kind
+ */
+export async function retireChoiceCard(message, kind) {
+  await message.update({
+    [`flags.${MODULE_ID}.resolved`]:   true,
+    [`flags.${MODULE_ID}.superseded`]: true,
+    content: `<div class="sf-card sf-suffer-choice-card sf-suffer-resolved">`
+      + `<div class="sf-card-header">◈ Consequence superseded</div>`
+      + `<div class="sf-card-body"><p>The result changed — ${RETIRED_BY[kind] ?? "it was upgraded"} — so this choice no longer applies. Nothing on it was applied.</p></div></div>`,
+  }).catch(err => console.warn(`${MODULE_ID} | ${kind}: retiring choice card ${message.id} failed:`, err?.message ?? err));
+}
+
+/**
+ * After an upgrade's claim: retire the superseded outcome's pending choice
+ * cards, then post the upgraded outcome's own choice, once — for the move's
+ * vehicle, companion and fight (`targets`, as persistResolution gives its
+ * card). A card that cannot be posted goes onto `failures`.
+ *
+ * @param {Object} args
+ * @param {string|null} args.resolutionId
+ * @param {"burn"|"improve"} args.kind
+ * @param {Actor} args.actor — the upgrading PC
+ * @param {Object|null} args.sufferPrompt — the upgraded outcome's
+ * @param {string|null} args.moveId
+ * @param {Object} [args.targets]
+ * @param {Array<Object>} args.failures
+ */
+export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures }) {
+  for (const card of outcomeChoiceCards(resolutionId)) {
+    if (!chosen(card.flags[MODULE_ID])) await retireChoiceCard(card, kind);
+  }
+  if (!sufferPrompt || !actor) return;
+  await applyUpgradeStep({
+    effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
+    executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
+  }, failures);
 }

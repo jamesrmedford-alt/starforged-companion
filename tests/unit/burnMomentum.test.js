@@ -14,6 +14,7 @@ import {
   renderBurnButtonHtml,
   buildSupersededNarrationContent,
   supersedeOriginalNarration,
+  resultUpgradeBlocker,
 } from '../../src/moves/burnMomentum.js';
 
 beforeEach(() => {
@@ -230,5 +231,25 @@ describe('supersedeOriginalNarration (F13a)', () => {
     global.game.messages = { contents: [card] };
     await supersedeOriginalNarration({ resolutionId: 'res-3' });
     expect(card.updated).toBeNull();
+  });
+});
+
+// Issue #311 P03: a consequence chosen on the move's choice card closes both
+// upgrades — what it applied stands, and an upgrade would stack two choices.
+describe('resultUpgradeBlocker', () => {
+  it('names the reason in order: already upgraded, consequence chosen, original pending', () => {
+    expect(resultUpgradeBlocker({ originalApplied: true }, { consumed: true })).toBe('already-upgraded');
+    expect(resultUpgradeBlocker({ originalApplied: true, choiceMade: true }, {})).toBe('choice-made');
+    expect(resultUpgradeBlocker({ originalApplied: false, choiceMade: true }, {})).toBe('choice-made');
+    expect(resultUpgradeBlocker({ originalApplied: false }, {})).toBe('original-pending');
+    expect(resultUpgradeBlocker({ originalApplied: true }, null)).toBeNull();
+  });
+});
+
+describe('buildBurnState — the move\'s targets', () => {
+  it('carries them for the upgraded outcome\'s choice card', () => {
+    const targets = { vehicleActorId: 'ship-1', companionItemId: null, combatTrackId: 'fight-1' };
+    expect(buildBurnState(makeResolution(), actorWithMomentum(7), null, targets).targets).toEqual(targets);
+    expect(buildBurnState(makeResolution(), actorWithMomentum(7)).targets).toBeNull();
   });
 });

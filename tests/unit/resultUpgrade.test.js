@@ -15,6 +15,9 @@
  *         burn does.
  *   P06 — an upgrade is claimed before its effects; a write refused after
  *         the claim goes to the GMs with a Retry.
+ *   P03 — an upgrade retires the superseded outcome's pending choice and
+ *         offers the upgraded outcome's, once; a consequence chosen first
+ *         closes both upgrades.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -273,5 +276,129 @@ describe("P06 — an upgrade is claimed before its effects", () => {
     await table.client("gm-1").click(failure._id, '[data-action="sf-payoff-retry"]');
     await table.settle(); await table.drain();
     expect(pc.system.health.value).toBe(5);
+  });
+});
+
+describe("P03 — an upgrade reconciles the move's choice cards", () => {
+  const FUGITIVE = [{ assetId: null, assetName: "Fugitive", resultImprovement: { improveTo: "strong_hit" }, hasClock: false }];
+  const WEAK_IRON  = [0.25, 0.65, 0.5];   // challenge 3, 7; die 4 — iron 3 is a weak hit
+  const WEAK_HEART = [0.25, 0.55, 0.5];   // challenge 3, 6; die 4 — heart 2 is a weak hit
+  const BURN    = '[data-action="sf-burn-momentum"]';
+  const IMPROVE = '[data-action="sf-improve-result"]';
+  const choices = () => table.cards(f => f.sufferCard && f.sufferPrompt);
+  const active  = () => choices().filter(c => !c.flags[MODULE_ID].resolved);
+
+  /** Send a relay as the player — what a stale render, or another client, could still send. */
+  async function relayAsPlayer(kind, payload) {
+    const { requestGmAction } = await table.client("pl-1").import("../../src/multiplayer/gmRelay.js");
+    await table.client("pl-1").run(() => requestGmAction(kind, payload));
+    await table.settle(); await table.drain();
+  }
+
+  it("a weak Face Danger burned to a strong hit retires its suffer card — the obsolete cost is not charged", async () => {
+    const card   = await roll("face_danger", { dice: WEAK_IRON });
+    const choice = choices().at(-1);
+    expect(flags(choice._id).resolutionId).toBe(flags(card._id).resolutionId);
+
+    await click(card, BURN);
+
+    expect(lastLog().outcome).toBe("strong_hit");
+    expect(flags(choice._id)).toMatchObject({ resolved: true, superseded: true });
+    expect(table.world.message(choice._id).content).toContain("Consequence superseded");
+    expect(active()).toHaveLength(0);   // a strong Face Danger has no choice
+    await relayAsPlayer("suffer.pick", { messageId: choice._id, pickKind: "any", sufferId: "endure_harm" });
+    expect(pc.system.health.value).toBe(5);
+  });
+
+  it("a pick still refuses when the card could not be retired, and retires it then", async () => {
+    const card   = await roll("face_danger", { dice: WEAK_IRON });
+    const choice = choices().at(-1);
+    let refused = false;
+    table.interceptWrites(w => {
+      if (!refused && w.kind === "message.update" && w.id === choice._id && w.changes?.[`flags.${MODULE_ID}.superseded`] === true) {
+        refused = true;
+        return new Error("test: refused retire");
+      }
+    });
+
+    await click(card, BURN);
+    expect(refused).toBe(true);
+    expect(flags(choice._id).resolved).toBe(false);
+
+    await click(choice, '[data-suffer-id="endure_harm"]');
+    expect(pc.system.health.value).toBe(5);
+    expect(flags(choice._id)).toMatchObject({ resolved: true, superseded: true });
+  });
+
+  it("a weak Hearten burned to a strong hit offers the strong hit's recovery, once", async () => {
+    pc.system.spirit.value = 1;
+    const card = await roll("hearten", { statUsed: "heart", dice: WEAK_HEART });
+    const weak = choices().at(-1);
+
+    await click(card, BURN);
+
+    expect(lastLog().outcome).toBe("strong_hit");
+    expect(flags(weak._id).superseded).toBe(true);
+    const fresh = active();
+    expect(fresh).toHaveLength(1);
+    expect(flags(fresh[0]._id)).toMatchObject({ upgraded: true, resolutionId: flags(card._id).resolutionId });
+    await click(fresh[0], '[data-option-index="1"]');   // Take +2 spirit (not shaken)
+    expect(pc.system.spirit.value).toBe(3);
+    // The reset momentum; the weak hit's Lose Momentum (-1) was never charged.
+    expect(pc.system.momentum.value).toBe(2);
+    expect(active()).toHaveLength(0);
+  });
+
+  it("a weak Heal improved to a strong hit offers the strong hit's recovery, with no cost", async () => {
+    control.abilities = FUGITIVE;
+    pc.system.health.value = 1;
+    pc.system.debility.wounded = true;
+    const card = await roll("heal", { dice: WEAK_IRON });
+
+    await click(card, IMPROVE);
+
+    const fresh = active();
+    expect(fresh).toHaveLength(1);
+    expect(flags(fresh[0]._id).upgraded).toBe(true);
+    await click(fresh[0], '[data-option-index="0"]');   // clear wounded + 2 health
+    expect(pc.system.health.value).toBe(3);
+    expect(pc.system.debility.wounded).toBe(false);
+    expect(pc.system.momentum.value).toBe(8);
+  });
+
+  it("a consequence chosen first closes Burn Momentum — the button says so, and the GM refuses it", async () => {
+    const card   = await roll("face_danger", { dice: WEAK_IRON });
+    const choice = choices().at(-1);
+    await click(choice, '[data-suffer-id="endure_harm"]');
+    expect(pc.system.health.value).toBe(4);
+
+    expect(flags(card._id).burn.choiceMade).toBe(true);
+    const btn = table.client("pl-1").render(card._id).querySelector(BURN);
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain("the consequence was already chosen");
+
+    await relayAsPlayer("move.burnMomentum", { messageId: card._id });
+    expect(flags(card._id).burn.consumed).toBeFalsy();
+    expect(lastLog().outcome).toBe("weak_hit");
+    expect(pc.system.momentum.value).toBe(8);
+    expect(pc.system.health.value).toBe(4);
+  });
+
+  it("the GM checks the choice cards themselves, so a lost close stamp does not reopen the upgrade", async () => {
+    control.abilities = FUGITIVE;
+    const card   = await roll("face_danger", { dice: WEAK_IRON });
+    const choice = choices().at(-1);
+    table.interceptWrites(w => {
+      if (w.kind === "message.update" && w.id === card._id && w.changes?.[`flags.${MODULE_ID}.improve.choiceMade`] === true) {
+        return new Error("test: refused close stamp");
+      }
+    });
+    await click(choice, '[data-suffer-id="endure_harm"]');
+    expect(flags(card._id).improve.choiceMade).toBeUndefined();
+
+    await click(card, IMPROVE);
+    expect(flags(card._id).improve.consumed).toBeFalsy();
+    expect(lastLog().outcome).toBe("weak_hit");
+    expect(pc.system.health.value).toBe(4);
   });
 });

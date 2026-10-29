@@ -340,11 +340,15 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // move (playtest lock-up). The card applies its choice on click via the same
   // resolveSufferSelection + runSufferResolution path the dialog used — meters
   // stay correct and nothing is auto-applied.
+  // The card carries its resolution: a Burn Momentum or Improve Result that
+  // replaces this outcome retires it and offers the new outcome's choice
+  // instead (resultUpgrade.js — issue #311 P03).
   await postSufferChoiceCard({
     sufferPrompt: prompt,
     actor,
     executorOpts,
     moveId: resolution.moveId,
+    resolutionId: resolution._id ?? null,
   });
 }
 

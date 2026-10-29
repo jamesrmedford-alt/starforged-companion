@@ -33,6 +33,7 @@ import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
+import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -253,9 +254,15 @@ function labelForSuffer(id) {
  * Post the non-blocking suffer-choice card. Returns the created message (or
  * null). Safe to call fire-and-forget from the move pipeline.
  *
- * @param {{ sufferPrompt: Object, actor: Actor, executorOpts?: Object, moveId?: string|null }} args
+ * `resolutionId` binds the card to its move's outcome, which a Burn Momentum or
+ * Improve Result can replace: the card of the superseded outcome is retired
+ * and refuses picks, and `upgraded` marks the upgraded outcome's own card
+ * (resultUpgrade.js — issue #311 P03).
+ *
+ * @param {{ sufferPrompt: Object, actor: Actor, executorOpts?: Object, moveId?: string|null,
+ *   resolutionId?: string|null, upgraded?: boolean }} args
  */
-export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts = {}, moveId = null }) {
+export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts = {}, moveId = null, resolutionId = null, upgraded = false }) {
   if (!sufferPrompt) return null;
   try {
     return await globalThis.ChatMessage?.create?.({
@@ -267,6 +274,8 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
           executorOpts,
           actorId:       actor?.id ?? null,
           moveId,
+          resolutionId,
+          ...(upgraded ? { upgraded: true } : {}),
           pickedIndices: [],
           resolved:      false,
         },
@@ -349,6 +358,16 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   if (!f.sufferCard || f.resolved || _picksInFlight.has(messageId)) {
     console.debug(`${MODULE_ID} | sufferCard: card ${messageId} already resolved — ignoring the pick.`);
     return { applied: false, reason: "already-resolved" };
+  }
+  // Its move's result was upgraded since: this choice belongs to the
+  // superseded outcome (issue #311 P03 — a Face Danger burned to a strong hit
+  // still charged its weak hit's cost). Refused even when the upgrade could
+  // not retire the card.
+  const upgradedBy = f.resolutionId && f.upgraded !== true ? upgradeKindFor(f.resolutionId) : null;
+  if (upgradedBy) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${messageId} — its move's result was upgraded (${upgradedBy}); the pick is refused.`);
+    await retireChoiceCard(message, upgradedBy);
+    return { applied: false, reason: "superseded" };
   }
   const actor = getActor(f.actorId) ?? null;
   const pick  = offeredPick(f, payload, actor);
@@ -442,6 +461,9 @@ async function handleSufferPick(message, dataset) {
     console.warn(`${MODULE_ID} | sufferCard: card ${message.id} could not be claimed — nothing applied:`, err?.message ?? err);
     return { applied: false, reason: "claim-refused" };
   }
+  // The consequence is chosen: its move's Burn Momentum / Improve Result close
+  // (resultUpgrade.js consequenceChosen).
+  if (f.resolutionId && f.upgraded !== true) await closeUpgradesForChoice(f.resolutionId);
 
   if (needsAny) {
     const followUp = await postSufferChoiceCard({

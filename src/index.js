@@ -1670,13 +1670,21 @@ export function registerChatHook() {
       // Step 9: post move result card. Determine burn eligibility against the
       // active character so the card can carry a 🔥 Burn Momentum button when
       // the dice would actually improve under burn.
+      // What the move was made against: its suffer-choice card changes that
+      // vehicle, companion or fight (issue #309), and so does the choice card
+      // an upgrade of its result posts (issue #311 P03).
+      const moveTargets = {
+        vehicleActorId:  interpretation.vehicleActorId ?? null,
+        companionItemId: interpretation.companionItemId ?? null,
+        combatTrackId:   moveFight?.id ?? null,
+      };
       const burnActor   = rollerActor;
-      const burnState   = buildBurnState(resolution, burnActor, ptpReversals);
+      const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
       // A miss's Pay the Price is undone by either upgrade (issue #311 P05).
-      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals);
+      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals, moveTargets);
       // "Reach a Milestone" suggestion (playtest: surface vow progress on a
       // success). Eligible on a quest-advancing hit when the PC has an open vow;
       // clicking marks progress without retyping the move. See moves/milestone.js.
@@ -1708,11 +1716,7 @@ export function registerChatHook() {
       if (game.user.isGM) {
         // What the move was made against rides onto its suffer-choice card,
         // so a choice changes that vehicle, companion or fight (issue #309).
-        await persistResolution(resolution, campaignState, speakerActorId, {
-          vehicleActorId:  interpretation.vehicleActorId ?? null,
-          companionItemId: interpretation.companionItemId ?? null,
-          combatTrackId:   moveFight?.id ?? null,
-        });
+        await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers
         // refuse) until this stamp — a burn clicked during the narration above
