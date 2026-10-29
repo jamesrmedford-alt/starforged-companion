@@ -117,7 +117,9 @@ hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
 BOND-NATIVE-FORGE fix). There the bonds legacy is written at once
 (`writeLegacyTicks`, its box XP only after the write lands); a refused write
 leaves the forge card saying the legacy is "not yet marked" and whispers the
-GMs a payoff failure card with a Retry (issue #306 R04). The Bolster (+2) / Expand (second role, +1) influence
+GMs a payoff failure card with a Retry (issue #306 R04). A PC's box XP that
+is refused once the ticks land goes on that card too, as an `xp` step whose
+Retry gives that PC's XP alone (issue #309 N06). The Bolster (+2) / Expand (second role, +1) influence
 choice is card text, tracked manually. Once
 `bonded`: always context-injected (`allyFlag`), develop switches to the
 bond-legacy branch, `selectConnection` prefers it as the sole-bonded

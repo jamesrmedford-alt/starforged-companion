@@ -172,7 +172,10 @@ flag, paid again). The native path, like a Retry, skips any step the vow's
 **A payoff step that does not land** (issue #306 R04, option 2):
 `payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
 Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
-filled box's XP awarded only once the write lands), the connection deepen
+filled box's XP awarded only once the write lands — each PC's award on its
+own, `awardLegacyBoxXP`; one that is refused is an `xp` step of its own,
+for that PC alone, since re-running the legacy would add its ticks again,
+issue #309 N06), the connection deepen
 (`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is
