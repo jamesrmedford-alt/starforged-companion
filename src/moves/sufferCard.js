@@ -462,15 +462,18 @@ async function handleSufferPick(message, dataset) {
     return { applied: false, reason: "claim-refused" };
   }
   // The consequence is chosen: its move's Burn Momentum / Improve Result close
-  // (resultUpgrade.js consequenceChosen).
-  if (f.resolutionId && f.upgraded !== true) await closeUpgradesForChoice(f.resolutionId);
+  // (resultUpgrade.js consequenceChosen) — once the choice stands.
+  const closeUpgrades = () => (f.resolutionId && f.upgraded !== true ? closeUpgradesForChoice(f.resolutionId) : null);
 
   if (needsAny) {
     const followUp = await postSufferChoiceCard({
       sufferPrompt: { kind: "any", amount: needsAny.amount, count: needsAny.count },
       actor, executorOpts, moveId: f.moveId,
     });
-    if (followUp) return { applied: true };
+    if (followUp) {
+      await closeUpgrades();
+      return { applied: true };
+    }
     // No picker to make the choice on: nothing was applied, so the card
     // re-opens for the pick to be made again.
     await message.update({
@@ -481,6 +484,7 @@ async function handleSufferPick(message, dataset) {
     return { applied: false, reason: "no-follow-up" };
   }
 
+  await closeUpgrades();
   const results = await runSufferResolution(calls, actor, executorOpts);
   const missed  = notAppliedLines(calls, results);
   if (missed.length) {

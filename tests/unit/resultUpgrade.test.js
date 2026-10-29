@@ -384,6 +384,27 @@ describe("P03 — an upgrade reconciles the move's choice cards", () => {
     expect(pc.system.health.value).toBe(4);
   });
 
+  it("a pick whose follow-up picker cannot be posted re-opens its card, and leaves the upgrades open", async () => {
+    const card   = await roll("set_a_course", { statUsed: "supply", dice: WEAK_IRON });   // supply 3 + 4: a weak hit
+    const choice = choices().at(-1);
+    let refused = false;
+    table.interceptWrites(w => {
+      if (!refused && w.kind === "message.create" && w.data?.flags?.[MODULE_ID]?.sufferPrompt?.kind === "any") {
+        refused = true;
+        return new Error("test: refused picker");
+      }
+    });
+
+    await click(choice, '[data-option-index="0"]');   // One suffer move (-2): a follow-up picker
+    expect(refused).toBe(true);
+    expect(flags(choice._id).resolved).toBe(false);
+    expect(flags(card._id).burn.choiceMade).toBeUndefined();
+
+    await click(card, BURN);
+    expect(flags(card._id).burn.consumed).toBe(true);
+    expect(lastLog().outcome).toBe("strong_hit");
+  });
+
   it("the GM checks the choice cards themselves, so a lost close stamp does not reopen the upgrade", async () => {
     control.abilities = FUGITIVE;
     const card   = await roll("face_danger", { dice: WEAK_IRON });
