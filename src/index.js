@@ -81,7 +81,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -1179,15 +1179,14 @@ export function registerChatHook() {
         }
       }
 
-      // Companion Takes a Hit strong hit — direct +1 companion health, no dialog.
-      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM) {
-        try {
-          const { applyMeterChanges } = await import("./character/actorBridge.js");
-          if (rollerActor) {
-            await applyMeterChanges(rollerActor, { companionHealth: resolution.consequences.companionHealthChange });
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | companion health change failed:`, err?.message ?? err);
+      // Companion Takes a Hit strong hit — direct +1 health to the companion
+      // the roll was made for (its asset's track). It went to the PC's meters,
+      // which have no companion health, and was dropped (issue #309 N03).
+      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM && rollerActor) {
+        const healed = await applyCompanionHealthChange(rollerActor, resolution.consequences.companionHealthChange,
+          { itemId: interpretation.companionItemId ?? null });
+        if (!healed.ok) {
+          ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
         }
       }
 
@@ -1702,9 +1701,10 @@ export function registerChatHook() {
       // Players trigger the pipeline but defer persistence to the GM's client.
       if (game.user.isGM) {
         // What the move was made against rides onto its suffer-choice card,
-        // so a choice changes that vehicle (issue #309).
+        // so a choice changes that vehicle or companion (issue #309).
         await persistResolution(resolution, campaignState, speakerActorId, {
-          vehicleActorId: interpretation.vehicleActorId ?? null,
+          vehicleActorId:  interpretation.vehicleActorId ?? null,
+          companionItemId: interpretation.companionItemId ?? null,
         });
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers

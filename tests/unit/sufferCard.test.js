@@ -323,3 +323,75 @@ describe("Withstand Damage — its integrity choices change the vehicle (issue #
     expect(integrity()).toBe(2);
   });
 });
+
+// ── Companion Takes a Hit: health changes the companion (issue #309 N03) ─────
+
+describe("Companion Takes a Hit — its health choices change the companion (issue #309 N03)", () => {
+  // The miss's "-1 companion health" went to the PC's generic meter write and
+  // was dropped; the weak hit's recovery read companion health 0 (never
+  // supplied), so it was always unavailable.
+  const gm = { requesterId: "gm-1", requesterIsGM: true };
+  let pc, glow, drone;
+
+  /** A vendor-shaped Companion asset (category + track). */
+  function companion(id, value) {
+    const item = {
+      id, name: id, type: "asset",
+      system: { category: "Companion", track: { enabled: true, name: "Health", value, min: 0, max: 3 } },
+      update: async (changes) => {
+        if ("system.track.value" in changes) item.system.track.value = changes["system.track.value"];
+      },
+    };
+    return item;
+  }
+
+  beforeEach(() => {
+    ChatMessage._reset();
+    game.actors._reset();
+    glow  = companion("glowcat", 2);
+    drone = companion("drone", 1);
+    pc = makeTestActor({ id: "pc-1", name: "Kira", ownership: { "pl-1": 3 }, items: { contents: [glow] } });
+    game.actors._set(pc.id, pc);
+    invalidateActorCache(pc.id);
+  });
+
+  async function choose(outcome, i, executorOpts = { companionItemId: "glowcat" }) {
+    const prompt = mapConsequences("companion_takes_a_hit", outcome, false).sufferPrompt;
+    const card = await postSufferChoiceCard({ sufferPrompt: prompt, actor: pc, executorOpts, moveId: "companion_takes_a_hit" });
+    game.messages = { contents: [card], get: (id) => (id === card.id ? card : null) };
+    const res = await applySufferPickFromRelay({ messageId: card.id, pickKind: "enum", optionIndex: String(i) }, gm);
+    return { card, res };
+  }
+
+  it("weak hit: the recovery is offered while the companion has health, and heals it for a momentum", async () => {
+    const { card, res } = await choose("weak_hit", 0);
+    expect(res).toEqual({ applied: true });
+    expect({ health: glow.system.track.value, momentum: pc.system.momentum.value }).toEqual({ health: 3, momentum: 1 });
+    expect(card.content).toContain("Applied:");
+  });
+
+  it("weak hit: unavailable — and nothing charged — when the companion is at 0", async () => {
+    glow.system.track.value = 0;
+    const { card, res } = await choose("weak_hit", 0);
+    expect(card.content).toMatch(/data-option-index="0"[^>]*disabled/);
+    expect(res).toEqual({ applied: false, reason: "not-offered" });
+    expect(pc.system.momentum.value).toBe(2);
+  });
+
+  it("miss: -1 companion health lowers the companion's track", async () => {
+    await choose("miss", 0);
+    expect(glow.system.track.value).toBe(1);
+  });
+
+  it("with two companions, the card's own companion is the one changed", async () => {
+    pc.items.contents.push(drone);
+    await choose("miss", 0, { companionItemId: "drone" });
+    expect({ glow: glow.system.track.value, drone: drone.system.track.value }).toEqual({ glow: 2, drone: 0 });
+  });
+
+  it("no companion to change: the card says the change was not applied", async () => {
+    pc.items.contents.length = 0;
+    const { card } = await choose("miss", 0, {});
+    expect(card.content).toContain("Not applied: companion health -1 — no companion to change");
+  });
+});

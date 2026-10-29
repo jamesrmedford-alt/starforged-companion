@@ -1,0 +1,171 @@
+/**
+ * STARFORGED COMPANION
+ * tests/unit/consequenceTargets.test.js
+ *
+ * A move's consequences change what the move was about (issue #309), on a
+ * booted GM / player table, through the real move pipeline: the interpreter
+ * answers a typed move, the REAL resolveMove rolls scripted dice, and the
+ * suffer-choice card's buttons are clicked by the player.
+ *
+ *   - N02: Withstand Damage's integrity choices went to the PC's meters,
+ *     which have no integrity — dropped, and reported applied. The vehicle
+ *     the roll read now rides onto the card.
+ *   - N03: Companion Takes a Hit's health changes went the same way, and the
+ *     weak hit's recovery was always unavailable. The companion the roll read
+ *     now rides onto the card, and the strong hit heals that one.
+ */
+
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+
+// The pipeline: no pacing call, the confirm dialog accepted, the interpreter
+// answering `control.interpretation` (a typed move), and scripted dice inside
+// the REAL resolveMove (`control.dice`, consumed in order).
+const control = vi.hoisted(() => ({ dice: [], interpretation: null }));
+vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  routePacedInput: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
+}));
+vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  interpretMove: vi.fn(async (narration) => ({
+    ...control.interpretation, playerNarration: narration, inputMethod: 'chat',
+  })),
+}));
+vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  scanForApplicableAbilities: vi.fn(async () => []),
+}));
+vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  confirmInterpretation: vi.fn(async () => true),
+}));
+vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    resolveMove: vi.fn((...args) => {
+      const dice = vi.spyOn(Math, 'random');
+      for (const r of control.dice) dice.mockReturnValueOnce(r);
+      try { return original.resolveMove(...args); } finally { dice.mockRestore(); }
+    }),
+  };
+});
+
+import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { scriptClaude } from '../helpers/faults.js';
+import { CampaignStateSchema } from '../../src/schemas.js';
+
+const REPLY = 'Sparks fly across the deck.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
+// d10 challenge dice: 0.25 → 3, 0.35 → 4; d6 action die: 0.9 → 6, 0.2 → 2.
+const STRONG = [0.25, 0.35, 0.9];
+const WEAK   = [0.25, 0.35, 0.2];
+
+let table, pat;
+const world = () => table.world.campaignState();
+const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
+const sufferCards = (moveId) => table.cards(f => f.sufferCard && f.moveId === moveId);
+
+/** A vendor-shaped Companion asset (subtypes/asset.ts): its health is the track. */
+function companion(id, value) {
+  const item = {
+    id, name: id, type: 'asset',
+    system: { category: 'Companion', abilities: [], track: { enabled: true, name: 'Health', value, min: 0, max: 3 } },
+    update: async (changes) => {
+      if ('system.track.value' in changes) item.system.track.value = changes['system.track.value'];
+    },
+  };
+  return item;
+}
+
+/** A player types a move; the canonical GM's pipeline runs it. */
+async function typedMove(interpretation, dice) {
+  control.interpretation = interpretation;
+  control.dice = dice;
+  await table.client('pl-1').chat('I brace for it.', { speaker: { actor: 'pc-pat' } });
+  await table.settle();
+  await table.drain();
+}
+
+/** The player clicks option `i` on the move's suffer-choice card. */
+async function choose(moveId, i) {
+  const cards = sufferCards(moveId);
+  expect(cards, 'one suffer-choice card').toHaveLength(1);
+  table.client('pl-1').click(cards[0]._id, `[data-option-index="${i}"]`);
+  await table.settle();
+  await table.drain();
+  return table.world.message(cards[0]._id);
+}
+
+beforeAll(async () => {
+  table = await simulateTable({ users: [USERS.GM, USERS.P1] });
+}, 30_000);
+afterAll(() => table?.teardown());
+
+beforeEach(async () => {
+  control.dice = [];
+  control.interpretation = null;
+  await table.reset({ world: { settings: {
+    chronicleAutoEntry: false,
+    campaignState: {
+      ...CampaignStateSchema,
+      sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [],
+    },
+  } } });
+  await table.setClaudeKey('gm-1', 'sk-ant-gina');
+  scriptClaude(table, { fallback: () => REPLY });
+});
+
+describe('Companion Takes a Hit — the companion the roll was made for (issue #309 N03)', () => {
+  let glow, drone;
+  beforeEach(() => {
+    glow  = companion('glowcat', 2);
+    drone = companion('drone', 1);
+    pat = table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [glow, drone] } });
+  });
+  const move = { moveId: 'companion_takes_a_hit', statUsed: 'companion_health', adds: 0, confidence: 1 };
+
+  it('a strong hit gives that companion +1 health', async () => {
+    await typedMove(move, STRONG);
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['companion_takes_a_hit', 'strong_hit']]);
+    expect({ glow: glow.system.track.value, drone: drone.system.track.value }).toEqual({ glow: 3, drone: 1 });
+  });
+
+  it('a weak hit offers the recovery, and the trade heals that companion for a momentum', async () => {
+    await typedMove(move, WEAK);
+    const [card] = sufferCards('companion_takes_a_hit');
+    expect(card.content).not.toMatch(/data-option-index="0"[^>]*disabled/);
+    expect(card.flags[MODULE_ID].executorOpts.companionItemId).toBe('glowcat');
+
+    const resolved = await choose('companion_takes_a_hit', 0);
+    expect(resolved.flags[MODULE_ID].resolved).toBe(true);
+    expect({ glow: glow.system.track.value, momentum: pat.system.momentum.value }).toEqual({ glow: 3, momentum: 1 });
+  });
+});
+
+describe('Withstand Damage — the vehicle the roll was made against (issue #309 N02)', () => {
+  let ship;
+  beforeEach(async () => {
+    pat = table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
+    ship = table.addActor({ id: 'ship-wayfarer', name: 'Wayfarer', type: 'starship', flags: { [MODULE_ID]: {
+      entityType: 'ship',
+      ship: { _id: 'ship-rec', name: 'Wayfarer', isCommandVehicle: true, integrity: 2, integrityMax: 5, battered: false },
+    } } });
+    await table.client('gm-1').run(() => game.settings.set(MODULE_ID, 'campaignState', { ...world(), shipIds: [ship.id] }));
+  });
+  const move = { moveId: 'withstand_damage', statUsed: 'integrity', adds: 0, confidence: 1 };
+  const integrity = () => ship.flags[MODULE_ID].ship.integrity;
+
+  it('a strong hit\'s +1 integrity raises it', async () => {
+    await typedMove(move, STRONG);
+    expect(sufferCards('withstand_damage')[0].flags[MODULE_ID].executorOpts.vehicleActorId).toBe('ship-wayfarer');
+    const resolved = await choose('withstand_damage', 0);
+    expect(resolved.content).toContain('integrity +1');
+    expect(integrity()).toBe(3);
+  });
+
+  it('a weak hit\'s trade costs a momentum and raises it', async () => {
+    await typedMove(move, WEAK);
+    await choose('withstand_damage', 0);
+    expect({ integrity: integrity(), momentum: pat.system.momentum.value }).toEqual({ integrity: 3, momentum: 1 });
+  });
+});

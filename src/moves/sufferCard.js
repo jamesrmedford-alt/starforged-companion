@@ -26,7 +26,7 @@ import {
   runSufferResolution,
   isOptionAvailable,
 } from "./sufferDialog.js";
-import { getActor, getPlayerActors } from "../character/actorBridge.js";
+import { getActor, getPlayerActors, readCompanionHealth } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
@@ -68,18 +68,21 @@ export function sufferMultiCap(prompt) {
 }
 
 /**
- * What an option's `requires` is checked against (isOptionAvailable): the PC,
+ * What an option's `requires` is checked against (isOptionAvailable): the PC;
+ * the companion's health — the companion the move was rolled for (the card's
+ * `executorOpts.companionItemId`), else the PC's only companion, 0 with none;
  * and whether the vehicle is battered — the vehicle the move was rolled
- * against (the card's `executorOpts.vehicleActorId`), else the command
- * vehicle; null when there is none, so a "+1 integrity" with no vehicle to
- * raise is unavailable. The PC's own impacts stood in for the vehicle's
- * (issue #309 N02).
+ * against (`executorOpts.vehicleActorId`), else the command vehicle; null when
+ * there is none, so a "+1 integrity" with no vehicle to raise is unavailable.
+ * Companion health was never supplied, so "companion health > 0" always read
+ * 0 (issue #309 N03); the PC's own impacts stood in for the vehicle's (N02).
  *
  * @param {Actor|null} actor
  * @param {Object} [executorOpts] — the card's
- * @returns {{ actor: Actor|null, vehicleBattered: boolean|null }}
+ * @returns {{ actor: Actor|null, companionHealth: number, vehicleBattered: boolean|null }}
  */
 function optionContext(actor, executorOpts = {}) {
+  const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
   let vehicleBattered = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
@@ -88,7 +91,7 @@ function optionContext(actor, executorOpts = {}) {
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, vehicleBattered };
+  return { actor, companionHealth, vehicleBattered };
 }
 
 /**
@@ -177,9 +180,10 @@ export function summarizeSufferCalls(calls) {
 // Why a call's write did not land (a runSufferResolution result with
 // `ok: false`) — said on the resolved card.
 const NOT_APPLIED = {
-  "no-vehicle": "no vehicle to change",
-  "battered":   "the vehicle is battered",
-  "refused":    "the world did not save it",
+  "no-vehicle":   "no vehicle to change",
+  "battered":     "the vehicle is battered",
+  "no-companion": "no companion to change",
+  "refused":      "the world did not save it",
 };
 
 /**
@@ -207,12 +211,15 @@ function summarizeSufferResults(calls, results) {
 
 // The four PC meters the system localises. An option's numeric field can name
 // something else (e.g. a companion/vehicle value) — those keep their raw key
-// rather than tripping i18n's unknown-slug warning.
+// (companion health spelled out) rather than tripping i18n's unknown-slug
+// warning.
 const LOCALIZED_METERS = new Set(["health", "spirit", "supply", "momentum"]);
+const OTHER_METER_LABELS = { companionHealth: "companion health" };
 
 /** System-localised meter label ("Momentum", "Élan", …); raw key otherwise. */
 function meterLabel(key) {
-  return LOCALIZED_METERS.has(key) ? localizeMeter(key) : String(key ?? "");
+  if (LOCALIZED_METERS.has(key)) return localizeMeter(key);
+  return OTHER_METER_LABELS[key] ?? String(key ?? "");
 }
 
 function labelForSuffer(id) {

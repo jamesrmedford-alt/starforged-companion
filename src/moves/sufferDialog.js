@@ -239,11 +239,18 @@ export async function runSufferResolution(calls, actor, opts = {}) {
         break;
       }
       case "meter": {
-        // A vehicle's integrity is no PC meter: the generic write dropped it,
-        // and the card reported it applied (issue #309 N02).
+        // A vehicle's integrity and a companion's health are no PC meters: the
+        // generic write dropped them, and the card reported them applied
+        // (issue #309 N02 / N03).
         if (call.meterKey === "integrity") {
           results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta,
             ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) });
+          break;
+        }
+        if (call.meterKey === "companionHealth") {
+          const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+          results.push({ kind: "meter", meterKey: call.meterKey, delta: call.delta,
+            ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null })) });
           break;
         }
         await applyMeterChanges(actor, { [call.meterKey]: call.delta });

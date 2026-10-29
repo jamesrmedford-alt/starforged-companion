@@ -51,7 +51,8 @@ const MODULE_ID  = 'starforged-companion';
  * @param {string|null} [speakerActorId] — the roller
  * @param {Object} [targets] — what the move was made against, carried onto its
  *   suffer-choice card for the choices that change it (issue #309): the
- *   vehicle (`vehicleActorId`, Withstand Damage's integrity)
+ *   vehicle (`vehicleActorId`, Withstand Damage's integrity) and the
+ *   companion (`companionItemId`, Companion Takes a Hit's health)
  * @returns {Promise<{ actor: Actor|null, campaignState: Object }>}
  */
 export async function persistResolution(resolution, campaignState, speakerActorId = null, targets = {}) {

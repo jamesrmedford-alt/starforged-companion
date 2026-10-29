@@ -21,11 +21,11 @@
  *   - player meters  (health/spirit/supply/momentum) → snapshot.meters[name]
  *   - vehicle stat   (integrity) → command-vehicle Actor's
  *                                  flags[MODULE_ID].ship.integrity
- *   - companion_health → 0 with a console.warn — companion health lives
- *                                  on a Companion asset Item's track; not
- *                                  yet wired through. Logged so the next
- *                                  Companion Takes A Hit roll surfaces
- *                                  exactly what's missing.
+ *   - companion_health → the Companion asset's track value
+ *                                  (resolveCompanionHealth); the roll's
+ *                                  companion and vehicle are recorded on
+ *                                  the interpretation for its consequences
+ *                                  (companionItemId / vehicleActorId).
  *
  * Progress moves are scored by the separate enrichProgressTicks() below.
  * The resolver reads a progress move's score from `interpretation.statValue`
@@ -37,7 +37,7 @@
  * itself skips progress moves.
  */
 
-import { readCharacterSnapshot } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -112,11 +112,14 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 
   const value = resolveStatValue(actor, statUsed, campaignState);
   interpretation.statValue = value;
-  // The vehicle the roll was made against: its consequence card's integrity
-  // choices change that vehicle (issue #309 N02 — they went to the PC's
-  // meters, which have no integrity, and were dropped).
+  // The vehicle or companion the roll was made against: its consequences
+  // change that one (issue #309 N02 / N03 — they went to the PC's meters,
+  // which have neither integrity nor companion health, and were dropped).
   if (statUsed === "integrity") {
     interpretation.vehicleActorId = getCommandVehicleActor(campaignState)?.id ?? null;
+  }
+  if (statUsed === "companion_health") {
+    interpretation.companionItemId = selectCompanionAsset(actor)?.id ?? null;
   }
   return value;
 }
@@ -195,8 +198,28 @@ function warnMissingActor(statUsed) {
 }
 
 /**
+ * The companion a companion_health roll is made for: of the character's
+ * Companion-category assets with an enabled track (actorBridge
+ * listCompanionAssets — the system stores the asset family on
+ * system.category, matched case-insensitively), the one with the highest
+ * current track value — the most charitable resolution, exact for the
+ * common single-companion character. Null when there is none.
+ *
+ * @param {Actor|null} actor
+ * @returns {Item|null}
+ */
+function selectCompanionAsset(actor) {
+  let chosen = null;
+  for (const c of listCompanionAssets(actor)) {
+    if (!chosen || (c.system?.track?.value ?? 0) > (chosen.system?.track?.value ?? 0)) chosen = c;
+  }
+  return chosen;
+}
+
+/**
  * Resolve the character's companion_health to the highest enabled
- * Companion-asset track value. Notifies on multi-companion ambiguity.
+ * Companion-asset track value (selectCompanionAsset). Notifies on
+ * multi-companion ambiguity.
  *
  * Exported for test coverage.
  */
@@ -206,34 +229,17 @@ export function resolveCompanionHealth(actor) {
     return 0;
   }
 
-  const items = actor.items?.contents ?? actor.items ?? [];
-  const assetItems = Array.isArray(items) ? items.filter(i => i?.type === "asset") : [];
-
-  // The system stores the asset family on system.category. The string
-  // is "Companion" (capital C) for companion assets out of the asset
-  // tables, but match case-insensitively so user-renamed categories
-  // or future localisation don't silently drop matches.
-  const companions = assetItems.filter(i => {
-    const category = String(i.system?.category ?? "").toLowerCase();
-    return category.includes("companion") && i.system?.track?.enabled !== false;
-  });
-
-  if (!companions.length) {
+  const companions = listCompanionAssets(actor);
+  const chosen = selectCompanionAsset(actor);
+  if (!chosen) {
     console.warn(
       `${MODULE_ID} | statEnrichment: companion_health rolled but no enabled Companion-category asset found on ${actor.name ?? actor.id}. Defaulting to 0.`,
     );
     return 0;
   }
 
-  // Pick the companion with the highest current track value — the most
-  // charitable resolution. For single-companion characters (the common
-  // case) this is exact; for multi-companion characters we surface
-  // which one we used so the player can re-narrate if they intended a
-  // different companion.
-  let chosen = companions[0];
-  for (const c of companions) {
-    if ((c.system?.track?.value ?? 0) > (chosen.system?.track?.value ?? 0)) chosen = c;
-  }
+  // For multi-companion characters we surface which one we used so the
+  // player can re-narrate if they intended a different companion.
   const value = Number(chosen.system?.track?.value ?? 0);
 
   if (companions.length > 1) {

@@ -131,6 +131,18 @@ describe('resolveStatValue — vehicle integrity', () => {
     enrichInterpretationStatValue(makeActor(), none, { shipIds: [] });
     expect(none.vehicleActorId).toBeNull();
   });
+
+  // Issue #309 N03: the roll's companion rides to its consequences.
+  it('a companion_health roll names the companion it was made for — the one it read', () => {
+    const actor = makeActor();
+    actor.items = { contents: [
+      { id: 'c-low',  name: 'Drone',   type: 'asset', system: { category: 'Companion', track: { enabled: true, value: 1 } } },
+      { id: 'c-high', name: 'Glowcat', type: 'asset', system: { category: 'Companion', track: { enabled: true, value: 3 } } },
+    ] };
+    const interp = { moveId: 'companion_takes_a_hit', statUsed: 'companion_health' };
+    enrichInterpretationStatValue(actor, interp, {});
+    expect(interp).toMatchObject({ statValue: 3, companionItemId: 'c-high' });
+  });
 });
 
 
