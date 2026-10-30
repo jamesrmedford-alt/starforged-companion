@@ -7,7 +7,7 @@
  * (rollOracle / rollPaired) is exercised by resolver tests.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { rollYesNo, rollOracle } from "../../src/oracles/roller.js";
 
 
@@ -127,42 +127,83 @@ describe("rollOracle — directive resolution", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// F16 Phase E — Pay the Price sufferRoute annotations surface on rollOracle
+// F16 Phase E — Pay the Price sufferRoute annotations surface on rollOracle (sufferRoutes)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("rollOracle — Pay the Price sufferRoute (F16 Phase E)", () => {
-  it("surfaces sufferRoute for 'You are harmed' (75-81 band)", () => {
+describe("rollOracle — Pay the Price sufferRoutes (F16 Phase E)", () => {
+  it("surfaces the route for 'You are harmed' (75-81 band)", () => {
     const r = rollOracle("pay_the_price", { roll: 78 });
     expect(r.result).toMatch(/harmed/i);
-    expect(r.sufferRoute).toEqual({ move: "endure_harm", amount: 1 });
+    expect(r.sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }]);
   });
 
-  it("surfaces sufferRoute for 'You are stressed' (82-88 band)", () => {
+  it("surfaces the route for 'You are stressed' (82-88 band)", () => {
     const r = rollOracle("pay_the_price", { roll: 85 });
-    expect(r.sufferRoute).toEqual({ move: "endure_stress", amount: 1 });
+    expect(r.sufferRoutes).toEqual([{ move: "endure_stress", amount: 1 }]);
   });
 
-  it("surfaces sufferRoute for 'You waste resources' (69-74 band)", () => {
+  it("surfaces the route for 'You waste resources' (69-74 band)", () => {
     const r = rollOracle("pay_the_price", { roll: 70 });
-    expect(r.sufferRoute).toEqual({ move: "sacrifice_resources", amount: 1 });
+    expect(r.sufferRoutes).toEqual([{ move: "sacrifice_resources", amount: 1 }]);
   });
 
-  it("surfaces sufferRoute for 'Your vehicle suffers damage' (63-68 band)", () => {
+  it("surfaces the route for 'Your vehicle suffers damage' (63-68 band)", () => {
     const r = rollOracle("pay_the_price", { roll: 65 });
-    expect(r.sufferRoute).toEqual({ move: "withstand_damage", amount: 1 });
+    expect(r.sufferRoutes).toEqual([{ move: "withstand_damage", amount: 1 }]);
   });
 
-  it("surfaces sufferRoute with soloFallback for 'friend in harm's way' (51-56 band)", () => {
+  it("surfaces the route with soloFallback for 'friend in harm's way' (51-56 band)", () => {
     const r = rollOracle("pay_the_price", { roll: 52 });
-    expect(r.sufferRoute.move).toBe("companion_takes_a_hit");
-    expect(r.sufferRoute.soloFallback).toBe("endure_harm");
-    expect(r.sufferRoute.amount).toBe(1);
+    expect(r.sufferRoutes).toEqual([{ move: "companion_takes_a_hit", amount: 1, soloFallback: "endure_harm" }]);
   });
 
-  it("does NOT carry sufferRoute on narrative-only entries", () => {
+  it("lists no route on narrative-only entries", () => {
     // 19-22: "A surprising development complicates your quest" — narrative
     const r = rollOracle("pay_the_price", { roll: 20 });
-    expect(r.sufferRoute).toBeUndefined();
+    expect(r.sufferRoutes).toEqual([]);
+  });
+
+  // Issue #314 Q03: a 96–100 returned the joined text alone, so the leaves'
+  // routes were lost — "You are harmed / You are stressed" changed no meter.
+  describe("a 'Roll twice' keeps each leaf's route (issue #314 Q03)", () => {
+    /** Roll a 96 with the d100s after it scripted: the Roll twice's leaves, then anything nested. */
+    function rollTwice(...nested) {
+      const rng = vi.spyOn(Math, "random");
+      for (const v of nested) rng.mockReturnValueOnce((v - 0.5) / 100);
+      try { return rollOracle("pay_the_price", { roll: 96 }); } finally { rng.mockRestore(); }
+    }
+
+    it("harm and stress: both routes, in the leaves' order, under the joined text", () => {
+      const r = rollTwice(78, 85);
+      expect(r.result).toBe("You are harmed / You are stressed");
+      expect(r.sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }, { move: "endure_stress", amount: 1 }]);
+    });
+
+    it("a narrative leaf and a routed one: the one route", () => {
+      const r = rollTwice(10, 85);
+      expect(r.result).toBe("You create an opportunity for an enemy / You are stressed");
+      expect(r.sufferRoutes).toEqual([{ move: "endure_stress", amount: 1 }]);
+    });
+
+    it("two of the same leaf are two routes — each lands once", () => {
+      const r = rollTwice(78, 80);
+      expect(r.result).toBe("You are harmed / You are harmed");
+      expect(r.sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }, { move: "endure_harm", amount: 1 }]);
+    });
+
+    it("a nested Roll twice adds its leaves' routes", () => {
+      const r = rollTwice(97, 78, 70, 85);   // 96 → (97 → (78, 70)), 85
+      expect(r.result).toBe("You are harmed / You waste resources / You are stressed");
+      expect(r.sufferRoutes).toEqual([
+        { move: "endure_harm", amount: 1 }, { move: "sacrifice_resources", amount: 1 }, { move: "endure_stress", amount: 1 },
+      ]);
+    });
+
+    it("the recursion cap ends a run of Roll twice with the directive's own text and no route", () => {
+      const r = rollTwice(...Array(40).fill(98));   // every nested roll is a Roll twice
+      expect(r.result).toMatch(/Roll twice/);
+      expect(r.sufferRoutes).toEqual([]);
+    });
   });
 });
 

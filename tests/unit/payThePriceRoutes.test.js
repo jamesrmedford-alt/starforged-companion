@@ -11,6 +11,8 @@
  *
  *   Q02 — harm or stress past the meter is momentum, carried on the receipt:
  *         an improvement refunds it, a burn's reset replaces it.
+ *   Q03 — a Pay the Price "Roll twice" lands each leaf's suffer route, and
+ *         the receipts carry every loss.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -148,5 +150,69 @@ describe("Q02 — harm past 0 health is momentum, through the move pipeline", ()
     expect(pc.system.momentum.value).toBe(9);
     expect(suffers()[0].momentumLoss).toBeNull();
     expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([expect.objectContaining({ meterKey: "health", amount: 1 })]);
+  });
+});
+
+describe("Q03 — a Pay the Price 'Roll twice' lands each leaf's route", () => {
+  it("96 → 78 + 85: the card says harm and stress, both routes are on it, and both land", async () => {
+    control.ptp = [96, 78, 85];
+    const card = await roll("gather_information");
+    expect(lastLog().outcome).toBe("miss");
+    const ptp = ptpCard();
+    expect(ptp.content).toContain("d100 = <strong>96</strong> · You are harmed / You are stressed");
+    expect(ptp.content).toContain("Routes to endure_harm (-1), endure_stress (-1).");
+    expect(ptp.flags[MODULE_ID].sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }, { move: "endure_stress", amount: 1 }]);
+    expect(pc.system.health.value).toBe(4);
+    expect(pc.system.spirit.value).toBe(4);
+    expect(suffers().map(f => f.suffer)).toEqual(["endure_harm", "endure_stress"]);
+    // Both losses are on the receipt, so an upgrade refunds both.
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([
+      expect.objectContaining({ move: "endure_harm",   meterKey: "health", amount: 1, before: 5, after: 4 }),
+      expect.objectContaining({ move: "endure_stress", meterKey: "spirit", amount: 1, before: 5, after: 4 }),
+    ]);
+  });
+
+  it("a burn of that miss refunds the health and the spirit, in one write", async () => {
+    control.ptp = [96, 78, 85];
+    const card = await roll("gather_information");
+
+    await click(card, BURN);
+
+    expect(lastLog().outcome).toBe("strong_hit");
+    expect(pc.system.health.value).toBe(5);
+    expect(pc.system.spirit.value).toBe(5);
+    expect(table.cards(f => f.burnReversal).at(-1)?.content).toMatch(/health \+1 refunded[\s\S]*spirit \+1 refunded/);
+  });
+
+  it("a narrative leaf beside a routed one: the one route lands", async () => {
+    control.ptp = [96, 10, 85];
+    await roll("gather_information");
+    expect(ptpCard().content).toContain("You create an opportunity for an enemy / You are stressed");
+    expect(pc.system.health.value).toBe(5);
+    expect(pc.system.spirit.value).toBe(4);
+    expect(suffers().map(f => f.suffer)).toEqual(["endure_stress"]);
+  });
+
+  it("two of the same leaf each land: 78 + 80 is two Endure Harms, health 5 → 3", async () => {
+    control.ptp = [96, 78, 80];
+    await roll("gather_information");
+    expect(pc.system.health.value).toBe(3);
+    expect(suffers().map(f => [f.suffer, f.before, f.after])).toEqual([["endure_harm", 5, 4], ["endure_harm", 4, 3]]);
+  });
+
+  it("the direct-78 control is unchanged: one Endure Harm, health 5 → 4", async () => {
+    await roll("gather_information");
+    expect(pc.system.health.value).toBe(4);
+    expect(suffers().map(f => f.suffer)).toEqual(["endure_harm"]);
+    expect(ptpCard().flags[MODULE_ID].sufferRoutes).toEqual([{ move: "endure_harm", amount: 1 }]);
+  });
+
+  it("!ptp lands each leaf too, on the typist's PC", async () => {
+    control.ptp = [96, 78, 85];
+    await table.client("pl-1").chat("!ptp", { speaker: { actor: pc.id } });
+    await table.settle(); await table.drain();
+    expect(ptpCard().content).toContain("Routes to endure_harm (-1), endure_stress (-1).");
+    expect(pc.system.health.value).toBe(4);
+    expect(pc.system.spirit.value).toBe(4);
   });
 });

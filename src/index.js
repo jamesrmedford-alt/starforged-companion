@@ -3011,18 +3011,15 @@ async function handlePayThePriceCommand(message) {
     : "";
 
   // F16 Phase E: rolled entries carrying a `sufferRoute` annotation auto-fire
-  // the corresponding suffer executor against the active character. Narrative
-  // entries (no sufferRoute) pass through unchanged — narrator and GM resolve.
-  const routeFooter = result.sufferRoute
-    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
-    : "";
-
+  // the corresponding suffer executor against the active character — each leaf
+  // of a "Roll twice" (issue #314 Q03). Narrative entries (no route) pass
+  // through unchanged — narrator and GM resolve.
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
     flags:   {
       [MODULE_ID]: {
         payThePriceCard: true,
-        sufferRoute:     result.sufferRoute ?? null,
+        sufferRoutes:    result.sufferRoutes,
         oracleMemory:    { name: "Pay the Price", question, answer: result.result },
       },
     },
@@ -3031,11 +3028,7 @@ async function handlePayThePriceCommand(message) {
   // Credit the roller: a routed suffer lands on the PC of the player who typed
   // the command, not the first PC in the world.
   const speakerActorId = resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState"));
-  if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute, speakerActorId).catch(err =>
-      console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err),
-    );
-  }
+  await dispatchPayThePriceSufferRoutes(result.sufferRoutes, speakerActorId, "!pay-the-price");
 
   // Countdown clocks advance on the canonical GM (world/actor writes) — run
   // locally there, relayed from a player's client.
@@ -4740,22 +4733,19 @@ async function postDecisiveActionCostCard(actorId = null) {
     return;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
-  const routeFooter = result.sufferRoute
-    ? `<p><em>Triggers: choose a suffer move (-${result.sufferRoute.amount}).</em></p>`
+  const routeFooter = result.sufferRoutes.length
+    ? `<p><em>Triggers: ${result.sufferRoutes.map(r => `choose a suffer move (-${r.amount})`).join("; ")}.</em></p>`
     : "";
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>Decisive Action — Cost</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
-      flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoute: result.sufferRoute ?? null } },
+      flags:   { [MODULE_ID]: { decisiveActionCostCard: true, sufferRoutes: result.sufferRoutes } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
     return;
   }
-  if (result.sufferRoute) {
-    await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err =>
-      console.warn(`${MODULE_ID} | decisive action cost suffer dispatch failed:`, err?.message ?? err));
-  }
+  await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
 }
 
 async function postFaceDefeatPayThePriceCard(actorId = null) {
@@ -4768,16 +4758,13 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
     return null;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
-  const routeFooter = result.sufferRoute
-    ? `<p><em>Routes to ${escapeChatHtml(result.sufferRoute.move)} (-${result.sufferRoute.amount}).</em></p>`
-    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routeFooter}</div>`,
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
       flags:   {
         [MODULE_ID]: {
           payThePriceCard: true,
-          sufferRoute:     result.sufferRoute ?? null,
+          sufferRoutes:    result.sufferRoutes,
           oracleMemory:    { name: "Pay the Price", question: "Face Defeat", answer: result.result },
         },
       },
@@ -4787,17 +4774,11 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
     return null;
   }
 
-  // Dispatch suffer executor first (before clock advance) so meter changes land
-  // before the burn button is visible. The receipts are what landed, so the
-  // burn reversal undoes only that.
-  let sufferMeterDeltas = [];
-  if (result.sufferRoute) {
-    const landed = await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err => {
-      console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err);
-      return null;
-    });
-    sufferMeterDeltas = ptpMeterReceipts(landed);
-  }
+  // Dispatch the suffer executors first (before clock advance) so meter changes
+  // land before the burn button is visible. The receipts are what landed — each
+  // route's — so the upgrade reversal undoes only that.
+  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "face defeat PtP");
+  const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
     console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err);
@@ -4884,6 +4865,36 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
   } catch (err) {
     console.warn(`${MODULE_ID} | postForgeABondCard: chat post failed:`, err?.message ?? err);
   }
+}
+
+/** The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none. */
+function sufferRoutesFooter(routes) {
+  if (!routes?.length) return "";
+  const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");
+  return `<p><em>Routes to ${list}.</em></p>`;
+}
+
+/**
+ * Dispatch each route a Pay the Price roll landed on, in order, once — a
+ * "Roll twice" lands every leaf's (issue #314 Q03: the leaves' routes were
+ * dropped, so "You are harmed / You are stressed" cost nothing). A route whose
+ * dispatch throws is logged and the next still runs.
+ *
+ * @param {Array<Object>} routes — rollOracle's `sufferRoutes`
+ * @param {string|null} actorId
+ * @param {string} where — for the log
+ * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
+ */
+async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
+  const landed = [];
+  for (const route of routes ?? []) {
+    const res = await dispatchPayThePriceSufferRoute(route, actorId).catch(err => {
+      console.warn(`${MODULE_ID} | ${where}: suffer dispatch (${route?.move}) failed:`, err?.message ?? err);
+      return null;
+    });
+    if (res) landed.push(res);
+  }
+  return landed;
 }
 
 /**
