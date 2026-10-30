@@ -70,7 +70,10 @@ export async function claimUpgradeCard(message, kind) {
 /**
  * One write of a claimed upgrade. A write the world refuses is pushed onto
  * `failures` as an `upgrade` step for the GMs' Retry (index.js
- * runPayoffStep → retryUpgradeStep), never thrown past the claimed card.
+ * runPayoffStep → retryUpgradeStep), never thrown past the claimed card. A
+ * step of several writes (`vowClocks`) that lands in part fails with the
+ * entries still owed, and the step pushed carries those alone — a Retry must
+ * not rewind the clocks that landed again (issue #314 Q05).
  *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
@@ -83,7 +86,7 @@ export async function applyUpgradeStep(step, failures) {
   try {
     const res = await runUpgradeStep(step);
     if (res.ok) return true;
-    failures.push({ ...step, step: "upgrade", reason: res.reason ?? "refused" });
+    failures.push({ ...step, ...(res.entries ? { entries: res.entries } : {}), step: "upgrade", reason: res.reason ?? "refused" });
   } catch (err) {
     console.warn(`${MODULE_ID} | upgrade ${step.effect} not applied:`, err?.message ?? err);
     failures.push({ ...step, step: "upgrade", reason: "refused", error: String(err?.message ?? err) });
@@ -107,8 +110,11 @@ async function runUpgradeStep(step) {
     }
     case "vowClocks": {
       const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
+      // Each Item's rewind stands alone: the ones the world refused are the
+      // step still owed (issue #314 Q05 — the whole step was queued, and the
+      // Retry rewound the landed clocks once more).
       const failed = await revertVowClocksForBurn(step.entries);
-      return failed.length ? { ok: false, reason: "refused" } : { ok: true };
+      return failed.length ? { ok: false, reason: "refused", entries: failed } : { ok: true };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -270,8 +276,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
   }
-  if (entries.length && await applyUpgradeStep({ effect: "vowClocks", entries }, failures)) {
-    for (const v of entries) reverted.push(`${v.name} clock rewound`);
+  if (entries.length) {
+    // The rewinds that landed are reported; the refused ones are on the step
+    // the GMs retry (issue #314 Q05).
+    const at = failures.length;
+    const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures);
+    const owed = new Set(ok ? [] : (failures[at]?.entries ?? entries).map(e => e.itemId));
+    for (const v of entries) if (!owed.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
   }
 
   // 2. Refund the route's PC-meter losses — each receipt is what landed (the
