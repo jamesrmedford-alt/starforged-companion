@@ -31,8 +31,17 @@ Two cross-cutting facts to hold onto:
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
   A consequence chosen first closes both. The upgraded outcome's other
-  effects — a Strike's progress, a combat position — do not run
-  (known-issues UPGRADE-PIPELINE-EFFECTS). The
+  effects run through the pipeline's own applier (`applyOutcomeEffects`,
+  `src/index.js` — the branches below are its body), for what the upgrade
+  adds over the recorded original: a Strike burned from a miss marks its
+  progress on the fight the card named (`targets.combatTrackId`; over by
+  then, nothing, and the card says so) and takes its new position; an Enter
+  the Fray burned while its threshold card waits puts the new opening
+  position on that card (found by the card's `resolutionId`); a Battle burned
+  from a lost miss pays the won fight's milestone and reward
+  (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
+  that pays the price too keeps the miss's Pay the Price (issue #313,
+  UPGRADE-PIPELINE-EFFECTS). The
   threshold card's **Enter the Fray** still uses its older ad-hoc relay
   (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
   the canonical GM — no no-GM warning).
@@ -48,8 +57,8 @@ Two cross-cutting facts to hold onto:
 momentum and `in_control`; weak hit → a choose-one (+2 momentum OR in control);
 miss → `bad_spot`.
 
-The pipeline's `enterCombat` branch (`src/index.js`) does **not** create a
-track. If no matching open combat track exists (`selectCombatTrack`,
+The pipeline's `enterCombat` branch (`applyOutcomeEffects`, `src/index.js`)
+does **not** create a track. If no matching open combat track exists (`selectCombatTrack`,
 `src/moves/combat.js`), it posts the **threshold decision card**
 (`buildCombatThresholdHtml`, `src/moves/combatThreshold.js`):
 
@@ -86,7 +95,8 @@ only for vows; a fight's payoff rides the *linked vow's* promised reward (see
 ## 2. During the fight
 
 Progress marks come only from move consequences (`combatProgress` in
-`mapConsequences`): Strike hits mark 2; Clash marks 2 (strong) / 1 (weak); Gain
+`mapConsequences`, applied by `applyOutcomeEffects` — for a rolled outcome,
+and for what an upgrade adds over it): Strike hits mark 2; Clash marks 2 (strong) / 1 (weak); Gain
 Ground marks only when the player picks that option in its choose-one; React
 Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 8
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.

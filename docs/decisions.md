@@ -6,6 +6,74 @@ rejected.
 
 ---
 
+## Issue #313: an upgraded result applies its outcome's other effects; a weak Secure an Advantage's momentum rides its choice (2026-10)
+
+**Decision:** (issue #313 — the two defects found while fixing #311. The
+maintainer asked for the issue to be addressed on 2026-10-30.)
+- **One applier for an outcome's effects beyond its meters and choice card**
+  [UPGRADE-PIPELINE-EFFECTS]. The pipeline's consequence branches — an
+  arrival (Set a Course), the expedition's progress, a legacy mark, the
+  companion's health, a fight's threshold card, progress, position and end
+  with a won fight's payoff — are `applyOutcomeEffects` (index.js). The
+  pipeline runs it for the rolled outcome; Burn Momentum and Improve Result
+  run it (injected as their hooks' `applyEffects`) for the upgraded outcome
+  against the recorded original: only what the upgrade adds — progress marks
+  beyond the original's, a changed position, an expedition's progress or a
+  legacy the original did not mark, the companion's health difference, an
+  arrival the miss never made, the payoff of a fight the miss lost. An
+  effect the original produced is never repeated. The move card carries the
+  move's target and ranks (`move`) beside its targets for it, and lists what
+  was applied and what was not.
+- **An upgrade acts on the fight its card named** — `targets.combatTrackId`,
+  the pipeline's `moveFight` — never a fight selected at click time (issue
+  #309 N04's rule): over by then, nothing is marked and the card says so.
+  With no fight named, the upgrade resolves-or-creates on the move's target
+  as the pipeline does. An Enter the Fray upgraded while its threshold card
+  waits puts the new opening position on that card
+  (`stashPositionOnThresholdCard`, by the card's `resolutionId`), as the
+  weak hit's "You are in control" choice does; Enter the Fray then creates
+  the fight in that position.
+- **A weak hit that pays the price too keeps the miss's Pay the Price.**
+  Clash's miss and weak hit both route it: a burn from one to the other
+  keeps the price already rolled instead of reverting it and rolling again;
+  the card says so.
+- **An upgrade saves its own legacy mark and arrival location**
+  (`writeLegacyTicks`, `persistCampaignStateFields`): no persistResolution
+  follows with its working copy, as one does in the pipeline. Both upgrades
+  re-narrate and log through one `renarrateUpgrade`, against a deep copy of
+  the stored campaign, never the cached setting (rules/foundry-api.md).
+- **Secure an Advantage's weak hit applies no momentum itself**
+  [SAA-WEAK-DOUBLE-MOMENTUM]: its choice carries "+2 momentum" or "+1 on
+  your next move", as Enter the Fray's and Gain Ground's do. The direct
+  delta had been kept for pre-F16 delta-based fixtures.
+
+**Reason:** issue #313, the two items left open by the #311 audit: the first
+found by reading the upgrade handlers (only the meters, the reversal and the
+choice card used the upgraded consequences), the second reproduced on a
+booted table (momentum 2 → 4 on the roll, 6 after the pick). Each fix's
+tests fail with the fix taken out (`docs/testing/fix-sensitivity.md`).
+
+**Rejected:**
+- *A second applier for upgrades beside the pipeline's branches* — two
+  implementations of one effect drift (rules/reachability.md §5); the
+  branches moved into the one function the pipeline calls.
+- *Re-select the fight at upgrade time* — with two fights open it marks
+  nothing, and an old card marks a fight opened since (issue #309 N04).
+- *Revert the miss's Pay the Price and roll the weak hit's* — the same price
+  twice over; the one rolled is the weak hit's.
+- *Pay a Battle's win again when a weak-hit win is improved to a strong one*
+  — the reward was granted once (its status flipped) and a second victory
+  card's buttons would act twice; the weak hit's payoff stands.
+- *Apply the upgraded outcome's asset consequence riders* — riders are
+  extracted per roll and prompt the GM; outside this fix.
+
+**Trade-offs accepted:** a Battle won on a weak hit and improved to a strong
+one keeps the weak hit's milestone count and reward. The upgraded outcome's
+asset consequence riders (`applyMoveConsequenceRiders`) still run only for
+the rolled outcome. A threshold card posted before cards carried their
+`resolutionId` cannot take an upgraded position (the card reports it not
+written). Impacts a suffer executor marked are still not reversed, as before.
+
 ## Issue #311 audit: a weak recovery is the strong one plus its cost; an upgrade owns what its outcome set off; completions are stamped (2026-10)
 
 **Decision:** (issue #311. The maintainer asked for the issue to be tackled
@@ -85,7 +153,7 @@ tests that came with the fixes fail with each fix taken out
 upgrading can no longer upgrade. A choice card posted before this change
 carries no `resolutionId` and is not reconciled. An upgraded outcome's other
 pipeline effects — combat or expedition progress, a combat position, legacy
-marks — still don't run (known-issues UPGRADE-PIPELINE-EFFECTS).
+marks — did not run until issue #313 (above).
 
 ## Issue #309 audit: a consequence changes what its move was about; claims before effects; a session ends once (2026-10)
 
