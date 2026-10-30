@@ -44,7 +44,7 @@ vi.mock('../../src/oracles/roller.js', async (importOriginal) => ({
   ...(await importOriginal()),
   rollOracle: vi.fn((tableId) => ({
     tableId, tableName: 'Pay the Price', roll: 42, result: 'You are harmed',
-    isRef: false, sufferRoute: { move: 'endure_harm', amount: 1 },
+    isRef: false, sufferRoutes: [{ move: 'endure_harm', amount: 1 }],
   })),
 }));
 vi.mock('../../src/moves/sufferExecutor.js', async (importOriginal) => ({

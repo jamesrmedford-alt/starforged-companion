@@ -6,6 +6,79 @@ rejected.
 
 ---
 
+## Issue #314 audit: a loss lands whole; a mirror follows its id; a retry owes only what failed (2026-10)
+
+**Decision:** (issue #314. The maintainer asked for the issue to be addressed
+on 2026-10-30. Each finding's ID in brackets.)
+- **Resupply's supply is conditional, as Heal's health is** [Q01]:
+  unprepared, clear it and take +1; otherwise take +2 — each branch gated on
+  the impact (`requires: "unprepared"` / `"!unprepared"`), on the weak hit
+  too (its amounts were right; its +2 was open to an unprepared PC).
+- **Harm or stress past the meter is momentum** [Q02]. The executor splits
+  the loss (`splitOverflow`), writes the meter, then takes the remainder
+  through `loseMomentum` with no card of its own — the Endure card shows
+  both meters — and reports what the momentum minimum refused for the player
+  to redirect (`momentumLoss` on the result). The Pay the Price receipt is a
+  list (`ptpMeterReceipts` → `sufferMeterDeltas`), the overflow a receipt of
+  its own: an improvement refunds it, a burn's reset replaces it.
+- **A directive's leaves keep their annotations** [Q03]. `resolveDirective`
+  returns the text and the terminal entries it landed on; `rollOracle` lists
+  every leaf's route as `sufferRoutes` (`sufferRoute` is gone — a "first of
+  several" field is the bug's shape), and the three Pay the Price sites
+  dispatch each, in order, once (`dispatchPayThePriceSufferRoutes`). A
+  narrative leaf stays narrative; a chain that hits the depth cap ends with
+  the directive's own text and no leaves.
+- **A bond Item mirrors one connection, by the record's `_id`** [Q04]
+  (`actorBridge.bondItemsFor`): a keyed Item matches its id alone; the name
+  reaches only an unkeyed Item, and only the PC's one of that name. Every
+  writer passes the record's `_id` — `markRelationshipProgress` always did;
+  the develop branch and `!bond` passed the host Actor id, which no Item
+  carries. `!bond` reads the record's id and name on the GM; the client's
+  `targetName` left the relay payload.
+- **A step that lands in part owes only what failed** [Q05]. A `vowClocks`
+  upgrade step fails with the entries still owed; the GMs' card carries
+  those alone, and its Retry — or a second refusal, on a fresh card — the
+  same. The reversal card lists the rewinds that landed.
+- **A bonded Develop Your Relationship rolls +rank in the pipeline** [Q06].
+  `enrichBondedDevelop` (statEnrichment.js) runs before the dice: it
+  resolves the connection (a picker's host id, else the name —
+  `selectConnection`'s ladder, sole-bonded fallback included), stamps its id
+  and name on the interpretation so the branch after the roll marks the same
+  one, and makes its rank the stat, worth `BOND_ROLL_ADDS` (moved to
+  developRelationship.js, shared with `!bond`); the card reads "+epic (5)".
+  An un-bonded connection stays no roll's worth. The interpreter's prompt
+  says so, and the move is a no-stat move for enrichment's warning.
+
+**Reason:** issue #314 reproduced each defect (twelve probes with their
+controls) on `40cabee`; the probes pass inverted after the fixes, and each
+fix's tests fail with it taken out (`docs/testing/fix-sensitivity.md`).
+
+**Rejected:**
+- *Post the "any" suffer picker for an overflow the momentum minimum
+  refuses* [Q02] — Lose Momentum's own at-min has no card either (a note on
+  its card); giving the overflow one would make the two differ. Recorded
+  as MOMENTUM-MIN-REDIRECT-MANUAL, for both at once.
+- *Keep `sufferRoute` beside `sufferRoutes`* [Q03] — every consumer takes
+  the list; a single-route field invites the same bug back.
+- *Drop the name fallback entirely* [Q04] — Items seeded before the key
+  existed would never update again; it stays for an unkeyed Item alone.
+- *Rename the bond Item when the connection is renamed* [Q04] — a
+  write-through the audit did not ask for; the mirror now reaches a renamed
+  connection's Item by id, and the stale name is BOND-ITEM-NAME-STALE.
+- *A separate upgrade step per vow Item* [Q05] — one card line per clock
+  either way; the entries-owed list keeps one step and one Retry.
+- *Put the rank in `adds`* [Q06] — the card would read "+null (0) + 5"; the
+  rule rolls +rank, so the rank is the stat.
+- *Resolve the bonded develop inside `enrichInterpretationStatValue`*
+  [Q06] — it is synchronous and has no connections; the lookup is the async
+  step beside `enrichProgressTicks`.
+
+**Trade-offs accepted:** a Pay the Price card from before this change
+carries a single `sufferMeterDelta`, which the reversal still reads. The
+overflow's momentum loss has no card of its own (the Endure card says it).
+An un-bonded Develop Your Relationship still rolls dice the rules don't ask
+for, and its card still reads "+null (0)" (NO-STAT-CARD-NULL).
+
 ## Issue #313: an upgraded result applies its outcome's other effects; a weak Secure an Advantage's momentum rides its choice (2026-10)
 
 **Decision:** (issue #313 — the two defects found while fixing #311. The
@@ -3399,6 +3472,12 @@ and applies the writes.
   marks when `progressTrackId` is set, which no resolver populates. Removed.
   *(2026-10: that persistence path is itself removed — see known-issues
   AUDIT-DEAD-SURFACE.)*
+- **Update (issue #314 Q06):** the bonded roll is +rank in the pipeline too.
+  `enrichBondedDevelop` (statEnrichment.js) resolves the connection before the
+  dice and makes its rank the stat (`BOND_ROLL_ADDS`, shared with `!bond`),
+  stamping the connection's id on the interpretation for the branch here.
+  **Q04:** the rank raise's bond-Item mirror is keyed by the record's `_id`,
+  as `markRelationshipProgress`'s ticks mirror always was.
 
 **Battle (audit 3.29).** Battle resolves an entire fight in one roll, so every
 outcome sets `endCombat: true` (closes any open combat track — a safe no-op when
@@ -3692,6 +3771,12 @@ move the dispatcher ran and the meter's before / after — not the table's
 annotation, and the reversal (`revertPayThePrice`, `src/moves/resultUpgrade.js`)
 is shared with Improve Result. A burn refunds no momentum: its reset
 replaces it.
+
+**Update (issue #314 Q02, Q03, Q05):** the receipt is a list
+(`sufferMeterDeltas`) — every route a "Roll twice" landed, and a harm's
+overflow into momentum as a receipt of its own (an improvement refunds it,
+a burn's reset replaces it); the refunds are one write per PC. A vow-clock
+rewind that lands in part leaves only the refused Items for the GMs' Retry.
 
 ## Reach a Milestone marks the vow; result cards suggest it (2026-06-22)
 

@@ -43,7 +43,7 @@ import { selectCombatTrack } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
 import { selectVowTrack } from "./vow.js";
 import { selectMilestoneVow } from "./milestone.js";
-import { selectConnection } from "./developRelationship.js";
+import { selectConnection, bondedDevelopRoll } from "./developRelationship.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -57,6 +57,7 @@ const PLAYER_METERS = new Set(["health", "spirit", "supply", "momentum"]);
 const NO_STAT_MOVES = new Set([
   "ask_the_oracle", "pay_the_price", "fulfill_your_vow", "forge_a_bond",
   "finish_an_expedition", "take_decisive_action", "reach_a_milestone",
+  "develop_your_relationship",   // bonded: +rank, filled by enrichBondedDevelop; else no roll
 ]);
 
 // Moves whose play-kit rule is "roll +X or +Y, whichever is higher".
@@ -122,6 +123,39 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
     interpretation.companionItemId = selectCompanionAsset(actor)?.id ?? null;
   }
   return value;
+}
+
+/**
+ * Develop Your Relationship: resolve the move's connection before the dice —
+ * a picker's host id first, else the named one (selectConnection) — and, when
+ * it is bonded, fill the stat from its rank: "roll +rank", troublesome +1 to
+ * epic +5 (bondedDevelopRoll). The move's schema lists no stat, so the
+ * pipeline rolled +0 for every bonded development — an epic bond's 3 against
+ * 4 and 7 was a miss that `!bond` scored 8 (issue #314 Q06). The resolved
+ * connection's host id and name are stamped on the interpretation so the
+ * develop branch after the roll marks the same connection. An un-bonded
+ * connection changes nothing: its development is no roll, a mark of progress.
+ *
+ * @param {Object} interpretation — mutated: `statUsed` / `statValue` when
+ *   bonded; `moveTargetId` / `moveTarget` when a connection resolves
+ * @param {{ listConnections: () => Promise<Array<Object>> }} deps — the active
+ *   connection records, each with its host Actor id as `__hostId`
+ * @returns {Promise<{ connection: Object|null, bonded: boolean, adds: number }|null>}
+ *   null for any other move
+ */
+export async function enrichBondedDevelop(interpretation, { listConnections }) {
+  if (interpretation?.moveId !== "develop_your_relationship") return null;
+  const connections = await listConnections();
+  const target = selectConnection(connections, interpretation.moveTarget ?? null,
+    { hostId: interpretation.moveTargetId ?? null });
+  if (!target) return { connection: null, bonded: false, adds: 0 };
+  if (target.__hostId) interpretation.moveTargetId = target.__hostId;
+  if (target.name)     interpretation.moveTarget   = target.name;
+  const roll = bondedDevelopRoll(target);
+  if (!roll) return { connection: target, bonded: false, adds: 0 };
+  interpretation.statUsed  = roll.statUsed;
+  interpretation.statValue = roll.statValue;
+  return { connection: target, bonded: true, adds: roll.statValue };
 }
 
 /**

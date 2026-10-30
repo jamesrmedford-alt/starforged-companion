@@ -14,6 +14,8 @@ import {
   CONNECTION_SUGGEST_CATEGORIES,
   nextRank,
   BOND_LEGACY_TICKS,
+  BOND_ROLL_ADDS,
+  bondedDevelopRoll,
   CONNECTION_RANKS,
   shouldForgeBond,
 } from "../../src/moves/developRelationship.js";
@@ -259,6 +261,26 @@ describe("constants", () => {
   });
   it("CONNECTION_RANKS is the five-rank ladder in order", () => {
     expect(CONNECTION_RANKS).toEqual(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
+  });
+  it("BOND_ROLL_ADDS is +1 … +5 up the ladder (play kit p. 3)", () => {
+    expect(BOND_ROLL_ADDS).toEqual({ troublesome: 1, dangerous: 2, formidable: 3, extreme: 4, epic: 5 });
+  });
+});
+
+// ─── bondedDevelopRoll — "roll +rank" (issue #314 Q06) ───────────────────────
+
+describe("bondedDevelopRoll", () => {
+  it("a bonded connection rolls its rank, worth its adds, at every rank", () => {
+    for (const [rank, adds] of Object.entries(BOND_ROLL_ADDS)) {
+      expect(bondedDevelopRoll(conn({ bonded: true, rank }))).toEqual({ statUsed: rank, statValue: adds });
+    }
+  });
+  it("an un-bonded connection is no roll", () => {
+    expect(bondedDevelopRoll(conn({ bonded: false, rank: "epic" }))).toBeNull();
+    expect(bondedDevelopRoll(null)).toBeNull();
+  });
+  it("an unknown rank is no roll", () => {
+    expect(bondedDevelopRoll(conn({ bonded: true, rank: "legendary" }))).toBeNull();
   });
 });
 

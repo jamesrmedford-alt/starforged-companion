@@ -20,11 +20,15 @@
  *      sheet update propagates the usual way (GM-only gate inherited
  *      per F16 Q4 / PERSIST-001).
  *   4. Handles the at-0 escalations the rulebook calls out:
- *        - Endure Harm at 0 health   → mark wounded/maimed; roll
+ *        - Endure Harm past 0 health → the remainder is Lose Momentum
+ *          ("if your health is 0, suffer -momentum equal to any
+ *          remaining harm" — issue #314 Q02; it used to vanish in the
+ *          meter's clamp); then mark wounded/maimed; roll
  *          MORTAL_WOUND d100 if the trigger was a miss; otherwise just
  *          mark and surface.
- *        - Endure Stress at 0 spirit → mark shaken/traumatized; roll
- *          DESOLATION d100 on miss.
+ *        - Endure Stress past 0 spirit → the remainder is Lose Momentum
+ *          the same way; mark shaken/traumatized; roll DESOLATION d100
+ *          on miss.
  *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
  *          this is the command vehicle, surface an Overcome
  *          Destruction prompt (Q2 — prompt, don't auto-fire).
@@ -136,6 +140,49 @@ export async function loseMomentum(actor, amount, opts = {}) {
 }
 
 /**
+ * Harm or stress beyond what the meter holds is a momentum loss: "if your
+ * health is 0, suffer -momentum equal to any remaining harm" (play kit p. 6;
+ * Endure Stress reads the same for spirit). The meter write clamped at 0 and
+ * the remainder was never charged (issue #314 Q02).
+ *
+ * @param {number} amount — the whole loss
+ * @param {number} before — the meter's value before the loss
+ * @returns {{ absorbed: number, overflow: number }} what the meter takes, and the rest
+ */
+function splitOverflow(amount, before) {
+  const absorbed = Math.min(amount, Math.max(0, before));
+  return { absorbed, overflow: amount - absorbed };
+}
+
+/**
+ * Take a loss's overflow as momentum (loseMomentum, no card of its own). What
+ * the momentum minimum refuses is reported for the player to redirect —
+ * loseMomentum's at-min rule (another suffer move, or progress cleared) is a
+ * manual follow-up.
+ *
+ * @param {Actor} actor
+ * @param {number} overflow
+ * @returns {Promise<Object|null>} `amount` owed, `taken`, `remaining` (refused
+ *   at the minimum), `before` / `after`, `atMin` — null when nothing overflowed
+ */
+async function overflowToMomentum(actor, overflow) {
+  if (overflow <= 0) return null;
+  const m = await loseMomentum(actor, overflow, { skipCard: true });
+  const taken = Math.max(0, m.before - m.after);
+  return { amount: overflow, taken, remaining: overflow - taken, before: m.before, after: m.after, atMin: m.atMin };
+}
+
+/** The card's line for an overflow: " — N more as momentum: 5 → 3", with what the minimum refused. */
+function overflowLine(momentumLoss) {
+  if (!momentumLoss) return "";
+  let line = ` — ${momentumLoss.amount} more as momentum: ${momentumLoss.before} → ${momentumLoss.after}`;
+  if (momentumLoss.remaining > 0) {
+    line += ` (at minimum; ${momentumLoss.remaining} not taken — redirect it to another suffer move or clear progress)`;
+  }
+  return line;
+}
+
+/**
  * Endure Harm executor.
  * @param {Actor} actor
  * @param {number} amount  1/2/3
@@ -143,15 +190,20 @@ export async function loseMomentum(actor, amount, opts = {}) {
  * @param {boolean} [opts.isMiss]  true → if at 0 health, roll mortal-wound
  * @param {number} [opts.fixedRoll]  d100 override for deterministic tests
  * @param {boolean} [opts.skipCard]
+ * @returns {Promise<{ before:number, after:number, atZero:boolean, woundedMarked?:boolean,
+ *   mortalWound?:Object|null, momentumLoss?:Object|null }>} `momentumLoss` is
+ *   the harm past 0 health, taken as momentum (overflowToMomentum)
  */
 export async function endureHarm(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
   const before = readMeter(actor, "health");
-  await applyMeterChanges(actor, { health: -amount });
+  const { absorbed, overflow } = splitOverflow(amount, before);
+  if (absorbed > 0) await applyMeterChanges(actor, { health: -absorbed });
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
+  const momentumLoss = await overflowToMomentum(actor, overflow);
 
   let woundedMarked = false;
   let mortalWound = null;
@@ -168,30 +220,33 @@ export async function endureHarm(actor, amount, opts = {}) {
   }
 
   if (!opts.skipCard) {
-    let body = `Health: ${before} → ${after}`;
+    let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (woundedMarked) body += " — marked <strong>wounded</strong>";
     if (mortalWound)   body += `<br/>Mortal Wound (d100 ${mortalWound.roll}): <em>${mortalWound.result}</em>`;
     await postSufferCard({
       title: `Endure Harm (-${amount})`,
       body,
-      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound },
+      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, momentumLoss },
     });
   }
 
-  return { before, after, atZero, woundedMarked, mortalWound };
+  return { before, after, atZero, woundedMarked, mortalWound, momentumLoss };
 }
 
 /**
- * Endure Stress executor — symmetric to Endure Harm against spirit.
+ * Endure Stress executor — symmetric to Endure Harm against spirit, the
+ * stress past 0 spirit taken as momentum (`momentumLoss`).
  */
 export async function endureStress(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
   const before = readMeter(actor, "spirit");
-  await applyMeterChanges(actor, { spirit: -amount });
+  const { absorbed, overflow } = splitOverflow(amount, before);
+  if (absorbed > 0) await applyMeterChanges(actor, { spirit: -absorbed });
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
+  const momentumLoss = await overflowToMomentum(actor, overflow);
 
   let shakenMarked = false;
   let desolation = null;
@@ -207,17 +262,17 @@ export async function endureStress(actor, amount, opts = {}) {
   }
 
   if (!opts.skipCard) {
-    let body = `Spirit: ${before} → ${after}`;
+    let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (shakenMarked) body += " — marked <strong>shaken</strong>";
     if (desolation)   body += `<br/>Desolation (d100 ${desolation.roll}): <em>${desolation.result}</em>`;
     await postSufferCard({
       title: `Endure Stress (-${amount})`,
       body,
-      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation },
+      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, momentumLoss },
     });
   }
 
-  return { before, after, atZero, shakenMarked, desolation };
+  return { before, after, atZero, shakenMarked, desolation, momentumLoss };
 }
 
 /**

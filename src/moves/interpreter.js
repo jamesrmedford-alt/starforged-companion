@@ -79,7 +79,7 @@ Given player narration, return a JSON object identifying:
 
 ### CONNECTION MOVES
 - **make_a_connection** — When you establish a relationship with an NPC. Roll +heart.
-- **develop_your_relationship** — When you deepen a connection (no roll, mark progress).
+- **develop_your_relationship** — When you deepen a connection. Un-bonded: no roll, mark progress. Bonded: roll +rank (the module fills the rank in; leave statUsed null).
 - **test_your_relationship** — When a connection is strained or tested. Roll +heart.
 - **forge_a_bond** — Progress move. When you cement a bond, compare progress to challenge dice.
 

@@ -966,21 +966,24 @@ const CONSEQUENCE_MAP = {
     }
   },
 
+  // Resupply's supply is conditional, as Heal's health is: unprepared, clear it
+  // and take +1; otherwise take +2 (play kit p. 7). The unprepared branch gave
+  // +2 and the +2 branch was open to an unprepared PC (issue #314 Q01).
   resupply: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(),
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "Clear unprepared + take/give +2 supply", chain: [{ clearImpact: "unprepared" }, { supply: 2 }], requires: "unprepared" },
-          { label: "Take/give +2 supply",                    supply: 2 },
+          { label: "Clear unprepared + take/give +1 supply", chain: [{ clearImpact: "unprepared" }, { supply: 1 }], requires: "unprepared" },
+          { label: "Take/give +2 supply",                    supply: 2, requires: "!unprepared" },
           { label: "Acquire specific item + +1 momentum",    momentum: 1 },
         ]},
-        otherEffect: "Clear unprepared (if applicable) and take/give +2 supply, or acquire a specific item and take +1 momentum." };
+        otherEffect: "If unprepared, clear it and take/give +1 supply; otherwise take/give +2 supply. Or acquire a specific item and take +1 momentum." };
       case "weak_hit": return { ...emptyConsequences(),
         sufferPrompt: { kind: "enumerated", options: [
           { label: "Clear unprepared + +1 supply (pay cost first)", chain: [{ clearImpact: "unprepared" }, { supply: 1 }], requires: "unprepared" },
-          { label: "+2 supply (clear another impact manually)",      supply: 2 },
+          { label: "+2 supply (pay cost first)",                    supply: 2, requires: "!unprepared" },
         ]},
-        otherEffect: "At cost. Clear unprepared and take +1 supply, or clear another impact and take +2 supply." };
+        otherEffect: "At cost. If unprepared, clear it and take +1 supply; otherwise take +2 supply." };
       case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Unexpected peril. Pay the Price." };
     }

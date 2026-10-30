@@ -295,11 +295,14 @@ export function unregisterOracleTable(tableId) {
  * type is reported via `isRef` / `refTableId` for callers that still want
  * to distinguish a direct hit from a resolved chain.
  *
- * F16 Phase E: when the matched entry carries a `sufferRoute` annotation
- * (e.g. the Pay-the-Price entries "You are harmed" / "Your vehicle
- * suffers damage" / etc.), surface it on the return value so the
- * `pay_the_price` chat-command handler can dispatch into the suffer
- * executors. Non-routable entries omit the field entirely.
+ * F16 Phase E: the Pay-the-Price entries "You are harmed" / "Your vehicle
+ * suffers damage" / etc. carry a `sufferRoute` annotation. `sufferRoutes`
+ * lists the routes of every entry the roll lands on — the matched entry's
+ * own, or each leaf of a "Roll twice" / "Roll again" chain, in order — so the
+ * Pay the Price handlers dispatch each into the suffer executors. A 96–100
+ * used to return the joined text alone and its leaves' routes were lost: "You
+ * are harmed / You are stressed" changed no meter (issue #314 Q03). A
+ * narrative-only result lists none.
  *
  * The die is the table's own (`entry.die`, custom tables — see
  * dieSizeForTable) or d100 for every built-in; it is reported as `die` so
@@ -308,7 +311,7 @@ export function unregisterOracleTable(tableId) {
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
- * @returns {{ tableId, tableName, die, roll, result, isRef, refTableId, sufferRoute? }}
+ * @returns {{ tableId, tableName, die, roll, result, isRef, refTableId, sufferRoutes: Array<Object> }}
  */
 export function rollOracle(tableId, options = {}) {
   const entry = ORACLE_TABLES[tableId];
@@ -320,51 +323,56 @@ export function rollOracle(tableId, options = {}) {
 
   if (!result) {
     console.warn(`Oracle | No result for roll ${roll} (d${die}) on table ${tableId}`);
-    return { tableId, tableName: entry.name, die, roll, result: "—", isRef: false };
+    return { tableId, tableName: entry.name, die, roll, result: "—", isRef: false, sufferRoutes: [] };
   }
 
   const resolved = resolveDirective(result, entry.table, 0, die);
   return {
     tableId,
-    tableName: entry.name,
+    tableName:    entry.name,
     die,
     roll,
-    result:     resolved,
-    isRef:      !!result.ref,
-    refTableId: result.ref ?? null,
-    ...(result.sufferRoute ? { sufferRoute: result.sufferRoute } : {}),
+    result:       resolved.text,
+    isRef:        !!result.ref,
+    refTableId:   result.ref ?? null,
+    sufferRoutes: resolved.leaves.filter(leaf => leaf.sufferRoute).map(leaf => leaf.sufferRoute),
   };
 }
 
 /**
- * Resolve a single table-entry directive into a usable result string.
- * Pure function — same rules as `rollTableResult` in sectorGenerator.js,
- * but operates on a single matched entry plus its parent table so it can
- * be invoked from `rollOracle` without needing the original d100.
+ * Resolve a single table-entry directive into its result text and the
+ * entries it lands on. Pure function — same rules as `rollTableResult` in
+ * sectorGenerator.js, but operates on a single matched entry plus its parent
+ * table so it can be invoked from `rollOracle` without needing the original
+ * d100.
  *
  * Resolution:
  *   - `entry.ref === "action_theme"` → roll CORE.ACTION + CORE.THEME, join `" "`.
  *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
  *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `"-"`.
- *   - otherwise → return `entry.result` verbatim.
+ *   - otherwise → `entry.result` verbatim; the entry is the one leaf.
+ *
+ * `leaves` are the terminal entries, in order, so a chain keeps each leaf's
+ * annotations (a Pay the Price leaf's `sufferRoute` — issue #314 Q03); a
+ * directive entry is never a leaf.
  *
  * Recursion is depth-capped (`MAX_DIRECTIVE_DEPTH`); at the cap we fall back
- * to whatever the directive entry's `result` string was so the chain
- * terminates with something readable rather than throwing.
+ * to whatever the directive entry's `result` string was, with no leaves, so
+ * the chain terminates with something readable rather than throwing.
  *
- * @param {{result:string, ref?:string}} entry
+ * @param {{result:string, ref?:string, sufferRoute?:Object}} entry
  * @param {Array<{min:number,max:number,result:string,ref?:string}>} parentTable
  * @param {number} [depth]
  * @param {number} [parentDie] — die the parent table rolls with (custom tables)
- * @returns {string}
+ * @returns {{ text: string, leaves: Array<Object> }}
  */
 const MAX_DIRECTIVE_DEPTH = 4;
 
 function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
-  if (depth >= MAX_DIRECTIVE_DEPTH) return entry.result;
+  if (depth >= MAX_DIRECTIVE_DEPTH) return { text: entry.result, leaves: [] };
 
   if (entry.ref === "action_theme") {
-    return `${rollAndResolve(CORE.ACTION, depth + 1)} ${rollAndResolve(CORE.THEME, depth + 1)}`;
+    return joinResolved(" ", rollAndResolve(CORE.ACTION, depth + 1), rollAndResolve(CORE.THEME, depth + 1));
   }
 
   // DESCRIPTOR-FOCUS-UNCHAINED fix (2026-07, found by the table-integrity
@@ -372,23 +380,27 @@ function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
   // the action_theme chain was ever implemented — those rolls returned the
   // literal placeholder "Descriptor + Focus" to the player.
   if (entry.ref === "descriptor_focus") {
-    return `${rollAndResolve(CORE.DESCRIPTOR, depth + 1)} ${rollAndResolve(CORE.FOCUS, depth + 1)}`;
+    return joinResolved(" ", rollAndResolve(CORE.DESCRIPTOR, depth + 1), rollAndResolve(CORE.FOCUS, depth + 1));
   }
 
   if (/^Roll (twice|again)\b/i.test(entry.result)) {
     const a = rollAndResolve(parentTable, depth + 1, parentDie);
     const b = rollAndResolve(parentTable, depth + 1, parentDie);
-    const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
-    return `${a}${joiner}${b}`;
+    return joinResolved(/paired name/i.test(entry.result) ? "-" : " / ", a, b);
   }
 
-  return entry.result;
+  return { text: entry.result, leaves: [entry] };
+}
+
+/** Two resolved halves as one: their texts joined, their leaves in order. */
+function joinResolved(joiner, a, b) {
+  return { text: `${a.text}${joiner}${b.text}`, leaves: [...a.leaves, ...b.leaves] };
 }
 
 function rollAndResolve(table, depth, die = 100) {
   const roll = rollDie(die);
   const entry = findResult(table, roll);
-  if (!entry) return "—";
+  if (!entry) return { text: "—", leaves: [] };
   return resolveDirective(entry, table, depth, die);
 }
 

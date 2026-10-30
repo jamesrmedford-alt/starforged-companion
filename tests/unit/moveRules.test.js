@@ -10,6 +10,8 @@
  *   P01 — the roller's negative momentum cancels a matching action die.
  *   P02 — a weak Heal or Hearten recovers as a strong hit does, then pays its
  *         cost.
+ *   Q01 (issue #314) — Resupply's supply is conditional on unprepared: clear
+ *         it and +1, otherwise +2.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -185,5 +187,52 @@ describe("Secure an Advantage's weak hit — the choice carries the momentum (SA
     await pick(1);
     expect(pc.system.momentum.value).toBe(2);
     expect(table.cards(f => f.sufferDeferred && f.nextBonus)).toHaveLength(1);
+  });
+});
+
+describe("Q01 — Resupply: unprepared, clear it and +1 supply; otherwise +2", () => {
+  const STRONG = [0.15, 0.25, 0.99];   // challenge 2, 3; action die 6 — wits 2 is a strong hit
+
+  async function pick(index) {
+    const card = choices().at(-1);
+    await table.client("pl-1").click(card._id, `[data-option-index="${index}"]`);
+    await table.settle(); await table.drain();
+    return card;
+  }
+
+  it("unprepared at supply 0: the clear-unprepared option restores 1, and the +2 option is unavailable", async () => {
+    pc.system.supply.value = 0;
+    pc.system.debility.unprepared = true;
+    await roll("resupply", { statUsed: "wits", dice: STRONG });
+    expect(lastLog().outcome).toBe("strong_hit");
+    const card = choices().at(-1);
+    expect(card.content).not.toMatch(/data-option-index="0" disabled/);
+    expect(card.content).toMatch(/data-option-index="1" disabled/);
+    await pick(0);
+    expect(pc.system.supply.value).toBe(1);
+    expect(pc.system.debility.unprepared).toBe(false);
+  });
+
+  it("prepared at supply 1: +2 supply restores to 3, and the clear-unprepared option is unavailable", async () => {
+    pc.system.supply.value = 1;
+    await roll("resupply", { statUsed: "wits", dice: STRONG });
+    const card = choices().at(-1);
+    expect(card.content).toMatch(/data-option-index="0" disabled/);
+    expect(card.content).not.toMatch(/data-option-index="1" disabled/);
+    await pick(1);
+    expect(pc.system.supply.value).toBe(3);
+    expect(pc.system.debility.unprepared).toBe(false);
+  });
+
+  it("the weak hit is gated the same way: unprepared at 0 takes 1, never 2", async () => {
+    pc.system.supply.value = 0;
+    pc.system.debility.unprepared = true;
+    await roll("resupply", { statUsed: "wits" });   // WEAK: challenge 3, 7; die 4 + wits 2 = 6
+    expect(lastLog().outcome).toBe("weak_hit");
+    const card = choices().at(-1);
+    expect(card.content).toMatch(/data-option-index="1" disabled/);
+    await pick(0);
+    expect(pc.system.supply.value).toBe(1);
+    expect(pc.system.debility.unprepared).toBe(false);
   });
 });

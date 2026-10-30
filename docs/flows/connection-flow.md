@@ -16,8 +16,14 @@ and the Actor id listed in `campaignState.connectionIds[]`
 (authoritative — scores Forge a Bond, feeds entity cards) and a PC `progress`
 Item with `system.subtype:"bond"` (the vendor sheet's Connections tab and
 CHARACTER STATE). Since the BOND-ITEM-MIRROR fix, `markRelationshipProgress`
-mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`, keyed by
-connectionId, then name), so the two stay in step.
+mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`), so the
+two stay in step. The Items are keyed by the record's `_id`
+(`flags[MODULE].connectionId`, written by every creator) and matched by it
+alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
+key, and only the PC's one of that name — a same-named sibling's Item is
+never written, and a renamed connection's Item is still found (issue #314
+Q04: `byId || byName` let the name override the key, and the rank writers
+passed the host Actor id, which no Item carries).
 
 ## 1. Meet (creation)
 
@@ -55,21 +61,30 @@ final `storeSector` write.
   substring → sole-bonded → sole-active) + `planDevelopRelationship` —
   **un-bonded** → one rank-step of
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
-  **bonded** → bonds-legacy ticks (strong 2 / weak 1) and a match-on-hit
-  raises the connection's rank (`nextRank`, clamped at epic). Ambiguous
-  target (several active, none named) silently no-ops.
+  **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
+  resolves the connection before the dice — the picker's host id, else the
+  name — stamps `moveTargetId` / `moveTarget` so this branch marks the same
+  one, and makes the rank the stat (`BOND_ROLL_ADDS`, +1 troublesome … +5
+  epic; the card reads "+epic (5)" — issue #314 Q06, the pipeline rolled +0
+  while `!bond` rolled +rank); the outcome marks bonds-legacy ticks (strong 2
+  / weak 1) and a match-on-hit raises the connection's rank (`nextRank`,
+  clamped at epic), mirrored onto the bond Items by the record's `_id`
+  (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
+  silently no-ops.
 - **`!bond [rank] [name]`** — the bonded develop roll
   (`src/moves/bondCommand.js`). `handleBondCommand` runs once, on the
   typist's client (chat routing `RUN_ON.AUTHOR`): it resolves the **named**
   bonded connection (`selectConnection` over active bonded records), else the
-  **sole** bonded one, and that connection's rank drives the adds (a bare
-  rank arg is the untargeted fallback; a name that matches nothing warns).
+  **sole** bonded one, and that connection's rank drives the adds
+  (`BOND_ROLL_ADDS`, shared with the pipeline's bonded roll; a bare rank arg
+  is the untargeted fallback; a name that matches nothing warns).
   It rolls, posts the card, and relays the lasting effect to the canonical
   GM (`requestGmAction("bond.apply")` → `applyBondEffects`): strong → 2
   bonds-legacy ticks (`addLegacyTicks`, so filled boxes pay XP), weak → +2
   momentum to the **roller's** PC (`resolveSpeakerActorId`), and a hit with a
   match on a targeted connection raises its rank one step for real
-  (`updateConnection` + the bond-Item mirror via `setBondItemRank`). The
+  (`updateConnection` + the bond-Item mirror via `setBondItemRank`, keyed by
+  the record's `_id` and name read on the GM — issue #314 Q04). The
   handler validates the client-supplied payload: ticks / momentum clamp to
   the legal {0, 2} (a request carrying both is refused), the raise must be
   exactly `nextRank` of the bonded connection's current rank, and momentum

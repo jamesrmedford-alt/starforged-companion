@@ -26,7 +26,10 @@ Two cross-cutting facts to hold onto:
   card is upgraded at most once. The pipeline gives each resolution an `_id`
   so the upgrade can strike the original narration card. Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
-  it reverts the miss's Pay the Price from what the route landed, retires the
+  it reverts the miss's Pay the Price from what each route landed — a "Roll
+  twice" lands each leaf's route (issue #314 Q03), and harm past a meter is a
+  momentum receipt of its own (Q02), which an improvement refunds and a
+  burn's reset replaces — retires the
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).

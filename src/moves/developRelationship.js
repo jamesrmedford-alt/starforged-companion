@@ -48,6 +48,33 @@ export function buildConnectionSuggestion(resolution, activeConnections, moveCat
 // decisions.md); miss = 0. A match on a hit additionally raises rank.
 export const BOND_LEGACY_TICKS = { strong_hit: 2, weak_hit: 1, miss: 0 };
 
+// Rank → the adds of the bonded-path Develop Your Relationship roll (play kit
+// p. 3: troublesome +1; dangerous +2; formidable +3; extreme +4; epic +5). The
+// pipeline's roll (statEnrichment enrichBondedDevelop) and `!bond` share it.
+export const BOND_ROLL_ADDS = {
+  troublesome: 1,
+  dangerous:   2,
+  formidable:  3,
+  extreme:     4,
+  epic:        5,
+};
+
+/**
+ * What a bonded Develop Your Relationship rolls: "roll +rank" — the
+ * connection's rank as the stat, worth its BOND_ROLL_ADDS. Null for an
+ * un-bonded connection (its development is no roll, a mark of progress) or an
+ * unknown rank. The move's schema lists no stat, so the pipeline rolled +0 for
+ * a bonded connection while `!bond` rolled +rank (issue #314 Q06).
+ *
+ * @param {{ bonded?: boolean, rank?: string }|null} connection
+ * @returns {{ statUsed: string, statValue: number }|null}
+ */
+export function bondedDevelopRoll(connection) {
+  if (!connection?.bonded) return null;
+  const adds = BOND_ROLL_ADDS[connection.rank];
+  return adds == null ? null : { statUsed: connection.rank, statValue: adds };
+}
+
 /**
  * Pure: does a Forge a Bond resolution earn its connection payoff (bonded flip
  * + bonds legacy)? True on any hit — the bond forms on a weak hit too, once

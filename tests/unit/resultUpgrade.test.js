@@ -18,6 +18,8 @@
  *   P03 — an upgrade retires the superseded outcome's pending choice and
  *         offers the upgraded outcome's, once; a consequence chosen first
  *         closes both upgrades.
+ *   Q05 (issue #314) — a vow-clock rewind that lands in part leaves only the
+ *         refused Items for the GMs' Retry.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -96,26 +98,33 @@ beforeEach(async () => {
 });
 
 describe("P04 — a burn refunds the Pay the Price loss that landed", () => {
-  it("a loss clamped at 0 health is not refunded: health stays 0", async () => {
+  it("a loss at 0 health is momentum (issue #314 Q02): no health is refunded, and a burn's reset replaces the momentum", async () => {
     pc.system.health.value = 0;
+    pc.system.momentum.value = 9;   // 8 after the loss still burns a miss against 6 and 7 to a strong hit
     const card = await roll("gather_information", { statUsed: "wits" });
     expect(pc.system.health.value).toBe(0);
-    expect(flags(card._id).burn.ptpReversals.sufferMeterDelta).toBeNull();
+    expect(pc.system.momentum.value).toBe(8);
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([expect.objectContaining({
+      move: "endure_harm", meterKey: "momentum", amount: 1, actorId: pc.id, before: 9, after: 8, overflow: true,
+    })]);
 
     await click(card, '[data-action="sf-burn-momentum"]');
 
     expect(flags(card._id).burn.consumed).toBe(true);
     expect(lastLog().outcome).toBe("strong_hit");
     expect(pc.system.health.value).toBe(0);
+    // Reset 1 (wounded was marked at 0 health) + the strong hit's +2; nothing refunded.
+    expect(pc.system.momentum.value).toBe(3);
+    expect(table.cards(f => f.burnReversal)).toHaveLength(0);
   });
 
   it("the solo fallback's real loss is refunded: companion route → Endure Harm, health 5 → 4 → 5", async () => {
     control.ptp = 53;   // a companion in harm's way; with none, Endure Harm (-1)
     const card = await roll("gather_information", { statUsed: "wits" });
     expect(pc.system.health.value).toBe(4);
-    expect(flags(card._id).burn.ptpReversals.sufferMeterDelta).toMatchObject({
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([expect.objectContaining({
       move: "endure_harm", meterKey: "health", amount: 1, actorId: pc.id, before: 5, after: 4,
-    });
+    })]);
 
     await click(card, '[data-action="sf-burn-momentum"]');
 
@@ -421,5 +430,113 @@ describe("P03 — an upgrade reconciles the move's choice cards", () => {
     expect(flags(card._id).improve.consumed).toBeFalsy();
     expect(lastLog().outcome).toBe("weak_hit");
     expect(pc.system.health.value).toBe(4);
+  });
+});
+
+describe("Q05 — a partial vow-clock rewind retries only the Items still owed", () => {
+  const BURN  = '[data-action="sf-burn-momentum"]';
+  const RETRY = '[data-action="sf-payoff-retry"]';
+  const failureCards = () => table.cards(f => f.payoffFailureCard && f.source === "upgrade");
+
+  /** An open vow Item with a six-segment countdown at 2; `refuse` counts the next updates to reject. */
+  function clockVow(id) {
+    const doc = {
+      id, name: id, type: "progress", flags: { [MODULE_ID]: {} },
+      system: { subtype: "vow", rank: "dangerous", current: 0, completed: false, hasClock: true, clockTicks: 2, clockMax: 6 },
+      writes: [], refuse: 0,
+      async update(changes) {
+        this.writes.push({ ...changes });
+        if (this.refuse > 0) { this.refuse--; throw new Error(`test: refused Item write ${id}`); }
+        for (const [path, value] of Object.entries(changes)) {
+          const parts = path.split("."); let node = this;
+          for (const k of parts.slice(0, -1)) node = node[k] ??= {};
+          node[parts.at(-1)] = value;
+        }
+        return this;
+      },
+    };
+    return doc;
+  }
+  const ticks = (...vows) => vows.map(v => v.system.clockTicks);
+
+  async function missAdvancingBoth(a, b) {
+    pc.items.contents.splice(0, pc.items.contents.length, a, b);
+    const card = await roll("gather_information", { statUsed: "wits" });   // a miss; Pay the Price 78 advances both clocks
+    expect(ticks(a, b)).toEqual([3, 3]);
+    return card;
+  }
+
+  async function gmRetry(card) {
+    await table.client("gm-1").click(card._id, RETRY);
+    await table.settle(); await table.drain();
+  }
+
+  it("the second Item's refused rewind alone goes to the GMs; their Retry rewinds it once and leaves the first clock as it is", async () => {
+    const a = clockVow("vow-a"), b = clockVow("vow-b");
+    const card = await missAdvancingBoth(a, b);
+    b.refuse = 1;
+
+    await click(card, BURN);
+
+    expect(ticks(a, b)).toEqual([2, 3]);
+    expect(table.cards(f => f.burnReversal).at(-1)?.content).toMatch(/vow-a clock rewound/);
+    expect(table.cards(f => f.burnReversal).at(-1)?.content).not.toMatch(/vow-b clock rewound/);
+    const failed = failureCards().at(-1);
+    expect(failed.flags[MODULE_ID].steps).toEqual([
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", name: "vow-b" }] },
+    ]);
+    expect(failed.content).toContain("Rewind the vow-b clock one segment");
+    expect(failed.content).not.toContain("vow-a");
+
+    await gmRetry(failed);
+    expect(ticks(a, b)).toEqual([2, 2]);
+    expect(a.writes.map(w => w["system.clockTicks"])).toEqual([3, 2]);      // advanced, rewound — never again
+    expect(b.writes.map(w => w["system.clockTicks"])).toEqual([3, 2, 2]);   // advanced, refused, rewound
+  });
+
+  it("a refusal on the first Item: the second lands, the first alone is retried", async () => {
+    const a = clockVow("vow-a"), b = clockVow("vow-b");
+    const card = await missAdvancingBoth(a, b);
+    a.refuse = 1;
+
+    await click(card, BURN);
+
+    expect(ticks(a, b)).toEqual([3, 2]);
+    expect(failureCards().at(-1).flags[MODULE_ID].steps[0].entries.map(e => e.itemId)).toEqual(["vow-a"]);
+    await gmRetry(failureCards().at(-1));
+    expect(ticks(a, b)).toEqual([2, 2]);
+  });
+
+  it("a second refusal during the Retry goes on a fresh card with that Item alone; its Retry lands", async () => {
+    const a = clockVow("vow-a"), b = clockVow("vow-b");
+    const card = await missAdvancingBoth(a, b);
+    b.refuse = 2;   // the burn's rewind, and the first Retry's
+
+    await click(card, BURN);
+    expect(ticks(a, b)).toEqual([2, 3]);
+    const first = failureCards().at(-1);
+
+    await gmRetry(first);
+    expect(ticks(a, b)).toEqual([2, 3]);
+    expect(failureCards()).toHaveLength(2);
+    const second = failureCards().at(-1);
+    expect(second._id).not.toBe(first._id);
+    expect(second.flags[MODULE_ID].steps).toEqual([
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", name: "vow-b" }] },
+    ]);
+
+    await gmRetry(second);
+    expect(ticks(a, b)).toEqual([2, 2]);
+  });
+
+  it("with nothing refused both clocks rewind once and no card is posted", async () => {
+    const a = clockVow("vow-a"), b = clockVow("vow-b");
+    const card = await missAdvancingBoth(a, b);
+
+    await click(card, BURN);
+
+    expect(ticks(a, b)).toEqual([2, 2]);
+    expect(failureCards()).toHaveLength(0);
+    expect(table.cards(f => f.burnReversal).at(-1)?.content).toMatch(/vow-a clock rewound[\s\S]*vow-b clock rewound/);
   });
 });
