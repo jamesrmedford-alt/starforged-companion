@@ -1055,6 +1055,56 @@ describe('setBondItemTicks', () => {
     expect(i.system.current).toBe(8);
   });
 
+  // Issue #314 Q04: `byId || byName` let a name override a different key, so
+  // developing one Sable wrote both Sables' Items.
+  describe("a keyed Item matches its own connection only", () => {
+    it("a same-named Item keyed to another connection keeps its ticks, on this PC and on another", async () => {
+      const mine    = bondItem({ id: 'b-a' });
+      const sibling = bondItem({ id: 'b-b', system: { subtype: 'bond', current: 20 },
+        flags: { 'starforged-companion': { connectionId: 'conn-2' } } });
+      const theirs  = bondItem({ id: 'b-c', system: { subtype: 'bond', current: 20 },
+        flags: { 'starforged-companion': { connectionId: 'conn-2' } } });
+      const a1 = makeTestActor({ id: 'pc-sbt-5', items: { contents: [mine, sibling] } });
+      const a2 = makeTestActor({ id: 'pc-sbt-6', items: { contents: [theirs] } });
+      game.actors._setAll([a1, a2]);
+
+      expect(await setBondItemTicks({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 8)).toBe(1);
+      expect(mine.system.current).toBe(8);
+      expect(sibling.system.current).toBe(20);
+      expect(theirs.system.current).toBe(20);
+    });
+
+    it("a keyed Item is found by its id after the connection was renamed; the stale name on another's Item does not match", async () => {
+      const renamed = bondItem({ id: 'b-r', name: 'Old Name' });
+      const other   = bondItem({ id: 'b-o', name: 'New Name', flags: { 'starforged-companion': { connectionId: 'conn-7' } } });
+      const a = makeTestActor({ id: 'pc-sbt-7', items: { contents: [renamed, other] } });
+      game.actors._setAll([a]);
+
+      expect(await setBondItemTicks({ connectionId: 'conn-1', name: 'New Name' }, 12)).toBe(1);
+      expect(renamed.system.current).toBe(12);
+      expect(other.system.current).toBe(0);
+    });
+
+    it("the name fallback takes an unkeyed Item only when it is the PC's one of that name", async () => {
+      const u1 = bondItem({ id: 'u1', flags: {} });
+      const u2 = bondItem({ id: 'u2', flags: {} });
+      const a  = makeTestActor({ id: 'pc-sbt-8', items: { contents: [u1, u2] } });
+      game.actors._setAll([a]);
+      expect(await setBondItemTicks({ connectionId: 'conn-9', name: 'Ash Barlowe' }, 8)).toBe(0);
+      expect([u1.system.current, u2.system.current]).toEqual([0, 0]);
+    });
+
+    it("a PC with a keyed Item for the connection ignores the name on its other Items", async () => {
+      const keyed   = bondItem({ id: 'k', name: 'Someone Else' });
+      const unkeyed = bondItem({ id: 'u', flags: {} });   // named Ash Barlowe, no key
+      const a = makeTestActor({ id: 'pc-sbt-9', items: { contents: [keyed, unkeyed] } });
+      game.actors._setAll([a]);
+      expect(await setBondItemTicks({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 8)).toBe(1);
+      expect(keyed.system.current).toBe(8);
+      expect(unkeyed.system.current).toBe(0);
+    });
+  });
+
   it('skips non-bond items, clamps to 0..40, and no-ops when already equal', async () => {
     const vow = bondItem({ id: 'v', system: { subtype: 'vow', current: 0 } });
     const bond = bondItem({ id: 'b3', system: { subtype: 'bond', current: 40 } });
@@ -1115,5 +1165,17 @@ describe('setBondItemRank', () => {
     game.actors._setAll([a]);
     expect(await setBondItemRank({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 'epic')).toBe(0);
     expect(vow.system.rank).toBe('dangerous');
+  });
+
+  // Issue #314 Q04 — same matching as the ticks mirror.
+  it("raises the Item keyed to the connection — renamed or not — and never a same-named Item keyed to another", async () => {
+    const mine    = rankBondItem({ id: 'rb-a', name: 'Old Name' });
+    const sibling = rankBondItem({ id: 'rb-b', flags: { 'starforged-companion': { connectionId: 'conn-2' } } });
+    const a = makeTestActor({ id: 'pc-sbr-5', items: { contents: [mine, sibling] } });
+    game.actors._setAll([a]);
+
+    expect(await setBondItemRank({ connectionId: 'conn-1', name: 'Ash Barlowe' }, 'formidable')).toBe(1);
+    expect(mine.system.rank).toBe('formidable');
+    expect(sibling.system.rank).toBe('dangerous');
   });
 });

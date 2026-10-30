@@ -1220,9 +1220,12 @@ export function registerChatHook() {
               await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
                 console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
               // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
-              // raised rank (NARR-BOND-RANK-STALE).
+              // raised rank (NARR-BOND-RANK-STALE). The Items are keyed by the
+              // record's `_id`, not the host Actor id (issue #314 Q04 — the
+              // host id matched nothing, and the name fallback hid it until a
+              // rename).
               await setBondItemRank(
-                { connectionId: plan.connection.__hostId, name: plan.connection.name },
+                { connectionId: plan.connection._id, name: plan.connection.name },
                 plan.newRank,
               ).catch(err =>
                 console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));

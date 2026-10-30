@@ -140,7 +140,6 @@ export async function handleBondCommand(message) {
     momentumChange,
     raiseRank,
     targetHostId: raiseRank ? (target.__hostId ?? null) : null,
-    targetName:   raiseRank ? (target.name ?? null)     : null,
     raisedRank,
     actorId:      rollerId,
   });
@@ -162,8 +161,7 @@ const BOND_MOMENTUM     = 2;
  * momentum target must be a PC the requester owns (or the requester is a GM).
  *
  * @param {{ ticksOnBonds?: number, momentumChange?: number, raiseRank?: boolean,
- *           targetHostId?: string|null, targetName?: string|null,
- *           raisedRank?: string|null, actorId?: string|null }} payload
+ *           targetHostId?: string|null, raisedRank?: string|null, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
@@ -230,9 +228,12 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
       await conn.updateConnection(payload.targetHostId, { rank: payload.raisedRank }).catch(err =>
         console.warn(`${MODULE_ID} | !bond rank raise failed:`, err?.message ?? err));
       // Mirror onto the PCs' bond Items so CHARACTER STATE shows the raised
-      // rank (NARR-BOND-RANK-STALE).
+      // rank (NARR-BOND-RANK-STALE). The Items are keyed by the record's own
+      // `_id` and the record's name is read here, not the client's (issue #314
+      // Q04 — the host Actor id matched no Item, and the name fallback hid it
+      // until a rename).
       await setBondItemRank(
-        { connectionId: payload.targetHostId, name: payload.targetName ?? null },
+        { connectionId: current._id ?? null, name: current.name ?? null },
         payload.raisedRank,
       ).catch(err =>
         console.warn(`${MODULE_ID} | !bond rank mirror failed:`, err?.message ?? err));

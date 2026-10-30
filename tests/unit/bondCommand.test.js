@@ -55,7 +55,7 @@ beforeEach(() => {
   pcB = makeTestActor({ id: 'pc-b', name: 'Bex' });
   game.actors._setAll([pcA, pcB]);
   getConnection.mockImplementation((hostId) => hostId === 'conn-1'
-    ? { name: 'Sable', rank: 'dangerous', bonded: true, active: true }
+    ? { _id: 'rec-sable', name: 'Sable', rank: 'dangerous', bonded: true, active: true }
     : null);
   game.settings._store.set(`${MODULE_ID}.campaignState`, {
     ...CampaignStateSchema, connectionIds: ['conn-1'], legacyTracks: {},
@@ -121,7 +121,7 @@ describe('handleBondCommand — author client', () => {
     rollChallengeDice.mockReturnValue([3, 3]);
     await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' } });
     const relayed = game.socket._emitted[0].payload.payload;
-    expect(relayed).toMatchObject({ raiseRank: true, targetHostId: 'conn-1', targetName: 'Sable', raisedRank: 'formidable' });
+    expect(relayed).toMatchObject({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' });
   });
 
   it('a miss relays nothing', async () => {
@@ -206,8 +206,27 @@ describe('applyBondEffects — canonical GM handler', () => {
   });
 
   it('raises the connection rank', async () => {
-    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', targetName: 'Sable', raisedRank: 'formidable' }, {});
+    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
     expect(updateConnection).toHaveBeenCalledWith('conn-1', { rank: 'formidable' });
+  });
+
+  // Issue #314 Q04: the mirror was keyed by the host Actor id, which no Item
+  // carries, and a name match wrote a same-named sibling's Item.
+  it("mirrors the rank onto the Item keyed by the record's _id — renamed or not — and leaves a same-named sibling's Item alone", async () => {
+    const bondItem = (id, name, connectionId) => ({
+      id, name, type: 'progress', system: { subtype: 'bond', current: 0, rank: 'dangerous' },
+      flags: { [MODULE_ID]: { connectionId } },
+      update: vi.fn(async function (c) { this.system.rank = c['system.rank']; }),
+    });
+    const sable   = bondItem('b-sable',   'Old Sable', 'rec-sable');    // the record's, named before a rename
+    const sibling = bondItem('b-sibling', 'Sable',     'rec-other');    // another Sable's
+    pcA.items = { contents: [sable, sibling] };
+
+    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
+
+    expect(sable.system.rank).toBe('formidable');
+    expect(sibling.system.rank).toBe('dangerous');
+    expect(sibling.update).not.toHaveBeenCalled();
   });
 
   it('refuses a malformed rank raise with a warning', async () => {

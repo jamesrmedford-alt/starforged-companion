@@ -668,33 +668,60 @@ export async function createCharacterBondItem(actor, data) {
 }
 
 /**
+ * The bond Items that mirror one connection, across every PC. An Item keyed
+ * by `connectionId` (the connection record's `_id`, the entity id every
+ * creator writes) matches that id alone: a same-named sibling keeps its own
+ * track, and a renamed connection still finds its Item. The name is a
+ * fallback for an Item with no key (seeded before the key existed), and only
+ * when it is the actor's one unkeyed bond Item of that name — never one keyed
+ * to another connection. The old `byId || byName` let a name override a
+ * different explicit key, so developing one Sable wrote both Sables' Items
+ * (issue #314 Q04).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @returns {Array<{ actor: Actor, item: Item }>}
+ */
+function bondItemsFor({ connectionId = null, name = null } = {}) {
+  const wanted  = String(name ?? "").trim().toLowerCase();
+  const matches = [];
+  for (const actor of getPlayerActors()) {
+    const items = (actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []))
+      .filter(item => item?.type === "progress" && item.system?.subtype === "bond");
+    const keyed = connectionId != null
+      ? items.filter(item => item.flags?.[MODULE_ID]?.connectionId === connectionId)
+      : [];
+    if (keyed.length) {
+      for (const item of keyed) matches.push({ actor, item });
+      continue;
+    }
+    if (!wanted) continue;
+    const unkeyed = items.filter(item => item.flags?.[MODULE_ID]?.connectionId == null
+      && String(item.name ?? "").trim().toLowerCase() === wanted);
+    if (unkeyed.length === 1) matches.push({ actor, item: unkeyed[0] });
+  }
+  return matches;
+}
+
+/**
  * Mirror a connection's relationship progress onto each PC's bond Item so the
  * vendor sheet's Connections tab shows the same track (BOND-ITEM-MIRROR fix —
  * the item was seeded at 0 and never advanced while the entity record moved).
- * Matches by the connectionId flag first, then case-insensitive name.
+ * `connectionId` is the connection record's `_id`; the Items it reaches are
+ * bondItemsFor's.
  *
  * @param {{ connectionId?: string|null, name?: string|null }} keys
  * @param {number} ticks — absolute tick value (0–40) to set
  * @returns {Promise<number>} how many items were updated
  */
-export async function setBondItemTicks({ connectionId = null, name = null } = {}, ticks) {
-  const wanted = String(name ?? "").trim().toLowerCase();
-  const next   = Math.max(0, Math.min(Number(ticks) || 0, 40));
-  let updated  = 0;
-  for (const actor of getPlayerActors()) {
-    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
-    for (const item of items) {
-      if (item?.type !== "progress" || item.system?.subtype !== "bond") continue;
-      const byId   = connectionId != null && item.flags?.[MODULE_ID]?.connectionId === connectionId;
-      const byName = wanted !== "" && String(item.name ?? "").trim().toLowerCase() === wanted;
-      if (!byId && !byName) continue;
-      if (Number(item.system?.current ?? 0) !== next) {
-        await item.update({ "system.current": next }).catch(err =>
-          console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
-        invalidateActorCache(actor.id);
-        updated++;
-      }
-    }
+export async function setBondItemTicks(keys = {}, ticks) {
+  const next  = Math.max(0, Math.min(Number(ticks) || 0, 40));
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if (Number(item.system?.current ?? 0) === next) continue;
+    await item.update({ "system.current": next }).catch(err =>
+      console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
   }
   return updated;
 }
@@ -704,31 +731,22 @@ export async function setBondItemTicks({ connectionId = null, name = null } = {}
  * narrator-context audit 2026-07): the item's rank was seeded at creation and
  * never updated when the connection record's rank rose (develop-match /
  * !bond-match raise the record only), so CHARACTER STATE — which reads the
- * bond Item — showed the stale rank forever. Same matching rules as
- * setBondItemTicks.
+ * bond Item — showed the stale rank forever. Same matching as
+ * setBondItemTicks (bondItemsFor).
  *
  * @param {{ connectionId?: string|null, name?: string|null }} keys
  * @param {string} rank — one of VALID_RANKS; anything else is ignored
  * @returns {Promise<number>} how many items were updated
  */
-export async function setBondItemRank({ connectionId = null, name = null } = {}, rank) {
+export async function setBondItemRank(keys = {}, rank) {
   if (!VALID_RANKS.includes(rank)) return 0;
-  const wanted = String(name ?? "").trim().toLowerCase();
-  let updated  = 0;
-  for (const actor of getPlayerActors()) {
-    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
-    for (const item of items) {
-      if (item?.type !== "progress" || item.system?.subtype !== "bond") continue;
-      const byId   = connectionId != null && item.flags?.[MODULE_ID]?.connectionId === connectionId;
-      const byName = wanted !== "" && String(item.name ?? "").trim().toLowerCase() === wanted;
-      if (!byId && !byName) continue;
-      if (item.system?.rank !== rank) {
-        await item.update({ "system.rank": rank }).catch(err =>
-          console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
-        invalidateActorCache(actor.id);
-        updated++;
-      }
-    }
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if (item.system?.rank === rank) continue;
+    await item.update({ "system.rank": rank }).catch(err =>
+      console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
   }
   return updated;
 }
