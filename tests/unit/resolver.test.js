@@ -336,9 +336,16 @@ describe("mapConsequences", () => {
       expect(c.otherEffect).toMatch(/both/i);
     });
 
-    it("weak hit gives +2 momentum and notes the player choice", () => {
+    // SAA-WEAK-DOUBLE-MOMENTUM: the weak hit carried a direct +2 beside its
+    // "+2 momentum" choice, so the pick gave +4 and "+1 on your next move"
+    // kept the +2 — the strong hit's "both" either way.
+    it("weak hit applies no momentum itself — the choice carries +2 momentum or +1 on the next move", () => {
       const c = mapConsequences("secure_an_advantage", "weak_hit", false);
-      expect(c.momentumChange).toBe(2);
+      expect(c.momentumChange).toBe(0);
+      expect(c.sufferPrompt).toEqual({ kind: "enumerated", options: [
+        { label: "+2 momentum",          momentum:  2 },
+        { label: "+1 on your next move", nextBonus: 1 },
+      ] });
       expect(c.otherEffect).toMatch(/choose one/i);
     });
   });

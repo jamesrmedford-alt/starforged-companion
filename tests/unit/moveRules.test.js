@@ -160,6 +160,36 @@ describe("P02 — a weak recovery is the strong hit's, plus its cost", () => {
   });
 });
 
+describe("Secure an Advantage's weak hit — the choice carries the momentum (SAA-WEAK-DOUBLE-MOMENTUM)", () => {
+  async function pick(index) {
+    const card = choices().at(-1);
+    await table.client("pl-1").click(card._id, `[data-option-index="${index}"]`);
+    await table.settle(); await table.drain();
+    return card;
+  }
+
+  // The weak hit applied +2 momentum itself and offered "+2 momentum" on its
+  // choice card too: the pick gave +4, and "+1 on your next move" kept the
+  // +2 — the strong hit's "both" either way.
+  it("+2 momentum: 2 on the roll, 4 after the pick", async () => {
+    pc.system.momentum.value = 2;
+    await roll("secure_an_advantage");
+    expect(lastLog().outcome).toBe("weak_hit");
+    expect(pc.system.momentum.value).toBe(2);
+    expect(choices()).toHaveLength(1);
+    await pick(0);
+    expect(pc.system.momentum.value).toBe(4);
+  });
+
+  it("+1 on your next move: the momentum stays at 2, and the reminder is posted", async () => {
+    pc.system.momentum.value = 2;
+    await roll("secure_an_advantage");
+    await pick(1);
+    expect(pc.system.momentum.value).toBe(2);
+    expect(table.cards(f => f.sufferDeferred && f.nextBonus)).toHaveLength(1);
+  });
+});
+
 describe("Q01 — Resupply: unprepared, clear it and +1 supply; otherwise +2", () => {
   const STRONG = [0.15, 0.25, 0.99];   // challenge 2, 3; action die 6 — wits 2 is a strong hit
 

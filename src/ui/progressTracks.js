@@ -873,6 +873,20 @@ export async function listProgressTracks() {
 }
 
 /**
+ * One track by ID, as stored — every field (`linkedVowName`, `objective`,
+ * `combatState`, `completed`…), finished or not; null when none. For a caller
+ * holding a track's id from a card that needs the track itself: an upgraded
+ * combat move's fight (index.js applyOutcomeEffects).
+ * @param {string} trackId
+ * @returns {Promise<object|null>}
+ */
+export async function getProgressTrack(trackId) {
+  if (!trackId) return null;
+  const tracks = await loadTracks();
+  return tracks.find(t => t.id === trackId) ?? null;
+}
+
+/**
  * Mark a track completed by ID from outside the panel (e.g. Finish an
  * Expedition). Completed tracks move to the panel's archive section but are
  * kept for the campaign record. GM-only (journal write); null if not found.

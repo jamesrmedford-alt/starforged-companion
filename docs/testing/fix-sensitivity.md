@@ -1,14 +1,14 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311 and #314
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313 and #314
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309 and #311 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311 and #313 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29 and
-for issue #314 on 2026-10-30. To reproduce:
+for issues #313 and #314 on 2026-10-30. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -43,6 +43,9 @@ node scripts/fix-sensitivity.mjs \
 # issue #311
 node scripts/fix-sensitivity.mjs \
   d1d7826 4b8b3f3 c3e5dbc 52cdc67 2f7afdb 2e2aebc 97b4438 35f5ecf da75b67 --md details.md
+
+# issue #313
+node scripts/fix-sensitivity.mjs 0e2e26e e362ef1 --md details.md
 
 # issue #314
 node scripts/fix-sensitivity.mjs \
@@ -156,6 +159,13 @@ temporary git worktree; the checkout it is run from is not touched.
 The audit's own probes (issue #311 appendices A and B), with their
 assertions inverted to the expected behaviour, pass on the fixed code: all
 twelve.
+
+### Issue #313 — the two found while fixing #311
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| SAA-WEAK-DOUBLE-MOMENTUM | 0e2e26e | revert | 3 — `moveRules.test.js` (2: momentum 2 stays 2 on the weak hit and is 4 after the "+2 momentum" pick, not 6; "+1 on your next move" leaves it at 2 and posts the reminder), `resolver.test.js` (the weak hit's row: no direct momentum, the two choices) |
+| UPGRADE-PIPELINE-EFFECTS | e362ef1 | revert | 8 — `upgradeEffects.test.js` (6: a Strike burned from a miss marks twice on its fight and takes control; a Clash burned to a weak hit marks once, stays in the bad spot and keeps its price; a fight over by the burn is not marked and the card says so; an Undertake an Expedition improved from a miss begins and marks the expedition; an Enter the Fray burned while its threshold card waits changes the card's position, and the fight is created in it; a Battle burned from a lost miss gets its victory card), `burnMomentum.test.js` and `improveResult.test.js` (the card carries the move's target and ranks); 2 more fail only on the missing `effectsNoteHtml` |
 
 ### Issue #314 — the audit after #312
 
