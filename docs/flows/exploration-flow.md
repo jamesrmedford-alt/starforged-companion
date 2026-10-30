@@ -44,6 +44,14 @@ passage" drawing.
   marks one rank-step. The progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button. Deliberately **not** an arrival move
   — no position write mid-journey.
+- **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
+  ship record, `currentLocationId`, the feedback card), and an Undertake an
+  Expedition miss upgraded marks the expedition as a rolled hit would — the
+  pipeline's branches above are one applier (`applyOutcomeEffects`,
+  `src/index.js`) that Burn Momentum and Improve Result run for what the
+  upgraded outcome adds over the recorded original (issue #313,
+  UPGRADE-PIPELINE-EFFECTS). An upgrade saves its own location and legacy
+  mark; no persistResolution follows.
 - **`!reveal-site <name>`** (GM): manual site discovery — same reveal flow as
   §4.
 

@@ -58,6 +58,23 @@ function esc(s) {
 }
 
 /**
+ * The threshold card's opening-position line — Enter the Fray's own outcome
+ * position, applied to the track at creation; "" when none. Rebuilt on a
+ * waiting card when an upgrade of that Enter the Fray changes the position
+ * (index.js stashPositionOnThresholdCard).
+ *
+ * @param {('in_control'|'bad_spot'|null)} position
+ * @returns {string}
+ */
+export function thresholdPositionLine(position) {
+  return position === "in_control"
+    ? `<p>⚑ If you enter this fight, you begin <strong>in control</strong>.</p>`
+    : position === "bad_spot"
+      ? `<p>⚑ If you enter this fight, you begin <strong>in a bad spot</strong>.</p>`
+      : "";
+}
+
+/**
  * Build the threshold decision card HTML. Pure — no Foundry calls.
  *
  * @param {{ label?: string, suggestedRank?: string, vowNames?: string[],
@@ -75,11 +92,7 @@ export function buildCombatThresholdHtml({ label, suggestedRank, vowNames = [], 
   const vowOpts = ['<option value="">(not tied to a vow)</option>']
     .concat((vowNames ?? []).filter(Boolean).map(n => `<option value="${esc(n)}">${esc(n)}</option>`))
     .join("");
-  const positionLine = position === "in_control"
-    ? `<p>⚑ If you enter this fight, you begin <strong>in control</strong>.</p>`
-    : position === "bad_spot"
-      ? `<p>⚑ If you enter this fight, you begin <strong>in a bad spot</strong>.</p>`
-      : "";
+  const positionLine = thresholdPositionLine(position);
   return `<div class="sf-card sf-combat-threshold" data-suggested-rank="${rank}">`
     + `<div class="sf-card-header">⚔ A fight looms — ${foe}</div>`
     + `<div class="sf-card-body">`

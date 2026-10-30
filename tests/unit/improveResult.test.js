@@ -98,6 +98,14 @@ describe("buildImproveState", () => {
     expect(state.ptpReversals).toEqual(ptpReversals);
     expect(buildImproveState(resolution(), [fugitiveAbility()], actor).ptpReversals).toBeNull();
   });
+
+  // UPGRADE-PIPELINE-EFFECTS: the strong hit's other effects resolve against
+  // the move's target and ranks, as the burn's card carries them.
+  it("carries the move's target and ranks, as the burn's card does", () => {
+    const move = { moveTarget: "Kessler Drift", moveTargetId: null, combatRank: null, expeditionRank: "dangerous" };
+    expect(buildImproveState(resolution(), [fugitiveAbility()], actor, null, null, move).move).toEqual(move);
+    expect(buildImproveState(resolution(), [fugitiveAbility()], actor).move).toBeNull();
+  });
 });
 
 describe("renderImproveButtonHtml", () => {

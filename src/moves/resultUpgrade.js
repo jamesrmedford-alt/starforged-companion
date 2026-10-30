@@ -32,6 +32,17 @@
  * write after the claim runs through applyUpgradeStep: one the world refuses
  * goes on the GMs' payoff failure card as an `upgrade` step, which its Retry
  * applies once (issue #311 P06).
+ *
+ * The upgraded outcome's other effects — the fight's progress and position,
+ * the expedition's progress, a legacy mark, the companion's health, an
+ * arrival, a lost fight's payoff — run through the pipeline's own applier
+ * (index.js applyOutcomeEffects, injected into both upgrade hooks as
+ * `applyEffects`), for what the upgraded outcome adds over the recorded
+ * original (applyUpgradedOutcomeEffects; UPGRADE-PIPELINE-EFFECTS — only the
+ * meters, the reversal and the choice card used the upgraded consequences). A
+ * weak hit that pays the price too keeps the price the miss already rolled
+ * (the handlers skip the reversal; effectsNoteHtml says so). Both upgrades
+ * re-narrate and log the same way (renarrateUpgrade).
  */
 
 import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot } from "../character/actorBridge.js";
@@ -400,4 +411,98 @@ export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt
     effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
     executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
   }, failures);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The upgraded outcome's other effects, its re-narration and its card note
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run the pipeline's applier (index.js applyUpgradedOutcomeEffects, the
+ * upgrade hooks' `applyEffects`) for what the upgraded outcome adds over the
+ * recorded original — the fight's progress and position, the expedition's
+ * progress, a legacy mark, the companion's health, an arrival, a lost fight's
+ * payoff (UPGRADE-PIPELINE-EFFECTS). Never throws: a failure is a line for
+ * the card.
+ *
+ * @param {Object} args
+ * @param {Function|null} args.applyEffects — the injected applier
+ * @param {Object} args.resolution — the upgraded outcome's resolution
+ * @param {Object} args.state — the card's `burn` / `improve` flag: originalOutcome,
+ *   originalConsequences, resolutionId, targets (the move's fight, vehicle, companion), move
+ *   (its target, id and ranks)
+ * @param {Actor} args.actor — the upgrading PC
+ * @param {Object} args.campaignState — the upgrade's working copy
+ * @param {"burn"|"improve"} args.kind
+ * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ */
+export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, state, actor, campaignState, kind }) {
+  if (typeof applyEffects !== "function") {
+    console.debug(`${MODULE_ID} | ${kind}: no effects applier registered — the upgraded outcome's other effects are not applied.`);
+    return { applied: [], notApplied: [] };
+  }
+  try {
+    const res = await applyEffects({
+      resolution, actor, campaignState,
+      against: {
+        outcome:      state.originalOutcome,
+        consequences: state.originalConsequences ?? {},
+        resolutionId: state.resolutionId ?? null,
+      },
+      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null },
+      targets: state.targets ?? {},
+    });
+    return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
+    return { applied: [], notApplied: ["the upgraded result's other effects"] };
+  }
+}
+
+/**
+ * Re-narrate an upgraded outcome and log it. The narrator gets the upgrade's
+ * working copy of the campaign and the upgrading PC as the speaker (credit
+ * the roller — the first PC used to be described); then the resolution is
+ * persisted log-only, its meters already applied, so it carries none —
+ * persistResolution merges the working copy onto the store. Best effort:
+ * without a narrator (no key, narration off) the move card is still updated.
+ *
+ * @param {Object} args
+ * @param {Object} args.resolution — the upgraded outcome's resolution
+ * @param {Object} args.campaignState — the upgrade's working copy
+ * @param {string|null} args.speakerActorId — the upgrading PC
+ * @param {Function|null} args.narrate — narrateResolution
+ * @param {Function|null} args.persist — persistResolution
+ * @param {"burn"|"improve"} args.kind
+ */
+export async function renarrateUpgrade({ resolution, campaignState, speakerActorId, narrate, persist, kind }) {
+  if (typeof narrate !== "function") {
+    console.warn(`${MODULE_ID} | ${kind}: no narrator registered — the upgraded outcome is not re-narrated.`);
+    return;
+  }
+  await narrate(resolution, campaignState, { speakerActorId });
+  if (typeof persist === "function" && globalThis.game?.user?.isGM) {
+    const logOnly = { ...resolution, consequences: {
+      momentumChange: 0, healthChange: 0, spiritChange: 0, supplyChange: 0, otherEffect: "", sufferMoveTriggered: null,
+    } };
+    await persist(logOnly, campaignState, speakerActorId).catch(err =>
+      console.warn(`${MODULE_ID} | ${kind}: session-log persist failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * The line an upgraded move card carries for the outcome's other effects:
+ * what was applied beyond the meters, what was not, and a Pay the Price kept
+ * because the upgraded outcome pays it too.
+ *
+ * @param {{ applied?: string[], notApplied?: string[], priceStands?: boolean }} [effects]
+ * @returns {string} HTML; "" when there is nothing to say
+ */
+export function effectsNoteHtml({ applied = [], notApplied = [], priceStands = false } = {}) {
+  const parts = [];
+  if (applied.length)    parts.push(`Also applied: ${applied.map(escapeHtml).join("; ")}.`);
+  if (notApplied.length) parts.push(`Not applied: ${notApplied.map(escapeHtml).join("; ")}.`);
+  if (priceStands)       parts.push("The Pay the Price already rolled stands — this result pays it too.");
+  return parts.length ? `<div class="sf-move-effect sf-upgrade-effects">${parts.join(" ")}</div>` : "";
 }

@@ -18,11 +18,17 @@
  * Scope (kept deliberately bounded, matching burn):
  *   - Offered only when the rolled outcome is below a strong hit (weak hit or
  *     miss) and an enabled ability on the active character offers the upgrade.
- *   - Non-progress moves only — progress-track marking isn't reversed.
+ *   - Non-progress moves only.
  *   - The cost is the ability's per-ability clock (AssetAbilityField
  *     hasClock/clockTicks/clockMax). Abilities whose improvement carries no
  *     clock still upgrade the result; the card notes any non-clock cost in
  *     text for the player to apply.
+ *   - The strong hit's other effects — the fight's progress and position, the
+ *     expedition's progress, a legacy mark, the companion's health, an
+ *     arrival, a lost fight's payoff — run through the pipeline's own applier
+ *     (index.js applyOutcomeEffects, injected as `applyEffects`) for what the
+ *     strong hit adds over the recorded original (UPGRADE-PIPELINE-EFFECTS),
+ *     as for a burn; a weak hit that pays the price too keeps the miss's.
  *
  * Multiplayer: like Burn Momentum, the click relays to the canonical GM
  * (requestGmAction("move.improveResult", { messageId })) because a player
@@ -44,6 +50,9 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  applyUpgradedOutcomeEffects,
+  renarrateUpgrade,
+  effectsNoteHtml,
 } from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
@@ -59,9 +68,9 @@ import {
 
 const MODULE_ID = "starforged-companion";
 
-// narrate / persist injected by registerImproveResultHook (src/index.js), kept
-// at module scope for the GM-side relay handler.
-let _deps = { narrate: null, persist: null };
+// narrate / persist / applyEffects injected by registerImproveResultHook
+// (src/index.js), kept at module scope for the GM-side relay handler.
+let _deps = { narrate: null, persist: null, applyEffects: null };
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,10 +88,12 @@ let _deps = { narrate: null, persist: null };
  * @param {Object|null} [ptpReversals]     — what the miss's Pay the Price did
  *   (the pipeline's, as for buildBurnState): the improvement undoes it
  * @param {Object|null} [targets]          — the move's vehicle, companion and
- *   fight, for the strong hit's choice card (as for buildBurnState)
+ *   fight, for the strong hit's choice card and effects (as for buildBurnState)
+ * @param {Object|null} [move]             — the move's target, its id and the
+ *   interpreter's ranks, for the strong hit's effects (as for buildBurnState)
  * @returns {Object|null}
  */
-export function buildImproveState(resolution, applicableAbilities, actor, ptpReversals = null, targets = null) {
+export function buildImproveState(resolution, applicableAbilities, actor, ptpReversals = null, targets = null, move = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
   if (!Array.isArray(applicableAbilities) || !applicableAbilities.length) return null;
@@ -104,7 +115,8 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
     actorId:              actor.id,
     resolutionId:         resolution._id ?? null,
     ptpReversals:         ptpReversals ?? null,   // the superseded miss's Pay the Price, undone on improve
-    targets:              targets ?? null,        // for the strong hit's choice card
+    targets:              targets ?? null,        // for the strong hit's choice card and effects
+    move:                 move ?? null,           // the move's target and ranks, for its effects
     // The cost: the ability's own clock.
     assetId:              ability.assetId ?? null,
     abilityIndex:         Number.isInteger(ability.abilityIndex) ? ability.abilityIndex : null,
@@ -153,11 +165,13 @@ function improveButtonLabel(state) {
  * after use.
  *
  * @param {Object}   hooks
- * @param {Function} hooks.narrate    async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist    async (resolution, state, speakerActorId) => void
+ * @param {Function} hooks.narrate        async (resolution, state, { speakerActorId }) => void
+ * @param {Function} hooks.persist        async (resolution, state, speakerActorId) => void
+ * @param {Function} [hooks.applyEffects] the strong hit's other effects — index.js
+ *   applyUpgradedOutcomeEffects (as for registerBurnMomentumHook)
  */
-export function registerImproveResultHook({ narrate, persist } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null };
+export function registerImproveResultHook({ narrate, persist, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags   = message?.flags?.[MODULE_ID] ?? {};
@@ -275,7 +289,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyImproveFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleImproveClick(message, { narrate, persist }) {
+async function handleImproveClick(message, { narrate, persist, applyEffects }) {
   const improve = message?.flags?.[MODULE_ID]?.improve;
   if (!improve?.canImprove || improve.consumed) return { applied: false, reason: "already-consumed" };
 
@@ -306,8 +320,10 @@ async function handleImproveClick(message, { narrate, persist }) {
 
   // The strong hit replaces a miss whose Pay the Price already landed: rewind
   // its clocks and refund its meter loss, as a burn does — the improvement
-  // kept them on top of its own cost (issue #311 P05).
-  if (improve.ptpReversals) {
+  // kept them on top of its own cost (issue #311 P05). (An improvement always
+  // reaches a strong hit, which pays no price; the check mirrors the burn's.)
+  const priceStands = !!improve.ptpReversals && newConsequences.routePayThePrice === true;
+  if (improve.ptpReversals && !priceStands) {
     await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures }).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
   }
@@ -319,10 +335,18 @@ async function handleImproveClick(message, { narrate, persist }) {
     sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures,
   }).catch(err => console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err));
 
+  // The strong hit's other effects, for what it adds over the recorded
+  // original, through the pipeline's own applier (UPGRADE-PIPELINE-EFFECTS).
+  // Its working copy of the campaign is the one the re-narration reads and
+  // logs against — a copy, never the cached setting (rules/foundry-api.md).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  const upgraded = buildImprovedResolution({ improve, newConsequences, campaignState });
+  const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: improve, actor, campaignState, kind: "improve" });
+
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands })) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -330,7 +354,8 @@ async function handleImproveClick(message, { narrate, persist }) {
   await supersedeOriginalNarration(improve).catch(err =>
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
-  await renarrate({ improve, newConsequences, narrate, persist })
+  // The improving PC is the card's actor, not the first PC (credit the roller).
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, persist, kind: "improve" })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
 
   return { applied: true };
@@ -381,22 +406,25 @@ async function advanceAbilityClock(actor, improve) {
   }
 }
 
-/** Append a strong-hit + cost banner to the move-result card content. */
-function buildImprovedCardContent(originalContent, clockNote) {
+/**
+ * Append a strong-hit + cost banner to the move-result card content, and the
+ * note on the strong hit's other effects (`effectsNote`, HTML from
+ * effectsNoteHtml).
+ */
+function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") {
   const note = clockNote ? ` ${clockNote}` : "";
   const banner =
-    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em></div>`;
+    `<div class="sf-improve-applied"><em>✦ Result improved to a strong hit.${note}</em>${effectsNote}</div>`;
   return `${String(originalContent ?? "")}${banner}`;
 }
 
-async function renarrate({ improve, newConsequences, narrate, persist }) {
-  if (typeof narrate !== "function") {
-    console.warn(`${MODULE_ID} | improveResult: no narrator registered (registerImproveResultHook) — improved outcome not re-narrated.`);
-    return;
-  }
-
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  const synthResolution = {
+/**
+ * The improved outcome as a resolution — what the effects applier, the
+ * narrator and the session log take. No dice: the result changed, not the
+ * roll.
+ */
+function buildImprovedResolution({ improve, newConsequences, campaignState }) {
+  return {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
     moveName:        toDisplayName(improve.moveId),
@@ -418,26 +446,6 @@ async function renarrate({ improve, newConsequences, narrate, persist }) {
     inputMethod:     "improve",
     sessionId:       campaignState.currentSessionId ?? "",
   };
-
-  // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
-  // narrateResolution never read it, and the old `if (!packet) return`
-  // guard silently ABORTED this re-narration when the dead assembly failed.
-  // narrateResolution(resolution, campaignState, options) — the old
-  // `(resolution, null, campaignState, {})` call still carried the retired
-  // packet slot, so the narrator got null for campaignState. The improving PC
-  // is the card's actor, not the first PC (credit the roller).
-  const speakerActorId = improve.actorId ?? null;
-  await narrate(synthResolution, campaignState, { speakerActorId });
-  if (typeof persist === "function" && game.user?.isGM) {
-    // Meters were already applied (improveMeterChanges) — log only.
-    const logOnly = { ...synthResolution, consequences: emptyConsequences() };
-    await persist(logOnly, campaignState, speakerActorId).catch(err =>
-      console.warn(`${MODULE_ID} | improveResult: persist (log) failed:`, err));
-  }
-}
-
-function emptyConsequences() {
-  return { momentumChange: 0, healthChange: 0, spiritChange: 0, supplyChange: 0 };
 }
 
 function toDisplayName(moveId) {
