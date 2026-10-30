@@ -44,7 +44,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
@@ -1007,6 +1007,14 @@ export function registerChatHook() {
       // card's Attempt to Fulfill could never hit). Also returns the resolved
       // combat track's own position for the TDA downgrade below. No-op for
       // action moves.
+      // The active connection records, each with its host Actor id (the
+      // `connectionIds` entry the write helpers take) as `__hostId`.
+      const listConnections = async () => {
+        const conn = await import("./entities/connection.js");
+        return (campaignState.connectionIds ?? [])
+          .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+          .filter(Boolean);
+      };
       const tickInfo = await enrichProgressTicks(interpretation, {
         listTracks: () => listProgressTracks(),
         readAllVows: async () => {
@@ -1016,14 +1024,19 @@ export function registerChatHook() {
             (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
           return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
         },
-        listConnections: async () => {
-          const conn = await import("./entities/connection.js");
-          return (campaignState.connectionIds ?? [])
-            .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-            .filter(Boolean);
-        },
+        listConnections,
       }).catch(err => {
         console.warn(`${MODULE_ID} | progress tick enrichment failed:`, err?.message ?? err);
+        return null;
+      });
+
+      // Develop Your Relationship with a bonded connection is a roll +rank: the
+      // connection is resolved before the dice and its rank is the stat (issue
+      // #314 Q06 — the schema lists no stat, so a bonded development rolled +0
+      // where `!bond` rolled +rank). The develop branch below marks the
+      // connection resolved here, by its id.
+      await enrichBondedDevelop(interpretation, { listConnections }).catch(err => {
+        console.warn(`${MODULE_ID} | bonded develop enrichment failed:`, err?.message ?? err);
         return null;
       });
 

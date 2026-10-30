@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth, enrichProgressTicks } from '../../src/moves/statEnrichment.js';
+import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth, enrichProgressTicks, enrichBondedDevelop } from '../../src/moves/statEnrichment.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -490,5 +490,64 @@ describe('enrichProgressTicks', () => {
     const info = await enrichProgressTicks(interp, { listTracks: async () => [track({ ticks: 24 })] });
     expect(info).toBeNull();
     expect(interp.statValue).toBe(3);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// enrichBondedDevelop — a bonded Develop Your Relationship rolls +rank
+// (issue #314 Q06: the schema lists no stat, so the pipeline rolled +0)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('enrichBondedDevelop', () => {
+  const vega  = { _id: 'rec-vega',  __hostId: 'npc-vega',  name: 'Vega',  rank: 'epic',      bonded: true,  active: true };
+  const sable = { _id: 'rec-sable', __hostId: 'npc-sable', name: 'Sable', rank: 'dangerous', bonded: false, active: true };
+  const deps  = { listConnections: async () => [vega, sable] };
+  const develop = (over = {}) => ({ moveId: 'develop_your_relationship', statUsed: null, statValue: 0, adds: 0, moveTarget: null, moveTargetId: null, ...over });
+
+  it("a picker's host id resolves the bonded connection: the rank is the stat, worth its adds", async () => {
+    const interp = develop({ moveTargetId: 'npc-vega' });
+    const res = await enrichBondedDevelop(interp, deps);
+    expect(res).toMatchObject({ bonded: true, adds: 5 });
+    expect(interp).toMatchObject({ statUsed: 'epic', statValue: 5, moveTargetId: 'npc-vega', moveTarget: 'Vega' });
+  });
+
+  it('a typed name resolves it too, and stamps the host id for the branch after the roll', async () => {
+    const interp = develop({ moveTarget: 'vega' });
+    await enrichBondedDevelop(interp, deps);
+    expect(interp).toMatchObject({ statUsed: 'epic', statValue: 5, moveTargetId: 'npc-vega', moveTarget: 'Vega' });
+  });
+
+  it('an un-bonded connection leaves the stat alone — its development is no roll', async () => {
+    const interp = develop({ moveTargetId: 'npc-sable' });
+    const res = await enrichBondedDevelop(interp, deps);
+    expect(res).toMatchObject({ bonded: false, adds: 0 });
+    expect(interp).toMatchObject({ statUsed: null, statValue: 0, moveTargetId: 'npc-sable', moveTarget: 'Sable' });
+  });
+
+  it('no connection resolves (an unknown name, two bonded to fall back on): nothing changes', async () => {
+    const rook = { ...sable, _id: 'rec-rook', __hostId: 'npc-rook', name: 'Rook', bonded: true };
+    const interp = develop({ moveTarget: 'Nobody' });
+    const res = await enrichBondedDevelop(interp, { listConnections: async () => [vega, rook] });
+    expect(res).toEqual({ connection: null, bonded: false, adds: 0 });
+    expect(interp).toMatchObject({ statUsed: null, statValue: 0, moveTargetId: null, moveTarget: 'Nobody' });
+  });
+
+  it('an unknown name with one bonded connection falls back to it, as selectConnection always has', async () => {
+    const interp = develop({ moveTarget: 'Nobody' });
+    await enrichBondedDevelop(interp, deps);
+    expect(interp).toMatchObject({ statUsed: 'epic', statValue: 5, moveTargetId: 'npc-vega', moveTarget: 'Vega' });
+  });
+
+  it('a stat the interpreter guessed gives way to the rank', async () => {
+    const interp = develop({ moveTargetId: 'npc-vega', statUsed: 'heart', statValue: 2 });
+    await enrichBondedDevelop(interp, deps);
+    expect(interp).toMatchObject({ statUsed: 'epic', statValue: 5 });
+  });
+
+  it('every other move is left as it is', async () => {
+    const interp = { moveId: 'test_your_relationship', statUsed: 'heart', statValue: 2, moveTarget: 'Vega' };
+    expect(await enrichBondedDevelop(interp, deps)).toBeNull();
+    expect(interp).toEqual({ moveId: 'test_your_relationship', statUsed: 'heart', statValue: 2, moveTarget: 'Vega' });
   });
 });

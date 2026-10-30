@@ -23,7 +23,7 @@
  */
 
 import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie } from "./resolver.js";
-import { selectConnection, nextRank } from "./developRelationship.js";
+import { selectConnection, nextRank, BOND_ROLL_ADDS } from "./developRelationship.js";
 import { showActionRoll } from "../dice/diceAnimation.js";
 import { getPlayerActors, applyMeterChanges, setBondItemRank, readMomentumState } from "../character/actorBridge.js";
 import { resolveSpeakerActorId } from "../multiplayer/speaker.js";
@@ -32,15 +32,8 @@ import { requesterOwnsActor } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
-// Rank → +X adds for the bonded-path Develop Your Relationship roll
-// (play kit p. 3: troublesome=+1; dangerous=+2; formidable=+3; extreme=+4; epic=+5).
-const BOND_ROLL_ADDS = {
-  troublesome: 1,
-  dangerous:   2,
-  formidable:  3,
-  extreme:     4,
-  epic:        5,
-};
+// The rank → adds table is developRelationship.js BOND_ROLL_ADDS, shared with
+// the move pipeline's own bonded Develop roll (issue #314 Q06).
 
 /**
  * Handle a `!bond [rank] [name]` chat command on the authoring client: resolve
