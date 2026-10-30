@@ -1481,13 +1481,24 @@ describe("recover-move dialog prompts", () => {
     expect(mapConsequences("heal", "strong_hit", false).sufferPrompt.options[0].chain).toHaveLength(2);
   });
 
-  it("resupply:strong_hit emits clearImpact:'unprepared' option and direct supply option", () => {
+  // Issue #314 Q01: the unprepared branch gave +2 supply, and the +2 branch was
+  // open to an unprepared PC — the rule is clear unprepared and +1, else +2.
+  it("resupply:strong_hit — unprepared: clear it and +1 supply; otherwise +2 — each branch gated on the impact", () => {
     const c = mapConsequences("resupply", "strong_hit", false);
     expect(c.sufferPrompt.kind).toBe("enumerated");
     const unpreparedOpt = c.sufferPrompt.options.find(o => o.requires === "unprepared");
-    expect(unpreparedOpt?.chain).toContainEqual(expect.objectContaining({ clearImpact: "unprepared" }));
-    const directOpt = c.sufferPrompt.options.find(o => o.supply === 2 && !o.requires);
-    expect(directOpt).toBeDefined();
+    expect(unpreparedOpt?.chain).toEqual([{ clearImpact: "unprepared" }, { supply: 1 }]);
+    const directOpt = c.sufferPrompt.options.find(o => o.supply === 2);
+    expect(directOpt?.requires).toBe("!unprepared");
+    expect(c.sufferPrompt.options.find(o => o.momentum === 1)?.requires).toBeUndefined();
+    expect(c.otherEffect).toMatch(/clear it and take\/give \+1 supply; otherwise take\/give \+2/);
+  });
+
+  it("resupply:weak_hit keeps the same conditional supply, at a cost", () => {
+    const c = mapConsequences("resupply", "weak_hit", false);
+    const unpreparedOpt = c.sufferPrompt.options.find(o => o.requires === "unprepared");
+    expect(unpreparedOpt?.chain).toEqual([{ clearImpact: "unprepared" }, { supply: 1 }]);
+    expect(c.sufferPrompt.options.find(o => o.supply === 2)?.requires).toBe("!unprepared");
   });
 
   it("companion_takes_a_hit:strong_hit sets companionHealthChange:1", () => {
