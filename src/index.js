@@ -5639,11 +5639,15 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   // rest go to the picker with the other prompted riders. One track settles
   // where an optional or exclusive mark goes, never whether it is taken: the
   // shortcut marked those unasked, and beside the alternative the player chose
-  // (issue #315 S02).
-  const tracks = await listProgressTracks().catch(() => []);
+  // (issue #315 S02). A finished track is archived, never a target: counted,
+  // a sole finished expedition was marked unasked (issue #315 S06). With no
+  // open track a mark has nowhere to go, and the summary says so.
+  const tracks = (await listProgressTracks().catch(() => [])).filter(t => !t.completed);
   const promptList = [];
   for (const r of prompted) {
-    if (r.resource === "progress" && !r.optional && !r.choiceGroup && tracks.length === 1) {
+    if (r.resource === "progress" && !tracks.length) {
+      outcomes.push({ rider: r, ok: false, reason: "no-track" });
+    } else if (r.resource === "progress" && !r.optional && !r.choiceGroup && tracks.length === 1) {
       outcomes.push(await applyProgressRider(r, tracks[0]));
     } else {
       promptList.push(r);
@@ -5675,6 +5679,11 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 async function applyProgressRider(rider, track) {
   const at = { rider, track: { id: track.id, label: track.label ?? null } };
   try {
+    // The track as it stands now: it can finish while the prompt is open, or
+    // before a Retry (issue #315 S06).
+    const current = await getProgressTrack(track.id);
+    if (!current) return { ...at, ok: false, reason: "track-gone" };
+    if (current.completed) return { ...at, ok: false, reason: "track-done" };
     const marked = await adjustProgressById(track.id, rider.amount);
     if (!marked) return { ...at, ok: false, reason: "track-gone" };
     return { ...at, track: { id: marked.id, label: marked.label }, ok: true };
@@ -5690,6 +5699,8 @@ const RIDER_NOT_APPLIED = {
   "no-pc":      "no character to change",
   "no-vehicle": "no command vehicle to change",
   "track-gone": "its track is gone",
+  "track-done": "its track is finished",
+  "no-track":   "no open progress track",
 };
 
 /** An asset effect's line: what it does, on which track, from which asset. */

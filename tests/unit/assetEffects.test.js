@@ -14,6 +14,7 @@
  *   S02 — an optional or "choose one" progress mark stays the player's choice
  *         when one track is open; the track is only its preselected destination.
  *   S03 — a progress effect marks its amount, either sign, within the track.
+ *   S06 — a finished track is never a progress effect's target.
  *   S08 — an effect is summarised as applied only once its write has landed;
  *         a refused one goes to the GMs, whose Retry applies it alone.
  */
@@ -357,6 +358,66 @@ describe("S03 — a progress effect marks its amount, either sign, within 0–40
     await finishMove();
 
     expect(saved()).toEqual([0, 16]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S06 — the rider path counted every track, finished ones too: a sole archived
+// expedition (completed, 16 ticks) was marked to 24, unasked, and named on the
+// summary. Only open tracks are targets, and the chosen one is checked again
+// when its mark is written.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S06 — a finished track is never a progress effect's target", () => {
+  it("only a finished expedition: it is left at 16, nothing is asked, and the card says there is no open track", async () => {
+    await openTrack({ ticks: 16, completed: true });
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+
+    await finishMove();
+
+    expect(saved()).toEqual([16]);
+    expect(prompts()).toHaveLength(0);
+    expect(summary()).toMatch(/Asset effects not applied[\s\S]*Mark progress[\s\S]*— no open progress track/);
+    expect(failCards()).toHaveLength(0);              // nothing to retry
+  });
+
+  it("one open beside a finished one: the open one is the sole target, marked unasked", async () => {
+    await openTrack({ label: "Old Survey", ticks: 16, completed: true });
+    await openTrack();
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+
+    await finishMove();
+
+    expect(prompts()).toHaveLength(0);
+    expect(saved()).toEqual([16, 8]);
+    expect(summary()).toMatch(/Mark progress → Reach Farpoint/);
+  });
+
+  it("the picker offers open tracks only", async () => {
+    await openTrack({ label: "Old Survey", ticks: 16, completed: true });
+    await openTrack(); await openTrack({ label: "Chart the Rift" });
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+    gm().answerDialogs(d => d.choose("skip"));
+
+    await finishMove();
+
+    expect(prompts()[0].content).toMatch(/Reach Farpoint[\s\S]*Chart the Rift/);
+    expect(prompts()[0].content).not.toMatch(/Old Survey/);
+  });
+
+  it("a track finished while the prompt is open is not marked, and the card says so", async () => {
+    await openTrack(); const rift = await openTrack({ label: "Chart the Rift" });
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+    const store = await gm().import("../../src/ui/progressTracks.js");
+    gm().answerDialogs(async d => {
+      await store.completeProgressTrack(rift.id);     // finished meanwhile, from the panel
+      return d.choose("apply", { 'select[name="prog-0"]': rift.id });
+    });
+
+    await finishMove();
+
+    expect(saved()).toEqual([0, 0]);
+    expect(summary()).toMatch(/Asset effects not applied[\s\S]*Mark progress → Chart the Rift[\s\S]*— its track is finished/);
   });
 });
 
