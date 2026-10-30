@@ -1,14 +1,14 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313 and #314
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314 and #315
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309, #311 and #313 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311, #313, #314 and #315 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29 and
-for issues #313 and #314 on 2026-10-30. To reproduce:
+for issues #313, #314 and #315 on 2026-10-30. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -50,6 +50,10 @@ node scripts/fix-sensitivity.mjs 0e2e26e e362ef1 --md details.md
 # issue #314
 node scripts/fix-sensitivity.mjs \
   285fe00 257630b 5e9095d 082e78d d1e15a5 79c45d1 --md details.md
+
+# issue #315
+node scripts/fix-sensitivity.mjs \
+  6879144 d9f8933 a9f238a 4e33ed1 7d5083b 29511e3 403ea27 9666fa6 --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -181,6 +185,25 @@ twelve.
 The audit's own probes (issue #314 appendix A), with their assertions
 inverted to the expected behaviour, pass on the fixed code: all twelve.
 
+### Issue #315 — the audit after #314
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| S01 MOVE-LOCK-RELEASED-BY-OLDER | 6879144 | revert | 5 — `assetEffects.test.js` (A's prompt closes while B holds the lock: B keeps it, C is refused), `pipeline.test.js` (4: `releasePendingMoveLock` says whether the lock is free — a release, a refused one, already free, no state) |
+| S08 RIDER-APPLIED-UNCOMMITTED | d9f8933 | revert | 6 — `assetEffects.test.js` (3: a refused integrity write and a refused progress save are not applied — the cache unchanged — and the GMs' Retry applies each once; one landed and one refused, the Retry replays the refused one only), `consequenceRiders.test.js` (3: one outcome per rider; a refused meter write; no character, no ship) |
+| S02 RIDER-PROGRESS-CHOICE-BYPASSED | a9f238a | revert | 3 — `assetEffects.test.js` (2: a "you may mark progress" is offered with the lone track preselected, and Skip leaves it; "mark progress or +2 momentum" offers both, and momentum leaves the track), `consequenceRiders.test.js` (a progress option stays in its choice group) |
+| S03 RIDER-PROGRESS-AMOUNT-LOST | 4e33ed1 | revert | 4 — `assetEffects.test.js` (+2 marks, -1, -2 to the floor, +2 through the picker) |
+| S06 RIDER-PROGRESS-FINISHED-TRACK | 7d5083b | revert | 4 — `assetEffects.test.js` (only a finished track: not marked, the card says no open track; one open beside a finished one is the sole target; the picker offers open tracks only; a track finished while the prompt is open is not marked) |
+| S05 RIDER-INTEGRITY-BATTERED | 29511e3 | revert | 3 — `assetEffects.test.js` (+1 integrity on a battered ship at 0 is not applied, and the card says why), `shipBatteredCanonical.test.js` (2: the same through `applyMeterRiders`, battered on both stores and on the sheet alone); 5 more fail only on the missing `changeIntegrity` |
+| S04 REPAIR-TRADE-UNPREPARED | 403ea27 | revert | 2 — `repair.test.js` (the last supply traded marks unprepared, the repair lands, the card says both; a refused impact write leaves the payment and the repair, and the card says to mark it) |
+| S07 CREW-UNPREPARED-ONE-PC | 9666fa6 | revert | 6 — `sufferExecutor.test.js` (3: A's sacrifice to 0 marks B, and the card names B; the roller already unprepared, the allies still marked; an ally's refused write is said, not thrown), `sharedSupply.test.js` (2: supply [0, 0] once synced, both unprepared, both momentum bounds lowered; a sheet edit raising supply clears no one), `repair.test.js` (the trade's ally is marked with the payer); 1 more fails only on the missing `supplyAllies` |
+
+The audit's own probes (issue #315 appendix A), with their assertions
+inverted to the expected behaviour, pass on the fixed code: all thirteen. One
+probe needs its pick made explicit: S02's "choose one" now offers the
+progress option first (checked by default), so choosing momentum ticks that
+radio.
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -225,6 +248,17 @@ ways; each was read and is a control:
 | `payThePriceRoutes` › a burn refunds no momentum — its reset replaces it — and no health the loss never took | a burn's reset still replaces momentum (#314 Q02) |
 | `resultUpgrade` › with nothing refused both clocks rewind once and no card is posted | the whole-step rewind (#314 Q05) |
 | `connectionPickerTarget` › an un-bonded pick is still no roll's worth: +0, its own track marked | an un-bonded development (#314 Q06) |
+| `assetEffects` › an early release that is refused holds the lock through the prompt; the finally then releases it | the finally's retry of a refused release (#315 S01) |
+| `assetEffects` › control: every write lands — the summary lists them, and the GMs get no card | an asset effect that lands (#315 S08) |
+| `assetEffects` › …and Apply marks the preselected track | applying an offered mark (#315 S02) |
+| `assetEffects` › …and choosing the mark marks its preselected track, with no momentum | choosing the mark (#315 S02) — before the fix it passed only because the old one-option dialog could not take the pick and the track was marked unasked |
+| `assetEffects` › control: a mark that is the outcome's own still marks the lone track, unasked | the single-track shortcut (#315 S02) |
+| `assetEffects` › control: with two tracks, skipping an optional mark leaves both at 0 | the audit's own control (#315 S02) |
+| `assetEffects` › +1 mark at 0 ticks: 8 / +2 marks at 32 ticks: 40 | one mark, and the 40-tick cap (#315 S03) |
+| `assetEffects` › control: once Repair clears battered, the effect lands | integrity on a ship that is not battered (#315 S05) |
+| `shipBatteredCanonical` › control: a ship that is not battered takes it / a -1 integrity effect lands on a battered ship | the same, and a loss while battered (#315 S05) |
+| `repair` › control: supply left over marks nothing / already unprepared: it stays marked… / too little supply: nothing is spent… | a trade short of 0, an impact already marked, the pay-in-full check (#315 S04) |
+| `sufferExecutor` › an ally already unprepared is not marked again or named / an NPC card is no crew, and a sacrifice short of 0 marks no one | the crew's limits (#315 S07) |
 
 Two more passed both ways under 611979e's revert because they cover N02,
 fixed in the commit before it: `consequenceTargets` › a strong hit's +1
@@ -1460,3 +1494,153 @@ Test files: `tests/unit/connectionPickerTarget.test.js`, `tests/unit/developRela
 | (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop every other move is left as it is | TypeError: (0 , enrichBondedDevelop) is not a function |
 
 - New test passing with and without the fix (a control?): tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) an un-bonded pick is still no roll's worth: +0, its own track marked
+
+### 6879144 — fix: an earlier move's finally never releases a later move's lock (issue #315 S01)
+
+Test files: `tests/unit/assetEffects.test.js`, `tests/unit/pipeline.test.js`. Source restored: 1 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 5 failed (2 new; 0 only for a missing export); 4 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S01 — a move's finally never releases a later move's lock A's prompt is open, B holds the lock, A finishes: B keeps it, so C is refused until B is done | AssertionError: expected false to be true // Object.is equality |
+| tests/unit/pipeline.test.js › releasePendingMoveLock clears a held lock | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/pipeline.test.js › releasePendingMoveLock reports a refused release as not released, and leaves the lock held | AssertionError: expected undefined to be false // Object.is equality |
+| tests/unit/pipeline.test.js › releasePendingMoveLock is idempotent — a second call when already released is a no-op | AssertionError: expected undefined to be true // Object.is equality |
+| tests/unit/pipeline.test.js › releasePendingMoveLock tolerates a missing campaignState without throwing | AssertionError: expected undefined to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S01 — a move's finally never releases a later move's lock an early release that is refused holds the lock through the prompt; the finally then releases it
+
+### d9f8933 — fix: an asset effect is reported applied only once its write lands (issue #315 S08)
+
+Test files: `tests/unit/assetEffects.test.js`, `tests/unit/consequenceRiders.test.js`. Source restored: 3 file(s).
+
+- With the fix: 23 passed, 0 failed.
+- Without it: 6 failed (5 new; 0 only for a missing export); 17 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S08 — an asset effect is applied only once its write lands a refused integrity write: the ship is unchanged, the card says why, and the GMs' Retry applies it once | AssertionError: expected '&lt;div class="sf-rider-summary">&lt;strong…' not to match /Asset effects applied/ |
+| (new) tests/unit/assetEffects.test.js › S08 — an asset effect is applied only once its write lands a refused progress save: nothing is marked, in the world or this client's cache, and the Retry marks it once | AssertionError: expected [ 8 ] to deeply equal [ +0 ] |
+| (new) tests/unit/assetEffects.test.js › S08 — an asset effect is applied only once its write lands one effect lands and one is refused: the card splits them, and the Retry replays the refused one only | AssertionError: expected '&lt;div class="sf-rider-summary">&lt;strong…' to match /…/strong>&lt;ul>&lt;li>\+1 momentum[\s\S]*Not applied:[\s\S]*\+1 integrity |
+| tests/unit/consequenceRiders.test.js › applyMeterRiders applies summed character-meter deltas to the actor | AssertionError: expected { label: '+1 momentum', …(1) } to match object { ok: true, rider: { …(2) } } |
+| (new) tests/unit/consequenceRiders.test.js › applyMeterRiders a refused meter write is not applied — each rider in it says so | Error: refused |
+| (new) tests/unit/consequenceRiders.test.js › applyMeterRiders with no character or no ship to change, those riders are not applied | AssertionError: expected [ [ undefined, undefined ], …(1) ] to deeply equal [ [ false, 'no-pc' ], …(1) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S08 — an asset effect is applied only once its write lands control: every write lands — the summary lists them, and the GMs get no card
+
+### a9f238a — fix: an optional or "choose one" progress mark stays a choice with one track open (issue #315 S02)
+
+Test files: `tests/unit/assetEffects.test.js`, `tests/unit/consequenceRiders.test.js`. Source restored: 2 file(s).
+
+- With the fix: 30 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 27 still pass (4 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open a 'you may mark progress' is offered, the lone track preselected — Skip all leaves it at 0 | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open 'mark progress or +2 momentum': both are options of one choice, and choosing momentum leaves the track alone | AssertionError: expected '&lt;p>Apply these asset effects from the…' to match /name="choice-0" value="0" checked> Ma…/ |
+| (new) tests/unit/consequenceRiders.test.js › groupPromptedRiders (riderDialog) a progress rider in a choice group stays one of its options | AssertionError: expected [ { resource: 'progress', …(3) } ] to have a length of +0 but got 1 |
+
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open …and Apply marks the preselected track
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open …and choosing the mark marks its preselected track, with no momentum
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open control: a mark that is the outcome's own still marks the lone track, unasked
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S02 — an optional or exclusive progress mark stays a choice with one track open control: with two tracks, skipping an optional mark leaves both at 0
+
+### 4e33ed1 — fix: a progress effect marks its amount, either sign (issue #315 S03)
+
+Test files: `tests/unit/assetEffects.test.js`. Source restored: 2 file(s).
+
+- With the fix: 18 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 14 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks +2 marks at 0 ticks: 16 | AssertionError: expected [ 8 ] to deeply equal [ 16 ] |
+| (new) tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks -1 mark at 16 ticks: 8 | AssertionError: expected [ 24 ] to deeply equal [ 8 ] |
+| (new) tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks -2 marks at 8 ticks: 0 | AssertionError: expected [ 16 ] to deeply equal [ +0 ] |
+| (new) tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks through the picker too: +2 on the track chosen of two | AssertionError: expected [ +0, 8 ] to deeply equal [ +0, 16 ] |
+
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks +1 mark at 0 ticks: 8
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S03 — a progress effect marks its amount, either sign, within 0–40 ticks +2 marks at 32 ticks: 40
+
+### 7d5083b — fix: a finished track is never an asset effect's progress target (issue #315 S06)
+
+Test files: `tests/unit/assetEffects.test.js`. Source restored: 1 file(s).
+
+- With the fix: 22 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 18 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S06 — a finished track is never a progress effect's target only a finished expedition: it is left at 16, nothing is asked, and the card says there is no open track | AssertionError: expected [ 24 ] to deeply equal [ 16 ] |
+| (new) tests/unit/assetEffects.test.js › S06 — a finished track is never a progress effect's target one open beside a finished one: the open one is the sole target, marked unasked | AssertionError: expected [ SimDialog{ client: 'gm-1', …(6) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/assetEffects.test.js › S06 — a finished track is never a progress effect's target the picker offers open tracks only | AssertionError: expected '&lt;p>Apply these asset effects from the…' not to match /Old Survey/ |
+| (new) tests/unit/assetEffects.test.js › S06 — a finished track is never a progress effect's target a track finished while the prompt is open is not marked, and the card says so | AssertionError: expected [ +0, 8 ] to deeply equal [ +0, +0 ] |
+
+### 29511e3 — fix: an asset effect cannot raise a battered ship's integrity (issue #315 S05)
+
+Test files: `tests/unit/assetEffects.test.js`, `tests/unit/shipBatteredCanonical.test.js`. Source restored: 4 file(s).
+
+- With the fix: 42 passed, 0 failed.
+- Without it: 8 failed (8 new; 5 only for a missing export); 34 still pass (3 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/assetEffects.test.js › S05 — an integrity effect cannot raise a battered ship's integrity +1 integrity on a battered ship at 0: not applied, still battered, and the card says why | AssertionError: expected 1 to be +0 // Object.is equality |
+| (new) (API) tests/unit/shipBatteredCanonical.test.js › changeIntegrity — the one integrity writer for a consequence or an asset effect refuses a rise while the sheet says battered, and changes nothing | TypeError: (0 , changeIntegrity) is not a function |
+| (new) (API) tests/unit/shipBatteredCanonical.test.js › changeIntegrity — the one integrity writer for a consequence or an asset effect the native field decides when the stores disagree: sheet battered, flag not — refused | TypeError: (0 , changeIntegrity) is not a function |
+| (new) (API) tests/unit/shipBatteredCanonical.test.js › changeIntegrity — the one integrity writer for a consequence or an asset effect …sheet un-ticked, flag still battered — the rise lands | TypeError: (0 , changeIntegrity) is not a function |
+| (new) (API) tests/unit/shipBatteredCanonical.test.js › changeIntegrity — the one integrity writer for a consequence or an asset effect a loss lands on a battered ship, within 0 | TypeError: (0 , changeIntegrity) is not a function |
+| (new) (API) tests/unit/shipBatteredCanonical.test.js › changeIntegrity — the one integrity writer for a consequence or an asset effect no such ship: not applied | TypeError: (0 , changeIntegrity) is not a function |
+| (new) tests/unit/shipBatteredCanonical.test.js › an asset effect's integrity (applyMeterRiders) on a battered ship — issue #315 S05 +1 integrity on a sheet-battered ship at 0 is not applied: integrity stays 0, still battered | AssertionError: expected { rider: { …(3) }, ok: true } to match object { ok: false, reason: 'battered' } |
+| (new) tests/unit/shipBatteredCanonical.test.js › an asset effect's integrity (applyMeterRiders) on a battered ship — issue #315 S05 the sheet alone battered is enough to refuse it | AssertionError: expected { rider: { …(3) }, ok: true } to match object { ok: false, reason: 'battered' } |
+
+- New test passing with and without the fix (a control?): tests/unit/assetEffects.test.js › S05 — an integrity effect cannot raise a battered ship's integrity control: once Repair clears battered, the effect lands
+- New test passing with and without the fix (a control?): tests/unit/shipBatteredCanonical.test.js › an asset effect's integrity (applyMeterRiders) on a battered ship — issue #315 S05 control: a ship that is not battered takes it
+- New test passing with and without the fix (a control?): tests/unit/shipBatteredCanonical.test.js › an asset effect's integrity (applyMeterRiders) on a battered ship — issue #315 S05 a -1 integrity effect lands on a battered ship
+
+### 403ea27 — fix: Repair's trade of the last supply marks unprepared (issue #315 S04)
+
+Test files: `tests/unit/repair.test.js`. Source restored: 2 file(s).
+
+- With the fix: 33 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 31 still pass (3 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) supply 1, one traded: supply 0, unprepared, the repair lands, and the card says both | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) the impact's write is refused: the payment and the repair stand, and the card says to mark it | AssertionError: expected '&lt;div class="sf-repair-card">&lt;strong>R…' to match /Out of supply, but unprepared could n…/ |
+
+- New test passing with and without the fix (a control?): tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) control: supply left over marks nothing
+- New test passing with and without the fix (a control?): tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) already unprepared: it stays marked, and the card does not claim a new mark
+- New test passing with and without the fix (a control?): tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) too little supply: nothing is spent, nothing is marked, nothing is repaired
+
+### 9666fa6 — fix: the crew sharing supply is marked unprepared together (issue #315 S07)
+
+Test files: `tests/unit/repair.test.js`, `tests/unit/sharedSupply.test.js`, `tests/unit/sufferExecutor.test.js`. Source restored: 4 file(s).
+
+- With the fix: 88 passed, 0 failed.
+- Without it: 7 failed (7 new; 1 only for a missing export); 81 still pass (2 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) the ally sharing the supply is marked with the payer, and both PCs' momentum bounds follow | AssertionError: expected [ true, false ] to deeply equal [ true, true ] |
+| (new) (API) tests/unit/sharedSupply.test.js › the crew shares the zero-supply impact (issue #315 S07) supplyAllies: every other PC, no NPC card, none for a non-PC | TypeError: (0 , supplyAllies) is not a function |
+| (new) tests/unit/sharedSupply.test.js › the crew shares the zero-supply impact (issue #315 S07) two PCs at supply 1: A sacrifices 1 — supply [0, 0] once synced, both unprepared, both momentum bounds lowered | AssertionError: expected [ true, false ] to deeply equal [ true, true ] |
+| (new) tests/unit/sharedSupply.test.js › the crew shares the zero-supply impact (issue #315 S07) control: raising the supply by a sheet edit mirrors the value and clears no one — a recovery move clears it | AssertionError: expected [ true, false ] to deeply equal [ true, true ] |
+| (new) tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together two PCs at supply 1: A's sacrifice to 0 marks A and B, and the card names B | AssertionError: expected [ true, false ] to deeply equal [ true, true ] |
+| (new) tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together the roller already unprepared: the allies are still marked | AssertionError: expected [] to deeply equal [ 'pc-b:unprepared' ] |
+| (new) tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together an ally's refused write: the others stand, nothing throws, and the card says to mark it | AssertionError: expected [ true, false, false ] to deeply equal [ true, false, true ] |
+
+- New test passing with and without the fix (a control?): tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together an ally already unprepared is not marked again or named
+- New test passing with and without the fix (a control?): tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together an NPC card is no crew, and a sacrifice short of 0 marks no one

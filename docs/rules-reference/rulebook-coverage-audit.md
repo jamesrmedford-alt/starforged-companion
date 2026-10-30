@@ -250,8 +250,8 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 | 3.32 | Endure Harm: roll on higher of Iron or Health | MOVE | GAP NEEDS-FEATURE | per playkit §3.3.4 — dynamic stat selection still not implemented | Medium | feature backlog |
 | 3.33 | Endure Stress: reduce spirit; stress past 0 is -momentum; auto-mark shaken | MOVE | PINNED | F16 executor auto-marks shaken; the remainder past 0 spirit is Lose Momentum (issue #314 Q02); `sufferExecutor.test.js` | — | done |
 | 3.34 | Companion Takes a Hit: damage to companion meter | MOVE | PINNED | F16 executor (`companion_takes_a_hit`); `sufferExecutor.test.js` | — | done |
-| 3.35 | Sacrifice Resources: supply decrease | MOVE | PINNED | F16 executor; `sufferExecutor.test.js` | — | done |
-| 3.36 | Withstand Damage: vehicle integrity decrease | MOVE | PINNED | F16 executor + Vehicle Damage d100 (`sufferAndCombat.js`); `sufferExecutor.test.js` | — | done |
+| 3.35 | Sacrifice Resources: supply decrease | MOVE | PINNED | F16 executor; `sufferExecutor.test.js`. At 0 the PC and every ally sharing the supply are marked unprepared together (`markUnprepared` — issue #315 S07 — only the payer was), Repair's supply trade the same (S04); `sharedSupply.test.js`, `repair.test.js` | — | done |
+| 3.36 | Withstand Damage: vehicle integrity decrease | MOVE | PINNED | F16 executor + Vehicle Damage d100 (`sufferAndCombat.js`); `sufferExecutor.test.js`. Its integrity choices and an asset effect's integrity share one writer, `changeIntegrity` — a rise refused while battered (issue #315 S05 — the asset path raised a battered ship's); `shipBatteredCanonical.test.js` | — | done |
 
 ### Recover Moves (5)
 
@@ -259,7 +259,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED; Heal and Hearten's outcome shapes pinned in `resolver.test.js` and through the pipeline in `moveRules.test.js` — a weak hit is the strong hit's recovery plus its cost (issue #311 P02 — the weak hits recovered nothing). Resupply pinned in both too: unprepared, clear it and +1 supply, otherwise +2, each branch gated on the impact (issue #314 Q01 — the clear-unprepared branch gave +2). Repair not | Medium | NEEDS-TEST — Repair |
+| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED; Heal and Hearten's outcome shapes pinned in `resolver.test.js` and through the pipeline in `moveRules.test.js` — a weak hit is the strong hit's recovery plus its cost (issue #311 P02 — the weak hits recovered nothing). Resupply pinned in both too: unprepared, clear it and +1 supply, otherwise +2, each branch gated on the impact (issue #314 Q01 — the clear-unprepared branch gave +2). Repair's supply trade marks unprepared at 0 (issue #315 S04, `repair.test.js`); Repair's restoration through the move pipeline not | Medium | NEEDS-TEST — Repair |
 | 3.38 | Sojourn: extended rest, multiple meter restoration | MOVE | GAP | none | Medium | NEEDS-TEST |
 | 3.39 | Repair: vehicle point spends | PIPELINE | GAP NEEDS-FEATURE | per playkit §3.3.6 — point spends not auto-applied | Low | feature backlog |
 

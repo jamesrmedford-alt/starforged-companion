@@ -11,6 +11,50 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #314 (issue #315) — all eight fixed in the v1.7.36 cycle
+
+Found by the 2026-10-29–30 audit of `40cabee` (the merge of PR #312): its
+thirteen probes (the eight defects and their controls) reproduced locally
+before the fixes — at `b23d193` too — and pass inverted to the expected
+behaviour after them. Each fix's tests fail with the fix taken out
+(`docs/testing/fix-sensitivity.md`). None has been checked in a live Foundry
+world yet. The ones to try: a move typed while another's "Apply asset
+effects" prompt is open (S01); an asset with "you may mark progress" or a
+"choose one" with progress, one track open (S02); a Repair that trades the
+last supply (S04); a battered ship and an asset's "+1 integrity" (S05); two
+PCs, and a Sacrifice Resources that takes the shared supply to 0 (S07).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| S01 MOVE-LOCK-RELEASED-BY-OLDER | RACE | The pipeline released `pendingMove` before the rider prompt, and its `finally` released it again unconditionally: a move started while that prompt was open lost its lock when the prompt closed, and a third move entered the interpreter while the second was still resolving → `releasePendingMoveLock` returns whether the lock is free (false when its write was refused); the pipeline records that its own release landed (`lockReleased`) and its `finally` releases only when it has not — the throw / cancelled-confirm paths and a refused early release keep their safety net |
+| S02 RIDER-PROGRESS-CHOICE-BYPASSED | WRONG-DETAIL | With one track open, the single-track shortcut marked every progress rider before the prompt — optional and "choose one" too: a "you may mark progress" was never offered, and "mark progress or +2 momentum" marked the track and then offered momentum alone, so choosing it applied both; `groupPromptedRiders` also pulled progress out of its choice group → the shortcut marks only a mark that is the outcome's own (neither optional nor in a choice group); a progress option stays in its group with its own track picker; one open track is preselected — it settles where a mark goes, not whether it is taken |
+| S03 RIDER-PROGRESS-AMOUNT-LOST | WRONG-DETAIL | The extractor's contract counts progress in signed marks, but both progress writes called `markProgressById` without the amount (whose default is one mark, clamped ≥ 1): +2 marks gave 8 ticks on a dangerous track, -1 at 16 gave 24 → `adjustProgressById` (progressTracks.js) changes a track by signed marks within 0..40 ticks; `markProgressById` delegates to it; the rider path passes the amount |
+| S04 REPAIR-TRADE-UNPREPARED | WRONG-DETAIL | Repair's supply trade debited the meter with `applyMeterChanges` alone: trading the last supply repaired the ship and left the PC at 0 supply, prepared, while the card said the supply was sacrificed → `markUnprepared` (sufferExecutor.js) is the zero-supply impact's one writer; the trade calls it once the payment is whole — after the pay-in-full check, so a refunded payment leaves no mark; a refused impact write leaves the payment and the repairs, and the card says to mark it |
+| S05 RIDER-INTEGRITY-BATTERED | WRONG-DETAIL | `applyMeterRiders` wrote integrity with `updateShip` directly: a ship battered at 0 went to 1, still battered, and the card said "+1 integrity" → `changeIntegrity` (entities/ship.js) is the one writer for a consequence's or an asset effect's integrity change — a rise refused while the canonical native impact says battered, a loss always landing; Withstand Damage's helper delegates to it; a refused rise is "Not applied — the vehicle is battered", with no Retry |
+| S06 RIDER-PROGRESS-FINISHED-TRACK | WRONG-DETAIL | The rider path counted `listProgressTracks()`, finished tracks included, and `markProgressById` has no finished guard: a sole archived expedition (completed, 16 ticks) went to 24 unasked and was named as the target → the rider path filters to open tracks before counting or offering them; a mark re-reads its track as it is written (finished or gone: not marked, and said); with no open track the effect is "Not applied — no open progress track" |
+| S07 CREW-UNPREPARED-ONE-PC | WRONG-DETAIL | The crew shares one supply (the `updateActor` sync mirrors the number), but the zero-supply impact was marked on the PC who paid alone: two PCs at supply 1, one Sacrifice Resources, and supply [0, 0] came with unprepared [true, false] — "you and your allies … mark unprepared together" → `supplyAllies` (sharedSupply.js) is the one definition of who shares a PC's supply (the sync reads it too); `markUnprepared` marks those allies with the payer (their momentum bounds follow) — from Sacrifice Resources, Repair's trade, and a move's own supply loss (`persistResolution`, which wrote the impact itself); an ally's refused write is said on the card, never thrown; raising supply clears nothing |
+| S08 RIDER-APPLIED-UNCOMMITTED | LOSE-STATE | The rider summary listed every effect asked for: a refused integrity write was caught and still listed, and the single-track progress shortcut discarded its write error — "Asset effects applied" over a ship at 1 and a track at 0, nothing told the GMs; and the progress store's writers changed the cached flag before saving, so a refused save left 8 ticks in the client's cache for the next save of any track to write → `applyMeterRiders` returns one outcome per rider from the write it rode, progress marks report theirs; the summary lists what landed and, apart, what did not and why; a refused write is a `rider` step on the GMs' payoff card whose Retry applies that effect alone; `loadTracks` hands writers a copy |
+
+Open — found while fixing, not fixed (outside the audited paths):
+
+- **UNPREPARED-CLEAR-ONE-PC** (WRONG-DETAIL, mirror of S07). The crew now
+  marks unprepared together, but Resupply's "clear unprepared" clears the
+  roller's impact alone, so an ally stays unprepared at a supply above 0
+  until their own recovery move or a sheet edit. The rules say the allies
+  mark it together; they don't say who clears it. Proposed (needs the
+  maintainer's call on the rule): Resupply's clear goes through the same
+  crew (`supplyAllies`).
+- **SUFFER-RETRY-WHOLE-AFTER-METER** (DUPLICATE, latent). A suffer pick's
+  executor writes the meter, then the impact (`sacrificeResources`'
+  unprepared, `endureHarm`'s wounded, `endureStress`' shaken); a refused
+  impact write throws past the landed meter write, the call is reported
+  refused whole, and its `suffer` Retry would take the meter again. Proposed:
+  the executors report a refused impact apart from the meter, and the Retry
+  marks the impact alone (as Q05 split the vow clocks).
+- **RIDERS-SETTING-UNDOCUMENTED** (UX, doc). The "Auto-apply asset
+  consequence riders" world setting (`riders.autoApply`) is not on the help
+  journal's Settings Reference page.
+
 ### Bug audit after #312 (issue #314) — all six fixed in the v1.7.36 cycle
 
 Found by the 2026-10-29 audit of `40cabee` (the merge of PR #312): its twelve
