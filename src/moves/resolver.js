@@ -378,10 +378,11 @@ const CONSEQUENCE_MAP = {
       };
       case "weak_hit": return {
         ...emptyConsequences(),
-        // B2: enumerated. Default option is +2 momentum so the existing
-        // delta-based test fixtures keep their pre-F16 shape; the dialog
-        // surfaces the alternative.
-        momentumChange: 2,
+        // B2: enumerated — the choice carries the momentum. A direct
+        // `momentumChange: 2` beside it (kept for old delta-based fixtures)
+        // landed on the roll AND again on the "+2 momentum" pick, and stayed
+        // under "+1 on your next move" — the strong hit's "both" either way
+        // (SAA-WEAK-DOUBLE-MOMENTUM).
         sufferPrompt: { kind: "enumerated", options: [
           { label: "+2 momentum",                momentum:   2 },
           { label: "+1 on your next move",       nextBonus:  1 },
