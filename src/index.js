@@ -94,6 +94,7 @@ import {
   getActiveCombatPosition,
   listProgressTracks,
   markProgressById,
+  adjustProgressById,
   addProgressTrack,
   completeProgressTrack,
   updateTrackFields,
@@ -5663,8 +5664,9 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 }
 
 /**
- * One progress rider's mark on its track: applied once the track's save has
- * landed — a refused save is said, never summarised as marked (issue #315 S08).
+ * One progress rider's marks on its track — its amount, either sign (issue
+ * #315 S03) — applied once the track's save has landed: a refused save is
+ * said, never summarised as marked (issue #315 S08).
  *
  * @param {Object} rider
  * @param {{ id: string, label?: string }} track
@@ -5673,7 +5675,7 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
 async function applyProgressRider(rider, track) {
   const at = { rider, track: { id: track.id, label: track.label ?? null } };
   try {
-    const marked = await markProgressById(track.id);
+    const marked = await adjustProgressById(track.id, rider.amount);
     if (!marked) return { ...at, ok: false, reason: "track-gone" };
     return { ...at, track: { id: marked.id, label: marked.label }, ok: true };
   } catch (err) {

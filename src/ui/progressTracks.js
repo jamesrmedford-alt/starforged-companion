@@ -915,13 +915,26 @@ export async function completeProgressTrack(trackId) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function markProgressById(trackId, times = 1) {
+  return adjustProgressById(trackId, Math.max(1, Math.floor(times) || 1));
+}
+
+/**
+ * Change a track's progress by `marks` rank-based marks — positive marks
+ * progress, negative takes it back — within 0..40 ticks. An asset effect's
+ * signed amount is counted in marks (consequence riders): +2 is two marks,
+ * -1 one taken back; every amount used to mark once (issue #315 S03).
+ * GM-only (journal write); null if not found.
+ * @param {string} trackId
+ * @param {number} marks  a whole number of marks, either sign
+ * @returns {Promise<object|null>}  Updated track or null if not found
+ */
+export async function adjustProgressById(trackId, marks) {
   const tracks = await loadTracks();
   const track = tracks.find(t => t.id === trackId);
   if (!track) return null;
 
   const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
-  const marks        = Math.max(1, Math.floor(times) || 1);
-  track.ticks = Math.min(track.ticks + ticksPerMark * marks, MAX_TICKS);
+  track.ticks = Math.max(0, Math.min(track.ticks + ticksPerMark * Math.trunc(marks), MAX_TICKS));
 
   await saveTracks(tracks);
   return track;

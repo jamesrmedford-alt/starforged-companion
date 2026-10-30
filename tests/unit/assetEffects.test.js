@@ -13,6 +13,7 @@
  *   S01 — a move's finally never releases a lock a later move holds (issue #315).
  *   S02 — an optional or "choose one" progress mark stays the player's choice
  *         when one track is open; the track is only its preselected destination.
+ *   S03 — a progress effect marks its amount, either sign, within the track.
  *   S08 — an effect is summarised as applied only once its write has landed;
  *         a refused one goes to the GMs, whose Retry applies it alone.
  */
@@ -326,6 +327,36 @@ describe("S02 — an optional or exclusive progress mark stays a choice with one
     expect(prompts()).toHaveLength(1);
     expect(prompts()[0].content).not.toMatch(/ selected>/);   // ambiguous: nothing preselected
     expect(saved()).toEqual([0, 0]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S03 — progress is counted in marks, signed (the extractor's contract), but
+// both progress writes dropped the amount: +2 marked once, -1 marked once.
+// A dangerous expedition takes 8 ticks a mark.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S03 — a progress effect marks its amount, either sign, within 0–40 ticks", () => {
+  for (const [amount, from, to] of [[1, 0, 8], [2, 0, 16], [-1, 16, 8], [-2, 8, 0], [2, 32, 40]]) {
+    it(`${amount > 0 ? "+" : ""}${amount} mark${Math.abs(amount) === 1 ? "" : "s"} at ${from} ticks: ${to}`, async () => {
+      await openTrack({ ticks: from });
+      riders({ resource: "progress", amount, label: `${amount} marks` });
+
+      await finishMove();
+
+      expect(saved()).toEqual([to]);
+      expect(summary()).toMatch(/Asset effects applied/);
+    });
+  }
+
+  it("through the picker too: +2 on the track chosen of two", async () => {
+    await openTrack(); const rift = await openTrack({ label: "Chart the Rift" });
+    riders({ resource: "progress", amount: 2, label: "+2 marks" });
+    gm().answerDialogs(d => d.choose("apply", { 'select[name="prog-0"]': rift.id }));
+
+    await finishMove();
+
+    expect(saved()).toEqual([0, 16]);
   });
 });
 
