@@ -5698,6 +5698,7 @@ const RIDER_NOT_APPLIED = {
   "refused":    "the world did not save it — the GMs have a Retry",
   "no-pc":      "no character to change",
   "no-vehicle": "no command vehicle to change",
+  "battered":   "the vehicle is battered — a Repair must clear that before integrity can rise",
   "track-gone": "its track is gone",
   "track-done": "its track is finished",
   "no-track":   "no open progress track",

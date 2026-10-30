@@ -429,37 +429,26 @@ function progressFight(tracks, opts) {
 /**
  * Change a vehicle's integrity — a consequence's "+1 integrity" / "-1
  * integrity" (Withstand Damage): the vehicle the move was rolled against,
- * else the command vehicle. Integrity lives on the ship record
- * (entities/ship.js — updateShip keeps it within 0..integrityMax); raising
- * it is refused while the vehicle is battered, read from its canonical
- * native impact (isShipBattered).
+ * else the command vehicle, through the ship record's one integrity writer
+ * (entities/ship.js changeIntegrity — raising it is refused while the
+ * vehicle is battered, read from its canonical native impact).
  *
  * @param {string|null} vehicleActorId
  * @param {number} delta
  * @returns {Promise<{ ok: boolean, vehicleActorId?: string, name?: string, before?: number, after?: number, reason?: string, error?: string }>}
  */
 async function applyVehicleIntegrity(vehicleActorId, delta) {
-  const { getShip, getCommandVehicleActorId, isShipBattered, updateShip } = await import("../entities/ship.js");
+  const { getCommandVehicleActorId, changeIntegrity } = await import("../entities/ship.js");
   const id = vehicleActorId
     ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
-  const ship = id ? getShip(id) : null;
-  if (!ship) {
+  const res = await changeIntegrity(id ?? null, delta);
+  if (res.reason === "no-vehicle") {
     console.warn(`${MODULE_ID} | integrity change: no vehicle found — ${delta >= 0 ? "+" : ""}${delta} integrity not applied.`);
-    return { ok: false, reason: "no-vehicle" };
+    return res;
   }
-  const before = Number(ship.integrity ?? 0);
-  const at = { vehicleActorId: id, name: ship.name ?? null, before };
-  if (delta > 0 && isShipBattered(id)) {
-    console.warn(`${MODULE_ID} | integrity change: ${ship.name ?? id} is battered — integrity not raised.`);
-    return { ok: false, reason: "battered", ...at };
-  }
-  try {
-    const updated = await updateShip(id, { integrity: before + delta });
-    return { ok: true, ...at, after: Number(updated?.integrity ?? before + delta) };
-  } catch (err) {
-    console.warn(`${MODULE_ID} | integrity change on ${ship.name ?? id} failed:`, err?.message ?? err);
-    return { ok: false, reason: "refused", error: String(err?.message ?? err), ...at };
-  }
+  if (res.reason === "battered") console.warn(`${MODULE_ID} | integrity change: ${res.name ?? id} is battered — integrity not raised.`);
+  if (res.reason === "refused")  console.warn(`${MODULE_ID} | integrity change on ${res.name ?? id} failed:`, res.error);
+  return { ...res, vehicleActorId: id };
 }
 
 async function postDeferredCard(title, body, flags = {}) {

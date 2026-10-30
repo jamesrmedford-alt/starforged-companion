@@ -14,6 +14,7 @@
  *   S02 — an optional or "choose one" progress mark stays the player's choice
  *         when one track is open; the track is only its preselected destination.
  *   S03 — a progress effect marks its amount, either sign, within the track.
+ *   S05 — an integrity effect cannot raise a battered ship's integrity.
  *   S06 — a finished track is never a progress effect's target.
  *   S08 — an effect is summarised as applied only once its write has landed;
  *         a refused one goes to the GMs, whose Retry applies it alone.
@@ -358,6 +359,39 @@ describe("S03 — a progress effect marks its amount, either sign, within 0–40
     await finishMove();
 
     expect(saved()).toEqual([0, 16]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S05 — an asset effect's integrity was written directly: a battered command
+// ship at 0 went to 1, still battered, and the card said "+1 integrity". The
+// rule: until you successfully Repair, you cannot raise the vehicle's integrity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S05 — an integrity effect cannot raise a battered ship's integrity", () => {
+  it("+1 integrity on a battered ship at 0: not applied, still battered, and the card says why", async () => {
+    const ship = await commandShip({ integrity: 0, battered: true });
+    const ships = await gm().import("../../src/entities/ship.js");
+    await gm().run(() => ships.repairIntegrity(ship.id, 1).catch(() => null));   // the Repair helper refuses too
+    expect(integrityOf(ship)).toBe(0);
+    riders({ resource: "integrity", amount: 1, label: "+1 integrity" });
+
+    await finishMove();
+
+    expect(integrityOf(ship)).toBe(0);
+    expect(ship.system.debility.battered).toBe(true);
+    expect(summary()).toMatch(/Asset effects not applied[\s\S]*\+1 integrity[\s\S]*— the vehicle is battered/);
+    expect(failCards()).toHaveLength(0);              // a rule, not a refused write: no Retry
+  });
+
+  it("control: once Repair clears battered, the effect lands", async () => {
+    const ship = await commandShip({ integrity: 0, battered: false });
+    riders({ resource: "integrity", amount: 1, label: "+1 integrity" });
+
+    await finishMove();
+
+    expect(integrityOf(ship)).toBe(1);
+    expect(summary()).toMatch(/Asset effects applied[\s\S]*\+1 integrity/);
   });
 });
 

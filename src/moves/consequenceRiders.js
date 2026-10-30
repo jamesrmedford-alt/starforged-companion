@@ -190,20 +190,19 @@ async function writeCharacterMeters(actor, deltas) {
   }
 }
 
-/** The ship's summed integrity delta, as one write (updateShip keeps it within 0..max). */
+/**
+ * The ship's summed integrity delta, as one write, through the ship record's
+ * integrity writer: a rise is refused while the vehicle is battered (issue
+ * #315 S05 — this path wrote the value directly, so a battered ship at 0
+ * gained integrity), and updateShip keeps it within 0..max.
+ */
 async function writeShipIntegrity(shipActorId, delta) {
-  const { getShip, updateShip } = await import("../entities/ship.js");
-  const ship = shipActorId ? getShip(shipActorId) : null;
-  if (!ship) return { ok: false, reason: "no-vehicle" };
+  const { getShip, changeIntegrity } = await import("../entities/ship.js");
+  if (!shipActorId || !getShip(shipActorId)) return { ok: false, reason: "no-vehicle" };
   if (!delta) return { ok: true };
-  try {
-    const max = ship.integrityMax ?? 5;
-    await updateShip(shipActorId, { integrity: Math.max(0, Math.min(max, Number(ship.integrity ?? max) + delta)) });
-    return { ok: true };
-  } catch (err) {
-    console.warn(`${MODULE_ID} | consequenceRiders: integrity write on ${ship.name ?? shipActorId} failed:`, err?.message ?? err);
-    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
-  }
+  const { ok, reason, error, name } = await changeIntegrity(shipActorId, delta);
+  if (reason === "refused") console.warn(`${MODULE_ID} | consequenceRiders: integrity write on ${name ?? shipActorId} failed:`, error);
+  return ok ? { ok } : { ok, reason, ...(error ? { error } : {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
