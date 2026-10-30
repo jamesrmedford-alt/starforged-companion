@@ -276,6 +276,22 @@ export async function endureStress(actor, amount, opts = {}) {
 }
 
 /**
+ * Sacrifice Resources has reduced `actor`'s supply to 0: mark unprepared —
+ * "unprepared is marked when you Sacrifice Resources and are reduced to 0
+ * supply". The one writer of that consequence: the executor below and
+ * Repair's supply trade (repair.js) both come here — the trade debited the
+ * meter alone and left a PC at 0 supply prepared (issue #315 S04).
+ *
+ * @param {Actor} actor  whose supply is now 0
+ * @returns {Promise<{ unpreparedMarked: boolean }>} false when already unprepared
+ */
+export async function markUnprepared(actor) {
+  if (!actor || actor.system?.debility?.unprepared) return { unpreparedMarked: false };
+  await setDebility(actor, "unprepared", true);
+  return { unpreparedMarked: true };
+}
+
+/**
  * Sacrifice Resources executor.
  * At 0 supply → mark unprepared; further losses prompt a redirect via the
  * dialog (handled in Phase D — executor surfaces atZero so the dialog
@@ -290,11 +306,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
-  let unpreparedMarked = false;
-  if (atZero && !actor.system?.debility?.unprepared) {
-    await setDebility(actor, "unprepared", true);
-    unpreparedMarked = true;
-  }
+  const { unpreparedMarked } = atZero ? await markUnprepared(actor) : { unpreparedMarked: false };
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;

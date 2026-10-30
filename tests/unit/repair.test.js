@@ -250,6 +250,76 @@ describe("applyRepairSpends", () => {
     expect(lastCard()).toMatch(/No repairs were applied/);
   });
 
+  // Issue #315 S04: the trade is Sacrifice Resources, but it debited the meter
+  // alone — the last supply left the PC at 0 and prepared, while the card
+  // said it was sacrificed. Unprepared is marked once the payment is whole.
+  describe("the trade's last supply marks unprepared (issue #315 S04)", () => {
+    const trade = (actorId, extra = 1) => payload({ situation: "field", outcome: "weak", extra, spends: { integrity: 1 + extra }, actorId });
+
+    it("supply 1, one traded: supply 0, unprepared, the repair lands, and the card says both", async () => {
+      installShip({ integrity: 1 });
+      const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
+
+      await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
+
+      expect(pc.system.supply.value).toBe(0);
+      expect(pc.system.debility.unprepared).toBe(true);
+      expect(getShip("ship-1").integrity).toBe(3);
+      expect(lastCard()).toMatch(/Sacrificed 1 supply from <strong>PC-K<\/strong> \(supply now 0\) → \+1 repair point\. Out of supply — marked <strong>unprepared<\/strong>\./);
+    });
+
+    it("control: supply left over marks nothing", async () => {
+      installShip({ integrity: 1 });
+      const pc = installPc("pc-k", { supply: 3, ownership: { "pl-1": 3 } });
+
+      await applyRepairSpends(trade("pc-k", 2), PLAYER_CTX);
+
+      expect(pc.system.supply.value).toBe(1);
+      expect(pc.system.debility.unprepared).toBe(false);
+      expect(lastCard()).not.toMatch(/unprepared/);
+    });
+
+    it("already unprepared: it stays marked, and the card does not claim a new mark", async () => {
+      installShip({ integrity: 1 });
+      const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
+      pc.system.debility.unprepared = true;
+
+      await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
+
+      expect(pc.system.supply.value).toBe(0);
+      expect(pc.system.debility.unprepared).toBe(true);
+      expect(lastCard()).not.toMatch(/marked <strong>unprepared/);
+    });
+
+    it("too little supply: nothing is spent, nothing is marked, nothing is repaired", async () => {
+      installShip({ integrity: 1 });
+      const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
+
+      await applyRepairSpends(trade("pc-k", 2), PLAYER_CTX);
+
+      expect(pc.system.supply.value).toBe(1);
+      expect(pc.system.debility.unprepared).toBe(false);
+      expect(getShip("ship-1").integrity).toBe(1);
+    });
+
+    it("the impact's write is refused: the payment and the repair stand, and the card says to mark it", async () => {
+      installShip({ integrity: 1 });
+      const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
+      const write = pc.update;
+      pc.update = async (changes, ...rest) => {
+        if ("system.debility.unprepared" in changes) throw new Error("write rejected");
+        return write(changes, ...rest);
+      };
+
+      await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
+
+      expect(pc.system.supply.value).toBe(0);
+      expect(pc.system.debility.unprepared).toBe(false);
+      expect(getShip("ship-1").integrity).toBe(3);
+      expect(lastCard()).toMatch(/Out of supply, but unprepared could not be marked — mark it on the sheet/);
+    });
+  });
+
   it("applies the base points with no trade at all", async () => {
     installShip({ integrity: 1 });
     await applyRepairSpends(payload({ situation: "field", outcome: "weak", spends: { integrity: 1 } }), PLAYER_CTX);
