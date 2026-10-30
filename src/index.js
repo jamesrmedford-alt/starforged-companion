@@ -5604,8 +5604,8 @@ async function handleShipMapCommand(message) {
 /**
  * Apply this outcome's asset consequence riders (consequence-riders feature).
  * Automatic meter riders apply silently; optional / "choose one" / progress
- * riders prompt. Progress marks resolve to the sole track when unambiguous,
- * else the picker. Posts a summary of what landed and what did not; a write
+ * riders prompt. A mark that is the outcome's own resolves to the sole track
+ * when unambiguous, else the picker. Posts a summary of what landed and what did not; a write
  * the world refused goes to the GMs, with a Retry for it alone (issue #315
  * S08). GM-gated by the caller.
  *
@@ -5633,12 +5633,16 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   // Automatic meter riders — apply immediately.
   outcomes.push(...withShip(await applyMeterRiders(automatic, { characterActor, shipActorId })));
 
-  // Progress riders: auto-mark when there's exactly one track (unambiguous),
-  // otherwise route to the picker with the rest of the prompted riders.
+  // Progress riders: a mark that is the outcome's own — not "you may", not one
+  // of a "choose one" — marks the sole track when there is exactly one; the
+  // rest go to the picker with the other prompted riders. One track settles
+  // where an optional or exclusive mark goes, never whether it is taken: the
+  // shortcut marked those unasked, and beside the alternative the player chose
+  // (issue #315 S02).
   const tracks = await listProgressTracks().catch(() => []);
   const promptList = [];
   for (const r of prompted) {
-    if (r.resource === "progress" && tracks.length === 1) {
+    if (r.resource === "progress" && !r.optional && !r.choiceGroup && tracks.length === 1) {
       outcomes.push(await applyProgressRider(r, tracks[0]));
     } else {
       promptList.push(r);

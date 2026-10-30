@@ -11,6 +11,8 @@
  * output) and the dice are scripted at their boundaries.
  *
  *   S01 — a move's finally never releases a lock a later move holds (issue #315).
+ *   S02 — an optional or "choose one" progress mark stays the player's choice
+ *         when one track is open; the track is only its preselected destination.
  *   S08 — an effect is summarised as applied only once its write has landed;
  *         a refused one goes to the GMs, whose Retry applies it alone.
  */
@@ -63,6 +65,7 @@ const entered = (text) => control.entered.some(t => t.includes(text));
 const notices = (userId) => table.client(userId).notifications.map(n => `${n.level}: ${n.message}`);
 const summary = () => table.cards(f => f.riderSummary).at(-1)?.content ?? "";
 const failCards = () => table.cards(f => f.payoffFailureCard);
+const prompts = () => table.dialogs.filter(d => d.title.includes("Apply asset effects"));
 const ticks   = () => (journal.getFlag(MODULE_ID, "tracks") ?? []).map(t => t.ticks);
 const saved   = () => (journal.savedFlag(MODULE_ID, "tracks") ?? []).map(t => t.ticks);
 
@@ -236,6 +239,93 @@ describe("S01 — a move's finally never releases a later move's lock", () => {
     await table.drain();
     expect(entered("MOVE C")).toBe(true);
     expect(moves()).toHaveLength(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S02 — with one track open, every progress rider marked it unasked: a "you
+// may mark progress" was never offered, and a "mark progress or +2 momentum"
+// marked the track before the dialog offered momentum alone — choosing it
+// applied both. The lone track is now the preselected destination only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S02 — an optional or exclusive progress mark stays a choice with one track open", () => {
+  // The radio of a "choose one" group, by option index.
+  const pick = (index, of = 2) => Object.fromEntries(Array.from({ length: of }, (_, i) =>
+    [`input[name="choice-0"][value="${i}"]`, i === index]));
+
+  it("a 'you may mark progress' is offered, the lone track preselected — Skip all leaves it at 0", async () => {
+    await openTrack();
+    riders({ resource: "progress", amount: 1, optional: true, label: "May mark progress" });
+    gm().answerDialogs(d => d.choose("skip"));
+
+    await finishMove();
+
+    expect(prompts()).toHaveLength(1);
+    expect(prompts()[0].content).toMatch(/<option value="[^"]+" selected>Reach Farpoint/);
+    expect(saved()).toEqual([0]);
+    expect(table.cards(f => f.riderSummary)).toHaveLength(0);
+  });
+
+  it("…and Apply marks the preselected track", async () => {
+    await openTrack();
+    riders({ resource: "progress", amount: 1, optional: true, label: "May mark progress" });
+    gm().answerDialogs(d => d.choose("apply"));
+
+    await finishMove();
+
+    expect(saved()).toEqual([8]);
+    expect(summary()).toMatch(/Asset effects applied[\s\S]*May mark progress → Reach Farpoint/);
+  });
+
+  it("'mark progress or +2 momentum': both are options of one choice, and choosing momentum leaves the track alone", async () => {
+    await openTrack();
+    riders({ resource: "progress", amount: 1, choiceGroup: "one", label: "Mark progress" },
+      { resource: "momentum", amount: 2, choiceGroup: "one", label: "+2 momentum" });
+    gm().answerDialogs(d => d.choose("apply", pick(1)));
+
+    await finishMove();
+
+    const [dialog] = prompts();
+    expect(dialog.content).toMatch(/name="choice-0" value="0" checked> Mark progress on track: <select name="choice-0-track-0">/);
+    expect(dialog.content).toMatch(/name="choice-0" value="1"> \+2 momentum/);
+    expect(saved()).toEqual([0]);
+    expect(pc.system.momentum.value).toBe(5);         // 2, +1 Face Danger, +2 the choice
+  });
+
+  it("…and choosing the mark marks its preselected track, with no momentum", async () => {
+    await openTrack();
+    riders({ resource: "progress", amount: 1, choiceGroup: "one", label: "Mark progress" },
+      { resource: "momentum", amount: 2, choiceGroup: "one", label: "+2 momentum" });
+    gm().answerDialogs(d => d.choose("apply", pick(0)));
+
+    await finishMove();
+
+    expect(saved()).toEqual([8]);
+    expect(pc.system.momentum.value).toBe(3);         // 2, +1 Face Danger
+    expect(summary()).toMatch(/Mark progress → Reach Farpoint/);
+  });
+
+  it("control: a mark that is the outcome's own still marks the lone track, unasked", async () => {
+    await openTrack();
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+
+    await finishMove();
+
+    expect(prompts()).toHaveLength(0);
+    expect(saved()).toEqual([8]);
+  });
+
+  it("control: with two tracks, skipping an optional mark leaves both at 0", async () => {
+    await openTrack(); await openTrack({ label: "Chart the Rift" });
+    riders({ resource: "progress", amount: 1, optional: true, label: "May mark progress" });
+    gm().answerDialogs(d => d.choose("skip"));
+
+    await finishMove();
+
+    expect(prompts()).toHaveLength(1);
+    expect(prompts()[0].content).not.toMatch(/ selected>/);   // ambiguous: nothing preselected
+    expect(saved()).toEqual([0, 0]);
   });
 });
 

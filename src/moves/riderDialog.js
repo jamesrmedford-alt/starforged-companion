@@ -4,9 +4,9 @@
  *
  * Automatic consequence riders apply silently (consequenceRiders.js). The ones
  * that need a decision — "you may take +1 momentum", "choose one: +1 health or
- * +1 momentum", and progress marks whose track is ambiguous — are collected
- * here so the player resolves them without touching meters by hand
- * (v1.7.x consequence-riders feature). GM-gated by the caller.
+ * +1 momentum", "you may mark progress", and progress marks whose track is
+ * ambiguous — are collected here so the player resolves them without touching
+ * meters by hand (v1.7.x consequence-riders feature). GM-gated by the caller.
  *
  * Pure decision logic lives in consequenceRiders.js; this file only renders
  * the form and reads back the selection, so it stays a thin Foundry shell.
@@ -17,8 +17,13 @@ const MODULE_ID = "starforged-companion";
 /**
  * Group prompted riders into render groups:
  *   - optional standalone riders → a checkbox each (default checked)
- *   - choiceGroup riders         → a radio set (pick one, or none)
- *   - progress riders            → a track <select> each
+ *   - choiceGroup riders         → a radio set (pick one, or none); a progress
+ *                                  option carries its own track <select>
+ *   - other progress riders      → a track <select> each
+ *
+ * A progress rider in a choice group stays in it: grouped as progress, it
+ * was offered beside its alternatives, so choosing one of those applied both
+ * (issue #315 S02).
  *
  * Exported for unit testing the grouping without a live dialog.
  *
@@ -31,12 +36,12 @@ export function groupPromptedRiders(prompted) {
   const choiceMap = new Map();
 
   for (const r of prompted ?? []) {
-    if (r.resource === "progress") { progress.push(r); continue; }
     if (r.choiceGroup) {
       if (!choiceMap.has(r.choiceGroup)) choiceMap.set(r.choiceGroup, []);
       choiceMap.get(r.choiceGroup).push(r);
       continue;
     }
+    if (r.resource === "progress") { progress.push(r); continue; }
     optionals.push(r);            // optional standalone
   }
   const choices = [...choiceMap.entries()].map(([group, options]) => ({ group, options }));
@@ -72,22 +77,26 @@ export async function promptRiders(prompted, tracks = []) {
       `</label></div>`);
   });
 
+  // A lone track is the destination, chosen already; whether a mark is taken
+  // at all stays the player's choice (issue #315 S02).
+  const trackOptions = tracks.map(t =>
+    `<option value="${esc(t.id)}"${tracks.length === 1 ? " selected" : ""}>${esc(t.label)} (${esc(t.rank)})</option>`).join("");
+  const trackSelect = (name, none) => `<select name="${name}"><option value="">${none}</option>${trackOptions}</select>`;
+
   choices.forEach((c, gi) => {
     const opts = c.options.map((r, oi) =>
       `<label style="display:block"><input type="radio" name="choice-${gi}" value="${oi}"${oi === 0 ? " checked" : ""}> ` +
-      `${esc(r.label)}</label>`).join("");
+      `${esc(r.label)}${r.resource === "progress" ? ` on track: ${trackSelect(`choice-${gi}-track-${oi}`, "— choose —")}` : ""}</label>`).join("");
     const assetName = c.options[0]?.assetName;
     parts.push(
       `<div class="form-group"><strong>Choose one${assetName ? ` (${esc(assetName)})` : ""}:</strong>` +
       `${opts}<label style="display:block"><input type="radio" name="choice-${gi}" value="none"> Neither</label></div>`);
   });
 
-  const trackOptions = tracks.map(t =>
-    `<option value="${esc(t.id)}">${esc(t.label)} (${esc(t.rank)})</option>`).join("");
   progress.forEach((r, i) => {
     parts.push(
       `<div class="form-group"><label>${esc(r.label)}${r.assetName ? ` <em>(${esc(r.assetName)})</em>` : ""} on track: ` +
-      `<select name="prog-${i}"><option value="">— skip —</option>${trackOptions}</select></label></div>`);
+      `${trackSelect(`prog-${i}`, "— skip —")}</label></div>`);
   });
 
   let result = null;
@@ -118,10 +127,11 @@ function readSelection(form, { optionals, choices, progress }) {
   });
   choices.forEach((c, gi) => {
     const val = form.querySelector(`[name="choice-${gi}"]:checked`)?.value;
-    if (val != null && val !== "none") {
-      const chosen = c.options[Number(val)];
-      if (chosen) apply.push(chosen);
-    }
+    const chosen = val != null && val !== "none" ? c.options[Number(val)] : null;
+    if (!chosen) return;
+    if (chosen.resource !== "progress") { apply.push(chosen); return; }
+    const trackId = form.querySelector(`[name="choice-${gi}-track-${val}"]`)?.value;
+    if (trackId) progressOut.push({ rider: chosen, trackId });
   });
   progress.forEach((r, i) => {
     const trackId = form.querySelector(`[name="prog-${i}"]`)?.value;

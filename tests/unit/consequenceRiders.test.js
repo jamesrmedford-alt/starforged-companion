@@ -200,4 +200,17 @@ describe("groupPromptedRiders (riderDialog)", () => {
     expect(choices[0].options).toHaveLength(2);
     expect(progress).toHaveLength(1);
   });
+
+  // Issue #315 S02: a progress option was pulled out of its "choose one", so
+  // it was applied beside the alternative the player chose.
+  it("a progress rider in a choice group stays one of its options", () => {
+    const { choices, progress } = groupPromptedRiders([
+      { resource: "progress", amount: 1, optional: false, choiceGroup: "g1" },
+      { resource: "momentum", amount: 2, optional: false, choiceGroup: "g1" },
+    ]);
+    expect(progress).toHaveLength(0);
+    expect(choices).toEqual([{ group: "g1", options: [
+      expect.objectContaining({ resource: "progress" }), expect.objectContaining({ resource: "momentum" }),
+    ] }]);
+  });
 });
