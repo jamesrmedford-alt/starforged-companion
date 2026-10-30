@@ -302,6 +302,19 @@ describe("applyRepairSpends", () => {
       expect(getShip("ship-1").integrity).toBe(1);
     });
 
+    // Issue #315 S07: the crew shares one supply, so they mark unprepared together.
+    it("the ally sharing the supply is marked with the payer, and both PCs' momentum bounds follow", async () => {
+      installShip({ integrity: 1 });
+      const pc   = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
+      const ally = installPc("pc-r", { supply: 1, ownership: { "pl-2": 3 } });
+
+      await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
+
+      expect([pc, ally].map(a => a.system.debility.unprepared)).toEqual([true, true]);
+      expect([pc, ally].map(a => [a.system.momentum.max, a.system.momentum.resetValue])).toEqual([[9, 1], [9, 1]]);
+      expect(lastCard()).toMatch(/marked <strong>unprepared<\/strong>\. PC-R, sharing the supply, is marked <strong>unprepared<\/strong> too\./);
+    });
+
     it("the impact's write is refused: the payment and the repair stand, and the card says to mark it", async () => {
       installShip({ integrity: 1 });
       const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });

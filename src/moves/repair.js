@@ -43,7 +43,7 @@ import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity, isSh
 import { requestGmAction }         from "../multiplayer/gmRelay.js";
 import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
 import { requesterOwnsActor }      from "./burnMomentum.js";
-import { markUnprepared }          from "./sufferExecutor.js";
+import { markUnprepared, crewUnpreparedNote } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -373,11 +373,13 @@ async function paySupplyTrade(actorId, extra, ctx) {
   const line = `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.`;
   if (after > 0) return { paid: true, line };
   // Paid in full, and to 0: the trade is Sacrifice Resources, so the last
-  // supply marks unprepared (issue #315 S04) — after the pay-in-full check, so
-  // a refunded payment never leaves it marked. The payment stands either way.
+  // supply marks unprepared (issue #315 S04) — with the allies sharing it
+  // (S07) — after the pay-in-full check, so a refunded payment never leaves
+  // it marked. The payment stands either way.
   try {
-    const { unpreparedMarked } = await markUnprepared(actor);
-    return { paid: true, line: unpreparedMarked ? `${line} Out of supply — marked <strong>unprepared</strong>.` : line };
+    const marks = await markUnprepared(actor);
+    const crew  = crewUnpreparedNote(marks);
+    return { paid: true, line: `${line}${marks.unpreparedMarked ? " Out of supply — marked <strong>unprepared</strong>." : ""}${crew ? ` ${crew}.` : ""}` };
   } catch (err) {
     console.warn(`${MODULE_ID} | repair: marking ${actor.name} unprepared failed:`, err?.message ?? err);
     return { paid: true, line: `${line} <em>Out of supply, but unprepared could not be marked — mark it on the sheet.</em>` };

@@ -34,6 +34,7 @@ import {
   setDebility,
 } from '../character/actorBridge.js';
 import { postSufferChoiceCard } from './sufferCard.js';
+import { markUnprepared } from './sufferExecutor.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 
@@ -356,12 +357,13 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
 async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
   const { sufferMoveTriggered } = consequences;
 
-  // Auto-mark unprepared if supply just hit 0
+  // Auto-mark unprepared if supply just hit 0 — with the crew sharing it
+  // (markUnprepared, the zero-supply impact's one writer — issue #315 S07)
   if (appliedMeters.supply < 0) {
     const sys = actor.system ?? {};
     const currentSupply = sys.supply?.value ?? sys.supply ?? 0;
     if (currentSupply === 0) {
-      await setDebility(actor, 'unprepared', true);
+      await markUnprepared(actor);
     }
   }
 

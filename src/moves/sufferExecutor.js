@@ -56,6 +56,7 @@
  */
 
 import { applyMeterChanges, setDebility } from "../character/actorBridge.js";
+import { supplyAllies } from "../multiplayer/sharedSupply.js";
 import { MORTAL_WOUND, DESOLATION, VEHICLE_DAMAGE } from "../oracles/tables/sufferAndCombat.js";
 
 const MODULE_ID = "starforged-companion";
@@ -278,17 +279,61 @@ export async function endureStress(actor, amount, opts = {}) {
 /**
  * Sacrifice Resources has reduced `actor`'s supply to 0: mark unprepared —
  * "unprepared is marked when you Sacrifice Resources and are reduced to 0
- * supply". The one writer of that consequence: the executor below and
- * Repair's supply trade (repair.js) both come here — the trade debited the
- * meter alone and left a PC at 0 supply prepared (issue #315 S04).
+ * supply" — on `actor` and on every ally sharing its supply: "because you
+ * and your allies share the same supply value, you mark unprepared
+ * together". The crew's supply is one value (multiplayer/sharedSupply.js
+ * mirrors the number to them); this is the one writer of the impact that
+ * goes with it — the executor below, Repair's supply trade (repair.js) and a
+ * move's own supply loss (persistResolution.js) all come here. Issue #315
+ * S04 (the trade marked no one) and S07 (only the PC who paid was marked).
+ * Raising supply clears nothing: the impact is cleared by a recovery move.
  *
  * @param {Actor} actor  whose supply is now 0
- * @returns {Promise<{ unpreparedMarked: boolean }>} false when already unprepared
+ * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesNotMarked: string[] }>}
+ *   `unpreparedMarked` is false when `actor` was already unprepared; the
+ *   allies by name — marked now, or whose write was refused (warned, never
+ *   thrown: the supply loss has landed either way)
  */
 export async function markUnprepared(actor) {
-  if (!actor || actor.system?.debility?.unprepared) return { unpreparedMarked: false };
-  await setDebility(actor, "unprepared", true);
-  return { unpreparedMarked: true };
+  const marks = { unpreparedMarked: false, alliesMarked: [], alliesNotMarked: [] };
+  if (!actor) return marks;
+  if (!actor.system?.debility?.unprepared) {
+    await setDebility(actor, "unprepared", true);
+    marks.unpreparedMarked = true;
+  }
+  for (const ally of supplyAllies(actor)) {
+    if (ally.system?.debility?.unprepared) continue;
+    try {
+      await setDebility(ally, "unprepared", true);
+      marks.alliesMarked.push(ally.name ?? ally.id);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sufferExecutor: marking ${ally.name ?? ally.id} unprepared failed:`, err?.message ?? err);
+      marks.alliesNotMarked.push(ally.name ?? ally.id);
+    }
+  }
+  return marks;
+}
+
+/**
+ * The allies' part of markUnprepared's marks, for a card line ("" when the
+ * crew is one PC): who, sharing the supply, was marked with the roller, and
+ * whose mark the world refused.
+ *
+ * @param {{ alliesMarked?: string[], alliesNotMarked?: string[] }} marks
+ * @returns {string} HTML
+ */
+export function crewUnpreparedNote({ alliesMarked = [], alliesNotMarked = [] } = {}) {
+  const names = (list) => list.map(escapeHtml).join(", ");
+  return [
+    alliesMarked.length
+      ? `${names(alliesMarked)}, sharing the supply, ${alliesMarked.length === 1 ? "is" : "are"} marked <strong>unprepared</strong> too`
+      : "",
+    alliesNotMarked.length ? `${names(alliesNotMarked)} could not be marked unprepared — mark it on the sheet` : "",
+  ].filter(Boolean).join("; ");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 /**
@@ -306,12 +351,15 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
-  const { unpreparedMarked } = atZero ? await markUnprepared(actor) : { unpreparedMarked: false };
+  const marks = atZero ? await markUnprepared(actor) : null;
+  const unpreparedMarked = !!marks?.unpreparedMarked;
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
     if (unpreparedMarked) body += " — marked <strong>unprepared</strong>";
     if (atZero && !unpreparedMarked) body += " — further loss redirects to another suffer move";
+    const crew = crewUnpreparedNote(marks ?? {});
+    if (crew) body += ` — ${crew}`;
     await postSufferCard({
       title: `Sacrifice Resources (-${amount})`,
       body,
