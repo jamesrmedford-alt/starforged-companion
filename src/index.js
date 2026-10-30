@@ -865,6 +865,11 @@ export function registerChatHook() {
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
     }
+    // Whether this move has released its lock. Once it has, the lock may be
+    // another move's: the early release below lets the next move start while
+    // this one's rider prompt is open, so this move's finally must not clear
+    // it again (issue #315 S01).
+    let lockReleased = false;
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
@@ -1511,9 +1516,10 @@ export function registerChatHook() {
         // held the lock, an unanswered or unnoticed dialog left
         // campaignState.pendingMove = true and every subsequent player input hit
         // the "a move is already being resolved" guard — the v1.7.12 lockup
-        // (known-issues PLAYTEST-1712 M/N, fixed here). The finally above
-        // re-releases idempotently for the throw / cancelled-confirm paths.
-        await releasePendingMoveLock();
+        // (known-issues PLAYTEST-1712 M/N, fixed here). The finally below
+        // releases for the throw / cancelled-confirm paths, and retries a
+        // release that was refused here.
+        lockReleased = await releasePendingMoveLock();
 
         // Auto-apply asset consequence riders from this outcome — meters and
         // progress — so the player never adjusts resources by hand. Runs after
@@ -1531,10 +1537,11 @@ export function registerChatHook() {
         "Check your API key in module settings and try again."
       );
     } finally {
-      // Safety net: always release the lock, even if the pipeline threw or the
-      // confirm dialog was cancelled before the success-path release below ran.
-      // Idempotent — when the early release already cleared it, this no-ops.
-      await releasePendingMoveLock();
+      // Safety net: release the lock if the pipeline threw or the confirm
+      // dialog was cancelled before the success-path release above ran, or
+      // that release was refused. Never once it has landed: a later move may
+      // hold the lock by now (issue #315 S01).
+      if (!lockReleased) await releasePendingMoveLock();
     }
   });
 }
@@ -2037,20 +2044,26 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * lock on the success path *before* the interactive consequence-rider prompt,
  * so an unanswered or unnoticed GM dialog can't wedge the lock and block all
  * subsequent narration (PLAYTEST-1712 M/N — the v1.7.12 lockup). The pipeline's
- * `finally` calls this again as a safety net for the throw / cancelled-confirm
- * paths. Re-reads the latest campaignState each call so it never clobbers
- * writes made during the pipeline (entity records, progress ticks, recap
- * caches). World-scoped write → effective on the GM client only.
+ * `finally` calls this as a safety net for the throw / cancelled-confirm paths
+ * and to retry a refused release — only while that move has not released its
+ * lock: once it has, the lock may be a later move's (issue #315 S01).
+ * Re-reads the latest campaignState each call so it never clobbers writes made
+ * during the pipeline (entity records, progress ticks, recap caches).
+ * World-scoped write → effective on the GM client only.
+ *
+ * @returns {Promise<boolean>} whether the lock is free now — false when the
+ *   release was refused (the caller retries it)
  */
 export async function releasePendingMoveLock() {
   const latestState = game.settings.get(MODULE_ID, "campaignState");
-  if (!latestState?.pendingMove) return;   // already released — cheap no-op
+  if (!latestState?.pendingMove) return true;   // already released — cheap no-op
   // Write a copy: `get` returns this client's cached value, and clearing the
   // flag on it before a write that failed made the retry (the pipeline's
   // finally) read "released" and skip — the world kept the lock (issue #302).
-  await game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false }).catch(err =>
-    console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err),
-  );
+  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false }).then(() => true, err => {
+    console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
+    return false;
+  });
 }
 
 /** Drop the owning actor's cached snapshot when one of its Items changes — this client's cache only. */
