@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309 and #311
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311 and #314
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -7,8 +7,8 @@ matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
-2026-10-29 (the patch applied to `fd17788`) and for issue #311 on 2026-10-29.
-To reproduce:
+2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29 and
+for issue #314 on 2026-10-30. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -43,6 +43,10 @@ node scripts/fix-sensitivity.mjs \
 # issue #311
 node scripts/fix-sensitivity.mjs \
   d1d7826 4b8b3f3 c3e5dbc 52cdc67 2f7afdb 2e2aebc 97b4438 35f5ecf da75b67 --md details.md
+
+# issue #314
+node scripts/fix-sensitivity.mjs \
+  285fe00 257630b 5e9095d 082e78d d1e15a5 79c45d1 --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -153,6 +157,20 @@ The audit's own probes (issue #311 appendices A and B), with their
 assertions inverted to the expected behaviour, pass on the fixed code: all
 twelve.
 
+### Issue #314 — the audit after #312
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| Q01 RESUPPLY-UNPREPARED-PLUS-2 | 285fe00 | revert | 4 — `moveRules.test.js` (2: unprepared at 0 takes 1 and the +2 is unavailable, on the strong and the weak hit), `resolver.test.js` (2: the strong and weak options' amounts and gates) |
+| Q02 HARM-OVERFLOW-LOST | 257630b | revert | 11 — `sufferExecutor.test.js` (6: a loss of 3 at health 1, equal, below, at 0 already, at the momentum minimum; stress the same), `payThePriceRoutes.test.js` (3: Pay the Price at 0 health through the pipeline, the improvement's refund, the health receipt), `resultUpgrade.test.js` (2: the receipt at 0 health; the solo fallback's receipt is a list) |
+| Q03 PTP-ROLL-TWICE-ROUTES-LOST | 5e9095d | revert | 18 — `oracleRoller.test.js` (11: each band's route as a list; harm + stress, a narrative leaf beside a routed one, two of the same leaf, a nested Roll twice, the recursion cap), `payThePriceRoutes.test.js` (6: both land through the pipeline and on the receipt, a burn refunds both, the one-route and duplicate-leaf cases, the direct control's list, `!ptp`), `creditTheRoller.test.js` (the `!ptp` route lands) |
+| Q04 BOND-ITEM-MIRROR-BY-NAME | 082e78d | revert | 10 — `actorBridge.test.js` (5: a same-named Item keyed to another connection, on this PC and another; a renamed connection's Item by id; an ambiguous unkeyed name; a keyed Item over the name; the rank mirror the same), `bondCommand.test.js` (the rank mirror by the record's `_id`), `bondItemMirror.test.js` (4: one Sable's progress and rank write its Item alone; a renamed connection's rank from the pipeline and from `!bond`) |
+| Q05 VOW-CLOCK-RETRY-WHOLE-STEP | d1e15a5 | revert | 3 — `resultUpgrade.test.js` (the second Item's refusal alone on the card and its Retry; a refusal on the first; a second refusal during the Retry on a fresh card) |
+| Q06 BONDED-DEVELOP-NO-RANK | 79c45d1 | revert | 10 — `connectionPickerTarget.test.js` (8: epic Vega from the picker is 8, a strong hit, 2 ticks; typed, resolved before the dice; each of the five ranks; parity with `!bond`), `developRelationship.test.js` (2: the rank table; the roll's stat at every rank); 9 more fail only on the missing `bondedDevelopRoll` / `enrichBondedDevelop` |
+
+The audit's own probes (issue #314 appendix A), with their assertions
+inverted to the expected behaviour, pass on the fixed code: all twelve.
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -193,6 +211,10 @@ ways; each was read and is a control:
 | `bondCommand` › a negative momentum that does not match the die leaves it | the same on `!bond` (#311 P01) |
 | `resultUpgrade` › the ordinary route still refunds its loss: Endure Harm, health 5 → 4 → 5 | the refund that already worked (#311 P04) |
 | `resultUpgrade` › Burn Momentum to a strong hit: the clock rewinds to 0/4 and health 4 → 5 | the burn's reversal, which Improve now shares (#311 P05) |
+| `moveRules` › prepared at supply 1: +2 supply restores to 3, and the clear-unprepared option is unavailable | the prepared branch (#314 Q01) |
+| `payThePriceRoutes` › a burn refunds no momentum — its reset replaces it — and no health the loss never took | a burn's reset still replaces momentum (#314 Q02) |
+| `resultUpgrade` › with nothing refused both clocks rewind once and no card is posted | the whole-step rewind (#314 Q05) |
+| `connectionPickerTarget` › an un-bonded pick is still no roll's worth: +0, its own track marked | an un-bonded development (#314 Q06) |
 
 Two more passed both ways under 611979e's revert because they cover N02,
 fixed in the commit before it: `consequenceTargets` › a strong hit's +1
@@ -1289,3 +1311,142 @@ Test files: `tests/unit/resultUpgrade.test.js`. Source restored: 1 file(s).
 | Fails without the fix | First failure line |
 | --- | --- |
 | (new) tests/unit/resultUpgrade.test.js › P03 — an upgrade reconciles the move's choice cards a pick whose follow-up picker cannot be posted re-opens its card, and leaves the upgrades open | AssertionError: expected true to be undefined |
+
+### 285fe00 — fix: Resupply clears unprepared for +1 supply, never +2 (issue #314 Q01)
+
+Test files: `tests/unit/moveRules.test.js`, `tests/unit/resolver.test.js`. Source restored: 1 file(s).
+
+- With the fix: 286 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 282 still pass (1 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/moveRules.test.js › Q01 — Resupply: unprepared, clear it and +1 supply; otherwise +2 unprepared at supply 0: the clear-unprepared option restores 1, and the +2 option is unavailable | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to match /data-option-index="1" disabled/ |
+| (new) tests/unit/moveRules.test.js › Q01 — Resupply: unprepared, clear it and +1 supply; otherwise +2 the weak hit is gated the same way: unprepared at 0 takes 1, never 2 | AssertionError: expected '&lt;div class="sf-card sf-suffer-choice-…' to match /data-option-index="1" disabled/ |
+| (new) tests/unit/resolver.test.js › recover-move dialog prompts resupply:strong_hit — unprepared: clear it and +1 supply; otherwise +2 — each branch gated on the impact | AssertionError: expected [ { clearImpact: 'unprepared' }, …(1) ] to deeply equal [ { clearImpact: 'unprepared' }, …(1) ] |
+| (new) tests/unit/resolver.test.js › recover-move dialog prompts resupply:weak_hit keeps the same conditional supply, at a cost | AssertionError: expected undefined to be '!unprepared' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/moveRules.test.js › Q01 — Resupply: unprepared, clear it and +1 supply; otherwise +2 prepared at supply 1: +2 supply restores to 3, and the clear-unprepared option is unavailable
+
+### 257630b — fix: harm or stress past the meter is momentum (issue #314 Q02)
+
+Test files: `tests/unit/payThePriceRoutes.test.js`, `tests/unit/resultUpgrade.test.js`, `tests/unit/sufferExecutor.test.js`. Source restored: 3 file(s).
+
+- With the fix: 55 passed, 0 failed.
+- Without it: 11 failed (10 new; 0 only for a missing export); 44 still pass (1 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline Pay the Price at 0 health: one Endure Harm card, health stays 0, momentum 9 → 8 | AssertionError: expected 9 to be 8 // Object.is equality |
+| (new) tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline an improvement refunds the momentum the harm took: 5 → 4, the strong hit's +2, +1 refunded = 7 | AssertionError: expected 5 to be 4 // Object.is equality |
+| (new) tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline the ordinary loss is unchanged: health 5 → 4, no momentum, and the receipt is the health | AssertionError: expected undefined to be null |
+| (new) tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed a loss at 0 health is momentum (issue #314 Q02): no health is refunded, and a burn's reset replaces the momentum | AssertionError: expected 9 to be 8 // Object.is equality |
+| tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed the solo fallback's real loss is refunded: companion route → Endure Harm, health 5 → 4 → 5 | AssertionError: expected undefined to deeply equal [ ObjectContaining{…} ] |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum a loss of 3 at health 1: health 1 → 0, the other 2 as momentum 5 → 3 | AssertionError: expected [ { health: -3 } ] to deeply equal [ { health: -1 }, { momentum: -2 } ] |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum a loss equal to the health left takes no momentum | AssertionError: expected undefined to be null |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum a loss below the health left takes no momentum | AssertionError: expected undefined to be null |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum at 0 health already, the whole loss is momentum, and no health write is made | AssertionError: expected [ { health: -2 } ] to deeply equal [ { momentum: -2 } ] |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum at the momentum minimum, what cannot be taken is said on the card, not lost in silence | AssertionError: expected -5 to be -6 // Object.is equality |
+| (new) tests/unit/sufferExecutor.test.js › endureStress stress past 0 spirit is momentum: a loss of 3 at spirit 1, momentum 5 → 3 | AssertionError: expected [ { spirit: -3 } ] to deeply equal [ { spirit: -1 }, { momentum: -2 } ] |
+
+- New test passing with and without the fix (a control?): tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline a burn refunds no momentum — its reset replaces it — and no health the loss never took
+
+### 5e9095d — fix: a Pay the Price "Roll twice" lands each leaf's suffer route (issue #314 Q03)
+
+Test files: `tests/unit/creditTheRoller.test.js`, `tests/unit/oracleRoller.test.js`, `tests/unit/payThePriceRoutes.test.js`. Source restored: 2 file(s).
+
+- With the fix: 48 passed, 0 failed.
+- Without it: 18 failed (17 new; 0 only for a missing export); 30 still pass (0 new).
+- Verdict: **sensitive** — 18 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/creditTheRoller.test.js › across a booted table !pay-the-price: the routed suffer lands on the typist's PC — once, on the typist's client | AssertionError: expected [] to deeply equal [ { on: 'pl-1', …(2) } ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) surfaces the route for 'You are harmed' (75-81 band) | AssertionError: expected undefined to deeply equal [ { move: 'endure_harm', amount: 1 } ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) surfaces the route for 'You are stressed' (82-88 band) | AssertionError: expected undefined to deeply equal [ Array(1) ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) surfaces the route for 'You waste resources' (69-74 band) | AssertionError: expected undefined to deeply equal [ { …(2) } ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) surfaces the route for 'Your vehicle suffers damage' (63-68 band) | AssertionError: expected undefined to deeply equal [ { move: 'withstand_damage', …(1) } ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) surfaces the route with soloFallback for 'friend in harm's way' (51-56 band) | AssertionError: expected undefined to deeply equal [ { …(3) } ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) lists no route on narrative-only entries | AssertionError: expected undefined to deeply equal [] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) a 'Roll twice' keeps each leaf's route (issue #314 Q03) harm and stress: both routes, in the leaves' order, under the joined text | AssertionError: expected undefined to deeply equal [ …(2) ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) a 'Roll twice' keeps each leaf's route (issue #314 Q03) a narrative leaf and a routed one: the one route | AssertionError: expected undefined to deeply equal [ Array(1) ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) a 'Roll twice' keeps each leaf's route (issue #314 Q03) two of the same leaf are two routes — each lands once | AssertionError: expected undefined to deeply equal [ …(2) ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) a 'Roll twice' keeps each leaf's route (issue #314 Q03) a nested Roll twice adds its leaves' routes | AssertionError: expected undefined to deeply equal [ …(3) ] |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — Pay the Price sufferRoutes (F16 Phase E) a 'Roll twice' keeps each leaf's route (issue #314 Q03) the recursion cap ends a run of Roll twice with the directive's own text and no route | AssertionError: expected undefined to deeply equal [] |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route 96 → 78 + 85: the card says harm and stress, both routes are on it, and both land | AssertionError: expected '&lt;div class="sf-ptp-card">&lt;strong>Pay …' to contain 'Routes to endure_harm (-1), endure_st…' |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route a burn of that miss refunds the health and the spirit, in one write | TypeError: .toMatch() expects to receive a string, but got undefined |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route a narrative leaf beside a routed one: the one route lands | AssertionError: expected 5 to be 4 // Object.is equality |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route two of the same leaf each land: 78 + 80 is two Endure Harms, health 5 → 3 | AssertionError: expected 5 to be 3 // Object.is equality |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route the direct-78 control is unchanged: one Endure Harm, health 5 → 4 | AssertionError: expected undefined to deeply equal [ { move: 'endure_harm', amount: 1 } ] |
+| (new) tests/unit/payThePriceRoutes.test.js › Q03 — a Pay the Price 'Roll twice' lands each leaf's route !ptp lands each leaf too, on the typist's PC | AssertionError: expected '&lt;div class="sf-ptp-card">&lt;strong>Pay …' to contain 'Routes to endure_harm (-1), endure_st…' |
+
+### 082e78d — fix: a bond Item mirrors its own connection, by the record's id (issue #314 Q04)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/bondCommand.test.js`, `tests/unit/bondItemMirror.test.js`. Source restored: 3 file(s).
+
+- With the fix: 121 passed, 0 failed.
+- Without it: 10 failed (10 new; 0 only for a missing export); 111 still pass (0 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/actorBridge.test.js › setBondItemTicks a keyed Item matches its own connection only a same-named Item keyed to another connection keeps its ticks, on this PC and on another | AssertionError: expected 3 to be 1 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › setBondItemTicks a keyed Item matches its own connection only a keyed Item is found by its id after the connection was renamed; the stale name on another's Item does not match | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › setBondItemTicks a keyed Item matches its own connection only the name fallback takes an unkeyed Item only when it is the PC's one of that name | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › setBondItemTicks a keyed Item matches its own connection only a PC with a keyed Item for the connection ignores the name on its other Items | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › setBondItemRank raises the Item keyed to the connection — renamed or not — and never a same-named Item keyed to another | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/bondCommand.test.js › applyBondEffects — canonical GM handler mirrors the rank onto the Item keyed by the record's _id — renamed or not — and leaves a same-named sibling's Item alone | AssertionError: expected 'dangerous' to be 'formidable' // Object.is equality |
+| (new) tests/unit/bondItemMirror.test.js › Q04 — two connections named Sable marking one's relationship progress writes its Item alone | AssertionError: expected [ 8, 8 ] to deeply equal [ 8, 20 ] |
+| (new) tests/unit/bondItemMirror.test.js › Q04 — two connections named Sable a strong hit with a match on one's Develop raises its record and its Item — the other Sable keeps its rank | AssertionError: expected [ 'formidable', 'formidable' ] to deeply equal [ 'formidable', 'dangerous' ] |
+| (new) tests/unit/bondItemMirror.test.js › Q04 — a renamed connection the pipeline's rank raise reaches the Item keyed by the record's _id, though the Item still bears the old name | AssertionError: expected 'dangerous' to be 'formidable' // Object.is equality |
+| (new) tests/unit/bondItemMirror.test.js › Q04 — a renamed connection `!bond` raises the renamed connection's Item too, and not a same-named sibling's | AssertionError: expected 'dangerous' to be 'formidable' // Object.is equality |
+
+### d1e15a5 — fix: a partial vow-clock rewind retries only the Items still owed (issue #314 Q05)
+
+Test files: `tests/unit/resultUpgrade.test.js`. Source restored: 1 file(s).
+
+- With the fix: 21 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 18 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed the second Item's refused rewind alone goes to the GMs; their Retry rewinds it once and leaves the first clock as it is | AssertionError: expected '&lt;div class="sf-clock-card">&lt;strong>⏰ …' to match /vow-a clock rewound/ |
+| (new) tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed a refusal on the first Item: the second lands, the first alone is retried | AssertionError: expected [ 'vow-a', 'vow-b' ] to deeply equal [ 'vow-a' ] |
+| (new) tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed a second refusal during the Retry goes on a fresh card with that Item alone; its Retry lands | AssertionError: expected [ 1, 3 ] to deeply equal [ 2, 3 ] |
+
+- New test passing with and without the fix (a control?): tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed with nothing refused both clocks rewind once and no card is posted
+
+### 79c45d1 — fix: a bonded Develop Your Relationship rolls +rank in the pipeline (issue #314 Q06)
+
+Test files: `tests/unit/connectionPickerTarget.test.js`, `tests/unit/developRelationship.test.js`, `tests/unit/statEnrichment.test.js`. Source restored: 5 file(s).
+
+- With the fix: 105 passed, 0 failed.
+- Without it: 19 failed (19 new; 9 only for a missing export); 86 still pass (1 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) from the picker: epic Vega is 3 + 5 = 8 against 4 and 7 — a strong hit, 2 bonds ticks (was +0, a miss, 0) | AssertionError: expected { …(18) } to match object { …(6) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) typed: the named bonded connection is resolved before the dice and rolled +rank | AssertionError: expected { …(10) } to match object { moveTargetId: 'conn-vega', …(2) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) troublesome: the stat is the rank, worth +1 | AssertionError: expected { …(27) } to match object { statUsed: 'troublesome', …(2) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) dangerous: the stat is the rank, worth +2 | AssertionError: expected { …(27) } to match object { statUsed: 'dangerous', …(2) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) formidable: the stat is the rank, worth +3 | AssertionError: expected { …(27) } to match object { statUsed: 'formidable', …(2) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) extreme: the stat is the rank, worth +4 | AssertionError: expected { …(27) } to match object { statUsed: 'extreme', …(2) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) epic: the stat is the rank, worth +5 | AssertionError: expected { …(27) } to match object { Object (statUsed, statValue, ...) } |
+| (new) tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) parity with `!bond`: the same dice score the same, and both pay 2 ticks | AssertionError: expected { …(27) } to match object { actionScore: 8, …(1) } |
+| (new) tests/unit/developRelationship.test.js › constants BOND_ROLL_ADDS is +1 … +5 up the ladder (play kit p. 3) | AssertionError: expected undefined to deeply equal { troublesome: 1, dangerous: 2, …(3) } |
+| (new) tests/unit/developRelationship.test.js › bondedDevelopRoll a bonded connection rolls its rank, worth its adds, at every rank | TypeError: Cannot convert undefined or null to object |
+| (new) (API) tests/unit/developRelationship.test.js › bondedDevelopRoll an un-bonded connection is no roll | TypeError: (0 , bondedDevelopRoll) is not a function |
+| (new) (API) tests/unit/developRelationship.test.js › bondedDevelopRoll an unknown rank is no roll | TypeError: (0 , bondedDevelopRoll) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop a picker's host id resolves the bonded connection: the rank is the stat, worth its adds | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop a typed name resolves it too, and stamps the host id for the branch after the roll | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop an un-bonded connection leaves the stat alone — its development is no roll | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop no connection resolves (an unknown name, two bonded to fall back on): nothing changes | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop an unknown name with one bonded connection falls back to it, as selectConnection always has | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop a stat the interpreter guessed gives way to the rank | TypeError: (0 , enrichBondedDevelop) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichBondedDevelop every other move is left as it is | TypeError: (0 , enrichBondedDevelop) is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/connectionPickerTarget.test.js › Develop Your Relationship with a bonded connection rolls +rank (issue #314 Q06) an un-bonded pick is still no roll's worth: +0, its own track marked

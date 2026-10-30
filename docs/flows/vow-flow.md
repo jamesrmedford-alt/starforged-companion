@@ -113,7 +113,10 @@ All real progress lands on **item ticks** (`system.current`) via
   the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
   so the clocks advance once, on the GM. A Burn Momentum or Improve Result
   that upgrades the miss reverts them via `revertVowClocksForBurn`
-  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05).
+  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05). A rewind that
+  lands in part leaves only the refused Items on the GMs' payoff card; its
+  Retry rewinds those alone (issue #314 Q05 — the whole step was queued and
+  the landed clocks were rewound again).
 
 ## 3. Narrator awareness
 

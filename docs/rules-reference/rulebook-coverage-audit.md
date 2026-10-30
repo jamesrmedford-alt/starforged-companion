@@ -205,7 +205,7 @@ Relationship`, `Forge a Bond`.
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
 | 3.13 | Make a Connection: oracle-seeded NPC, progress track | MOVE | PINNED | `connectionPipeline`, `connectionSeedEnrichment`, `entityWorldJournal` | — | none |
-| 3.14 | Develop Your Relationship: marks progress; when bonded → also tick bond legacy track | MOVE | DONE | `developRelationship.js` + GM-gated pipeline: un-bonded marks the connection track; bonded marks bonds legacy (strong 2 / weak 1 / miss 0) and a match raises rank (§3.3.5). `developRelationship` unit batch | — | done (2026-06-17) |
+| 3.14 | Develop Your Relationship: marks progress; when bonded → roll +rank, tick bond legacy track | MOVE | DONE | `developRelationship.js` + GM-gated pipeline: un-bonded marks the connection track; bonded rolls +rank (`enrichBondedDevelop`, +1 troublesome … +5 epic — issue #314 Q06, the pipeline rolled +0), marks bonds legacy (strong 2 / weak 1 / miss 0) and a match raises rank (§3.3.5). `developRelationship` unit batch; `connectionPickerTarget.test.js` through the pipeline, at every rank, with `!bond` parity | — | done (2026-06-17; +rank 2026-10) |
 | 3.15 | Test Your Relationship: roll when bond is stressed | MOVE | GAP | none | Low | NEEDS-TEST |
 | 3.16 | Forge a Bond: progress move resolves; awards Bond asset | MOVE | GAP | none | Medium | NEEDS-TEST |
 
@@ -246,9 +246,9 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
 | 3.30 | Lose Momentum: −1/−2/−3 | MOVE | PINNED | F16 suffer pipeline (`sufferExecutor.js`); `sufferExecutor.test.js` + `momentumMath` | — | done |
-| 3.31 | Endure Harm: reduce health; auto-mark wounded at health=1 | MOVE | PINNED | F16 executor auto-marks wounded; `sufferExecutor.test.js` + quench wounded assertions | — | done |
+| 3.31 | Endure Harm: reduce health; harm past 0 is -momentum; auto-mark wounded at health=1 | MOVE | PINNED | F16 executor auto-marks wounded; the remainder past 0 health is Lose Momentum (issue #314 Q02 — it vanished in the clamp); `sufferExecutor.test.js` (below / equal / past / at 0 / at the momentum minimum), `payThePriceRoutes.test.js` through the pipeline, + quench wounded assertions | — | done |
 | 3.32 | Endure Harm: roll on higher of Iron or Health | MOVE | GAP NEEDS-FEATURE | per playkit §3.3.4 — dynamic stat selection still not implemented | Medium | feature backlog |
-| 3.33 | Endure Stress: reduce spirit; auto-mark shaken | MOVE | PINNED | F16 executor auto-marks shaken; `sufferExecutor.test.js` | — | done |
+| 3.33 | Endure Stress: reduce spirit; stress past 0 is -momentum; auto-mark shaken | MOVE | PINNED | F16 executor auto-marks shaken; the remainder past 0 spirit is Lose Momentum (issue #314 Q02); `sufferExecutor.test.js` | — | done |
 | 3.34 | Companion Takes a Hit: damage to companion meter | MOVE | PINNED | F16 executor (`companion_takes_a_hit`); `sufferExecutor.test.js` | — | done |
 | 3.35 | Sacrifice Resources: supply decrease | MOVE | PINNED | F16 executor; `sufferExecutor.test.js` | — | done |
 | 3.36 | Withstand Damage: vehicle integrity decrease | MOVE | PINNED | F16 executor + Vehicle Damage d100 (`sufferAndCombat.js`); `sufferExecutor.test.js` | — | done |
@@ -259,7 +259,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED; Heal and Hearten's outcome shapes pinned in `resolver.test.js` and through the pipeline in `moveRules.test.js` — a weak hit is the strong hit's recovery plus its cost (issue #311 P02 — the weak hits recovered nothing). Resupply / Repair not | Medium | NEEDS-TEST — Resupply / Repair |
+| 3.37 | Heal / Hearten / Resupply / Repair: meter restoration per move | MOVE | PARTIAL | `actorBridge` meter changes PINNED; Heal and Hearten's outcome shapes pinned in `resolver.test.js` and through the pipeline in `moveRules.test.js` — a weak hit is the strong hit's recovery plus its cost (issue #311 P02 — the weak hits recovered nothing). Resupply pinned in both too: unprepared, clear it and +1 supply, otherwise +2, each branch gated on the impact (issue #314 Q01 — the clear-unprepared branch gave +2). Repair not | Medium | NEEDS-TEST — Repair |
 | 3.38 | Sojourn: extended rest, multiple meter restoration | MOVE | GAP | none | Medium | NEEDS-TEST |
 | 3.39 | Repair: vehicle point spends | PIPELINE | GAP NEEDS-FEATURE | per playkit §3.3.6 — point spends not auto-applied | Low | feature backlog |
 
@@ -290,7 +290,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 |---|---|---|---|---|---|
 | 3.45 | Ask the Oracle: yes/no with odds (small/unlikely/50-50/likely/almost certain) | MOVE | PINNED | `rollAskTheOracle` (`roller.js:343`, `ORACLE_ODDS`) + `fateMoves` batch | — | done |
 | 3.46 | Ask the Oracle: prompt table roll (~120 RG tables) | MOVE | PARTIAL | `systemAssets` lookups; `i18nResolution` | Low | NEEDS-TEST — sample roller against one or two tables |
-| 3.47 | Pay the Price: choose / roll / narrator decides on miss | MOVE | DONE | Pay the Price d100 (`payThePrice.js`) + `!pay-the-price` + suffer routing; `fateMoves` batch | — | done |
+| 3.47 | Pay the Price: choose / roll / narrator decides on miss | MOVE | DONE | Pay the Price d100 (`payThePrice.js`) + `!pay-the-price` + suffer routing — a 96–100 "Roll twice" lands each leaf's route (issue #314 Q03; `oracleRoller.test.js`, `payThePriceRoutes.test.js`); `fateMoves` batch | — | done |
 
 ### Clocks & scene challenges
 

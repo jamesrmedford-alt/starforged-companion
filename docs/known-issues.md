@@ -11,6 +11,46 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #312 (issue #314) — all six fixed in the v1.7.36 cycle
+
+Found by the 2026-10-29 audit of `40cabee` (the merge of PR #312): its twelve
+probes (the six defects, two of them twice over, and their controls)
+reproduced locally before the fixes, and pass inverted to the expected
+behaviour after them. Each fix's tests fail with the fix taken out
+(`docs/testing/fix-sensitivity.md`). None has been checked in a live Foundry
+world yet. The ones to try: a strong Resupply while unprepared (Q01); an
+Endure Harm of 2 or 3 at health 1 (Q02); a Pay the Price of 96–100 (Q03);
+Develop Your Relationship with a bonded connection from the "Which
+connection?" card, and its card's "+epic (5)" (Q06).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| Q01 RESUPPLY-UNPREPARED-PLUS-2 | WRONG-DETAIL | The strong hit's clear-unprepared option gave +2 supply, and its plain +2 stood open to an unprepared PC: unprepared at supply 0 came out at 2 either way; the rule is Heal's shape — unprepared, clear it and +1, otherwise +2 → the two branches carry 1 and 2 and are each gated on the impact (`requires`), the weak hit too |
+| Q02 HARM-OVERFLOW-LOST | WRONG-DETAIL | `endureHarm` / `endureStress` took the whole loss off the meter, which clamped at 0, and read the clamped value for the at-0 escalations: the harm the meter could not take vanished (a loss of 3 at health 1 left momentum 5; a Pay the Price harm at 0 health cost nothing) → the loss is split (`splitOverflow`): the meter takes what it holds, the remainder goes through `loseMomentum` (no card of its own — the Endure card shows both meters, and what the momentum minimum refused), the result carries `momentumLoss`, and the Pay the Price receipt lists it (`sufferMeterDeltas`) — an improvement refunds it, a burn's reset replaces it |
+| Q03 PTP-ROLL-TWICE-ROUTES-LOST | WRONG-DETAIL | `rollOracle` copied `sufferRoute` from the matched entry and `resolveDirective` returned a "Roll twice" as joined text, so a 96–100's leaves lost their routes: "You are harmed / You are stressed" changed no meter and posted no suffer card → `resolveDirective` returns the text and its leaves; `rollOracle` lists every leaf's route (`sufferRoutes`; `sufferRoute` is gone); the pipeline's miss, `!ptp` and the Take Decisive Action cost dispatch each once, in order (`dispatchPayThePriceSufferRoutes`), the card names them all, and the receipts carry every loss |
+| Q04 BOND-ITEM-MIRROR-BY-NAME | WRONG-DETAIL | `setBondItemTicks` / `setBondItemRank` matched `byId \|\| byName`, so a name overrode a different explicit key — developing one of two Sables wrote both Items (ticks 8 onto a track at 20, then both ranks); and the develop branch and `!bond` keyed the rank mirror by the host Actor id, which no Item carries, so a renamed connection's rank raise missed its Item → `bondItemsFor`: a keyed Item matches its own record `_id` alone, the name only an unkeyed Item and only the PC's one of that name; both rank writers pass the record's `_id` (`!bond` reads it on the GM; `targetName` left the relay) |
+| Q05 VOW-CLOCK-RETRY-WHOLE-STEP | DUPLICATE | `revertVowClocksForBurn` returned the refused Items, but `runUpgradeStep` reduced them to `ok: false` and the whole step was queued: the GMs' Retry rewound the landed clocks again (2/2 → 3/3 on the miss → 2/3 after a partial burn → 1/2 after Retry) → a `vowClocks` step that lands in part fails with the entries still owed, the card carries those alone (a second refusal during the Retry the same, on a fresh card), and the reversal card lists the rewinds that landed |
+| Q06 BONDED-DEVELOP-NO-RANK | WRONG-DETAIL | The move's schema lists no stat and nothing filled one, so every bonded Develop Your Relationship through the pipeline — the picker's forced move or a typed one — rolled +0: an epic bond's 3 against 4 and 7 missed and paid nothing where `!bond` scored 8 and 2 ticks; the connection's bonded state and rank were read only after the roll → `enrichBondedDevelop` (statEnrichment.js) resolves the connection before the dice (the picker's host id, else the name), stamps its id and name on the interpretation for the branch after the roll, and makes its rank the stat, worth `BOND_ROLL_ADDS` (now in developRelationship.js, shared with `!bond`); the card reads "+epic (5)"; un-bonded stays no roll's worth |
+
+Open — found while fixing, not fixed (outside the audited paths):
+
+- **BOND-ITEM-NAME-STALE** (WRONG-DETAIL, mirror drift). `updateConnection`
+  renames the NPC card but not the PCs' bond Items: after a rename the
+  vendor Connections tab and CHARACTER STATE keep the old name (the ticks and
+  rank now reach the Item by id — Q04). Proposed: rename the Items
+  `bondItemsFor` finds in the same write.
+- **MOMENTUM-MIN-REDIRECT-MANUAL** (WRONG-DETAIL, low). Lose Momentum at -6
+  — its own, or a harm's overflow (Q02) — says on its card that the
+  remainder must be redirected to another suffer move or to progress
+  cleared, but no card offers the choice (the dialog that was to recurse
+  into it was deleted in the 2026-07 review). Proposed: post the "any"
+  suffer picker for the remainder, with a clear-progress option.
+- **NO-STAT-CARD-NULL** (UX). A move card for a move without a stat that the
+  pipeline rolls anyway (an un-bonded Develop Your Relationship, Reach a
+  Milestone, Forsake Your Vow) prints "+null (0)" as its stat line
+  (`formatMoveResult`). Proposed: print no stat line when `statUsed` is
+  null.
+
 ### Bug audit after #310 (issue #311) — all eight fixed in the v1.7.36 cycle
 
 Found by the 2026-10-29 audit of `62bc92d` (the merge of PR #310): its twelve
