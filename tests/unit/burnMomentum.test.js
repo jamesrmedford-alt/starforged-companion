@@ -252,4 +252,12 @@ describe('buildBurnState — the move\'s targets', () => {
     expect(buildBurnState(makeResolution(), actorWithMomentum(7), null, targets).targets).toEqual(targets);
     expect(buildBurnState(makeResolution(), actorWithMomentum(7)).targets).toBeNull();
   });
+
+  // UPGRADE-PIPELINE-EFFECTS: the burned outcome's other effects resolve
+  // against the move's target and ranks, as the pipeline's did.
+  it('carries the move\'s target and ranks for the burned outcome\'s other effects', () => {
+    const move = { moveTarget: 'Boarders', moveTargetId: null, combatRank: 'dangerous', expeditionRank: null };
+    expect(buildBurnState(makeResolution(), actorWithMomentum(7), null, null, move).move).toEqual(move);
+    expect(buildBurnState(makeResolution(), actorWithMomentum(7)).move).toBeNull();
+  });
 });

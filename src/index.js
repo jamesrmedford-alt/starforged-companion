@@ -97,6 +97,7 @@ import {
   addProgressTrack,
   completeProgressTrack,
   updateTrackFields,
+  getProgressTrack,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition, legacyRewardTicks, selectExpeditionTrack, planRecommit } from "./moves/expedition.js";
 import { selectSectorSite } from "./sectors/precursorSites.js";
@@ -109,7 +110,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
-import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
   endCombatTracker,
@@ -165,7 +166,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { resolveRelevance } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
-import { startScene, endScene, mergeOwnedFields } from "./factContinuity/sceneLifecycle.js";
+import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS } from "./session/lifecycle.js";
 import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
@@ -1066,134 +1067,15 @@ export function registerChatHook() {
       // the narrator's recent-narration ring (issue #300 F02).
       resolution._id = foundry.utils.randomID();
 
-      // Fact-continuity §20 — when a travel move with ARRIVAL semantics
-      // resolves to a non-miss, the ship arrived at the destination the
-      // player named. Infer the new position and write it onto the
-      // command vehicle BEFORE the assembler builds the context packet so
-      // Section 6.5 reflects the arrival on this same turn.
-      //
-      // Cluster C: finish_an_expedition joins set_a_course — both mean
-      // "you reach your destination" on a hit (play kit). The
-      // undertake_an_expedition waypoint move stays deliberately unwired:
-      // a hit marks progress, not arrival.
-      const arrivalMove =
-        resolution.moveId === "set_a_course"
-        || resolution.moveId === "finish_an_expedition";
-      if (
-        arrivalMove
-        && resolution.outcome !== "miss"
-        && getShipPositioningEnabled()
-        && getShipAutoMoveOnCourse()
-        && game.user.isGM
-      ) {
-        await maybeUpdateShipPositionFromName(
-          interpretation.moveTarget,
-          campaignState,
-          tokenDragSetCourse ? "scene_token"
-            : resolution.moveId === "finish_an_expedition" ? "expedition"
-            : "set_a_course",
-        );
-
-        // Keep the campaign's "current location" in step with the arrival —
-        // previously only a manual !at wrote currentLocationId, so travelling
-        // by move left the narrator options / entity-panel highlight pointing
-        // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
-        // destination that isn't a tracked entity leaves the store untouched.
-        const arrivedAt = resolveCurrentLocationName(interpretation.moveTarget ?? "", campaignState);
-        if (arrivedAt) {
-          campaignState.currentLocationId   = arrivedAt.id;
-          campaignState.currentLocationType = arrivedAt.type;
-        } else if (interpretation.moveTarget) {
-          console.debug(`${MODULE_ID} | arrival: "${interpretation.moveTarget}" is not a tracked location — currentLocation unchanged.`);
-        }
-
-        // §20.4b — when the move was initiated by a Token drag and we
-        // succeeded, also move the Token to the destination Note's
-        // coordinates. On a miss the Token never moved (the drag was
-        // cancelled in the preUpdateToken hook), so no snap-back is
-        // needed.
-        if (tokenDragSetCourse) {
-          await moveCommandVehicleTokenToDestination(tokenDragSetCourse).catch(err =>
-            console.warn(`${MODULE_ID} | Token-drag commit failed:`, err),
-          );
-        }
-
-        // F15 (folded into F16 Phase F): surface a follow-up card so the
-        // user sees that the token moved + which destination. Before this
-        // wire, the position update fired silently and players hit F16's
-        // "narrator says something happened, sheet shows nothing" trust
-        // gap on every Set a Course. The card is informational —
-        // SufferChoiceDialog handles the actual meter changes from the
-        // weak-hit choice in parallel.
-        await postSetACourseFeedbackCard(
-          interpretation.moveTarget,
-          resolution,
-        ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
-      }
-
-      // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
-      // mark progress on the shared expedition track. Resolve-or-create the
-      // track (rank inferred by the interpreter) and mark one rank-step. GM-only
-      // (progress-track writes go to the hidden tracks journal); the feedback
-      // card tells the player what was marked and that they can re-rank.
-      if (resolution.consequences?.expeditionProgress && game.user.isGM) {
-        try {
-          const result = await applyExpeditionProgress(
-            { moveTarget: interpretation.moveTarget, expeditionRank: interpretation.expeditionRank },
-            {
-              listTracks:   () => listProgressTracks(),
-              createTrack:  (data) => addProgressTrack(data),
-              markProgress: (id) => markProgressById(id),
-            },
-          );
-          if (result?.track) {
-            // Link the new expedition to the undiscovered site its destination
-            // confidently names (exact/substring/type keyword — never the
-            // sole-undiscovered guess), searched across every sector at once
-            // (issue #300 F07). Finishing then reveals THIS site instead of
-            // re-guessing by name — the audit's "expedition→site linkage is
-            // name-fuzzy" gap.
-            if (result.created) {
-              try {
-                const linked = selectSectorSite(campaignState.sectors, result.track.label, {
-                  requireLabelMatch: true,
-                  activeSectorId:    campaignState.activeSectorId ?? null,
-                });
-                if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
-              } catch (err) {
-                console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
-              }
-            }
-            await postExpeditionProgressCard(result).catch(err =>
-              console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | expedition progress failed:`, err?.message ?? err);
-        }
-      }
-
-      // Legacy-track marks (Make a Discovery / Confront Chaos). Mutate the
-      // legacy track in place — persistResolution (below, GM-gated) deep-clones
-      // and persists campaignState, so no separate write is needed.
-      if (resolution.consequences?.legacyMark && game.user.isGM) {
-        const { track, ticks } = resolution.consequences.legacyMark;
-        if (track && ticks > 0) {
-          addLegacyTicks(campaignState, track, ticks);
-          await postLegacyMarkCard(track, ticks).catch(err =>
-            console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
-        }
-      }
-
-      // Companion Takes a Hit strong hit — direct +1 health to the companion
-      // the roll was made for (its asset's track). It went to the PC's meters,
-      // which have no companion health, and was dropped (issue #309 N03).
-      if ((resolution.consequences?.companionHealthChange ?? 0) !== 0 && game.user.isGM && rollerActor) {
-        const healed = await applyCompanionHealthChange(rollerActor, resolution.consequences.companionHealthChange,
-          { itemId: interpretation.companionItemId ?? null });
-        if (!healed.ok) {
-          ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
-        }
-      }
+      // The outcome's effects beyond the roller's meters and its choice card —
+      // an arrival, the expedition's progress, a legacy mark, the companion's
+      // health, the fight's threshold, progress, position and end — through
+      // the one applier Burn Momentum and Improve Result also run, for what
+      // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
+      // The fight the move was about comes back for its cards.
+      const { moveFight } = await applyOutcomeEffects({
+        resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
+      });
 
       // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
       // connection marks its own relationship track ("no roll, mark progress");
@@ -1480,142 +1362,6 @@ export function registerChatHook() {
         }
       }
 
-      // Combat lifecycle — Enter the Fray creates/reuses the combat track (rank
-      // inferred from narration). Strike and Clash mark progress directly (×2 or
-      // ×1). Position is written after the track exists. Take Decisive Action and
-      // Face Defeat complete the track. All GM-gated (track journal writes).
-      let thresholdPosted = false;
-      if (resolution.consequences?.enterCombat && game.user.isGM) {
-        try {
-          // Combat is offered, not forced (#241): post a threshold decision card —
-          // Enter the Fray (which creates the track, at a suggested-but-adjustable
-          // rank, optionally linked to the vow it serves) vs. a way out. Skip when
-          // already in this fight (a matching open combat track exists); later
-          // combat moves just mark progress on it. Enter the Fray's own outcome
-          // position rides the card so it lands on the track at creation.
-          const existing = selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null);
-          if (!existing || existing.completed) {
-            const vowNames = (readVows(speakerActor) ?? [])
-              .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
-            await postCombatThresholdCard({
-              label:         interpretation.moveTarget ?? "the enemy",
-              suggestedRank: interpretation.combatRank,
-              vowNames,
-              position:      resolution.consequences.combatPosition ?? null,
-              actorId:       speakerActor?.id ?? null,
-            }).catch(err =>
-              console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
-            thresholdPosted = true;
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
-        }
-      }
-
-      let combatProgressTrack = null;
-      if ((resolution.consequences?.combatProgress ?? 0) > 0 && game.user.isGM) {
-        try {
-          const count = resolution.consequences.combatProgress;
-          const result = await applyCombatProgress(
-            { moveTarget: interpretation.moveTarget, combatRank: interpretation.combatRank, markCount: count },
-            {
-              listTracks:   () => listProgressTracks(),
-              createTrack:  (data) => addProgressTrack(data),
-              markProgress: (id) => markProgressById(id),
-            },
-          );
-          if (result?.track) {
-            combatProgressTrack = result.track;
-            await postCombatProgressCard(result).catch(err =>
-              console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | combat progress failed:`, err?.message ?? err);
-        }
-      }
-
-      // The fight this move was about — the one its progress marked (or
-      // created), else the move's target by the same ladder, else the sole
-      // open fight. Resolved once, for two readers: the move's position is
-      // written to it (the single-active-fight lookup left every position
-      // unwritten while two fights were open, so Take Decisive Action's
-      // bad-spot downgrade could never apply there — issue #306 R05), and the
-      // move card's Finish the Fight button names it, so the roll it starts
-      // scores this fight and no other (TDA-BUTTON-NO-TARGET).
-      let moveFight = null;
-      if (game.user.isGM && (resolution.consequences?.combatPosition || TDA_OFFER_MOVES.has(resolution.moveId))) {
-        try {
-          moveFight = combatProgressTrack
-            ?? selectCombatTrack(await listProgressTracks(), interpretation.moveTarget ?? null,
-              { trackId: interpretation.moveTargetId ?? null });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
-        }
-      }
-
-      if (resolution.consequences?.combatPosition && game.user.isGM) {
-        try {
-          const pipelinePos = resolution.consequences.combatPosition;
-          if (moveFight) {
-            await applyCombatPositionToTrack(moveFight.id, pipelinePos, speakerActor);
-          } else if (thresholdPosted) {
-            // Enter the Fray: the track doesn't exist yet — the position rides
-            // the threshold card's flags and lands at track creation.
-            console.debug(`${MODULE_ID} | combat position "${pipelinePos}" rides the threshold card — track not created yet.`);
-          } else {
-            console.warn(`${MODULE_ID} | combat position "${pipelinePos}" matched no open fight ("${interpretation.moveTarget ?? "?"}") — not written.`);
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
-        }
-      }
-
-      if (resolution.consequences?.endCombat && game.user.isGM) {
-        try {
-          const result = await finishCombatTrack(
-            { moveTarget: interpretation.moveTarget, moveTargetId: interpretation.moveTargetId ?? null },
-            {
-              listTracks:    () => listProgressTracks(),
-              completeTrack: (id) => completeProgressTrack(id),
-            },
-          );
-          if (result?.track) {
-            await postCombatFinishCard(result).catch(err =>
-              console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err));
-            // Delete the Foundry combat tracker for this track
-            await endCombatTracker(result.track.id).catch(err =>
-              console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
-            // Won fight that served a vow → surface the milestone (#241). Win =
-            // a hit on Take Decisive Action / Battle (not Face Defeat). Marks
-            // scale by the fight's rank; a weak-hit win is one fewer (min 1).
-            const wonFight = resolution.moveId !== "face_defeat"
-              && (resolution.outcome === "strong_hit" || resolution.outcome === "weak_hit");
-            if (wonFight && result.track.linkedVowName) {
-              const marks = Math.max(1,
-                marksForSourceRank(result.track.rank) - (resolution.outcome === "weak_hit" ? 1 : 0));
-              await postFightVowMilestoneCard(result.track.linkedVowName, marks, rollerActor?.id ?? null).catch(err =>
-                console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
-              // Deliver the vow's promised concrete reward (#241 Phase 2), scaled
-              // by the win; one-time (status flips so a re-win can't re-grant).
-              // A grant that does not land is told to the GMs, with a Retry
-              // (issue #306 R04).
-              const granted = await grantLinkedVowReward(result.track.linkedVowName, resolution.outcome, { actorId: rollerActor?.id ?? null }).catch(err => {
-                console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
-                return null;
-              });
-              if (granted && !granted.ok) {
-                await postPayoffFailureCard({
-                  source: "fight", vowName: result.track.linkedVowName, vowId: granted.vowId ?? null,
-                  actorId: rollerActor?.id ?? null, outcome: resolution.outcome, failures: [granted],
-                }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
-        }
-      }
-
       // TDA weak hit — roll decisive_action_cost d100 and post a visible card.
       // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
       // B1 generic suffer picker so the player can choose which move takes -2.
@@ -1678,13 +1424,23 @@ export function registerChatHook() {
         companionItemId: interpretation.companionItemId ?? null,
         combatTrackId:   moveFight?.id ?? null,
       };
+      // What an upgrade of this result needs to apply the upgraded outcome's
+      // other effects as this pipeline applied the original's — the move's
+      // target, its id and the ranks the interpreter inferred
+      // (applyOutcomeEffects; UPGRADE-PIPELINE-EFFECTS).
+      const moveContext = {
+        moveTarget:     interpretation.moveTarget ?? null,
+        moveTargetId:   interpretation.moveTargetId ?? null,
+        combatRank:     interpretation.combatRank ?? null,
+        expeditionRank: interpretation.expeditionRank ?? null,
+      };
       const burnActor   = rollerActor;
-      const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets);
+      const burnState   = buildBurnState(resolution, burnActor, ptpReversals, moveTargets, moveContext);
       // Post-roll "improve the result" affordance (finding G) — e.g. Fugitive's
       // "improve the result to a strong hit" at the cost of filling its clock.
       // Driven by the same abilities surfaced pre-roll on the confirm dialog.
       // A miss's Pay the Price is undone by either upgrade (issue #311 P05).
-      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals, moveTargets);
+      const improveState = buildImproveState(resolution, interpretation.applicableAbilities, burnActor, ptpReversals, moveTargets, moveContext);
       // "Reach a Milestone" suggestion (playtest: surface vow progress on a
       // success). Eligible on a quest-advancing hit when the PC has an open vow;
       // clicking marks progress without retyping the move. See moves/milestone.js.
@@ -1765,6 +1521,492 @@ export function registerChatHook() {
       await releasePendingMoveLock();
     }
   });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OUTCOME EFFECTS — one applier for the pipeline and the result upgrades
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Apply an outcome's effects beyond the roller's meters and its choice card —
+ * what the pipeline applies from the resolver's consequence flags: an arrival
+ * (Set a Course), the expedition's progress, a legacy mark, the companion's
+ * health, a fight's threshold card, progress, position and end, with a won
+ * fight's payoff. Runs on the canonical GM.
+ *
+ * One applier, two callers (UPGRADE-PIPELINE-EFFECTS — Burn Momentum and
+ * Improve Result swapped the meters, reverted the miss's Pay the Price and
+ * reconciled the choice card, and nothing else of the upgraded outcome ran: a
+ * Strike burned from a miss to a strong hit marked no progress and stayed in
+ * the miss's bad spot, an Undertake an Expedition improved from a miss marked
+ * no progress):
+ *   - the move pipeline, for the rolled outcome (`against` null): every effect;
+ *   - the upgrades (applyUpgradedOutcomeEffects), for the upgraded outcome
+ *     against the recorded original: what it adds — progress marks beyond the
+ *     original's, a changed position, the expedition progress or legacy the
+ *     original did not mark, the companion's health difference, an arrival the
+ *     miss never made, the payoff of a fight the miss lost. An effect the
+ *     original produced is never repeated. The fight the original's card named
+ *     (`targets.combatTrackId`) is the one marked and positioned; gone or
+ *     finished by then, nothing is marked (as a choice card's progress, issue
+ *     #309 N04). An Enter the Fray whose threshold card still waits gets its
+ *     new opening position on that card.
+ *
+ * @param {Object} args
+ * @param {Object} args.resolution — moveId, outcome, consequences, _id
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null, combatRank?: string|null,
+ *   expeditionRank?: string|null, companionItemId?: string|null }} args.interpretation
+ * @param {Object} args.campaignState — the caller's working copy. The pipeline's legacy mark
+ *   and arrival location are written to it (persistResolution saves them); an upgrade's are
+ *   saved at once (writeLegacyTicks, persistCampaignStateFields)
+ * @param {Actor|null} args.rollerActor — credited with the companion's health and a won fight
+ * @param {Actor|null} args.speakerActor — whose sheet mirrors the position
+ * @param {{ outcome: string, consequences: Object, resolutionId?: string|null }|null} [args.against]
+ *   — the recorded original, for an upgrade
+ * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
+ *   named, for an upgrade
+ * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
+ * @returns {Promise<{ moveFight: Object|null, applied: string[], notApplied: string[] }>}
+ *   moveFight — the fight the move was about: the one its progress marked (or created),
+ *   else the stamped or selected open fight, else the one it ended; applied / notApplied —
+ *   what the effects did, in words, for an upgrade's card
+ */
+async function applyOutcomeEffects({
+  resolution, interpretation, campaignState, rollerActor, speakerActor,
+  against = null, targets = null, tokenDragSetCourse = null,
+}) {
+  const applied    = [];
+  const notApplied = [];
+  const out = { moveFight: null, applied, notApplied };
+  if (!game.user?.isGM) return out;
+
+  const next       = resolution.consequences ?? {};
+  const orig       = against?.consequences ?? {};
+  const upgrade    = against !== null;
+  const isHit      = (outcome) => outcome === "strong_hit" || outcome === "weak_hit";
+  const moveTarget = interpretation?.moveTarget ?? null;
+
+  // Fact-continuity §20 — when a travel move with ARRIVAL semantics
+  // resolves to a non-miss, the ship arrived at the destination the
+  // player named. Infer the new position and write it onto the
+  // command vehicle BEFORE the narrator builds its context so
+  // Section 6.5 reflects the arrival on this same turn.
+  //
+  // Cluster C: finish_an_expedition joins set_a_course — both mean
+  // "you reach your destination" on a hit (play kit). The
+  // undertake_an_expedition waypoint move stays deliberately unwired:
+  // a hit marks progress, not arrival. An upgrade arrives only when the
+  // recorded outcome was the miss that did not.
+  const arrivalMove =
+    resolution.moveId === "set_a_course"
+    || resolution.moveId === "finish_an_expedition";
+  if (
+    arrivalMove
+    && resolution.outcome !== "miss"
+    && !(upgrade && against.outcome !== "miss")
+    && getShipPositioningEnabled()
+    && getShipAutoMoveOnCourse()
+  ) {
+    await maybeUpdateShipPositionFromName(
+      moveTarget,
+      campaignState,
+      tokenDragSetCourse ? "scene_token"
+        : resolution.moveId === "finish_an_expedition" ? "expedition"
+        : "set_a_course",
+    );
+
+    // Keep the campaign's "current location" in step with the arrival —
+    // previously only a manual !at wrote currentLocationId, so travelling
+    // by move left the narrator options / entity-panel highlight pointing
+    // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
+    // destination that isn't a tracked entity leaves the store untouched.
+    const arrivedAt = resolveCurrentLocationName(moveTarget ?? "", campaignState);
+    if (arrivedAt) {
+      campaignState.currentLocationId   = arrivedAt.id;
+      campaignState.currentLocationType = arrivedAt.type;
+      // The pipeline's persistResolution saves its working copy; an upgrade's
+      // location is saved here, beside the ship record just written.
+      if (upgrade) {
+        await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+      }
+    } else if (moveTarget) {
+      console.debug(`${MODULE_ID} | arrival: "${moveTarget}" is not a tracked location — currentLocation unchanged.`);
+    }
+
+    // §20.4b — when the move was initiated by a Token drag and we
+    // succeeded, also move the Token to the destination Note's
+    // coordinates. On a miss the Token never moved (the drag was
+    // cancelled in the preUpdateToken hook), so no snap-back is
+    // needed.
+    if (tokenDragSetCourse) {
+      await moveCommandVehicleTokenToDestination(tokenDragSetCourse).catch(err =>
+        console.warn(`${MODULE_ID} | Token-drag commit failed:`, err),
+      );
+    }
+
+    // F15 (folded into F16 Phase F): surface a follow-up card so the
+    // user sees that the token moved + which destination. Before this
+    // wire, the position update fired silently and players hit F16's
+    // "narrator says something happened, sheet shows nothing" trust
+    // gap on every Set a Course. The card is informational —
+    // SufferChoiceDialog handles the actual meter changes from the
+    // weak-hit choice in parallel.
+    await postSetACourseFeedbackCard(
+      moveTarget,
+      resolution,
+    ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    applied.push(`arrived at ${moveTarget ?? "the destination"}`);
+  }
+
+  // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
+  // mark progress on the shared expedition track. Resolve-or-create the
+  // track (rank inferred by the interpreter) and mark one rank-step. GM-only
+  // (progress-track writes go to the hidden tracks journal); the feedback
+  // card tells the player what was marked and that they can re-rank.
+  if (next.expeditionProgress && !orig.expeditionProgress) {
+    try {
+      const result = await applyExpeditionProgress(
+        { moveTarget, expeditionRank: interpretation?.expeditionRank },
+        {
+          listTracks:   () => listProgressTracks(),
+          createTrack:  (data) => addProgressTrack(data),
+          markProgress: (id) => markProgressById(id),
+        },
+      );
+      if (result?.track) {
+        // Link the new expedition to the undiscovered site its destination
+        // confidently names (exact/substring/type keyword — never the
+        // sole-undiscovered guess), searched across every sector at once
+        // (issue #300 F07). Finishing then reveals THIS site instead of
+        // re-guessing by name — the audit's "expedition→site linkage is
+        // name-fuzzy" gap.
+        if (result.created) {
+          try {
+            const linked = selectSectorSite(campaignState.sectors, result.track.label, {
+              requireLabelMatch: true,
+              activeSectorId:    campaignState.activeSectorId ?? null,
+            });
+            if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
+          } catch (err) {
+            console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
+          }
+        }
+        await postExpeditionProgressCard(result).catch(err =>
+          console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
+        applied.push(`progress marked on the ${result.track.label ?? "expedition"} expedition`);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | expedition progress failed:`, err?.message ?? err);
+      notApplied.push("expedition progress");
+    }
+  }
+
+  // Legacy-track marks (Make a Discovery / Confront Chaos). The pipeline
+  // mutates its working copy in place — persistResolution deep-clones and
+  // persists campaignState, so no separate write is needed. An upgrade's
+  // mark is saved now, its box XP once the save lands (writeLegacyTicks).
+  const legacy = legacyMarkAdded(next.legacyMark, orig.legacyMark);
+  if (legacy) {
+    const { track, ticks } = legacy;
+    const label = String(LEGACY_LABELS[track] ?? track).toLowerCase();
+    try {
+      if (upgrade) {
+        const failed = await writeLegacyTicks(track, ticks);
+        if (failed.length) {
+          await postPayoffFailureCard({ source: "legacyXp", failures: failed }).catch(err =>
+            console.warn(`${MODULE_ID} | legacy XP failure card failed:`, err?.message ?? err));
+        }
+      } else {
+        addLegacyTicks(campaignState, track, ticks);
+      }
+      await postLegacyMarkCard(track, ticks).catch(err =>
+        console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
+      applied.push(`${ticks} tick${ticks === 1 ? "" : "s"} on the ${label} legacy`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | legacy mark failed:`, err?.message ?? err);
+      notApplied.push(`the ${label} legacy mark`);
+    }
+  }
+
+  // Companion Takes a Hit strong hit — direct +1 health to the companion
+  // the roll was made for (its asset's track). It went to the PC's meters,
+  // which have no companion health, and was dropped (issue #309 N03). An
+  // upgrade applies the difference: a miss's -1 improved to the strong
+  // hit's +1 heals 2.
+  const companionDelta = Number(next.companionHealthChange ?? 0) - Number(orig.companionHealthChange ?? 0);
+  if (companionDelta !== 0 && rollerActor) {
+    const healed = await applyCompanionHealthChange(rollerActor, companionDelta,
+      { itemId: interpretation?.companionItemId ?? null });
+    const signed = `${companionDelta > 0 ? "+" : ""}${companionDelta}`;
+    if (!healed.ok) {
+      ui.notifications?.warn?.(`Starforged Companion: the companion's health change was not applied (${healed.reason}) — apply it on the asset.`);
+      notApplied.push(`companion health ${signed} (${healed.reason})`);
+    } else {
+      applied.push(`companion health ${signed}`);
+    }
+  }
+
+  // Combat lifecycle — Enter the Fray creates/reuses the combat track (rank
+  // inferred from narration). Strike and Clash mark progress directly (×2 or
+  // ×1). Position is written after the track exists. Take Decisive Action and
+  // Face Defeat complete the track. All GM-gated (track journal writes).
+  let thresholdPosted = false;
+  if (next.enterCombat && !upgrade) {
+    try {
+      // Combat is offered, not forced (#241): post a threshold decision card —
+      // Enter the Fray (which creates the track, at a suggested-but-adjustable
+      // rank, optionally linked to the vow it serves) vs. a way out. Skip when
+      // already in this fight (a matching open combat track exists); later
+      // combat moves just mark progress on it. Enter the Fray's own outcome
+      // position rides the card so it lands on the track at creation. An
+      // upgrade posts none: the original outcome's card is waiting, and its
+      // position is changed below.
+      const existing = selectCombatTrack(await listProgressTracks(), moveTarget);
+      if (!existing || existing.completed) {
+        const vowNames = (readVows(speakerActor) ?? [])
+          .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
+        await postCombatThresholdCard({
+          label:         moveTarget ?? "the enemy",
+          suggestedRank: interpretation?.combatRank,
+          vowNames,
+          position:      next.combatPosition ?? null,
+          actorId:       speakerActor?.id ?? null,
+          resolutionId:  resolution._id ?? null,
+        }).catch(err =>
+          console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
+        thresholdPosted = true;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
+    }
+  }
+
+  // Progress marks: the pipeline resolves-or-creates on the move's target. An
+  // upgrade marks the fight the original's card named, by id — or nothing,
+  // when that fight is over; never a fight selected now (issue #309 N04).
+  // With no fight named (the original found none) it resolves-or-creates as
+  // the pipeline does.
+  const marks     = Math.max(0, Number(next.combatProgress ?? 0) - Number(orig.combatProgress ?? 0));
+  const stampedId = upgrade ? (targets?.combatTrackId ?? null) : null;
+  const stamped   = stampedId ? await getProgressTrack(stampedId).catch(() => null) : null;
+  const stampedOpen = stamped?.type === "combat" && !stamped.completed ? stamped : null;
+  let combatProgressTrack = null;
+  if (marks > 0) {
+    const times = marks === 1 ? "once" : `${marks} times`;
+    try {
+      if (stampedId) {
+        if (stampedOpen) {
+          let track = stampedOpen;
+          let marksApplied = 0;
+          for (let i = 0; i < marks; i++) {
+            const updated = await markProgressById(stampedOpen.id);
+            if (updated) { track = updated; marksApplied++; }
+          }
+          combatProgressTrack = track;
+          await postCombatProgressCard({ track, marksApplied }).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          applied.push(`progress marked ${times} on ${track.label ?? "the fight"}`);
+        } else {
+          console.warn(`${MODULE_ID} | combat progress: the move's fight ${stampedId} is over or gone — ×${marks} not marked.`);
+          notApplied.push(`combat progress ×${marks} — its fight is over`);
+        }
+      } else {
+        const result = await applyCombatProgress(
+          { moveTarget, combatRank: interpretation?.combatRank, markCount: marks },
+          {
+            listTracks:   () => listProgressTracks(),
+            createTrack:  (data) => addProgressTrack(data),
+            markProgress: (id) => markProgressById(id),
+          },
+        );
+        if (result?.track) {
+          combatProgressTrack = result.track;
+          await postCombatProgressCard(result).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          applied.push(`progress marked ${times} on ${result.track.label ?? "the fight"}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | combat progress failed:`, err?.message ?? err);
+      notApplied.push(`combat progress ×${marks}`);
+    }
+  }
+
+  // The fight this move was about — the one its progress marked (or
+  // created), else the move's target by the same ladder, else the sole
+  // open fight. Resolved once, for two readers: the move's position is
+  // written to it (the single-active-fight lookup left every position
+  // unwritten while two fights were open, so Take Decisive Action's
+  // bad-spot downgrade could never apply there — issue #306 R05), and the
+  // move card's Finish the Fight button names it, so the roll it starts
+  // scores this fight and no other (TDA-BUTTON-NO-TARGET). An upgrade holds
+  // to the fight its card named: open, it is the fight; over, there is none.
+  if (next.combatPosition || TDA_OFFER_MOVES.has(resolution.moveId) || stampedId) {
+    try {
+      out.moveFight = combatProgressTrack
+        ?? (stampedId
+          ? stampedOpen
+          : selectCombatTrack(await listProgressTracks(), moveTarget,
+            { trackId: interpretation?.moveTargetId ?? null }));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
+    }
+  }
+
+  const position = next.combatPosition ?? null;
+  if (position && position !== (orig.combatPosition ?? null)) {
+    const label = position === "in_control" ? "in control" : "in a bad spot";
+    try {
+      if (out.moveFight) {
+        await applyCombatPositionToTrack(out.moveFight.id, position, speakerActor);
+        applied.push(label);
+      } else if (thresholdPosted) {
+        // Enter the Fray: the track doesn't exist yet — the position rides
+        // the threshold card's flags and lands at track creation.
+        console.debug(`${MODULE_ID} | combat position "${position}" rides the threshold card — track not created yet.`);
+      } else if (upgrade && next.enterCombat && await stashPositionOnThresholdCard(against.resolutionId ?? null, position)) {
+        // The original's threshold card still waits for its Enter the Fray:
+        // the upgraded opening position replaces the recorded one on it.
+        applied.push(`${label} once you enter the fight`);
+      } else {
+        console.warn(`${MODULE_ID} | combat position "${position}" matched no open fight ("${moveTarget ?? "?"}") — not written.`);
+        notApplied.push(`${label} — no open fight matched`);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | combat position failed:`, err?.message ?? err);
+      notApplied.push(label);
+    }
+  }
+
+  if (next.endCombat && !upgrade) {
+    try {
+      const fin = await finishCombatTrack(
+        { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null },
+        {
+          listTracks:    () => listProgressTracks(),
+          completeTrack: (id) => completeProgressTrack(id),
+        },
+      );
+      if (fin?.track) {
+        // The fight this move ended, for its card's upgrades: a Battle burned
+        // from a miss to a hit wins it (below).
+        out.moveFight ??= fin.track;
+        await postCombatFinishCard(fin).catch(err =>
+          console.warn(`${MODULE_ID} | combat finish card failed:`, err?.message ?? err));
+        // Delete the Foundry combat tracker for this track
+        await endCombatTracker(fin.track.id).catch(err =>
+          console.warn(`${MODULE_ID} | combat tracker close failed:`, err?.message ?? err));
+        // Won fight that served a vow → surface the milestone (#241). Win =
+        // a hit on Take Decisive Action / Battle (not Face Defeat).
+        if (resolution.moveId !== "face_defeat" && isHit(resolution.outcome) && fin.track.linkedVowName) {
+          await applyWonFightPayoff(fin.track, resolution.outcome, rollerActor);
+        }
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | finish combat failed:`, err?.message ?? err);
+    }
+  } else if (next.endCombat && upgrade && resolution.moveId !== "face_defeat"
+      && isHit(resolution.outcome) && !isHit(against.outcome)) {
+    // A Battle lost on the recorded miss is won on the upgraded hit: the
+    // fight it ended (its card named it; finished by now) pays off. A win
+    // already paid on a weak hit is not paid again on a strong one.
+    if (stamped?.linkedVowName) {
+      await applyWonFightPayoff(stamped, resolution.outcome, rollerActor);
+      applied.push(`the fight won — a milestone toward ${stamped.linkedVowName}`);
+    } else if (!stamped) {
+      console.debug(`${MODULE_ID} | won fight: the upgraded ${resolution.moveId} names no fight — no payoff.`);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Burn Momentum's and Improve Result's applier (their hooks' `applyEffects`):
+ * the upgraded outcome's effects for what it adds over the recorded original,
+ * on the canonical GM. The upgrading PC is the roller and the speaker.
+ *
+ * @param {{ resolution: Object, against: Object, interpretation: Object, targets: Object,
+ *   actor: Actor|null, campaignState: Object }} args — resultUpgrade.js applyUpgradedOutcomeEffects
+ * @returns {Promise<{ applied: string[], notApplied: string[] }>}
+ */
+async function applyUpgradedOutcomeEffects({ resolution, against, interpretation, targets, actor, campaignState }) {
+  const { applied, notApplied } = await applyOutcomeEffects({
+    resolution, interpretation, campaignState, against, targets,
+    rollerActor: actor, speakerActor: actor,
+  });
+  return { applied, notApplied };
+}
+
+/**
+ * The legacy mark an outcome adds over another's: all of it when the other
+ * marked none (or another track), else the ticks beyond the other's; null
+ * when nothing is added.
+ *
+ * @param {{ track: string, ticks: number }|null|undefined} next
+ * @param {{ track: string, ticks: number }|null|undefined} orig
+ * @returns {{ track: string, ticks: number }|null}
+ */
+function legacyMarkAdded(next, orig) {
+  if (!next?.track || !(Number(next.ticks) > 0)) return null;
+  const ticks = orig?.track === next.track ? Number(next.ticks) - Number(orig.ticks ?? 0) : Number(next.ticks);
+  return ticks > 0 ? { track: next.track, ticks } : null;
+}
+
+/**
+ * A won fight that served a vow: the victory card (its milestone marks scale
+ * by the fight's rank; a weak-hit win is one fewer, min 1) and the vow's
+ * promised reward (#241 Phase 2), scaled by the win and one-time — the status
+ * flips so a re-win can't re-grant. A grant that does not land is told to the
+ * GMs, with a Retry (issue #306 R04). Shared by the pipeline's end-of-fight
+ * branch and a Battle upgraded from a lost miss.
+ *
+ * @param {{ rank?: string, linkedVowName: string }} track — the fight
+ * @param {"strong_hit"|"weak_hit"} outcome
+ * @param {Actor|null} rollerActor
+ */
+async function applyWonFightPayoff(track, outcome, rollerActor) {
+  const marks = Math.max(1, marksForSourceRank(track.rank) - (outcome === "weak_hit" ? 1 : 0));
+  await postFightVowMilestoneCard(track.linkedVowName, marks, rollerActor?.id ?? null).catch(err =>
+    console.warn(`${MODULE_ID} | fight-vow milestone card failed:`, err?.message ?? err));
+  const granted = await grantLinkedVowReward(track.linkedVowName, outcome, { actorId: rollerActor?.id ?? null }).catch(err => {
+    console.warn(`${MODULE_ID} | grant linked vow reward failed:`, err?.message ?? err);
+    return null;
+  });
+  if (granted && !granted.ok) {
+    await postPayoffFailureCard({
+      source: "fight", vowName: track.linkedVowName, vowId: granted.vowId ?? null,
+      actorId: rollerActor?.id ?? null, outcome, failures: [granted],
+    }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * An Enter the Fray upgraded while its threshold card still waits: put the
+ * upgraded opening position on the card — its flag, which
+ * createCombatTrackFromThreshold applies at track creation (as the weak hit's
+ * "You are in control" choice does), and its line — in place of the recorded
+ * outcome's. The card is the one the original resolution posted
+ * (`resolutionId`); a card from before cards carried it is not found.
+ *
+ * @param {string|null} resolutionId — the original resolution's
+ * @param {"in_control"|"bad_spot"} position
+ * @returns {Promise<boolean>} whether a card was updated
+ */
+async function stashPositionOnThresholdCard(resolutionId, position) {
+  if (!resolutionId) return false;
+  const card = (game.messages?.contents ?? []).find(m =>
+    m?.flags?.[MODULE_ID]?.combatThresholdCard === true && m.flags[MODULE_ID].resolutionId === resolutionId);
+  if (!card) return false;
+  const line    = thresholdPositionLine(position);
+  const content = String(card.content ?? "");
+  const current = /<p>⚑ [^<]*<strong>[^<]*<\/strong>\.<\/p>/;
+  const updated = current.test(content)
+    ? content.replace(current, line)
+    : content.replace("</p>", `</p>${line}`);
+  await card.update({ [`flags.${MODULE_ID}.position`]: position, content: updated });
+  return true;
 }
 
 
@@ -3404,7 +3646,7 @@ async function postExpeditionFinishCard({ track, legacyTicks }) {
 
 // ── Combat threshold (#241): offer Enter the Fray vs. a way out ──────────────
 
-async function postCombatThresholdCard({ label, suggestedRank, vowNames, position = null, actorId = null }) {
+async function postCombatThresholdCard({ label, suggestedRank, vowNames, position = null, actorId = null, resolutionId = null }) {
   try {
     await ChatMessage.create({
       content: buildCombatThresholdHtml({ label, suggestedRank, vowNames, position }),
@@ -3413,7 +3655,10 @@ async function postCombatThresholdCard({ label, suggestedRank, vowNames, positio
       // exist yet when the consequence fires, so createCombatTrackFromThreshold
       // applies it at creation. The weak-hit choose-one stashes its pick into
       // the same flag (sufferDialog combat-position executor).
-      flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null, position, actorId } },
+      // resolutionId: the Enter the Fray this card answers — an upgrade of its
+      // result (Burn Momentum / Improve Result) changes the position here while
+      // the card still waits (stashPositionOnThresholdCard).
+      flags:   { [MODULE_ID]: { combatThresholdCard: true, label: label ?? null, position, actorId, resolutionId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatThresholdCard: chat post failed:`, err?.message ?? err);
@@ -5881,13 +6126,18 @@ Hooks.once("ready", () => {
   // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
   registerFightVowMilestoneHook();
   registerSettingsHooks();
+  // Both upgrades re-narrate and log through the pipeline's narrator and
+  // persist, and apply the upgraded outcome's other effects through its
+  // applier (UPGRADE-PIPELINE-EFFECTS).
   registerBurnMomentumHook({
-    narrate:  narrateResolution,
-    persist:  persistResolution,
+    narrate:      narrateResolution,
+    persist:      persistResolution,
+    applyEffects: applyUpgradedOutcomeEffects,
   });
   registerImproveResultHook({
-    narrate:  narrateResolution,
-    persist:  persistResolution,
+    narrate:      narrateResolution,
+    persist:      persistResolution,
+    applyEffects: applyUpgradedOutcomeEffects,
   });
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the
   // move lock — see sufferCard.js); wire its buttons.

@@ -37,16 +37,24 @@
  * reconciles the move's choice cards — retiring the superseded outcome's,
  * posting the burned outcome's — through resultUpgrade.js, shared with
  * Improve Result (issue #311). A consequence already chosen closes the burn.
+ * The burned outcome's other effects — the fight's progress and position,
+ * the expedition's progress, a legacy mark, the companion's health, an
+ * arrival, a lost fight's payoff — run through the pipeline's own applier
+ * (index.js applyOutcomeEffects, injected as `applyEffects`) for what the
+ * burned outcome adds over the recorded original (UPGRADE-PIPELINE-EFFECTS:
+ * a Strike burned from a miss to a strong hit marked no progress and stayed
+ * in the miss's bad spot). The card carries the move's fight, vehicle and
+ * companion (`targets`) and its target and ranks (`move`) for it.
  *
  * Limitations of this implementation:
  *   - Only meter consequences (health/spirit/supply/momentum) reverse on
- *     burn. Progress-track marking and auto-debility flips from suffer
- *     moves are not rolled back — those rarely change between weak and
- *     strong hits for the same move, and the rules-correct reversal
- *     would require more state than we currently track. If a player
- *     reports a case where this matters, we can extend.
- *   - Nor does the burned outcome's own progress or combat position apply
- *     (known-issues UPGRADE-PIPELINE-EFFECTS).
+ *     burn. Auto-debility flips from suffer moves are not rolled back —
+ *     those rarely change between weak and strong hits for the same move,
+ *     and the rules-correct reversal would require more state than we
+ *     currently track. If a player reports a case where this matters, we
+ *     can extend.
+ *   - A weak hit that pays the price too (Clash) keeps the Pay the Price the
+ *     miss already rolled rather than reverting it and rolling again.
  */
 
 import {
@@ -68,6 +76,9 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  applyUpgradedOutcomeEffects,
+  renarrateUpgrade,
+  effectsNoteHtml,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -81,10 +92,11 @@ const OWNERSHIP_OWNER = 3;
 // button would sit on "Burning…" forever.
 export const RELAY_RECOVERY_MS = 15000;
 
-// narrate / persist injected by registerBurnMomentumHook (src/index.js). Kept
-// at module scope so the GM-side relay handler — which runs outside the click
-// closure, possibly for another player's click — can re-narrate and log.
-let _deps = { narrate: null, persist: null };
+// narrate / persist / applyEffects injected by registerBurnMomentumHook
+// (src/index.js). Kept at module scope so the GM-side relay handler — which
+// runs outside the click closure, possibly for another player's click — can
+// apply the burned outcome's effects, re-narrate and log.
+let _deps = { narrate: null, persist: null, applyEffects: null };
 
 // Move-card ids whose result is being upgraded — by a burn or an Improve
 // Result — on this (the canonical GM's) client. Two near-simultaneous clicks
@@ -163,10 +175,15 @@ export const UPGRADE_REFUSALS = {
  * @param {Actor}  actor       — active character; needed for momentum + impacts
  * @param {Object|null} [ptpReversals] — what the miss's Pay the Price did, undone on burn
  * @param {Object|null} [targets] — the move's vehicle, companion and fight
- *   (persistResolution's): the upgraded outcome's choice card changes them
+ *   (persistResolution's): the upgraded outcome's choice card changes them,
+ *   and its other effects mark that fight
+ * @param {Object|null} [move] — the move's target, its id and the ranks the
+ *   interpreter inferred (`moveTarget`, `moveTargetId`, `combatRank`,
+ *   `expeditionRank`): what the upgraded outcome's other effects resolve
+ *   against, as the pipeline's did (applyOutcomeEffects)
  * @returns {Object|null}
  */
-export function buildBurnState(resolution, actor, ptpReversals = null, targets = null) {
+export function buildBurnState(resolution, actor, ptpReversals = null, targets = null, move = null) {
   if (!actor || !resolution) return null;
   if (resolution.isProgressMove) return null;
 
@@ -196,7 +213,8 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
     actorId:            actor.id,
     resolutionId:       resolution._id ?? null,  // links to the original narration card (F13a)
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
-    targets:            targets ?? null,          // for the upgraded outcome's choice card
+    targets:            targets ?? null,          // for the upgraded outcome's choice card and effects
+    move:               move ?? null,             // the move's target and ranks, for its effects
   };
 }
 
@@ -238,14 +256,17 @@ function labelForOutcome(outcome) {
  * a click handler. Idempotent across re-renders — disables the button after
  * use so the same card cannot burn twice.
  *
- * @param {Object} hooks      — narrator + persist injections so this module
- *                              can re-narrate and re-persist after a burn
- *                              without pulling in the full pipeline graph.
- * @param {Function} hooks.narrate    async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist    async (resolution, state, speakerActorId) => void
+ * @param {Object} hooks      — narrator, persist and effects injections so this
+ *                              module can apply the burned outcome's effects,
+ *                              re-narrate and re-persist after a burn without
+ *                              pulling in the full pipeline graph.
+ * @param {Function} hooks.narrate       async (resolution, state, { speakerActorId }) => void
+ * @param {Function} hooks.persist       async (resolution, state, speakerActorId) => void
+ * @param {Function} [hooks.applyEffects] async ({ resolution, against, interpretation, targets,
+ *   actor, campaignState }) => { applied, notApplied } — index.js applyUpgradedOutcomeEffects
  */
-export function registerBurnMomentumHook({ narrate, persist } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null };
+export function registerBurnMomentumHook({ narrate, persist, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags = message?.flags?.[MODULE_ID] ?? {};
@@ -428,7 +449,7 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyBurnFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleBurnClick(message, { narrate, persist }) {
+async function handleBurnClick(message, { narrate, persist, applyEffects }) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const burn  = flags.burn;
   if (!burn?.canBurn || burn.consumed) return { applied: false, reason: "already-consumed" };
@@ -470,8 +491,11 @@ async function handleBurnClick(message, { narrate, persist }) {
 
   // Revert Pay-the-Price side effects that fired before the burn button was
   // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss).
-  if (burn.ptpReversals) {
+  // -1 from a PtP table roll on the original miss). A weak hit that pays the
+  // price too (Clash) keeps the one already rolled: reverting it and rolling
+  // again would be the same price over.
+  const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
+  if (burn.ptpReversals && !priceStands) {
     await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
@@ -483,21 +507,32 @@ async function handleBurnClick(message, { narrate, persist }) {
     sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures,
   }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err));
 
-  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences) })
+  // The burned outcome's other effects — the fight's progress and position,
+  // the expedition's progress, a legacy mark, the companion's health, an
+  // arrival, a lost fight's payoff — for what it adds over the recorded
+  // original, through the pipeline's own applier (UPGRADE-PIPELINE-EFFECTS).
+  // The working copy it writes is the one the re-narration reads and logs
+  // against; a copy, never the cached setting (rules/foundry-api.md).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: momentum.value, newConsequences, campaignState });
+  const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
+
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands })) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
   // Supersede the original narration card (F13a): the burn changed the outcome,
   // so the prose describing the pre-burn result is now stale. Strike it through
   // and label it rather than delete it, so the history is preserved. The new
-  // (upgraded) narration is posted below by renarrate().
+  // (upgraded) narration is posted below.
   await supersedeOriginalNarration(burn).catch(err =>
     console.warn(`${MODULE_ID} | burnMomentum: superseding original narration failed:`, err));
 
-  // Re-narrate on the upgraded outcome. Best-effort — if the campaign has
-  // no API key configured or the narrator is otherwise disabled, the move
-  // card is still correctly updated above.
-  await renarrate({ burn, burnResult, burnedMomentum: momentum.value, newConsequences, narrate, persist })
+  // Re-narrate on the upgraded outcome and log it. Best-effort — if the
+  // campaign has no API key configured or the narrator is otherwise disabled,
+  // the move card is still correctly updated above. The burning PC is the
+  // card's actor, not the first PC (credit the roller).
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, persist, kind: "burn" })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 
   return { applied: true };
@@ -521,14 +556,13 @@ function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newCon
   };
 }
 
-async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, narrate, persist }) {
-  if (typeof narrate !== "function") {
-    console.warn(`${MODULE_ID} | burnMomentum: no narrator registered (registerBurnMomentumHook) — burned outcome not re-narrated.`);
-    return;
-  }
-
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  const synthResolution = {
+/**
+ * The burned outcome as a resolution — what the effects applier, the narrator
+ * and the session log take: the dice as rolled, the action score the burned
+ * momentum set, the upgraded consequences.
+ */
+function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState }) {
+  return {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
     moveName:        toDisplayName(burn.moveId),
@@ -551,24 +585,6 @@ async function renarrate({ burn, burnResult, burnedMomentum, newConsequences, na
     inputMethod:     "burn",
     sessionId:       campaignState.currentSessionId ?? "",
   };
-
-  // The context packet was retired (FACTION-PACKET-DEAD, 2026-07):
-  // narrateResolution never read it, and the old `if (!packet) return`
-  // guard silently ABORTED this re-narration when the dead assembly failed.
-  // narrateResolution(resolution, campaignState, options) — the old
-  // `(resolution, null, campaignState, {})` call still carried the retired
-  // packet slot, so the narrator got null for campaignState. The burning PC is
-  // the card's actor, not the first PC (credit the roller).
-  const speakerActorId = burn.actorId ?? null;
-  await narrate(synthResolution, campaignState, { speakerActorId });
-  if (typeof persist === "function" && game.user?.isGM) {
-    // Don't double-persist meters — the burn's meter step above already did
-    // that. Just append the upgraded resolution to the session log via a
-    // minimal resolution that carries no consequences.
-    const logOnly = { ...synthResolution, consequences: emptyConsequences() };
-    await persist(logOnly, campaignState, speakerActorId).catch(err =>
-      console.warn(`${MODULE_ID} | burnMomentum: session-log persist failed:`, err));
-  }
 }
 
 
@@ -619,9 +635,10 @@ export function buildSupersededNarrationContent(originalContent) {
 /**
  * Rewrite the existing move-result card's HTML to reflect the burned
  * outcome. Strikes through the original outcome label and appends the
- * burned outcome + new consequence text.
+ * burned outcome + new consequence text, and the note on its other effects
+ * (`effectsNote`, HTML from effectsNoteHtml).
  */
-function buildBurnedCardContent(originalContent, burnResult, newConsequences) {
+function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "") {
   const html = String(originalContent ?? "");
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
   // Strike the original outcome div and append a burned-result block.
@@ -635,6 +652,7 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences) {
       (newConsequences.otherEffect
         ? `<div class="sf-move-effect">${newConsequences.otherEffect}</div>`
         : "") +
+      effectsNote +
     `</div>`
   );
   return strikethrough.replace("</div>", `${burnNote}</div>`);
@@ -667,15 +685,4 @@ function toDisplayName(moveId) {
     .split("_")
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
-}
-
-function emptyConsequences() {
-  return {
-    momentumChange:      0,
-    healthChange:        0,
-    spiritChange:        0,
-    supplyChange:        0,
-    otherEffect:         "",
-    sufferMoveTriggered: null,
-  };
 }
