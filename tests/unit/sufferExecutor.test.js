@@ -24,13 +24,15 @@ const bridgeCalls = { applyMeterChanges: [], setDebility: [] };
 vi.mock("../../src/character/actorBridge.js", () => ({
   applyMeterChanges: vi.fn(async (actor, changes) => {
     bridgeCalls.applyMeterChanges.push({ actor, changes });
-    // Mutate the mock actor so subsequent reads see the new value.
+    // Mutate the mock actor so subsequent reads see the new value, clamped
+    // as actorBridge clamps (momentum at -6, the others at 0).
+    const floor = (k) => (k === "momentum" ? -6 : 0);
     for (const [k, delta] of Object.entries(changes)) {
       if (actor.system?.[k] && typeof actor.system[k] === "object") {
-        actor.system[k].value = (actor.system[k].value ?? 0) + delta;
+        actor.system[k].value = Math.max(floor(k), (actor.system[k].value ?? 0) + delta);
       } else {
         actor.system = actor.system ?? {};
-        actor.system[k] = (actor.system[k] ?? 0) + delta;
+        actor.system[k] = Math.max(floor(k), (actor.system[k] ?? 0) + delta);
       }
     }
   }),
@@ -176,6 +178,62 @@ describe("endureHarm", () => {
     expect((await endureHarm(a, 0)).skipped).toBe(true);
     expect(bridgeCalls.applyMeterChanges).toHaveLength(0);
   });
+
+  // Issue #314 Q02: "if your health is 0, suffer -momentum equal to any
+  // remaining harm" — the remainder vanished in the meter's clamp.
+  describe("harm past 0 health is momentum", () => {
+    const withMomentum = (health, momentum, wounded = false) => {
+      const a = actor(health, wounded);
+      a.system.momentum = { value: momentum, max: 10, min: -6 };
+      return a;
+    };
+
+    it("a loss of 3 at health 1: health 1 → 0, the other 2 as momentum 5 → 3", async () => {
+      const a = withMomentum(1, 5);
+      const r = await endureHarm(a, 3);
+      expect(bridgeCalls.applyMeterChanges.map(c => c.changes)).toEqual([{ health: -1 }, { momentum: -2 }]);
+      expect(r).toMatchObject({ before: 1, after: 0, atZero: true,
+        momentumLoss: { amount: 2, taken: 2, remaining: 0, before: 5, after: 3, atMin: false } });
+      expect(a.system.momentum.value).toBe(3);
+      expect(chatCalls).toHaveLength(1);   // one card: the overflow has no card of its own
+      expect(chatCalls[0].content).toContain("Health: 1 → 0 — 2 more as momentum: 5 → 3");
+      expect(chatCalls[0].flags["starforged-companion"].momentumLoss).toMatchObject({ amount: 2, taken: 2 });
+    });
+
+    it("a loss equal to the health left takes no momentum", async () => {
+      const a = withMomentum(2, 5);
+      const r = await endureHarm(a, 2);
+      expect(r.momentumLoss).toBeNull();
+      expect(a.system.momentum.value).toBe(5);
+      expect(chatCalls[0].content).toContain("Health: 2 → 0");
+      expect(chatCalls[0].content).not.toContain("as momentum");
+    });
+
+    it("a loss below the health left takes no momentum", async () => {
+      const a = withMomentum(3, 5);
+      const r = await endureHarm(a, 1);
+      expect(r.momentumLoss).toBeNull();
+      expect(bridgeCalls.applyMeterChanges.map(c => c.changes)).toEqual([{ health: -1 }]);
+    });
+
+    it("at 0 health already, the whole loss is momentum, and no health write is made", async () => {
+      const a = withMomentum(0, 1, true);
+      const r = await endureHarm(a, 2);
+      expect(bridgeCalls.applyMeterChanges.map(c => c.changes)).toEqual([{ momentum: -2 }]);
+      expect(r).toMatchObject({ before: 0, after: 0, atZero: true, woundedMarked: false,
+        momentumLoss: { amount: 2, taken: 2, before: 1, after: -1 } });
+      expect(chatCalls[0].content).toContain("Health: 0 → 0 — 2 more as momentum: 1 → -1");
+    });
+
+    it("at the momentum minimum, what cannot be taken is said on the card, not lost in silence", async () => {
+      const a = withMomentum(1, -5);
+      const r = await endureHarm(a, 3);
+      expect(a.system.momentum.value).toBe(-6);
+      expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 1, remaining: 1, before: -5, after: -6, atMin: true });
+      expect(chatCalls[0].content).toContain(
+        "Health: 1 → 0 — 2 more as momentum: -5 → -6 (at minimum; 1 not taken — redirect it to another suffer move or clear progress)");
+    });
+  });
 });
 
 
@@ -211,6 +269,17 @@ describe("endureStress", () => {
   it("rolls desolation d100 on miss at 0 spirit", async () => {
     const r = await endureStress(actor(1), 1, { isMiss: true, fixedRoll: 5 });
     expect(r.desolation).toEqual({ roll: 5, result: expect.stringMatching(/overwhelmed/i) });
+  });
+
+  // Issue #314 Q02 — symmetric to Endure Harm.
+  it("stress past 0 spirit is momentum: a loss of 3 at spirit 1, momentum 5 → 3", async () => {
+    const a = actor(1);
+    a.system.momentum = { value: 5, max: 10, min: -6 };
+    const r = await endureStress(a, 3);
+    expect(bridgeCalls.applyMeterChanges.map(c => c.changes)).toEqual([{ spirit: -1 }, { momentum: -2 }]);
+    expect(r).toMatchObject({ before: 1, after: 0, atZero: true, shakenMarked: true,
+      momentumLoss: { amount: 2, taken: 2, remaining: 0, before: 5, after: 3 } });
+    expect(chatCalls[0].content).toContain("Spirit: 1 → 0 — 2 more as momentum: 5 → 3 — marked <strong>shaken</strong>");
   });
 });
 

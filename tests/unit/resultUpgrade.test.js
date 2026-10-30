@@ -96,26 +96,33 @@ beforeEach(async () => {
 });
 
 describe("P04 — a burn refunds the Pay the Price loss that landed", () => {
-  it("a loss clamped at 0 health is not refunded: health stays 0", async () => {
+  it("a loss at 0 health is momentum (issue #314 Q02): no health is refunded, and a burn's reset replaces the momentum", async () => {
     pc.system.health.value = 0;
+    pc.system.momentum.value = 9;   // 8 after the loss still burns a miss against 6 and 7 to a strong hit
     const card = await roll("gather_information", { statUsed: "wits" });
     expect(pc.system.health.value).toBe(0);
-    expect(flags(card._id).burn.ptpReversals.sufferMeterDelta).toBeNull();
+    expect(pc.system.momentum.value).toBe(8);
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([expect.objectContaining({
+      move: "endure_harm", meterKey: "momentum", amount: 1, actorId: pc.id, before: 9, after: 8, overflow: true,
+    })]);
 
     await click(card, '[data-action="sf-burn-momentum"]');
 
     expect(flags(card._id).burn.consumed).toBe(true);
     expect(lastLog().outcome).toBe("strong_hit");
     expect(pc.system.health.value).toBe(0);
+    // Reset 1 (wounded was marked at 0 health) + the strong hit's +2; nothing refunded.
+    expect(pc.system.momentum.value).toBe(3);
+    expect(table.cards(f => f.burnReversal)).toHaveLength(0);
   });
 
   it("the solo fallback's real loss is refunded: companion route → Endure Harm, health 5 → 4 → 5", async () => {
     control.ptp = 53;   // a companion in harm's way; with none, Endure Harm (-1)
     const card = await roll("gather_information", { statUsed: "wits" });
     expect(pc.system.health.value).toBe(4);
-    expect(flags(card._id).burn.ptpReversals.sufferMeterDelta).toMatchObject({
+    expect(flags(card._id).burn.ptpReversals.sufferMeterDeltas).toEqual([expect.objectContaining({
       move: "endure_harm", meterKey: "health", amount: 1, actorId: pc.id, before: 5, after: 4,
-    });
+    })]);
 
     await click(card, '[data-action="sf-burn-momentum"]');
 

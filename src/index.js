@@ -4788,15 +4788,15 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
   }
 
   // Dispatch suffer executor first (before clock advance) so meter changes land
-  // before the burn button is visible. The receipt is what landed, so the burn
-  // reversal undoes only that.
-  let sufferMeterDelta = null;
+  // before the burn button is visible. The receipts are what landed, so the
+  // burn reversal undoes only that.
+  let sufferMeterDeltas = [];
   if (result.sufferRoute) {
     const landed = await dispatchPayThePriceSufferRoute(result.sufferRoute, actorId).catch(err => {
       console.warn(`${MODULE_ID} | face defeat PtP suffer dispatch failed:`, err?.message ?? err);
       return null;
     });
-    sufferMeterDelta = ptpMeterReceipt(landed);
+    sufferMeterDeltas = ptpMeterReceipts(landed);
   }
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -4812,27 +4812,37 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
     speakerActorId: actorId,
   });
 
-  return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDelta };
+  return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas };
 }
 
 /**
- * The PC-meter loss a Pay the Price route actually caused, for the burn
+ * The PC-meter losses a Pay the Price route actually caused, for the upgrade
  * reversal to refund: the move the dispatcher ran — "companion in harm's way"
- * runs Endure Harm with no companion — and the meter's before and after, so a
- * loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
+ * runs Endure Harm with no companion — and each meter's before and after, so
+ * a loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
  * Companion Takes a Hit change a vehicle or a companion, which a burn does not
  * reverse. The table's annotation stood in for it, so a burn raised health a
  * clamped loss never took and skipped the fallback's real one (issue #311 P04).
+ * Harm or stress past the meter is taken as momentum (`momentumLoss`, issue
+ * #314 Q02): that is a receipt of its own, which an improvement refunds and a
+ * burn's reset replaces.
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
- * @returns {{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number }|null}
+ * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number, overflow?: true }>}
  */
-function ptpMeterReceipt(landed) {
+function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
-  if (!meterKey || landed.skipped) return null;
+  if (!meterKey || landed.skipped) return [];
+  const receipts = [];
   const amount = Number(landed.before) - Number(landed.after);
-  if (!(amount > 0)) return null;
-  return { move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after };
+  if (amount > 0) {
+    receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after });
+  }
+  const m = landed.momentumLoss;
+  if (m && m.taken > 0) {
+    receipts.push({ move: landed.move, meterKey: "momentum", amount: m.taken, actorId: landed.actorId ?? null, before: m.before, after: m.after, overflow: true });
+  }
+  return receipts;
 }
 
 async function postForsakeVowCard(vowName) {
