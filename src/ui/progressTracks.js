@@ -110,12 +110,15 @@ async function getOrCreateJournal() {
 }
 
 /**
- * Read all tracks from the journal flags.
+ * Read all tracks from the journal flags — a copy. `getFlag` returns this
+ * client's cached value, and every writer here changes what it loaded before
+ * saving: in place, a save the world refused left its change in the cache,
+ * shown as landed and written by the next save of any track (issue #315 S08).
  * @returns {Promise<object[]>}
  */
 async function loadTracks() {
   const journal = await getOrCreateJournal();
-  return journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
+  return foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
 }
 
 /**

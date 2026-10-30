@@ -11,6 +11,8 @@
  * output) and the dice are scripted at their boundaries.
  *
  *   S01 — a move's finally never releases a lock a later move holds (issue #315).
+ *   S08 — an effect is summarised as applied only once its write has landed;
+ *         a refused one goes to the GMs, whose Retry applies it alone.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
@@ -49,16 +51,20 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
   }) };
 });
 
-import { simulateTable, USERS } from "../helpers/multiClient.js";
+import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude, deferred, failWrites, campaignStateWrite } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
-let table, pc;
+let table, pc, journal;
 const world   = () => table.world.campaignState();
 const gm      = () => table.client("gm-1");
 const moves   = () => table.cards(f => f.moveResolution);
 const entered = (text) => control.entered.some(t => t.includes(text));
 const notices = (userId) => table.client(userId).notifications.map(n => `${n.level}: ${n.message}`);
+const summary = () => table.cards(f => f.riderSummary).at(-1)?.content ?? "";
+const failCards = () => table.cards(f => f.payoffFailureCard);
+const ticks   = () => (journal.getFlag(MODULE_ID, "tracks") ?? []).map(t => t.ticks);
+const saved   = () => (journal.savedFlag(MODULE_ID, "tracks") ?? []).map(t => t.ticks);
 
 /** The firing riders of one asset ability (a strong hit fires `strong_hit`). */
 function riders(...rows) {
@@ -72,6 +78,72 @@ async function say(text) {
   await table.settle();
 }
 
+/** A move that runs to the end, its prompt (if any) answered by the GM's responder. */
+async function finishMove(text = "MOVE") { await say(text); await table.drain(); }
+
+/**
+ * The progress store's journal. `getFlag` hands back this client's cached
+ * value, as Foundry's does; the world's copy is kept apart (`savedFlag`), so a
+ * test can tell a change left in the cache from a save that landed.
+ * `refuseNext(fn)` refuses the next save whose value fn matches.
+ */
+function progressJournal() {
+  const cached = {}, world = {};
+  let refuse = null;
+  return {
+    id: "fx-progress", name: "Starforged Progress Tracks",
+    getFlag: (scope, key) => cached[`${scope}.${key}`],
+    savedFlag: (scope, key) => structuredClone(world[`${scope}.${key}`]),
+    refuseNext: (fn) => { refuse = fn; },
+    setFlag: async (scope, key, value) => {
+      if (refuse?.(value)) { refuse = null; throw new Error("The server refused the save (test fault)"); }
+      cached[`${scope}.${key}`] = structuredClone(value);
+      world[`${scope}.${key}`]  = structuredClone(value);
+    },
+  };
+}
+
+/** An expedition through the real store, on the GM. */
+async function openTrack({ label = "Reach Farpoint", ticks = 0, completed = false } = {}) {
+  const store = await gm().import("../../src/ui/progressTracks.js");
+  return gm().run(async () => {
+    const track = await store.addProgressTrack({ type: "expedition", label, rank: "dangerous" });
+    await store.updateTrackFields(track.id, { ticks, completed });
+    return track;
+  });
+}
+
+/** The command vehicle: integrity on its flag record, battered on the native field and the flag. */
+async function commandShip({ integrity = 1, battered = false } = {}) {
+  const ship = table.addActor({ id: "ship-a", type: "starship", name: "Wayfarer",
+    system: { debility: { battered } }, flags: { [MODULE_ID]: {
+      entityType: "ship", ship: { _id: "ship-entity", name: "Wayfarer", integrity, integrityMax: 5, battered, isCommandVehicle: true },
+    } } });
+  await gm().run(() => game.settings.set(MODULE_ID, "campaignState", { ...world(), shipIds: [ship.id] }));
+  await table.settle();
+  return ship;
+}
+const integrityOf = (ship) => ship.flags[MODULE_ID].ship.integrity;
+
+/** Refuse the next write of `integrity` to the ship's record. */
+function refuseIntegrity(ship, integrity) {
+  let refused = 0;
+  table.interceptWrites(w => {
+    if (refused || w.kind !== "actor.update" || w.id !== ship.id) return undefined;
+    if (w.changes?.[`flags.${MODULE_ID}.ship`]?.integrity !== integrity) return undefined;
+    refused += 1;
+    return new Error("The server refused the integrity (test fault)");
+  });
+  return { get refused() { return refused; } };
+}
+
+/** A GM presses the payoff card's Retry. */
+async function retry(card) {
+  gm().click(card._id, '[data-action="sf-payoff-retry"]');
+  await table.settle();
+  await table.drain();
+}
+
 beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1, USERS.P2] }); }, 30_000);
 afterAll(() => table?.teardown());
 beforeEach(async () => {
@@ -83,6 +155,8 @@ beforeEach(async () => {
   } } });
   await table.setClaudeKey("gm-1", "sk-ant-gina");
   pc = table.addActor({ id: "pc-a", name: "Kira", ownership: { "pl-1": 3 } });
+  journal = progressJournal();
+  table.journal._set(journal);
   scriptClaude(table, { fallback: () => 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 });
 // A move a failed test left waiting must not run into the next test.
@@ -162,5 +236,87 @@ describe("S01 — a move's finally never releases a later move's lock", () => {
     await table.drain();
     expect(entered("MOVE C")).toBe(true);
     expect(moves()).toHaveLength(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S08 — the summary listed every effect asked for: a refused integrity write
+// and a refused progress save both read "Asset effects applied", and nothing
+// told the GMs. An effect is applied once its write lands; a refused one is
+// said, and goes to the GMs' payoff card, whose Retry applies it alone.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S08 — an asset effect is applied only once its write lands", () => {
+  it("a refused integrity write: the ship is unchanged, the card says why, and the GMs' Retry applies it once", async () => {
+    const ship = await commandShip({ integrity: 1 });
+    const refused = refuseIntegrity(ship, 2);
+    riders({ resource: "integrity", amount: 1, label: "+1 integrity" });
+
+    await finishMove();
+
+    expect(refused.refused).toBe(1);
+    expect(integrityOf(ship)).toBe(1);
+    expect(summary()).not.toMatch(/Asset effects applied/);
+    expect(summary()).toMatch(/Asset effects not applied[\s\S]*\+1 integrity[\s\S]*the world did not save it/);
+    expect(failCards()).toHaveLength(1);
+    const card = failCards()[0];
+    expect(card.flags[MODULE_ID]).toMatchObject({ source: "rider", actorId: pc.id,
+      steps: [{ step: "rider", rider: { resource: "integrity", amount: 1 }, shipActorId: ship.id }] });
+    expect(card.content).toMatch(/Wayfarer's integrity stands at 1 now/);
+
+    await retry(card);
+    expect(integrityOf(ship)).toBe(2);
+    await retry(card);                                // claimed: a second press does nothing
+    expect(integrityOf(ship)).toBe(2);
+  });
+
+  it("a refused progress save: nothing is marked, in the world or this client's cache, and the Retry marks it once", async () => {
+    await openTrack();
+    journal.refuseNext(value => value?.[0]?.ticks === 8);
+    riders({ resource: "progress", amount: 1, label: "Mark progress" });
+
+    await finishMove();
+
+    expect(saved()).toEqual([0]);
+    expect(ticks()).toEqual([0]);                     // the cache was not changed either
+    expect(summary()).toMatch(/Asset effects not applied[\s\S]*Mark progress → Reach Farpoint[\s\S]*the world did not save it/);
+    const [card] = failCards();
+    expect(card.flags[MODULE_ID].steps).toEqual([expect.objectContaining({ step: "rider", track: expect.objectContaining({ label: "Reach Farpoint" }) })]);
+    expect(card.content).toMatch(/It stands at 0\/40 ticks now/);
+
+    await retry(card);
+    expect(saved()).toEqual([8]);
+  });
+
+  it("one effect lands and one is refused: the card splits them, and the Retry replays the refused one only", async () => {
+    const ship = await commandShip({ integrity: 1 });
+    refuseIntegrity(ship, 2);
+    riders({ resource: "momentum", amount: 1, label: "+1 momentum" }, { resource: "integrity", amount: 1, label: "+1 integrity" });
+
+    await finishMove();
+
+    expect(pc.system.momentum.value).toBe(4);        // 2, +1 Face Danger, +1 the effect
+    expect(integrityOf(ship)).toBe(1);
+    expect(summary()).toMatch(/Asset effects applied<\/strong><ul><li>\+1 momentum[\s\S]*Not applied:[\s\S]*\+1 integrity/);
+    const [card] = failCards();
+    expect(card.flags[MODULE_ID].steps.map(s => s.rider.resource)).toEqual(["integrity"]);
+
+    await retry(card);
+    expect(integrityOf(ship)).toBe(2);
+    expect(pc.system.momentum.value).toBe(4);        // not replayed
+  });
+
+  it("control: every write lands — the summary lists them, and the GMs get no card", async () => {
+    const ship = await commandShip({ integrity: 1 });
+    await openTrack();
+    riders({ resource: "integrity", amount: 1, label: "+1 integrity" }, { resource: "progress", amount: 1, label: "Mark progress" });
+
+    await finishMove();
+
+    expect(integrityOf(ship)).toBe(2);
+    expect(saved()).toEqual([8]);
+    expect(summary()).toMatch(/Asset effects applied[\s\S]*\+1 integrity[\s\S]*Mark progress → Reach Farpoint/);
+    expect(summary()).not.toMatch(/Not applied/);
+    expect(failCards()).toHaveLength(0);
   });
 });

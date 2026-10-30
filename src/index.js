@@ -127,6 +127,7 @@ import {
   collectFiringRiders,
   partitionRiders,
   applyMeterRiders,
+  normaliseRider,
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
@@ -4490,6 +4491,7 @@ const PAYOFF_TITLES = {
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   session:     ()  => `Session momentum not given`,
+  rider:       (c) => `Asset effects not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -4502,7 +4504,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"rider", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4540,6 +4542,7 @@ function payoffStepRecord(f) {
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "upgrade":     return upgradeStepRecord(f);
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
+    case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -4578,6 +4581,9 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const now = pc ? ` ${who}'s momentum stands at ${readCharacterSnapshot(pc)?.meters?.momentum ?? "?"} now.` : "";
         return `+${f.amount ?? 1} momentum for ${who}${f.award ? ` (${escapeChatHtml(f.award)})` : ""} — ${why}.${now}`;
       }
+      case "rider":
+        // An asset effect after a move (issue #315 S08).
+        return describeRiderStep(f, why, actorId);
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who = escapeChatHtml(pc?.name ?? "a character");
@@ -4668,6 +4674,9 @@ async function runPayoffStep(s, card, copies) {
     case "upgrade":
       // A burn's or an improvement's write refused after its claim (issue #311 P06).
       return retryUpgradeStep(s);
+    case "rider":
+      // An asset effect the world refused after a move (issue #315 S08).
+      return retryRiderStep(s, card?.actorId ?? null);
     case "momentum": {
       // A PC's session momentum the world refused — that PC's alone (issue #311 P08).
       const amount = Math.floor(Number(s.amount));
@@ -5596,7 +5605,9 @@ async function handleShipMapCommand(message) {
  * Apply this outcome's asset consequence riders (consequence-riders feature).
  * Automatic meter riders apply silently; optional / "choose one" / progress
  * riders prompt. Progress marks resolve to the sole track when unambiguous,
- * else the picker. Posts a summary of what was applied. GM-gated by the caller.
+ * else the picker. Posts a summary of what landed and what did not; a write
+ * the world refused goes to the GMs, with a Retry for it alone (issue #315
+ * S08). GM-gated by the caller.
  *
  * @param {Object} resolution
  * @param {Object} interpretation — carries extractedRiders from the pre-roll pass
@@ -5615,11 +5626,12 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
     ?? (await import("./entities/ship.js")).getCommandVehicleActorId?.(campaignState)
     ?? null;
 
-  const appliedSummary = [];
+  // One outcome per rider that ran: { rider, ok, reason?, error?, track?, shipActorId? }.
+  const outcomes = [];
+  const withShip = (results) => results.map(o => (o.rider.resource === "integrity" ? { ...o, shipActorId } : o));
 
   // Automatic meter riders — apply immediately.
-  const autoApplied = await applyMeterRiders(automatic, { characterActor, shipActorId });
-  appliedSummary.push(...autoApplied);
+  outcomes.push(...withShip(await applyMeterRiders(automatic, { characterActor, shipActorId })));
 
   // Progress riders: auto-mark when there's exactly one track (unambiguous),
   // otherwise route to the picker with the rest of the prompted riders.
@@ -5627,8 +5639,7 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   const promptList = [];
   for (const r of prompted) {
     if (r.resource === "progress" && tracks.length === 1) {
-      await markProgressById(tracks[0].id).catch(() => {});
-      appliedSummary.push({ label: `${r.label} → ${tracks[0].label}`, assetName: r.assetName });
+      outcomes.push(await applyProgressRider(r, tracks[0]));
     } else {
       promptList.push(r);
     }
@@ -5637,24 +5648,126 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   // Prompt for optional / choice / ambiguous-progress riders.
   if (promptList.length) {
     const { apply, progress } = await promptRiders(promptList, tracks);
-    const chosenMeters = await applyMeterRiders(apply.filter(r => r.resource !== "progress"),
-      { characterActor, shipActorId });
-    appliedSummary.push(...chosenMeters);
+    outcomes.push(...withShip(await applyMeterRiders(apply.filter(r => r.resource !== "progress"),
+      { characterActor, shipActorId })));
     for (const { rider, trackId } of progress ?? []) {
-      const track = await markProgressById(trackId).catch(() => null);
-      if (track) appliedSummary.push({ label: `${rider.label} → ${track.label}`, assetName: rider.assetName });
+      outcomes.push(await applyProgressRider(rider, tracks.find(t => t.id === trackId) ?? { id: trackId }));
     }
   }
 
-  if (appliedSummary.length) {
-    const rows = appliedSummary
-      .map(a => `<li>${a.label}${a.assetName ? ` <em>(${a.assetName})</em>` : ""}</li>`)
-      .join("");
-    await ChatMessage.create({
-      content: `<div class="sf-rider-summary"><strong>✦ Asset effects applied</strong><ul>${rows}</ul></div>`,
-      flags:   { [MODULE_ID]: { riderSummary: true } },
-    }).catch(err => console.warn(`${MODULE_ID} | rider summary card failed:`, err?.message ?? err));
+  await reportRiderOutcomes(outcomes, characterActor);
+}
+
+/**
+ * One progress rider's mark on its track: applied once the track's save has
+ * landed — a refused save is said, never summarised as marked (issue #315 S08).
+ *
+ * @param {Object} rider
+ * @param {{ id: string, label?: string }} track
+ * @returns {Promise<Object>} the rider's outcome
+ */
+async function applyProgressRider(rider, track) {
+  const at = { rider, track: { id: track.id, label: track.label ?? null } };
+  try {
+    const marked = await markProgressById(track.id);
+    if (!marked) return { ...at, ok: false, reason: "track-gone" };
+    return { ...at, track: { id: marked.id, label: marked.label }, ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consequence riders: progress on "${track.label ?? track.id}" failed:`, err?.message ?? err);
+    return { ...at, ok: false, reason: "refused", error: errText(err) };
   }
+}
+
+// Why an asset effect did not land — said on the summary card.
+const RIDER_NOT_APPLIED = {
+  "refused":    "the world did not save it — the GMs have a Retry",
+  "no-pc":      "no character to change",
+  "no-vehicle": "no command vehicle to change",
+  "track-gone": "its track is gone",
+};
+
+/** An asset effect's line: what it does, on which track, from which asset. */
+function riderLine({ rider, track }) {
+  const what = track ? `${rider.label} → ${track.label ?? "a track"}` : rider.label;
+  return `${escapeChatHtml(what)}${rider.assetName ? ` <em>(${escapeChatHtml(rider.assetName)})</em>` : ""}`;
+}
+
+/**
+ * The summary of a move's asset effects — the ones that landed, and the ones
+ * that did not with why — and, for each write the world refused, a step on
+ * the GMs' payoff failure card, whose Retry applies that effect alone.
+ *
+ * @param {Array<Object>} outcomes — one per rider that ran
+ * @param {Actor|null} characterActor — the roller, whose meters the effects change
+ */
+async function reportRiderOutcomes(outcomes, characterActor) {
+  const applied = outcomes.filter(o => o.ok);
+  const missed  = outcomes.filter(o => !o.ok);
+  if (!applied.length && !missed.length) return;
+  const list = (rows) => `<ul>${rows.map(o => `<li>${riderLine(o)}${o.ok ? "" : ` — ${escapeChatHtml(RIDER_NOT_APPLIED[o.reason] ?? o.reason ?? "it failed")}`}</li>`).join("")}</ul>`;
+  const body = applied.length
+    ? `<strong>✦ Asset effects applied</strong>${list(applied)}${missed.length ? `<p>Not applied:</p>${list(missed)}` : ""}`
+    : `<strong>✦ Asset effects not applied</strong>${list(missed)}`;
+  await ChatMessage.create({
+    content: `<div class="sf-rider-summary">${body}</div>`,
+    flags:   { [MODULE_ID]: { riderSummary: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | rider summary card failed:`, err?.message ?? err));
+
+  const failures = missed.filter(o => o.reason === "refused").map(o => ({
+    step: "rider", rider: o.rider, track: o.track ?? null, shipActorId: o.shipActorId ?? null,
+    reason: o.reason, error: o.error ?? null,
+  }));
+  if (failures.length) {
+    await postPayoffFailureCard({ source: "rider", actorId: characterActor?.id ?? null, failures })
+      .catch(err => console.warn(`${MODULE_ID} | rider failure card failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * A payoff card's line for a `rider` step: the effect, and the value it
+ * changes as it stands now — the track's ticks, the ship's integrity or the
+ * PC's meter.
+ */
+async function describeRiderStep(f, why, actorId) {
+  const rider = f.rider ?? {};
+  const what  = riderLine({ rider: { label: rider.label ?? "An asset effect", assetName: rider.assetName ?? "" }, track: f.track ?? null });
+  if (rider.resource === "progress") {
+    const track = f.track?.id ? await getProgressTrack(f.track.id) : null;
+    return `${what} — ${why}.${track ? ` It stands at ${Number(track.ticks ?? 0)}/40 ticks now.` : ""}`;
+  }
+  if (rider.resource === "integrity") {
+    const { getShip } = await import("./entities/ship.js");
+    const ship = f.shipActorId ? getShip(f.shipActorId) : null;
+    return `${what} — ${why}.${ship ? ` ${escapeChatHtml(ship.name ?? "The ship")}'s integrity stands at ${ship.integrity} now.` : ""}`;
+  }
+  const pc    = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  const value = readCharacterSnapshot(pc)?.meters?.[rider.resource];
+  const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${escapeChatHtml(rider.resource)} stands at ${value} now.` : "";
+  return `${what} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+}
+
+/**
+ * A payoff card's `rider` step, applied again: the one asset effect the world
+ * refused after a move (issue #315 S08) — the card's PC's meters, its ship's
+ * integrity or its track. The card is GM-authored, but its rider is still
+ * validated as the extractor's output is.
+ *
+ * @param {Object} s — the step: { rider, track, shipActorId }
+ * @param {string|null} actorId — the card's PC
+ * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ */
+async function retryRiderStep(s, actorId) {
+  const rider = normaliseRider({ ...s?.rider, condition: "any" }, s?.rider?.assetName ?? "");
+  if (!rider) return { ok: false, reason: "invalid step" };
+  if (rider.resource === "progress") {
+    if (!s.track?.id) return { ok: false, reason: "invalid step" };
+    const { ok, reason, error } = await applyProgressRider(rider, s.track);
+    return { ok, reason, error };
+  }
+  const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
+  if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+  const [{ ok, reason, error }] = await applyMeterRiders([rider], { characterActor: pc, shipActorId: s.shipActorId ?? null });
+  return { ok, reason, error };
 }
 
 // Combat blow-by-blow moves after which the player may want to cash in the
