@@ -46,6 +46,7 @@ import {
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
+import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -3540,40 +3541,40 @@ function registerRecommitSocket() {
 const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bonds" };
 
 /**
- * Add ticks to a legacy track on campaignState (capped at the 40-tick / 10-box
- * maximum), creating the entry if absent. Mutates in place; the caller (or its
- * pipeline) persists campaignState.
+ * Add ticks to a legacy track on campaignState, creating the entry if absent.
+ * Mutates in place; the caller (or its pipeline) persists campaignState. The
+ * arithmetic is moves/legacyTracks.js markLegacyTrack: filling the tenth box
+ * clears the track, which starts again with the overflow and counts the
+ * cycle (`cycles`, `cleared`) — it used to cap at 40 ticks, so every later
+ * mark was lost and no XP followed (issue #316 T02).
  *
  * Newly FILLED boxes award XP — 2 per box, 1 once the track has been cleared
- * (play kit rule 1.12) — to every player character (legacy tracks are shared
- * crew tracks in this module, like the shared supply), with a chat note. The
- * award is fire-and-forget so call sites stay synchronous; failures warn.
+ * (play kit rule 1.12), each box at the rate of the cycle it filled in — to
+ * every player character (legacy tracks are shared crew tracks in this
+ * module, like the shared supply), with a chat note. The award is
+ * fire-and-forget so call sites stay synchronous; failures warn.
  * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
  * awarding path (persistResolution.markLegacyProgress) required a consequence
  * field no resolver set. `awardXp: false` leaves the award to the caller:
  * writeLegacyTicks awards it once its write has landed.
  *
- * @returns {number} newly filled boxes
+ * @returns {{ boxes: number, xp: number, cleared: boolean }} the boxes this
+ *   mark filled, the XP they earn (per character) and whether it cleared the
+ *   track
  */
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
-  const t = campaignState.legacyTracks[key] ?? { ticks: 0, cleared: false };
-  const boxesBefore = Math.floor((t.ticks ?? 0) / 4);
-  t.ticks = Math.min((t.ticks ?? 0) + ticks, 40);
-  const newBoxes = Math.floor(t.ticks / 4) - boxesBefore;
-  campaignState.legacyTracks[key] = t;
-  if (newBoxes > 0 && awardXp) {
+  const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
+  campaignState.legacyTracks[key] = marked.track;
+  if (marked.boxes > 0 && awardXp) {
     // A PC whose award is refused is told to the GMs, with a Retry for that
     // award alone (issue #309 N06).
-    awardLegacyBoxXP(key, newBoxes, legacyBoxXp(t, newBoxes))
+    awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared })
       .then(failed => failed.length ? postPayoffFailureCard({ source: "legacyXp", failures: failed }) : null)
       .catch(err => console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
   }
-  return newBoxes;
+  return { boxes: marked.boxes, xp: marked.xp, cleared: marked.cleared };
 }
-
-// XP for newly filled legacy boxes: 2 a box, 1 once the track has been cleared.
-const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
 
 /**
  * Mark a legacy track and save it at once — a payoff outside the move
@@ -3592,10 +3593,10 @@ const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
 async function writeLegacyTicks(key, ticks) {
   const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-  const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
+  const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
   await game.settings.set(MODULE_ID, "campaignState", cs);
-  if (newBoxes <= 0) return [];
-  return awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
+  if (marked.boxes <= 0) return [];
+  return awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
 /**
@@ -3609,10 +3610,12 @@ async function writeLegacyTicks(key, ticks) {
  * @param {"quests"|"bonds"|"discoveries"} key
  * @param {number} boxes — newly filled boxes
  * @param {number} xp — per PC
- * @param {{ pcs?: Actor[]|null }} [opts] — a Retry's PC; every PC when absent
+ * @param {{ pcs?: Actor[]|null, clearedNow?: boolean }} [opts] — a Retry's PC;
+ *   every PC when absent. `clearedNow`: this mark filled the tenth box, so
+ *   the note says the track has cleared and started again
  * @returns {Promise<Array<{ step: "xp", pcId: string|null, xp: number, track: string, boxes: number, reason: string, error: string }>>}
  */
-async function awardLegacyBoxXP(key, boxes, xp, { pcs = null } = {}) {
+async function awardLegacyBoxXP(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
   const recipients = pcs ?? getPlayerActors();
   const failed = [];
   const given  = [];
@@ -3632,9 +3635,12 @@ async function awardLegacyBoxXP(key, boxes, xp, { pcs = null } = {}) {
   const who = pcs || failed.length
     ? given.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
     : [];
+  const clearedNote = clearedNow
+    ? ` The track is filled and cleared — it starts again from its first box, and each box earns 1 XP from now on.`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled). Spend it on new assets or upgrades (Earn Experience).</p></div>`,
-    flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp } },
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp, ...(clearedNow ? { cleared: true } : {}) } },
   }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
   return failed;
 }
@@ -4556,8 +4562,9 @@ async function describePayoffFailure(f, { vowName, actorId }) {
   try {
     switch (f.step) {
       case "legacy": {
-        const now = game.settings.get(MODULE_ID, "campaignState")?.legacyTracks?.[f.track]?.ticks ?? 0;
-        return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now.`;
+        const track = game.settings.get(MODULE_ID, "campaignState")?.legacyTracks?.[f.track];
+        const now   = track?.ticks ?? 0;
+        return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now${track?.cleared ? " (cleared)" : ""}.`;
       }
       case "deepen": {
         const target = await findOpenConnection(f.connectionName);

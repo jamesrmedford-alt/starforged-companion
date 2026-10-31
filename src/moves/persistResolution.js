@@ -37,6 +37,7 @@ import { postSufferChoiceCard } from './sufferCard.js';
 import { markUnprepared } from './sufferExecutor.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
+import { mergeLegacyTrack } from './legacyTracks.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -161,8 +162,10 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //   sessionLogs — the store's logs; this resolution's entry is appended after.
 //   sessionSummary — whichever record has the newer updatedAt.
 //   legacyTracks — both sides add ticks (pipeline addLegacyTicks; `!bond`, the
-//     native-sheet vow hook): per track the higher tick count, `cleared` if
-//     either is. Ticks only ever increase, so no writer's ticks are reverted;
+//     native-sheet vow hook): per track the record further along — by its
+//     progress, cleared cycles included (legacyTracks.js mergeLegacyTrack),
+//     not its raw tick count, which a clear resets to the overflow (issue
+//     #316 T02). Ticks only ever increase, so no writer's ticks are reverted;
 //     two simultaneous adds to the SAME track keep the larger one only.
 //   Scene ledgers (currentSceneId, sceneTruths, sceneState, sceneFrame,
 //     spotlight) — if the store is on a different scene (a `!scene`, End a
@@ -264,15 +267,8 @@ function mergeLegacyTracks(store, working) {
   if (!s && !w) return null;
   const out = {};
   for (const key of new Set([...Object.keys(s ?? {}), ...Object.keys(w ?? {})])) {
-    const a = s?.[key];
-    const b = w?.[key];
-    if (!a || !b) { out[key] = a ?? b; continue; }
-    out[key] = {
-      ...a,
-      ...b,
-      ticks:   Math.max(Number(a.ticks ?? 0), Number(b.ticks ?? 0)),
-      cleared: !!(a.cleared || b.cleared),
-    };
+    const merged = mergeLegacyTrack(s?.[key], w?.[key]);
+    if (merged) out[key] = merged;
   }
   return out;
 }
