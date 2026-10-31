@@ -37,6 +37,7 @@
  * itself skips progress moves.
  */
 
+import { MOVES } from "../schemas.js";
 import { readCharacterSnapshot, listCompanionAssets } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack } from "./combat.js";
@@ -160,6 +161,42 @@ export async function enrichBondedDevelop(interpretation, { listConnections }) {
   // the stat is made, for the resolver (issue #316 T05).
   interpretation.rollKind  = "action";
   return { connection: target, bonded: true, adds: roll.statValue };
+}
+
+/**
+ * A forced move's stat, read from its narration (issue #321 U04). A move a
+ * card or button forces — the pacing "Roll ⟨move⟩" button, the way-out and
+ * Battle buttons — skips the interpreter, and rolled the move's first listed
+ * stat: every forced Face Danger, Secure an Advantage, Enter the Fray, Gain
+ * Ground or Battle rolled +edge, every Heal +iron. When the move's stat is a
+ * choice — several listed, and not "whichever is higher" (PICK_HIGHER_OF,
+ * settled when the value is read) — the injected stat-only interpretation
+ * reads the narration's approach. A stat the move does not list, no
+ * interpreter (no Claude key) or a failed reading keeps the listed default;
+ * the confirm dialog shows the stat either way.
+ *
+ * @param {Object} interpretation — a forced interpretation; `statUsed` (and
+ *   `rationale`, with the reading's) updated in place
+ * @param {{ interpret?: ((narration: string, moveId: string) => Promise<Object>)|null }} deps
+ *   — the stat-only interpretation: interpretMove with the move as its
+ *   expectedMoveSlug; null when no Claude key is available
+ * @returns {Promise<string|null>} the stat read, or null when none was
+ */
+export async function enrichForcedMoveStat(interpretation, { interpret = null } = {}) {
+  const moveId = interpretation?.moveId;
+  const stats  = Array.isArray(MOVES[moveId]?.stat) ? MOVES[moveId].stat : [];
+  if (typeof interpret !== "function" || stats.length < 2 || PICK_HIGHER_OF[moveId]) return null;
+  let reading = null;
+  try {
+    reading = await interpret(interpretation.playerNarration ?? "", moveId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | forced move: reading the stat failed — rolling the listed +${interpretation.statUsed}:`, err?.message ?? err);
+    return null;
+  }
+  if (!stats.includes(reading?.statUsed)) return null;
+  interpretation.statUsed = reading.statUsed;
+  if (reading.rationale) interpretation.rationale = [interpretation.rationale, reading.rationale].filter(Boolean).join(" ");
+  return reading.statUsed;
 }
 
 /**

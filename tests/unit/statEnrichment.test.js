@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth, enrichProgressTicks, enrichBondedDevelop } from '../../src/moves/statEnrichment.js';
+import { resolveStatValue, enrichInterpretationStatValue, resolveCompanionHealth, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat } from '../../src/moves/statEnrichment.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -549,5 +549,73 @@ describe('enrichBondedDevelop', () => {
     const interp = { moveId: 'test_your_relationship', statUsed: 'heart', statValue: 2, moveTarget: 'Vega' };
     expect(await enrichBondedDevelop(interp, deps)).toBeNull();
     expect(interp).toEqual({ moveId: 'test_your_relationship', statUsed: 'heart', statValue: 2, moveTarget: 'Vega' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// enrichForcedMoveStat — a forced move rolls the stat its narration fits
+// (issue #321 U04: every forced move rolled its first listed stat — a forced
+// Face Danger always +edge, a forced Heal always +iron)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('enrichForcedMoveStat', () => {
+  const forced = (moveId, statUsed, over = {}) => ({
+    moveId, statUsed, statValue: 0, playerNarration: 'I melt into the shadows and slip past the sentries.',
+    rationale: 'Move nominated by pacing classifier; player confirmed via suggestion button.', ...over,
+  });
+  const reads = (statUsed, rationale = 'Slipping past unseen is stealth.') =>
+    vi.fn(async () => ({ moveId: 'face_danger', statUsed, rationale }));
+
+  it('a move with several stats rolls the one the stat-only reading picks, and says why', async () => {
+    const interpret = reads('shadow');
+    const interp = forced('face_danger', 'edge');
+    expect(await enrichForcedMoveStat(interp, { interpret })).toBe('shadow');
+    expect(interpret).toHaveBeenCalledWith('I melt into the shadows and slip past the sentries.', 'face_danger');
+    expect(interp.statUsed).toBe('shadow');
+    expect(interp.rationale).toBe('Move nominated by pacing classifier; player confirmed via suggestion button. Slipping past unseen is stealth.');
+  });
+
+  it('every forced move whose stat is a choice is read — the examples that always rolled +edge or +iron', async () => {
+    for (const [moveId, first, picked] of [
+      ['secure_an_advantage', 'edge', 'wits'], ['enter_the_fray', 'edge', 'heart'], ['gain_ground', 'edge', 'iron'],
+      ['battle', 'edge', 'shadow'], ['heal', 'iron', 'wits'], ['compel', 'heart', 'shadow'], ['strike', 'iron', 'edge'],
+    ]) {
+      const interp = forced(moveId, first);
+      await enrichForcedMoveStat(interp, { interpret: reads(picked) });
+      expect(interp.statUsed, moveId).toBe(picked);
+    }
+  });
+
+  it('no Claude key (no interpreter): the listed stat stays', async () => {
+    const interp = forced('face_danger', 'edge');
+    expect(await enrichForcedMoveStat(interp, { interpret: null })).toBeNull();
+    expect(interp.statUsed).toBe('edge');
+  });
+
+  it('nothing to choose — one stat, a progress or no-roll move, or "whichever is higher" — makes no reading', async () => {
+    const interpret = reads('wits');
+    for (const [moveId, statUsed] of [
+      ['gather_information', 'wits'], ['swear_an_iron_vow', 'heart'], ['take_decisive_action', null],
+      ['reach_a_milestone', null], ['endure_harm', 'health'], ['endure_stress', 'spirit'],
+    ]) {
+      const interp = forced(moveId, statUsed);
+      expect(await enrichForcedMoveStat(interp, { interpret }), moveId).toBeNull();
+      expect(interp.statUsed, moveId).toBe(statUsed);
+    }
+    expect(interpret).not.toHaveBeenCalled();
+  });
+
+  it('a stat the move does not list keeps the listed one', async () => {
+    const interp = forced('compel', 'heart');
+    expect(await enrichForcedMoveStat(interp, { interpret: reads('wits') })).toBeNull();
+    expect(interp.statUsed).toBe('heart');
+  });
+
+  it('a failed reading keeps the listed stat and says so', async () => {
+    expectConsoleError(/reading the stat failed/);
+    const interp = forced('face_danger', 'edge');
+    const interpret = vi.fn(async () => { throw new Error('overloaded'); });
+    expect(await enrichForcedMoveStat(interp, { interpret })).toBeNull();
+    expect(interp.statUsed).toBe('edge');
   });
 });

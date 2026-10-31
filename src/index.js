@@ -44,7 +44,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -893,6 +893,16 @@ export function registerChatHook() {
             apiKey,
             combatPosition,
           });
+      // A forced move whose stat is a choice rolls the one its narration's
+      // approach fits — a stat-only interpretation — not its first listed
+      // stat (issue #321 U04). No key keeps the listed stat.
+      if (forcedMoveId) {
+        await enrichForcedMoveStat(interpretation, {
+          interpret: apiKey
+            ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+            : null,
+        });
+      }
 
       if (interpretation.mischiefApplied) {
         interpretation._mischiefAside = buildMischiefAside(
@@ -3012,9 +3022,10 @@ async function handleJournalCommand(message) {
  */
 /**
  * Build a minimal interpretation when the move ID is supplied by the caller
- * (the NWMA suggestion button). Skips the Claude API entirely. Stat defaults
- * to the move's first listed stat; the confirmation dialog still lets the
- * player override.
+ * (the NWMA suggestion button, the way-out and Battle buttons …), without
+ * interpreting the move. The stat starts as the move's first listed stat; the
+ * pipeline then reads the narration for it when the move lists several
+ * (enrichForcedMoveStat — issue #321 U04), and the confirm dialog shows it.
  */
 function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null, moveTargetId = null) {
   const moveData = MOVES[moveId];

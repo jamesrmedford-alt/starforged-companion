@@ -356,10 +356,14 @@ export async function buildCanonicalMoveBlock(slug) {
  * @param {Object} options.campaignState   — CampaignStateSchema
  * @param {string} options.mischiefLevel   — "serious" | "balanced" | "chaotic"
  * @param {string} options.apiKey          — Claude API key
- * @param {string} [options.expectedMoveSlug] — When provided (e.g. on a
- *   re-interpretation pass after the player overrode the move in the
- *   confirmation dialog), the canonical move text from foundry-ironsworn
- *   is injected as a `<canonical_move>` block to ground the response.
+ * @param {string} [options.expectedMoveSlug] — The move already chosen — by a
+ *   card or button that forces it (the pacing "Roll ⟨move⟩" button, the
+ *   way-out and Battle buttons …). The move is fixed: the model is told so
+ *   and reads the narration for the rest — the stat above all — grounded in
+ *   the canonical move text from foundry-ironsworn (a `<canonical_move>`
+ *   block). The result is that move, with a stat it lists: the model's when
+ *   it is one, else the move's first. No mischief framing and no combat
+ *   position steer apply — both are about choosing the move (issue #321 U04).
  * @param {('in_control'|'bad_spot'|null)} [options.combatPosition] — The active
  *   combat track's position (from getActiveCombatPosition()). When set, the
  *   interpreter is steered to a position-appropriate combat move and the result
@@ -372,22 +376,27 @@ export async function interpretMove(narration, {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
 
+  const expectedMove    = expectedMoveSlug && MOVES[expectedMoveSlug] ? expectedMoveSlug : null;
+  const position        = expectedMove ? null : combatPosition;
   const systemPrompt = buildSystemPrompt();
-  const mischiefFraming = buildMischiefFraming(mischiefLevel, narration);
+  const mischiefFraming = expectedMove ? null : buildMischiefFraming(mischiefLevel, narration);
   const contextSummary  = buildContextSummary(campaignState);
-  const combatDirective = buildCombatPositionDirective(combatPosition);
-  const canonicalBlock  = expectedMoveSlug
-    ? await buildCanonicalMoveBlock(expectedMoveSlug)
+  const combatDirective = buildCombatPositionDirective(position);
+  const expectedDirective = buildExpectedMoveDirective(expectedMove);
+  const canonicalBlock  = expectedMove
+    ? await buildCanonicalMoveBlock(expectedMove)
     : "";
 
   // User message: context + mischief framing + combat-position directive +
-  // canonical block + narration. Mischief framing is invisible to the player —
-  // it shapes how the model reads the input. The combat directive (empty out of
-  // combat) restricts the candidate combat moves to the current position.
+  // the chosen move + canonical block + narration. Mischief framing is
+  // invisible to the player — it shapes how the model reads the input. The
+  // combat directive (empty out of combat) restricts the candidate combat
+  // moves to the current position.
   const userMessage = [
     contextSummary,
     mischiefFraming,
     combatDirective,
+    expectedDirective,
     canonicalBlock,
     `Player narration: "${narration}"`,
   ].filter(Boolean).join("\n\n");
@@ -401,8 +410,26 @@ export async function interpretMove(narration, {
     promptCachingEnabled: campaignState.api?.promptCachingEnabled ?? true,
   });
 
-  const parsed = parseInterpretation(response, narration, mischiefLevel, combatPosition);
+  const parsed = parseInterpretation(response, narration, mischiefLevel, position, expectedMove);
   return parsed;
+}
+
+/**
+ * The user-message directive for a move already chosen (interpretMove's
+ * expectedMoveSlug): the move is fixed, so the model reads the narration for
+ * the stat among the ones the move lists. '' when no move is given.
+ *
+ * @param {string|null} moveId — a MOVES key, or null
+ * @returns {string}
+ */
+function buildExpectedMoveDirective(moveId) {
+  const move = moveId ? MOVES[moveId] : null;
+  if (!move) return "";
+  const stats = Array.isArray(move.stat) && move.stat.length ? move.stat : null;
+  return [
+    `MOVE ALREADY CHOSEN: the player chose ${toDisplayName(moveId)}. Return moveId "${moveId}" — do not choose a different move.`,
+    stats ? `Choose statUsed from ${stats.join(", ")}: the one that fits how the narration approaches the move.` : null,
+  ].filter(Boolean).join(" ");
 }
 
 
@@ -458,9 +485,14 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
  * in derived fields (moveName, isProgressMove).
  *
  * Falls back gracefully if the response is malformed — returns face_danger +wits
- * with a note so the confirmation UI can catch it.
+ * with a note so the confirmation UI can catch it (an expected move, with its
+ * first listed stat).
+ *
+ * `expectedMoveId` (interpretMove's expectedMoveSlug) is the move already
+ * chosen: it stands whatever the model named, with a stat it lists — the
+ * model's when it is one, else its first.
  */
-function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPosition = null) {
+function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPosition = null, expectedMoveId = null) {
   let parsed;
 
   try {
@@ -469,14 +501,16 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     parsed = JSON.parse(cleaned);
   } catch {
     console.warn("Starforged Companion | Failed to parse API response as JSON:", rawText);
-    return fallbackInterpretation(originalNarration, mischiefLevel);
+    return fallbackInterpretation(originalNarration, mischiefLevel, expectedMoveId);
   }
 
+  if (expectedMoveId && parsed && typeof parsed === "object") parsed.moveId = expectedMoveId;
+
   // Validate move ID
-  const moveData = MOVES[parsed.moveId];
+  const moveData = MOVES[parsed?.moveId];
   if (!moveData) {
-    console.warn(`Starforged Companion | Unknown move ID in response: ${parsed.moveId}`);
-    return fallbackInterpretation(originalNarration, mischiefLevel);
+    console.warn(`Starforged Companion | Unknown move ID in response: ${parsed?.moveId}`);
+    return fallbackInterpretation(originalNarration, mischiefLevel, expectedMoveId);
   }
 
   // Force the move to be legal for the current combat position. The prompt
@@ -495,6 +529,10 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
   if (!statValid) {
     console.warn(`Starforged Companion | Unknown stat in response: ${parsed.statUsed}`);
     parsed.statUsed = finalMoveData.stat?.[0] ?? "wits";
+  }
+  const listedStats = Array.isArray(finalMoveData.stat) ? finalMoveData.stat : [];
+  if (expectedMoveId && listedStats.length && !listedStats.includes(parsed.statUsed)) {
+    parsed.statUsed = listedStats[0];
   }
 
   const baseRationale = parsed.rationale ?? parsed.interpretationRationale ?? "";
@@ -526,20 +564,23 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
 
 /**
  * Safe fallback interpretation when the API response cannot be parsed.
- * Defaults to Face Danger +wits — the most common adventure move.
- * Low confidence flags it for the confirmation UI to highlight.
+ * Defaults to Face Danger +wits — the most common adventure move; a move
+ * already chosen (`expectedMoveId`) keeps that move and its first listed stat,
+ * since nothing was read. Low confidence flags it for the confirmation UI to
+ * highlight.
  */
-function fallbackInterpretation(narration, mischiefLevel) {
+function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null) {
+  const expected = expectedMoveId && MOVES[expectedMoveId] ? expectedMoveId : null;
   return {
     playerNarration:         narration,
     inputMethod:             "chat",
     mischiefLevel,
-    moveId:                  "face_danger",
-    moveName:                "Face Danger",
-    statUsed:                "wits",
+    moveId:                  expected ?? "face_danger",
+    moveName:                expected ? toDisplayName(expected) : "Face Danger",
+    statUsed:                expected ? (MOVES[expected].stat?.[0] ?? null) : "wits",
     statValue:               0,
     adds:                    0,
-    isProgressMove:          false,
+    isProgressMove:          expected ? MOVES[expected].progressMove === true : false,
     progressTicks:           0,
     moveTarget:              null,
     expeditionRank:          null,
