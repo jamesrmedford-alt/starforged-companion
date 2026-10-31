@@ -155,41 +155,54 @@ export function sumMeterDeltas(riders) {
 
 /**
  * Apply meter riders to the character actor and (for integrity) the command
- * ship actor. GM-gated by the caller. Returns a summary of what was applied.
+ * ship actor. GM-gated by the caller. The character's meters are one write
+ * and the ship's integrity another; each rider's outcome is its write's — a
+ * rider is applied only once that write has landed (issue #315 S08: a
+ * refused integrity write was summarised as applied).
  *
  * @param {Array} riders
  * @param {Object} ctx
  * @param {Actor} ctx.characterActor
- * @param {Actor|null} [ctx.shipActor]
- * @param {string|null} [ctx.shipActorId] — fallback id to updateShip against
- * @returns {Promise<Array<{label:string, assetName:string}>>} applied summary
+ * @param {string|null} [ctx.shipActorId] — the ship whose integrity changes
+ * @returns {Promise<Array<{ rider: Object, ok: boolean, reason?: string, error?: string }>>}
+ *   one per meter rider, in order: `reason` is why it was not applied
  */
 export async function applyMeterRiders(riders, { characterActor, shipActorId } = {}) {
-  const applied = [];
   const meterRiders = (riders ?? []).filter(r => METER_RESOURCES.has(r.resource));
-  if (!meterRiders.length) return applied;
+  if (!meterRiders.length) return [];
 
   const { character, integrity } = sumMeterDeltas(meterRiders);
+  const onShip = (r) => r.resource === "integrity";
+  const characterResult = meterRiders.some(r => !onShip(r)) ? await writeCharacterMeters(characterActor, character) : null;
+  const shipResult      = meterRiders.some(onShip) ? await writeShipIntegrity(shipActorId, integrity) : null;
+  return meterRiders.map(rider => ({ rider, ...(onShip(rider) ? shipResult : characterResult) }));
+}
 
-  if (characterActor && (character.momentum || character.health || character.spirit || character.supply)) {
-    await applyMeterChanges(characterActor, character);
+/** The character's summed meter deltas, as one write. */
+async function writeCharacterMeters(actor, deltas) {
+  if (!actor) return { ok: false, reason: "no-pc" };
+  try {
+    await applyMeterChanges(actor, deltas);
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consequenceRiders: meter write on ${actor.name ?? actor.id} failed:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
   }
-  if (integrity && shipActorId) {
-    try {
-      const { getShip, updateShip } = await import("../entities/ship.js");
-      const ship = getShip(shipActorId);
-      if (ship) {
-        const max = ship.integrityMax ?? 5;
-        const next = Math.max(0, Math.min(max, Number(ship.integrity ?? max) + integrity));
-        await updateShip(shipActorId, { integrity: next });
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | consequenceRiders: integrity write failed:`, err?.message ?? err);
-    }
-  }
+}
 
-  for (const r of meterRiders) applied.push({ label: r.label, assetName: r.assetName });
-  return applied;
+/**
+ * The ship's summed integrity delta, as one write, through the ship record's
+ * integrity writer: a rise is refused while the vehicle is battered (issue
+ * #315 S05 — this path wrote the value directly, so a battered ship at 0
+ * gained integrity), and updateShip keeps it within 0..max.
+ */
+async function writeShipIntegrity(shipActorId, delta) {
+  const { getShip, changeIntegrity } = await import("../entities/ship.js");
+  if (!shipActorId || !getShip(shipActorId)) return { ok: false, reason: "no-vehicle" };
+  if (!delta) return { ok: true };
+  const { ok, reason, error, name } = await changeIntegrity(shipActorId, delta);
+  if (reason === "refused") console.warn(`${MODULE_ID} | consequenceRiders: integrity write on ${name ?? shipActorId} failed:`, error);
+  return ok ? { ok } : { ok, reason, ...(error ? { error } : {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

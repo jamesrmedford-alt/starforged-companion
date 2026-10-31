@@ -21,7 +21,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const bridgeCalls = { applyMeterChanges: [], setDebility: [] };
+// The player characters the shared-supply crew is drawn from (sharedSupply.js).
+const roster = vi.hoisted(() => ({ actors: [] }));
 vi.mock("../../src/character/actorBridge.js", () => ({
+  getPlayerActors: vi.fn(() => roster.actors.filter(a => a.type === "character" && !a.flags?.["starforged-companion"]?.entityType)),
+  isPlayerCharacterActor: (a) => a?.type === "character" && !a?.flags?.["starforged-companion"]?.entityType,
   applyMeterChanges: vi.fn(async (actor, changes) => {
     bridgeCalls.applyMeterChanges.push({ actor, changes });
     // Mutate the mock actor so subsequent reads see the new value, clamped
@@ -48,6 +52,7 @@ const chatCalls = [];
 beforeEach(() => {
   bridgeCalls.applyMeterChanges.length = 0;
   bridgeCalls.setDebility.length = 0;
+  roster.actors = [];
   chatCalls.length = 0;
   globalThis.ChatMessage = {
     create: vi.fn(async (data) => {
@@ -317,6 +322,66 @@ describe("sacrificeResources", () => {
     expect(r.atZero).toBe(true);
     expect(r.unpreparedMarked).toBe(false);
     expect(chatCalls[0].content).toMatch(/redirect/i);
+  });
+
+  // Issue #315 S07: the crew shares one supply, and "because you and your
+  // allies share the same supply value, you mark unprepared together" — only
+  // the PC who paid was marked; the sync mirrored the number alone.
+  describe("the crew sharing the supply is marked unprepared together", () => {
+    const pc = (id, name, { supply = 1, unprepared = false, entityType } = {}) => ({
+      id, name, type: "character",
+      flags: entityType ? { "starforged-companion": { entityType } } : {},
+      system: { supply: { value: supply, max: 5, min: 0 }, debility: { unprepared } },
+    });
+    const marked = () => bridgeCalls.setDebility.map(c => `${c.actor.id}:${c.key}`);
+
+    it("two PCs at supply 1: A's sacrifice to 0 marks A and B, and the card names B", async () => {
+      const a = pc("pc-a", "Kira"), b = pc("pc-b", "Ren");
+      roster.actors = [a, b];
+      const r = await sacrificeResources(a, 1);
+      expect(r.unpreparedMarked).toBe(true);
+      expect([a, b].map(x => x.system.debility.unprepared)).toEqual([true, true]);
+      expect(chatCalls[0].content).toMatch(/marked <strong>unprepared<\/strong> — Ren, sharing the supply, is marked <strong>unprepared<\/strong> too/);
+    });
+
+    it("an ally already unprepared is not marked again or named", async () => {
+      const a = pc("pc-a", "Kira"), b = pc("pc-b", "Ren", { unprepared: true });
+      roster.actors = [a, b];
+      await sacrificeResources(a, 1);
+      expect(marked()).toEqual(["pc-a:unprepared"]);
+      expect(chatCalls[0].content).not.toMatch(/Ren/);
+    });
+
+    it("the roller already unprepared: the allies are still marked", async () => {
+      const a = pc("pc-a", "Kira", { unprepared: true }), b = pc("pc-b", "Ren");
+      roster.actors = [a, b];
+      await sacrificeResources(a, 1);
+      expect(marked()).toEqual(["pc-b:unprepared"]);
+    });
+
+    it("an ally's refused write: the others stand, nothing throws, and the card says to mark it", async () => {
+      const a = pc("pc-a", "Kira"), b = pc("pc-b", "Ren"), c = pc("pc-c", "Ash");
+      roster.actors = [a, b, c];
+      const { setDebility } = await import("../../src/character/actorBridge.js");
+      setDebility.mockImplementationOnce(async (x, key, value) => {          // A's own mark lands
+        bridgeCalls.setDebility.push({ actor: x, key, value });
+        x.system.debility[key] = value;
+      }).mockImplementationOnce(async () => { throw new Error("write rejected"); });   // Ren's is refused
+      const r = await sacrificeResources(a, 1);
+      expect(r.unpreparedMarked).toBe(true);
+      expect([a, b, c].map(x => x.system.debility.unprepared)).toEqual([true, false, true]);
+      expect(chatCalls[0].content).toMatch(/Ash, sharing the supply, is marked[\s\S]*Ren could not be marked unprepared — mark it on the sheet/);
+    });
+
+    it("an NPC card is no crew, and a sacrifice short of 0 marks no one", async () => {
+      const a = pc("pc-a", "Kira", { supply: 3 }), npc = pc("npc-1", "Sable", { entityType: "connection" });
+      roster.actors = [a, npc];
+      await sacrificeResources(a, 1);
+      expect(marked()).toEqual([]);
+      a.system.supply.value = 1;
+      await sacrificeResources(a, 1);
+      expect(marked()).toEqual(["pc-a:unprepared"]);
+    });
   });
 });
 

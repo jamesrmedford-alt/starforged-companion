@@ -366,6 +366,37 @@ export async function repairIntegrity(actorId, amount) {
 }
 
 /**
+ * Change a ship's integrity by `delta` — a consequence's or an asset
+ * effect's "+1 integrity" / "-1 integrity". The one writer for such a change:
+ * Withstand Damage's choices (sufferDialog.js) and asset effects
+ * (consequenceRiders.js) both come here (issue #315 S05 — the asset path
+ * wrote integrity directly and raised a battered ship's). A rise is refused
+ * while the vehicle is battered — "until you successfully Repair, you cannot
+ * raise the vehicle's integrity" — read from its canonical native impact
+ * (isShipBattered); a loss always lands. No effect carries an override of
+ * that rule. updateShip keeps the value within 0..integrityMax. Reports,
+ * never throws.
+ *
+ * @param {string|null} actorId
+ * @param {number} delta
+ * @returns {Promise<{ ok: boolean, reason?: "no-vehicle"|"battered"|"refused", error?: string,
+ *   name?: string|null, before?: number, after?: number }>}
+ */
+export async function changeIntegrity(actorId, delta) {
+  const ship = actorId ? getShip(actorId) : null;
+  if (!ship) return { ok: false, reason: "no-vehicle" };
+  const before = Number(ship.integrity ?? 0);
+  const at = { name: ship.name ?? null, before };
+  if (delta > 0 && isShipBattered(actorId)) return { ok: false, reason: "battered", ...at };
+  try {
+    const updated = await updateShip(actorId, { integrity: before + delta });
+    return { ok: true, ...at, after: Number(updated?.integrity ?? before + delta) };
+  } catch (err) {
+    return { ok: false, reason: "refused", error: String(err?.message ?? err), ...at };
+  }
+}
+
+/**
  * Clear the battered impact (costs 2 repair points in the Repair move).
  * Live caller: src/moves/repair.js applyRepairSpends. updateShip writes the
  * canonical native field (system.debility.battered) and the flag mirror.

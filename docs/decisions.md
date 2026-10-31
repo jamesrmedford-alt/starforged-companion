@@ -6,6 +6,81 @@ rejected.
 
 ---
 
+## Issue #315 audit: a move releases only its own lock; an asset effect keeps its choice, amount and target, and is applied once it lands; the crew is unprepared together (2026-10)
+
+**Decision:** (issue #315. The maintainer asked for the issue to be addressed
+on 2026-10-30. Each finding's ID in brackets.)
+- **A move releases only its own lock** [S01]. The pipeline still releases
+  `pendingMove` before the rider prompt (below, "Move-concurrency lock…"), so
+  a later move may hold the lock by the time the prompt closes: the
+  pipeline records that its own release landed (`lockReleased`), and its
+  `finally` releases only when it has not. `releasePendingMoveLock` returns
+  whether the lock is free — false when its write was refused, which the
+  `finally` retries.
+- **An asset effect is applied once its write lands** [S08].
+  `applyMeterRiders` returns one outcome per rider from the write it rode
+  (the character's meters are one write, the ship's integrity another);
+  progress marks report theirs (`applyProgressRider`). The summary lists what
+  landed and, apart, what did not and why; a write the world refused is a
+  `rider` step on the GMs' payoff failure card, whose Retry applies that
+  effect alone — the effects that landed are not replayed. The progress
+  store hands its writers a copy (`loadTracks`), so a refused save leaves
+  nothing in the client's cache.
+- **One open track settles where a mark goes, not whether it is taken**
+  [S02]. The single-track shortcut marks only a mark that is the outcome's
+  own; an optional ("you may") or "choose one" mark is offered, with the
+  lone track preselected, and a progress option stays in its choice group
+  with its own track picker.
+- **A progress effect's amount is signed marks** [S03], as the extractor's
+  contract says: `adjustProgressById` changes a track by them within 0..40
+  ticks (`markProgressById`, always at least one mark, delegates to it).
+- **A finished track is never a target** [S06]: the rider path counts and
+  offers open tracks only, and re-reads the chosen track as the mark is
+  written; with none open the summary says so.
+- **One writer for a consequence's integrity change** [S05]:
+  `changeIntegrity` (entities/ship.js) — a rise refused while the canonical
+  native impact says battered, a loss always landing. Withstand Damage's
+  choices and asset effects both go through it. No effect carries an
+  override of the battered rule.
+- **One writer for the zero-supply impact, and it is the crew's** [S04, S07].
+  `markUnprepared` (sufferExecutor.js) marks the PC whose supply reached 0
+  and every ally sharing it (`supplyAllies`, sharedSupply.js — the one
+  definition of the crew, which the sync reads too): from Sacrifice
+  Resources, Repair's supply trade (once the payment is whole) and a move's
+  own supply loss (`persistResolution`). An ally's refused write is said on
+  the card, never thrown — the supply loss has landed.
+
+**Reason:** issue #315 reproduced each defect (thirteen probes with their
+controls) on `40cabee`, and again on `b23d193`; the probes pass inverted after
+the fixes, and each fix's tests fail with it taken out
+(`docs/testing/fix-sensitivity.md`). The rules: "unprepared is marked when
+you Sacrifice Resources and are reduced to 0 supply … because you and your
+allies share the same supply value, you mark unprepared together"; for
+battered, "until you successfully Repair, you cannot raise the vehicle's
+integrity".
+
+**Rejected:**
+- *An owner token in `pendingMove` instead of a boolean* [S01] — every reader
+  checks truthiness and the tests pin `true`; the move that holds the lock
+  only has to know whether it has let go of it.
+- *Reject negative progress at validation* [S03] — the extractor's contract
+  allows a loss, and taking marks back is a faithful reading of it; turning
+  it into a gain was the bug.
+- *Guard finished tracks inside `markProgressById`* [S06] — it has other
+  callers, each selecting an open track already; the rider path re-reads the
+  track itself.
+- *Mirror the impact through the supply sync hook* [S07] — the hook sees
+  every supply change, sheet edits included, and the impact belongs to
+  Sacrifice Resources, not to any 0; a second mirror store invites drift.
+- *Clear the crew's unprepared when any PC raises the supply* [S07] — a
+  recovery move clears it, not a number. Who a Resupply clears is
+  UNPREPARED-CLEAR-ONE-PC, left for the maintainer's call.
+
+**Trade-offs accepted:** a rider refused by a rule (battered, no open track,
+a finished track) is listed as not applied with no Retry — retrying would
+not help. A trade's or an ally's refused impact is said on the card, to be
+marked by hand.
+
 ## Issue #314 audit: a loss lands whole; a mirror follows its id; a retry owes only what failed (2026-10)
 
 **Decision:** (issue #314. The maintainer asked for the issue to be addressed
@@ -1602,6 +1677,11 @@ battered vehicle that still gained integrity, and a panel and narrator that
 said "not battered". rules/reachability.md §5: name the canonical store and
 write through to the mirror.
 
+**Update (issue #315 S05):** a consequence's or an asset effect's integrity
+change goes through `changeIntegrity` (entities/ship.js), which reads
+`isShipBattered` — the asset path wrote integrity directly and raised a
+battered ship's.
+
 **Rejected:**
 - *Battered if either store says so* — a stale flag would override a sheet
   un-tick.
@@ -2433,8 +2513,14 @@ wedging the session. Pre-roll dialogs (`confirmInterpretation`,
 `ClarificationDialog`) still hold the lock by design — they are the move's own
 expected confirm step, at the start, where a cancel releases the lock immediately.
 
+**Update (issue #315 S01):** the `finally` re-releases only when this move's
+own release has not landed (`lockReleased`) — once it has, the lock may be
+a later move's, which the second release cleared. `releasePendingMoveLock`
+returns whether the lock is free; a refused early release is still retried.
+
 **Files:** `src/index.js` (`releasePendingMoveLock`, the release sites in the
-pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`.
+pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`,
+`tests/unit/assetEffects.test.js`.
 
 ---
 
@@ -3408,6 +3494,14 @@ guess. Writes are GM-gated (PERSIST-001); a `riders.autoApply` world setting
   out of scope; those stay surfaced or handled by the existing pre-roll
   scanner. The module assists; it isn't a complete automation engine.
 
+**Update (issue #315):** the single-track auto-mark is for a mark that is the
+outcome's own — an optional or "choose one" mark is offered, the lone track
+preselected (S02); progress is signed marks (S03); only open tracks are
+targets (S06); integrity goes through `changeIntegrity`, refused while
+battered (S05); and the summary reports what landed — a refused write goes
+to the GMs' payoff card with a Retry for that effect alone (S08). See
+"Issue #315 audit".
+
 ---
 
 ### Combat lifecycle (audit 3.24–3.27) — 2026-06-16
@@ -4018,3 +4112,10 @@ read/write working unchanged.
   `updateActor` hook catches every change.
 - *Let any client write the sync* — multi-writer races + permission failures; gate to
   the canonical GM.
+
+**Update (issue #315 S07):** the impact that comes with a shared 0 is the
+crew's too — "you mark unprepared together". `supplyAllies` is the one
+definition of who shares a PC's supply (the sync reads it), and
+`markUnprepared` (sufferExecutor.js), the zero-supply impact's one writer,
+marks them with the PC who paid. The sync still mirrors the number alone; a
+supply raised on a sheet clears no impact.

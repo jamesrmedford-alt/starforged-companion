@@ -26,8 +26,10 @@
  * canonical native system.debility.battered (isShipBattered) and cleared on
  * both stores (clearBattered); integrity lives on the ship flag record
  * (repairIntegrity clamps to integrityMax); the supply trade debits
- * the repairing player's PC. Companion health, "broken module" and "other
- * device" rows record the spend on the chat card only (no schema yet).
+ * the repairing player's PC — Sacrifice Resources, so its last supply
+ * marks unprepared (sufferExecutor.js markUnprepared). Companion health,
+ * "broken module" and "other device" rows record the spend on the chat card
+ * only (no schema yet).
  *
  * Multiplayer: the dialog runs on the typing player's client (`!repair` is
  * routed to its author), but ship / other-actor writes need GM authority,
@@ -41,6 +43,7 @@ import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity, isSh
 import { requestGmAction }         from "../multiplayer/gmRelay.js";
 import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
 import { requesterOwnsActor }      from "./burnMomentum.js";
+import { markUnprepared, crewUnpreparedNote } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -367,7 +370,20 @@ async function paySupplyTrade(actorId, extra, ctx) {
     }
     return { paid: false, line: `<em>${name}'s supply changed during the trade — nothing was spent.</em>` };
   }
-  return { paid: true, line: `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.` };
+  const line = `Sacrificed ${extra} supply from <strong>${name}</strong> (supply now ${after}) → +${pts}.`;
+  if (after > 0) return { paid: true, line };
+  // Paid in full, and to 0: the trade is Sacrifice Resources, so the last
+  // supply marks unprepared (issue #315 S04) — with the allies sharing it
+  // (S07) — after the pay-in-full check, so a refunded payment never leaves
+  // it marked. The payment stands either way.
+  try {
+    const marks = await markUnprepared(actor);
+    const crew  = crewUnpreparedNote(marks);
+    return { paid: true, line: `${line}${marks.unpreparedMarked ? " Out of supply — marked <strong>unprepared</strong>." : ""}${crew ? ` ${crew}.` : ""}` };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | repair: marking ${actor.name} unprepared failed:`, err?.message ?? err);
+    return { paid: true, line: `${line} <em>Out of supply, but unprepared could not be marked — mark it on the sheet.</em>` };
+  }
 }
 
 /**

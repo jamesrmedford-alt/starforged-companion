@@ -38,6 +38,22 @@ function supplyOf(actor) {
 }
 
 /**
+ * The allies sharing a player character's supply: every other player
+ * character (NPC cards are not crew). [] in solo play, or for an actor that
+ * is no PC. The one definition of the crew — the sync below mirrors the
+ * value to them, and the zero-supply impact marks them unprepared with it
+ * (sufferExecutor.js markUnprepared — issue #315 S07).
+ *
+ * @param {Actor} actor
+ * @param {Actor[]} [allActors]  the roster to look in (every PC by default)
+ * @returns {Actor[]}
+ */
+export function supplyAllies(actor, allActors = getPlayerActors()) {
+  if (!isPlayerCharacterActor(actor)) return [];
+  return (allActors ?? []).filter(a => a && a.id !== actor.id && isPlayerCharacterActor(a));
+}
+
+/**
  * Pure: given the actor whose supply just changed and the full PC roster, return
  * the other player characters whose supply differs, paired with the value to set
  * them to. Skips the source actor and non-PC actors (NPC cards). Returns [] in
@@ -51,13 +67,9 @@ function supplyOf(actor) {
  */
 export function computeSupplySyncUpdates(source, allActors, value = supplyOf(source)) {
   if (!Number.isFinite(value)) return [];
-  const out = [];
-  for (const actor of allActors ?? []) {
-    if (!actor || actor.id === source?.id) continue;
-    if (!isPlayerCharacterActor(actor)) continue;
-    if (supplyOf(actor) !== value) out.push({ actor, value });
-  }
-  return out;
+  return supplyAllies(source, allActors)
+    .filter(actor => supplyOf(actor) !== value)
+    .map(actor => ({ actor, value }));
 }
 
 /**

@@ -8,7 +8,8 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { computeSupplySyncUpdates, registerSharedSupplyHook } from '../../src/multiplayer/sharedSupply.js';
+import { computeSupplySyncUpdates, registerSharedSupplyHook, supplyAllies } from '../../src/multiplayer/sharedSupply.js';
+import { sacrificeResources } from '../../src/moves/sufferExecutor.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -168,5 +169,56 @@ describe('the updateActor hook (canonical GM)', () => {
     await onUpdate(b, supplyChange(2), {});
     expect(game.actors.get('pc-a').system.supply.value).toBe(2);
     expect(c.system.supply.value).toBe(2);
+  });
+});
+
+// Issue #315 S07: the sync mirrors the supply value; the impact that comes
+// with 0 is the crew's too — "because you and your allies share the same
+// supply value, you mark unprepared together" — but only the PC who paid was
+// marked. Sacrifice Resources' zero-supply mark (sufferExecutor.js
+// markUnprepared) now marks the allies supplyAllies names.
+describe('the crew shares the zero-supply impact (issue #315 S07)', () => {
+  let onUpdate;
+  beforeAll(() => {
+    registerSharedSupplyHook();
+    onUpdate = Hooks._handlers.get('updateActor').at(-1);
+  });
+  beforeEach(() => game.actors._reset());
+
+  function livePc(id, name, supply) {
+    const actor = makeTestActor({ id, name, type: 'character', system: { supply: { value: supply } } });
+    game.actors._set(id, actor);
+    return actor;
+  }
+  const unprepared = (...actors) => actors.map(a => a.system.debility.unprepared);
+
+  it('supplyAllies: every other PC, no NPC card, none for a non-PC', () => {
+    const a = livePc('pc-a', 'Kira', 1), b = livePc('pc-b', 'Ren', 1);
+    game.actors._set('npc-1', makeTestActor({ id: 'npc-1', type: 'character', flags: { [MODULE_ID]: { entityType: 'connection' } } }));
+    expect(supplyAllies(a).map(x => x.id)).toEqual(['pc-b']);
+    expect(supplyAllies(b).map(x => x.id)).toEqual(['pc-a']);
+    expect(supplyAllies(game.actors.get('npc-1'))).toEqual([]);
+  });
+
+  it('two PCs at supply 1: A sacrifices 1 — supply [0, 0] once synced, both unprepared, both momentum bounds lowered', async () => {
+    const a = livePc('pc-a', 'Kira', 1), b = livePc('pc-b', 'Ren', 1);
+
+    await sacrificeResources(a, 1);
+    await onUpdate(a, { system: { supply: { value: 0 } } }, {});   // the sync's expanded updateActor delta
+
+    expect([a, b].map(x => x.system.supply.value)).toEqual([0, 0]);
+    expect(unprepared(a, b)).toEqual([true, true]);
+    expect([a, b].map(x => [x.system.momentum.max, x.system.momentum.resetValue])).toEqual([[9, 1], [9, 1]]);
+  });
+
+  it('control: raising the supply by a sheet edit mirrors the value and clears no one — a recovery move clears it', async () => {
+    const a = livePc('pc-a', 'Kira', 1), b = livePc('pc-b', 'Ren', 1);
+    await sacrificeResources(a, 1);
+
+    await b.update({ 'system.supply.value': 2 });
+    await onUpdate(b, { system: { supply: { value: 2 } } }, {});
+
+    expect([a, b].map(x => x.system.supply.value)).toEqual([2, 2]);
+    expect(unprepared(a, b)).toEqual([true, true]);
   });
 });

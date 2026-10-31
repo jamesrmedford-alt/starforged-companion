@@ -117,18 +117,40 @@ describe("applyMeterRiders", () => {
   it("applies summed character-meter deltas to the actor", async () => {
     const actor = global.makeTestActor({ type: "character", name: "PC" });
     const before = actor.system.momentum.value;
-    const applied = await applyMeterRiders(
+    const outcomes = await applyMeterRiders(
       [{ resource: "momentum", amount: 1, label: "+1 momentum", assetName: "Veteran" }],
       { characterActor: actor },
     );
     expect(actor.system.momentum.value).toBe(before + 1);
-    expect(applied).toHaveLength(1);
-    expect(applied[0]).toMatchObject({ label: "+1 momentum", assetName: "Veteran" });
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({ ok: true, rider: { label: "+1 momentum", assetName: "Veteran" } });
   });
 
   it("returns nothing when there are no meter riders", async () => {
     const actor = global.makeTestActor({ type: "character", name: "PC" });
     expect(await applyMeterRiders([{ resource: "progress", amount: 1 }], { characterActor: actor })).toEqual([]);
+  });
+
+  // Issue #315 S08: every rider was listed as applied, whatever its write did.
+  it("a refused meter write is not applied — each rider in it says so", async () => {
+    const actor = global.makeTestActor({ type: "character", name: "PC" });
+    actor.update = async () => { throw new Error("refused"); };
+    const outcomes = await applyMeterRiders([
+      { resource: "momentum", amount: 1, label: "+1 momentum" },
+      { resource: "health",   amount: 1, label: "+1 health" },
+    ], { characterActor: actor });
+    expect(outcomes.map(o => [o.rider.label, o.ok, o.reason])).toEqual([
+      ["+1 momentum", false, "refused"],
+      ["+1 health",   false, "refused"],
+    ]);
+  });
+
+  it("with no character or no ship to change, those riders are not applied", async () => {
+    const outcomes = await applyMeterRiders([
+      { resource: "momentum",  amount: 1, label: "+1 momentum" },
+      { resource: "integrity", amount: 1, label: "+1 integrity" },
+    ], { characterActor: null, shipActorId: null });
+    expect(outcomes.map(o => [o.ok, o.reason])).toEqual([[false, "no-pc"], [false, "no-vehicle"]]);
   });
 });
 
@@ -177,5 +199,18 @@ describe("groupPromptedRiders (riderDialog)", () => {
     expect(choices).toHaveLength(1);
     expect(choices[0].options).toHaveLength(2);
     expect(progress).toHaveLength(1);
+  });
+
+  // Issue #315 S02: a progress option was pulled out of its "choose one", so
+  // it was applied beside the alternative the player chose.
+  it("a progress rider in a choice group stays one of its options", () => {
+    const { choices, progress } = groupPromptedRiders([
+      { resource: "progress", amount: 1, optional: false, choiceGroup: "g1" },
+      { resource: "momentum", amount: 2, optional: false, choiceGroup: "g1" },
+    ]);
+    expect(progress).toHaveLength(0);
+    expect(choices).toEqual([{ group: "g1", options: [
+      expect.objectContaining({ resource: "progress" }), expect.objectContaining({ resource: "momentum" }),
+    ] }]);
   });
 });

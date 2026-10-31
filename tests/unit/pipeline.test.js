@@ -108,10 +108,24 @@ describe('releasePendingMoveLock', () => {
     const state = { ...CampaignStateSchema, pendingMove: true, sessionActive: true };
     game.settings._store.set(`${MODULE_ID}.campaignState`, state);
 
-    await releasePendingMoveLock();
+    await expect(releasePendingMoveLock()).resolves.toBe(true);
 
     const after = game.settings._store.get(`${MODULE_ID}.campaignState`);
     expect(after.pendingMove).toBe(false);
+  });
+
+  // Issue #315 S01: the pipeline's finally retries only a release that did not
+  // land, so the helper says which — a refused write is false, never "released".
+  it('reports a refused release as not released, and leaves the lock held', async () => {
+    const state = { ...CampaignStateSchema, pendingMove: true, sessionActive: true };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, state);
+    expectConsoleError(/Failed to release pendingMove lock/);
+    vi.spyOn(game.settings, 'set').mockRejectedValueOnce(new Error('refused'));
+
+    await expect(releasePendingMoveLock()).resolves.toBe(false);
+
+    expect(game.settings._store.get(`${MODULE_ID}.campaignState`).pendingMove).toBe(true);
+    expect(getCapturedErrors()).toContainEqual(expect.stringMatching(/Failed to release pendingMove lock/));
   });
 
   it('is idempotent — a second call when already released is a no-op', async () => {
@@ -120,7 +134,7 @@ describe('releasePendingMoveLock', () => {
 
     await releasePendingMoveLock();           // success-path early release
     const setSpy = vi.spyOn(game.settings, 'set');
-    await releasePendingMoveLock();           // finally-block safety net
+    await expect(releasePendingMoveLock()).resolves.toBe(true);   // already free
 
     // Already false → no second write (cheap no-op, doesn't churn world state).
     expect(setSpy).not.toHaveBeenCalled();
@@ -152,6 +166,6 @@ describe('releasePendingMoveLock', () => {
 
   it('tolerates a missing campaignState without throwing', async () => {
     game.settings._store.delete(`${MODULE_ID}.campaignState`);
-    await expect(releasePendingMoveLock()).resolves.toBeUndefined();
+    await expect(releasePendingMoveLock()).resolves.toBe(true);
   });
 });
