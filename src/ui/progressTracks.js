@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClock, retireClock, removeClock } from '../clocks/clocks.js';
+import { requestGmAction } from '../multiplayer/gmRelay.js';
 
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
@@ -114,11 +115,54 @@ async function getOrCreateJournal() {
  * client's cached value, and every writer here changes what it loaded before
  * saving: in place, a save the world refused left its change in the cache,
  * shown as landed and written by the next save of any track (issue #315 S08).
+ * Never creates the journal — no journal means no tracks — so any client may
+ * read: the panel renders on players' clients, which cannot create it
+ * (issue #321 U05). Only a write creates it.
  * @returns {Promise<object[]>}
  */
 async function loadTracks() {
+  const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME) ?? null;
+  return foundry.utils.deepClone(journal?.getFlag(MODULE_ID, FLAG_KEY) ?? []);
+}
+
+/**
+ * Change the tracks: `change(tracks)` gets a fresh copy of the stored list
+ * and returns the list to save, or null to save nothing. Creates the journal
+ * on the first write. GM-only (journal write).
+ *
+ * @param {(tracks: object[]) => (object[]|null|Promise<object[]|null>)} change
+ * @returns {Promise<void>}
+ */
+async function writeTracks(change) {
   const journal = await getOrCreateJournal();
-  return foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
+  const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
+  const next    = await change(tracks);
+  if (Array.isArray(next)) await journal.setFlag(MODULE_ID, FLAG_KEY, next);
+}
+
+/**
+ * Change one track by id: `change(track)` edits it in place, or returns false
+ * to save nothing. The track as saved; null when there is none by that id or
+ * the change declined.
+ *
+ * @param {string} trackId
+ * @param {(track: object) => (boolean|void|Promise<boolean|void>)} change
+ * @returns {Promise<object|null>}
+ */
+async function updateTrack(trackId, change) {
+  let updated = null;
+  await writeTracks(async (tracks) => {
+    const track = tracks.find(t => t.id === trackId);
+    if (!track || (await change(track)) === false) return null;
+    updated = track;
+    return tracks;
+  });
+  return updated;
+}
+
+/** Ticks one Mark Progress adds to a track, by its rank. */
+function ticksPerMark(track) {
+  return RANKS[track?.rank]?.ticksPerMark ?? 4;
 }
 
 /**
@@ -519,28 +563,45 @@ export class ProgressTrackApp extends ApplicationV2 {
   // integration tests can await the full async chain after dispatching a real
   // DOM click event. ApplicationV2's action dispatcher invokes handlers
   // fire-and-forget, so without this hook there is no way for a test to wait
-  // for multi-step persistence (loadTracks → DialogV2.confirm → saveTracks)
-  // to settle before re-reading state.
+  // for multi-step persistence (DialogV2.confirm → the GM's write) to settle
+  // before re-reading state.
+  //
+  // The panel is on every user's toolbar, but the tracks journal is the GM's
+  // document: every edit is asked of the canonical GM (#requestEdit →
+  // "progressTrack.edit", applyProgressTrackEditFromRelay), which runs it
+  // locally on that GM and is relayed from anyone else (issue #321 U05). A
+  // player's click used to write the journal directly and was refused.
   // -----------------------------------------------------------------------
 
   /**
-   * Mark progress on a track (adds ticksPerMark, capped at MAX_TICKS).
+   * Ask the canonical GM for one track edit, then re-render. Nothing is
+   * swallowed: with no GM connected requestGmAction has warned; a refusal the
+   * canonical GM's own click gets back is shown; a write that throws is
+   * reported. (A relayed edit is fire-and-forget: it lands — and every open
+   * panel re-renders — when the GM's write reaches the journal.)
+   */
+  static async #requestEdit(app, edit) {
+    try {
+      const res = await requestGmAction('progressTrack.edit', edit);
+      const reason = res?.result?.applied === false ? res.result.reason : null;
+      // A paired-clock refusal was already explained by warnPairedClock.
+      if (reason && reason !== 'clock') {
+        ui.notifications?.warn?.(`Starforged Companion: ${EDIT_REFUSAL_TEXT[reason] ?? 'the track was not changed.'}`);
+      }
+    } catch (err) {
+      console.error(`${MODULE_ID} | progress track "${edit.op}" failed:`, err);
+      ui.notifications?.error?.('Starforged Companion: the progress track change could not be saved — see the console.');
+    }
+    app.render();
+  }
+
+  /**
+   * Mark progress on a track (adds the rank's ticks per mark, capped at MAX_TICKS).
    * @param {PointerEvent} event
    * @param {HTMLElement}  target
    */
   static #onMarkProgress(event, target) {
-    const work = (async () => {
-      const trackId = target.dataset.trackId;
-      const tracks = await loadTracks();
-      const track = tracks.find(t => t.id === trackId);
-      if (!track) return;
-
-      const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
-      track.ticks = Math.min(track.ticks + ticksPerMark, MAX_TICKS);
-
-      await saveTracks(tracks);
-      this.render();
-    })();
+    const work = ProgressTrackApp.#requestEdit(this, { op: 'mark', trackId: target.dataset.trackId });
     this._lastAction = work;
     return work;
   }
@@ -549,17 +610,7 @@ export class ProgressTrackApp extends ApplicationV2 {
    * Clear one box of progress (removes TICKS_PER_BOX ticks, min 0).
    */
   static #onClearProgress(event, target) {
-    const work = (async () => {
-      const trackId = target.dataset.trackId;
-      const tracks = await loadTracks();
-      const track = tracks.find(t => t.id === trackId);
-      if (!track) return;
-
-      track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
-
-      await saveTracks(tracks);
-      this.render();
-    })();
+    const work = ProgressTrackApp.#requestEdit(this, { op: 'clear', trackId: target.dataset.trackId });
     this._lastAction = work;
     return work;
   }
@@ -580,30 +631,12 @@ export class ProgressTrackApp extends ApplicationV2 {
   }
 
   /**
-   * Toggle a track's completed state. Completed tracks are moved to the archive
-   * section but kept for campaign record-keeping. A scene challenge's paired
-   * tension clock is retired with it (issue #316 T03).
+   * Complete a track. Completed tracks are moved to the archive section but
+   * kept for campaign record-keeping. A scene challenge's paired tension
+   * clock is retired with it (issue #316 T03).
    */
   static #onCompleteTrack(event, target) {
-    const work = (async () => {
-      const trackId = target.dataset.trackId;
-      const tracks = await loadTracks();
-      const track = tracks.find(t => t.id === trackId);
-      if (!track) return;
-
-      try {
-        await retirePairedClock(track);
-      } catch (err) {
-        warnPairedClock('completeTrack', err);
-        return;
-      }
-
-      track.completed = true;
-      track.completedAt = Date.now();
-
-      await saveTracks(tracks);
-      this.render();
-    })();
+    const work = ProgressTrackApp.#requestEdit(this, { op: 'complete', trackId: target.dataset.trackId });
     this._lastAction = work;
     return work;
   }
@@ -614,31 +647,20 @@ export class ProgressTrackApp extends ApplicationV2 {
    * the toggle here lets the player correct it manually.
    */
   static #onToggleCombatState(event, target) {
-    const work = (async () => {
-      const trackId = target.dataset.trackId;
-      const tracks = await loadTracks();
-      const track = tracks.find(t => t.id === trackId);
-      if (!track || track.type !== 'combat') return;
-
-      const cycle = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
-      track.combatState = cycle[track.combatState ?? 'null'];
-
-      await saveTracks(tracks);
-      this.render();
-    })();
+    const work = ProgressTrackApp.#requestEdit(this, { op: 'position', trackId: target.dataset.trackId });
     this._lastAction = work;
     return work;
   }
 
   /**
-   * Remove a track permanently (with a confirm dialog for safety). A scene
-   * challenge's paired tension clock goes with it (issue #316 T03).
+   * Remove a track permanently, once the clicker confirms (the dialog opens on
+   * their screen). A scene challenge's paired tension clock goes with it
+   * (issue #316 T03).
    */
   static #onRemoveTrack(event, target) {
     const work = (async () => {
       const trackId = target.dataset.trackId;
-      const tracks = await loadTracks();
-      const track = tracks.find(t => t.id === trackId);
+      const track = (await loadTracks()).find(t => t.id === trackId);
       if (!track) return;
 
       const confirmed = await DialogV2.confirm({
@@ -647,23 +669,15 @@ export class ProgressTrackApp extends ApplicationV2 {
       });
       if (!confirmed) return;
 
-      try {
-        await removePairedClock(track);
-      } catch (err) {
-        warnPairedClock('removeTrack', err);
-        return;
-      }
-
-      const updated = tracks.filter(t => t.id !== trackId);
-      await saveTracks(updated);
-      this.render();
+      await ProgressTrackApp.#requestEdit(this, { op: 'remove', trackId });
     })();
     this._lastAction = work;
     return work;
   }
 
   /**
-   * Add a new track from the input fields at the top of the panel.
+   * Add a new track from the input fields at the top of the panel. The GM
+   * creates it — and a scene challenge's paired clock (addProgressTrack).
    */
   static #onAddTrack(_event, _target) {
     const work = (async () => {
@@ -678,30 +692,10 @@ export class ProgressTrackApp extends ApplicationV2 {
         return;
       }
 
-      const track = createTrack({
-        label,
-        type: typeSelect.value,
-        rank: rankSelect.value,
-      });
-
-      // Scene Challenge auto-creates a paired 4-segment tension clock
-      // (rulebook pp. 239–241). The clock's _id is stored on the track
-      // so the panel can surface progress against the danger.
-      if (track.type === 'scene_challenge') {
-        try {
-          const clock = await createClock({ name: track.label, segments: 4, type: 'tension' });
-          track.tensionClockId = clock._id;
-        } catch (err) {
-          console.warn(`${MODULE_ID} | addTrack: scene_challenge tension-clock creation failed:`, err);
-        }
-      }
-
-      const tracks = await loadTracks();
-      tracks.push(track);
-      await saveTracks(tracks);
-
       labelInput.value = '';
-      this.render();
+      await ProgressTrackApp.#requestEdit(this, {
+        op: 'add', label, type: typeSelect.value, rank: rankSelect.value,
+      });
     })();
     this._lastAction = work;
     return work;
@@ -1007,6 +1001,133 @@ export async function updateTrackFields(trackId, patch = {}) {
   Object.assign(track, patch);
   await saveTracks(tracks);
   return track;
+}
+
+// ---------------------------------------------------------------------------
+// Panel edits on the canonical GM (issue #321 U05)
+// ---------------------------------------------------------------------------
+
+/** The longest track name the panel's input accepts (its maxlength). */
+const MAX_LABEL_LENGTH = 60;
+
+/** What the clicker is told when the canonical GM declines their own edit. */
+const EDIT_REFUSAL_TEXT = {
+  'invalid':  'the panel cannot make that change — nothing was changed.',
+  'no-track': 'that track is gone or already finished — nothing was changed.',
+};
+
+/** Position toggle cycle: neutral → in control → in a bad spot → neutral. */
+const NEXT_POSITION = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
+
+const own = (table, key) => typeof key === 'string' && Object.prototype.hasOwnProperty.call(table, key);
+
+/** A track the panel lists: a fight, an expedition or a scene challenge. */
+function isPanelTrack(track) {
+  return !!track && own(PANEL_TRACK_TYPES, track.type);
+}
+
+/** An open panel track — what the +, −, ✓ and position buttons act on. */
+function isOpenPanelTrack(track) {
+  return isPanelTrack(track) && !track.completed;
+}
+
+/**
+ * gmRelay handler for "progressTrack.edit" — runs on the canonical GM, which
+ * writes the tracks journal for every user's Progress Tracks panel. The
+ * journal is created `ownership: NONE`, so a player's own write was refused
+ * and the click did nothing (issue #321 U05). Every user may make every
+ * panel edit — the panel is on everyone's toolbar, and ✕ asks the clicker to
+ * confirm first. The payload is checked against what the panel can produce:
+ * +, −, ✓ act on an open fight, expedition or scene challenge, the position
+ * toggle on an open fight, ✕ on any of the three; a new track takes its name
+ * (trimmed, at most 60 characters), type and rank from the panel's own lists.
+ *
+ * @param {{ op: "add"|"mark"|"clear"|"complete"|"position"|"remove",
+ *           trackId?: string, label?: string, type?: string, rank?: string }} payload
+ * @param {Object} [_ctx]  gmRelay context — no edit is restricted to a role
+ * @returns {Promise<{ applied: boolean, reason?: "invalid"|"no-track"|"clock", trackId?: string }>}
+ */
+export async function applyProgressTrackEditFromRelay(payload = {}, _ctx = {}) {
+  const trackId = typeof payload?.trackId === 'string' ? payload.trackId : '';
+
+  switch (payload?.op) {
+    case 'add': {
+      const label = typeof payload.label === 'string' ? payload.label.trim().slice(0, MAX_LABEL_LENGTH) : '';
+      if (!label || !own(PANEL_TRACK_TYPES, payload.type) || !own(RANKS, payload.rank)) {
+        return refusedEdit('invalid', payload);
+      }
+      const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank });
+      return { applied: true, trackId: track.id };
+    }
+    case 'mark':
+      return editOutcome(await updateTrack(trackId, (track) => {
+        if (!isOpenPanelTrack(track)) return false;
+        track.ticks = Math.min(track.ticks + ticksPerMark(track), MAX_TICKS);
+      }), payload);
+    case 'clear':
+      return editOutcome(await updateTrack(trackId, (track) => {
+        if (!isOpenPanelTrack(track)) return false;
+        track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
+      }), payload);
+    case 'position':
+      return editOutcome(await updateTrack(trackId, (track) => {
+        if (!isOpenPanelTrack(track) || track.type !== 'combat') return false;
+        track.combatState = NEXT_POSITION[track.combatState ?? 'null'] ?? null;
+      }), payload);
+    case 'complete': {
+      // The paired clock is retired before the track changes; refused, the
+      // track stays open and the press is the retry (issue #316 T03).
+      let clockError = null;
+      const track = await updateTrack(trackId, async (t) => {
+        if (!isOpenPanelTrack(t)) return false;
+        try {
+          await retirePairedClock(t);
+        } catch (err) {
+          clockError = err;
+          return false;
+        }
+        t.completed   = true;
+        t.completedAt = Date.now();
+      });
+      if (clockError) {
+        warnPairedClock('completeTrack', clockError);
+        return refusedEdit('clock', payload);
+      }
+      return editOutcome(track, payload);
+    }
+    case 'remove': {
+      let clockError = null;
+      let removed = null;
+      await writeTracks(async (tracks) => {
+        const track = tracks.find(t => t.id === trackId);
+        if (!isPanelTrack(track)) return null;
+        try {
+          await removePairedClock(track);
+        } catch (err) {
+          clockError = err;
+          return null;
+        }
+        removed = track;
+        return tracks.filter(t => t.id !== trackId);
+      });
+      if (clockError) {
+        warnPairedClock('removeTrack', clockError);
+        return refusedEdit('clock', payload);
+      }
+      return editOutcome(removed, payload);
+    }
+    default:
+      return refusedEdit('invalid', payload);
+  }
+}
+
+function editOutcome(track, payload) {
+  return track ? { applied: true, trackId: track.id } : refusedEdit('no-track', payload);
+}
+
+function refusedEdit(reason, payload) {
+  console.warn(`${MODULE_ID} | progress track "${payload?.op ?? '?'}" on ${payload?.trackId || 'a new track'} not applied (${reason}).`);
+  return { applied: false, reason };
 }
 
 /**

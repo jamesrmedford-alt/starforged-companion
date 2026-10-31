@@ -169,6 +169,9 @@ export const GM_ACTIONS = Object.freeze({
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
+  // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)
+  "progressTrack.edit":        { load: () => import("../ui/progressTracks.js"),                      fn: "applyProgressTrackEditFromRelay" },
+  "entity.edit":               { load: () => import("../ui/entityPanel.js"),                         fn: "applyEntityEditFromRelay" },
 });
 
 /**

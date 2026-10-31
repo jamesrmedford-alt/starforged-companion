@@ -18,6 +18,7 @@
 import { generatePortrait, regeneratePortrait } from '../art/generator.js';
 import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
+import { requestGmAction }                      from '../multiplayer/gmRelay.js';
 import {
   getEntityDocument,
   readEntityFlag,
@@ -907,21 +908,41 @@ export class EntityPanelApp extends ApplicationV2 {
   }
 
   // -----------------------------------------------------------------------
-  // Generative tier handlers
+  // Generative tier handlers + canonicalLocked toggle
+  //
+  // The panel is on every user's toolbar, but an entity's record lives on the
+  // GM's document (an NPC card Actor, a settlement Actor, a faction journal)
+  // that a player's client cannot write: each edit is asked of the canonical
+  // GM (#requestEdit → "entity.edit", applyEntityEditFromRelay), locally on
+  // that GM and relayed from anyone else (issue #321 U05). A player's lock
+  // toggle used to be refused, and Pin / Remove swallowed the refusal.
   // -----------------------------------------------------------------------
+
+  /**
+   * Ask the canonical GM for one entity edit, then re-render. Nothing is
+   * swallowed: with no GM connected requestGmAction has warned; a refusal the
+   * canonical GM's own click gets back is shown; a write that throws is
+   * reported. (A relayed edit lands — and every open panel re-renders — when
+   * the GM's write reaches the entity.)
+   */
+  static async #requestEdit(app, edit) {
+    try {
+      const res = await requestGmAction('entity.edit', edit);
+      if (res?.result?.applied === false) {
+        ui.notifications?.warn?.(`Starforged Companion: ${ENTITY_EDIT_REFUSAL_TEXT[res.result.reason] ?? 'the entity was not changed.'}`);
+      }
+    } catch (err) {
+      console.error(`${MODULE_ID} | entity panel "${edit.op}" failed:`, err);
+      ui.notifications?.error?.('Starforged Companion: the entity change could not be saved — see the console.');
+    }
+    app.render();
+  }
 
   static async #onPinTier(event, target) {
     const journalId = target.dataset.journalId;
     const detail    = target.dataset.detail;
     if (!journalId || !detail) return;
-    await mutateGenerativeTier(journalId, (tier) => {
-      const idx = tier.findIndex(e => (e?.detail ?? '') === detail);
-      if (idx === -1) return tier;
-      const updated = [...tier];
-      updated[idx] = { ...updated[idx], pinned: !updated[idx].pinned };
-      return updated;
-    });
-    this.render();
+    await EntityPanelApp.#requestEdit(this, { op: 'pin', entityId: journalId, detail });
   }
 
   static async #onPromoteTier(event, target) {
@@ -939,63 +960,25 @@ export class EntityPanelApp extends ApplicationV2 {
     });
     if (!confirmed) return;
 
-    const resolved = resolveEntityById(journalId);
-    if (!resolved) return;
-    const { typeKey: entityType, document } = resolved;
-    const data = { ...resolved.data };
-
-    const tier = Array.isArray(data.generativeTier) ? [...data.generativeTier] : [];
-    const idx  = tier.findIndex(e => (e?.detail ?? '') === detail);
-    if (idx === -1) return;
-
-    const promotedAt = new Date().toISOString();
-    tier[idx] = { ...tier[idx], promoted: true, promotedAt };
-
-    const existingNotes = data.notes ?? '';
-    const appended      = existingNotes
-      ? `${existingNotes}\n\n${detail}`
-      : detail;
-
-    await writeEntityFlag(entityType, document, {
-      ...data,
-      notes:          appended,
-      generativeTier: tier,
-      updatedAt:      promotedAt,
-    });
-    this.render();
+    await EntityPanelApp.#requestEdit(this, { op: 'promote', entityId: journalId, detail });
   }
 
   static async #onRemoveTier(event, target) {
     const journalId = target.dataset.journalId;
     const detail    = target.dataset.detail;
     if (!journalId || !detail) return;
-    await mutateGenerativeTier(journalId, (tier) =>
-      tier.filter(e => (e?.detail ?? '') !== detail),
-    );
-    this.render();
+    await EntityPanelApp.#requestEdit(this, { op: 'remove', entityId: journalId, detail });
   }
-
-  // -----------------------------------------------------------------------
-  // canonicalLocked toggle + current-location button
-  // -----------------------------------------------------------------------
 
   static async #onToggleCanonicalLock(event, target) {
     const journalId = target.dataset.journalId;
     if (!journalId) return;
-
-    const resolved = resolveEntityById(journalId);
-    if (!resolved) return;
-    const { typeKey: entityType, document } = resolved;
-    const data = { ...resolved.data };
-
-    const next = !data.canonicalLocked;
-    await writeEntityFlag(entityType, document, {
-      ...data,
-      canonicalLocked: next,
-      updatedAt:       new Date().toISOString(),
-    });
-    this.render();
+    await EntityPanelApp.#requestEdit(this, { op: 'lock', entityId: journalId });
   }
+
+  // -----------------------------------------------------------------------
+  // Current-location button
+  // -----------------------------------------------------------------------
 
   static #onSetCurrentLocation(event, target) {
     const work = (async () => {
@@ -1178,29 +1161,74 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Read the entity record on a journal's first page, apply a transformation
- * to its generativeTier array, and persist the result via page.setFlag.
- * Returns the resulting tier (or null if the page/record could not be
- * resolved). Used by Pin / Remove handlers.
- */
-async function mutateGenerativeTier(journalId, transform) {
-  try {
-    const resolved = resolveEntityById(journalId);
-    if (!resolved) return null;
-    const { typeKey: entityType, document } = resolved;
-    const data = { ...resolved.data };
+// ---------------------------------------------------------------------------
+// Panel edits on the canonical GM (issue #321 U05)
+// ---------------------------------------------------------------------------
 
-    const tier = Array.isArray(data.generativeTier) ? data.generativeTier : [];
-    const next = transform(tier) ?? tier;
-    await writeEntityFlag(entityType, document, {
-      ...data,
-      generativeTier: next,
-      updatedAt:      new Date().toISOString(),
-    });
-    return next;
-  } catch (err) {
-    console.error(`${MODULE_ID} | mutateGenerativeTier failed:`, err);
-    return null;
+/** What the clicker is told when the canonical GM declines their own edit. */
+const ENTITY_EDIT_REFUSAL_TEXT = {
+  'invalid':   'the panel cannot make that change — nothing was changed.',
+  'no-entity': 'that entity is gone — nothing was changed.',
+  'no-detail': 'that narrator-added detail is gone — nothing was changed.',
+};
+
+const ENTITY_EDIT_OPS = new Set(['lock', 'pin', 'promote', 'remove']);
+
+/**
+ * gmRelay handler for "entity.edit" — runs on the canonical GM, which writes
+ * entity records for every user's Entities panel. A record lives on a
+ * GM-owned document (an NPC card or settlement Actor, a faction's journal),
+ * so a player's own write was refused: the canonical-lock toggle threw, and
+ * Pin / Remove did nothing, silently (issue #321 U05). Every user may make
+ * these edits — the panel is on everyone's toolbar, and Promote asks the
+ * clicker to confirm first. The payload is checked against what the panel
+ * can produce: an entity the registry resolves, and for Pin / Promote /
+ * Remove a narrator-added detail the panel still shows (not promoted). Each
+ * edit reads the record and writes it with no await in between.
+ *
+ * @param {{ op: "lock"|"pin"|"promote"|"remove", entityId?: string, detail?: string }} payload
+ * @param {Object} [_ctx]  gmRelay context — no edit is restricted to a role
+ * @returns {Promise<{ applied: boolean, reason?: "invalid"|"no-entity"|"no-detail" }>}
+ */
+export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
+  const op = payload?.op;
+  if (!ENTITY_EDIT_OPS.has(op)) return refusedEntityEdit('invalid', payload);
+
+  const entityId = typeof payload.entityId === 'string' ? payload.entityId : '';
+  const resolved = entityId ? resolveEntityById(entityId) : null;
+  if (!resolved) return refusedEntityEdit('no-entity', payload);
+  const { typeKey, document, data } = resolved;
+  const now = new Date().toISOString();
+
+  if (op === 'lock') {
+    await writeEntityFlag(typeKey, document, { ...data, canonicalLocked: !data.canonicalLocked, updatedAt: now });
+    return { applied: true };
   }
+
+  // Pin / Promote / Remove act on a detail the panel shows — never a promoted one.
+  const detail = typeof payload.detail === 'string' ? payload.detail : '';
+  const tier   = Array.isArray(data.generativeTier) ? data.generativeTier : [];
+  const shown  = (e) => !e?.promoted && (e?.detail ?? '') === detail;
+  const idx    = detail ? tier.findIndex(shown) : -1;
+  if (idx === -1) return refusedEntityEdit('no-detail', payload);
+
+  let next;
+  if (op === 'pin') {
+    next = { ...data, generativeTier: tier.map((e, i) => (i === idx ? { ...e, pinned: !e.pinned } : e)) };
+  } else if (op === 'promote') {
+    next = {
+      ...data,
+      notes:          data.notes ? `${data.notes}\n\n${detail}` : detail,
+      generativeTier: tier.map((e, i) => (i === idx ? { ...e, promoted: true, promotedAt: now } : e)),
+    };
+  } else {
+    next = { ...data, generativeTier: tier.filter(e => !shown(e)) };
+  }
+  await writeEntityFlag(typeKey, document, { ...next, updatedAt: now });
+  return { applied: true };
+}
+
+function refusedEntityEdit(reason, payload) {
+  console.warn(`${MODULE_ID} | entity panel "${payload?.op ?? '?'}" on ${payload?.entityId || '?'} not applied (${reason}).`);
+  return { applied: false, reason };
 }
