@@ -29,6 +29,7 @@ import {
   applyFightVowMarkMilestone,
   applyFightVowDeepenBond,
   applyPayoffRetry,
+  applyWaypointOraclePick,
   parseCardButtons,
   relayCardAction,
 } from '../../src/moves/cardActions.js';
@@ -401,5 +402,109 @@ describe('relayCardAction', () => {
     const restore = vi.fn();
     expect(await relayCardAction({ kind: 'connection.pick', payload: {}, isResolved: () => false, restore })).toBeNull();
     expect(restore).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// waypoint.oracle — a matched waypoint's alternative (issue #316 T06)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyWaypointOraclePick', () => {
+  const P2_CTX = { requesterId: 'pl-2', requester: P2, requesterIsGM: false };
+  let waypoint, choice;
+  const forcedMoves = () => ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.forcedMoveId === 'make_a_discovery');
+
+  beforeEach(() => {
+    waypoint = makeCard('wp-1', { moveResolution: true, resolutionId: 'res-wp', waypointOracleCard: 'make_a_discovery', actorId: 'pc-b' });
+    choice   = makeCard('choice-1', {
+      sufferCard: true, resolutionId: 'res-wp', resolved: false, actorId: 'pc-b',
+      sufferPrompt: { kind: 'enumerated', multi: 1, options: [{ label: 'Mark expedition progress', expeditionProgress: 1 }, { label: '+2 momentum', momentum: 2 }] },
+    }, '<div>choose</div>');
+    messages = [picker, fight, waypoint, choice];
+    game.messages = { get: (id) => messages.find(m => m.id === id) ?? null, contents: messages };
+  });
+
+  it('the owner takes it: the forced move is posted once, as the roller, the card claimed, the ordinary choice retired', async () => {
+    const res = await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX);
+    expect(res).toEqual({ posted: true });
+    expect(forcedMoves()).toHaveLength(1);
+    expect(forcedMoves()[0]).toMatchObject({
+      content: 'I follow what the waypoint revealed — making a discovery.',
+      speaker: { actor: 'pc-b' },
+    });
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery' });
+    expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');
+    // Retired: resolved and superseded (the card double applies flag paths only;
+    // the retired text is covered by the booted-table test).
+    expect(choice.flags[MODULE_ID]).toMatchObject({ resolved: true, superseded: true });
+    expect(choice.update).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringMatching(/Make a Discovery — so this choice no longer applies/),
+    }));
+  });
+
+  it('a second press — by anyone — posts nothing more', async () => {
+    await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX);
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: false, reason: 'already-claimed' });
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('two near-simultaneous presses post exactly one move', async () => {
+    const [a, b] = await Promise.all([
+      applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX),
+      applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX),
+    ]);
+    expect([a.posted, b.posted].filter(Boolean)).toHaveLength(1);
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('refuses a requester who does not own the roller; a GM may take it for them', async () => {
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P2_CTX)).toEqual({ posted: false, reason: 'not-owner' });
+    expect(forcedMoves()).toHaveLength(0);
+    expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBeUndefined();
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: true });
+    expect(forcedMoves()[0].speaker).toMatchObject({ actor: 'pc-b' });
+  });
+
+  it('a card from before the roller was stamped is a GM\'s to take, posted without a speaker override', async () => {
+    delete waypoint.flags[MODULE_ID].actorId;
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: false, reason: 'not-owner' });
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: true });
+    expect(forcedMoves()[0].speaker).toBeUndefined();
+  });
+
+  it('the ordinary reward already chosen: refused, and the alternative is closed on the card', async () => {
+    choice.flags[MODULE_ID].resolved = true;
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: false, reason: 'ordinary-chosen' });
+    expect(forcedMoves()).toHaveLength(0);
+    expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('ordinary');
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: false, reason: 'already-claimed' });
+  });
+
+  it('a pick in progress on a multi-select choice counts as chosen too', async () => {
+    choice.flags[MODULE_ID].pickedIndices = [0];
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: false, reason: 'ordinary-chosen' });
+  });
+
+  it('a refused claim posts nothing; a failed post releases the claim so the press can be made again', async () => {
+    waypoint.update.mockRejectedValueOnce(new Error('refused by the test'));
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: false, reason: 'claim-refused' });
+    expect(forcedMoves()).toHaveLength(0);
+
+    vi.spyOn(ChatMessage, 'create').mockRejectedValueOnce(new Error('post refused'));
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: false, reason: 'post-failed' });
+    expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBeNull();
+    expect(choice.flags[MODULE_ID].resolved).toBe(false);
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, P1_CTX)).toEqual({ posted: true });
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('warns when the card is gone, is not a waypoint card, or names no player character', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await applyWaypointOraclePick({ messageId: 'nope' }, P1_CTX)).toEqual({ posted: false, reason: 'no-message' });
+    expect(await applyWaypointOraclePick({ messageId: 'pick-1' }, P1_CTX)).toEqual({ posted: false, reason: 'not-a-waypoint-card' });
+    waypoint.flags[MODULE_ID].actorId = 'npc-1';
+    expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: false, reason: 'not-a-pc' });
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
   });
 });

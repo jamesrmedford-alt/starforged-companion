@@ -1486,6 +1486,7 @@ export function registerChatHook() {
         milestoneState,
         connectionState,
         moveFight,
+        rollerActor?.id ?? null,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -5830,7 +5831,7 @@ const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_
  *   combatTrackLabel and named on the Finish the Fight button, which forwards
  *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
  */
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
   // and fail-open — never blocks or breaks the result post. A no-roll move
@@ -5844,6 +5845,9 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
+        // The roller: whose reward a waypoint match's alternative is, and who
+        // may take it (cardActions.js applyWaypointOraclePick, issue #316 T06).
+        ...(rollerActorId ? { actorId: rollerActorId } : {}),
         ...(combatMove ? { combatMoveCard: true } : {}),
         ...(namedFight ? { combatTrackId: namedFight.id, combatTrackLabel: namedFight.label ?? null } : {}),
         ...(waypointOracleFor(resolution) ? { waypointOracleCard: waypointOracleFor(resolution) } : {}),
@@ -5944,32 +5948,43 @@ export function waypointOracleFor(resolution) {
 }
 
 /**
- * Wire the waypoint-match oracle button — posts the forced follow-up move
- * (Make a Discovery / Confront Chaos); the canonical GM's pipeline resolves
- * it. Exported so Quench can drive it with a synthetic message + root.
+ * Wire the waypoint-match oracle button (Make a Discovery / Confront Chaos).
+ * A click relays to the canonical GM ("waypoint.oracle" →
+ * src/moves/cardActions.js applyWaypointOraclePick), which claims the card
+ * once (`waypointRewardClaimed`), retires the pending ordinary choice and
+ * posts the forced follow-up as the roller. The click used to post the move
+ * from the clicker's client and only disable its own button: a re-render
+ * re-armed it from the unchanged flags, and the match's alternative — the
+ * rule's "instead" — stacked on the ordinary +2 momentum (issue #316 T06). A
+ * card already claimed, by either reward, renders the button disabled; a click
+ * that is not delivered re-arms it. Exported so Quench can drive it with a
+ * synthetic message + root.
  */
 export function wireWaypointOracleButton(message, root) {
   const oracleMove = message?.flags?.[MODULE_ID]?.waypointOracleCard;
   if (!oracleMove) return;
   const btn = root?.querySelector?.('[data-action="sf-waypoint-oracle"]');
   if (!btn) return;
+  const claimed = liveCardFlags(message)?.waypointRewardClaimed;
+  if (claimed) {
+    btn.disabled = true;
+    btn.title = claimed === "ordinary"
+      ? "The ordinary reward was taken — the match's alternative no longer applies"
+      : "Taken";
+    return;
+  }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
   fresh.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      await ChatMessage.create({
-        content: oracleMove === "make_a_discovery"
-          ? "I follow what the waypoint revealed — making a discovery."
-          : "I face the chaos the waypoint exposed.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: oracleMove } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | waypoint oracle button failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "waypoint.oracle",
+      payload:    { messageId: message?.id ?? null },
+      isResolved: () => !!liveCardFlags(message)?.waypointRewardClaimed,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
 onChatMessageRender((message, root) => wireWaypointOracleButton(message, root));

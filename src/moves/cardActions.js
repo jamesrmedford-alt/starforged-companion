@@ -17,7 +17,9 @@
  * Both now relay through the canonical-GM action relay
  * (src/multiplayer/gmRelay.js — "connection.pick", "fightVow.markMilestone",
  * "fightVow.deepenBond"), as does a payoff failure card's Retry
- * ("payoff.retry", issue #306 R04). The handlers below run on the canonical GM, check
+ * ("payoff.retry", issue #306 R04) and an Explore a Waypoint match's
+ * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06). The
+ * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
  * effect value from the GM-authored card — never from the client payload
@@ -31,6 +33,7 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
+import { consequenceChosen, retireOutcomeChoiceCards } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -234,6 +237,108 @@ function connectionPickerChoices(message) {
     name:       b.connectionName ?? "",
     pickAction: b.pickAction ?? null,
   }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WAYPOINT MATCH — gmRelay "waypoint.oracle"
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The follow-up an Explore a Waypoint match offers, by the move card's
+// `waypointOracleCard` flag (index.js waypointOracleFor): its forced-move text
+// and the reason a retired ordinary choice card gives.
+const WAYPOINT_ORACLE_MOVES = Object.freeze({
+  make_a_discovery: { content: "I follow what the waypoint revealed — making a discovery.", retired: "discovery" },
+  confront_chaos:   { content: "I face the chaos the waypoint exposed.",                    retired: "chaos" },
+});
+
+/**
+ * gmRelay handler for "waypoint.oracle" — runs on the canonical GM (issue #316
+ * T06). An Explore a Waypoint match offers Make a Discovery (a strong hit) or
+ * Confront Chaos (a miss) *instead* of the ordinary result; the card's button
+ * used to post the forced move from the clicker's client and disable only its
+ * own DOM button, so a re-render re-armed it from the unchanged flags and the
+ * discovery stacked on the +2 momentum already taken.
+ *
+ * One durable claim per matched waypoint, on the GM-authored card
+ * (`waypointRewardClaimed`: "alternative" here, "ordinary" when the choice
+ * card's pick lands — resultUpgrade.js closeUpgradesForChoice): the ordinary
+ * reward already chosen refuses the alternative; the alternative taken
+ * retires the pending ordinary choice card (a pick that reaches it anyway is
+ * refused). The requester must own the roller's PC (the card's `actorId`) or
+ * be a GM; the forced move speaks as that PC. Claimed before the post —
+ * idempotent behind the in-flight guard; a post that fails releases the
+ * claim so the press can be made again.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | waypoint oracle: card ${messageId ?? "?"} not found — no move posted.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f    = message.flags?.[MODULE_ID] ?? {};
+  const move = WAYPOINT_ORACLE_MOVES[f.waypointOracleCard];
+  if (!move) {
+    console.warn(`${MODULE_ID} | waypoint oracle: message ${messageId} offers no waypoint follow-up — ignored.`);
+    return { posted: false, reason: "not-a-waypoint-card" };
+  }
+  const key = `${messageId}:waypoint`;
+  if (f.waypointRewardClaimed || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | waypoint oracle: card ${messageId} already claimed (${f.waypointRewardClaimed ?? "in flight"}) — ignoring the press.`);
+    return { posted: false, reason: "already-claimed" };
+  }
+
+  // The roller's PC — the card's. A card posted before the roller was stamped
+  // is a GM's to take.
+  const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | waypoint oracle: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | waypoint oracle: user ${ctx?.requesterId ?? "?"} may not take ${actor?.name ?? "this card"}'s reward — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+
+  _inFlight.add(key);
+  try {
+    // The ordinary reward is already chosen: the alternative is "instead",
+    // not as well. Closed on the card, so its button says so everywhere.
+    if (consequenceChosen(f.resolutionId)) {
+      console.debug(`${MODULE_ID} | waypoint oracle: card ${messageId} — the ordinary reward was taken; the alternative is closed.`);
+      await message.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: "ordinary" })
+        .catch(err => console.warn(`${MODULE_ID} | waypoint oracle: closing the alternative failed:`, err?.message ?? err));
+      return { posted: false, reason: "ordinary-chosen" };
+    }
+    try {
+      await message.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: "alternative" });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | waypoint oracle: card ${messageId} could not be claimed — nothing posted:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: move.content,
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | waypoint oracle: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: null })
+        .catch(e => console.warn(`${MODULE_ID} | waypoint oracle: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    // The ordinary choice no longer applies.
+    await retireOutcomeChoiceCards(f.resolutionId, move.retired);
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

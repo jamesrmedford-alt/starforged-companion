@@ -380,9 +380,13 @@ export function upgradeKindFor(resolutionId) {
 }
 
 /**
- * The move card's Burn / Improve are closed once its consequence is chosen —
- * stamped (`choiceMade`) so the buttons say so; consequenceChosen is the check
- * the GM handlers make. Best effort.
+ * The move card's open affordances are closed once its consequence is chosen:
+ * Burn / Improve stamped (`choiceMade`) so the buttons say so — consequenceChosen
+ * is the check the GM handlers make — and, on an Explore a Waypoint match, the
+ * alternative the match offered (Make a Discovery / Confront Chaos) marked
+ * taken by the ordinary reward (`waypointRewardClaimed: "ordinary"`): the rule
+ * offers it *instead* of the ordinary choice, and it stacked on top (issue
+ * #316 T06). Best effort.
  *
  * @param {string|null} resolutionId
  */
@@ -390,21 +394,31 @@ export async function closeUpgradesForChoice(resolutionId) {
   const card = moveCardFor(resolutionId);
   const f    = card?.flags?.[MODULE_ID];
   if (!f) return;
-  const open = ["burn", "improve"].filter(k => f[k] && !f[k].consumed && !f[k].choiceMade);
-  if (!open.length) return;
-  await card.update(Object.fromEntries(open.map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true])))
+  const update = Object.fromEntries(["burn", "improve"]
+    .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
+    .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
+  if (f.waypointOracleCard && !f.waypointRewardClaimed) update[`flags.${MODULE_ID}.waypointRewardClaimed`] = "ordinary";
+  if (!Object.keys(update).length) return;
+  await card.update(update)
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
 }
 
-const RETIRED_BY = { burn: "momentum was burned", improve: "the result was improved" };
+// Why a choice card was retired, by what replaced the choice.
+const RETIRED_REASON = {
+  burn:      "The result changed — momentum was burned — so this choice no longer applies.",
+  improve:   "The result changed — the result was improved — so this choice no longer applies.",
+  discovery: "The match's alternative was taken instead — Make a Discovery — so this choice no longer applies.",
+  chaos:     "The match's alternative was taken instead — Confront Chaos — so this choice no longer applies.",
+};
 
 /**
- * Retire a pending choice card of the superseded outcome: resolved and
- * superseded, so its buttons go. Best effort — a pick that reaches it anyway is
- * refused (upgradeKindFor).
+ * Retire a pending choice card: resolved and superseded, so its buttons go —
+ * its outcome was replaced by an upgrade, or (an Explore a Waypoint match) the
+ * match's alternative was taken instead of it. Best effort — a pick that
+ * reaches it anyway is refused (upgradeKindFor; sufferCard.js).
  *
  * @param {ChatMessage} message
- * @param {"burn"|"improve"} kind
+ * @param {"burn"|"improve"|"discovery"|"chaos"} kind
  */
 export async function retireChoiceCard(message, kind) {
   await message.update({
@@ -412,8 +426,23 @@ export async function retireChoiceCard(message, kind) {
     [`flags.${MODULE_ID}.superseded`]: true,
     content: `<div class="sf-card sf-suffer-choice-card sf-suffer-resolved">`
       + `<div class="sf-card-header">◈ Consequence superseded</div>`
-      + `<div class="sf-card-body"><p>The result changed — ${RETIRED_BY[kind] ?? "it was upgraded"} — so this choice no longer applies. Nothing on it was applied.</p></div></div>`,
+      + `<div class="sf-card-body"><p>${RETIRED_REASON[kind] ?? "The result changed — it was upgraded — so this choice no longer applies."} Nothing on it was applied.</p></div></div>`,
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: retiring choice card ${message.id} failed:`, err?.message ?? err));
+}
+
+/**
+ * Retire every pending (unchosen) choice card of a resolution's own outcome —
+ * after an upgrade's claim (reconcileChoices), or once a waypoint match's
+ * alternative is taken (cardActions.js applyWaypointOraclePick, issue #316
+ * T06).
+ *
+ * @param {string|null} resolutionId
+ * @param {"burn"|"improve"|"discovery"|"chaos"} kind
+ */
+export async function retireOutcomeChoiceCards(resolutionId, kind) {
+  for (const card of outcomeChoiceCards(resolutionId)) {
+    if (!chosen(card.flags[MODULE_ID])) await retireChoiceCard(card, kind);
+  }
 }
 
 /**
@@ -432,9 +461,7 @@ export async function retireChoiceCard(message, kind) {
  * @param {Array<Object>} args.failures
  */
 export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures }) {
-  for (const card of outcomeChoiceCards(resolutionId)) {
-    if (!chosen(card.flags[MODULE_ID])) await retireChoiceCard(card, kind);
-  }
+  await retireOutcomeChoiceCards(resolutionId, kind);
   if (!sufferPrompt || !actor) return;
   await applyUpgradeStep({
     effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
