@@ -9,7 +9,10 @@
  * houseplants. Specific, small, almost tender.
  *
  * NPC selection priority (highest first):
- *   1. A bonded connection (Forge a Bond completed — most personal)
+ *   1. A bonded connection still in play (Forge a Bond completed — most
+ *      personal). A severed or lost one (`active: false`; `!sever` keeps
+ *      `bonded`) is the person the crew just lost, not a closing slice of
+ *      life (issue #321 U61).
  *   2. An active non-bonded connection with rank >= dangerous
  *   3. An active threat from the World Journal (named NPC variants)
  *   4. Any active non-bonded connection
@@ -39,11 +42,11 @@ const MODULE_ID = "starforged-companion";
  * @returns {{ kind: string, name: string, hint: string }}
  */
 export function selectEndSessionNPC(campaignState) {
-  // 1. Bonded connection
+  // 1. Bonded connection still in play — a severed bond keeps `bonded: true`
   let connections = [];
   try { connections = listConnections(campaignState ?? {}); } catch { connections = []; }
 
-  const bonded = connections.find(c => c?.bonded === true);
+  const bonded = connections.find(c => c?.bonded === true && c?.active !== false);
   if (bonded?.name) {
     return {
       kind: "bonded_connection",
