@@ -299,29 +299,86 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
   });
 });
 
+/**
+ * The per-settlement page the pre-Phase-3 sector creator wrote into the Sector
+ * Record — its template verbatim (createSectorJournal's per-settlement loop,
+ * commits efc8c74..b65175a; the producer no longer exists).
+ */
+function legacySettlementPageContent(s, stubText = null) {
+  return `<h2>${s.name}</h2>
+<p><strong>Type:</strong> ${s.type ?? "Orbital"}</p>
+<p><strong>Population:</strong> ${s.population ?? "Few"}</p>
+<p><strong>Authority:</strong> ${s.authority ?? "None"}</p>
+<p><strong>Projects:</strong> ${(s.projects ?? ["Mining"]).join(", ")}</p>
+${s.trouble ? `<p><strong>Trouble:</strong> ${s.trouble}</p>` : ""}
+${s.planet ? `<p><strong>Planet:</strong> ${s.planet.name} (${s.planet.type})</p>` : ""}
+<hr>
+<p class="narrator-stub">${stubText || "<em>No narrator text generated.</em>"}</p>
+<hr>
+<h3>Notes</h3>
+<p><em>Record discoveries and plot threads here.</em></p>`;
+}
+
 describe("cleanupSectorRecordPages", () => {
   let restore;
   afterEach(() => { restore?.(); });
 
-  it("deletes every embedded page except the overview", async () => {
+  function cinderBelt() {
     restore = installRichJournalMock();
     const sectorId   = "sec-X";
     const sectorName = "Cinder Belt";
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, "<h2>Cinder Belt</h2>");
-
-    const extra1 = makePage({ name: "Outpost A", text: { content: "<p>legacy settlement page</p>", format: 1 } });
-    const extra2 = makePage({ name: "Outpost B", text: { content: "<p>legacy settlement page</p>", format: 1 } });
-    journal._addPage(extra1);
-    journal._addPage(extra2);
     global.game.journal._add(journal);
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g-a", actorId: "actor-a", name: "Outpost A" },
+      { genId: "g-b", actorId: "actor-b", name: "Outpost B" },
+    ] })] };
+    const addPage = (name, content) => {
+      const page = makePage({ name, text: { content, format: 1 } });
+      journal._addPage(page);
+      return page;
+    };
+    return { sectorId, journal, overviewPage, campaignState, addPage };
+  }
 
-    const deleted = await cleanupSectorRecordPages(sectorId, {
-      sectors: [{ id: sectorId, name: sectorName }],
-    });
+  it("deletes the legacy per-settlement pages the old sector creator wrote", async () => {
+    const { sectorId, overviewPage, campaignState, addPage } = cinderBelt();
+    const a = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A", trouble: "Raiders" }, "A rusting dome."));
+    const b = addPage("Outpost B", legacySettlementPageContent({ name: "Outpost B", planet: { name: "Vorn Prime", type: "Desert World" } }));
+
+    const deleted = await cleanupSectorRecordPages(sectorId, campaignState);
     expect(deleted).toBe(2);
-    expect(extra1._deleted).toBe(true);
-    expect(extra2._deleted).toBe(true);
+    expect(a._deleted).toBe(true);
+    expect(b._deleted).toBe(true);
     expect(overviewPage._deleted).toBeUndefined();
+  });
+
+  it("keeps a page the GM added — its name is no settlement's, or its body is not the generated layout", async () => {
+    const { sectorId, campaignState, addPage } = cinderBelt();
+    const rumours = addPage("Rumours", "<p>The Hegemony is coming.</p>");
+    const named   = addPage("Outpost A", "<p>My notes on Outpost A: the dock master is lying.</p>");
+
+    expect(await cleanupSectorRecordPages(sectorId, campaignState)).toBe(0);
+    expect(rumours._deleted).toBeUndefined();
+    expect(named._deleted).toBeUndefined();
+  });
+
+  it("keeps a legacy settlement page whose Notes the GM wrote", async () => {
+    const { sectorId, campaignState, addPage } = cinderBelt();
+    const annotated = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A" })
+      .replace("<p><em>Record discoveries and plot threads here.</em></p>", "<p>Kade owes us a favour.</p>"));
+    const appended = addPage("Outpost B", `${legacySettlementPageContent({ name: "Outpost B" })}\n<p>The reactor leaks.</p>`);
+
+    expect(await cleanupSectorRecordPages(sectorId, campaignState)).toBe(0);
+    expect(annotated._deleted).toBeUndefined();
+    expect(appended._deleted).toBeUndefined();
+  });
+
+  it("deletes nothing when the sector's record is not stored (nothing identifies its settlements)", async () => {
+    const { sectorId, addPage } = cinderBelt();
+    const page = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A" }));
+    expect(await cleanupSectorRecordPages(sectorId, { sectors: [] })).toBe(0);
+    expect(page._deleted).toBeUndefined();
   });
 });
 
@@ -531,6 +588,19 @@ describe("the overview of a sector the creator stored (real generate → store c
 
     for (const a of actors) expect(page.text.content).toContain(`@UUID[Actor.${a.id}]{${a.name}}`);
     expect(page.text.content).not.toMatch(/<!-- sf:settlements-list --><ul><\/ul>/);
+  });
+
+  it("!migrate-entities' page cleanup keeps a page the GM added to the sector record", async () => {
+    const { sector } = await buildRealSector();
+    const stored  = global.game.settings.get(MODULE, "campaignState");
+    const journal = global.game.journal.find(j => j.flags?.[MODULE]?.sectorRecord && j.flags[MODULE].sectorId === sector.id);
+    const [rumours] = await journal.createEmbeddedDocuments("JournalEntryPage", [
+      { name: "Rumours", type: "text", text: { content: "<p>The Hegemony is coming.</p>" } },
+    ]);
+
+    expect(await cleanupSectorRecordPages(sector.id, stored)).toBe(0);
+    expect(rumours._deleted).toBeUndefined();
+    expect(journal.pages.contents.map(p => p.name)).toEqual([sector.name, "Rumours"]);
   });
 
   it("renaming a settlement Actor (the live updateActor sync) keeps the list, renamed", async () => {

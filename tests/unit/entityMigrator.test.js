@@ -381,14 +381,33 @@ describe("sector-record overview rewrite (Phase 3.5)", () => {
       },
       delete: async function () { this._deleted = true; },
     };
+    // The per-settlement page the pre-Phase-3 creator wrote (its template).
     const extraPage = {
       id:   "page-extra",
       name: "Outpost 7",
-      text: { content: "<p>legacy embedded settlement detail</p>" },
+      text: { content: `<h2>Outpost 7</h2>
+<p><strong>Type:</strong> Orbital</p>
+<p><strong>Population:</strong> Few</p>
+<p><strong>Authority:</strong> None</p>
+<p><strong>Projects:</strong> Trade</p>
+<hr>
+<p class="narrator-stub"><em>No narrator text generated.</em></p>
+<hr>
+<h3>Notes</h3>
+<p><em>Record discoveries and plot threads here.</em></p>` },
       update: async () => {},
       delete: async function () { this._deleted = true; },
     };
-    const sectorPages = [overviewPage, extraPage];
+    // A page the GM added to the record — the migration must not touch it
+    // (issue #321 U49).
+    const gmPage = {
+      id:   "page-gm",
+      name: "Rumours",
+      text: { content: "<p>The Hegemony is coming.</p>" },
+      update: async () => {},
+      delete: async function () { this._deleted = true; },
+    };
+    const sectorPages = [overviewPage, extraPage, gmPage];
     const sectorJournal = {
       id:    "j-sector",
       name:  "Sigma Draconis — Sector Record",
@@ -400,11 +419,12 @@ describe("sector-record overview rewrite (Phase 3.5)", () => {
     global.game.journal._add(settlementJournal);
     global.game.journal._add(sectorJournal);
 
-    // Seed campaignState with the sector entry that points at the legacy journal id.
+    // Seed campaignState with the sector entry that points at the legacy journal
+    // id — in the shape storeSector persists (map data, no settlements array).
     const state = global.game.settings.get(MODULE, "campaignState");
     state.sectors = [{
       id: "sec-1", name: "Sigma Draconis",
-      settlements: [{ id: "g7", name: "Outpost 7", locationType: "orbital", population: "Few", authority: "None" }],
+      mapData:          { settlements: [{ id: "g7", name: "Outpost 7", type: "orbital", gridX: 1, gridY: 2 }] },
       settlementIds:    ["j-set"],
       entityJournalIds: { g7: "j-set" },
       activeSectorId:   "sec-1",
@@ -430,9 +450,10 @@ describe("sector-record overview rewrite (Phase 3.5)", () => {
     expect(overviewPage.text.content).toContain("trader's haven");
     expect(overviewPage.text.content).not.toMatch(/<ul><li>Outpost 7 —/);
 
-    // Legacy embedded settlement page deleted; overview survives.
+    // Legacy embedded settlement page deleted; the overview and the GM's page survive.
     expect(extraPage._deleted).toBe(true);
     expect(overviewPage._deleted).toBeUndefined();
+    expect(gmPage._deleted).toBeUndefined();
   });
 });
 
