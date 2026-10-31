@@ -261,3 +261,21 @@ describe('buildBurnState — the move\'s targets', () => {
     expect(buildBurnState(makeResolution(), actorWithMomentum(7)).move).toBeNull();
   });
 });
+
+// Issue #316 T05: a no-roll move (Make a Discovery) rolled an action die
+// against its null stat and offered a burn on the "miss".
+describe('buildBurnState — a move that rolled nothing cannot be burned', () => {
+  it('returns null for a rollKind "none" resolution, whatever its momentum', () => {
+    const noRoll = makeResolution({
+      moveId: 'make_a_discovery', rollKind: 'none', outcome: null, outcomeLabel: 'No roll',
+      actionDie: 0, actionScore: 0, challengeDice: [],
+      consequences: { legacyMark: { track: 'discoveries', ticks: 2 }, momentumChange: 0 },
+    });
+    expect(buildBurnState(noRoll, actorWithMomentum(9))).toBeNull();
+  });
+
+  it('control: an action-roll miss with the same momentum is eligible', () => {
+    const miss = makeResolution({ rollKind: 'action', outcome: 'miss', actionScore: 1, challengeDice: [7, 8] });
+    expect(buildBurnState(miss, actorWithMomentum(9))).toMatchObject({ canBurn: true, originalOutcome: 'miss' });
+  });
+});

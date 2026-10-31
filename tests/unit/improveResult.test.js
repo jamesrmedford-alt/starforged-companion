@@ -126,3 +126,11 @@ describe("renderImproveButtonHtml", () => {
     expect(html).not.toContain("fill 1 of");
   });
 });
+
+// Issue #316 T05: a move that rolled nothing has no result to improve.
+describe("buildImproveState — a no-roll move", () => {
+  it("returns null for a rollKind \"none\" resolution even with an applicable ability", () => {
+    const noRoll = resolution({ moveId: "make_a_discovery", rollKind: "none", outcome: null, outcomeLabel: "No roll" });
+    expect(buildImproveState(noRoll, [fugitiveAbility()], actor)).toBeNull();
+  });
+});

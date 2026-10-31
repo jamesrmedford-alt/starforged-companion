@@ -16,7 +16,7 @@
  * Source: Ironsworn: Starforged Reference Guide pp.8-25, Rules Summary pp.116-121
  */
 
-import { MOVES } from "../schemas.js";
+import { MOVES, moveRollKind } from "../schemas.js";
 import { rollOracle, rollPaired } from "../oracles/roller.js";
 
 
@@ -1127,23 +1127,37 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   if (!moveData) throw new Error(`Unknown move: ${moveId}`);
 
   const isProgressMove = moveData.progressMove === true;
+  // How the move resolves (schemas.js moveRollKind). A no-roll move — Make a
+  // Discovery, Confront Chaos, Reach a Milestone, Pay the Price, the session
+  // moves — used to roll an action die against its null stat and come out a
+  // "miss" or a "hit" the rules know nothing of, with a Burn Momentum offer on
+  // the miss (issue #316 T05). The move's data decides, not a stat the
+  // interpreter happened to name; a bonded Develop Your Relationship is the
+  // one no-stat move that rolls, and its enrichment says so on the
+  // interpretation (`rollKind: "action"`).
+  const rollKind = isProgressMove ? "progress"
+    : (moveRollKind(moveId) === "action" || interpretation.rollKind === "action") ? "action"
+    : "none";
 
   let actionDie    = 0;
   let actionDieCancelled = false;
   let actionScore  = 0;
   let progressScore = 0;
-  const challengeDice = rollChallengeDice();
-  let outcome, isMatch;
+  let challengeDice = [];
+  let outcome = null;
+  let isMatch = false;
 
-  if (isProgressMove) {
+  if (rollKind === "progress") {
     // Progress move: score from the relevant track's filled boxes. statValue
     // is repurposed as the tick carrier — filled from live module data
     // (combat/expedition tracks, vow items, connection records) by
     // enrichProgressTicks (src/moves/statEnrichment.js) before resolveMove
     // is called. The interpreter never supplies tick counts.
     const ticks = statValue;
+    challengeDice = rollChallengeDice();
     ({ progressScore, outcome, isMatch } = calcProgressOutcome(ticks, challengeDice));
-  } else {
+  } else if (rollKind === "action") {
+    challengeDice = rollChallengeDice();
     actionDie   = rollActionDie();
     // The die stays on the record (the card shows it struck through); a
     // cancelled one adds nothing to the score.
@@ -1151,6 +1165,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     actionScore = calcActionScore(actionDieCancelled ? 0 : actionDie, statValue, adds);
     ({ outcome, isMatch } = calcOutcome(actionScore, challengeDice));
   }
+  // rollKind "none": no dice, no outcome — the consequences apply as written.
 
   // Take Decisive Action — play kit p. 5: "If you are in control, check the
   // result as normal. If you are in a bad spot, count a strong hit without
@@ -1169,7 +1184,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     }
   }
 
-  const outcomeLabel   = buildOutcomeLabel(outcome, isMatch);
+  const outcomeLabel   = rollKind === "none" ? "No roll" : buildOutcomeLabel(outcome, isMatch);
   const consequences   = mapConsequences(moveId, outcome, isMatch);
   if (downgradeApplied) {
     consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
@@ -1178,7 +1193,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     moveName, statUsed, statValue, adds,
     actionDie, actionDieCancelled, actionScore, challengeDice,
     outcome, outcomeLabel, isMatch,
-    isProgressMove, progressScore,
+    rollKind, isProgressMove, progressScore,
     consequences,
   });
 
@@ -1208,6 +1223,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     momentumBurnedFrom: 0,
     outcome,
     outcomeLabel,
+    rollKind,
     isProgressMove,
     progressScore,
     consequences,
@@ -1457,6 +1473,15 @@ function safeRollPaired(t1, t2) {
  * Gives Loremaster the full mechanical picture so narration is coherent.
  */
 function buildLoremasterContext(r) {
+  // A no-roll move: no dice, no outcome — only the move and what it does.
+  if (r.rollKind === "none") {
+    return [
+      `[MOVE: ${r.moveName}]`,
+      `[ROLL: none — this move has no action roll]`,
+      r.consequences.otherEffect ? `[CONSEQUENCE: ${r.consequences.otherEffect}]` : "",
+    ].filter(Boolean).join(" ");
+  }
+
   const dieStr = r.actionDieCancelled ? `${r.actionDie} (cancelled by momentum -${r.actionDie})` : `${r.actionDie}`;
   const diceStr = r.isProgressMove
     ? `Progress score: ${r.progressScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`

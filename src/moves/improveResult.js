@@ -95,7 +95,9 @@ let _deps = { narrate: null, persist: null, applyEffects: null };
  */
 export function buildImproveState(resolution, applicableAbilities, actor, ptpReversals = null, targets = null, move = null) {
   if (!actor || !resolution) return null;
-  if (resolution.isProgressMove) return null;
+  // Only an action roll's result can be improved: not a progress roll's, and
+  // not a move that rolled nothing (issue #316 T05).
+  if (resolution.isProgressMove || resolution.rollKind === "none") return null;
   if (!Array.isArray(applicableAbilities) || !applicableAbilities.length) return null;
 
   // Only offer when there's room to improve (weak hit or miss → strong hit).

@@ -5833,8 +5833,9 @@ const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_
 async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
-  // and fail-open — never blocks or breaks the result post.
-  void showMoveRoll(resolution);
+  // and fail-open — never blocks or breaks the result post. A no-roll move
+  // rolled nothing to show.
+  if (resolution.rollKind !== "none") void showMoveRoll(resolution);
   const combatMove = TDA_OFFER_MOVES.has(resolution.moveId);
   const namedFight = combatMove && fight?.id ? fight : null;
   return ChatMessage.create({
@@ -5873,15 +5874,22 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
   // Progress moves roll no action die — the score is the track's filled boxes
   // (statValue carries the ticks; progressScore = floor(ticks / 4)). Rendering
   // them through the action-move template printed "+ (0)" and "Action: 0 + N
-  // = 0" against a real outcome.
-  const statLine = resolution.isProgressMove
-    ? `progress (${resolution.statValue} ticks)`
-    : `+${resolution.statUsed} (${resolution.statValue})`;
-  const diceLine = resolution.isProgressMove
-    ? `Progress: <strong>${resolution.progressScore}</strong>
+  // = 0" against a real outcome. A no-roll move (resolver rollKind "none" —
+  // Make a Discovery, Reach a Milestone …) has no dice and no outcome to
+  // show: it printed "+null (0)" and a "Miss" (issue #316 T05).
+  const noRoll = resolution.rollKind === "none";
+  const statLine = noRoll
+    ? `no action roll — the move's effect applies as written`
+    : resolution.isProgressMove
+      ? `progress (${resolution.statValue} ticks)`
+      : `+${resolution.statUsed} (${resolution.statValue})`;
+  const diceLine = noRoll
+    ? ""
+    : resolution.isProgressMove
+      ? `Progress: <strong>${resolution.progressScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`
-    : `Action: ${resolution.actionDieCancelled
+      : `Action: ${resolution.actionDieCancelled
           ? `<s>${resolution.actionDie}</s> (cancelled by momentum -${resolution.actionDie})`
           : resolution.actionDie} + ${resolution.statValue}${addsStr}
         = <strong>${resolution.actionScore}</strong>
@@ -5892,10 +5900,10 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
     <div class="sf-move-result ${outcomeClass}">
       <div class="sf-move-name">${resolution.moveName}</div>
       <div class="sf-move-stat">${statLine}</div>
-      <div class="sf-move-dice">
+      ${diceLine ? `<div class="sf-move-dice">
         ${diceLine}
-      </div>
-      <div class="sf-move-outcome">${resolution.outcomeLabel}</div>
+      </div>` : ""}
+      ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
       ${resolution.consequences.otherEffect
         ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
         : ""}
