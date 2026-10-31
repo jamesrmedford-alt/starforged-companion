@@ -5294,7 +5294,10 @@ async function handleSeverCommand(message) {
   const connections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(Boolean);
-  const target = selectConnection(connections, arg || null);
+  // Strict: a severance is permanent, so a name that matches nobody severs
+  // nobody, and a bare `!sever` acts only when one connection is active —
+  // never the develop ladder's sole-bonded guess (issue #321 U14).
+  const target = selectConnection(connections, arg || null, { strict: true });
   if (!target?.__hostId) {
     ui.notifications?.warn(
       `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);

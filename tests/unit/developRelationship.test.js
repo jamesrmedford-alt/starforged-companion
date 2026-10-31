@@ -93,6 +93,34 @@ describe("selectConnection", () => {
     expect(selectConnection(list, null)?._id).toBe("b");
   });
 
+  // Issue #321 U14 — `!sever` is irreversible, so it never guesses.
+  describe("strict (!sever)", () => {
+    const list = [
+      conn({ _id: "a", name: "Mira Kade", bonded: true }),
+      conn({ _id: "b", name: "Dex Holloway" }),
+    ];
+
+    it("a named target that matches no name resolves nothing — not the sole bonded one", () => {
+      expect(selectConnection(list, "Vexx", { strict: true })).toBeNull();
+      expect(selectConnection(list, "the", { strict: true })).toBeNull();
+    });
+
+    it("an unnamed target resolves nothing while several are active, even with one bonded", () => {
+      expect(selectConnection(list, null, { strict: true })).toBeNull();
+    });
+
+    it("control: keeps the exact and substring rungs", () => {
+      expect(selectConnection(list, "mira kade", { strict: true })?._id).toBe("a");
+      expect(selectConnection(list, "Dex", { strict: true })?._id).toBe("b");
+    });
+
+    it("an unnamed target resolves the sole active connection", () => {
+      const one = [conn({ _id: "a", name: "Mira", bonded: true }), conn({ _id: "x", name: "Gone", active: false })];
+      expect(selectConnection(one, null, { strict: true })?._id).toBe("a");
+      expect(selectConnection(one, "Vexx", { strict: true })).toBeNull();
+    });
+  });
+
   // Issue #301 B01 — a connection picker names its choice by host Actor id.
   describe("by host id (a picker's choice)", () => {
     const list = [

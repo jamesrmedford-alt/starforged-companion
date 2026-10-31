@@ -116,12 +116,17 @@ export function nextRank(rank) {
  *     connection is never what a forge with no matching target meant
  *  4. null when ambiguous
  *
+ * `strict` is for an irreversible write (`!sever`): a named target that
+ * matches no name resolves nothing, and an unnamed one resolves only the sole
+ * active connection — never the sole bonded one among several. A typo must
+ * not land on the table's one bond (rules/reachability.md §6 — issue #321 U14).
+ *
  * @param {Array<{_id,name,rank,bonded,active,__hostId}>} connections
  * @param {string|null} target — interpretation.moveTarget (the named connection)
- * @param {{ hostId?: string|null, unbonded?: boolean }} [opts]
+ * @param {{ hostId?: string|null, unbonded?: boolean, strict?: boolean }} [opts]
  * @returns {object|null}
  */
-export function selectConnection(connections, target, { hostId = null, unbonded = false } = {}) {
+export function selectConnection(connections, target, { hostId = null, unbonded = false, strict = false } = {}) {
   const active = (connections ?? []).filter(c => c && c.active !== false);
   if (!active.length) return null;
 
@@ -143,6 +148,10 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
     }
   }
 
+  if (strict) {
+    if (target) return null;
+    return active.length === 1 ? active[0] : null;
+  }
   if (unbonded) {
     const open = active.filter(c => !c.bonded);
     return open.length === 1 ? open[0] : null;
