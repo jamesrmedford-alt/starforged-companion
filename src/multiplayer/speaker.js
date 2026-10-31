@@ -20,7 +20,12 @@
  *                                     through (observed in playtest: chat
  *                                     attributed to "Ship").
  *   2. message.author.character.id  — User.character (the explicitly
- *                                     bound PC for this Foundry user)
+ *                                     bound PC for this Foundry user),
+ *                                     honoured only when it is a player
+ *                                     character — a user whose assigned
+ *                                     character is the crew's starship or
+ *                                     an NPC card falls through (issue
+ *                                     #321 U24)
  *   3. first Actor type === "character" that the author OWNS via
  *      Foundry's permission system
  *   4. campaignState.characterIds[0] — solo-GM-play fallback
@@ -87,9 +92,14 @@ export function resolveSpeakerActorId(message, campaignState) {
 
   // 2. User.character — the bound PC. Works for any player who set
   //    "character" on their User document (the standard Foundry pattern).
+  //    Validated like step 1: a user can assign the starship or an NPC card
+  //    as their character, and attributing to it would roll the ship's
+  //    (absent) stats and write the move's effects onto it.
   const author = message?.author ?? null;
-  if (author?.character?.id) {
-    return author.character.id;
+  const bound  = author?.character ?? null;
+  if (bound?.id) {
+    const actor = globalThis.game?.actors?.get?.(bound.id) ?? bound;
+    if (isPlayerCharacter(actor)) return actor.id;
   }
 
   // 3. Ownership scan. A player can own a PC without setting it as their
