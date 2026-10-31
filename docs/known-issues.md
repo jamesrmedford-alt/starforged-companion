@@ -11,6 +11,52 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #315 (issue #316) — all six fixed in the v1.7.36 cycle
+
+Found by the 2026-10-30 audit of `40cabee` (the merge of PR #312): its eight
+probes (the six defects and two controls) reproduced locally on `6455e01`
+(the merge of PR #319) before the fixes; after them the six defect probes
+fail — their assertions pin the broken behaviour — and the two controls
+pass, and each fix's own tests, which assert the expected behaviour, fail
+with the fix taken out (`docs/testing/fix-sensitivity.md`). None has been
+checked in a live Foundry world yet. The ones to try: a character with an
+impact taking +1 momentum several times, and the sheet's momentum maximum
+afterwards (T01); a legacy track at 38 ticks and a Make a Discovery (T02); a
+scene challenge completed in the Progress Tracks panel, then a Pay the Price
+(T03); an Explore a Waypoint strong hit with a match — the +2 momentum pick
+and the 🔭 Make a Discovery button, in either order, and the card after a
+chat reload (T05, T06).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| T01 MOMENTUM-BASE-WRITEBACK | LOSE-STATE | `applyMeterChanges` and `recalculateMomentumBounds` wrote the effective momentum maximum and reset — the bases less the impacts — into `system.momentum.max` / `resetValue`, the base fields foundry-ironsworn's getters deduct the impacts from: with one impact, three strong hits took the maximum 9 → 8 → 7 → 6 and the reset to 0, and clearing the impact left 7 / 0 → the bases are never written; `momentumBounds` reads the effective values (the getters, else the vendor's formula over the sheet's bases) for the clamp, the snapshot and the burn preview; the recalculation only clamps momentum to the new maximum, with no write when it is within it |
+| T02 LEGACY-CAP-NO-CLEAR | LOSE-STATE | `addLegacyTicks` capped a track at 40 ticks and nothing cleared it: from 38, the first discovery paid the tenth box's 2 XP and every later mark was discarded (40 / 40 / 40, 2 XP for good); the persist merge took the higher tick count, which would have undone a clear → `moves/legacyTracks.js`: filling the tenth box clears the track, which starts again with the overflow and counts its cycles (`{ ticks, cleared, cycles }`); each box is paid at the rate of the cycle it filled in (2, then 1); two copies merge by progress (`cycles × 40 + ticks`); `addLegacyTicks` returns `{ boxes, xp, cleared }` and the XP note says when the track cleared; a track frozen at 40 clears on its next mark |
+| T03 SCENE-CLOCK-OUTLIVES-CHALLENGE | WRONG-DETAIL | Completing a scene challenge (the panel's ✓, `completeProgressTrack`) archived the track and left its paired tension clock active: the next Pay the Price advanced it 0/4 → 1/4 and posted a clock card naming the finished challenge; removing the track left the clock behind → completion retires the paired clock (`retireClock`: `active: false`, kept and shown as retired, skipped by every automatic advance); removal removes it (`removeClock`, shared with `!clock remove` and the panel's ✕); both run before the track write and are idempotent, so a refused clock write changes nothing and the press is the retry |
+| T04 BEGIN-CLOCK-WRITE-LOST | LOSE-STATE | Begin a Session stamped the session begun, then its campaign clock advance's write was refused: the roll was caught and logged, the clock stayed at 1/6, no card said so, and a second Begin said "already begun" → `advanceCampaignClocksForBeginSession` keeps its rolls when the write is refused (`saved: false`, the error, the fill rolled to; written on a copy); Begin posts the clock card with the advance marked "not saved" and a `clocks` step on the GMs' payoff card (source `sessionClocks`), whose Retry saves each clock to at least its rolled fill (`applyClockAdvances`) — never rolled again, never advanced twice; the already-begun note names the clock still owed |
+| T05 NO-ROLL-MOVE-ROLLED | WRONG-DETAIL | The resolver knew progress moves from everything else and rolled an action die for every other move: a forced Make a Discovery read "+null (0)", "Action: 1 + 0 = 1 vs 7, 8", Miss, and offered "Burn Momentum (9 → Strong Hit)", which spent momentum 9 → 2 on an outcome the rules never had; every no-roll move (Confront Chaos, Reach a Milestone, Pay the Price, the session moves …) rolled the same way → `schemas.js moveRollKind` ("action" / "progress" / "none") is the one classification the resolver, Take a Break's add, the card, the dice animation and the Burn / Improve offers read; a "none" resolution draws no dice and has `outcome: null` ("No roll"), its consequences apply as written; a stat the interpreter names on a no-roll move is ignored; a bonded Develop Your Relationship is marked `rollKind: "action"` by its enrichment |
+| T06 WAYPOINT-REWARD-STACKS | DUPLICATE | The 🔭 Make a Discovery / 🌀 Confront Chaos button posted the forced move from the clicker's client and disabled only its own DOM button: the +2 momentum was taken, then the discovery on top (2 ticks), then — a chat re-render rebuilt the button from the unchanged flags — the discovery again (4 ticks, 2 XP) → the click relays to the canonical GM (`waypoint.oracle` → `applyWaypointOraclePick`), which claims the GM-authored card once (`waypointRewardClaimed: "alternative"`), posts the forced move as the roller (the move card's new `actorId`) and retires the pending ordinary choice card; the ordinary pick closes the alternative (`closeUpgradesForChoice` stamps "ordinary"); only the roller's owner or a GM may take it; a re-render or another client finds the claim; a post that fails releases it |
+
+Open — found while fixing, not fixed (outside the audited paths):
+
+- **MOMENTUM-BASE-DRIFTED** (LOSE-STATE, data). A world that played under
+  the write-back has characters whose sheet bases sit below 10 / +2 (the
+  audit's run ended at 7 / 0). T01 stops the drift but repairs nothing: the
+  bases are the sheet's, and nothing distinguishes a base the write-back
+  lowered from one a GM set on purpose. Proposed (needs the maintainer's
+  call): a one-time GM command that resets a character's base maximum and
+  reset to 10 / +2, with a note in the help; until then they are repaired by
+  hand.
+- **WAYPOINT-MISS-NO-PTP** (WRONG-DETAIL). `explore_a_waypoint`'s miss says
+  "Pay the Price" on its card but sets no `routePayThePrice`, so — unlike
+  Undertake an Expedition's miss — no Pay the Price card is rolled and no
+  suffer route lands. Proposed: `routePayThePrice: true` on the miss, as for
+  the other `PAY_THE_PRICE_ON_MISS` moves.
+- **WAYPOINT-ALT-AFTER-UPGRADE** (WRONG-DETAIL, low). A waypoint miss with a
+  match offers Confront Chaos; a miss later burned or improved to a hit keeps
+  that button live on the superseded card (the claim closes it only once
+  taken). Proposed: an upgrade stamps the alternative closed with the choice
+  cards it retires.
+
 ### Bug audit after #314 (issue #315) — all eight fixed in the v1.7.36 cycle
 
 Found by the 2026-10-29–30 audit of `40cabee` (the merge of PR #312): its
@@ -89,11 +135,10 @@ Open — found while fixing, not fixed (outside the audited paths):
   cleared, but no card offers the choice (the dialog that was to recurse
   into it was deleted in the 2026-07 review). Proposed: post the "any"
   suffer picker for the remainder, with a clear-progress option.
-- **NO-STAT-CARD-NULL** (UX). A move card for a move without a stat that the
-  pipeline rolls anyway (an un-bonded Develop Your Relationship, Reach a
-  Milestone, Forsake Your Vow) prints "+null (0)" as its stat line
-  (`formatMoveResult`). Proposed: print no stat line when `statUsed` is
-  null.
+- ~~**NO-STAT-CARD-NULL** (UX)~~ — fixed by issue #316 T05: a move without
+  a stat is a no-roll move now, and its card shows no stat line, no dice and
+  no outcome (it used to roll anyway and print "+null (0)" — an un-bonded
+  Develop Your Relationship, Reach a Milestone, Forsake Your Vow).
 
 
 ### Bug audit after #310 (issue #311) — all eight fixed in the v1.7.36 cycle, and the two found while fixing (issue #313)

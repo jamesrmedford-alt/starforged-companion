@@ -1,14 +1,15 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314 and #315
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315 and #316
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309, #311, #313, #314 and #315 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311, #313, #314, #315 and #316 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
-2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29 and
-for issues #313, #314 and #315 on 2026-10-30. To reproduce:
+2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29, for
+issues #313, #314 and #315 on 2026-10-30 and for issue #316 on 2026-10-31. To
+reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -54,6 +55,10 @@ node scripts/fix-sensitivity.mjs \
 # issue #315
 node scripts/fix-sensitivity.mjs \
   6879144 d9f8933 a9f238a 4e33ed1 7d5083b 29511e3 403ea27 9666fa6 --md details.md
+
+# issue #316
+node scripts/fix-sensitivity.mjs \
+  e6c6500 eca4344 bb52b2b 775fd77 96043f2 300fb37 --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -204,6 +209,17 @@ probe needs its pick made explicit: S02's "choose one" now offers the
 progress option first (checked by default), so choosing momentum ticks that
 radio.
 
+### Issue #316 — the audit after #315
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| T01 MOMENTUM-BASE-WRITEBACK | e6c6500 | revert | 13 — `actorBridge.test.js` (9: no `system.momentum.max` / `resetValue` in any meter write; three gains with one impact keep 9 / +1; a gain clamps to the getters' maximum; clearing the impact restores 10 / +2 with nothing written; an edited base reset is kept; marking an impact clamps 10 → 9 in one write, and 9 stays with none), `momentumBounds.test.js` (2: the same through the GM's pipeline — three strong hits keep 9 / +1, the stored bases 10 / 2, and the impact cleared restores 10 / +2; a gain clamps to the impact-reduced maximum), `repair.test.js` and `sharedSupply.test.js` (the #315 S04 / S07 bounds, now the effective ones) |
+| T02 LEGACY-CAP-NO-CLEAR | eca4344 | revert | 11 — `legacyRollover.test.js` (3: from 38, three discoveries clear the track to 0 / 2 / 4 and pay 2 then 1 XP; a track frozen at 40 clears on the next; a mark short of the tenth box clears nothing), `flowDefectFixes.test.js` (5: `addLegacyTicks` returns the boxes, XP and clear; the tenth box clears and the overflow carries on at 1 XP), `persistResolutionMerge.test.js` (3: a cleared track is not reverted by the store's 38; a store record further along keeps its clear; the merged record counts its cycles); `legacyTracks.test.js` fails to load without the module |
+| T03 SCENE-CLOCK-OUTLIVES-CHALLENGE | bb52b2b | revert | 5 — `sceneChallengeClock.test.js` (4: the panel's ✓ retires the paired clock, which Pay the Price then leaves at 0/4 and names on no card while another tension clock advances; `completeProgressTrack` the same; the panel's ✕ removes the clock; a refused clock write leaves the challenge open and warns, and the next press completes it), `clocks.test.js` (`!clock list` shows a retired clock); 4 more fail only on the missing `retireClock` / `removeClock` |
+| T04 BEGIN-CLOCK-WRITE-LOST | 775fd77 | revert | 6 — `sessionStartClocks.test.js` (4: the refused write leaves the session begun, the clock card marked "not saved" and a GMs' card naming the rolled fill; a second Begin names the clock owed and the Retry saves the fill once without rolling again; a Retry after a GM's own advance does not advance twice; a player's press saves nothing), `clocksSessionStart.test.js` (2: every result names its clock and says it was saved; a refused write keeps the rolls, the cache unchanged); 3 more fail only on the missing `applyClockAdvances` |
+| T05 NO-ROLL-MOVE-ROLLED | 96043f2 | revert | 9 — `resolver.test.js` (5: Make a Discovery draws no dice and has no outcome; a stat the interpreter named is not rolled and a negative momentum cancels nothing; every no-roll move in the table; a bonded Develop rolls +rank by its `rollKind`; action and progress moves keep their kinds), `noRollMoves.test.js` (3: the real waypoint follow-up has no dice, no outcome, no Burn, and momentum stays 9; a typed Make a Discovery the same; a Face Danger miss still rolls and offers a burn), `improveResult.test.js` (no Improve on a "none" resolution); 3 more fail only on the missing `moveRollKind` |
+| T06 WAYPOINT-REWARD-STACKS | 300fb37 | revert | 8 — `waypointRewardClaim.test.js` (4: the ordinary +2 taken, the discovery is refused and its button closed on a re-render; the discovery first marks 2 ticks once, retires the ordinary choice and a re-render finds the claim; another player's click is refused and a GM's takes it as the roller; Confront Chaos is taken once), `cardButtonWiring.test.js` (4: a player's click relays `waypoint.oracle` with no local post; the canonical GM's click claims and posts once as the roller; a claimed card renders disabled; no GM re-arms); 9 more fail only on the missing `applyWaypointOraclePick` |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -259,6 +275,11 @@ ways; each was read and is a control:
 | `shipBatteredCanonical` › control: a ship that is not battered takes it / a -1 integrity effect lands on a battered ship | the same, and a loss while battered (#315 S05) |
 | `repair` › control: supply left over marks nothing / already unprepared: it stays marked… / too little supply: nothing is spent… | a trade short of 0, an impact already marked, the pay-in-full check (#315 S04) |
 | `sufferExecutor` › an ally already unprepared is not marked again or named / an NPC card is no crew, and a sacrifice short of 0 marks no one | the crew's limits (#315 S07) |
+| `actorBridge` › readMomentumState reads the effective bounds without touching the sheet | the read side, which never wrote (#316 T01) |
+| `momentumBounds` › control: no impacts — three strong hits leave the bounds at 10 / +2 | the audit's own control (#316 T01) |
+| `sceneChallengeClock` › control: a cancelled removal changes nothing / control: a combat track's completion touches no clock | the confirm's No, and a track with no paired clock (#316 T03) |
+| `sessionStartClocks` › control: Begin advances the clock once; a second Begin repeats nothing and owes nothing | the audit's own control (#316 T04) |
+| `burnMomentum` › buildBurnState — a move that rolled nothing cannot be burned: returns null for a rollKind "none" resolution / control: an action-roll miss with the same momentum is eligible | a "none" resolution's null outcome already made no burn (the gate is shown by `noRollMoves` through the pipeline), and an action miss still burns (#316 T05) |
 
 Two more passed both ways under 611979e's revert because they cover N02,
 fixed in the commit before it: `consequenceTargets` › a strong hit's +1
@@ -1644,3 +1665,154 @@ Test files: `tests/unit/repair.test.js`, `tests/unit/sharedSupply.test.js`, `tes
 
 - New test passing with and without the fix (a control?): tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together an ally already unprepared is not marked again or named
 - New test passing with and without the fix (a control?): tests/unit/sufferExecutor.test.js › sacrificeResources the crew sharing the supply is marked unprepared together an NPC card is no crew, and a sacrifice short of 0 marks no one
+
+### e6c6500 — fix: momentum writes leave the sheet's base max and reset alone (issue #316 T01)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/momentumBounds.test.js`, `tests/unit/repair.test.js`, `tests/unit/sharedSupply.test.js`. Source restored: 1 file(s).
+
+- With the fix: 155 passed, 0 failed.
+- Without it: 13 failed (10 new; 0 only for a missing export); 142 still pass (2 new).
+- Verdict: **sensitive** — 13 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/actorBridge.test.js › applyMeterChanges clamps momentum to −6–momentumMax (reset is the burn target, not a floor) | AssertionError: expected { 'system.momentum.value': 8, …(2) } to not have property "system.momentum.resetValue" |
+| (new) tests/unit/actorBridge.test.js › applyMeterChanges reduces the effective momentum maximum by 1 per active impact (all categories count) | AssertionError: expected { 'system.momentum.value': 7, …(2) } to not have property "system.momentum.max" |
+| (new) tests/unit/actorBridge.test.js › applyMeterChanges counts vehicle and burden impacts toward the effective maximum too | AssertionError: expected { 'system.momentum.value': 8, …(2) } to not have property "system.momentum.max" |
+| (new) tests/unit/actorBridge.test.js › setDebility clamps momentum to the new effective maximum when an impact is marked | AssertionError: expected { 'system.momentum.max': 9, …(2) } to deeply equal { 'system.momentum.value': 9 } |
+| (new) tests/unit/actorBridge.test.js › setDebility writes nothing more when the momentum is already within the new maximum | AssertionError: expected [ { …(1) }, …(1) ] to have a length of 1 but got 2 |
+| (new) tests/unit/actorBridge.test.js › momentum writes leave the sheet's base max and reset alone (issue #316 T01) three gains with one impact keep the effective maximum at 9 and the reset at +1 | AssertionError: expected [ { max: 8, reset: +0 }, …(2) ] to deeply equal [ { max: 9, reset: 1 }, …(2) ] |
+| (new) tests/unit/actorBridge.test.js › momentum writes leave the sheet's base max and reset alone (issue #316 T01) clamps a gain to the effective maximum the getters report | AssertionError: expected 9 to be 10 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › momentum writes leave the sheet's base max and reset alone (issue #316 T01) clearing the impact restores the full bounds: 10 and +2, with nothing written | AssertionError: expected 9 to be 10 // Object.is equality |
+| (new) tests/unit/actorBridge.test.js › momentum writes leave the sheet's base max and reset alone (issue #316 T01) without the getters, the bounds come from the sheet's bases — an edited base is kept | AssertionError: expected { value: 2, min: -6, max: 9, …(2) } to match object { max: 9, reset: 2 } |
+| (new) tests/unit/momentumBounds.test.js › T01 — the pipeline's momentum writes leave the sheet's bases alone one impact: three strong hits keep the maximum at 9 and the reset at +1; clearing it restores 10 / +2 | AssertionError: expected [ { max: 9, reset: 1 }, …(3) ] to deeply equal [ { max: 9, reset: 1 }, …(3) ] |
+| (new) tests/unit/momentumBounds.test.js › T01 — the pipeline's momentum writes leave the sheet's bases alone a gain is clamped to the impact-reduced maximum, not the base | AssertionError: expected 9 to be 10 // Object.is equality |
+| tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) the ally sharing the supply is marked with the payer, and both PCs' momentum bounds follow | AssertionError: expected [ [ 9, 1 ], [ 9, 1 ] ] to deeply equal [ [ 10, 2 ], [ 10, 2 ] ] |
+| tests/unit/sharedSupply.test.js › the crew shares the zero-supply impact (issue #315 S07) two PCs at supply 1: A sacrifices 1 — supply [0, 0] once synced, both unprepared, both momentum bounds lowered | AssertionError: expected [ [ 9, 1 ], [ 9, 1 ] ] to deeply equal [ [ 10, 2 ], [ 10, 2 ] ] |
+
+- New test passing with and without the fix (a control?): tests/unit/actorBridge.test.js › momentum writes leave the sheet's base max and reset alone (issue #316 T01) readMomentumState reads the effective bounds without touching the sheet
+- New test passing with and without the fix (a control?): tests/unit/momentumBounds.test.js › T01 — the pipeline's momentum writes leave the sheet's bases alone control: no impacts — three strong hits leave the bounds at 10 / +2
+
+### eca4344 — fix: a legacy track clears at its tenth box and carries on (issue #316 T02)
+
+Test files: `tests/unit/flowDefectFixes.test.js`, `tests/unit/legacyRollover.test.js`, `tests/unit/legacyTracks.test.js`, `tests/unit/persistResolutionMerge.test.js`. Source restored: 3 file(s).
+
+- With the fix: 43 passed, 0 failed.
+- Without it: 11 failed (6 new; 0 only for a missing export), 1 file(s) failed to load; 19 still pass (0 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) awards 2 XP per newly filled box to every PC and posts the earned-XP note | AssertionError: expected undefined to be 2 // Object.is equality |
+| tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) awards a box's XP past 30, and never lowers XP already above it | AssertionError: expected 1 to match object { boxes: 1, xp: 2 } |
+| tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) awards nothing when no box fills | AssertionError: expected undefined to be +0 // Object.is equality |
+| tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) pays 1 XP per box once the track has been cleared (rule 1.12) | AssertionError: expected 1 to deeply equal { boxes: 1, xp: 1, cleared: false } |
+| (new) tests/unit/flowDefectFixes.test.js › addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD) the tenth box clears the track: the overflow carries on from the first box at 1 XP a box | AssertionError: expected 1 to deeply equal { boxes: 3, xp: 4, cleared: true } |
+| (new) tests/unit/legacyRollover.test.js › T02 — a legacy track clears at its tenth box and carries on from 38: three discoveries clear the track, keep marking it, and pay 2 then 1 XP | AssertionError: expected [ { ticks: 40, …(2) }, …(2) ] to deeply equal [ …(3) ] |
+| (new) tests/unit/legacyRollover.test.js › T02 — a legacy track clears at its tenth box and carries on a track the old cap froze at 40 clears on the next discovery and marks the overflow | AssertionError: expected { ticks: 40, cleared: false } to deeply equal { ticks: 2, cleared: true, cycles: 1 } |
+| (new) tests/unit/legacyRollover.test.js › T02 — a legacy track clears at its tenth box and carries on control: short of the tenth box, a discovery marks its ticks and clears nothing | AssertionError: expected { ticks: 36, cleared: false } to deeply equal { ticks: 36, cleared: false, …(1) } |
+| tests/unit/persistResolutionMerge.test.js › persistResolution — concurrent writes survive the stale working copy legacy ticks from a concurrent `!bond` are not reverted | AssertionError: expected { bonds: { ticks: 3, …(1) }, …(1) } to deeply equal { bonds: { ticks: 3, …(2) }, …(1) } |
+| (new) tests/unit/persistResolutionMerge.test.js › persistResolution — concurrent writes survive the stale working copy a legacy track the pipeline cleared is not reverted by the store's higher pre-clear count | AssertionError: expected { ticks: 38, cleared: true, cycles: 1 } to deeply equal { ticks: 2, cleared: true, cycles: 1 } |
+| (new) tests/unit/persistResolutionMerge.test.js › persistResolution — concurrent writes survive the stale working copy a store record further along than the pipeline's keeps its marks — a clear included | AssertionError: expected { ticks: 39, cleared: true, cycles: 1 } to deeply equal { ticks: 1, cleared: true, cycles: 1 } |
+
+- Failed to load: `tests/unit/legacyTracks.test.js` — Cannot find module '../../src/moves/legacyTracks.js' imported from '/tmp/claude-0/-home-user-starforged-companion/0fbd7979-57ee-525d-8cab-6002bc35f026/scratchpad/fs-tmp/fix-sensitivity-eca4344-G2PzSG/
+
+### bb52b2b — fix: a finished scene challenge's danger clock stops advancing (issue #316 T03)
+
+Test files: `tests/unit/clocks.test.js`, `tests/unit/sceneChallengeClock.test.js`. Source restored: 2 file(s).
+
+- With the fix: 29 passed, 0 failed.
+- Without it: 9 failed (9 new; 4 only for a missing export); 20 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/clocks.test.js › retireClock / removeClock retireClock marks the clock inactive and keeps it; automatic advances then skip it | TypeError: retireClock is not a function |
+| (new) (API) tests/unit/clocks.test.js › retireClock / removeClock retireClock is idempotent — a clock already retired is left as it is, with no write | TypeError: retireClock is not a function |
+| (new) (API) tests/unit/clocks.test.js › retireClock / removeClock retireClock writes on a copy: a refused write leaves the cached state as it was | TypeError: retireClock is not a function |
+| (new) (API) tests/unit/clocks.test.js › retireClock / removeClock removeClock takes the clock off the list and returns it; an unknown id is null | TypeError: removeClock is not a function |
+| (new) tests/unit/clocks.test.js › retireClock / removeClock `!clock remove` and `!clock list` go through the same list: a retired clock is listed as retired | AssertionError: expected '&lt;div class="sf-clock-card">&lt;strong>Cl…' to match /Flooding chamber —…/4 &lt;em>\(retired\)&lt;\ |
+| (new) tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing the panel's ✓ retires the paired clock: Pay the Price leaves it at 0/4 and names it on no card; another tension clock still advances | AssertionError: expected { _id: 'wqx3eUQhw6Rqnai4', …(10) } to match object { active: false, filled: +0 } |
+| (new) tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing completeProgressTrack (a programmatic completion) retires the clock the same way | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing the panel's ✕ removes the paired clock with the challenge, once the GM confirms | AssertionError: expected '&lt;p>Permanently remove &lt;strong>Escape …' to match /Its danger clock goes with it/ |
+| (new) tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing a refused clock write leaves the challenge open and warns; the next press completes and retires it | AssertionError: expected false to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing control: a cancelled removal changes nothing
+- New test passing with and without the fix (a control?): tests/unit/sceneChallengeClock.test.js › T03 — a completed scene challenge's danger clock stops advancing control: a combat track's completion touches no clock
+
+### 775fd77 — fix: a refused session-start clock advance is saved by the GMs' Retry (issue #316 T04)
+
+Test files: `tests/unit/clocksSessionStart.test.js`, `tests/unit/sessionStartClocks.test.js`. Source restored: 3 file(s).
+
+- With the fix: 19 passed, 0 failed.
+- Without it: 9 failed (9 new; 3 only for a missing export); 10 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/clocksSessionStart.test.js › a refused session-start write keeps the rolls (issue #316 T04) every result names its clock and says it was saved | AssertionError: expected { name: 'Hostile expansion', …(7) } to match object { _id: 'c1', advanced: true, …(2) } |
+| (new) tests/unit/clocksSessionStart.test.js › a refused session-start write keeps the rolls (issue #316 T04) the write refused: the advanced entry carries saved:false and the error, the stored clock and the cache are unchanged | Error: refused by the test |
+| (new) (API) tests/unit/clocksSessionStart.test.js › a refused session-start write keeps the rolls (issue #316 T04) applyClockAdvances saves the recorded fills, once: a second call changes nothing and writes nothing | TypeError: applyClockAdvances is not a function |
+| (new) (API) tests/unit/clocksSessionStart.test.js › a refused session-start write keeps the rolls (issue #316 T04) a clock a GM advanced past the recorded fill is left; the fill is clamped to the segments; a missing clock is named | TypeError: applyClockAdvances is not a function |
+| (new) (API) tests/unit/clocksSessionStart.test.js › a refused session-start write keeps the rolls (issue #316 T04) a refused Retry write reports refused and leaves the cache as it was | TypeError: applyClockAdvances is not a function |
+| (new) tests/unit/sessionStartClocks.test.js › T04 — a refused session-start clock advance is saved by the GMs' Retry, not lost the write refused: the session is begun, the clock card says the advance was not saved, and the GMs get a Retry naming the rolled fill | TypeError: .toMatch() expects to receive a string, but got undefined |
+| (new) tests/unit/sessionStartClocks.test.js › T04 — a refused session-start clock advance is saved by the GMs' Retry, not lost a second Begin repeats nothing, and its note names the clock still owed; the Retry saves the rolled fill once, without rolling again | AssertionError: expected '&lt;div class="sf-session-card">&lt;strong>…' to match /already begun.*advance of Hostile exp…/ |
+| (new) tests/unit/sessionStartClocks.test.js › T04 — a refused session-start clock advance is saved by the GMs' Retry, not lost a Retry after a GM advanced the clock by hand meanwhile does not advance it twice | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/sessionStartClocks.test.js › T04 — a refused session-start clock advance is saved by the GMs' Retry, not lost only a GM may Retry: a player's press saves nothing | TypeError: Cannot read properties of undefined (reading '_id') |
+
+- New test passing with and without the fix (a control?): tests/unit/sessionStartClocks.test.js › T04 — a refused session-start clock advance is saved by the GMs' Retry, not lost control: Begin advances the clock once; a second Begin repeats nothing and owes nothing
+
+### 96043f2 — fix: a move with no action roll rolls nothing and offers no burn (issue #316 T05)
+
+Test files: `tests/unit/burnMomentum.test.js`, `tests/unit/improveResult.test.js`, `tests/unit/noRollMoves.test.js`, `tests/unit/resolver.test.js`, `tests/unit/schemas.test.js`. Source restored: 7 file(s).
+
+- With the fix: 353 passed, 0 failed.
+- Without it: 12 failed (12 new; 3 only for a missing export); 341 still pass (2 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/improveResult.test.js › buildImproveState — a no-roll move returns null for a rollKind "none" resolution even with an applicable ability | AssertionError: expected { canImprove: true, …(18) } to be null |
+| (new) tests/unit/noRollMoves.test.js › T05 — Make a Discovery from a waypoint match rolls nothing and offers no burn the follow-up card has no dice, no outcome and no Burn Momentum; momentum stays 9; the legacy is marked | AssertionError: expected { …(27) } to match object { moveId: 'explore_a_waypoint', …(3) } |
+| (new) tests/unit/noRollMoves.test.js › T05 — Make a Discovery from a waypoint match rolls nothing and offers no burn a typed Make a Discovery rolls nothing even when the interpreter names a stat | AssertionError: expected { …(27) } to match object { rollKind: 'none', …(3) } |
+| (new) tests/unit/noRollMoves.test.js › T05 — Make a Discovery from a waypoint match rolls nothing and offers no burn control: an action move still rolls its dice and offers a burn on a miss | AssertionError: expected { …(27) } to match object { rollKind: 'action', …(3) } |
+| (new) tests/unit/resolver.test.js › resolveMove — no-roll moves Make a Discovery draws no dice: no outcome, no match, its consequences as written | AssertionError: expected "random" to not be called at all, but actually been called 3 times |
+| (new) tests/unit/resolver.test.js › resolveMove — no-roll moves the move's data decides: a stat the interpreter named on a no-roll move is not rolled, and a negative momentum cancels nothing | AssertionError: expected "random" to not be called at all, but actually been called 3 times |
+| (new) tests/unit/resolver.test.js › resolveMove — no-roll moves every no-roll move in the table resolves without dice | AssertionError: confront_chaos: expected undefined to be 'none' // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove — no-roll moves a bonded Develop Your Relationship — rollKind "action" from its enrichment — rolls +rank | AssertionError: expected undefined to be 'action' // Object.is equality |
+| (new) tests/unit/resolver.test.js › resolveMove — no-roll moves control: a progress move and an action move keep their kinds | AssertionError: expected undefined to be 'action' // Object.is equality |
+| (new) (API) tests/unit/schemas.test.js › moveRollKind classifies every move as action, progress or none | TypeError: moveRollKind is not a function |
+| (new) (API) tests/unit/schemas.test.js › moveRollKind a stat list is an action roll; progressMove a progress roll; neither, no roll | TypeError: moveRollKind is not a function |
+| (new) (API) tests/unit/schemas.test.js › moveRollKind an unknown id rolls nothing | TypeError: moveRollKind is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/burnMomentum.test.js › buildBurnState — a move that rolled nothing cannot be burned returns null for a rollKind "none" resolution, whatever its momentum
+- New test passing with and without the fix (a control?): tests/unit/burnMomentum.test.js › buildBurnState — a move that rolled nothing cannot be burned control: an action-roll miss with the same momentum is eligible
+
+### 300fb37 — fix: a matched waypoint has one reward, claimed once on its card (issue #316 T06)
+
+Test files: `tests/unit/cardActions.test.js`, `tests/unit/cardButtonWiring.test.js`, `tests/unit/waypointRewardClaim.test.js`. Source restored: 4 file(s).
+
+- With the fix: 78 passed, 0 failed.
+- Without it: 17 failed (17 new; 9 only for a missing export); 61 still pass (0 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick the owner takes it: the forced move is posted once, as the roller, the card claimed, the ordinary choice retired | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick a second press — by anyone — posts nothing more | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick two near-simultaneous presses post exactly one move | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick refuses a requester who does not own the roller; a GM may take it for them | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick a card from before the roller was stamped is a GM's to take, posted without a speaker override | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick the ordinary reward already chosen: refused, and the alternative is closed on the card | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick a pick in progress on a multi-select choice counts as chosen too | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick a refused claim posts nothing; a failed post releases the claim so the press can be made again | TypeError: applyWaypointOraclePick is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyWaypointOraclePick warns when the card is gone, is not a waypoint card, or names no player character | TypeError: applyWaypointOraclePick is not a function |
+| (new) tests/unit/cardButtonWiring.test.js › wireWaypointOracleButton — relays waypoint.oracle a player click relays the card id to the canonical GM — no local chat post, the button disabled | AssertionError: expected [ { …(11) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/cardButtonWiring.test.js › wireWaypointOracleButton — relays waypoint.oracle on the canonical GM the click claims the card and posts the forced move once, speaking as the roller | AssertionError: expected undefined to match object { actor: 'pc-b' } |
+| (new) tests/unit/cardButtonWiring.test.js › wireWaypointOracleButton — relays waypoint.oracle a claimed card renders its button disabled — by either reward | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/cardButtonWiring.test.js › wireWaypointOracleButton — relays waypoint.oracle re-arms the button when no GM is connected | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward the ordinary +2 momentum taken, the discovery is refused and its button closed — on a re-render too | AssertionError: expected { moveResolution: true, …(2) } to match object { …(2) } |
+| (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward the discovery taken first: 2 ticks once, the ordinary choice retired and its pick refused, a re-render finds the claim | AssertionError: expected undefined to be 'alternative' // Object.is equality |
+| (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward another player's click is refused; a GM's takes it as the roller | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward a miss with a match: Confront Chaos is taken once | AssertionError: expected 2 to be 1 // Object.is equality |
+

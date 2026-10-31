@@ -6,6 +6,95 @@ rejected.
 
 ---
 
+## Issue #316 audit: the sheet owns the momentum bases; a legacy track clears; a scene challenge ends with its clock; a start effect is recoverable; a move rolls by its data; a matched waypoint has one reward (2026-10)
+
+**Decision:** (issue #316. The maintainer asked for the issue to be addressed
+on 2026-10-31. Each finding's ID in brackets.)
+- **The momentum bases are the sheet's** [T01]. `system.momentum.max` /
+  `resetValue` are the base values foundry-ironsworn's `momentumMax` /
+  `momentumReset` getters deduct the impacts from. The module reads the
+  effective bounds (`actorBridge.momentumBounds`: the getters, else the
+  vendor's formula over the sheet's bases) for the meter clamp, the snapshot
+  and the burn preview, and never writes the bases;
+  `recalculateMomentumBounds` only clamps momentum to the new maximum, with
+  no write when it is already within it.
+- **A legacy track clears at its tenth box** [T02] (`moves/legacyTracks.js`).
+  The record is `{ ticks, cleared, cycles }`: the ticks of the current cycle,
+  the cleared cycles counted, `cleared` written through for its readers. A
+  mark pays each box at the rate of the cycle it filled in — 2 XP, then 1
+  once cleared — several boxes and more than one clear in one mark included;
+  two copies of a track merge by progress (`cycles × 40 + ticks`), never by
+  raw ticks. `addLegacyTicks` stays the one writer and returns
+  `{ boxes, xp, cleared }`; the XP note says when the track cleared.
+- **A scene challenge's clock ends with the challenge** [T03]. Completion
+  retires the paired clock (`clocks.retireClock` — `active: false`, kept and
+  shown as retired; every automatic advance skips an inactive clock);
+  removal removes it (`removeClock`, which `!clock remove` and the panel's ✕
+  share). Both run before the track write and are idempotent, so a refused
+  clock write changes nothing and the press is the retry.
+- **A session's start effects are stamped once; a failed one is a step**
+  [T04]. `sessionStartedId` still blocks a second Begin. A campaign clock
+  advance the world refused keeps its roll (`saved: false`, the fill rolled
+  to, on the result) and goes on the GMs' payoff failure card as a `clocks`
+  step (source `sessionClocks`), whose Retry saves each clock to at least its
+  rolled fill (`applyClockAdvances`) — nothing is rolled again, nothing is
+  advanced twice after a GM moved it by hand. The already-begun note names a
+  clock still owed.
+- **A move resolves by its data** [T05]. `schemas.js moveRollKind` reads
+  MOVES into "action" (a stat list), "progress" (`progressMove`) or "none"
+  (neither): the one classification the resolver, Take a Break's add
+  (`isActionRollMove`), the card, the dice animation and the Burn / Improve
+  offers read. A "none" resolution draws no dice and has `outcome: null`
+  ("No roll"); its consequences apply as written. A stat the interpreter
+  names on a no-roll move is ignored; a bonded Develop Your Relationship,
+  the one no-stat move that rolls, is marked `rollKind: "action"` by its
+  enrichment.
+- **A matched waypoint has one reward, claimed on its card** [T06].
+  `waypointRewardClaimed` ("alternative" | "ordinary") lives on the
+  GM-authored move card: written by the relay handler (gmRelay
+  `waypoint.oracle` → `cardActions.applyWaypointOraclePick`) when the
+  alternative is taken, and by the ordinary choice card's pick
+  (`resultUpgrade.closeUpgradesForChoice`). The move card carries the roller
+  (`actorId`), who alone — or a GM — may take the alternative, posted as
+  that PC; taking it retires the pending ordinary choice card
+  (`retireOutcomeChoiceCards`). The card is claimed before the post; a post
+  that fails releases the claim.
+
+**Reason:** issue #316 reproduced each defect (eight probes with their
+controls) on `40cabee`, and again on `6455e01` (the merge of PR #319); after
+the fixes the six defect probes fail — their assertions pin the broken
+behaviour — and the two controls pass, and each fix's tests fail with it
+taken out (`docs/testing/fix-sensitivity.md`). The rules: Earn Experience
+pays 2 XP a box and 1 once the track is cleared; a scene challenge ends when
+its track or its clock fills; Make a Discovery has no action roll; Explore a
+Waypoint's match offers its discovery "instead" of the ordinary result.
+
+**Rejected:**
+- *Repair drifted bases on every Actor at load* [T01] — nothing
+  distinguishes a base the write-back lowered from one a GM set, and the
+  issue asked for the bases to be preserved, not rewritten. Recorded as
+  MOMENTUM-BASE-DRIFTED for the maintainer's call.
+- *Keep `{ ticks, cleared }` and let the merge prefer `cleared`* [T02] — a
+  second clear would compare a cleared 38 against a cleared 2 by ticks
+  again; counting the cycles makes progress monotonic.
+- *Remove the clock on completion too* [T03] — a completed challenge is kept
+  for the record, and its clock with it, retired; removal is the GM saying
+  the whole thing goes.
+- *Let a second Begin retry the clock effect* [T04] — the stamp exists so the
+  momentum and the opening scene never repeat; the failed effect is retried
+  on its own, as a PC's session momentum already is (issue #311 P08).
+- *A `noRoll: true` flag on each MOVES entry* [T05] — the data already says
+  it (no stat, not a progress move); a second field would drift from the
+  first.
+- *Claim the alternative on the clicking client* [T06] — the move card is
+  GM-authored; a player cannot write its flags, which is why the DOM-only
+  disable was the bug.
+
+**Trade-offs accepted:** a drifted momentum base stays drifted until repaired
+by hand; a waypoint card posted before the roller was stamped offers its
+alternative to a GM only; a Confront Chaos button on a miss later burned to
+a hit stays live until taken (WAYPOINT-ALT-AFTER-UPGRADE).
+
 ## Issue #315 audit: a move releases only its own lock; an asset effect keeps its choice, amount and target, and is applied once it lands; the crew is unprepared together (2026-10)
 
 **Decision:** (issue #315. The maintainer asked for the issue to be addressed
@@ -674,7 +763,9 @@ finding's ID in brackets):
 - **A session's start effects apply once** [F11]. Begin a Session stamps
   `sessionStartedId` (store-owned) before granting anything; a second Begin
   for the same session posts "already begun" and repeats nothing. Begins on
-  the GM are chained, so two at once cannot both pass the check.
+  the GM are chained, so two at once cannot both pass the check. A start
+  effect the world refuses is retried on its own, never by a second Begin
+  (issue #316 T04 — the `clocks` step; see "Issue #316 audit").
 - **A narration in flight when the X-Card is played is discarded** [F13] —
   every narrator entry point re-checks the live X-Card after its Claude call
   returns, before the sidecar or any card (see "X-Card: anyone plays it").
@@ -2058,7 +2149,9 @@ set for the table, like the shared supply). *(2026-10: removed — see
 known-issues AUDIT-DEAD-SURFACE. `markLegacyProgress` and the whole
 `progressTrackId` / `progressMarked` persist route were deleted with the other
 unreachable `persistResolution` steps; `addLegacyTicks` is the only legacy
-path.)*
+path.)* *(2026-10, issue #316 T02: the track clears at its tenth box and
+counts its cycles — `moves/legacyTracks.js`; `addLegacyTicks` returns
+`{ boxes, xp, cleared }`. See "Issue #316 audit".)*
 
 **Rejected:**
 - *Per-character legacy tracks* (RAW-strict) — a data-model migration far
@@ -3215,7 +3308,10 @@ of leaving them as instructional text (closes audit 3.18–3.21):
   default, re-rankable in the panel — the inference is a best guess, kept cheap
   to correct).
 - **Make a Discovery / Confront Chaos** mark the **discoveries** legacy track
-  (2 ticks / 1 tick-per-aspect) via a `legacyMark` consequence.
+  (2 ticks / 1 tick-per-aspect) via a `legacyMark` consequence. *(2026-10,
+  issue #316: neither has an action roll — the resolver draws no dice for
+  them (T05) — and a waypoint match offers them instead of its ordinary
+  result, one claim per card (T06). See "Issue #316 audit".)*
 - **Finish an Expedition** completes the open expedition track and pays its
   rank's **legacy reward** onto discoveries (`legacyRewardTicks`, the play-kit
   1-tick→3-box table; weak hit one rank lower, troublesome→none; a miss leaves

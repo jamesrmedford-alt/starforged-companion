@@ -11,7 +11,7 @@ Single-glance status of all features, and the map from each scope to its
 > `*-scope.md` file. See `decisions.md` → "Scope documents live as GitHub
 > issues".
 
-Latest release tag: **v1.7.35** (fetched 2026-10-25 — always re-check with
+Latest release tag: **v1.7.35** (fetched 2026-10-31 — always re-check with
 `git fetch --tags origin && git tag --sort=-version:refname | head -1`).
 
 ---

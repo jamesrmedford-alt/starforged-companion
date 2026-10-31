@@ -118,7 +118,7 @@ chapter.
 | 1.9 | Progress track marks per rank (3/2/1 box; extreme/epic in ticks) | MECHANIC | PINNED | `progressMechanics` — parametric across all 5 ranks (commit `943265e`) | — | done |
 | 1.10 | Progress move uses filled-box tally as score (not stat + die) | MECHANIC | PINNED | `progressMechanics` — score-from-boxes fixture | — | done |
 | 1.11 | Momentum does not apply to progress rolls | MECHANIC | PINNED | `progressMechanics` batch | — | done |
-| 1.12 | Legacy track: 2 XP per filled box; 1 XP after track is cleared once | MECHANIC | PINNED | `xpEconomy` batch (commit `943265e`) | — | done |
+| 1.12 | Legacy track: 2 XP per filled box; 1 XP after track is cleared once | MECHANIC | PINNED | `xpEconomy` batch (commit `943265e`); the clear itself — the tenth box clears the track, which starts again at 1 XP a box — lands since issue #316 T02 (`tests/unit/legacyTracks.test.js`, `legacyRollover.test.js`) | — | done |
 | 1.13 | Condition meters bounded at 0–5 | MECHANIC | PINNED | `actorBridge` `applyMeterChanges` clamping | — | none |
 | 1.14 | Impacts: four categories, 12 specific impacts canonical | MECHANIC | PINNED + FIXED | `momentumImpactMath` enumerates the canonical impacts; `readDebilities` legacy-field bug (§3.1.3) fixed | — | done |
 | 1.15 | Five stats Edge/Heart/Iron/Shadow/Wits with values 1–3 at creation | MECHANIC | PINNED (schema-side) | `actorBridge` snapshot pins paths; `i18nResolution` pins names | — | none |
@@ -279,7 +279,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| 3.43 | Legacy box filled → 2 XP award (1 XP after track cleared) | MOVE | PINNED | `xpEconomy` batch — 2-XP/1-XP-after-clear fixtured | — | done |
+| 3.43 | Legacy box filled → 2 XP award (1 XP after track cleared) | MOVE | PINNED | `xpEconomy` batch — 2-XP/1-XP-after-clear fixtured; a track reaching its tenth box through play clears and pays the overflow's boxes at 1 XP (issue #316 T02, `tests/unit/legacyRollover.test.js`) | — | done |
 | 3.44 | Advance: spend XP on assets | MOVE | GAP | none — `xpEconomy` covers the award side, not the spend side | Medium | NEEDS-TEST |
 
 ### Fate Moves (2)
