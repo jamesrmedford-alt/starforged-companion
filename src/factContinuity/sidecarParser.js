@@ -23,16 +23,32 @@
  *                  or null when absent / malformed.
  *   - parseError — Error when a block was present but JSON.parse failed.
  *
+ * The sidecar's fence is recognised however the model tags it: ```json (the
+ * instructed form), "``` json", or a bare ``` whose body is a JSON object
+ * (issue #321 U41 — a bare fence used to post the raw JSON on the card and
+ * drop the turn's facts). Raw sidecar JSON never reaches the prose.
+ *
  * This module is pure — no I/O, no globals.
  */
 
-// Matches the final ```json … ``` fence in the response. The narrator is
-// instructed to emit exactly one block, but if the model emits multiple we
-// take the last one — it is the most recent assertion of state.
+// Matches each complete ``` … ``` fence in the response. Group 1 is the
+// `json` info string when present (spaces before it allowed); group 2 is the
+// body. The narrator is instructed to emit exactly one block, but if the model
+// emits multiple we take the last one — it is the most recent assertion of
+// state.
 //
 // `[\s\S]` rather than `.` so the body may span lines. Non-greedy so multiple
 // blocks (when they occur) match individually rather than collapsing.
-const FENCE_PATTERN = /```json\s*\n?([\s\S]*?)\n?```/gi;
+const FENCE_PATTERN = /```[ \t]*(json)?\s*\n?([\s\S]*?)\n?```/gi;
+
+// The opening of a fence no later ``` closes (see the unclosed tail below).
+const OPENING_FENCE = /^```[ \t]*(json)?\s*/i;
+
+// One or two backticks at the very end: a closing fence cut off mid-way.
+const PARTIAL_CLOSING_FENCE = /\s*`{1,2}\s*$/u;
+
+const TRUNCATED_MESSAGE =
+  'Sidecar opening fence found but no closing fence — narrator response likely truncated by maxTokens.';
 
 /**
  * Pull the last fenced JSON block from raw narrator text and parse it.
@@ -45,57 +61,69 @@ export function extractSidecar(rawText) {
     return { prose: rawText ?? '', sidecar: null, parseError: null };
   }
 
-  const matches = [...rawText.matchAll(FENCE_PATTERN)];
-  if (!matches.length) {
-    // Defensive: if the model emitted an opening ```json fence but the
-    // closing ``` never arrived — typically because maxTokens cut the
-    // response mid-sidecar — the regex above will not match. Without this
-    // fallback, the truncated JSON bleeds verbatim into the chat card
-    // (observed on Forge with v1.3.0). Strip from the opening fence
-    // forward, surface a parseError so the caller logs the cause, and
-    // return sidecar=null so partial data is not applied to the ledger.
-    const openIdx = rawText.search(/```json\b/i);
-    if (openIdx >= 0) {
-      const prose = rawText.slice(0, openIdx).replace(/\s+$/u, '');
-      return {
-        prose,
-        sidecar:    null,
-        parseError: new Error(
-          'Sidecar opening fence found but no closing fence — narrator response likely truncated by maxTokens.',
-        ),
-      };
+  // The fences that hold a sidecar, in order. A `json`-tagged fence always
+  // does; an untagged one only when its body is a JSON object — narration
+  // carries no code, so a fenced object is the model's sidecar.
+  const blocks = [];
+  let pairedEnd = 0;
+  for (const m of rawText.matchAll(FENCE_PATTERN)) {
+    pairedEnd = m.index + m[0].length;
+    const body = (m[2] ?? '').trim();
+    if (m[1] || isObjectBody(body)) {
+      blocks.push({ start: m.index, end: pairedEnd, body, closed: true });
     }
-    return { prose: rawText, sidecar: null, parseError: null };
   }
 
-  // Take the last fence in the response. Strip every fence from the prose so
+  // An opening fence after the last complete one has no closing ``` — most
+  // often maxTokens cut the response mid-sidecar (observed on Forge with
+  // v1.3.0), sometimes the model just never closed it. Strip from the opening
+  // fence forward so the JSON never bleeds into the chat card, and parse what
+  // is there: a complete object is applied, a truncated one surfaces a
+  // parseError so the caller logs the cause and no partial data reaches the
+  // ledger.
+  const openIdx = rawText.indexOf('```', pairedEnd);
+  if (openIdx >= 0) {
+    const opening = rawText.slice(openIdx).match(OPENING_FENCE);
+    const body    = rawText.slice(openIdx + opening[0].length).replace(PARTIAL_CLOSING_FENCE, '').trim();
+    if (opening[1] || isObjectBody(body)) {
+      blocks.push({ start: openIdx, end: rawText.length, body, closed: false });
+    }
+  }
+
+  if (!blocks.length) return { prose: rawText, sidecar: null, parseError: null };
+
+  // Take the last block in the response. Strip every block from the prose so
   // the player never sees JSON regardless of how many the model emitted.
-  const lastMatch = matches[matches.length - 1];
-  const body      = lastMatch[1]?.trim() ?? '';
-  const prose     = stripFences(rawText, matches);
+  const last  = blocks[blocks.length - 1];
+  const prose = stripBlocks(rawText, blocks);
 
   let sidecar = null;
   let parseError = null;
   try {
-    const parsed = JSON.parse(body);
+    const parsed = JSON.parse(last.body);
     sidecar = normaliseSidecar(parsed);
   } catch (err) {
-    parseError = err instanceof Error ? err : new Error(String(err));
+    if (!last.closed) parseError = new Error(TRUNCATED_MESSAGE);
+    else parseError = err instanceof Error ? err : new Error(String(err));
   }
 
   return { prose, sidecar, parseError };
 }
 
+/** True when a fence body is a JSON object (parsed or not). */
+function isObjectBody(body) {
+  return body.startsWith('{');
+}
+
 /**
- * Remove every fenced JSON block from the response. Adjacent whitespace is
- * collapsed so the prose ends cleanly without trailing blank lines.
+ * Remove every sidecar block from the response. Trailing whitespace is
+ * trimmed so the prose ends cleanly without trailing blank lines.
  */
-function stripFences(rawText, matches) {
+function stripBlocks(rawText, blocks) {
   let out = rawText;
   // Iterate in reverse so earlier indices remain valid as we splice.
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const m = matches[i];
-    out = out.slice(0, m.index) + out.slice(m.index + m[0].length);
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    out = out.slice(0, blocks[i].start) + out.slice(blocks[i].end);
   }
   return out.replace(/\s+$/u, '');
 }

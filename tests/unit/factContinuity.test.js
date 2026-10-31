@@ -146,6 +146,86 @@ describe('extractSidecar', () => {
   });
 });
 
+// Issue #321 U41: only a fence tagged exactly "json" was recognised, so a
+// bare ``` (or "``` json") fence posted the raw sidecar JSON on the card for
+// every player, stored it as narration text, and dropped the turn's facts.
+describe('extractSidecar — a sidecar fenced without the json tag', () => {
+  const json = JSON.stringify({
+    newTruths:    [{ subject: 'Vance', fact: 'Walks with a limp' }],
+    stateChanges: [{ subject: 'Vance', attribute: 'location', value: 'the cargo bay' }],
+    sceneFrame:   { location: 'Bleakhold docking ring', present: ['Vance'], situation: 'Vance limps in' },
+  }, null, 2);
+
+  it.each([
+    ['a bare ``` fence',        `Vance limps into the cargo bay.\n\n\`\`\`\n${json}\n\`\`\``],
+    ['a "``` json" fence',      `Vance limps into the cargo bay.\n\n\`\`\` json\n${json}\n\`\`\``],
+    ['a single-line bare fence', `Vance limps into the cargo bay.\n\`\`\`${JSON.stringify(JSON.parse(json))}\`\`\``],
+  ])('%s: parses the sidecar and keeps the JSON out of the prose', (_label, raw) => {
+    const { prose, sidecar, parseError } = extractSidecar(raw);
+    expect(parseError).toBeNull();
+    expect(sidecar.newTruths[0].fact).toBe('Walks with a limp');
+    expect(sidecar.stateChanges[0].value).toBe('the cargo bay');
+    expect(sidecar.sceneFrame.location).toBe('Bleakhold docking ring');
+    expect(prose).toBe('Vance limps into the cargo bay.');
+  });
+
+  it('strips a bare fence whose object body is malformed and reports the parse error', () => {
+    const raw = 'Vance limps in.\n\n```\n{ "newTruths": [{ "subject": "Vance", "fact": "Limps" },] }\n```';
+    const { prose, sidecar, parseError } = extractSidecar(raw);
+    expect(prose).toBe('Vance limps in.');
+    expect(sidecar).toBeNull();
+    expect(parseError).toBeInstanceOf(Error);
+  });
+
+  it('leaves a bare fence that holds no JSON object in the prose (control)', () => {
+    const raw = 'The terminal reads:\n```\nACCESS DENIED\n```';
+    const { prose, sidecar, parseError } = extractSidecar(raw);
+    expect(prose).toBe(raw);
+    expect(sidecar).toBeNull();
+    expect(parseError).toBeNull();
+  });
+
+  it('parses an unclosed fence whose object is complete (the closing fence never came)', () => {
+    for (const opening of ['```json', '```', '``` json']) {
+      const { prose, sidecar, parseError } = extractSidecar(`Vance limps in.\n\n${opening}\n${json}\n`);
+      expect(parseError, opening).toBeNull();
+      expect(sidecar?.newTruths?.[0]?.fact, opening).toBe('Walks with a limp');
+      expect(prose, opening).toBe('Vance limps in.');
+    }
+  });
+
+  it('parses an unclosed fence whose closing fence was cut off after one or two backticks', () => {
+    const { prose, sidecar, parseError } = extractSidecar(`Vance limps in.\n\`\`\`json\n${json}\n\`\``);
+    expect(parseError).toBeNull();
+    expect(sidecar.newTruths[0].fact).toBe('Walks with a limp');
+    expect(prose).toBe('Vance limps in.');
+  });
+
+  it('strips a truncated unclosed bare fence and surfaces the truncation', () => {
+    const raw = 'Vance limps in.\n\n```\n{ "newTruths": [{ "subject": "Vance", "fact": "Wal';
+    const { prose, sidecar, parseError } = extractSidecar(raw);
+    expect(prose).toBe('Vance limps in.');
+    expect(sidecar).toBeNull();
+    expect(parseError.message).toMatch(/truncated/i);
+  });
+
+  it('strips a truncated fence that follows a complete one, so no JSON reaches the prose', () => {
+    const raw = [
+      'Prose chunk one.',
+      '```json',
+      '{ "newTruths": [{ "subject": "A", "fact": "old" }] }',
+      '```',
+      'Prose chunk two.',
+      '```json',
+      '{ "newTruths": [{ "subject": "B", "fa',
+    ].join('\n');
+    const { prose, parseError } = extractSidecar(raw);
+    expect(prose).not.toMatch(/```|newTruths/);
+    expect(prose).toMatch(/Prose chunk two\.$/);
+    expect(parseError.message).toMatch(/truncated/i);
+  });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // applySidecar
