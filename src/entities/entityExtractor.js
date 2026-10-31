@@ -1662,6 +1662,13 @@ async function confirmDraft(message, draftIndex) {
 
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
+  // Already created — by a Confirm whose card write was lost, or another GM's:
+  // mark the row, create nothing twice (issue #321 U25).
+  if (entityExistsForName(draft.name, draft.type, campaignState)) {
+    await setDraftStatus(message, draftIndex, "confirmed");
+    return;
+  }
+
   let record = null;
   try {
     if (draft.type === "connection") {
@@ -1772,8 +1779,7 @@ async function confirmDraft(message, draftIndex) {
     await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
   }
 
-  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });
-  await updateDraftCard(message, drafts);
+  await setDraftStatus(message, draftIndex, "confirmed");
 }
 
 async function handleDraftDismiss(message, draftIndex) {
@@ -1797,8 +1803,36 @@ async function handleDraftDismiss(message, draftIndex) {
     return;
   }
 
-  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "dismissed" });
-  await updateDraftCard(message, drafts);
+  await setDraftStatus(message, draftIndex, "dismissed");
+}
+
+// Card writes per draft card on this client, one at a time. Each re-reads the
+// card's live rows and changes only its own: two rows confirmed back to back
+// each wrote the whole array copied at its click, and the later write reverted
+// the other row to "pending" — its Confirm came back and made the NPC twice
+// (issue #321 U25). The creation itself stays concurrent (the per-row
+// _draftsInFlight guard covers a double-click), so a slow one never holds up
+// another row.
+const _draftCardWrites = new Map();
+
+async function setDraftStatus(message, draftIndex, status) {
+  const id = message?.id;
+  const prev = _draftCardWrites.get(id);
+  let release;
+  const done = new Promise(resolve => { release = resolve; });
+  _draftCardWrites.set(id, done);
+  try {
+    if (prev) await prev;
+    const live = globalThis.game?.messages?.get?.(id) ?? message;
+    const drafts = Array.isArray(live?.flags?.[MODULE_ID]?.drafts) ? [...live.flags[MODULE_ID].drafts] : [];
+    const at = drafts.findIndex(d => d.index === draftIndex);
+    if (at < 0) return;
+    drafts[at] = { ...drafts[at], status };
+    await updateDraftCard(live, drafts);
+  } finally {
+    release();
+    if (_draftCardWrites.get(id) === done) _draftCardWrites.delete(id);
+  }
 }
 
 async function updateDraftCard(message, drafts) {
