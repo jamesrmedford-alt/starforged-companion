@@ -2239,6 +2239,40 @@ function nativeRollNarratesHere(message) {
 }
 
 /**
+ * The subtype lookup both native-roll hooks hand classifyProgressRoll — the
+ * narration hook below and the canonical GM's payoff hook
+ * (registerNativeFulfilConsequenceHook) — so the two always agree on what a
+ * sheet roll was. The vendor sets a moveDsId only for a vow, so a connection's
+ * roll is told apart by the source progress Item's subtype, read off the
+ * speaker actor (the system serialises only the track name). The module and
+ * the vendor's Connections tab store a connection as subtype "bond": the
+ * narration hook accepted only "connection", so a sheet-rolled Forge a Bond
+ * was paid but never narrated (issue #321 U21).
+ *
+ * @param {ChatMessage} message  the native roll card
+ * @param {string} label         the calling hook, for the log line
+ * @returns {(source: string) => ('vow'|'connection'|null)}
+ */
+function nativeProgressSubtypeLookup(message, label) {
+  return (source) => {
+    try {
+      const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
+      const src   = String(source ?? "").trim().toLowerCase();
+      if (!actor || !src) return null;
+      const item = actor.items?.find?.(i =>
+        i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
+      const subtype = String(item?.system?.subtype ?? "").toLowerCase();
+      if (subtype.includes("vow")) return "vow";
+      if (subtype.includes("connection") || subtype.includes("bond")) return "connection";
+      return null;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: subtype lookup for "${source}" threw:`, err?.message ?? err);
+      return null;
+    }
+  };
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -2267,24 +2301,9 @@ function registerNativeProgressRollHook() {
 
       const content = String(message?.content ?? "");
       const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
-      const moveId  = (narratesHere && parsed) ? classifyProgressRoll(parsed, (source) => {
-        // Fallback discriminator: read the source progress Item's subtype off
-        // the speaker actor (the system serialises only the track name).
-        try {
-          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
-          const src   = String(source ?? "").trim().toLowerCase();
-          if (!actor || !src) return null;
-          const item = actor.items?.find?.(i =>
-            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
-          const subtype = String(item?.system?.subtype ?? "").toLowerCase();
-          if (subtype.includes("vow"))        return "vow";
-          if (subtype.includes("connection")) return "connection";
-          return null;
-        } catch (err) {
-          console.warn(`${MODULE_ID} | native-roll: subtype lookup for "${source}" threw:`, err?.message ?? err);
-          return null;
-        }
-      }) : null;
+      const moveId  = (narratesHere && parsed)
+        ? classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-roll"))
+        : null;
 
       // No silent failures (decisions.md): map the facts to act/skip + reason +
       // level, then always log the decision on this (the deciding) client.
@@ -4351,24 +4370,7 @@ function registerNativeFulfilConsequenceHook() {
       if (!isCanonicalGM()) return;
       const parsed = parseIronswornProgressRoll(message?.content ?? "");
       if (!parsed) return;
-      const moveId = classifyProgressRoll(parsed, (source) => {
-        try {
-          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
-          const src   = String(source ?? "").trim().toLowerCase();
-          if (!actor || !src) return null;
-          const it = actor.items?.find?.(i =>
-            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
-          const subtype = String(it?.system?.subtype ?? "").toLowerCase();
-          if (subtype.includes("vow"))        return "vow";
-          // The module (and vendor Connections tab) store connection progress
-          // items as subtype "bond" — accept both spellings.
-          if (subtype.includes("connection") || subtype.includes("bond")) return "connection";
-          return null;
-        } catch (err) {
-          console.warn(`${MODULE_ID} | native-fulfil: subtype lookup threw:`, err?.message ?? err);
-          return null;
-        }
-      });
+      const moveId = classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-fulfil"));
       if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
         // The sheet roll's speaker is the PC who rolled — their copy gets the reward.
         payFulfilledVowNative(parsed.source, parsed.outcome, {
