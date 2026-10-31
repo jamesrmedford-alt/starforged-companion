@@ -64,6 +64,7 @@ function getPanelClass() {
           ...c,
           triggered: c.filled >= c.segments,
           isCampaign: c.type === "campaign",
+          retired: c.active === false,
         })),
       };
     }
@@ -75,8 +76,8 @@ function getPanelClass() {
       const row = (c) => {
         const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
         return `
-          <div class="clock-row clock-${c.type}${c.triggered ? " is-triggered" : ""}" data-clock-id="${c._id}">
-            <div class="clock-name"><strong>${escapeHtml(c.name)}</strong> · ${c.type} · ${c.filled}/${c.segments}${c.isCampaign ? ` (odds: ${c.advanceOdds})` : ""}${c.triggered ? " <em>TRIGGERED</em>" : ""}</div>
+          <div class="clock-row clock-${c.type}${c.triggered ? " is-triggered" : ""}${c.retired ? " is-retired" : ""}" data-clock-id="${c._id}">
+            <div class="clock-name"><strong>${escapeHtml(c.name)}</strong> · ${c.type} · ${c.filled}/${c.segments}${c.isCampaign ? ` (odds: ${c.advanceOdds})` : ""}${c.triggered ? " <em>TRIGGERED</em>" : ""}${c.retired ? " <em>retired</em>" : ""}</div>
             <div class="clock-bar"><code>[${bar}]</code></div>
             <div class="clock-actions">
               <button data-action="advanceClock" data-clock-id="${c._id}" title="Advance (campaign rolls odds; tension fills 1)">↻</button>
@@ -167,10 +168,7 @@ function getPanelClass() {
 
     static async #onRemoveClock(_event, target) {
       if (!gmGate("Remove clock")) return;
-      const id = target.dataset.clockId;
-      const state = readState();
-      state.clocks = (state.clocks ?? []).filter(c => c._id !== id);
-      await writeState(state);
+      await removeClock(target.dataset.clockId);
       this.render();
     }
   };
@@ -238,6 +236,47 @@ export async function createClock(input) {
     updatedAt:   new Date().toISOString(),
   };
   state.clocks.push(clock);
+  await writeState(state);
+  return clock;
+}
+
+/**
+ * Retire a clock: `active: false`, kept on the list for the record. An
+ * inactive clock is skipped by every automatic advance (Pay the Price,
+ * Begin a Session) and shown as retired. A scene challenge's paired tension
+ * clock is retired when the challenge is completed (ui/progressTracks.js) —
+ * it used to keep advancing on every Pay the Price after the challenge was
+ * archived (issue #316 T03). Idempotent: a clock already retired is left as
+ * it is, with no write. Written on a copy, so a refused write leaves this
+ * client's cached state as it was.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored, or null when there is none by that id
+ */
+export async function retireClock(clockId) {
+  const state = foundry.utils.deepClone(readState());
+  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+  if (!clock) return null;
+  if (clock.active === false) return clock;
+  clock.active    = false;
+  clock.updatedAt = new Date().toISOString();
+  await writeState(state);
+  return clock;
+}
+
+/**
+ * Remove a clock from the list — `!clock remove`, the panel's ✕, and a scene
+ * challenge removed with its paired clock (ui/progressTracks.js, issue #316
+ * T03). Written on a copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock removed, or null when there was none by that id
+ */
+export async function removeClock(clockId) {
+  const state = foundry.utils.deepClone(readState());
+  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+  if (!clock) return null;
+  state.clocks = state.clocks.filter(c => c._id !== clockId);
   await writeState(state);
   return clock;
 }
@@ -513,9 +552,7 @@ async function cmdRemove(parts) {
   if (!gmGate("!clock remove")) return;
   const clock = await findClockByArg(parts);
   if (!clock) return;
-  const state = readState();
-  state.clocks = (state.clocks ?? []).filter(c => c._id !== clock._id);
-  await writeState(state);
+  await removeClock(clock._id);
   await postCard(`<strong>Clock removed</strong><p>${escapeHtml(clock.name)}.</p>`);
 }
 
@@ -602,7 +639,8 @@ function peelQuotedName(parts) {
 function renderClock(c) {
   const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
   const triggered = c.filled >= c.segments ? " <em>(TRIGGERED)</em>" : "";
-  return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}`;
+  const retired   = c.active === false ? " <em>(retired)</em>" : "";
+  return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}${retired}`;
 }
 
 function fireClockVignette(clockData) {

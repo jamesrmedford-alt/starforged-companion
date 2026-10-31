@@ -19,6 +19,7 @@ vi.mock('../../src/narration/narrator.js', () => ({
 import { narrateClockAdvancement } from '../../src/narration/narrator.js';
 import {
   advanceTensionClocksForPayThePrice, revertTensionClocksForBurn, handleClockCommand,
+  retireClock, removeClock,
 } from '../../src/clocks/clocks.js';
 
 const KEY = 'starforged-companion.campaignState';
@@ -228,5 +229,71 @@ describe('!clock advance / fill', () => {
     } finally {
       restore();
     }
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// retireClock / removeClock — a scene challenge's paired clock (issue #316 T03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('retireClock / removeClock', () => {
+  beforeEach(() => {
+    game.settings._store.clear();
+    ChatMessage._reset();
+  });
+
+  it('retireClock marks the clock inactive and keeps it; automatic advances then skip it', async () => {
+    setClocks([
+      { _id: 't1', name: 'Flooding chamber', type: 'tension', segments: 4, filled: 1, active: true },
+      { _id: 't2', name: 'Reactor breach',   type: 'tension', segments: 4, filled: 0, active: true },
+    ]);
+    const retired = await retireClock('t1');
+    expect(retired).toMatchObject({ _id: 't1', active: false, filled: 1 });
+    expect(storedClocks().map(c => [c._id, c.active])).toEqual([['t1', false], ['t2', true]]);
+
+    const advanced = await advanceTensionClocksForPayThePrice();
+    expect(advanced.map(c => c._id)).toEqual(['t2']);
+    expect(storedClocks().find(c => c._id === 't1').filled).toBe(1);
+  });
+
+  it('retireClock is idempotent — a clock already retired is left as it is, with no write', async () => {
+    setClocks([{ _id: 't1', name: 'Done', type: 'tension', segments: 4, filled: 2, active: false, updatedAt: 'then' }]);
+    const spy = vi.spyOn(game.settings, 'set');
+    expect(await retireClock('t1')).toMatchObject({ _id: 't1', active: false, updatedAt: 'then' });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('retireClock writes on a copy: a refused write leaves the cached state as it was', async () => {
+    setClocks([{ _id: 't1', name: 'Flooding chamber', type: 'tension', segments: 4, filled: 1, active: true }]);
+    vi.spyOn(game.settings, 'set').mockRejectedValueOnce(new Error('refused by the test'));
+    await expect(retireClock('t1')).rejects.toThrow('refused by the test');
+    expect(storedClocks()[0].active).toBe(true);
+  });
+
+  it('removeClock takes the clock off the list and returns it; an unknown id is null', async () => {
+    setClocks([
+      { _id: 't1', name: 'Flooding chamber', type: 'tension', segments: 4, filled: 1, active: true },
+      { _id: 't2', name: 'Reactor breach',   type: 'tension', segments: 4, filled: 0, active: true },
+    ]);
+    expect(await removeClock('t1')).toMatchObject({ _id: 't1', name: 'Flooding chamber' });
+    expect(storedClocks().map(c => c._id)).toEqual(['t2']);
+    expect(await removeClock('nope')).toBeNull();
+    expect(await retireClock('nope')).toBeNull();
+  });
+
+  it('`!clock remove` and `!clock list` go through the same list: a retired clock is listed as retired', async () => {
+    setClocks([
+      { _id: 't1', name: 'Flooding chamber', type: 'tension', segments: 4, filled: 1, active: false },
+      { _id: 't2', name: 'Reactor breach',   type: 'tension', segments: 4, filled: 0, active: true },
+    ]);
+    await handleClockCommand({ content: '!clock list', flags: {} });
+    expect(ChatMessage._created.at(-1).content).toMatch(/Flooding chamber — tension 1\/4 <em>\(retired\)<\/em>/);
+    expect(ChatMessage._created.at(-1).content).not.toMatch(/Reactor breach — tension 0\/4 <em>\(retired\)/);
+
+    await handleClockCommand({ content: '!clock remove "Reactor breach"', flags: {} });
+    expect(storedClocks().map(c => c._id)).toEqual(['t1']);
+    expect(ChatMessage._created.at(-1).content).toMatch(/Clock removed/);
   });
 });
