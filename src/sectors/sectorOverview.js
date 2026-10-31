@@ -53,6 +53,30 @@ function locationTypeToLabel(locationType) {
   return LOCATION_TYPE_LABELS[locationType] ?? "Deep Space";
 }
 
+// The settlement Actor's class lives in `system.klass` ("deep space", what
+// the sheet's dropdown edits) and its flag's `location` ("Deep Space"); the
+// generator and the map use "deep_space". One key space for the label map.
+function normaliseLocationType(raw) {
+  if (!raw) return null;
+  const key = String(raw).trim().toLowerCase().replace(/\s+/g, "_");
+  return Object.prototype.hasOwnProperty.call(LOCATION_TYPE_LABELS, key) ? key : null;
+}
+
+/**
+ * The settlement rows an overview lists, in map order. The sector the creator
+ * holds carries the rolled `settlements[]`; the record storeSector persists to
+ * `campaignState.sectors[]` carries none — only `mapData.settlements` (id,
+ * name, marker type) and `entityJournalIds` — so a stored record is listed
+ * from its map data (issue #321 U13: the rewrite read `sector.settlements`
+ * and wrote an empty list over the real one).
+ */
+function settlementRows(sector) {
+  if (Array.isArray(sector?.settlements) && sector.settlements.length) return sector.settlements;
+  return (sector?.mapData?.settlements ?? [])
+    .filter(m => m?.id)
+    .map(m => ({ id: m.id, name: m.name, locationType: m.type }));
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -65,21 +89,31 @@ function escapeHtml(s) {
 /**
  * Render the wrapped `<ul>` for a sector overview's Settlements list.
  *
- * @param {Object} sector  has `.settlements[]` (gen-side, with id/name/
- *   locationType/population/authority)
+ * Each row shows the settlement Actor's CURRENT name, class, population and
+ * authority — the Actor is the settlement's canonical store, and these are
+ * the fields the live sync rewrites the list for — falling back to the
+ * row's own values where the Actor has none.
+ *
+ * @param {Object} sector  the creator's sector (`.settlements[]`, with
+ *   id/name/locationType/population/authority) or a stored sector record
+ *   (`.mapData.settlements[]` — see settlementRows)
  * @param {Object<string, ClientDocument>} settlementsByGenId  gen-side id →
  *   settlement Actor (if migrated). When an entry is missing the row falls
  *   back to a plain `<li>` without a UUID link.
  * @returns {string}
  */
 export function buildSettlementsListHtml(sector, settlementsByGenId = {}) {
-  const items = (sector?.settlements ?? []).map(s => {
+  const items = settlementRows(sector).map(s => {
     const actor = settlementsByGenId?.[s.id];
-    const tail  = `${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
-                  `Pop: ${escapeHtml(s.population ?? "")}, ` +
-                  `Authority: ${escapeHtml(s.authority ?? "")}`;
+    const data  = actor?.flags?.[MODULE_ID]?.settlement ?? {};
+    const locationType = normaliseLocationType(actor?.system?.klass)
+      ?? normaliseLocationType(data.location)
+      ?? s.locationType;
+    const tail  = `${escapeHtml(locationTypeToLabel(locationType))}, ` +
+                  `Pop: ${escapeHtml(data.population || s.population || "")}, ` +
+                  `Authority: ${escapeHtml(data.authority || s.authority || "")}`;
     const head  = actor?.id
-      ? `@UUID[Actor.${actor.id}]{${escapeHtml(actor.name ?? s.name)}}`
+      ? `@UUID[Actor.${actor.id}]{${escapeHtml(actor.name || s.name)}}`
       : escapeHtml(s.name);
     return `<li>${head} — ${tail}</li>`;
   }).join("");
