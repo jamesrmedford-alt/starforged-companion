@@ -864,11 +864,20 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
  * clock never moved on a miss). Vows with no clock, an already-full clock, or
  * marked completed are skipped. Returns what advanced, for the chat summary.
  *
+ * Copies of one vow — the same module `vowId`: a shared vow has one copy per
+ * PC, kept in lockstep by registerSharedVowSyncHook — are one clock. Pass one
+ * `lockstep` Map through every PC's call of a single advance: the first copy
+ * records the value it reached, and each later copy is set to that value
+ * rather than advanced again from one the sync hook may already have moved
+ * (issue #321 U55). A later copy already at that value is reported without a
+ * write; one ahead of it is left alone. Each entry carries its `vowId` (null
+ * for a vow without one), so a caller can report the vow once.
+ *
  * @param {Actor} actor
- * @param {{ by?: number }} [opts]
- * @returns {Promise<Array<{name:string, ticks:number, max:number, triggered:boolean}>>}
+ * @param {{ by?: number, lockstep?: Map<string, number>|null }} [opts]
+ * @returns {Promise<Array<{name:string, ticks:number, max:number, triggered:boolean, itemId:string, actorId:string, vowId:string|null}>>}
  */
-export async function advanceVowClocks(actor, { by = 1 } = {}) {
+export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) {
   if (!actor) return [];
   const items = actor.items?.contents ?? actor.items ?? [];
   const list  = Array.isArray(items) ? items : [];
@@ -881,13 +890,22 @@ export async function advanceVowClocks(actor, { by = 1 } = {}) {
 
   const advanced = [];
   for (const v of vows) {
-    const max = Number(v.system?.clockMax ?? 0);
-    const cur = Number(v.system?.clockTicks ?? 0);
-    if (!max || cur >= max) continue;
-    const next = Math.min(cur + by, max);
+    const max    = Number(v.system?.clockMax ?? 0);
+    const cur    = Number(v.system?.clockTicks ?? 0);
+    const vowId  = v.flags?.[MODULE_ID]?.vowId ?? null;
+    const target = vowId ? lockstep?.get(vowId) : undefined;
+    let next;
+    if (target !== undefined) {
+      if (cur > target) continue;
+      next = target;
+    } else {
+      if (!max || cur >= max) continue;
+      next = Math.min(cur + by, max);
+    }
     try {
-      await v.update({ "system.clockTicks": next }, { suppressLog: true });
-      advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id });
+      if (next !== cur) await v.update({ "system.clockTicks": next }, { suppressLog: true });
+      if (vowId && target === undefined) lockstep?.set(vowId, next);
+      advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id, vowId });
     } catch (err) {
       console.error(`actorBridge | advanceVowClocks failed for ${v.name ?? "vow"}:`, err);
     }

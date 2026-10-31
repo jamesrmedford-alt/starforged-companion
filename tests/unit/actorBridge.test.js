@@ -1008,6 +1008,25 @@ describe('advanceVowClocks', () => {
     const advanced = await advanceVowClocks(actor, { by: 2 });
     expect(advanced[0].ticks).toBe(2);
   });
+
+  // Issue #321 U55: a shared vow's copies (one per PC, the same vowId) are one
+  // clock — one advance moves every copy to the value the first one reached.
+  it('with a lockstep map, later copies of a vowId follow the first copy instead of advancing again', async () => {
+    const copy = (id, ticks) => Object.assign(clockVow({ id, name: 'Rescue Dani', ticks, max: 6 }),
+      { flags: { 'starforged-companion': { sharedVow: true, vowId: 'shared-1' } } });
+    const a = freshActor({ id: 'pc-a', items: { contents: [copy('va', 2)] } });
+    const b = freshActor({ id: 'pc-b', items: { contents: [copy('vb', 3)] } });   // the sync hook already moved it
+    const c = freshActor({ id: 'pc-c', items: { contents: [copy('vc', 2)] } });
+    const lockstep = new Map();
+    const out = [
+      ...await advanceVowClocks(a, { lockstep }),
+      ...await advanceVowClocks(b, { lockstep }),
+      ...await advanceVowClocks(c, { lockstep }),
+    ];
+    expect(out.map(e => [e.itemId, e.ticks, e.vowId])).toEqual([['va', 3, 'shared-1'], ['vb', 3, 'shared-1'], ['vc', 3, 'shared-1']]);
+    expect([a, b, c].map(x => x.items.contents[0].system.clockTicks)).toEqual([3, 3, 3]);
+    expect(lockstep.get('shared-1')).toBe(3);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -25,6 +25,12 @@ const MODULE_ID = "starforged-companion";
  * world/actor writes are GM-only. A player-typed `!ptp` runs on the author's
  * client, so it reaches this through the GM relay
  * (advanceClocksForPayThePriceRelay) instead of calling it directly.
+ *
+ * A shared vow (one copy per PC, the same vowId) is one deadline: every copy
+ * advances, in lockstep, but the card lists it once and it fires one trigger
+ * vignette (issue #321 U55 — three PCs gave three lines, three Claude calls and
+ * three TRIGGERED cards). The returned list keeps every copy, for the Burn
+ * Momentum reversal to rewind each.
  */
 export async function advanceClocksOnPayThePrice() {
   if (!game.user?.isGM) {
@@ -44,9 +50,10 @@ export async function advanceClocksOnPayThePrice() {
 
   try {
     const { getPlayerActors, advanceVowClocks } = await import("../character/actorBridge.js");
+    const lockstep = new Map();   // vowId → the value its first copy reached
     for (const actor of getPlayerActors()) {
-      for (const v of await advanceVowClocks(actor)) {
-        advanced.push({ actorId: v.actorId, itemId: v.itemId, name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
+      for (const v of await advanceVowClocks(actor, { lockstep })) {
+        advanced.push({ actorId: v.actorId, itemId: v.itemId, vowId: v.vowId ?? null, name: v.name, type: "vow", filled: v.ticks, segments: v.max, triggered: v.triggered });
       }
     }
   } catch (err) {
@@ -54,7 +61,8 @@ export async function advanceClocksOnPayThePrice() {
   }
 
   if (!advanced.length) return advanced;
-  const lines = advanced.map(a =>
+  const clocks = onePerClock(advanced);
+  const lines = clocks.map(a =>
     `<li>${escapeChatHtml(a.name)} — ${a.filled}/${a.segments}${a.triggered ? " <strong>(TRIGGERED)</strong>" : ""}</li>`,
   ).join("");
   try {
@@ -68,7 +76,7 @@ export async function advanceClocksOnPayThePrice() {
 
   // Fire-and-forget vignette for any clock that just triggered — the
   // narrative beat for when a deadline arrives or a threat materialises.
-  const justTriggered = advanced.filter(a => a.triggered);
+  const justTriggered = clocks.filter(a => a.triggered);
   if (justTriggered.length) {
     setTimeout(async () => {
       try {
@@ -110,6 +118,24 @@ export async function advanceClocksOnPayThePrice() {
  */
 export async function advanceClocksForPayThePriceRelay(_payload, _ctx) {
   await advanceClocksOnPayThePrice();
+}
+
+/**
+ * One entry per clock in the fiction: the copies of a vow (the same vowId — a
+ * shared vow has one per PC) collapse to the first. Tension clocks and vows
+ * without a vowId are each their own clock.
+ *
+ * @param {Array<Object>} advanced
+ * @returns {Array<Object>}
+ */
+function onePerClock(advanced) {
+  const seen = new Set();
+  return advanced.filter(a => {
+    if (a.type !== "vow" || !a.vowId) return true;
+    if (seen.has(a.vowId)) return false;
+    seen.add(a.vowId);
+    return true;
+  });
 }
 
 function escapeChatHtml(s) {
