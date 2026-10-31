@@ -4,6 +4,8 @@
 // This isolates the foundry-ironsworn API surface so system changes only require
 // updates in one place.
 
+import { rankName } from "../schemas.js";
+
 const MODULE_ID = "starforged-companion";
 
 // Hard floor for momentum during regular play. Matches the Starforged play kit
@@ -224,7 +226,10 @@ export function readVows(actor) {
     return {
       id:           v.id ?? v._id ?? null,
       name:         v.name ?? '',
-      rank:         v.system?.rank ?? 'dangerous',
+      // The vendor stores rank as a ChallengeRank number (1 troublesome …
+      // 5 epic); every consumer — the narrator, the milestone cards — wants
+      // the name (issue #321 U62).
+      rank:         rankName(v.system?.rank ?? 'dangerous'),
       ticks,
       progress:     Math.floor(ticks / 4),
       completed:    !!v.system?.completed,
@@ -259,7 +264,7 @@ export function readConnections(actor) {
     return {
       id:        b.id ?? b._id ?? null,
       name:      b.name ?? '',
-      rank:      b.system?.rank ?? 'dangerous',
+      rank:      rankName(b.system?.rank ?? 'dangerous'),   // the vendor's number → its name
       ticks,
       progress:  Math.floor(ticks / 4),
       completed: !!b.system?.completed,
