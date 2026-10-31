@@ -32,6 +32,7 @@
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
+import { mergeOwnedFields } from "../factContinuity/sceneLifecycle.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -328,9 +329,13 @@ export async function generateLoreRecap(campaignState) {
   if (!recap) return null;
   if (!recap.trim()) return null;
 
+  // Only the recap is this command's to write, onto the store as it is now
+  // (issue #321 U06a): campaignState was read before the Claude call, and
+  // writing it whole reverted whatever landed meanwhile — a player's X-Card,
+  // a move releasing its lock (rules/reachability.md §9).
   campaignState.loreRecap = recap;
   try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(campaignState, ["loreRecap"], "!lore"));
   } catch (err) {
     console.error(`${MODULE_ID} | lore: failed to persist loreRecap:`, err);
     throw err;

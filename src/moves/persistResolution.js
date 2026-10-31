@@ -153,6 +153,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       activeSectorId              `!sector`
 //       incitingIncident            session/incitingIncident.js
 //       worldTruths, worldTruthsSet, worldTruthsJournalId   truths flows
+//       loreRecap                   truths/generator.js generateLoreRecap (`!lore`) —
+//                                   the pipeline never writes it, so its working copy
+//                                   only ever holds the recap from before the move
 //
 //   ENTITY_ID_LISTS (entities/registry.js) — both sides append (the
 //     narrator's auto-created connections land on the working copy and the
@@ -209,6 +212,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'worldTruths',
   'worldTruthsSet',
   'worldTruthsJournalId',
+  'loreRecap',
 ]);
 
 /**
