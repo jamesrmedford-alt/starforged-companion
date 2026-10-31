@@ -97,6 +97,11 @@ export async function initWorldJournals() {
  * false. !journal lore "title" confirmed sets confirmed: true. The combined
  * detection pass writes narratorAsserted: true, confirmed: false.
  *
+ * An update keeps the entry's text and category when the caller gives none,
+ * and its `retracted` mark unless the caller sets one: Foundry's setFlag
+ * merges the object into the stored flag key by key, so `retracted` is always
+ * written explicitly (issue #321 U40 — a restore left it set).
+ *
  * Empty titles are rejected.
  *
  * @param {string} title
@@ -114,18 +119,23 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.lore);
   if (!journal) return null;
 
-  const existing = findPageByName(journal, cleanTitle)?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
-  const now      = new Date().toISOString();
+  const existing  = findPageByName(journal, cleanTitle)?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+  const now       = new Date().toISOString();
+  const retracted = typeof entry?.retracted === "boolean" ? entry.retracted : existing?.retracted === true;
 
   const data = {
     title:            cleanTitle,
-    category:         entry?.category ?? "other",
-    text:             entry?.text     ?? "",
+    category:         entry?.category ?? existing?.category ?? "other",
+    text:             entry?.text || existing?.text || "",
     sessionId:        entry?.sessionId ?? campaignState?.currentSessionId ?? "",
     sessionNumber:    entry?.sessionNumber ?? campaignState?.sessionNumber ?? null,
     moveId:           entry?.moveId   ?? null,
     confirmed:        entry?.confirmed === true,
     narratorAsserted: entry?.narratorAsserted === true,
+    // A struck fact's entry (retractSessionLore) stays out of canon until a
+    // GM's !journal ruling restores it.
+    retracted,
+    retractedAt:      retracted ? (existing?.retractedAt ?? now) : null,
     promotedAt:       existing?.promotedAt ?? (entry?.confirmed === true ? now : null),
     // Fact-continuity fields (issue #227 (Fact Continuity) §4.4). Optional;
     // null for entries that did not originate from a scene-truth migration.
@@ -919,14 +929,26 @@ export async function executeJournalCommand(parsed, campaignState) {
         sessionId,
       }, campaignState);
 
-    case "lore":
+    case "lore": {
+      // The GM's ruling on an entry: confirmed or rumour, never retracted —
+      // `!journal lore "<title>" confirmed` restores a struck entry
+      // (decisions.md "A strike reaches every copy of the fact"). A recorded
+      // entry keeps its text unless the command gives one, its category, and
+      // where it came from: its session and move, and — when confirmed — its
+      // narrator provenance (a rumour ruling still takes a narrator-asserted
+      // entry out of the review queue). Issue #321 U40.
+      const confirmed = parsed.qualifier === "confirmed";
+      const existing  = findLoreEntry(parsed.name);
       return recordLoreDiscovery(parsed.name, {
         text:             parsed.text,
-        confirmed:        parsed.qualifier === "confirmed",
-        narratorAsserted: false,
-        sessionId,
-        sessionNumber:    sessionNum,
+        confirmed,
+        retracted:        false,
+        narratorAsserted: confirmed && existing?.narratorAsserted === true,
+        sessionId:        existing?.sessionId || sessionId,
+        sessionNumber:    existing ? existing.sessionNumber : sessionNum,
+        moveId:           existing?.moveId ?? null,
       }, campaignState);
+    }
 
     case "threat":
       return recordThreat(parsed.name, {
@@ -977,6 +999,12 @@ async function getOrCreateJournal(name) {
 
 function findPageByName(journal, pageName) {
   return journal?.pages?.contents?.find(p => p.name === pageName) ?? null;
+}
+
+/** The stored lore entry titled `title` (trimmed, as recordLoreDiscovery files it), or null. */
+function findLoreEntry(title) {
+  const page = findPageByName(findJournal(JOURNAL_NAMES.lore), String(title ?? "").trim());
+  return page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore] ?? null;
 }
 
 async function upsertPage(journal, pageName, flagKey, data) {
