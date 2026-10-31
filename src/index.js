@@ -2081,13 +2081,16 @@ function invalidateItemOwnerSnapshot(item) {
  * Fires when any Actor document is updated — including by other clients.
  *
  * Responsibilities:
- * - Invalidate the cached character snapshot so the next context packet build
- *   reads fresh state from the Actor document.
- * - If the change touches condition debilities, recalculate momentum bounds so
- *   the Actor's momentum stays within the new valid range.
+ * - Invalidate the cached character snapshot on EVERY update — this client's
+ *   cache only — so the next roll and context build read fresh state from the
+ *   Actor document. Not gated on `hasPlayerOwner`: that is false for every PC
+ *   in solo-GM play (and for a PC the GM plays at a group table), whose sheet
+ *   edits otherwise never reached rolls or the narrator (issue #321 U01).
+ * - If a player-owned PC's condition debilities changed, recalculate momentum
+ *   bounds so the Actor's momentum stays within the new valid range.
  *
- * Ignores updates made by this client (userId === game.user.id) because
- * actorBridge already invalidates the cache after its own writes.
+ * The momentum recalc ignores updates made by this client
+ * (userId === game.user.id): actorBridge's own writes keep the bounds.
  */
 function registerActorHook() {
   // A PC's vows, bonds and assets are embedded Items, changed on the native
@@ -2099,12 +2102,12 @@ function registerActorHook() {
   Hooks.on("deleteItem", invalidateItemOwnerSnapshot);
 
   Hooks.on("updateActor", (actor, changes, _options, userId) => {
-    if (!actor.hasPlayerOwner) return;
-
-    // Invalidate the cached snapshot so the next context build reads fresh data
+    // Invalidate the cached snapshot so the next roll / context build reads
+    // fresh data — every actor, whoever owns it.
     invalidateActorCache(actor.id);
 
-    // Skip if this is our own write — actorBridge already handled the cache
+    // The momentum recalc below is for player-owned PCs, edited by another user.
+    if (!actor.hasPlayerOwner) return;
     if (userId === game.user.id) return;
 
     // If condition debilities changed, recalculate momentum bounds — on
