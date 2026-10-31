@@ -340,10 +340,17 @@ export async function revertTensionClocksForBurn(ids) {
  * clock checked — including those that did not advance — so the caller can
  * post a full session-start summary card.
  *
- * @returns {Promise<Array<{name, type, filled, segments, triggered, advanced, odds, roll}>>}
+ * The rolls are kept when the write is refused: each advanced entry then
+ * carries `saved: false` and the error, with `filled` the segment it rolled
+ * to, so the caller can report it and have it saved later without rolling
+ * again (applyClockAdvances; issue #316 T04 — a refused write was caught and
+ * logged, and the advance was lost for the session). Written on a copy, so
+ * the refused write leaves this client's cached state as it was.
+ *
+ * @returns {Promise<Array<{_id, name, type, filled, segments, triggered, advanced, odds, roll, saved, error?}>>}
  */
 export async function advanceCampaignClocksForBeginSession() {
-  const state = readState();
+  const state = foundry.utils.deepClone(readState());
   const eligible = (state.clocks ?? []).filter(
     c => c.active !== false && c.type === "campaign" && (c.filled ?? 0) < c.segments,
   );
@@ -362,6 +369,7 @@ export async function advanceCampaignClocksForBeginSession() {
       dirty = true;
     }
     results.push({
+      _id:       c._id,
       name:      c.name,
       type:      "campaign",
       filled:    c.filled,
@@ -370,11 +378,57 @@ export async function advanceCampaignClocksForBeginSession() {
       advanced,
       odds:      c.advanceOdds,
       roll:      r.roll,
+      saved:     true,
     });
   }
 
-  if (dirty) await writeState(state);
+  if (dirty) {
+    try {
+      await writeState(state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Begin a Session: the campaign clock advance was not saved:`, err?.message ?? err);
+      for (const r of results) {
+        if (r.advanced) { r.saved = false; r.error = String(err?.message ?? err); }
+      }
+    }
+  }
   return results;
+}
+
+/**
+ * Save recorded clock advances — the GMs' Retry of a session-start advance
+ * the world refused (index.js runPayoffStep "clocks", issue #316 T04). Each
+ * entry names a clock and the fill it rolled to; the clock is set to at least
+ * that fill, within its segments, so a Retry after a GM advanced it by hand
+ * — or a second Retry — never advances it twice. A clock no longer on the list
+ * is skipped and named. One write, on a copy; nothing is rolled.
+ *
+ * @param {Array<{ _id: string, filled: number }>} entries
+ * @returns {Promise<{ ok: true, applied: Array<{_id, name, filled}>, missing: string[] }
+ *   | { ok: false, reason: "refused", error: string }>}
+ */
+export async function applyClockAdvances(entries) {
+  const state   = foundry.utils.deepClone(readState());
+  const applied = [];
+  const missing = [];
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
+    if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
+    const target = Math.min(Math.max(0, Math.floor(Number(e.filled) || 0)), clock.segments);
+    if ((clock.filled ?? 0) >= target) continue;
+    clock.filled    = target;
+    clock.updatedAt = new Date().toISOString();
+    applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
+  }
+  if (applied.length) {
+    try {
+      await writeState(state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | clock advances not saved:`, err?.message ?? err);
+      return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+    }
+  }
+  return { ok: true, applied, missing };
 }
 
 export async function handleClockCommand(message) {

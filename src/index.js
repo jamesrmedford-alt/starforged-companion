@@ -57,7 +57,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, applyClockAdvances } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -4498,6 +4498,7 @@ const PAYOFF_TITLES = {
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   session:     ()  => `Session momentum not given`,
+  sessionClocks: () => `Session-start clock advance not saved`,
   rider:       (c) => `Asset effects not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
@@ -4511,7 +4512,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"rider", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4549,6 +4550,8 @@ function payoffStepRecord(f) {
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "upgrade":     return upgradeStepRecord(f);
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
+    case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
+      clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
     case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
@@ -4592,6 +4595,16 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       case "rider":
         // An asset effect after a move (issue #315 S08).
         return describeRiderStep(f, why, actorId);
+      case "clocks": {
+        // A session-start campaign clock advance the world refused (issue #316 T04).
+        const live = game.settings.get(MODULE_ID, "campaignState")?.clocks ?? [];
+        const parts = (f.clocks ?? []).map(c => {
+          const now = live.find(x => x._id === c._id);
+          const standing = now ? ` (stands at ${now.filled ?? 0}/${now.segments} now)` : " (no longer on the list)";
+          return `${escapeChatHtml(c.name ?? "a clock")} to ${c.filled}/${c.segments ?? "?"}${standing}`;
+        });
+        return `Begin a Session's campaign clock advance: ${parts.join("; ")} — ${why}. The oracle's roll stands; Retry saves it without rolling again.`;
+      }
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who = escapeChatHtml(pc?.name ?? "a character");
@@ -4685,6 +4698,15 @@ async function runPayoffStep(s, card, copies) {
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).
       return retryRiderStep(s, card?.actorId ?? null);
+    case "clocks": {
+      // A session-start clock advance the world refused: the rolled fills are
+      // saved, never rolled again, and a clock already there is left (issue #316 T04).
+      const entries = (Array.isArray(s.clocks) ? s.clocks : [])
+        .filter(c => typeof c?._id === "string" && c._id && Number.isInteger(Number(c.filled)) && Number(c.filled) >= 1 && Number(c.filled) <= 10)
+        .map(c => ({ _id: c._id, filled: Number(c.filled) }));
+      if (!entries.length) return { ok: false, reason: "invalid step" };
+      return applyClockAdvances(entries);
+    }
     case "momentum": {
       // A PC's session momentum the world refused — that PC's alone (issue #311 P08).
       const amount = Math.floor(Number(s.amount));
