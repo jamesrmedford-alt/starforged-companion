@@ -2026,13 +2026,21 @@ export function buildPartyBlock(party) {
   ].join('\n');
 }
 
+/**
+ * WORLD TRUTHS block — one line per established truth. A truth whose option
+ * carries a sub-table (the Cataclysm war's foe, why AI is outlawed) keeps its
+ * rolled detail after the title, with the table's label, as the World Truths
+ * journal prints it: without it the narrator knew there was a war but not
+ * who it was against, and was free to invent a foe (issue #321 U66).
+ */
 function buildWorldTruthsBlock(campaignState) {
   const truths  = campaignState?.worldTruths ?? {};
   const entries = Object.entries(truths)
     .map(([key, v]) => {
       const text = v.title ?? v.result;
       if (!text) return null;
-      return `${toLabel(key)}: ${text}`;
+      const sub = typeof v.subResult === 'string' ? v.subResult.trim() : '';
+      return `${toLabel(key)}: ${text}${sub ? ` ${v.subTableLabel ?? 'Detail:'} ${sub}` : ''}`;
     })
     .filter(Boolean);
 

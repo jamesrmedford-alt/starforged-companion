@@ -27,6 +27,7 @@ import {
   NARRATOR_PERMISSIONS,
   buildShipPositionLine,
 } from '../../src/narration/narratorPrompt.js';
+import { rollCategory } from '../../src/truths/generator.js';
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +170,23 @@ describe('buildNarratorSystemPrompt()', () => {
     );
     expect(prompt).toContain('WORLD TRUTHS');
     expect(prompt).toContain('Sundering shattered');
+  });
+
+  // Issue #321 U66: the narrator was told there was a war but not who it was
+  // against — the rolled sub-table result never reached the prompt.
+  it('WORLD TRUTHS carries a truth\'s rolled sub-table detail, with its label', () => {
+    const cataclysm = rollCategory('cataclysm', { roll: 82, subRoll: 15 });
+    const ai        = rollCategory('ai',        { roll: 12, subRoll: 28 });
+    const war       = rollCategory('war',       { roll: 30 });                 // no sub-table
+    expect(cataclysm.subResult).toBe('Artificial intelligence');
+    const prompt = buildNarratorSystemPrompt(
+      makeCampaignState({ worldTruths: { cataclysm, ai, war } }),
+      makeNarratorSettings(),
+      null,
+    );
+    expect(prompt).toContain(`Cataclysm: ${cataclysm.title} In this final war, we were set upon by: Artificial intelligence`);
+    expect(prompt).toContain(`Ai: ${ai.title} ${ai.subTableLabel} ${ai.subResult}`);
+    expect(prompt).toContain(`War: ${war.title}\n`);
   });
 
   // PLAYTEST-1712 S — the inciting incident must be injected as durable canon
