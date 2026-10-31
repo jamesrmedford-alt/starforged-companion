@@ -24,7 +24,7 @@
 
 import { CampaignStateSchema, MOVES }   from "./schemas.js";
 import { interpretMove }         from "./moves/interpreter.js";
-import { resolveMove }           from "./moves/resolver.js";
+import { resolveMove, withPayThePriceSeed } from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
@@ -1402,10 +1402,14 @@ export function registerChatHook() {
       // burn button can undo them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        ptpReversals = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
+        const ptp = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
           console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err);
           return null;
         });
+        ptpReversals = ptp?.reversals ?? null;
+        // The move's narration depicts this card's price — the one the table
+        // pays; the resolver rolled none for it (issue #321 U03).
+        resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
       }
 
       // Step 7: relevance resolver — picks the narrator-permission block
@@ -5131,7 +5135,9 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
     speakerActorId: actorId,
   });
 
-  return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas };
+  // reversals — what the price did, for an upgrade to undo; price — the
+  // result the card shows, which the move's narration is seeded with.
+  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas }, price: result.result };
 }
 
 /**
