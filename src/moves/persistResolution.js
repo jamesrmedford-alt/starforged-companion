@@ -133,7 +133,8 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
 //                                   on the store via clearPersistedNextMoveAdd
 //       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
-//       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
+//       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays;
+//                                   a new session's mint closes the gate)
 //       sessionStartedId            Begin a Session relay (start effects once per session)
 //       currentSessionId, sessionNumber, lastSessionTimestamp,
 //       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle

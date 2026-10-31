@@ -262,14 +262,19 @@ describe("Begin a Session", () => {
 
   it("a session that went idle is begun anew, although nobody ended it", async () => {
     setUsers([GM], "gm-1");
+    const lastWeek = new Date(Date.now() - 170 * 3_600_000).toISOString();
     game.settings._store.set(`${MODULE_ID}.campaignState`, {
       sessionActive: true, currentSessionId: "s-old", sessionStartedId: "s-old",
+      sessionActiveStartedAt: lastWeek,
       lastSessionTimestamp: new Date(Date.now() - 5 * 3_600_000).toISOString(),
     });
     await applyBeginSession({ vignetteRolled: false, includeGalley: false }, {});
     expect(state().currentSessionId).not.toBe("s-old");
     expect(state().sessionStartedId).toBe(state().currentSessionId);
     expect(calls).toEqual(["clocks"]);
+    // The new session's gate opens now, not "since last week" (issue #321 U12).
+    expect(state().sessionActive).toBe(true);
+    expect(Date.now() - Date.parse(state().sessionActiveStartedAt)).toBeLessThan(60_000);
   });
 
   it("the dialog does not open on a session already begun", async () => {
