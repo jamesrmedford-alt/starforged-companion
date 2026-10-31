@@ -205,7 +205,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -2219,6 +2219,26 @@ function registerEntityRenameSyncHook() {
 }
 
 /**
+ * Which client narrates a native sheet roll: the keyed-runner ladder of
+ * RUN_ON.CLAUDE and requestOracleNarration (decisions.md "Claude calls run
+ * where a key lives, exactly once"). A keyed GM is connected → the canonical
+ * GM, which is keyed by construction, so the call succeeds and its narrator
+ * side-data applies; otherwise → the roller's own client, with its own key.
+ * The createChatMessage hook fires on every client and each reaches the same
+ * answer, so no relay is needed. Unlike the chat-command AUTHOR policy, an
+ * author-less message is nobody's roll — a native roll card always carries
+ * its roller.
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function nativeRollNarratesHere(message) {
+  if (hasKeyedActiveGM()) return isCanonicalGM();
+  const authorId = messageAuthorId(message);
+  return authorId != null && authorId === game?.user?.id;
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -2226,33 +2246,28 @@ function registerEntityRenameSyncHook() {
  * card, classifies it as a vow or connection resolution, and narrates the
  * already-determined outcome via narrateResolution — WITHOUT re-rolling.
  *
- * Single-emitter on the ROLLER's own client (the message author): exactly one
- * client narrates — the one that made the roll and holds the Claude key —
- * matching the pipeline's no-GM-dependency narration (#248 Theme D). The old
- * isCanonicalGM gate produced nothing when the Claude key lived on a player's
- * client, not the GM's. Anything it can't act on (action rolls, expedition/
- * combat progress, our own cards, unparseable shapes) is skipped with a debug
+ * Narrated exactly once, where a Claude key lives (nativeRollNarratesHere —
+ * decisions.md "Claude calls run where a key lives, exactly once"): the keyed
+ * canonical GM when one is connected, else the roller's own client with its
+ * own key. Narrating only on the roller gave a keyless player "Narration
+ * unavailable" at a table whose GM holds the key (issue #321 U11); the older
+ * canonical-GM-only gate produced nothing when only a player held a key
+ * (#248 Theme D). The narration is the roller's: their PC is the narrator's
+ * CHARACTER. Anything it can't act on (action rolls, expedition/combat
+ * progress, our own cards, unparseable shapes) is skipped with a debug
  * breadcrumb on the deciding client (decisions.md → "No silent failures"). See
  * nativeProgressRoll.js for the vendor-coupling note.
  */
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
-      // Narration runs on the ROLLER's own client — the one that made the roll
-      // and (per #209) holds the Claude key — mirroring the move pipeline's
-      // "no GM dependency" narration (Step 10 above). Gating this to the
-      // canonical GM (the old behaviour) silently produced nothing on tables
-      // where the Claude key lives on a player's client, not the GM's
-      // (#248 Theme D; decisions.md → "No silent failures"). Other clients
-      // correctly stand down here — not a failure, so no log.
-      // Unlike the chat-command AUTHOR policy, an author-less message is NOT
-      // treated as ours here — a native roll card always carries its roller.
-      const authorId = messageAuthorId(message);
-      const isRoller = authorId != null && authorId === game?.user?.id;
+      // Every client reads the same keyed-GM registry and user list, so one
+      // decides it narrates and the others stand down — not a failure, so no log.
+      const narratesHere = nativeRollNarratesHere(message);
 
       const content = String(message?.content ?? "");
-      const parsed  = isRoller ? parseIronswornProgressRoll(content) : null;
-      const moveId  = (isRoller && parsed) ? classifyProgressRoll(parsed, (source) => {
+      const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
+      const moveId  = (narratesHere && parsed) ? classifyProgressRoll(parsed, (source) => {
         // Fallback discriminator: read the source progress Item's subtype off
         // the speaker actor (the system serialises only the track name).
         try {
@@ -2273,8 +2288,8 @@ function registerNativeProgressRollHook() {
 
       // No silent failures (decisions.md): map the facts to act/skip + reason +
       // level, then always log the decision on this (the deciding) client.
-      const rollKind = (isRoller && !parsed) ? ironswornRollKind(content) : "progress";
-      const plan = planNativeRollNarration({ isRoller, rollKind, parsed, moveId });
+      const rollKind = (narratesHere && !parsed) ? ironswornRollKind(content) : "progress";
+      const plan = planNativeRollNarration({ narratesHere, rollKind, parsed, moveId });
       if (plan.log === "warn") {
         console.warn(`${MODULE_ID} | native-roll: ${plan.reason} — skipping (a vendor card-shape change?)`);
       } else if (plan.log === "debug") {
@@ -2291,6 +2306,8 @@ function registerNativeProgressRollHook() {
 
       import("./narration/narrator.js").then(({ narrateResolution }) => {
         const campaignState = game.settings.get(MODULE_ID, "campaignState");
+        // The roller's PC (the sheet's speaker), not this client's own.
+        const speakerActorId = resolveSpeakerActorId(message, campaignState);
         const resolution = {
           _id:             `native-${message.id}`,
           moveId,
@@ -2307,7 +2324,7 @@ function registerNativeProgressRollHook() {
         };
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome.
-        return narrateResolution(resolution, campaignState);
+        return narrateResolution(resolution, campaignState, { speakerActorId });
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
     } catch (err) {

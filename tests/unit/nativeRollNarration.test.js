@@ -55,37 +55,37 @@ describe('ironswornRollKind', () => {
 });
 
 describe('planNativeRollNarration — no silent failures', () => {
-  it('stands down quietly when this client is not the roller', () => {
-    expect(planNativeRollNarration({ isRoller: false, rollKind: 'progress', parsed: { source: 'V' }, moveId: 'fulfill_your_vow' }))
-      .toEqual({ act: false, reason: 'not-this-clients-roll', log: 'none' });
+  it('stands down quietly when another client narrates the roll', () => {
+    expect(planNativeRollNarration({ narratesHere: false, rollKind: 'progress', parsed: { source: 'V' }, moveId: 'fulfill_your_vow' }))
+      .toEqual({ act: false, reason: 'narrated-on-another-client', log: 'none' });
   });
 
-  it('narrates when the roller parsed a classified vow/connection roll', () => {
-    expect(planNativeRollNarration({ isRoller: true, rollKind: 'progress', parsed: { source: 'V', outcome: 'weak_hit' }, moveId: 'fulfill_your_vow' }))
+  it('narrates when this client parsed a classified vow/connection roll', () => {
+    expect(planNativeRollNarration({ narratesHere: true, rollKind: 'progress', parsed: { source: 'V', outcome: 'weak_hit' }, moveId: 'fulfill_your_vow' }))
       .toEqual({ act: true, reason: 'narrate', log: 'debug' });
   });
 
   it('debug-logs a progress roll that is not a vow/connection (expedition/combat)', () => {
-    expect(planNativeRollNarration({ isRoller: true, rollKind: 'progress', parsed: { source: 'Expedition' }, moveId: null }))
+    expect(planNativeRollNarration({ narratesHere: true, rollKind: 'progress', parsed: { source: 'Expedition' }, moveId: null }))
       .toEqual({ act: false, reason: 'not-vow-or-connection', log: 'debug' });
   });
 
   it('stays quiet on a normal action roll', () => {
-    expect(planNativeRollNarration({ isRoller: true, rollKind: 'action', parsed: null, moveId: null }))
+    expect(planNativeRollNarration({ narratesHere: true, rollKind: 'action', parsed: null, moveId: null }))
       .toEqual({ act: false, reason: 'action-roll', log: 'none' });
   });
 
   it('WARNS on an unparseable roll card (a possible vendor-shape change)', () => {
-    expect(planNativeRollNarration({ isRoller: true, rollKind: 'unparseable', parsed: null, moveId: null }))
+    expect(planNativeRollNarration({ narratesHere: true, rollKind: 'unparseable', parsed: null, moveId: null }))
       .toEqual({ act: false, reason: 'unparseable-roll-card', log: 'warn' });
   });
 
   it('stays quiet on an ordinary non-roll message', () => {
-    expect(planNativeRollNarration({ isRoller: true, rollKind: 'not-a-roll', parsed: null, moveId: null }))
+    expect(planNativeRollNarration({ narratesHere: true, rollKind: 'not-a-roll', parsed: null, moveId: null }))
       .toEqual({ act: false, reason: 'not-an-ironsworn-roll', log: 'none' });
   });
 
   it('treats missing facts as a quiet stand-down (no throw)', () => {
-    expect(planNativeRollNarration()).toEqual({ act: false, reason: 'not-this-clients-roll', log: 'none' });
+    expect(planNativeRollNarration()).toEqual({ act: false, reason: 'narrated-on-another-client', log: 'none' });
   });
 });
