@@ -3188,13 +3188,18 @@ async function handlePaceCommand(message) {
   });
 }
 
-// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys.
+// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys. The play
+// kit names two of the five odds with two words — "small chance" and "almost
+// certain" — which are looked up before the one-word aliases (issue #321 U64:
+// only the first word was checked, so "almost certain" rolled at 50/50 and
+// "small chance" left "chance" in the question).
 const ODDS_ALIASES = new Map([
-  ["small_chance",  "small_chance"], ["small", "small_chance"],
+  ["small_chance",  "small_chance"], ["small", "small_chance"], ["small chance", "small_chance"],
   ["unlikely",      "unlikely"],
   ["50_50",         "50_50"],        ["50/50", "50_50"], ["even", "50_50"],
   ["likely",        "likely"],
   ["almost_certain","almost_certain"], ["certain", "almost_certain"], ["sure", "almost_certain"],
+  ["almost certain", "almost_certain"],
 ]);
 
 /**
@@ -3230,16 +3235,19 @@ async function handleOracleCommand(message) {
     return;
   }
 
-  // Resolve odds — if parts[1] is a known odds alias use it, else fall back
-  // to 50/50 and treat parts[1..] as the question.
+  // Resolve odds — a two-word alias (parts[1..2]) first, then a one-word
+  // alias (parts[1]); else fall back to 50/50 and treat parts[1..] as the
+  // question.
   let oddsKey  = "50_50";
   let question = parts.slice(1).join(" ");
-  if (parts[1]) {
-    const aliased = ODDS_ALIASES.get(parts[1].toLowerCase());
-    if (aliased) {
-      oddsKey  = aliased;
-      question = parts.slice(2).join(" ");
-    }
+  const twoWord = parts[2] ? ODDS_ALIASES.get(`${parts[1]} ${parts[2]}`.toLowerCase()) : null;
+  const oneWord = parts[1] ? ODDS_ALIASES.get(parts[1].toLowerCase()) : null;
+  if (twoWord) {
+    oddsKey  = twoWord;
+    question = parts.slice(3).join(" ");
+  } else if (oneWord) {
+    oddsKey  = oneWord;
+    question = parts.slice(2).join(" ");
   }
 
   const result = rollYesNo(oddsKey, { question });

@@ -306,6 +306,34 @@ describe('!oracle <tableId> — roll any registered oracle table', () => {
   });
 });
 
+// Issue #321 U64: only the first word after "yes" was checked for odds. The
+// play kit names two of the five odds with two words, so "almost certain"
+// rolled at 50/50 (≤ 50, not ≤ 90) with "almost certain" in the question, and
+// "small chance" left "chance" in the question (card, oracle memory, the
+// narrator's follow-up).
+describe("!oracle yes — the rulebook's two-word odds names", () => {
+  const memory = () => table.cards(f => f.oracleCommandCard && f.oracleMemory).at(-1)?.flags?.[MODULE_ID]?.oracleMemory;
+
+  it('"almost certain" rolls at Almost Certain odds, not 50/50', async () => {
+    await type('pl-1', '!oracle yes almost certain is the station still there');
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (almost certain)', question: 'is the station still there' });
+    expect(table.cards(f => f.oracleCommandCard).at(-1).content).toMatch(/≤ 90\?/);
+  });
+
+  it('"small chance" keeps "chance" out of the question', async () => {
+    await type('pl-1', '!oracle yes Small Chance will the patrol spot us');
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (small chance)', question: 'will the patrol spot us' });
+    expect(table.cards(f => f.oracleCommandCard).at(-1).content).toMatch(/≤ 10\?/);
+  });
+
+  it('a one-word alias still works, and a question that merely starts with an odds word is not eaten', async () => {
+    await type('pl-1', '!oracle yes certain they saw us');
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (almost certain)', question: 'they saw us' });
+    await type('pl-1', '!oracle yes is it almost done');
+    expect(memory()).toMatchObject({ name: 'Ask the Oracle (50/50)', question: 'is it almost done' });
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // !recap while "Recap GM-only" is on
 // ─────────────────────────────────────────────────────────────────────────────
