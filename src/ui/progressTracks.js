@@ -14,7 +14,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-import { createClock } from '../clocks/clocks.js';
+import { createClock, retireClock, removeClock } from '../clocks/clocks.js';
 
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
@@ -129,6 +129,38 @@ async function loadTracks() {
 async function saveTracks(tracks) {
   const journal = await getOrCreateJournal();
   await journal.setFlag(MODULE_ID, FLAG_KEY, tracks);
+}
+
+// ---------------------------------------------------------------------------
+// Scene challenges' paired clocks
+// ---------------------------------------------------------------------------
+//
+// A scene challenge is a progress track paired with a tension clock
+// (`tensionClockId`, created with the track). The scene ends when either
+// fills — so a completed challenge's clock is done too. Completing the track
+// only archived the track, and Pay the Price kept advancing the clock as an
+// active danger, posting cards that named the finished challenge (issue #316
+// T03). Completion retires the clock (kept for the record); removing the
+// track removes its clock with it. Both run BEFORE the track write and are
+// idempotent, so a refused track save leaves only the save to redo, and a
+// refused clock write changes nothing — the press is the retry.
+
+/** Retire a scene challenge's paired clock. No-op for any other track. */
+async function retirePairedClock(track) {
+  if (track?.type !== 'scene_challenge' || !track.tensionClockId) return;
+  await retireClock(track.tensionClockId);
+}
+
+/** Remove a scene challenge's paired clock. No-op for any other track. */
+async function removePairedClock(track) {
+  if (track?.type !== 'scene_challenge' || !track.tensionClockId) return;
+  await removeClock(track.tensionClockId);
+}
+
+/** The panel's word when a paired clock write is refused: nothing changed; press again. */
+function warnPairedClock(what, err) {
+  console.warn(`${MODULE_ID} | ${what}: the scene challenge's paired clock write failed — nothing changed:`, err?.message ?? err);
+  ui?.notifications?.warn?.(`Starforged Companion: the scene challenge's danger clock could not be ${what === 'removeTrack' ? 'removed' : 'retired'} — nothing was changed. Try again.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +581,8 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   /**
    * Toggle a track's completed state. Completed tracks are moved to the archive
-   * section but kept for campaign record-keeping.
+   * section but kept for campaign record-keeping. A scene challenge's paired
+   * tension clock is retired with it (issue #316 T03).
    */
   static #onCompleteTrack(event, target) {
     const work = (async () => {
@@ -557,6 +590,13 @@ export class ProgressTrackApp extends ApplicationV2 {
       const tracks = await loadTracks();
       const track = tracks.find(t => t.id === trackId);
       if (!track) return;
+
+      try {
+        await retirePairedClock(track);
+      } catch (err) {
+        warnPairedClock('completeTrack', err);
+        return;
+      }
 
       track.completed = true;
       track.completedAt = Date.now();
@@ -591,7 +631,8 @@ export class ProgressTrackApp extends ApplicationV2 {
   }
 
   /**
-   * Remove a track permanently (with a confirm dialog for safety).
+   * Remove a track permanently (with a confirm dialog for safety). A scene
+   * challenge's paired tension clock goes with it (issue #316 T03).
    */
   static #onRemoveTrack(event, target) {
     const work = (async () => {
@@ -602,9 +643,16 @@ export class ProgressTrackApp extends ApplicationV2 {
 
       const confirmed = await DialogV2.confirm({
         window:  { title: 'Remove Track' },
-        content: `<p>Permanently remove <strong>${track.label}</strong>? This cannot be undone.</p>`,
+        content: `<p>Permanently remove <strong>${track.label}</strong>?${track.type === 'scene_challenge' && track.tensionClockId ? ' Its danger clock goes with it.' : ''} This cannot be undone.</p>`,
       });
       if (!confirmed) return;
+
+      try {
+        await removePairedClock(track);
+      } catch (err) {
+        warnPairedClock('removeTrack', err);
+        return;
+      }
 
       const updated = tracks.filter(t => t.id !== trackId);
       await saveTracks(updated);
@@ -892,7 +940,9 @@ export async function getProgressTrack(trackId) {
 /**
  * Mark a track completed by ID from outside the panel (e.g. Finish an
  * Expedition). Completed tracks move to the panel's archive section but are
- * kept for the campaign record. GM-only (journal write); null if not found.
+ * kept for the campaign record. A scene challenge's paired tension clock is
+ * retired first (issue #316 T03); a refused clock write rejects before the
+ * track changes. GM-only (journal write); null if not found.
  * @param {string} trackId
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
@@ -900,6 +950,7 @@ export async function completeProgressTrack(trackId) {
   const tracks = await loadTracks();
   const track  = tracks.find(t => t.id === trackId);
   if (!track) return null;
+  await retirePairedClock(track);
   track.completed   = true;
   track.completedAt = Date.now();
   await saveTracks(tracks);

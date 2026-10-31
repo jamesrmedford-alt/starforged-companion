@@ -155,6 +155,10 @@ export async function enrichBondedDevelop(interpretation, { listConnections }) {
   if (!roll) return { connection: target, bonded: false, adds: 0 };
   interpretation.statUsed  = roll.statUsed;
   interpretation.statValue = roll.statValue;
+  // The schema lists no stat, so the move resolves with no roll (schemas.js
+  // moveRollKind "none"); bonded, it is an action roll +rank — said here, where
+  // the stat is made, for the resolver (issue #316 T05).
+  interpretation.rollKind  = "action";
   return { connection: target, bonded: true, adds: roll.statValue };
 }
 

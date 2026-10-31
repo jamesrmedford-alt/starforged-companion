@@ -64,6 +64,7 @@ function getPanelClass() {
           ...c,
           triggered: c.filled >= c.segments,
           isCampaign: c.type === "campaign",
+          retired: c.active === false,
         })),
       };
     }
@@ -75,8 +76,8 @@ function getPanelClass() {
       const row = (c) => {
         const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
         return `
-          <div class="clock-row clock-${c.type}${c.triggered ? " is-triggered" : ""}" data-clock-id="${c._id}">
-            <div class="clock-name"><strong>${escapeHtml(c.name)}</strong> · ${c.type} · ${c.filled}/${c.segments}${c.isCampaign ? ` (odds: ${c.advanceOdds})` : ""}${c.triggered ? " <em>TRIGGERED</em>" : ""}</div>
+          <div class="clock-row clock-${c.type}${c.triggered ? " is-triggered" : ""}${c.retired ? " is-retired" : ""}" data-clock-id="${c._id}">
+            <div class="clock-name"><strong>${escapeHtml(c.name)}</strong> · ${c.type} · ${c.filled}/${c.segments}${c.isCampaign ? ` (odds: ${c.advanceOdds})` : ""}${c.triggered ? " <em>TRIGGERED</em>" : ""}${c.retired ? " <em>retired</em>" : ""}</div>
             <div class="clock-bar"><code>[${bar}]</code></div>
             <div class="clock-actions">
               <button data-action="advanceClock" data-clock-id="${c._id}" title="Advance (campaign rolls odds; tension fills 1)">↻</button>
@@ -167,10 +168,7 @@ function getPanelClass() {
 
     static async #onRemoveClock(_event, target) {
       if (!gmGate("Remove clock")) return;
-      const id = target.dataset.clockId;
-      const state = readState();
-      state.clocks = (state.clocks ?? []).filter(c => c._id !== id);
-      await writeState(state);
+      await removeClock(target.dataset.clockId);
       this.render();
     }
   };
@@ -243,6 +241,47 @@ export async function createClock(input) {
 }
 
 /**
+ * Retire a clock: `active: false`, kept on the list for the record. An
+ * inactive clock is skipped by every automatic advance (Pay the Price,
+ * Begin a Session) and shown as retired. A scene challenge's paired tension
+ * clock is retired when the challenge is completed (ui/progressTracks.js) —
+ * it used to keep advancing on every Pay the Price after the challenge was
+ * archived (issue #316 T03). Idempotent: a clock already retired is left as
+ * it is, with no write. Written on a copy, so a refused write leaves this
+ * client's cached state as it was.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock as stored, or null when there is none by that id
+ */
+export async function retireClock(clockId) {
+  const state = foundry.utils.deepClone(readState());
+  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+  if (!clock) return null;
+  if (clock.active === false) return clock;
+  clock.active    = false;
+  clock.updatedAt = new Date().toISOString();
+  await writeState(state);
+  return clock;
+}
+
+/**
+ * Remove a clock from the list — `!clock remove`, the panel's ✕, and a scene
+ * challenge removed with its paired clock (ui/progressTracks.js, issue #316
+ * T03). Written on a copy.
+ *
+ * @param {string} clockId
+ * @returns {Promise<object|null>} the clock removed, or null when there was none by that id
+ */
+export async function removeClock(clockId) {
+  const state = foundry.utils.deepClone(readState());
+  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+  if (!clock) return null;
+  state.clocks = state.clocks.filter(c => c._id !== clockId);
+  await writeState(state);
+  return clock;
+}
+
+/**
  * Advance every active tension clock by one segment. The module's clock
  * contract (file header above; issue #203 (Clocks)) is that tension
  * clocks advance when you Pay the Price or a complication is rolled — this is
@@ -301,10 +340,17 @@ export async function revertTensionClocksForBurn(ids) {
  * clock checked — including those that did not advance — so the caller can
  * post a full session-start summary card.
  *
- * @returns {Promise<Array<{name, type, filled, segments, triggered, advanced, odds, roll}>>}
+ * The rolls are kept when the write is refused: each advanced entry then
+ * carries `saved: false` and the error, with `filled` the segment it rolled
+ * to, so the caller can report it and have it saved later without rolling
+ * again (applyClockAdvances; issue #316 T04 — a refused write was caught and
+ * logged, and the advance was lost for the session). Written on a copy, so
+ * the refused write leaves this client's cached state as it was.
+ *
+ * @returns {Promise<Array<{_id, name, type, filled, segments, triggered, advanced, odds, roll, saved, error?}>>}
  */
 export async function advanceCampaignClocksForBeginSession() {
-  const state = readState();
+  const state = foundry.utils.deepClone(readState());
   const eligible = (state.clocks ?? []).filter(
     c => c.active !== false && c.type === "campaign" && (c.filled ?? 0) < c.segments,
   );
@@ -323,6 +369,7 @@ export async function advanceCampaignClocksForBeginSession() {
       dirty = true;
     }
     results.push({
+      _id:       c._id,
       name:      c.name,
       type:      "campaign",
       filled:    c.filled,
@@ -331,11 +378,57 @@ export async function advanceCampaignClocksForBeginSession() {
       advanced,
       odds:      c.advanceOdds,
       roll:      r.roll,
+      saved:     true,
     });
   }
 
-  if (dirty) await writeState(state);
+  if (dirty) {
+    try {
+      await writeState(state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Begin a Session: the campaign clock advance was not saved:`, err?.message ?? err);
+      for (const r of results) {
+        if (r.advanced) { r.saved = false; r.error = String(err?.message ?? err); }
+      }
+    }
+  }
   return results;
+}
+
+/**
+ * Save recorded clock advances — the GMs' Retry of a session-start advance
+ * the world refused (index.js runPayoffStep "clocks", issue #316 T04). Each
+ * entry names a clock and the fill it rolled to; the clock is set to at least
+ * that fill, within its segments, so a Retry after a GM advanced it by hand
+ * — or a second Retry — never advances it twice. A clock no longer on the list
+ * is skipped and named. One write, on a copy; nothing is rolled.
+ *
+ * @param {Array<{ _id: string, filled: number }>} entries
+ * @returns {Promise<{ ok: true, applied: Array<{_id, name, filled}>, missing: string[] }
+ *   | { ok: false, reason: "refused", error: string }>}
+ */
+export async function applyClockAdvances(entries) {
+  const state   = foundry.utils.deepClone(readState());
+  const applied = [];
+  const missing = [];
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
+    if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
+    const target = Math.min(Math.max(0, Math.floor(Number(e.filled) || 0)), clock.segments);
+    if ((clock.filled ?? 0) >= target) continue;
+    clock.filled    = target;
+    clock.updatedAt = new Date().toISOString();
+    applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
+  }
+  if (applied.length) {
+    try {
+      await writeState(state);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | clock advances not saved:`, err?.message ?? err);
+      return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+    }
+  }
+  return { ok: true, applied, missing };
 }
 
 export async function handleClockCommand(message) {
@@ -513,9 +606,7 @@ async function cmdRemove(parts) {
   if (!gmGate("!clock remove")) return;
   const clock = await findClockByArg(parts);
   if (!clock) return;
-  const state = readState();
-  state.clocks = (state.clocks ?? []).filter(c => c._id !== clock._id);
-  await writeState(state);
+  await removeClock(clock._id);
   await postCard(`<strong>Clock removed</strong><p>${escapeHtml(clock.name)}.</p>`);
 }
 
@@ -602,7 +693,8 @@ function peelQuotedName(parts) {
 function renderClock(c) {
   const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
   const triggered = c.filled >= c.segments ? " <em>(TRIGGERED)</em>" : "";
-  return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}`;
+  const retired   = c.active === false ? " <em>(retired)</em>" : "";
+  return `<code>[${bar}]</code> ${escapeHtml(c.name)} — ${c.type} ${c.filled}/${c.segments}${c.type === "campaign" ? ` (odds: ${c.advanceOdds})` : ""}${triggered}${retired}`;
 }
 
 function fireClockVignette(clockData) {

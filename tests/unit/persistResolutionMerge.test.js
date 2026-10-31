@@ -155,10 +155,32 @@ describe("persistResolution — concurrent writes survive the stale working copy
     snapshot.legacyTracks.quests = { ticks: 4, cleared: false };   // pipeline: fulfil a vow
     stored().legacyTracks = { bonds: { ticks: 3, cleared: false } }; // `!bond` +1 meanwhile
     await persistResolution(resolution(), snapshot);
+    // bonds was on both sides (the snapshot's 2, the store's 3): the merged
+    // record is normalised (its cleared cycles counted); quests, on the
+    // pipeline's side alone, is kept as written.
     expect(stored().legacyTracks).toEqual({
-      bonds:  { ticks: 3, cleared: false },
+      bonds:  { ticks: 3, cleared: false, cycles: 0 },
       quests: { ticks: 4, cleared: false },
     });
+  });
+
+  // Issue #316 T02: the merge took the higher tick count, which a clear
+  // resets — a track the pipeline rolled over from 38 to 2 (cleared) read as
+  // behind the store's 38, and the clear was undone.
+  it("a legacy track the pipeline cleared is not reverted by the store's higher pre-clear count", async () => {
+    const snapshot = pipelineSnapshot();
+    snapshot.legacyTracks.discoveries = { ticks: 2, cleared: true, cycles: 1 };   // 38 + 4: cleared, 2 over
+    stored().legacyTracks = { discoveries: { ticks: 38, cleared: false } };
+    await persistResolution(resolution(), snapshot);
+    expect(stored().legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
+  });
+
+  it("a store record further along than the pipeline's keeps its marks — a clear included", async () => {
+    const snapshot = pipelineSnapshot();
+    snapshot.legacyTracks.discoveries = { ticks: 39, cleared: false };
+    stored().legacyTracks = { discoveries: { ticks: 1, cleared: true, cycles: 1 } };   // cleared meanwhile
+    await persistResolution(resolution(), snapshot);
+    expect(stored().legacyTracks.discoveries).toEqual({ ticks: 1, cleared: true, cycles: 1 });
   });
 
   it("merges scene truths: the pipeline's new truths and a concurrent `!truth` retraction both land", async () => {

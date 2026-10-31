@@ -21,6 +21,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   wireConnectionPickerButtons,
   wireFightVowButtons,
+  wireWaypointOracleButton,
   payFulfilledVowNative,
   resolveVowItemCopies,
   resolveVowHolderActor,
@@ -509,5 +510,64 @@ describe('momentumRecalcRunsHere', () => {
   it('never runs for the client\'s own write', () => {
     setUsers(users, 'gm-1');
     expect(momentumRecalcRunsHere(pcB, 'gm-1')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Waypoint match — Make a Discovery / Confront Chaos (issue #316 T06)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('wireWaypointOracleButton — relays waypoint.oracle', () => {
+  const waypointRoot = () => makeRoot([{ action: 'sf-waypoint-oracle', dataset: {} }]);
+  let card;
+  beforeEach(() => {
+    card = makeCard('wp-1', { moveResolution: true, resolutionId: 'res-wp', waypointOracleCard: 'make_a_discovery', actorId: 'pc-b' });
+    messages.push(card);
+  });
+
+  it('a player click relays the card id to the canonical GM — no local chat post, the button disabled', async () => {
+    setUsers([GM, P1], 'pl-1');
+    const root = waypointRoot();
+    wireWaypointOracleButton(card, root);
+    await click(root.buttons[0]);
+    expect(ChatMessage._created).toHaveLength(0);
+    expect(game.socket._emitted).toEqual([{
+      event: GM_RELAY_SOCKET,
+      payload: { kind: 'gmRelay.waypoint.oracle', payload: { messageId: 'wp-1' }, requesterId: 'pl-1' },
+    }]);
+    expect(root.buttons[0].disabled).toBe(true);
+  });
+
+  it('on the canonical GM the click claims the card and posts the forced move once, speaking as the roller', async () => {
+    setUsers([GM, P1], 'gm-1');
+    const root = waypointRoot();
+    wireWaypointOracleButton(card, root);
+    await click(root.buttons[0]);
+    const forced = ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.forcedMoveId === 'make_a_discovery');
+    expect(forced).toHaveLength(1);
+    expect(forced[0].speaker).toMatchObject({ actor: 'pc-b' });
+    expect(card.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');
+    // A second click on the stale render posts nothing more.
+    await click(root.buttons[0]);
+    expect(ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.forcedMoveId)).toHaveLength(1);
+  });
+
+  it('a claimed card renders its button disabled — by either reward', () => {
+    for (const claimed of ['alternative', 'ordinary']) {
+      card.flags[MODULE_ID].waypointRewardClaimed = claimed;
+      const root = waypointRoot();
+      wireWaypointOracleButton(card, root);
+      expect(root.buttons[0].disabled).toBe(true);
+    }
+    expect(waypointRoot().buttons[0].title).toBeUndefined();
+  });
+
+  it('re-arms the button when no GM is connected', async () => {
+    setUsers([P1], 'pl-1');
+    const root = waypointRoot();
+    wireWaypointOracleButton(card, root);
+    await click(root.buttons[0]);
+    expect(root.buttons[0].disabled).toBe(false);
+    expect(game.socket._emitted ?? []).toHaveLength(0);
   });
 });

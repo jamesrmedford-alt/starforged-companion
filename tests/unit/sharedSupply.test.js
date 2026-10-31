@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { computeSupplySyncUpdates, registerSharedSupplyHook, supplyAllies } from '../../src/multiplayer/sharedSupply.js';
 import { sacrificeResources } from '../../src/moves/sufferExecutor.js';
+import { readMomentumState } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -208,7 +209,9 @@ describe('the crew shares the zero-supply impact (issue #315 S07)', () => {
 
     expect([a, b].map(x => x.system.supply.value)).toEqual([0, 0]);
     expect(unprepared(a, b)).toEqual([true, true]);
-    expect([a, b].map(x => [x.system.momentum.max, x.system.momentum.resetValue])).toEqual([[9, 1], [9, 1]]);
+    // The effective bounds follow the impact; the sheet's bases stay 10 / +2 (issue #316 T01).
+    expect([a, b].map(x => [readMomentumState(x).max, readMomentumState(x).reset])).toEqual([[9, 1], [9, 1]]);
+    expect([a, b].map(x => [x.system.momentum.max, x.system.momentum.resetValue])).toEqual([[10, 2], [10, 2]]);
   });
 
   it('control: raising the supply by a sheet edit mirrors the value and clears no one — a recovery move clears it', async () => {

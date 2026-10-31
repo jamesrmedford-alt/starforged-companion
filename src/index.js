@@ -46,6 +46,7 @@ import {
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
+import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -56,7 +57,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, applyClockAdvances } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -1485,6 +1486,7 @@ export function registerChatHook() {
         milestoneState,
         connectionState,
         moveFight,
+        rollerActor?.id ?? null,
       );
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency
@@ -3540,40 +3542,40 @@ function registerRecommitSocket() {
 const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bonds" };
 
 /**
- * Add ticks to a legacy track on campaignState (capped at the 40-tick / 10-box
- * maximum), creating the entry if absent. Mutates in place; the caller (or its
- * pipeline) persists campaignState.
+ * Add ticks to a legacy track on campaignState, creating the entry if absent.
+ * Mutates in place; the caller (or its pipeline) persists campaignState. The
+ * arithmetic is moves/legacyTracks.js markLegacyTrack: filling the tenth box
+ * clears the track, which starts again with the overflow and counts the
+ * cycle (`cycles`, `cleared`) — it used to cap at 40 ticks, so every later
+ * mark was lost and no XP followed (issue #316 T02).
  *
  * Newly FILLED boxes award XP — 2 per box, 1 once the track has been cleared
- * (play kit rule 1.12) — to every player character (legacy tracks are shared
- * crew tracks in this module, like the shared supply), with a chat note. The
- * award is fire-and-forget so call sites stay synchronous; failures warn.
+ * (play kit rule 1.12), each box at the rate of the cycle it filled in — to
+ * every player character (legacy tracks are shared crew tracks in this
+ * module, like the shared supply), with a chat note. The award is
+ * fire-and-forget so call sites stay synchronous; failures warn.
  * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
  * awarding path (persistResolution.markLegacyProgress) required a consequence
  * field no resolver set. `awardXp: false` leaves the award to the caller:
  * writeLegacyTicks awards it once its write has landed.
  *
- * @returns {number} newly filled boxes
+ * @returns {{ boxes: number, xp: number, cleared: boolean }} the boxes this
+ *   mark filled, the XP they earn (per character) and whether it cleared the
+ *   track
  */
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
-  const t = campaignState.legacyTracks[key] ?? { ticks: 0, cleared: false };
-  const boxesBefore = Math.floor((t.ticks ?? 0) / 4);
-  t.ticks = Math.min((t.ticks ?? 0) + ticks, 40);
-  const newBoxes = Math.floor(t.ticks / 4) - boxesBefore;
-  campaignState.legacyTracks[key] = t;
-  if (newBoxes > 0 && awardXp) {
+  const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
+  campaignState.legacyTracks[key] = marked.track;
+  if (marked.boxes > 0 && awardXp) {
     // A PC whose award is refused is told to the GMs, with a Retry for that
     // award alone (issue #309 N06).
-    awardLegacyBoxXP(key, newBoxes, legacyBoxXp(t, newBoxes))
+    awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared })
       .then(failed => failed.length ? postPayoffFailureCard({ source: "legacyXp", failures: failed }) : null)
       .catch(err => console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
   }
-  return newBoxes;
+  return { boxes: marked.boxes, xp: marked.xp, cleared: marked.cleared };
 }
-
-// XP for newly filled legacy boxes: 2 a box, 1 once the track has been cleared.
-const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
 
 /**
  * Mark a legacy track and save it at once — a payoff outside the move
@@ -3592,10 +3594,10 @@ const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
 async function writeLegacyTicks(key, ticks) {
   const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-  const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
+  const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
   await game.settings.set(MODULE_ID, "campaignState", cs);
-  if (newBoxes <= 0) return [];
-  return awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
+  if (marked.boxes <= 0) return [];
+  return awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
 /**
@@ -3609,10 +3611,12 @@ async function writeLegacyTicks(key, ticks) {
  * @param {"quests"|"bonds"|"discoveries"} key
  * @param {number} boxes — newly filled boxes
  * @param {number} xp — per PC
- * @param {{ pcs?: Actor[]|null }} [opts] — a Retry's PC; every PC when absent
+ * @param {{ pcs?: Actor[]|null, clearedNow?: boolean }} [opts] — a Retry's PC;
+ *   every PC when absent. `clearedNow`: this mark filled the tenth box, so
+ *   the note says the track has cleared and started again
  * @returns {Promise<Array<{ step: "xp", pcId: string|null, xp: number, track: string, boxes: number, reason: string, error: string }>>}
  */
-async function awardLegacyBoxXP(key, boxes, xp, { pcs = null } = {}) {
+async function awardLegacyBoxXP(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
   const recipients = pcs ?? getPlayerActors();
   const failed = [];
   const given  = [];
@@ -3632,9 +3636,12 @@ async function awardLegacyBoxXP(key, boxes, xp, { pcs = null } = {}) {
   const who = pcs || failed.length
     ? given.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
     : [];
+  const clearedNote = clearedNow
+    ? ` The track is filled and cleared — it starts again from its first box, and each box earns 1 XP from now on.`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled). Spend it on new assets or upgrades (Earn Experience).</p></div>`,
-    flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp } },
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp, ...(clearedNow ? { cleared: true } : {}) } },
   }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
   return failed;
 }
@@ -4492,6 +4499,7 @@ const PAYOFF_TITLES = {
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   session:     ()  => `Session momentum not given`,
+  sessionClocks: () => `Session-start clock advance not saved`,
   rider:       (c) => `Asset effects not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
@@ -4505,7 +4513,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"rider", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -4543,6 +4551,8 @@ function payoffStepRecord(f) {
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
     case "upgrade":     return upgradeStepRecord(f);
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
+    case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
+      clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
     case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
@@ -4556,8 +4566,9 @@ async function describePayoffFailure(f, { vowName, actorId }) {
   try {
     switch (f.step) {
       case "legacy": {
-        const now = game.settings.get(MODULE_ID, "campaignState")?.legacyTracks?.[f.track]?.ticks ?? 0;
-        return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now.`;
+        const track = game.settings.get(MODULE_ID, "campaignState")?.legacyTracks?.[f.track];
+        const now   = track?.ticks ?? 0;
+        return `${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy: +${plural(f.ticks, "tick")} — ${why}. It stands at ${now}/40 ticks now${track?.cleared ? " (cleared)" : ""}.`;
       }
       case "deepen": {
         const target = await findOpenConnection(f.connectionName);
@@ -4585,6 +4596,16 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       case "rider":
         // An asset effect after a move (issue #315 S08).
         return describeRiderStep(f, why, actorId);
+      case "clocks": {
+        // A session-start campaign clock advance the world refused (issue #316 T04).
+        const live = game.settings.get(MODULE_ID, "campaignState")?.clocks ?? [];
+        const parts = (f.clocks ?? []).map(c => {
+          const now = live.find(x => x._id === c._id);
+          const standing = now ? ` (stands at ${now.filled ?? 0}/${now.segments} now)` : " (no longer on the list)";
+          return `${escapeChatHtml(c.name ?? "a clock")} to ${c.filled}/${c.segments ?? "?"}${standing}`;
+        });
+        return `Begin a Session's campaign clock advance: ${parts.join("; ")} — ${why}. The oracle's roll stands; Retry saves it without rolling again.`;
+      }
       case "xp": {
         const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
         const who = escapeChatHtml(pc?.name ?? "a character");
@@ -4678,6 +4699,15 @@ async function runPayoffStep(s, card, copies) {
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).
       return retryRiderStep(s, card?.actorId ?? null);
+    case "clocks": {
+      // A session-start clock advance the world refused: the rolled fills are
+      // saved, never rolled again, and a clock already there is left (issue #316 T04).
+      const entries = (Array.isArray(s.clocks) ? s.clocks : [])
+        .filter(c => typeof c?._id === "string" && c._id && Number.isInteger(Number(c.filled)) && Number(c.filled) >= 1 && Number(c.filled) <= 10)
+        .map(c => ({ _id: c._id, filled: Number(c.filled) }));
+      if (!entries.length) return { ok: false, reason: "invalid step" };
+      return applyClockAdvances(entries);
+    }
     case "momentum": {
       // A PC's session momentum the world refused — that PC's alone (issue #311 P08).
       const amount = Math.floor(Number(s.amount));
@@ -5801,11 +5831,12 @@ const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_
  *   combatTrackLabel and named on the Finish the Fight button, which forwards
  *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
  */
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
-  // and fail-open — never blocks or breaks the result post.
-  void showMoveRoll(resolution);
+  // and fail-open — never blocks or breaks the result post. A no-roll move
+  // rolled nothing to show.
+  if (resolution.rollKind !== "none") void showMoveRoll(resolution);
   const combatMove = TDA_OFFER_MOVES.has(resolution.moveId);
   const namedFight = combatMove && fight?.id ? fight : null;
   return ChatMessage.create({
@@ -5814,6 +5845,9 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
       [MODULE_ID]: {
         moveResolution: true,
         resolutionId:   resolution._id,
+        // The roller: whose reward a waypoint match's alternative is, and who
+        // may take it (cardActions.js applyWaypointOraclePick, issue #316 T06).
+        ...(rollerActorId ? { actorId: rollerActorId } : {}),
         ...(combatMove ? { combatMoveCard: true } : {}),
         ...(namedFight ? { combatTrackId: namedFight.id, combatTrackLabel: namedFight.label ?? null } : {}),
         ...(waypointOracleFor(resolution) ? { waypointOracleCard: waypointOracleFor(resolution) } : {}),
@@ -5844,15 +5878,22 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
   // Progress moves roll no action die — the score is the track's filled boxes
   // (statValue carries the ticks; progressScore = floor(ticks / 4)). Rendering
   // them through the action-move template printed "+ (0)" and "Action: 0 + N
-  // = 0" against a real outcome.
-  const statLine = resolution.isProgressMove
-    ? `progress (${resolution.statValue} ticks)`
-    : `+${resolution.statUsed} (${resolution.statValue})`;
-  const diceLine = resolution.isProgressMove
-    ? `Progress: <strong>${resolution.progressScore}</strong>
+  // = 0" against a real outcome. A no-roll move (resolver rollKind "none" —
+  // Make a Discovery, Reach a Milestone …) has no dice and no outcome to
+  // show: it printed "+null (0)" and a "Miss" (issue #316 T05).
+  const noRoll = resolution.rollKind === "none";
+  const statLine = noRoll
+    ? `no action roll — the move's effect applies as written`
+    : resolution.isProgressMove
+      ? `progress (${resolution.statValue} ticks)`
+      : `+${resolution.statUsed} (${resolution.statValue})`;
+  const diceLine = noRoll
+    ? ""
+    : resolution.isProgressMove
+      ? `Progress: <strong>${resolution.progressScore}</strong>
         &nbsp;|&nbsp;
         Challenge: ${resolution.challengeDice[0]}, ${resolution.challengeDice[1]}${matchStr}`
-    : `Action: ${resolution.actionDieCancelled
+      : `Action: ${resolution.actionDieCancelled
           ? `<s>${resolution.actionDie}</s> (cancelled by momentum -${resolution.actionDie})`
           : resolution.actionDie} + ${resolution.statValue}${addsStr}
         = <strong>${resolution.actionScore}</strong>
@@ -5863,10 +5904,10 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
     <div class="sf-move-result ${outcomeClass}">
       <div class="sf-move-name">${resolution.moveName}</div>
       <div class="sf-move-stat">${statLine}</div>
-      <div class="sf-move-dice">
+      ${diceLine ? `<div class="sf-move-dice">
         ${diceLine}
-      </div>
-      <div class="sf-move-outcome">${resolution.outcomeLabel}</div>
+      </div>` : ""}
+      ${noRoll ? "" : `<div class="sf-move-outcome">${resolution.outcomeLabel}</div>`}
       ${resolution.consequences.otherEffect
         ? `<div class="sf-move-effect">${resolution.consequences.otherEffect}</div>`
         : ""}
@@ -5907,32 +5948,43 @@ export function waypointOracleFor(resolution) {
 }
 
 /**
- * Wire the waypoint-match oracle button — posts the forced follow-up move
- * (Make a Discovery / Confront Chaos); the canonical GM's pipeline resolves
- * it. Exported so Quench can drive it with a synthetic message + root.
+ * Wire the waypoint-match oracle button (Make a Discovery / Confront Chaos).
+ * A click relays to the canonical GM ("waypoint.oracle" →
+ * src/moves/cardActions.js applyWaypointOraclePick), which claims the card
+ * once (`waypointRewardClaimed`), retires the pending ordinary choice and
+ * posts the forced follow-up as the roller. The click used to post the move
+ * from the clicker's client and only disable its own button: a re-render
+ * re-armed it from the unchanged flags, and the match's alternative — the
+ * rule's "instead" — stacked on the ordinary +2 momentum (issue #316 T06). A
+ * card already claimed, by either reward, renders the button disabled; a click
+ * that is not delivered re-arms it. Exported so Quench can drive it with a
+ * synthetic message + root.
  */
 export function wireWaypointOracleButton(message, root) {
   const oracleMove = message?.flags?.[MODULE_ID]?.waypointOracleCard;
   if (!oracleMove) return;
   const btn = root?.querySelector?.('[data-action="sf-waypoint-oracle"]');
   if (!btn) return;
+  const claimed = liveCardFlags(message)?.waypointRewardClaimed;
+  if (claimed) {
+    btn.disabled = true;
+    btn.title = claimed === "ordinary"
+      ? "The ordinary reward was taken — the match's alternative no longer applies"
+      : "Taken";
+    return;
+  }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
   fresh.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      await ChatMessage.create({
-        content: oracleMove === "make_a_discovery"
-          ? "I follow what the waypoint revealed — making a discovery."
-          : "I face the chaos the waypoint exposed.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: oracleMove } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | waypoint oracle button failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "waypoint.oracle",
+      payload:    { messageId: message?.id ?? null },
+      isResolved: () => !!liveCardFlags(message)?.waypointRewardClaimed,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
 onChatMessageRender((message, root) => wireWaypointOracleButton(message, root));

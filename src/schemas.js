@@ -87,6 +87,7 @@ export function rankName(rank) {
 
 /**
  * All 40 named moves with category, stat options, and progress move flag.
+ * How a move resolves is read from these two fields by moveRollKind below.
  *
  * stat meanings:
  *   null            = no action roll (progress move, or narrative-only)
@@ -175,6 +176,32 @@ export const MOVES = {
   ask_the_oracle:            { category: "fate",        stat: null,                                                  narratorClass: "discovery"      },
   pay_the_price:             { category: "fate",        stat: null,                                                  narratorClass: "hybrid"         },
 };
+
+/**
+ * How a move resolves — read from MOVES, so the dice, the result labels, the
+ * negative-momentum cancel and the Burn / Improve controls all follow one
+ * classification (issue #316 T05: the resolver knew progress moves from
+ * "everything else" and rolled an action die for every no-roll move, so Make
+ * a Discovery came out a "miss" against a null stat, with a Burn Momentum
+ * offer that spent real momentum on it):
+ *   "progress"  progressMove — filled boxes vs the challenge dice
+ *   "action"    a stat list — action die + stat (+ adds) vs the challenge dice
+ *   "none"      no roll — an oracle or bookkeeping move (Make a Discovery,
+ *               Confront Chaos, Reach a Milestone, Pay the Price, the session
+ *               moves …): its consequences apply with no outcome
+ * An unknown id is "none". Develop Your Relationship is "none" by its data;
+ * bonded, its enrichment makes the connection's rank the stat and marks the
+ * interpretation `rollKind: "action"` (moves/statEnrichment.js).
+ *
+ * @param {string} moveId
+ * @returns {"action"|"progress"|"none"}
+ */
+export function moveRollKind(moveId) {
+  const move = MOVES[moveId];
+  if (!move) return "none";
+  if (move.progressMove === true) return "progress";
+  return Array.isArray(move.stat) && move.stat.length > 0 ? "action" : "none";
+}
 
 /**
  * Valid narratorClass values for the MOVES taxonomy.
@@ -316,8 +343,12 @@ export const ConnectionSchema = {
  * @property {number[]} challengeDice    two d10 results
  * @property {boolean}  isMatch          both challenge dice equal
  * @property {boolean}  momentumBurned
- * @property {string}   outcome          "strong_hit" | "weak_hit" | "miss"
- * @property {string}   outcomeLabel     display label, e.g. "Strong Hit with a Match"
+ * @property {"action"|"progress"|"none"} rollKind  how the move resolved (moveRollKind);
+ *                                     "none" rolled nothing: no dice, no outcome
+ * @property {string|null} outcome       "strong_hit" | "weak_hit" | "miss"; null for a
+ *                                     no-roll move
+ * @property {string}   outcomeLabel     display label, e.g. "Strong Hit with a Match";
+ *                                     "No roll" for a no-roll move
  * @property {boolean}  isProgressMove
  * @property {number}   progressScore    filled boxes — progress moves only
  * @property {Object}   consequences     mechanical effects applied before narration:

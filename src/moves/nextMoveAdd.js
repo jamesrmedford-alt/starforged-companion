@@ -9,20 +9,20 @@
  * no-roll moves (Reach a Milestone, session moves, …) leave it pending.
  */
 
-import { MOVES } from "../schemas.js";
+import { moveRollKind } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
 
 /**
  * True for a move rolled with the action die + a stat (the moves a +1 add
- * applies to). Progress moves and no-roll moves are excluded.
+ * applies to). Progress moves and no-roll moves are excluded — the one
+ * classification (schemas.js moveRollKind) the resolver rolls by too.
  *
  * @param {string} moveId
  * @returns {boolean}
  */
 export function isActionRollMove(moveId) {
-  const move = MOVES[moveId];
-  return !!move && !move.progressMove && Array.isArray(move.stat) && move.stat.length > 0;
+  return moveRollKind(moveId) === "action";
 }
 
 /**

@@ -236,3 +236,37 @@ describe("schemas.js dead exports stay deleted", () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// moveRollKind — how a move resolves (issue #316 T05)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("moveRollKind", () => {
+  it("classifies every move as action, progress or none", async () => {
+    const { MOVES, moveRollKind } = await import("../../src/schemas.js");
+    for (const id of Object.keys(MOVES)) {
+      expect(["action", "progress", "none"], id).toContain(moveRollKind(id));
+    }
+  });
+
+  it("a stat list is an action roll; progressMove a progress roll; neither, no roll", async () => {
+    const { moveRollKind } = await import("../../src/schemas.js");
+    expect(moveRollKind("face_danger")).toBe("action");
+    expect(moveRollKind("explore_a_waypoint")).toBe("action");
+    expect(moveRollKind("endure_harm")).toBe("action");
+    expect(moveRollKind("fulfill_your_vow")).toBe("progress");
+    expect(moveRollKind("take_decisive_action")).toBe("progress");
+    for (const id of ["make_a_discovery", "confront_chaos", "reach_a_milestone", "pay_the_price", "ask_the_oracle",
+      "forsake_your_vow", "develop_your_relationship", "sacrifice_resources", "lose_momentum", "face_defeat",
+      "begin_a_session", "end_a_session", "earn_experience", "advance"]) {
+      expect(moveRollKind(id), id).toBe("none");
+    }
+  });
+
+  it("an unknown id rolls nothing", async () => {
+    const { moveRollKind } = await import("../../src/schemas.js");
+    expect(moveRollKind("not_a_move")).toBe("none");
+    expect(moveRollKind(undefined)).toBe("none");
+  });
+});

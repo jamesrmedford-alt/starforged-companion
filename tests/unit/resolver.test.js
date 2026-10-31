@@ -1630,3 +1630,85 @@ describe("explore_a_waypoint — site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026
     expect((seeds?.results ?? []).some(r => /Inside the/.test(r))).toBe(false);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A move with no action roll rolls nothing (issue #316 T05)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveMove — no-roll moves", () => {
+  beforeEach(() => {
+    rollOracle.mockReset();
+    rollPaired.mockReset();
+    rollOracle.mockReturnValue({ result: "—" });
+    rollPaired.mockReturnValue({});
+  });
+
+  const noRollInterpretation = (over = {}) => ({
+    moveId: "make_a_discovery", moveName: "Make A Discovery", statUsed: null, statValue: 0, adds: 0,
+    rationale: "forced", mischiefApplied: false, mischiefLevel: "serious", playerNarration: "I follow what the waypoint revealed.",
+    ...over,
+  });
+
+  it("Make a Discovery draws no dice: no outcome, no match, its consequences as written", () => {
+    const rng = vi.spyOn(Math, "random");
+    const result = resolveMove(noRollInterpretation(), { currentSessionId: "sess-1" });
+    expect(rng).not.toHaveBeenCalled();
+    rng.mockRestore();
+
+    expect(result.rollKind).toBe("none");
+    expect(result.outcome).toBeNull();
+    expect(result.isMatch).toBe(false);
+    expect(result.outcomeLabel).toBe("No roll");
+    expect(result.actionDie).toBe(0);
+    expect(result.actionScore).toBe(0);
+    expect(result.actionDieCancelled).toBe(false);
+    expect(result.challengeDice).toEqual([]);
+    expect(result.isProgressMove).toBe(false);
+    expect(result.consequences.legacyMark).toEqual({ track: "discoveries", ticks: 2 });
+    expect(result.loremasterContext).toBe(
+      "[MOVE: Make A Discovery] [ROLL: none — this move has no action roll] [CONSEQUENCE: Mark 2 ticks on discoveries legacy track. Roll or choose a discovery from the table.]",
+    );
+  });
+
+  it("the move's data decides: a stat the interpreter named on a no-roll move is not rolled, and a negative momentum cancels nothing", () => {
+    const rng = vi.spyOn(Math, "random");
+    const result = resolveMove(noRollInterpretation({ statUsed: "iron", statValue: 3 }), { currentSessionId: "" }, { momentum: -3 });
+    expect(rng).not.toHaveBeenCalled();
+    rng.mockRestore();
+    expect(result.rollKind).toBe("none");
+    expect(result.outcome).toBeNull();
+    expect(result.actionDieCancelled).toBe(false);
+  });
+
+  it("every no-roll move in the table resolves without dice", () => {
+    const rng = vi.spyOn(Math, "random");
+    for (const id of ["confront_chaos", "reach_a_milestone", "pay_the_price", "ask_the_oracle", "forsake_your_vow",
+      "develop_your_relationship", "sacrifice_resources", "lose_momentum", "face_defeat", "earn_experience"]) {
+      const result = resolveMove(noRollInterpretation({ moveId: id, moveName: id }), { currentSessionId: "" });
+      expect(result.rollKind, id).toBe("none");
+      expect(result.outcome, id).toBeNull();
+    }
+    expect(rng).not.toHaveBeenCalled();
+    rng.mockRestore();
+  });
+
+  it("a bonded Develop Your Relationship — rollKind \"action\" from its enrichment — rolls +rank", () => {
+    fixDiceSequence([0.25, 0.45, 0.99]);   // challenge 3, 5; action die 6
+    const result = resolveMove(noRollInterpretation({
+      moveId: "develop_your_relationship", moveName: "Develop Your Relationship",
+      statUsed: "formidable", statValue: 3, rollKind: "action",
+    }), { currentSessionId: "" });
+    expect(result.rollKind).toBe("action");
+    expect(result.actionScore).toBe(9);
+    expect(result.outcome).toBe("strong_hit");
+    expect(result.challengeDice).toEqual([3, 5]);
+  });
+
+  it("control: a progress move and an action move keep their kinds", () => {
+    fixDiceSequence([0.25, 0.45, 0.99]);
+    expect(resolveMove(noRollInterpretation({ moveId: "face_danger", moveName: "Face Danger", statUsed: "iron", statValue: 2 }), {}).rollKind).toBe("action");
+    fixDiceSequence([0.25, 0.45]);
+    expect(resolveMove(noRollInterpretation({ moveId: "fulfill_your_vow", moveName: "Fulfill Your Vow", statValue: 24 }), {}).rollKind).toBe("progress");
+  });
+});

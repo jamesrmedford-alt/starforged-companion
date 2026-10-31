@@ -259,8 +259,8 @@ to find each move's resolver branch.
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Legacy tracks (quests, bonds, discoveries) | ✅ | `campaignState.legacyTracks` (`CampaignStateSchema`, `src/schemas.js`); every write goes through `addLegacyTicks` (`src/index.js`) |
-| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `addLegacyTicks` awards box XP to every PC (LEGACY-XP-DEAD fix) via `awardXP` (`src/character/actorBridge.js`) |
+| Legacy tracks (quests, bonds, discoveries) | ✅ | `campaignState.legacyTracks` (`CampaignStateSchema`, `src/schemas.js`); every write goes through `addLegacyTicks` (`src/index.js`); filling the tenth box clears the track, which starts again with the overflow and counts its cycles (`src/moves/legacyTracks.js`, issue #316 T02) |
+| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `addLegacyTicks` awards box XP to every PC (LEGACY-XP-DEAD fix) via `awardXP` (`src/character/actorBridge.js`) — each box at the rate of the cycle it filled in: 2 XP, then 1 once the track has cleared (issue #316 T02) |
 | Vows persisted as `progress` items on the actor | ✅ | `src/character/actorBridge.js:347-355` (`createCharacterVowItem`) |
 | Connections mirrored as bond items | ✅ | `src/character/actorBridge.js:328-336` (`createCharacterBondItem`) |
 | Connection role/rank/bond, second-role on Bond | ✅ | `src/entities/connection.js:371-379` |
@@ -318,7 +318,7 @@ to find each move's resolver branch.
 | Rule | Status | Pathway |
 |---|---|---|
 | Clocks (4/6/8/10-segment, campaign or tension) | ✅ | `src/clocks/clocks.js`: `!clock new/advance/fill/reset/remove/list` + the Clocks panel; campaign clocks roll their odds and advance at Begin a Session (`advanceCampaignClocksForBeginSession`); tension clocks and vow deadline clocks advance one segment on Pay the Price (`advanceClocksOnPayThePrice`, `src/clocks/payThePriceClocks.js` — a player's `!ptp` relays `payThePrice.advanceClocks` to the canonical GM). A full clock only posts an "already triggered" notice |
-| Scene Challenges worksheet (rulebook pp. 239–241) | 🔄 | the Progress Tracks panel creates `scene_challenge` tracks (`src/ui/progressTracks.js`) with a paired 4-segment tension clock (`tensionClockId`); no Starforged move maps to it (the panel roll is display-only), no setup walkthrough |
+| Scene Challenges worksheet (rulebook pp. 239–241) | 🔄 | the Progress Tracks panel creates `scene_challenge` tracks (`src/ui/progressTracks.js`) with a paired 4-segment tension clock (`tensionClockId`); completing the challenge retires the clock and removing it removes the clock (issue #316 T03); no Starforged move maps to it (the panel roll is display-only), no setup walkthrough |
 | Custom oracle tables (the oracle worksheet) | ✅ | `!oracle-add` / Custom Oracles panel (`src/oracles/customOracles.js`): entries must run from 1 with no gaps or overlaps (`validateCustomOracleEntries`); the table rolls 1..its highest entry (`dieSizeForTable`, `src/oracles/roller.js` — a 1–6 table rolls a d6); roll with `!oracle <tableId>` or the panel. `campaignState.customOracles` is canonical; each client's `ORACLE_TABLES` copy is a mirror kept in sync |
 
 ### 2.8 Chat commands & toolbar (UI surface inventory)

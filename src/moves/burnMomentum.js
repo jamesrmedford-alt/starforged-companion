@@ -185,7 +185,10 @@ export const UPGRADE_REFUSALS = {
  */
 export function buildBurnState(resolution, actor, ptpReversals = null, targets = null, move = null) {
   if (!actor || !resolution) return null;
-  if (resolution.isProgressMove) return null;
+  // Only an action roll can be burned: not a progress roll, and not a move
+  // that rolled nothing — Make a Discovery offered a burn on a "miss" it
+  // never rolled (issue #316 T05).
+  if (resolution.isProgressMove || resolution.rollKind === "none") return null;
 
   const momentum           = readMomentumState(actor);
   const consequenceDelta   = Number(resolution.consequences?.momentumChange ?? 0);

@@ -61,10 +61,20 @@ passage" drawing.
   expedition progress" and "+2 momentum" (executed by the suffer executor —
   which resolve-or-creates: with no open expedition it begins a default
   dangerous one and marks it, WAYPOINT-PROGRESS-NOOP fix; several open →
-  visible warn); weak hit +1 momentum; miss routes Pay the Price. Strong-hit-with-match
-  seeds a "notable aspect" + Make-a-Discovery oracle roll into the narrator
-  prompt; miss-with-match seeds Confront Chaos — **advisory prose only**, no
-  mechanical affordance.
+  visible warn); weak hit +1 momentum; miss routes Pay the Price (in text
+  only — the miss sets no `routePayThePrice`, WAYPOINT-MISS-NO-PTP, open).
+  Strong-hit-with-match seeds a "notable aspect" + Make-a-Discovery oracle
+  roll into the narrator prompt and offers **🔭 Make a Discovery** on the
+  result card; miss-with-match seeds Confront Chaos and offers **🌀 Confront
+  Chaos**. The match's alternative is *instead* of the ordinary result: one
+  claim per card (`waypointRewardClaimed` on the GM-authored move card,
+  written on the canonical GM by the `waypoint.oracle` relay —
+  `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
+  the roller (`actorId`) and retires the pending ordinary choice card — or by
+  the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
+  The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,
+  no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,
+  which clears at its tenth box (T02).
 - **Location tracking**: `!at <name>` writes BOTH
   `campaignState.currentLocationId/Type` and the ship position (bare `!at`
   clears both), and since the LOCATION-DUAL-STORE fix the arrival block does
@@ -145,7 +155,8 @@ summary lives in the `known-issues.md` table and the code.
   **🔁 Recommit** (rolls the challenge dice, clears the lowest die's boxes,
   raises the rank — `planRecommit`), and Explore a Waypoint match results
   carry one-click **🔭 Make a Discovery** / **🌀 Confront Chaos** buttons
-  (`waypointOracleFor`).
+  (`waypointOracleFor`); since issue #316 T06 a click relays to the
+  canonical GM, which claims the card once (§2).
 - **Rank is player-re-ranked — reaffirmed deliberate** (see `decisions.md` →
   "Flow-audit soft spots").
 - **Arrival inference degrades to freeText — reaffirmed deliberate** (same

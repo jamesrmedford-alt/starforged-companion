@@ -197,7 +197,7 @@ async function beginSessionOnce(payload) {
     await rollSessionIfDue(cs);
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
       console.debug?.(`${MODULE_ID} | Begin a Session: session ${cs.currentSessionId} has already begun — start effects not repeated.`);
-      await postSessionAlreadyBegunCard();
+      await postSessionAlreadyBegunCard(cs.currentSessionId);
       return;
     }
     beginSession(cs);
@@ -223,7 +223,10 @@ async function beginSessionOnce(payload) {
 
   // Campaign clocks — roll Ask the Oracle for each at session start (play
   // kit: campaign clocks advance at Begin a Session via the clock's
-  // advanceOdds).
+  // advanceOdds). The session is stamped begun above, so a second Begin
+  // repeats nothing: an advance the world refused is a `clocks` step on the
+  // GMs' payoff failure card, whose Retry saves the rolled fills without
+  // rolling again (issue #316 T04 — it was caught and logged, and lost).
   try {
     const { advanceCampaignClocksForBeginSession } = await import("../clocks/clocks.js");
     const clockResults = await advanceCampaignClocksForBeginSession();
@@ -231,7 +234,7 @@ async function beginSessionOnce(payload) {
       const rows = clockResults.map(r => {
         const bar    = "█".repeat(r.filled) + "░".repeat(Math.max(0, r.segments - r.filled));
         const status = r.advanced
-          ? `YES (d100=${r.roll}) — <strong>${r.filled}/${r.segments}</strong>${r.triggered ? " <strong>(TRIGGERED)</strong>" : ""}`
+          ? `YES (d100=${r.roll}) — <strong>${r.filled}/${r.segments}</strong>${r.triggered ? " <strong>(TRIGGERED)</strong>" : ""}${r.saved === false ? " — <em>not saved: see the GMs' Retry card</em>" : ""}`
           : `NO (d100=${r.roll})`;
         return `<li>${escapeHtml(r.name)} [${bar}] — Ask the Oracle (${r.odds}): ${status}</li>`;
       }).join("");
@@ -239,6 +242,19 @@ async function beginSessionOnce(payload) {
         content: `<div class="sf-clock-card"><strong>⏳ Campaign clocks — Begin a Session</strong><ul>${rows}</ul></div>`,
         flags:   { [MODULE_ID]: { clockCard: true, beginSessionAdvance: true } },
       });
+      const unsaved = clockResults.filter(r => r.advanced && r.saved === false);
+      if (unsaved.length) {
+        try {
+          const { postPayoffFailureCard } = await import("../index.js");
+          await postPayoffFailureCard({ source: "sessionClocks", failures: [{
+            step: "clocks", sessionId,
+            clocks: unsaved.map(r => ({ _id: r._id, name: r.name, filled: r.filled, segments: r.segments })),
+            reason: "refused", error: unsaved[0].error ?? null,
+          }] });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | session-start clocks: failure card failed:`, err?.message ?? err);
+        }
+      }
       const advanced = clockResults.filter(r => r.advanced);
       if (advanced.length) {
         setTimeout(async () => {
@@ -304,10 +320,21 @@ async function beginSessionOnce(payload) {
 }
 
 
-/** Begin a Session ran again on a session already begun — say what (didn't) happen. */
-async function postSessionAlreadyBegunCard() {
+/**
+ * Begin a Session ran again on a session already begun — say what (didn't)
+ * happen, and name a session-start clock advance still waiting on the GMs'
+ * Retry card, since Begin again is the natural (and wrong) way to try again
+ * (issue #316 T04).
+ *
+ * @param {string|null} sessionId
+ */
+async function postSessionAlreadyBegunCard(sessionId = null) {
+  const owed = outstandingSessionClocks(sessionId);
+  const owedNote = owed.length
+    ? ` The start's advance of ${owed.map(escapeHtml).join(", ")} was not saved — a GM's Retry on the GMs' card saves it.`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>This session has already begun — its campaign clocks, momentum and opening scene are not repeated. End a Session to begin the next one.</p></div>`,
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>This session has already begun — its campaign clocks, momentum and opening scene are not repeated. End a Session to begin the next one.${owedNote}</p></div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: note card failed:`, err?.message ?? err));
 }
@@ -687,6 +714,28 @@ function outstandingSessionMomentum(sessionId) {
     if (!f?.payoffFailureCard || f.resolved || f.source !== "session") continue;
     for (const s of f.steps ?? []) {
       if (s?.step === "momentum" && s.sessionId === sessionId) names.add(game.actors?.get?.(s.pcId)?.name ?? "a character");
+    }
+  }
+  return [...names];
+}
+
+/**
+ * The campaign clocks whose session-start advance for `sessionId` is still
+ * on an unretried GMs' card (a `clocks` step, issue #316 T04) — named on the
+ * already-begun note.
+ *
+ * @param {string|null} sessionId
+ * @returns {string[]}
+ */
+function outstandingSessionClocks(sessionId) {
+  if (!sessionId) return [];
+  const names = new Set();
+  for (const m of game.messages?.contents ?? []) {
+    const f = m?.flags?.[MODULE_ID];
+    if (!f?.payoffFailureCard || f.resolved || f.source !== "sessionClocks") continue;
+    for (const s of f.steps ?? []) {
+      if (s?.step !== "clocks" || s.sessionId !== sessionId) continue;
+      for (const c of s.clocks ?? []) names.add(String(c?.name ?? "a clock"));
     }
   }
   return [...names];
