@@ -187,7 +187,18 @@ export async function runCombinedDetectionPass(
     return emptyDetection();
   }
 
-  return parseDetectionResponse(raw, campaignState);
+  // A reply that holds no JSON object — cut off at max_tokens, or malformed —
+  // drops every entity, lore item, threat and faction of this narration, so
+  // it is never silent either (issue #321 U15; cf. NARRCHK-TRUNC-SILENT).
+  const parsed = parseDetectionJson(raw);
+  if (raw && !parsed) {
+    console.warn(
+      `${MODULE_ID} | entityExtractor: the detection reply is not a complete JSON object — ` +
+      `this narration's entities, lore and factions were not captured.`,
+    );
+    notifyDetectionFailure();
+  }
+  return detectionFromParsed(parsed, campaignState);
 }
 
 
@@ -397,15 +408,22 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
  * @returns {{ entities, worldJournal }}
  */
 export function parseDetectionResponse(text, campaignState) {
-  if (!text || typeof text !== "string") return emptyDetection();
-  const slice = (text.match(/\{[\s\S]*\}/) ?? [text])[0];
+  return detectionFromParsed(parseDetectionJson(text), campaignState);
+}
 
-  let parsed;
+/** The reply's JSON object, or null when it holds none (cut off, malformed, empty). */
+function parseDetectionJson(text) {
+  if (!text || typeof text !== "string") return null;
+  const slice = (text.match(/\{[\s\S]*\}/) ?? [text])[0];
   try {
-    parsed = JSON.parse(slice);
+    return JSON.parse(slice);
   } catch {
-    return emptyDetection();
+    return null;
   }
+}
+
+function detectionFromParsed(parsed, campaignState) {
+  if (!parsed) return emptyDetection();
 
   const entities = Array.isArray(parsed?.entities) ? parsed.entities : [];
   const wj       = parsed?.worldJournal && typeof parsed.worldJournal === "object"
@@ -1826,21 +1844,28 @@ function collectGmIds() {
 // Default API call (Haiku)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The combined detection reply carries every entity, rename, lore item,
+// threat, faction, location and state transition of one narration; a busy one
+// (an inciting incident) runs ~900 tokens. At 600 it was cut off mid-JSON and
+// the whole detection dropped (issue #321 U15). The tier reply is one short list.
+const DETECTION_MAX_TOKENS = 1500;
+const TIER_MAX_TOKENS      = 600;
+
 async function defaultCallDetectionAPI(prompt) {
-  return callHaiku(prompt, "Return only the JSON object — no prose.");
+  return callHaiku(prompt, "Return only the JSON object — no prose.", DETECTION_MAX_TOKENS);
 }
 
 async function defaultCallTierAPI(prompt) {
-  return callHaiku(prompt, "Return only the JSON object — no prose.");
+  return callHaiku(prompt, "Return only the JSON object — no prose.", TIER_MAX_TOKENS);
 }
 
-async function callHaiku(userPrompt, systemPrompt) {
+async function callHaiku(userPrompt, systemPrompt, maxTokens) {
   const apiKey = readApiKey();
   if (!apiKey) return "";
 
   const body = {
     model:      HAIKU_MODEL,
-    max_tokens: 600,
+    max_tokens: maxTokens,
     system: [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
     ],
@@ -1855,6 +1880,11 @@ async function callHaiku(userPrompt, systemPrompt) {
   };
 
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+  if (data?.stop_reason === "max_tokens") {
+    // Cut off at the cap: the JSON ends mid-object. The caller reports the
+    // loss; this names the cause (issue #321 U15).
+    console.warn(`${MODULE_ID} | entityExtractor: Haiku reply cut off at max_tokens (${maxTokens}).`);
+  }
   return (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)
