@@ -21,7 +21,7 @@ import {
   resolveRepairActorId,
 } from "../../src/moves/repair.js";
 import { getShip } from "../../src/entities/ship.js";
-import { invalidateActorCache } from "../../src/character/actorBridge.js";
+import { invalidateActorCache, readMomentumState } from "../../src/character/actorBridge.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -311,7 +311,9 @@ describe("applyRepairSpends", () => {
       await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
 
       expect([pc, ally].map(a => a.system.debility.unprepared)).toEqual([true, true]);
-      expect([pc, ally].map(a => [a.system.momentum.max, a.system.momentum.resetValue])).toEqual([[9, 1], [9, 1]]);
+      // The effective bounds follow the impact; the sheet's bases stay 10 / +2 (issue #316 T01).
+      expect([pc, ally].map(a => [readMomentumState(a).max, readMomentumState(a).reset])).toEqual([[9, 1], [9, 1]]);
+      expect([pc, ally].map(a => [a.system.momentum.max, a.system.momentum.resetValue])).toEqual([[10, 2], [10, 2]]);
       expect(lastCard()).toMatch(/marked <strong>unprepared<\/strong>\. PC-R, sharing the supply, is marked <strong>unprepared<\/strong> too\./);
     });
 

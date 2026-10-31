@@ -15,6 +15,7 @@ import {
   readVows,
   readConnections,
   applyMeterChanges,
+  readMomentumState,
   setDebility,
   awardXP,
   listCompanionAssets,
@@ -367,7 +368,9 @@ describe('applyMeterChanges', () => {
     // Try to set momentum to +20 (above max)
     await applyMeterChanges(actor, { momentum: 20 });
     expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
-    expect(actor._updateHistory[0]['system.momentum.resetValue']).toBe(0);
+    // The effective reset (0) is read, never written: the sheet's base stays +2.
+    expect(actor._updateHistory[0]).not.toHaveProperty('system.momentum.resetValue');
+    expect(actor.system.momentum.resetValue).toBe(2);
   });
 
   it('allows momentum to drop below momentumReset down to the −6 floor', async () => {
@@ -387,26 +390,29 @@ describe('applyMeterChanges', () => {
     expect(actor._updateHistory[0]['system.momentum.value']).toBe(-6);
   });
 
-  it('reduces momentumMax by 1 per active impact (all categories count)', async () => {
+  it('reduces the effective momentum maximum by 1 per active impact (all categories count)', async () => {
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
         debility: { wounded: true, shaken: true, unprepared: true },
       },
     });
-    await applyMeterChanges(actor, { momentum: 1 });
-    expect(actor._updateHistory[0]['system.momentum.max']).toBe(7);
+    await applyMeterChanges(actor, { momentum: 20 });
+    expect(actor._updateHistory[0]['system.momentum.value']).toBe(7);
+    expect(actor._updateHistory[0]).not.toHaveProperty('system.momentum.max');
+    expect(actor.system.momentum.max).toBe(10);
   });
 
-  it('counts vehicle and burden impacts toward momentum max too', async () => {
+  it('counts vehicle and burden impacts toward the effective maximum too', async () => {
     const actor = freshActor({
       system: {
         momentum: { value: 2, max: 10, resetValue: 2 },
         debility: { battered: true, doomed: true },
       },
     });
-    await applyMeterChanges(actor, { momentum: 1 });
-    expect(actor._updateHistory[0]['system.momentum.max']).toBe(8);
+    await applyMeterChanges(actor, { momentum: 20 });
+    expect(actor._updateHistory[0]['system.momentum.value']).toBe(8);
+    expect(actor._updateHistory[0]).not.toHaveProperty('system.momentum.max');
   });
 
   it('does not call actor.update() if no changes', async () => {
@@ -432,19 +438,113 @@ describe('setDebility', () => {
     expect(actor._updateHistory[0]['system.debility.wounded']).toBe(true);
   });
 
-  it('triggers momentum recalculation for condition debilities', async () => {
+  it('clamps momentum to the new effective maximum when an impact is marked', async () => {
+    const actor = freshActor({
+      system: {
+        momentum: { value: 10, max: 10, resetValue: 2 },
+      },
+    });
+    await setDebility(actor, 'wounded', true);
+    // Two updates: the debility, then the clamp 10 → 9. The bases stay the sheet's.
+    expect(actor._updateHistory).toHaveLength(2);
+    expect(actor._updateHistory[1]).toEqual({ 'system.momentum.value': 9 });
+    expect(actor.system.momentum.max).toBe(10);
+    expect(actor.system.momentum.resetValue).toBe(2);
+  });
+
+  it('writes nothing more when the momentum is already within the new maximum', async () => {
     const actor = freshActor({
       system: {
         momentum: { value: 9, max: 10, resetValue: 2 },
       },
     });
     await setDebility(actor, 'wounded', true);
-    // Should have two updates: one for debility, one for momentum recalc
-    expect(actor._updateHistory.length).toBeGreaterThanOrEqual(2);
+    expect(actor._updateHistory).toHaveLength(1);
+    expect(actor._updateHistory[0]).toEqual({ 'system.debility.wounded': true });
   });
 
   it('does not throw if actor is null', async () => {
     await expect(setDebility(null, 'wounded', true)).resolves.toBeUndefined();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The momentum bases are the sheet's (issue #316 T01)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// foundry-ironsworn's CharacterModel getters (vendor/foundry-ironsworn
+// src/module/actor/subtypes/character.ts): the effective bounds are the BASE
+// fields less the marked impacts. The stock test actor carries plain fields,
+// so the write-back of a derived value into its own base went unseen: this
+// attaches the real formulas.
+function withVendorGetters(actor) {
+  const sys = actor.system;
+  const impacts = () => Object.values(sys.debility).filter(v => v === true).length;
+  Object.defineProperties(sys, {
+    momentumMax:   { configurable: true, get: () => Math.min(10, Math.max(-6, sys.momentum.max - impacts())) },
+    momentumReset: { configurable: true, get: () => Math.min(sys.momentum.max, Math.max(0, sys.momentum.resetValue - impacts())) },
+  });
+  return actor;
+}
+
+describe('momentum writes leave the sheet\'s base max and reset alone (issue #316 T01)', () => {
+  it('three gains with one impact keep the effective maximum at 9 and the reset at +1', async () => {
+    const actor = withVendorGetters(freshActor({
+      system: { momentum: { value: 2, max: 10, resetValue: 2 }, debility: { wounded: true } },
+    }));
+    const seen = [];
+    for (let i = 0; i < 3; i++) {
+      await applyMeterChanges(actor, { momentum: 1 });
+      seen.push({ max: actor.system.momentumMax, reset: actor.system.momentumReset });
+    }
+    // Before the fix: 8/0, 7/0, 6/0 — each write deducted the impact again.
+    expect(seen).toEqual([{ max: 9, reset: 1 }, { max: 9, reset: 1 }, { max: 9, reset: 1 }]);
+    expect(actor.system.momentum).toMatchObject({ value: 5, max: 10, resetValue: 2 });
+    for (const u of actor._updateHistory) {
+      expect(u).not.toHaveProperty('system.momentum.max');
+      expect(u).not.toHaveProperty('system.momentum.resetValue');
+    }
+  });
+
+  it('clamps a gain to the effective maximum the getters report', async () => {
+    const actor = withVendorGetters(freshActor({
+      system: { momentum: { value: 8, max: 10, resetValue: 2 }, debility: { wounded: true } },
+    }));
+    await applyMeterChanges(actor, { momentum: 5 });
+    expect(actor.system.momentum.value).toBe(9);
+    expect(actor.system.momentum.max).toBe(10);
+  });
+
+  it('clearing the impact restores the full bounds: 10 and +2, with nothing written', async () => {
+    const actor = withVendorGetters(freshActor({
+      system: { momentum: { value: 5, max: 10, resetValue: 2 }, debility: { wounded: true } },
+    }));
+    await applyMeterChanges(actor, { momentum: 1 });
+    await setDebility(actor, 'wounded', false);
+    expect(actor.system.momentumMax).toBe(10);
+    expect(actor.system.momentumReset).toBe(2);
+    // The debility write is the only one setDebility made: 6 is within 10.
+    expect(actor._updateHistory.at(-1)).toEqual({ 'system.debility.wounded': false });
+  });
+
+  it('readMomentumState reads the effective bounds without touching the sheet', () => {
+    const actor = withVendorGetters(freshActor({
+      system: { momentum: { value: 4, max: 10, resetValue: 2 }, debility: { wounded: true, shaken: true } },
+    }));
+    expect(readMomentumState(actor)).toMatchObject({ value: 4, min: -6, max: 8, reset: 0, impactCount: 2 });
+    expect(actor._updateHistory).toHaveLength(0);
+  });
+
+  it('without the getters, the bounds come from the sheet\'s bases — an edited base is kept', async () => {
+    // A base reset of +3 (homebrew): the effective reset is +2 with one impact,
+    // and the base is never overwritten with it.
+    const actor = freshActor({
+      system: { momentum: { value: 2, max: 10, resetValue: 3 }, debility: { wounded: true } },
+    });
+    expect(readMomentumState(actor)).toMatchObject({ max: 9, reset: 2 });
+    await applyMeterChanges(actor, { momentum: 1 });
+    expect(actor.system.momentum.resetValue).toBe(3);
   });
 });
 

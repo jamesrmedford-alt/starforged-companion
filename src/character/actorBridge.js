@@ -319,8 +319,16 @@ export function readMomentumState(actor) {
 
 /**
  * Apply meter changes (deltas) from a move resolution to the Actor.
- * Clamps all values to valid Ironsworn ranges.
- * Recalculates momentumMax and momentumReset from active condition debilities.
+ * Clamps all values to valid Ironsworn ranges — momentum to its effective
+ * maximum (the base maximum less the marked impacts, momentumBounds).
+ *
+ * Only `system.momentum.value` is written. The effective max and reset used
+ * to be written back into `system.momentum.max` / `resetValue` too — but
+ * those are the BASE fields the vendor's `momentumMax` / `momentumReset`
+ * getters subtract the impacts from, so each write deducted the impacts
+ * again: with one impact, three successful moves took the maximum from 9 to
+ * 6 and the reset to 0, and clearing the impact could not recover the bases
+ * (issue #316 T01). The bases are the sheet's; the module never writes them.
  * @param {Actor} actor
  * @param {{ health?: number, spirit?: number, supply?: number, momentum?: number }} meterChanges
  * @returns {Promise<void>}
@@ -331,7 +339,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
   const impactCount = countImpacts(debs);
-  const { max: momentumMax, reset: momentumReset } = momentumBounds(sys, impactCount);
+  const { max: momentumMax } = momentumBounds(sys, impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
   const spiritMax  = debs.shaken  ? 3 : 5;
@@ -360,9 +368,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   if (meterChanges.momentum !== undefined && meterChanges.momentum !== 0) {
     const next = clamp(currentMomentum + meterChanges.momentum, MOMENTUM_MIN, momentumMax);
-    updates['system.momentum.value']      = next;
-    updates['system.momentum.max']        = momentumMax;
-    updates['system.momentum.resetValue'] = momentumReset;
+    updates['system.momentum.value'] = next;
   }
 
   if (Object.keys(updates).length) {
@@ -374,7 +380,8 @@ export async function applyMeterChanges(actor, meterChanges) {
 
 /**
  * Set or clear a single debility flag on the Actor.
- * Also recalculates momentum bounds if a condition debility changed.
+ * An impact changes the effective momentum bounds (the system derives them
+ * from the impacts): the current momentum is clamped to the new maximum.
  * @param {Actor} actor
  * @param {string} debilityKey
  * @param {boolean} value
@@ -926,9 +933,15 @@ export function invalidateActorCache(actorId) {
 }
 
 /**
- * Recalculate momentum max and reset from current condition debilities,
- * and clamp the current momentum value to the new bounds.
- * Called when a condition debility changes.
+ * Clamp the current momentum to the effective bounds after the impacts
+ * changed. Called when a debility changes (setDebility, and the updateActor
+ * hook for a sheet edit — index.js momentumRecalcRunsHere).
+ *
+ * The bounds themselves are not written: the system derives `momentumMax` /
+ * `momentumReset` from the base fields and the marked impacts, so there is
+ * nothing to recalculate on the sheet — and writing the derived values into
+ * the bases compounded the impact deduction on every call (issue #316 T01).
+ * Momentum already within the new maximum is left alone, with no write.
  * @param {Actor} actor
  * @returns {Promise<void>}
  */
@@ -938,19 +951,12 @@ export async function recalculateMomentumBounds(actor) {
   const sys       = actor.system ?? {};
   const debs      = readDebilities(actor);
   const impactCount = countImpacts(debs);
-  const { max: maxMom, reset: resetMom } = momentumBounds(sys, impactCount);
+  const { max: maxMom } = momentumBounds(sys, impactCount);
   const current   = meterValue(sys.momentum);
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
+  if (clamped === current) return;
 
-  const updates = {
-    'system.momentum.max':        maxMom,
-    'system.momentum.resetValue': resetMom,
-  };
-  if (clamped !== current) {
-    updates['system.momentum.value'] = clamped;
-  }
-
-  await actor.update(updates);
+  await actor.update({ 'system.momentum.value': clamped });
   invalidateActorCache(actor.id);
 }
 
@@ -969,16 +975,27 @@ function countImpacts(debs) {
   return IMPACT_KEYS.filter(k => debs[k]).length;
 }
 
-// Momentum max and reset (the burn target) for an impact count. Prefers the
-// vendor system's computed getters (#impactCount-driven) when present so a
-// future schema change tracks automatically; otherwise the play-kit formula
-// (p.1). The one derivation of the bounds — the sheet writes, the snapshot and
-// the burn preview all read it.
+// The vendor's momentum limits (MomentumField: MAX, MIN, RESET_MIN) and base
+// values. The base max and reset live on the sheet (`system.momentum.max`,
+// `system.momentum.resetValue`, 10 and +2 unless edited); the EFFECTIVE values
+// deduct the marked impacts.
+const MOMENTUM_BASE_MAX   = 10;
+const MOMENTUM_BASE_RESET = 2;
+
+// Momentum max and reset (the burn target) for an impact count — EFFECTIVE
+// values, read only. Prefers the vendor system's computed getters
+// (#impactCount-driven) when present so a future schema change tracks
+// automatically; otherwise the vendor's own formula over the sheet's base
+// fields (play kit p.1: max 10 and reset +2, each reduced by 1 per impact).
+// The one derivation of the bounds — the meter clamp, the snapshot and the
+// burn preview all read it. Never written back to the sheet: the bases are
+// what the getters subtract from (issue #316 T01).
 function momentumBounds(sys, impactCount) {
-  return {
-    max:   sys.momentumMax   ?? Math.max(0, 10 - impactCount),
-    reset: sys.momentumReset ?? Math.max(0, 2 - impactCount),
-  };
+  const baseMax   = Number.isFinite(sys.momentum?.max)        ? sys.momentum.max        : MOMENTUM_BASE_MAX;
+  const baseReset = Number.isFinite(sys.momentum?.resetValue) ? sys.momentum.resetValue : MOMENTUM_BASE_RESET;
+  const max   = sys.momentumMax   ?? clamp(baseMax - impactCount, MOMENTUM_MIN, MOMENTUM_BASE_MAX);
+  const reset = sys.momentumReset ?? clamp(baseReset - impactCount, 0, baseMax);
+  return { max, reset };
 }
 
 function clamp(value, min, max) {
