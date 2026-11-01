@@ -7,7 +7,8 @@
  *
  * Exports:
  *   - startScene(campaignState, { reason }) — assign a fresh scene ID; if a
- *       prior scene wasn't cleanly ended, flush it first via endScene.
+ *       prior scene wasn't cleanly ended, flush it first via endScene. A
+ *       caller holding no scene adopts the store's active scene instead.
  *   - endScene(campaignState, { reason }) — migrate entity-scoped truths to
  *       entity generative tiers, archive free-text and scene-scoped truths
  *       to the WJ Lore journal, then discard active ledgers.
@@ -39,14 +40,29 @@ const MODULE_ID = 'starforged-companion';
  * the previous scene was never cleanly ended; that scene is flushed first
  * with reason "implicit_due_to_new_scene".
  *
+ * A caller holding no scene may hold a snapshot read before another
+ * narration started one — the move pipeline reads campaignState before its
+ * confirm dialog and Claude calls. When the store has an active scene, that
+ * scene is the one in progress: it is adopted into the caller's copy (scene
+ * id, truths, state, frame, spotlight) and its id returned, nothing written
+ * (issue #321 U06f — a second scene used to be minted over the live one's
+ * ledgers, which were neither kept nor archived). A caller that holds the
+ * active scene (`!scene start` reads the store first) still ends it and
+ * starts a new one.
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("@scene_intercept",
  *   "first_narration", "scene_command")
- * @returns {Promise<string>} the new scene ID
+ * @returns {Promise<string>} the new (or adopted) scene ID
  */
 export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   if (!campaignState) return null;
+
+  if (!campaignState.currentSceneId && adoptStoredScene(campaignState)) {
+    console.debug(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — scene ${campaignState.currentSceneId} is already active; continuing it.`);
+    return campaignState.currentSceneId;
+  }
 
   const stateHasEntries = hasActiveStateEntries(campaignState);
   if ((campaignState.sceneTruths?.length ?? 0) > 0 || stateHasEntries) {
@@ -163,6 +179,30 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Copy the store's active scene — SCENE_FIELDS, cloned — into the caller's
+ * campaignState when the store has one the caller lacks. Returns true when a
+ * scene was adopted.
+ *
+ * @param {Object} campaignState — the caller's copy (mutated)
+ * @returns {boolean}
+ */
+function adoptStoredScene(campaignState) {
+  let latest = null;
+  try {
+    latest = game.settings.get(MODULE_ID, 'campaignState');
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed; starting a scene from the caller's copy:`, err?.message ?? err);
+    return false;
+  }
+  if (!latest || typeof latest !== 'object' || latest === campaignState || !latest.currentSceneId) return false;
+  for (const key of SCENE_FIELDS) {
+    if (latest[key] === undefined) delete campaignState[key];
+    else campaignState[key] = foundry.utils.deepClone(latest[key]);
+  }
+  return true;
+}
 
 function hasActiveStateEntries(campaignState) {
   const bySubject = campaignState.sceneState?.bySubject;
