@@ -1029,9 +1029,12 @@ function ringEntryText(message) {
  * architecture §2) — added with the rolling session summary.
  *
  * @param {string} sessionId
+ * @param {{ forRecap?: boolean }} [opts] — `forRecap`: the session recap's
+ *   reading, which keeps a fallback card and an X-carded narration (their
+ *   moves happened) and leaves out the rest as the narrator's does
  * @returns {Array<Object>} ChatMessage documents
  */
-function sessionNarratorCards(sessionId) {
+function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
   return (game.messages?.contents ?? []).filter(m => {
     const f = m.flags?.[MODULE_ID];
     if (!f?.narratorCard) return false;
@@ -1053,10 +1056,13 @@ function sessionNarratorCards(sessionId) {
     // so the session recap still counts the move, but its line must not reach
     // the ring or the rolling summary, nor count as the session's first
     // narration — that cancelled the session's campaign recap (issue #321 U35).
-    if (f.narrationFallback) return false;
+    // The session recap (`forRecap`) keeps it: the move happened — the recap
+    // counts it and quotes none of its line (issue #322 V05).
+    if (f.narrationFallback && !forRecap) return false;
     // The X-Card removed this narration (issue #321 U07): the table took it
-    // out of the story, so the narrator never reads it again.
-    if (f.xCarded) return false;
+    // out of the story, so the narrator never reads it again. Its move still
+    // happened: the recap counts it, without its prose.
+    if (f.xCarded && !forRecap) return false;
     if (Array.isArray(m.whisper) && m.whisper.length) return false;
     return true;
   });
@@ -1237,30 +1243,71 @@ async function clearXCardRedirect() {
 }
 
 /**
+ * The session `!recap session N` names: the current one when N is its number,
+ * else the session whose narrator cards carry N (`sessionNumber`, stamped on
+ * every narrator card), else last session's summary when it is N's. The
+ * number was matched and dropped, so every `!recap session N` recapped the
+ * current session under its own number (issue #322 V05).
+ *
+ * @param {Object} campaignState
+ * @param {number} sessionNumber
+ * @returns {{ sessionId: string|null, sessionNumber: number }} a null id when
+ *   no record of session N is left
+ */
+function recapSessionFor(campaignState, sessionNumber) {
+  if (Number(campaignState?.sessionNumber) === sessionNumber) {
+    return { sessionId: campaignState?.currentSessionId ?? null, sessionNumber };
+  }
+  const card = (game.messages?.contents ?? []).findLast?.(m => {
+    const f = m.flags?.[MODULE_ID];
+    return f?.narratorCard && Number(f.sessionNumber) === sessionNumber && typeof f.sessionId === 'string' && f.sessionId;
+  });
+  if (card) return { sessionId: card.flags[MODULE_ID].sessionId, sessionNumber };
+  const prev = campaignState?.previousSessionSummary;
+  if (prev && Number(prev.sessionNumber) === sessionNumber && typeof prev.sessionId === 'string' && prev.sessionId) {
+    return { sessionId: prev.sessionId, sessionNumber };
+  }
+  return { sessionId: null, sessionNumber };
+}
+
+/**
  * Assemble and post a session recap card from chat history.
  * No Claude API call — reads narrator card flags from game.messages.
  *
+ * The cards are the session's narrator cards as the narrator reads them
+ * (sessionNarratorCards — a burned move's superseded prose left out), plus
+ * its fallback and X-carded cards, whose moves happened: they count, and none
+ * of their lines is quoted. "Moves resolved" counts the cards that carry a
+ * move — paced prose, an @scene answer or a vignette is part of the story,
+ * not a move. The recap read every narrator card itself: a burned Strike
+ * showed as "Strike → Miss" beside "Strike → Strong Hit", and every card
+ * counted as a move (issue #322 V05).
+ *
  * @param {Object} campaignState
- * @param {string|null} sessionId  — null = current session
+ * @param {string|null} sessionId  — null = current session (or the one
+ *   `opts.sessionNumber` names)
+ * @param {{ sessionNumber?: number|null }} [opts] — `!recap session N`'s N
  * @returns {Promise<void>}
  */
-export async function postSessionRecap(campaignState, sessionId = null) {
-  const targetId = sessionId ?? campaignState?.currentSessionId ?? null;
-  const sessionNum = campaignState?.sessionNumber ?? null;
+export async function postSessionRecap(campaignState, sessionId = null, { sessionNumber = null } = {}) {
+  const asked   = Number.isInteger(sessionNumber) && sessionNumber > 0 ? sessionNumber : null;
+  const target  = sessionId
+    ? { sessionId, sessionNumber: null }
+    : asked !== null
+      ? recapSessionFor(campaignState, asked)
+      : { sessionId: campaignState?.currentSessionId ?? null, sessionNumber: campaignState?.sessionNumber ?? null };
+  const targetId   = target.sessionId;
+  const sessionNum = target.sessionNumber
+    ?? (targetId && targetId === campaignState?.currentSessionId ? campaignState?.sessionNumber ?? null : null);
 
-  const messages = (game.messages?.contents ?? []).filter(m => {
-    const flags = m.flags?.[MODULE_ID];
-    if (!flags?.narratorCard) return false;
-    if (targetId === null) return true;
-    return flags.sessionId === targetId;
-  });
+  const messages = asked !== null && !targetId ? [] : sessionNarratorCards(targetId, { forRecap: true });
 
   if (!messages.length) {
     return ChatMessage.create({
       content: `
         <div class="sf-recap-session-card">
           <div class="sf-recap-label">◈ Session Recap</div>
-          <div class="sf-recap-empty">No narrated moves found for this session.</div>
+          <div class="sf-recap-empty">${asked !== null ? `No narrated moves found for session ${asked}.` : 'No narrated moves found for this session.'}</div>
         </div>
       `.trim(),
       flags: {
@@ -1268,6 +1315,7 @@ export async function postSessionRecap(campaignState, sessionId = null) {
           recapCard:    true,
           recapType:    'session',
           recapEmpty:   true,
+          ...(sessionNum != null ? { sessionNumber: sessionNum } : {}),
         },
       },
     });
@@ -1276,6 +1324,7 @@ export async function postSessionRecap(campaignState, sessionId = null) {
   const outcomes = { strong_hit: 0, weak_hit: 0, miss: 0 };
   const moveLines = [];
   let matchContext = null;
+  let totalMoves = 0;
 
   for (const msg of messages) {
     const f = msg.flags[MODULE_ID];
@@ -1283,23 +1332,25 @@ export async function postSessionRecap(campaignState, sessionId = null) {
       ? f.moveId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : null;
     const outcome  = f.outcome ?? null;
-    // A narration the X-Card removed (issue #321 U07): its move still
-    // counts, but its prose is not quoted back to the table.
-    const text     = f.xCarded ? '' : (f.narrationText ?? '');
+    // A narration the X-Card removed (issue #321 U07) and a fallback card
+    // ("narration unavailable") count their move; no line of theirs is quoted.
+    const text     = (f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? '');
     const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
 
-    if (outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
+    if (moveName) totalMoves++;
+    if (moveName && outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
     if (f.isMatch) matchContext = moveName;
 
     if (moveName && outcome) {
       const outcomeLabel = outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      moveLines.push(`• ${moveName} → ${outcomeLabel}${firstSentence ? ': ' + firstSentence : ''}`);
-    } else if (text) {
-      moveLines.push(`• ${firstSentence}`);
+      moveLines.push(`• ${moveName} → ${outcomeLabel}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
+    } else if (moveName) {
+      moveLines.push(`• ${moveName}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
+    } else if (firstSentence) {
+      moveLines.push(`• ${escapeHtml(firstSentence)}`);
     }
   }
 
-  const totalMoves = messages.length;
   const summaryParts = [`${totalMoves} move${totalMoves !== 1 ? 's' : ''} resolved.`];
   if (outcomes.strong_hit > 0) summaryParts.push(`${outcomes.strong_hit} strong hit${outcomes.strong_hit !== 1 ? 's' : ''}.`);
   if (matchContext) summaryParts.push(`A match was rolled — ${matchContext}.`);

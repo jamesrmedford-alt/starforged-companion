@@ -695,8 +695,11 @@ async function handleEncounterCommand(message) {
 async function handleRecapCommand(message) {
   const text = message.content?.trim() ?? "";
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  if (/^!recap\s+session(?:\s+(\d+))?/i.test(text)) {
-    await postSessionRecap(campaignState, null);
+  const session = /^!recap\s+session(?:\s+(\d+))?/i.exec(text);
+  if (session) {
+    // `!recap session 3` recaps session 3 — the number was matched and dropped,
+    // so every N recapped the current session (issue #322 V05).
+    await postSessionRecap(campaignState, null, { sessionNumber: session[1] ? Number(session[1]) : null });
   } else {
     await postCampaignRecap(campaignState);
   }
