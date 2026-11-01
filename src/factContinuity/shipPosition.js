@@ -20,7 +20,7 @@
  * before `applySidecar` runs.
  */
 
-import { buildNameIndex } from "../context/relevanceResolver.js";
+import { buildNameIndex, resolveEntityName } from "../context/relevanceResolver.js";
 import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
@@ -118,8 +118,10 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
     }
     default: {
       // Ship / faction / connection / creature / character — none of
-      // these are spatial anchors. Fall through to free-text capture.
-      out.freeText = hit.name ?? ref;
+      // these are spatial anchors. Keep the narrated phrase as free text:
+      // the bare name dropped where the ship is ("alongside the Covenant
+      // flagship" became "The Covenant" — issue #321 U43).
+      out.freeText = ref;
       return out;
     }
   }
@@ -316,14 +318,18 @@ function lookupSector(id, campaignState) {
  * Match a free-text seed against the name index with tolerance for the
  * phrasing narrators and players actually use (Cluster C / F5 gap 3):
  *
- *   "Lyra"                     → exact
- *   "Lyra's orbital graveyard" → possessive-stripped word scan → "lyra"
- *   "the Vault of Tears"       → word scan (words ≥ 4 chars; leftmost wins)
+ *   "Lyra"                         → exact
+ *   "Lyra's orbital graveyard"     → word scan → "Lyra"
+ *   "the Vault of Tears"           → word scan → "Vault" (a name part)
+ *   "a derelict station above Kaan" → word scan → "Kaan", never "station"
  *
- * Precedence: full ref → possessive-stripped full ref → per-word scan
- * (possessives stripped, punctuation trimmed, words shorter than 4 chars
- * skipped so "the"/"of" can't false-positive). Returns the index hit or
- * null. Exported for unit testing.
+ * Precedence: full ref → possessive-stripped full ref (exact index keys) →
+ * a scan of the seed's capitalised words, leftmost first, each resolved
+ * through resolveEntityName's bounded ladder: a full name, or one name part
+ * a single entity has. A lowercase word is never looked up, so a common noun
+ * cannot match a name part (issue #321 U43: "a derelict station" docked the
+ * ship at Bleakhold Station). Returns the hit or null. Exported for unit
+ * testing.
  */
 export function matchSeedAgainstIndex(index, ref) {
   const lookup = String(ref ?? "").toLowerCase();
@@ -335,10 +341,11 @@ export function matchSeedAgainstIndex(index, ref) {
     if (hit) return hit;
   }
 
-  for (const raw of stripPossessive(lookup).split(/\s+/)) {
-    const word = raw.replace(/[^\p{L}\p{N}-]/gu, "");
-    if (word.length < 4) continue;
-    const hit = index.get(word);
+  const entities = [...new Set(index.values())];
+  for (const raw of String(ref).split(/\s+/)) {
+    const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    if (!/^\p{Lu}/u.test(word)) continue;
+    const hit = resolveEntityName(word, entities);
     if (hit) return hit;
   }
   return null;

@@ -384,6 +384,53 @@ describe('inferShipPosition — tolerant seed matching', () => {
   });
 });
 
+// Issue #321 U43: the word scan looked up every lowercased word in the name
+// index, whose keys include each multi-word name's first and last word — so a
+// common noun matched a recorded place's name part — and a non-spatial hit
+// replaced the narrated phrase with the entity's bare name.
+describe('inferShipPosition — the word scan resolves names, not common nouns', () => {
+  const cs = () => ({
+    settlements: [{ _id: 's-bleak', journalId: 's-bleak', name: 'Bleakhold Station', sectorId: 'sec-1' }],
+    planets:     [{ _id: 'p-kaan',  journalId: 'p-kaan',  name: 'Kaan', settlementIds: [], sectorId: 'sec-1' }],
+    factions:    [{ _id: 'f-cov',   journalId: 'f-cov',   name: 'The Covenant' }],
+    ships:       [{ _id: 'sh-iron', journalId: 'sh-iron', name: 'Iron Resolve' }],
+    sectors:     [{ id: 'sec-1', name: 'Igneous Spine' }],
+    activeSectorId: 'sec-1',
+  });
+
+  it('a common noun in an unrecorded destination does not dock the ship at a recorded place', () => {
+    const pos = inferShipPosition('a derelict station above Kaan', cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBeNull();
+    expect(pos.nearestPlanetId).toBe('p-kaan');
+  });
+
+  it('a phrase whose only name-like word is lowercase stays free text', () => {
+    const pos = inferShipPosition('holding beside the station', cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBeNull();
+    expect(pos.freeText).toBe('holding beside the station');
+  });
+
+  it('a capitalised name part in a phrase still resolves (control)', () => {
+    const pos = inferShipPosition("holding off Bleakhold's docking ring", cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBe('s-bleak');
+  });
+
+  it('a whole seed that is a deliberate short name resolves in any case (control)', () => {
+    expect(inferShipPosition('bleakhold', cs(), { source: 'at_command' }).nearestSettlementId).toBe('s-bleak');
+  });
+
+  it('keeps the narrated phrase when the only match is not a place', () => {
+    const state = cs();
+    const pos   = inferShipPosition('alongside the Covenant flagship Iron Resolve', state, { source: 'narrator_sidecar' });
+    expect(pos.freeText).toBe('alongside the Covenant flagship Iron Resolve');
+    expect(formatShipPositionLine(pos, state, "Pioneer's Pride")).toContain('flagship');
+
+    const beside = inferShipPosition('beside Iron Resolve', state, { source: 'narrator_sidecar' });
+    expect(beside.freeText).toBe('beside Iron Resolve');
+    expect(beside.nearestSettlementId).toBeNull();
+  });
+});
+
 
 // ────────────────────────────────────────────────────────────────────
 // Document-backed resolution (v1.7.10 finding #5)
