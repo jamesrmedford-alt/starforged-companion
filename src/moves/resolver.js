@@ -588,7 +588,13 @@ const CONSEQUENCE_MAP = {
           : "Strong hit — choose: mark expedition progress OR take +2 momentum." };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Interesting find bound up in peril or ominous aspect. Take +1 momentum." };
-      case "miss": return { ...emptyConsequences(),
+      // A miss pays the price, routed like every other "Pay the Price" miss —
+      // the card, its suffer route, the tension clocks (issue #321 U17,
+      // WAYPOINT-MISS-NO-PTP: it said so and routed nothing). With a match the
+      // player may instead Confront Chaos (the card's button), so the price
+      // is theirs to choose, not routed — as Finish an Expedition's miss
+      // offers its recommit.
+      case "miss": return { ...emptyConsequences(), routePayThePrice: !isMatch,
         otherEffect: isMatch
           ? "Miss with a match — may Confront Chaos instead. Otherwise: immediate hardship or threat. Pay the Price."
           : "Immediate hardship or threat. Pay the Price." };

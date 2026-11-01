@@ -1507,6 +1507,9 @@ describe("routePayThePrice on miss/weak outcomes", () => {
     ["hearten",                 "miss"],
     ["resupply",                "miss"],
     ["repair",                  "miss"],
+    // Issue #321 U17 (WAYPOINT-MISS-NO-PTP): the card said "Pay the Price"
+    // and nothing routed it — no card, no suffer route, no clock tick.
+    ["explore_a_waypoint",      "miss"],
   ];
   PTP_CASES.forEach(([moveId, outcome]) => {
     it(`${moveId}:${outcome} sets routePayThePrice:true`, () => {
@@ -1516,6 +1519,12 @@ describe("routePayThePrice on miss/weak outcomes", () => {
 
   it("face_danger:strong_hit does NOT set routePayThePrice", () => {
     expect(mapConsequences("face_danger", "strong_hit", false).routePayThePrice).toBe(false);
+  });
+
+  it("control: explore_a_waypoint:miss with a match offers Confront Chaos instead — the price is not routed", () => {
+    const c = mapConsequences("explore_a_waypoint", "miss", true);
+    expect(c.routePayThePrice).toBe(false);
+    expect(c.otherEffect).toMatch(/Confront Chaos instead.*Pay the Price/);
   });
 });
 

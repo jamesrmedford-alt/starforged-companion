@@ -18,7 +18,8 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
-const control = vi.hoisted(() => ({ ptpRolls: 0, interpretation: null }));
+// dice: [challenge, challenge, action] Math.random values for resolveMove.
+const control = vi.hoisted(() => ({ ptpRolls: 0, interpretation: null, dice: null }));
 vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
   ...(await importOriginal()),
   routePacedInput: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
@@ -40,8 +41,9 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
   return {
     ...original,
     resolveMove: vi.fn((...args) => {
-      // challenge 10, 10; action 1 → a miss
-      const dice = vi.spyOn(Math, 'random').mockReturnValueOnce(0.95).mockReturnValueOnce(0.95).mockReturnValueOnce(0.0);
+      // By default challenge 10, 10; action 1 → a miss
+      const dice = vi.spyOn(Math, 'random');
+      for (const d of control.dice ?? [0.95, 0.95, 0.0]) dice.mockReturnValueOnce(d);
       try { return original.resolveMove(...args); } finally { dice.mockRestore(); }
     }),
   };
@@ -77,6 +79,7 @@ afterAll(() => table?.teardown());
 
 beforeEach(async () => {
   control.ptpRolls = 0;
+  control.dice = null;
   await table.reset({ world: { settings: { campaignState: {
     ...CampaignStateSchema,
     sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 3, currentSceneId: 'sc-1', sceneTruths: [],
@@ -121,5 +124,29 @@ describe('one result, one Pay the Price (issue #321 U03)', () => {
 
     expect(seeded).toEqual([shown]);
     expect(control.ptpRolls).toBe(1);
+  });
+});
+
+// Issue #321 U17 (WAYPOINT-MISS-NO-PTP): an Explore a Waypoint miss said "Pay
+// the Price" and routed nothing — no card, no suffer route, no clock tick.
+describe('an Explore a Waypoint miss pays the price (issue #321 U17)', () => {
+  const WAYPOINT = { moveId: 'explore_a_waypoint', moveName: 'Explore A Waypoint', statUsed: 'wits' };
+
+  it('a miss without a match posts the Pay the Price card — once, the price the narration depicts', async () => {
+    control.dice = [0.85, 0.95, 0.0];                  // challenge 9, 10; action 1 + wits 2 — a miss, no match
+    const { seeded, shown } = await playMove(WAYPOINT, 'I pick through the wreck for anything useful.');
+
+    expect(seeded).toEqual([shown]);
+    expect(control.ptpRolls).toBe(1);
+  });
+
+  it('control: a miss with a match offers Confront Chaos instead — no price is routed', async () => {
+    control.dice = [0.95, 0.95, 0.0];                  // challenge 10, 10 — a match
+    control.interpretation = { adds: 0, rationale: 'test', mischiefApplied: false, ...WAYPOINT };
+    await table.client('pl-1').chat('I pick through the wreck for anything useful.', { speaker: { actor: 'pc-pat' } });
+    await table.settle();
+
+    expect(table.cards(f => f.payThePriceCard)).toHaveLength(0);
+    expect(table.cards(f => f.moveResolution)[0].flags[MODULE_ID].waypointOracleCard).toBe('confront_chaos');
   });
 });
