@@ -18,7 +18,15 @@ export const SCALE = [
   { min: 26, max: 60,  result: "Medium (person-sized)" },
   { min: 61, max: 90,  result: "Large (vehicle-sized)" },
   { min: 91, max: 99,  result: "Huge (whale-sized)" },
-  { min: 100,max: 100, result: "Ultra-scale (roll on ultra table)" },
+  // Roll on the Ultra-scale table below — the roller does (rollOracle).
+  { min: 100,max: 100, result: "Ultra-scale", ref: "creature_ultra_scale" },
+];
+
+// Creature Scale 100 rolls here (Starforged/Oracles/Creatures/Ultra-scale).
+export const ULTRA_SCALE = [
+  { min: 1,  max: 89,  result: "Titanic (hill-sized)" },
+  { min: 90, max: 99,  result: "Colossal (mountain-sized)" },
+  { min: 100,max: 100, result: "Vast (planet-sized)" },
 ];
 
 // Basic form tables vary by environment
