@@ -455,8 +455,14 @@ function detectionFromParsed(parsed, campaignState) {
     .filter(r => r.from && r.to && normalizeEntityName(r.from) !== normalizeEntityName(r.to));
 
   // A name being renamed TO must never also be created as a brand-new entity —
-  // belt-and-braces in case the model lists it in both places.
-  const renameTargets = new Set(renames.map(r => normalizeEntityName(r.to)).filter(Boolean));
+  // belt-and-braces in case the model lists it in both places. Only for a
+  // rename that can land, though: its `from` must name a recorded placeholder
+  // figure. Any other rename is skipped (applyEntityRenames), and dropping its
+  // `to` as well lost the newly named NPC entirely (issue #321 U27).
+  const renameTargets = new Set(renames
+    .filter(r => findPlaceholderConnection(r.from, campaignState))
+    .map(r => normalizeEntityName(r.to))
+    .filter(Boolean));
 
   const filteredEntities = entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
@@ -619,7 +625,6 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const getConn      = deps.getConn      ?? getConnection;
   const updateConn   = deps.updateConn   ?? updateConnection;
   const entityExists = deps.entityExists ?? entityExistsAnyType;
-  const ids          = campaignState?.connectionIds ?? [];
   const applied      = [];
 
   for (const { from, to } of renames) {
@@ -629,22 +634,14 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     // Never rename onto a name that already belongs to another entity.
     if (entityExists(to, campaignState)) continue;
 
-    // Find the placeholder connection this rename targets.
-    let targetId = null, targetRec = null;
-    for (const id of ids) {
-      let rec = null;
-      try { rec = getConn(id); } catch { continue; }
-      if (rec?.name && normalizeEntityName(rec.name) === fromNorm) {
-        targetId = id; targetRec = rec; break;
-      }
-    }
-    if (!targetId || !targetRec) continue;
-    // Safety bound: only collapse placeholder figures, never properly-named ones.
-    if (!isPlaceholderName(targetRec.name)) continue;
+    // The placeholder connection this rename targets — only placeholder
+    // figures collapse, never properly-named ones.
+    const target = findPlaceholderConnection(from, campaignState, getConn);
+    if (!target) continue;
 
     try {
-      await updateConn(targetId, { name: to });
-      applied.push({ from: targetRec.name, to, id: targetId });
+      await updateConn(target.id, { name: to });
+      applied.push({ from: target.rec.name, to, id: target.id });
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
     }
@@ -659,6 +656,30 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     }
   }
   return applied;
+}
+
+/**
+ * The recorded connection a rename's `from` names, when that connection is
+ * still a placeholder figure — `{ id, rec }` — else null (no such connection,
+ * or one with a proper name). A rename lands only on one; the detection parse
+ * drops the rename's `to` from the new entities only then.
+ *
+ * @param {string} from
+ * @param {Object} campaignState
+ * @param {Function} [getConn]  (id) => record
+ * @returns {{ id: string, rec: Object }|null}
+ */
+function findPlaceholderConnection(from, campaignState, getConn = getConnection) {
+  const fromNorm = normalizeEntityName(from);
+  if (!fromNorm) return null;
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConn(id); } catch { continue; }
+    if (rec?.name && normalizeEntityName(rec.name) === fromNorm) {
+      return isPlaceholderName(rec.name) ? { id, rec } : null;
+    }
+  }
+  return null;
 }
 
 /**
