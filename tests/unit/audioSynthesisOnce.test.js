@@ -65,7 +65,6 @@ beforeEach(() => {
     'audio.clientEnabled':   true,
     'audio.narratorVoiceId': 'voice-narrator',
     'audio.npcVoiceId':      'voice-npc',
-    'audio.cacheMaxBytes':   0,
     'elevenLabsApiKey':      'sk_gm_key',          // the canonical GM holds the key
   })) game.settings._store.set(`${MODULE_ID}.${key}`, value);
   game.socket._reset();

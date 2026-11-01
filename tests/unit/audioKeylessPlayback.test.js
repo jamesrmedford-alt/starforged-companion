@@ -73,7 +73,6 @@ beforeEach(() => {
     'audio.clientEnabled':   true,
     'audio.narratorVoiceId': 'voice-narrator',
     'audio.npcVoiceId':      'voice-npc',
-    'audio.cacheMaxBytes':   0,
   })) game.settings._store.set(`${MODULE_ID}.${key}`, value);
   game.settings._store.delete(KEY);           // the player's client holds no key
   restoreUser = asPlayer();

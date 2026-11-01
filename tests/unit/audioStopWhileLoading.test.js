@@ -17,13 +17,12 @@ vi.mock('../../src/audio/cache.js', () => ({
   cacheKey:        vi.fn(),
   lookup:          vi.fn(),
   write:           vi.fn(),
-  evictIfOverflow: vi.fn(),
 }));
 vi.mock('../../src/audio/elevenlabs.js', () => ({ synthesise: vi.fn() }));
 vi.mock('../../src/multiplayer/gmGate.js', async (orig) => ({ ...(await orig()), isCanonicalGM: () => true }));
 
 import { onNarratorCardRendered } from '../../src/audio/index.js';
-import { cacheKey, lookup, write, evictIfOverflow } from '../../src/audio/cache.js';
+import { cacheKey, lookup, write } from '../../src/audio/cache.js';
 import { synthesise } from '../../src/audio/elevenlabs.js';
 import { stopActivePlayback } from '../../src/audio/playback.js';
 import { parseHTML, StubElement, setListenerResultSink } from '../helpers/cardDom.js';
@@ -45,7 +44,6 @@ beforeEach(() => {
   cacheKey.mockResolvedValue(HASH);
   lookup.mockResolvedValue(null);                                   // uncached → synthesise
   write.mockResolvedValue(`worlds/test-world/audio/aa/${HASH}.mp3`);
-  evictIfOverflow.mockResolvedValue(0);
   const gates = [];
   synthesise.mockImplementation(() => new Promise(r => gates.push(r)));
   releaseSynth = () => gates.splice(0).forEach(r => r(new ArrayBuffer(8)));

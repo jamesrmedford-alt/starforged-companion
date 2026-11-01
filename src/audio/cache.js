@@ -21,21 +21,18 @@ const MODULE_ID = "starforged-companion";
 
 // In-memory positive-lookup memo (hash → resolved path). Repeated plays and
 // chat re-renders of the same clip otherwise re-hit FilePicker.browse, which is
-// an assets/browse API call on The Forge. Positives only; cleared on an
-// eviction sweep so a deleted file can't linger. Lifetime = page load.
+// an assets/browse API call on The Forge. Positives only. Lifetime = page load.
+//
+// The cache is never trimmed: Foundry v13's client FilePicker has no delete,
+// so the size-cap sweep (evictIfOverflow, with its `audio.cacheMaxBytes`
+// setting) could only browse every subdirectory and HEAD every clip — on The
+// Forge with sizes that read 0 — and delete nothing. It was removed (issue
+// #322 V16); a GM empties worlds/<world>/audio/ by hand.
 const _lookupMemo = new Map();
 
-// Eviction throttle. evictIfOverflow() browses the entire cache tree, so firing
-// it after every synthesized clip floods the Forge assets/browse endpoint (the
-// "called continuously for 5 minutes" rate warning). The cap is soft, so a
-// periodic sweep is enough.
-let _lastEvictionAt = 0;
-const EVICTION_MIN_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-
-/** Test-only — reset the in-memory lookup memo and eviction throttle. */
+/** Test-only — reset the in-memory lookup memo. */
 export function _resetAudioCacheStateForTests() {
   _lookupMemo.clear();
-  _lastEvictionAt = 0;
 }
 
 /**
@@ -148,98 +145,3 @@ export async function write(hash, bytes) {
   return uploadedPath ?? full;
 }
 
-/**
- * Evict oldest cache entries until cumulative size is <= maxBytes.
- * Returns the count of entries evicted.
- *
- * Iterates the two-level fanout directories. Each file's modification
- * time is the eviction sort key (oldest first). Soft-fails on any
- * per-file error; the cache is best-effort and a failed eviction is
- * preferable to a thrown sweep.
- *
- * @param {number} maxBytes
- * @returns {Promise<number>}
- */
-export async function evictIfOverflow(maxBytes, { force = false } = {}) {
-  if (!Number.isFinite(maxBytes) || maxBytes <= 0) return 0;
-  // Throttle: this sweep browses the whole cache tree (one assets/browse per
-  // subdir). Running it after every clip hammered the Forge API; the cap is
-  // soft, so sweep at most once per interval. `force` bypasses it for tests.
-  if (!force && (Date.now() - _lastEvictionAt) < EVICTION_MIN_INTERVAL_MS) return 0;
-  _lastEvictionAt = Date.now();
-  // A sweep may delete files, so drop memoised paths that could now be stale.
-  _lookupMemo.clear();
-  const worldId = globalThis.game?.world?.id;
-  if (!worldId) return 0;
-  const rootDir = `worlds/${worldId}/audio`;
-
-  let topLevel;
-  try {
-    topLevel = await foundry.applications.apps.FilePicker.implementation.browse("data", rootDir);
-  } catch {
-    return 0;
-  }
-
-  const subdirs = Array.isArray(topLevel?.dirs) ? topLevel.dirs : [];
-  const entries = [];
-  for (const sub of subdirs) {
-    let listing;
-    try {
-      listing = await foundry.applications.apps.FilePicker.implementation.browse("data", sub);
-    } catch {
-      continue;
-    }
-    const files = Array.isArray(listing?.files) ? listing.files : [];
-    for (const f of files) {
-      if (typeof f !== "string" || !f.endsWith(".mp3")) continue;
-      // Foundry FilePicker.browse does not expose mtime or size directly.
-      // We fall back to HEAD against the file URL to read the size and
-      // Last-Modified header. Errors fall back to size 0 + epoch.
-      let size = 0;
-      let mtime = 0;
-      try {
-        const head = await fetch(`/${f}`, { method: "HEAD" });
-        const len = head.headers.get("content-length");
-        if (len) size = Number(len) || 0;
-        const last = head.headers.get("last-modified");
-        if (last) mtime = Date.parse(last) || 0;
-      } catch (err) {
-        // Head request unavailable — eviction sort treats the entry as
-        // oldest with size 0. Best-effort cache; log at debug rather
-        // than warn to avoid noise on every entry of a clean cache.
-        if (typeof console.debug === "function") {
-          console.debug(`${MODULE_ID} | audio cache: HEAD ${f} failed (skipping size):`, err?.message ?? err);
-        }
-      }
-      entries.push({ path: f, size, mtime });
-    }
-  }
-
-  let total = entries.reduce((a, e) => a + e.size, 0);
-  if (total <= maxBytes) return 0;
-
-  entries.sort((a, b) => a.mtime - b.mtime);
-
-  let evicted = 0;
-  for (const e of entries) {
-    if (total <= maxBytes) break;
-    // Foundry V13 does not expose FilePicker.delete on the client; on a
-    // hosted instance, file deletion typically requires a server-side
-    // route. As a v1 fallback, we just stop counting once we'd exceed
-    // the cap — the cache will grow past maxBytes until the GM manually
-    // empties the directory. A follow-on socket handler to a GM-side
-    // delete can address this when it becomes a real problem.
-    try {
-      if (typeof foundry.applications.apps.FilePicker.implementation.delete === "function") {
-        await foundry.applications.apps.FilePicker.implementation.delete("data", e.path);
-        total -= e.size;
-        evicted++;
-      } else {
-        break;
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | audio cache: evict ${e.path} failed:`, err);
-    }
-  }
-  return evicted;
-}

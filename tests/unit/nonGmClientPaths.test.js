@@ -26,7 +26,6 @@ vi.mock('../../src/audio/cache.js', () => ({
   cacheKey:        vi.fn().mockResolvedValue('deadbeefdeadbeef'),
   lookup:          vi.fn().mockResolvedValue(null),
   write:           vi.fn().mockResolvedValue('/worlds/test/audio/deadbeef.mp3'),
-  evictIfOverflow: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/multiplayer/gmGate.js', () => ({
@@ -124,8 +123,6 @@ describe('registerAudioSocket — GM relay contract', () => {
     vi.clearAllMocks();
     vi.mocked(isCanonicalGM).mockReturnValue(true);
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/deadbeef.mp3');
-    // Disable the cache-cap so evictIfOverflow isn't triggered.
-    game.settings._store.set(`${MODULE_ID}.audio.cacheMaxBytes`, 0);
   });
 
   afterEach(() => {
@@ -210,7 +207,6 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/x.mp3');
     vi.mocked(mockSynthesise).mockResolvedValue(new Uint8Array([1, 2, 3]));
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_gm_key');
-    game.settings._store.set(`${MODULE_ID}.audio.cacheMaxBytes`, 0);
   });
   afterEach(() => { game.socket._reset(); });
 

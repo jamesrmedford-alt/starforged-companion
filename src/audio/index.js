@@ -21,7 +21,6 @@ import {
   cacheKey,
   lookup as cacheLookup,
   write  as cacheWrite,
-  evictIfOverflow,
 } from "./cache.js";
 import { synthesise } from "./elevenlabs.js";
 import {
@@ -324,17 +323,10 @@ function synthesiseToCacheOnce(hash, spec, apiKey) {
   return pending;
 }
 
-/** Canonical GM: write a clip to the cache (+ an eviction sweep); the path, or null when the write failed. */
+/** Canonical GM: write a clip to the cache; the path, or null when the write failed. */
 async function writeToCache(hash, bytes) {
   try {
-    const path = await cacheWrite(hash, bytes);
-    const cap  = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-    if (cap > 0) {
-      evictIfOverflow(cap).catch(err =>
-        console.warn(`${MODULE_ID} | audio cache eviction sweep failed:`, err),
-      );
-    }
-    return path;
+    return await cacheWrite(hash, bytes);
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
     return null;
@@ -414,12 +406,6 @@ async function handleCacheWrite(payload) {
   try {
     const bytes = base64ToBytes(payload.b64 ?? "");
     await cacheWrite(payload.hash, bytes);
-    const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-    if (cap > 0) {
-      evictIfOverflow(cap).catch(err =>
-        console.warn(`${MODULE_ID} | audio cache eviction (GM-relay) failed:`, err),
-      );
-    }
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache GM-relay write failed:`, err);
   }

@@ -462,10 +462,6 @@ function registerCoreSettings() {
     name: "Playback speed", scope: "world", config: false,
     type: Number, default: 1.0, range: { min: 0.7, max: 1.5, step: 0.1 },
   });
-  game.settings.register(MODULE_ID, "audio.cacheMaxBytes", {
-    name: "Audio cache size cap (bytes)", scope: "world", config: false,
-    type: Number, default: 200 * 1024 * 1024,
-  });
 
   game.settings.register(MODULE_ID, "elevenLabsApiKey", {
     name: "ElevenLabs API Key",

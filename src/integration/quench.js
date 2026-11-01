@@ -5742,7 +5742,6 @@ function registerAudioCrossClientTests(quench) {
         "audio.enabled", "audio.clientEnabled", "audio.narratorVoiceId",
         "audio.npcVoiceId", "audio.modelId", "audio.speed",
         "audio.volume", "audio.autoplay", "elevenLabsApiKey",
-        "audio.cacheMaxBytes",
       ];
       let _prev = {};
 
