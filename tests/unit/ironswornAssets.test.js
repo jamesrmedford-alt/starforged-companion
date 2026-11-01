@@ -2,6 +2,7 @@
 // System asset integration — Phase 1, 3, 4, 9.
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs';
 import {
   IS_BASE,
   IS_PATHS,
@@ -86,7 +87,8 @@ describe('Phase 3 — pickStarshipIcon', () => {
   it('returns a path under IS_PATHS.STARSHIPS', () => {
     const path = pickStarshipIcon('Wayfinder');
     expect(path.startsWith(`${IS_PATHS.STARSHIPS}/`)).toBe(true);
-    expect(path).toMatch(/Starforged-Starship-Token-\d{2}\.webp$/);
+    // The system ships assets/starships/Ship-NNs.webp (issue #321 U31).
+    expect(path).toMatch(/\/Ship-\d{2}s\.webp$/);
   });
 
   it('is deterministic — same seed → same icon', () => {
@@ -102,10 +104,38 @@ describe('Phase 3 — pickStarshipIcon', () => {
 
   it('produces a token in the 01..15 range', () => {
     for (const seed of ['x', 'y', 'z', 'foo', 'bar', 'baz', 'qux', 'quux', 'short', 'longer']) {
-      const m = pickStarshipIcon(seed).match(/Token-(\d{2})\.webp$/);
+      const m = pickStarshipIcon(seed).match(/\/Ship-(\d{2})s\.webp$/);
       const num = parseInt(m[1], 10);
       expect(num).toBeGreaterThanOrEqual(1);
       expect(num).toBeLessThanOrEqual(15);
+    }
+  });
+});
+
+// Issue #321 U31 — the picked image must exist in the system. The runtime path
+// maps back to the vendored source tree (systems/foundry-ironsworn/X →
+// vendor/foundry-ironsworn/system/X, as ironswornAssets.js documents). CI checks
+// the submodule out; a checkout without it skips these.
+describe('pickStarshipIcon — against the vendored foundry-ironsworn', () => {
+  const VENDOR = 'vendor/foundry-ironsworn/system';
+  const vendored = fs.existsSync(`${VENDOR}/assets`);
+  const toVendor = (runtimePath) => runtimePath.replace(`systems/${IS_SYSTEM_ID}/`, `${VENDOR}/`);
+
+  it.skipIf(!vendored)('control: the system ships Ship-10s.webp (its own create-actor default) and the planet tokens', () => {
+    expect(fs.existsSync(`${VENDOR}/assets/starships/Ship-10s.webp`)).toBe(true);
+    expect(fs.existsSync(toVendor(iconForPlanetType('Desert World')))).toBe(true);
+  });
+
+  it.skipIf(!vendored)('every seed resolves to a starship image the system actually ships', () => {
+    const seeds = ['Wayfinder', 'Iron Wraith', 'abc123def456ghij', 'Kestrel', 'x'];
+    const missing = seeds.map(pickStarshipIcon).filter(p => !fs.existsSync(toVendor(p)));
+    expect(missing).toEqual([]);
+  });
+
+  it.skipIf(!vendored)('control: all fifteen designs the picker spans exist', () => {
+    const files = fs.readdirSync(`${VENDOR}/assets/starships`);
+    for (let i = 1; i <= 15; i++) {
+      expect(files).toContain(`Ship-${String(i).padStart(2, '0')}s.webp`);
     }
   });
 });
