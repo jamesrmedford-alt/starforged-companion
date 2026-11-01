@@ -1782,12 +1782,16 @@ async function confirmDraft(message, draftIndex) {
     // skips any faction that already has an entity record, so without this the
     // entity and the journal stay disconnected and the Factions page stays
     // empty (playtest finding).
+    // No attitude: the entry keeps the one the narration established (a new
+    // entry starts "unknown"); the backlink is the host id, as the reconcile
+    // above writes it. Passing attitude "unknown" overwrote a known attitude,
+    // and record._id re-pointed the backlink (issue #321 U28).
     if (draft.type === "faction") {
       try {
+        const { findFactionByName } = await import("./faction.js");
         await recordFactionIntelligence(draft.name, {
-          attitude: "unknown",
           summary:  draft.description ?? "",
-          entityId: record._id,
+          entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
         }, campaignState);
       } catch (err) {
         console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
