@@ -81,12 +81,13 @@ const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']
  * True when the X-Card is active. Checks the caller's campaignState AND the
  * live stored setting: the move pipeline narrates from a snapshot read before
  * its confirm dialog and Claude calls, so an X-Card played meanwhile (relayed
- * to the GM) is only visible in the store. Errs toward suppressing.
+ * to the GM) is only visible in the store. Errs toward suppressing. Exported
+ * for the Private Channel's narrator and Publish (issue #321 U09).
  *
  * @param {Object|null} campaignState
  * @returns {boolean}
  */
-function isXCardActive(campaignState) {
+export function isXCardActive(campaignState) {
   if (campaignState?.xCardActive) return true;
   try {
     return !!game.settings.get(MODULE_ID, 'campaignState')?.xCardActive;
@@ -128,7 +129,7 @@ function xCardPlayCount() {
  * @param {Object|null} campaignState
  * @returns {{ interrupted: (label: string) => boolean }}
  */
-function watchXCard(campaignState) {
+export function watchXCard(campaignState) {
   const playsAtStart = xCardPlayCount();
   return {
     interrupted(label) {

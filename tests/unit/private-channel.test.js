@@ -36,6 +36,9 @@ vi.mock("../../src/narration/narrator.js", () => ({
   getRecentNarrationContext: vi.fn(() => ""),
   currentLocationName:       vi.fn(() => null),
   buildPrivateChannelStory:  vi.fn(async () => ({ canon: "", scene: "" })),
+  // No X-Card in play here; tests/unit/privateChannelXCard.test.js runs the real check.
+  isXCardActive:             vi.fn(() => false),
+  watchXCard:                vi.fn(() => ({ interrupted: () => false })),
 }));
 vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 

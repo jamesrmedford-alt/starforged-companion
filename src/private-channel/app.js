@@ -9,7 +9,8 @@
  */
 
 import { requestPrivateNarration } from "./narrate.js";
-import { publishToMainChat } from "./publish.js";
+import { publishToMainChat, XCARD_PUBLISH_REFUSED } from "./publish.js";
+import { isXCardActive } from "../narration/narrator.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import {
   appendToBuffer,
@@ -202,6 +203,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
         scheduleDebouncedWrite(this.userId);
       } else {
         this.errorBanner = {
+          "x-card":       "The X-Card is in play — the narrator is paused until a GM resumes the scene.",
           "no-key":       "Add your Claude API key in Companion Settings → About.",
           "no-character": "Set up your character first.",
           "empty":        "The narrator had nothing to say — try rephrasing.",
@@ -223,6 +225,12 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const lastNarrator = [...this.turns].reverse().find(t => t.who === "narrator");
     if (!lastNarrator) {
       this.errorBanner = "Nothing to publish yet.";
+      await this.render();
+      return;
+    }
+    // Nothing reaches the table during an X-Card pause (issue #321 U09).
+    if (isXCardActive(null)) {
+      this.errorBanner = XCARD_PUBLISH_REFUSED;
       await this.render();
       return;
     }
