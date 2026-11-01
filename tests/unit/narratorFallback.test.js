@@ -9,10 +9,31 @@
  * The fix gave postFallbackCard the same flag shape as the success-path
  * narrator cards (sessionId, sessionNumber, narrationText, moveId,
  * outcome, matchedEntityIds, timestamp).
+ *
+ * That shape includes `narratorCard: true`, which the session recap (its
+ * move count) and the live Quench pipeline test rely on — but
+ * rules/narrator-memory.md invariant 1 says a fallback card is not narrator
+ * memory. Its `narrationFallback` flag keeps it out of the recent-narration
+ * ring, the rolling summary and the session's first-narration check
+ * (sessionNarratorCards — issue #321 U35: the "narration unavailable" line
+ * reached RECENT SCENE, and a failed first narration cancelled the session's
+ * campaign recap).
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { narrateResolution } from '../../src/narration/narrator.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));
+vi.mock('../../src/system/campaignTruths.js', async () => {
+  const actual = await vi.importActual('../../src/system/campaignTruths.js');
+  return { ...actual, buildCampaignTruthsBlock: vi.fn(async () => '') };
+});
+
+import {
+  narrateResolution,
+  getRecentNarrationContext,
+  buildNarratorExtras,
+  campaignRecapCacheKey,
+} from '../../src/narration/narrator.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -82,5 +103,49 @@ describe('narrateResolution fallback card', () => {
     // and matches the success-path narratorCard shape. Undefined would
     // not.
     expect(flags?.sessionId).toBeNull();
+  });
+});
+
+describe('a fallback card is not narrator memory (issue #321 U35)', () => {
+  const SESSION = 'sess-5';
+  const resolution = {
+    _id: 'res-1', moveId: 'face_danger', moveName: 'Face Danger',
+    outcome: 'strong_hit', outcomeLabel: 'Strong Hit', playerNarration: 'I vault the gap.',
+  };
+
+  beforeEach(() => {
+    game.actors._reset();
+    global.game.messages = { contents: [] };
+  });
+
+  /** The first move of the session fails to narrate (no key here; an overload or timeout in play). */
+  async function failFirstNarration(campaignState) {
+    await narrateResolution(resolution, campaignState);
+    const fallback = ChatMessage._created.at(-1);
+    expect(fallback.flags[MODULE_ID].narrationFallback).toBe(true);
+    global.game.messages = { contents: ChatMessage._created.slice() };
+    return fallback;
+  }
+
+  it('the "narration unavailable" line never reaches the recent-narration ring', async () => {
+    await failFirstNarration({ currentSessionId: SESSION, sessionNumber: 5 });
+    const ring = getRecentNarrationContext(SESSION, 20);
+    expect(ring).not.toContain('narration unavailable');
+  });
+
+  it('a failed first narration does not cost the session its campaign recap', async () => {
+    const campaignState = { currentSessionId: SESSION, sessionNumber: 5 };
+    // A recap made from the chronicle as it stands (no PCs → empty chronicle).
+    campaignState.campaignRecapCache = { text: 'Previously: the beacon at Bleakhold went dark.', ...(await campaignRecapCacheKey(campaignState)) };
+
+    // Sanity: with no narrator card yet, the session's first narration gets the recap.
+    const before = await buildNarratorExtras('paced_narrative', campaignState, { playerNarration: 'x' });
+    expect(before.campaignRecap).toContain('beacon at Bleakhold');
+
+    await failFirstNarration(campaignState);
+
+    // The next real narration is still the session's first narration.
+    const after = await buildNarratorExtras('paced_narrative', campaignState, { playerNarration: 'x' });
+    expect(after.campaignRecap).toContain('beacon at Bleakhold');
   });
 });

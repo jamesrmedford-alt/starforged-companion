@@ -1034,6 +1034,12 @@ function sessionNarratorCards(sessionId) {
     // upgraded re-narration card carries the live prose). Playtest: the struck
     // pre-burn narration kept reaching the narrator.
     if (f.burnSuperseded) return false;
+    // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
+    // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
+    // so the session recap still counts the move, but its line must not reach
+    // the ring or the rolling summary, nor count as the session's first
+    // narration — that cancelled the session's campaign recap (issue #321 U35).
+    if (f.narrationFallback) return false;
     if (Array.isArray(m.whisper) && m.whisper.length) return false;
     return true;
   });
@@ -2959,10 +2965,12 @@ async function postFallbackCard(resolution, campaignState = null) {
     `.trim(),
     flags: {
       [MODULE_ID]: {
-        // Match the success-path narratorCard flag shape so recap readers
-        // (`getRecentNarrationContext`, `_collectAllChronicleEntries`) and
-        // the live-Quench narrator-card assertion can locate the fallback
-        // alongside real narrations.
+        // Match the success-path narratorCard flag shape so the session
+        // recap still counts the move and the live-Quench narrator-card
+        // assertion can locate the fallback alongside real narrations. The
+        // line is not fiction: `narrationFallback` keeps it out of the ring,
+        // the rolling summary and the first-narration check
+        // (sessionNarratorCards — issue #321 U35).
         narratorCard:      true,
         narrationCard:     true,
         narrationFallback: true,
