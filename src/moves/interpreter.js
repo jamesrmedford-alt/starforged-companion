@@ -153,7 +153,6 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "moveName": "Face Danger",
   "statUsed": "wits",
   "statValue": 0,
-  "adds": 0,
   "isProgressMove": false,
   "progressTicks": 0,
   "moveTarget": null,
@@ -547,10 +546,17 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     moveId:                 parsed.moveId,
     moveName:               toDisplayName(parsed.moveId),
     statUsed:               parsed.statUsed,
-    statValue:              parsed.statValue ?? 0,       // Filled in by enrichInterpretationStatValue (see src/moves/statEnrichment.js); model is instructed to leave it 0
-    adds:                   parsed.adds ?? 0,
+    // The numbers are the module's, never the model's (issue #322 V08): the
+    // stat value and a progress score come from the sheet and the live tracks
+    // (enrichInterpretationStatValue / enrichProgressTicks,
+    // src/moves/statEnrichment.js), the adds from the confirm dialog's asset
+    // abilities and the pending +1s. The model's were copied unchecked — a
+    // string "1" in `adds` concatenated (1 + 2 + "1" = "31", capped to 10: a
+    // strong hit), and a `statValue` it was told to leave 0 became the score.
+    statValue:              0,
+    adds:                   0,
     isProgressMove:         finalMoveData.progressMove === true,
-    progressTicks:          parsed.progressTicks ?? 0,
+    progressTicks:          0,
     moveTarget:              typeof parsed.moveTarget === "string" && parsed.moveTarget.trim() ? parsed.moveTarget.trim() : null,
     expeditionRank:          typeof parsed.expeditionRank === "string" && parsed.expeditionRank.trim() ? parsed.expeditionRank.trim().toLowerCase() : null,
     combatRank:              typeof parsed.combatRank === "string" && parsed.combatRank.trim() ? parsed.combatRank.trim().toLowerCase() : null,

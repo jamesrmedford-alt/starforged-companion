@@ -364,7 +364,8 @@ export const PROGRESS_TICK_SOURCES = {
  *                     trackId:string|null,
  *                     combatState:("in_control"|"bad_spot"|null) }|null>}
  *   null when the move isn't a progress move or has no module tick source;
- *   ticks 0 (statValue untouched) when the source resolves nothing.
+ *   ticks 0 (statValue and progressTicks set to 0) when the source resolves
+ *   nothing.
  */
 export async function enrichProgressTicks(interpretation, deps = {}) {
   if (interpretation?.isProgressMove !== true) return null;
@@ -448,6 +449,11 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
     console.warn(
       `${MODULE_ID} | enrichProgressTicks: no open ${source} matched for ${moveId} (target: ${target ? `"${target}"` : "none"}) — progress score will be 0.`,
     );
+    // Score 0, as the warning says — not whatever number the interpretation
+    // carried: the resolver scores `statValue`, and a model that ignored
+    // "ALWAYS leave statValue as 0" scored its own guess (issue #322 V08).
+    interpretation.statValue     = 0;
+    interpretation.progressTicks = 0;
     return { ticks: 0, source, label: null, trackId: null, combatState: null };
   }
 
