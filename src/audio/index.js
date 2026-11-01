@@ -42,7 +42,7 @@ let _gestureOverlayShown = false;
 // Keyless playback: a client without an ElevenLabs key asks the canonical GM to
 // synthesise + cache an uncached clip, then plays the resulting file. Each
 // request is awaited per content-hash (multiple waiters allowed) with a
-// timeout; the GM signals completion over the socket.
+// timeout; the GM signals completion over the socket with the file's path.
 const SYNTH_REQUEST_TIMEOUT_MS = 30_000;
 const _pendingSynth  = new Map();   // hash -> Set<resolve>
 // Canonical GM: hash -> the one synthesis + cache write of that clip, awaited by
@@ -369,7 +369,7 @@ export function registerAudioSocket() {
     switch (payload.kind) {
       case "audio.cache.write":   return handleCacheWrite(payload);
       case "audio.synth.request": return handleSynthRequest(payload);
-      case "audio.synth.done":    return resolvePendingSynth(payload.hash);
+      case "audio.synth.done":    return resolvePendingSynth(payload.hash, payload.path);
       default: return;
     }
   });
@@ -395,46 +395,53 @@ async function handleCacheWrite(payload) {
 // GM-side: a keyless client asked us to synthesise + cache a clip it can't make
 // itself. Dedupe against the cache and the clip's in-flight synthesis — this
 // client's own playback's or an earlier request's (synthesiseToCacheOnce) —
-// then signal done so the requester (and any other waiters) can play the
-// cached file.
+// then signal done with the cached file's path, so the requester (and any
+// other waiters) can play it: a default Player may not browse the cache
+// directory (FilePicker "Use File Browser" is Trusted Player and above), so a
+// done signal with only the hash left them "not ready" every time, and on The
+// Forge only the upload's own response names the file (issue #321 U60).
 async function handleSynthRequest(payload) {
   if (!isCanonicalGM()) return;
   const hash = typeof payload.hash === "string" ? payload.hash : "";
   const spec = payload.spec;
   if (!hash) return;
-  const signalDone = () => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash });
+  const signalDone = (path) => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash, path: path ?? null });
+  let path = null;
   try {
-    if (await cacheLookup(hash)) { signalDone(); return; }   // already cached
+    path = await cacheLookup(hash);
+    if (path) { signalDone(path); return; }                  // already cached
     const apiKey = getSetting("elevenLabsApiKey", "");
     if (_synthInFlight.has(hash) || (apiKey && String(apiKey).trim() && spec)) {
-      await synthesiseToCacheOnce(hash, spec, apiKey);
+      ({ path } = await synthesiseToCacheOnce(hash, spec, apiKey));
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | audio GM-synthesis (keyless request) failed:`, err);
   }
-  signalDone();   // success, already-cached, or failure — always unblock waiters
+  signalDone(path);   // success, already-cached, or failure — always unblock waiters
 }
 
-// Requester side: resolve everyone waiting on this hash.
-function resolvePendingSynth(hash) {
+// Requester side: resolve everyone waiting on this hash with the cached path —
+// only a path that names this clip's file is played; anything else is no path.
+function resolvePendingSynth(hash, path) {
   const set = _pendingSynth.get(hash);
   if (!set) return;
   _pendingSynth.delete(hash);
-  for (const resolve of set) resolve();
+  const src = typeof path === "string" && path.endsWith(`/${hash}.mp3`) ? path : null;
+  for (const resolve of set) resolve(src);
 }
 
 // Keyless client: ask the canonical GM to synthesise + cache `hash`, wait for
-// the done signal (or time out), then return the now-cached path (or null).
+// the done signal (or time out), then return the path it names — or, without
+// one, the cache lookup's (a Trusted Player may browse; a Player may not).
 async function requestGmSynthesis(hash, spec) {
   const ready = new Promise((resolve) => {
     let set = _pendingSynth.get(hash);
     if (!set) { set = new Set(); _pendingSynth.set(hash, set); }
     set.add(resolve);
-    setTimeout(() => { set.delete(resolve); resolve(); }, SYNTH_REQUEST_TIMEOUT_MS);
+    setTimeout(() => { set.delete(resolve); resolve(null); }, SYNTH_REQUEST_TIMEOUT_MS);
   });
   game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.request", hash, spec });
-  await ready;
-  return await cacheLookup(hash);
+  return (await ready) ?? await cacheLookup(hash);
 }
 
 // ---------------------------------------------------------------------------

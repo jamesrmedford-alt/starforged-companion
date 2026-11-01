@@ -214,21 +214,24 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
   });
   afterEach(() => { game.socket._reset(); });
 
-  it('synthesises + caches an uncached clip, then signals done', async () => {
+  // Issue #321 U60: the done signal names the cached file — a default Player
+  // may not browse the cache directory to find it.
+  it('synthesises + caches an uncached clip, then signals done with the path it wrote', async () => {
     const handler = getHandler();
     await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
     expect(mockSynthesise).toHaveBeenCalledOnce();
     expect(mockWrite).toHaveBeenCalledWith('abc', expect.any(Uint8Array));
     expect(doneEmits()).toHaveLength(1);
-    expect(doneEmits()[0].payload).toEqual({ kind: 'audio.synth.done', hash: 'abc' });
+    expect(doneEmits()[0].payload).toEqual({ kind: 'audio.synth.done', hash: 'abc', path: '/worlds/test/audio/x.mp3' });
   });
 
-  it('skips synthesis when the clip is already cached, but still signals done', async () => {
+  it('skips synthesis when the clip is already cached, but still signals done with its path', async () => {
     vi.mocked(mockLookup).mockResolvedValue('/worlds/test/audio/abc.mp3');
     const handler = getHandler();
     await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();
     expect(doneEmits()).toHaveLength(1);
+    expect(doneEmits()[0].payload.path).toBe('/worlds/test/audio/abc.mp3');
   });
 
   it('ignores synth requests when not the canonical GM', async () => {
@@ -239,11 +242,12 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     expect(doneEmits()).toHaveLength(0);
   });
 
-  it('signals done without synthesising when the GM has no key', async () => {
+  it('signals done without synthesising when the GM has no key — no path', async () => {
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, '');
     const handler = getHandler();
     await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();
     expect(doneEmits()).toHaveLength(1);
+    expect(doneEmits()[0].payload.path).toBeNull();
   });
 });
