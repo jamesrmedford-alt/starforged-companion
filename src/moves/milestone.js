@@ -88,6 +88,68 @@ export function selectMilestoneVow(vows, target) {
 }
 
 /**
+ * The vow a Fulfill Your Vow scores (issue #321 U02). The vows are every PC's
+ * (readVows output with each copy's `actorId`); a shared vow is one copy per
+ * PC, all carrying its `vowId`. Unnamed, the old "sole open vow" fallback
+ * scored 0 — a certain miss — whenever the table held more than one copy:
+ * a shared vow on two PCs, two PCs' own vows, a solo PC's background and
+ * inciting vows.
+ *
+ *   1. `itemId` — the copy a "Which vow?" pick named: that open copy, else
+ *      nothing (it was fulfilled or deleted meanwhile), never another.
+ *   2. A name — the roller's own vow first, then anyone's: exact, then a
+ *      substring either way.
+ *   3. Otherwise one vow per `vowId` (a vow not yet stamped counts as itself):
+ *      the roller's own open vows first — one is the vow, several are the
+ *      choices — then everyone's. A shared vow is scored on the roller's copy
+ *      when they hold one.
+ *
+ * @param {Array<{ id, name, rank, ticks, completed, actorId?, vowId? }>} vows
+ * @param {string|null} target — interpretation.moveTarget
+ * @param {{ itemId?: string|null, rollerActorId?: string|null }} [opts]
+ * @returns {{ vow: Object|null, choices: Object[] }} `choices` (two or more
+ *   distinct vows) when the vow is the roller's to pick
+ */
+export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = null } = {}) {
+  const open = (vows ?? []).filter(v => v && !v.completed);
+  if (itemId) return { vow: open.find(v => v.id === itemId) ?? null, choices: [] };
+  const mine = rollerActorId ? open.filter(v => v.actorId === rollerActorId) : [];
+
+  const named = vowByName(mine, target) ?? vowByName(open, target);
+  if (named) return { vow: named, choices: [] };
+
+  for (const pool of [mine, open]) {
+    const distinct = distinctVows(pool, rollerActorId);
+    if (distinct.length === 1) return { vow: distinct[0], choices: [] };
+    if (distinct.length > 1) return { vow: null, choices: distinct };
+  }
+  return { vow: null, choices: [] };
+}
+
+/** The vow `target` names: exact (case-insensitive), then a substring either way. */
+function vowByName(vows, target) {
+  const lo = String(target ?? "").toLowerCase().trim();
+  if (!lo) return null;
+  return vows.find(v => (v.name ?? "").toLowerCase() === lo)
+    ?? vows.find(v => {
+      const n = (v.name ?? "").toLowerCase();
+      return n && (n.includes(lo) || lo.includes(n));
+    })
+    ?? null;
+}
+
+/** One entry per vow (`vowId`, else the copy's own id) — the roller's copy when they hold one. */
+function distinctVows(vows, rollerActorId) {
+  const byVow = new Map();
+  for (const v of vows) {
+    const key = v.vowId || `item:${v.id}`;
+    const held = byVow.get(key);
+    if (!held || (rollerActorId && held.actorId !== rollerActorId && v.actorId === rollerActorId)) byVow.set(key, v);
+  }
+  return [...byVow.values()];
+}
+
+/**
  * Plan a Reach a Milestone.
  *
  * @param {Array} vows — readVows() output

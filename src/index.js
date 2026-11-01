@@ -22,7 +22,7 @@
  *   — Narration runs on whichever client triggered the move
  */
 
-import { CampaignStateSchema, MOVES }   from "./schemas.js";
+import { CampaignStateSchema, MOVES, rankName } from "./schemas.js";
 import { interpretMove }         from "./moves/interpreter.js";
 import { resolveMove, withPayThePriceSeed } from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
@@ -123,7 +123,7 @@ import {
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
-import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
+import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow } from "./moves/milestone.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -945,6 +945,30 @@ export function registerChatHook() {
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       const rollerActor  = speakerActor ?? getPlayerActors()[0] ?? null;
 
+      // Every PC's vows, each copy with its holder — speaker first so a name
+      // tie resolves to the roller's own copy.
+      const readAllVows = async () => {
+        const actors = getPlayerActors();
+        actors.sort((a, b) =>
+          (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
+        return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+      };
+
+      // Fulfill Your Vow scores one vow's progress. Naming none while the
+      // roller — or, holding none, the table — has several open, it scored
+      // nothing: a certain miss. Ask which vow instead of rolling; each pick
+      // posts the move again with that vow's copy, as the roller (issue #321
+      // U02). A shared vow's copies are one vow (selectFulfilVow).
+      if (interpretation.moveId === "fulfill_your_vow" && !interpretation.moveTargetId) {
+        const { vow, choices } = selectFulfilVow(await readAllVows(), interpretation.moveTarget ?? null,
+          { rollerActorId: rollerActor?.id ?? null });
+        if (!vow && choices.length >= 2) {
+          await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: choices }).catch(err =>
+            console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
+          return;
+        }
+      }
+
       // Scan the character's assets + the command vehicle's modules for
       // abilities that apply to the chosen move. Surfaced on the
       // confirmation dialog as opt-in checkboxes — accepted abilities
@@ -1036,13 +1060,8 @@ export function registerChatHook() {
       };
       const tickInfo = await enrichProgressTicks(interpretation, {
         listTracks: () => listProgressTracks(),
-        readAllVows: async () => {
-          const actors = getPlayerActors();
-          // Speaker-first so a name tie resolves to the roller's own vow copy.
-          actors.sort((a, b) =>
-            (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
-          return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
-        },
+        readAllVows,
+        rollerActorId: rollerActor?.id ?? null,
         listConnections,
       }).catch(err => {
         console.warn(`${MODULE_ID} | progress tick enrichment failed:`, err?.message ?? err);
@@ -1060,12 +1079,12 @@ export function registerChatHook() {
       });
 
       // A roll started from a track (a Progress Tracks row, an expedition
-      // card) names it by id. When that track was deleted or finished
-      // meanwhile, nothing is rolled — and it says so: a same-named sibling is
-      // a different fight, and a score of 0 would be a certain miss with its
-      // consequences (issue #306 R06).
+      // card, a "Which vow?" pick) names it by id. When that track was
+      // deleted or finished meanwhile, nothing is rolled — and it says so: a
+      // same-named sibling is a different fight, and a score of 0 would be a
+      // certain miss with its consequences (issue #306 R06, #321 U02).
       if (interpretation.moveTargetId
-          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition")
+          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
           && !tickInfo.trackId) {
         await postTrackGoneCard(interpretation).catch(err =>
           console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
@@ -3510,6 +3529,39 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
     flags: { [MODULE_ID]: {
       whichFightCard: true, moveId, narration: narration ?? null, actorId,
       fights: fights.map(t => ({ id: t.id, label: t.label ?? null })),
+    } },
+  });
+}
+
+/**
+ * Fulfill Your Vow with several vows open and none named: ask which vow,
+ * instead of rolling a score of nothing — a certain miss (issue #321 U02).
+ * Posted in place of the move; nothing is rolled or written. Each distinct
+ * vow (selectFulfilVow — a shared vow once, as the roller's copy when they
+ * hold one) gets a button (wireWhichVowButtons) whose pick the canonical GM
+ * applies once (gmRelay "fulfilVow.pick" → cardActions.applyFulfilVowPick):
+ * the move is posted again with that copy's id, as the roller.
+ *
+ * @param {{ narration?: string, actorId?: string|null,
+ *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
+ */
+async function postWhichVowCard({ narration, actorId = null, vows }) {
+  const buttons = vows.map(v => {
+    const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
+    const boxes = Math.floor(Number(v.ticks ?? 0) / 4);
+    return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
+      + `title="Roll this vow's progress">🏁 ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
+  }).join("");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Fulfill Your Vow — which vow?</strong>`
+      + `<p>More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.</p>`
+      + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
+    // choices: the offered vow copies — a pick must be one of them and
+    // forwards its copy as forcedMoveTargetId / forcedMoveTarget. actorId:
+    // the roller, the pick's speaker, so the move stays theirs.
+    flags: { [MODULE_ID]: {
+      whichVowCard: true, narration: narration ?? null, actorId,
+      choices: vows.map(v => ({ itemId: v.id, name: v.name ?? null })),
     } },
   });
 }
@@ -6733,6 +6785,45 @@ export function wireWhichFightButtons(message, root) {
   }
 }
 onChatMessageRender((message, root) => wireWhichFightButtons(message, root));
+
+/**
+ * Wire a "which vow?" card's buttons (postWhichVowCard, issue #321 U02). A
+ * pick relays to the canonical GM ("fulfilVow.pick" →
+ * cardActions.applyFulfilVowPick), which claims the GM-authored card
+ * (`resolved`) and posts the move once, as the roller; a re-render or another
+ * client finds the claim. A click that is not delivered re-arms the buttons.
+ *
+ * Exported so tests and Quench can drive it with a synthetic message + root.
+ */
+export function wireWhichVowButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.whichVowCard) return;
+  const buttons = [...(root?.querySelectorAll?.('[data-action="sf-which-vow"]') ?? [])];
+  if (!buttons.length) return;
+  if (liveCardFlags(message)?.resolved) {
+    for (const b of buttons) b.disabled = true;
+    return;
+  }
+  const fresh = buttons.map(btn => {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+    return clone;
+  });
+  for (const btn of fresh) {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      for (const b of fresh) b.disabled = true;
+      await relayCardAction({
+        kind:       "fulfilVow.pick",
+        payload:    { messageId: message?.id ?? null, itemId: btn.dataset.itemId || null },
+        isResolved: () => !!liveCardFlags(message)?.resolved,
+        restore:    () => { for (const b of fresh) b.disabled = false; },
+      });
+    });
+  }
+}
+onChatMessageRender((message, root) => wireWhichVowButtons(message, root));
 
 /**
  * Wire the "⚑ Reach a Milestone" suggestion button on a move-result card.

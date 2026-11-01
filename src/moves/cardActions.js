@@ -17,8 +17,9 @@
  * Both now relay through the canonical-GM action relay
  * (src/multiplayer/gmRelay.js — "connection.pick", "fightVow.markMilestone",
  * "fightVow.deepenBond"), as does a payoff failure card's Retry
- * ("payoff.retry", issue #306 R04) and an Explore a Waypoint match's
- * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06). The
+ * ("payoff.retry", issue #306 R04), an Explore a Waypoint match's
+ * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06) and a
+ * "Which vow?" card's pick ("fulfilVow.pick", issue #321 U02). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -335,6 +336,94 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
     }
     // The ordinary choice no longer applies.
     await retireOutcomeChoiceCards(f.resolutionId, move.retired);
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHICH VOW? — gmRelay "fulfilVow.pick" (issue #321 U02)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "fulfilVow.pick" — runs on the canonical GM (issue #321
+ * U02). A Fulfill Your Vow that named no vow while several were open is not
+ * rolled: the pipeline posts a "Which vow?" card (index.js postWhichVowCard).
+ * A pick posts the move again with the picked copy's id and name — the vow
+ * the roll scores and the fulfilment completes — spoken as the card's roller.
+ *
+ * The pick must be one of the card's own choices, and the requester must own
+ * the roller's PC (the card's `actorId`) or be a GM; a card with no roller is
+ * a GM's to pick. One pick per card: the GM-authored card is claimed
+ * (`resolved`) before the post, behind the in-flight guard, so a second
+ * client's click or a re-render finds it claimed; a post that fails releases
+ * the claim so the pick can be made again.
+ *
+ * @param {{ messageId?: string, itemId?: string }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyFulfilVowPick(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | which vow: card ${messageId ?? "?"} not found — no move posted.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.whichVowCard) {
+    console.warn(`${MODULE_ID} | which vow: message ${messageId} is not a which-vow card — ignored.`);
+    return { posted: false, reason: "not-a-which-vow-card" };
+  }
+  const key = `${messageId}:fulfilVow`;
+  if (f.resolved || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | which vow: card ${messageId} already picked — ignoring the press.`);
+    return { posted: false, reason: "already-resolved" };
+  }
+  const itemId = typeof payload.itemId === "string" && payload.itemId ? payload.itemId : null;
+  const choice = (Array.isArray(f.choices) ? f.choices : []).find(c => c?.itemId && c.itemId === itemId);
+  if (!choice) {
+    console.warn(`${MODULE_ID} | which vow: ${itemId ?? "?"} is not a choice on card ${messageId} — refused.`);
+    return { posted: false, reason: "not-on-card" };
+  }
+
+  // The roller's PC — the card's. A card with no roller is a GM's to pick.
+  const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | which vow: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | which vow: user ${ctx?.requesterId ?? "?"} may not pick for ${actor?.name ?? "this card"} — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | which vow: card ${messageId} could not be claimed — nothing posted:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: f.narration || `Attempt to fulfill ${choice.name || "my vow"}.`,
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow",
+          forcedMoveTargetId: choice.itemId,
+          ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
+        } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | which vow: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | which vow: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
     return { posted: true };
   } finally {
     _inFlight.delete(key);

@@ -43,7 +43,7 @@ import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
 import { selectVowTrack } from "./vow.js";
-import { selectMilestoneVow } from "./milestone.js";
+import { selectFulfilVow } from "./milestone.js";
 import { selectConnection, bondedDevelopRoll } from "./developRelationship.js";
 
 const MODULE_ID = "starforged-companion";
@@ -348,15 +348,17 @@ export const PROGRESS_TICK_SOURCES = {
  * live tick count of the track this progress move rolls against. Module data
  * is ground truth — the interpreter is instructed never to supply tick counts,
  * and card buttons only name a target via forcedMoveTarget (a connection
- * picker, a Progress Tracks row and an expedition card also by id, via
- * forcedMoveTargetId → interpretation.moveTargetId).
+ * picker, a Progress Tracks row, an expedition card and a "Which vow?" pick
+ * also by id, via forcedMoveTargetId → interpretation.moveTargetId).
  *
  * Dependency-injected so it unit-tests without Foundry:
  *
  * @param {Object} interpretation — mutated in place (statValue, progressTicks)
  * @param {{ listTracks?:    () => Promise<Array<{id,label,type,rank,ticks,completed,combatState}>>,
- *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed}>>,
+ *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed,actorId,vowId}>>,
+ *           rollerActorId?: string|null,
  *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active,__hostId}>> }} deps
+ *   — `rollerActorId`: whose vows a Fulfill Your Vow prefers (credit the roller)
  * @returns {Promise<{ ticks:number, source:string, label:string|null,
  *                     trackId:string|null,
  *                     combatState:("in_control"|"bad_spot"|null) }|null>}
@@ -400,16 +402,19 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
   } else if (source === "vow") {
     // Item vows are the live store — milestones mark actor vow Items, while
     // journal `vow` tracks are creation-time mirrors that are never
-    // tick-synced afterwards. Items first; journal fallback only when no
-    // item matches.
+    // tick-synced afterwards. Items first: a "Which vow?" pick's copy by id,
+    // else the named vow, else the roller's one vow — a shared vow's copies
+    // counted as one (selectFulfilVow, issue #321 U02). The journal fallback
+    // only when no item vow is open — never for a vow the roller must pick.
+    const itemId = interpretation?.moveTargetId ?? null;
     const vows = (await deps.readAllVows?.()) ?? [];
-    const vow  = selectMilestoneVow(vows, target);
+    const { vow, choices } = selectFulfilVow(vows, target, { itemId, rollerActorId: deps.rollerActorId ?? null });
     if (vow) {
       resolved = {
         ticks: Number(vow.ticks ?? 0), label: vow.name ?? null,
         trackId: vow.id ?? null, combatState: null,
       };
-    } else {
+    } else if (!itemId && !choices.length) {
       const tracks = (await deps.listTracks?.()) ?? [];
       const track  = selectVowTrack(tracks, target);
       if (track) {

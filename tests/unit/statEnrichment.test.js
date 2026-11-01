@@ -495,6 +495,79 @@ describe('enrichProgressTicks', () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fulfill Your Vow naming no vow (issue #321 U02): the "🏁 Attempt to Fulfill
+// Vow" button sends no target, and the "sole open vow" fallback scored 0 — a
+// certain miss — whenever more than one vow copy was open. The pipeline hands
+// enrichment the roller (credit the roller), and each copy its vowId.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02)', () => {
+  const shared = (actorId, id) => ({
+    id, name: 'Rescue Dani', rank: 'formidable', ticks: 32, completed: false, actorId, vowId: 'vid-dani',
+  });
+  const fulfil = (over = {}) => ({ moveId: 'fulfill_your_vow', isProgressMove: true, moveTarget: null, statValue: 0, ...over });
+
+  it('control: one PC, one open vow — the unnamed fulfil scores it', async () => {
+    const interp = fulfil();
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [shared('pc1', 'v1')], listTracks: async () => [], rollerActorId: 'pc1',
+    });
+    expect(info.ticks).toBe(32);
+  });
+
+  it('two PCs whose only vow is their shared vow — the unnamed fulfil scores that vow, not 0', async () => {
+    const interp = fulfil();
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [shared('pc1', 'v1'), shared('pc2', 'v2')], listTracks: async () => [], rollerActorId: 'pc1',
+    });
+    expect(info).toMatchObject({ ticks: 32, trackId: 'v1' });
+    expect(interp.statValue).toBe(32);
+  });
+
+  it('two PCs, each with their own single vow — the roller\'s vow is scored, not 0', async () => {
+    const interp = fulfil();
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [
+        { id: 'v1', name: 'Find my sister',      rank: 'dangerous', ticks: 24, completed: false, actorId: 'pc1', vowId: 'vid-sis' },
+        { id: 'v9', name: 'Repay the Syndicate', rank: 'extreme',   ticks: 4,  completed: false, actorId: 'pc2', vowId: 'vid-debt' },
+      ],
+      listTracks: async () => [],
+      rollerActorId: 'pc1',
+    });
+    expect(info.ticks).toBe(24);
+  });
+
+  it('a "Which vow?" pick scores the copy it names, by id', async () => {
+    const interp = fulfil({ moveTargetId: 'v2', moveTarget: 'Rescue Dani' });
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [shared('pc1', 'v1'), { ...shared('pc2', 'v2'), ticks: 36 }], listTracks: async () => [], rollerActorId: 'pc1',
+    });
+    expect(info).toMatchObject({ ticks: 36, trackId: 'v2' });
+  });
+
+  it('a picked vow fulfilled meanwhile scores nothing — and no journal track stands in for it', async () => {
+    const interp = fulfil({ moveTargetId: 'v1', moveTarget: 'Rescue Dani' });
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [{ ...shared('pc1', 'v1'), completed: true }],
+      listTracks: async () => [{ id: 'j1', type: 'vow', label: 'Rescue Dani', rank: 'formidable', ticks: 40, completed: false }],
+      rollerActorId: 'pc1',
+    });
+    expect(info).toMatchObject({ ticks: 0, trackId: null });
+  });
+
+  it('several of the roller\'s vows open: nothing scored — the pipeline asks which vow first', async () => {
+    const interp = fulfil();
+    const info = await enrichProgressTicks(interp, {
+      readAllVows: async () => [shared('pc1', 'v1'), { ...shared('pc1', 'bg'), name: 'Background Vow', vowId: 'vid-bg' }],
+      listTracks: async () => [{ id: 'j1', type: 'vow', label: 'Old journal vow', rank: 'formidable', ticks: 40, completed: false }],
+      rollerActorId: 'pc1',
+    });
+    expect(info).toMatchObject({ ticks: 0, trackId: null });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // enrichBondedDevelop — a bonded Develop Your Relationship rolls +rank
 // (issue #314 Q06: the schema lists no stat, so the pipeline rolled +0)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -167,6 +167,9 @@ export const GM_ACTIONS = Object.freeze({
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
   "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay" },
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
+  // Issue #321 group A — one-shot card picks claimed on the GM-authored card:
+  // U02 "Which vow?" (a Fulfill Your Vow that named none of several open vows)
+  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
   // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)

@@ -240,6 +240,10 @@ export function readVows(actor) {
       clock:        hasClock
         ? { ticks: Number(v.system?.clockTicks ?? 0), max: Number(v.system?.clockMax ?? 0) }
         : null,
+      // The vow's stable id across copies: every PC's copy of a shared vow
+      // carries the same one (issue #321 U02 — a Fulfill Your Vow counts the
+      // copies as one vow). null on a vow the module has not stamped yet.
+      vowId:        v.flags?.[MODULE_ID]?.vowId ?? null,
     };
   });
 }
