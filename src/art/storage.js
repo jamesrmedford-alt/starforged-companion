@@ -82,13 +82,18 @@ export async function storeArtAsset(asset, campaignState) {
  */
 export async function loadArtAsset(assetId, campaignState = null) {
   try {
-    // Fast path: look up entry name from campaign state index
+    // Fast path: look up entry name from campaign state index — the entry it
+    // names must still hold this asset. A GM who renamed the opaque "Art: …"
+    // entry in the Art Cache folder hid the portrait for good: the name found
+    // nothing and the scan below never ran (issue #322 V25).
     if (campaignState?.artAssetIds?.[assetId]) {
       const entryName = campaignState.artAssetIds[assetId];
-      return readAssetFromEntry(game.journal?.getName(entryName));
+      const byName = readAssetFromEntry(game.journal?.getName(entryName));
+      if (byName?._id === assetId) return byName;
     }
 
-    // Slow path: scan all journal entries for this asset ID
+    // Slow path (and the fast path's fallback): scan journal entries for this
+    // asset ID — the flags a rename leaves alone.
     for (const entry of game.journal?.contents ?? []) {
       if (entry.flags?.[MODULE_ID]?.entityType === "artAsset") {
         const page = entry.pages?.contents?.[0];
