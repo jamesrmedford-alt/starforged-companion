@@ -59,6 +59,14 @@ export class SectorCreatorApp extends ApplicationV2 {
   /** Current step (1–11) */
   #step = 1;
 
+  /**
+   * True while "Create Sector" runs the creation pipeline — minutes with art
+   * and narrator stubs on. Create and Re-generate render disabled and no-op
+   * until it is released (in a finally): a second click used to start a
+   * second full creation of the same sector (issue #321 U46).
+   */
+  #busy = false;
+
   static open() {
     if (!SectorCreatorApp.#instance || SectorCreatorApp.#instance.rendered === false) {
       SectorCreatorApp.#instance = new SectorCreatorApp();
@@ -74,6 +82,7 @@ export class SectorCreatorApp extends ApplicationV2 {
       step:   this.#step,
       region: this.#region,
       sector: this.#sector,
+      busy:   this.#busy,
       mapSvg: this.#sector ? renderSectorMap(this.#sector.mapData) : null,
     };
   }
@@ -171,11 +180,11 @@ export class SectorCreatorApp extends ApplicationV2 {
           </section>
 
           <div class="sf-wizard-actions">
-            <button class="sf-btn sf-btn-secondary" data-action="rerollSector">
+            <button class="sf-btn sf-btn-secondary" data-action="rerollSector"${context.busy ? " disabled" : ""}>
               🎲 Re-generate Sector
             </button>
-            <button class="sf-btn sf-btn-primary" data-action="finalizeSector">
-              ✓ Create Sector
+            <button class="sf-btn sf-btn-primary" data-action="finalizeSector"${context.busy ? " disabled" : ""}>
+              ${context.busy ? "◈ Creating sector…" : "✓ Create Sector"}
             </button>
             <button class="sf-btn sf-btn-cancel" data-action="cancelCreator">
               Cancel
@@ -204,21 +213,31 @@ export class SectorCreatorApp extends ApplicationV2 {
   }
 
   static async #onRerollSector(_event, _target) {
-    if (!this.#region) return;
+    // A re-roll mid-creation would show a sector that is not the one being created.
+    if (!this.#region || this.#busy) return;
     this.#sector = generateSector(this.#region);
     this.render();
   }
 
   static async #onFinalizeSector(_event, _target) {
-    if (!this.#sector) return;
+    if (!this.#sector || this.#busy) return;
 
+    this.#busy = true;
+    let created = false;
     try {
+      if (this.rendered) await this.render();   // Create / Re-generate disabled while it runs
       await runSectorCreationPipeline(this.#sector);
-      this.close();
+      created = true;
     } catch (err) {
       console.error(`${MODULE_ID} | Sector creation failed:`, err);
       ui.notifications.error("Sector Creator: Failed to save sector. See console for details.");
+    } finally {
+      // Released on every path, a throw included — a guard left set would
+      // refuse every later Create in this window.
+      this.#busy = false;
     }
+    if (created) await this.close();
+    else if (this.rendered) await this.render();   // re-enabled for a retry
   }
 
   static #onCancel(_event, _target) {
@@ -230,6 +249,9 @@ export class SectorCreatorApp extends ApplicationV2 {
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED CREATION PIPELINE
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Sector creations running on this client: sector id → the run's promise.
+const creationsInFlight = new Map();
 
 /**
  * Run the full sector-creation pipeline for an already-generated sector:
@@ -243,10 +265,37 @@ export class SectorCreatorApp extends ApplicationV2 {
  * produce identical sectors, and gating tweaks apply to both. Throws on
  * pipeline failure; callers own the user-facing error surface.
  *
+ * Idempotent per sector id (issue #321 U46): a call while the same sector's
+ * creation is running joins that run, and a call for a sector already
+ * stored returns its record — neither creates a second set of Actors, a
+ * second Sector Record or a second Scene, nor pays for the art and narrator
+ * calls again. A failed run is not stored, so it can be retried.
+ *
  * @param {Object} sector — a SectorResult from generateSector()
  * @returns {Promise<Object>} the stored sector record
  */
-export async function runSectorCreationPipeline(sector) {
+export function runSectorCreationPipeline(sector) {
+  const id = sector?.id ?? null;
+  if (!id) return createSector(sector);
+  if (creationsInFlight.has(id)) return creationsInFlight.get(id);
+  const stored = findStoredSector(id);
+  if (stored) return Promise.resolve(stored);
+  const run = createSector(sector).finally(() => creationsInFlight.delete(id));
+  creationsInFlight.set(id, run);
+  return run;
+}
+
+/**
+ * The stored record for a sector id once storeSector has written it — not the
+ * bare {id, name} entry createEntityJournals registers while a run is
+ * underway (that one carries no mapData).
+ */
+function findStoredSector(id) {
+  const sectors = game.settings.get(MODULE_ID, "campaignState")?.sectors;
+  return (Array.isArray(sectors) ? sectors : []).find(s => s?.id === id && s.mapData) ?? null;
+}
+
+async function createSector(sector) {
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
 
   const artEnabled   = getSetting("sectorArtEnabled",            true);
