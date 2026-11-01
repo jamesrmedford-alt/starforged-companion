@@ -15,13 +15,15 @@
 //     ai sub-roll 28    → ai_reason 1-33 "energies corrupt" (sub-result, not main title)
 //                          main title (roll 12, 1-33) contains "Adepts"
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TRUTH_CATEGORIES } from '../../src/truths/tables.js';
 import {
   rollCategory,
+  rollWorldTruths,
   storeWorldTruths,
   formatForContext,
 } from '../../src/truths/generator.js';
+import { CampaignStateSchema } from '../../src/schemas.js';
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -237,8 +239,140 @@ describe('rollCategory — boundary rolls', () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 7. storeWorldTruths / loadWorldTruths — round-trip
+// 7. storeWorldTruths (the Playtest Quickstart's World Truths phase)
 // ---------------------------------------------------------------------------
+
+// Issue #321 U67: storeWorldTruths never set worldTruthsSet /
+// worldTruthsJournalId — only the system-dialog hooks did, and they skip a
+// journal carrying this module's flags — so every world load still said "No
+// World Truths have been established". It also found its journal by name and
+// rewrote the first page of a GM's own "World Truths" notes.
+describe('storeWorldTruths', () => {
+  const KEY = 'starforged-companion.campaignState';
+  const MODULE_ID = 'starforged-companion';
+  const savedJournal = game.journal;
+  const savedCreate  = JournalEntry.create;
+
+  /** A journal collection holding `docs`, with JournalEntry.create adding to it. */
+  function journalWorld(docs = []) {
+    const created = [];
+    game.journal = {
+      get:      (id) => docs.find(d => d.id === id) ?? null,
+      getName:  (name) => docs.find(d => d.name === name) ?? null,
+      contents: docs,
+    };
+    JournalEntry.create = async (data) => {
+      const entry = makeJournal(`j-new-${created.length + 1}`, data.name, data.flags ?? {}, []);
+      docs.push(entry);
+      created.push(entry);
+      return entry;
+    };
+    return { created };
+  }
+
+  function makeJournal(id, name, flags, pages) {
+    const entry = {
+      id, name, flags, pages: { contents: pages },
+      createEmbeddedDocuments: async (_type, data) => {
+        const made = data.map((d, i) => makePage(`${id}-p${pages.length + i}`, d.name, d.text?.content ?? '', d.flags ?? {}));
+        pages.push(...made);
+        return made;
+      },
+    };
+    return entry;
+  }
+
+  function makePage(id, name, content, flags) {
+    const page = {
+      id, name, flags, text: { content },
+      update: async (changes) => {
+        if (changes['text.content'] !== undefined) page.text.content = changes['text.content'];
+        if (changes.flags) page.flags = changes.flags;
+        return page;
+      },
+    };
+    return page;
+  }
+
+  beforeEach(() => {
+    game.settings._store.set(KEY, JSON.parse(JSON.stringify(CampaignStateSchema)));
+  });
+  afterEach(() => {
+    game.journal = savedJournal;
+    JournalEntry.create = savedCreate;
+  });
+
+  it('records the truths as established: worldTruthsSet and worldTruthsJournalId alongside worldTruths', async () => {
+    journalWorld();
+    const campaignState = game.settings.get(MODULE_ID, 'campaignState');
+    const journal = await storeWorldTruths(rollWorldTruths(), campaignState);
+
+    const stored = game.settings._store.get(KEY);
+    expect(Object.keys(stored.worldTruths)).toHaveLength(14);
+    expect(journal?.id).toBeTruthy();
+    expect(stored.worldTruthsSet).toBe(true);
+    expect(stored.worldTruthsJournalId).toBe(journal.id);
+  });
+
+  it('a GM journal named "World Truths" (no module flag) keeps its content — the module writes its own', async () => {
+    const gmNotes = makePage('p-gm', 'My setting notes', "<p>The GM's own truths, written by hand.</p>", {});
+    const gmJournal = makeJournal('j-gm-notes', 'World Truths', {}, [gmNotes]);
+    const { created } = journalWorld([gmJournal]);
+
+    const journal = await storeWorldTruths(rollWorldTruths(), game.settings.get(MODULE_ID, 'campaignState'));
+    expect(gmNotes.text.content).toBe("<p>The GM's own truths, written by hand.</p>");
+    expect(created).toHaveLength(1);
+    expect(journal).toBe(created[0]);
+    expect(game.settings._store.get(KEY).worldTruthsJournalId).toBe(created[0].id);
+  });
+
+  it('a second run rewrites the module\'s own journal — found by the recorded id, though the GM renamed it — and keeps its other pages', async () => {
+    const { created } = journalWorld();
+    const first = await storeWorldTruths(rollWorldTruths(), game.settings.get(MODULE_ID, 'campaignState'));
+    await first.createEmbeddedDocuments('JournalEntryPage', [{ name: 'The Story So Far', text: { content: '<p>Lore.</p>' } }]);
+    first.name = 'Our Setting';
+
+    const again = rollWorldTruths();
+    const second = await storeWorldTruths(again, game.settings.get(MODULE_ID, 'campaignState'));
+    expect(second).toBe(first);
+    expect(created).toHaveLength(1);
+    const [truthsPage, lorePage] = first.pages.contents;
+    expect(truthsPage.flags[MODULE_ID].worldTruths).toBe(again);
+    expect(truthsPage.text.content).toContain(again.cataclysm.title);
+    expect(lorePage.text.content).toBe('<p>Lore.</p>');
+  });
+
+  it('found by its flag when the recorded id names another journal; a lost truths page is re-created, never written over the lore page', async () => {
+    const lore = makePage('p-lore', 'The Story So Far', '<p>Lore.</p>', {});
+    const ours = makeJournal('j-ours', 'World Truths', { [MODULE_ID]: { entityType: 'worldTruths' } }, [lore]);
+    const systemTruths = makeJournal('j-system', 'Setting Truths', {}, [makePage('p-sys', 'Setting Truths', '<h2>Cataclysm</h2><h2>Exodus</h2>', {})]);
+    const { created } = journalWorld([systemTruths, ours]);
+    game.settings._store.set(KEY, { ...game.settings._store.get(KEY), worldTruthsSet: true, worldTruthsJournalId: 'j-system' });
+
+    const truthSet = rollWorldTruths();
+    const journal = await storeWorldTruths(truthSet, game.settings.get(MODULE_ID, 'campaignState'));
+    expect(journal).toBe(ours);
+    expect(created).toHaveLength(0);
+    expect(lore.text.content).toBe('<p>Lore.</p>');
+    expect(ours.pages.contents.map(p => p.name)).toEqual(['The Story So Far', 'World Truths']);
+    expect(ours.pages.contents[1].flags[MODULE_ID].worldTruths).toBe(truthSet);
+    expect(systemTruths.pages.contents[0].text.content).toBe('<h2>Cataclysm</h2><h2>Exodus</h2>');
+    expect(game.settings._store.get(KEY).worldTruthsJournalId).toBe('j-ours');
+  });
+
+  it('writes only the truths fields — a write that lands while the journal is created is kept', async () => {
+    journalWorld();
+    const create = JournalEntry.create;
+    JournalEntry.create = async (data) => {
+      const latest = game.settings.get(MODULE_ID, 'campaignState');
+      await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardActive: true });   // an X-Card relayed meanwhile
+      return create(data);
+    };
+    const snapshot = { ...game.settings.get(MODULE_ID, 'campaignState') };
+    await storeWorldTruths(rollWorldTruths(), snapshot);
+    expect(game.settings._store.get(KEY)).toMatchObject({ xCardActive: true, worldTruthsSet: true });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // 8. hasTruths
