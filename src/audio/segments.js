@@ -26,9 +26,16 @@ export const SEGMENT_VOICE = Object.freeze({
 });
 
 const NPC_TAG_RE = /<npc>([\s\S]*?)<\/npc>/gi;
+// Half a pair — an opening tag the model never closed (a reply cut off
+// mid-line), or a stray closing tag. Matched pairs go first; what is left of a
+// tag is removed. It showed as literal text on the card and was read aloud
+// (issue #322 V17).
+const STRAY_TAG_RE = /<\/?npc\s*>/gi;
 
 /**
- * Split narrator prose into a sequence of voice-tagged segments.
+ * Split narrator prose into a sequence of voice-tagged segments. Text after
+ * an opening tag that is never closed is an NPC segment; a stray closing tag
+ * is dropped — no tag text reaches the TTS engine.
  *
  * @param {string} prose — narrator prose with optional `<npc>…</npc>` markup
  * @returns {Array<{ voice: string, text: string }>}
@@ -63,22 +70,32 @@ export function splitSegments(prose) {
 
   if (cursor < text.length) {
     const trailing = text.slice(cursor);
-    if (trailing.trim().length > 0) {
-      segments.push({ voice: SEGMENT_VOICE.NARRATOR, text: trailing });
+    // An unclosed opening tag: what follows it is the NPC's line, cut short.
+    const open = /<npc\s*>/i.exec(trailing);
+    const narratorPart = (open ? trailing.slice(0, open.index) : trailing).replace(STRAY_TAG_RE, "");
+    if (narratorPart.trim().length > 0) {
+      segments.push({ voice: SEGMENT_VOICE.NARRATOR, text: narratorPart });
+    }
+    if (open) {
+      const npcPart = trailing.slice(open.index + open[0].length).replace(STRAY_TAG_RE, "");
+      if (npcPart.trim().length > 0) segments.push({ voice: SEGMENT_VOICE.NPC, text: npcPart });
     }
   }
 
-  return segments;
+  // A stray closing tag in a leading narrator stretch is dropped too.
+  for (const seg of segments) seg.text = seg.text.replace(STRAY_TAG_RE, "");
+  return segments.filter(seg => seg.text.trim().length > 0);
 }
 
 /**
  * Remove `<npc>…</npc>` markers from prose for chat display while
- * preserving the inner text verbatim. Idempotent.
+ * preserving the inner text verbatim — and half a pair (an unclosed opening
+ * tag, a stray closing one) too. Idempotent.
  *
  * @param {string} prose
  * @returns {string}
  */
 export function stripMarkup(prose) {
   if (typeof prose !== "string") return "";
-  return prose.replace(new RegExp(NPC_TAG_RE.source, "gi"), "$1");
+  return prose.replace(new RegExp(NPC_TAG_RE.source, "gi"), "$1").replace(STRAY_TAG_RE, "");
 }
