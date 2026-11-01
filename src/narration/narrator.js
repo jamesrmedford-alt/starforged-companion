@@ -1691,6 +1691,12 @@ export async function narrateOracleFollowup({
     return null;
   }
 
+  // Its sidecar writes truths, state and the frame: they belong to a scene
+  // (issue #321 U34 — NARR-INCITING-SCENE on every sidecar-writing path).
+  // Written under no scene, the next move's scene start ended them as a
+  // phantom scene, discarding the state and the frame.
+  await ensureSceneStarted(campaignState, 'oracle_followup');
+
   const character = getActiveCharacter(campaignState, speakerActorId);
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
@@ -1828,6 +1834,9 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
+  // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
+  await ensureSceneStarted(campaignState, 'session_vignette');
+
   const character = getActiveCharacter(campaignState);
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1888,6 +1897,9 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
+
+  // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
+  await ensureSceneStarted(campaignState, 'clock_vignette');
 
   const character = getActiveCharacter(campaignState);
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
@@ -1985,6 +1997,9 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
 
   const apiKey = getApiKey();
   if (!apiKey) return null;
+
+  // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
+  await ensureSceneStarted(campaignState, 'vow_swearing');
 
   const character    = getActiveCharacter(campaignState, speakerActorId);
   const ironTruth    = getTruth(campaignState, 'iron');
