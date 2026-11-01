@@ -11,6 +11,7 @@ import {
   buildSharedStorySections,
   buildPacedNarrativeUserMessage,
   formatEntityCard,
+  formatSettlementPlanet,
   sanitizePlayerText,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
@@ -2716,6 +2717,11 @@ export function formatActiveSector(campaignState) {
         const bits = [];
         if (s.authority) bits.push(`Authority: ${s.authority}`);
         if (s.trouble)   bits.push(`Trouble: ${s.trouble}`);
+        // The world and star pinned beside it on the sector map — rolled at
+        // creation, no entity of their own (issue #321 U51).
+        const planet = formatSettlementPlanet(s.planet);
+        if (planet)      bits.push(`Planet: ${planet}`);
+        if (s.stellar)   bits.push(`Stellar object: ${s.stellar}`);
         return `- ${s.name}${bits.length ? ` (${bits.join('; ')})` : ''}`;
       });
   } catch (err) {

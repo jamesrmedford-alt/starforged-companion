@@ -16,6 +16,7 @@ import {
   buildSceneUserMessage,
   resolveNarrationPerspective,
   formatEntityCard,
+  formatSettlementPlanet,
   formatOracleSeedsBlock,
   formatRecentOraclesBlock,
   formatActiveThreatsBlock,
@@ -816,6 +817,40 @@ describe('formatEntityCard', () => {
     }), 'connection');
     expect(card).not.toContain('Now canonical');
     expect(card).toContain('Still soft');
+  });
+});
+
+// Issue #321 U51: the sector generator rolls a planet (and a star) beside each
+// settlement and pins them on the map; the settlement card never showed them.
+describe('formatEntityCard — a sector settlement\'s planet and star', () => {
+  const settlement = (over = {}) => ({
+    name: 'Bleakhold', location: 'Orbital', population: 'Thousands', authority: 'Corrupt',
+    planet: { type: 'Desert World', name: 'Vorn Prime' }, stellar: 'Red star',
+    generativeTier: [], canonicalLocked: true, ...over,
+  });
+
+  it('shows the rolled planet as "Name (Type)" and the stellar object', () => {
+    const card = formatEntityCard(settlement(), 'settlement');
+    expect(card).toContain('  Planet: Vorn Prime (Desert World)');
+    expect(card).toContain('  Stellar object: Red star');
+    expect(card).not.toContain('[object Object]');
+  });
+
+  it('omits the Planet line for a deep-space settlement (no planet rolled)', () => {
+    const card = formatEntityCard(settlement({ location: 'Deep Space', planet: null }), 'settlement');
+    expect(card).not.toContain('Planet:');
+    expect(card).toContain('  Stellar object: Red star');
+  });
+});
+
+describe('formatSettlementPlanet', () => {
+  it('renders a rolled planet record, a bare string, and nothing', () => {
+    expect(formatSettlementPlanet({ type: 'Ice World', name: 'Caul Deep' })).toBe('Caul Deep (Ice World)');
+    expect(formatSettlementPlanet({ name: 'Caul Deep' })).toBe('Caul Deep');
+    expect(formatSettlementPlanet({ type: 'Ice World' })).toBe('Ice World');
+    expect(formatSettlementPlanet('Caul Deep')).toBe('Caul Deep');
+    expect(formatSettlementPlanet(null)).toBe('');
+    expect(formatSettlementPlanet({})).toBe('');
   });
 });
 

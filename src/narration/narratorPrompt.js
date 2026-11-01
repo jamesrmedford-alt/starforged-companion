@@ -735,6 +735,10 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['authority',  'Authority'],
     ['firstLook',  'First look'],
     ['initialContact', 'Initial contact'],
+    // The world and star the sector generator rolled and pinned beside the
+    // settlement on the map (issue #321 U51 — stored, never shown).
+    ['planet',     'Planet', formatSettlementPlanet],
+    ['stellar',    'Stellar object'],
     ['description','Description'],
     ['notes',      'Notes'],
   ],
@@ -792,6 +796,23 @@ function formatLastKnown(lastKnown) {
     out.push(`  ${attr}: ${value}${entry.sessionNum ? ` (Session ${entry.sessionNum})` : ''}`);
   }
   return out;
+}
+
+/**
+ * A settlement's rolled planet as narrator text — "Vorn Prime (Desert World)".
+ * The sector generator rolls one per orbital / planetside settlement and keeps
+ * it on the settlement's record as `{ name, type }` (no planet entity exists),
+ * so the settlement card and the active sector's roster both render it here.
+ *
+ * @param {{name?: string, type?: string}|string|null} planet
+ * @returns {string} '' when there is none
+ */
+export function formatSettlementPlanet(planet) {
+  if (!planet) return '';
+  if (typeof planet !== 'object') return String(planet).trim();
+  const name = String(planet.name ?? '').trim();
+  const type = String(planet.type ?? '').trim();
+  return name && type ? `${name} (${type})` : (name || type);
 }
 
 /** Generative-tier lines an entity card shows, and how many of them are held for traits. */
@@ -878,8 +899,8 @@ export function formatEntityCard(entity, entityType) {
 
   const fields = CANONICAL_FIELDS_BY_TYPE[entityType] ?? [['description', 'Description']];
   const shown  = new Set();   // a value two fields share (a goal also stored as the motivation) shows once
-  for (const [key, label] of fields) {
-    const value = entity[key];
+  for (const [key, label, format] of fields) {
+    const value = format ? format(entity[key]) : entity[key];
     if (value === undefined || value === null || value === '') continue;
     const text = Array.isArray(value) ? value.join(', ') : String(value);
     if (!text || shown.has(text)) continue;
