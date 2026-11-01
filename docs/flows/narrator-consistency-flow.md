@@ -37,7 +37,8 @@ The audit prompt (`buildAuditPrompt`) compares prose against the FULL
 ledger block (`buildLedgerBlock` at `maxTokens: Infinity`) — SCENE FRAME,
 RECORDED IDENTITIES (PC + matched-NPC pronouns, 2026-07), TRUTHS, RETRACTED
 FACTS (this scene's strikes and, since issue #286 B6, the session's earlier
-scenes'), STATE, SHIP POSITION — via one Haiku call (`claude-haiku-4-5`,
+scenes' — never a truth the X-Card retracted, which `sessionRetractedFacts`
+leaves out so the removed content is not handed back; issue #321 U07), STATE, SHIP POSITION — via one Haiku call (`claude-haiku-4-5`,
 `max_tokens: 1000` since 2026-07, with a `stop_reason` truncation warning,
 through `api-proxy.js`). Response kinds: `truth | state
 | frame | ship | retraction | identity`, each with confidence high/medium/
@@ -69,7 +70,18 @@ longer special-cases them).
   (`openCorrectionDialog`), scoped to the card's matched entities + current
   location: in-scope truths get Strike / Replace, state entries get Strike
   / Set. Strikes now feed the CORRECTED do-not-re-assert block and the
-  write-layer re-assertion guard (2026-07).
+  write-layer re-assertion guard (2026-07). The dialog holds no
+  campaignState: each row action reads the store as it is at the click (a
+  Replace once its prompt closes), applies to a copy and persists only the
+  ledger field it changed onto the latest store (`persistSceneLedgerFields`),
+  a Strike's or Replace's regen mark on the stored rolling summary riding the
+  same write (`onto` → `markSummaryForRegen`); a cancelled prompt or a row
+  that no longer matches writes nothing. Each click used to write the
+  snapshot read when the dialog opened, reverting an X-Card, the next
+  narration's truths or a released move lock (issue #321 U06e). The row
+  buttons attach on the dialog's `render` event (`dlg.addEventListener`), the
+  hook Foundry v13's DialogV2 offers — Strike and Replace closed the dialog
+  instead (issue #321 U38).
 - **Medium/low-confidence** results are telemetry-only — logged to the
   Pacing Telemetry journal's Consistency Check page
   (`logConsistencyDecision`, GM-gated, fail-open) and never shown to the GM.
@@ -81,7 +93,12 @@ longer special-cases them).
   `factContinuity.command` → `applyFactContinuityCommand`), which resolves
   the subject against the full entity roster, applies the strike / set with
   the **requester's** permissions (`ctx.requesterIsGM` — a player cannot
-  strike a GM-asserted truth), persists, and posts the result card. Before
+  strike a GM-asserted truth) to a copy of the store, persists only the
+  ledger field it changed onto the store as it is then
+  (`persistSceneLedgerFields`; a Strike's summary regen mark in the same
+  write) — it wrote its whole read back after a Strike's propagation awaits,
+  reverting what landed meanwhile (issue #321 U06b); a command that matches
+  nothing writes nothing — and posts the result card. Before
   the 2026-10 audit the command ran on every client, so a player's correction
   only landed via the GM client's re-run — with GM permissions.
 - The **WJ lore-contradiction path** (detection pass, `entryType: "lore"`)

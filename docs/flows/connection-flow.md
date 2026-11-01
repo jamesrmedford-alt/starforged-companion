@@ -40,19 +40,42 @@ final `storeSector` write.
   `routeEntityDrafts` auto-creates the first connection draft
   (`buildConnectionSeedData` → `createConnection` → silent portrait →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
-  Item).
+  Item — on the roller's PC: the narration's `actorId` rides
+  `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts`).
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
-  #302), Dismiss records the name in `dismissedEntities`.
-  Placeholder-name reveals rename in place rather than duplicating.
+  #302), Dismiss records the name in `dismissedEntities`. The card carries the
+  PC its narration was for (flag `actorId`, stamped by every detection path
+  that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
+  the bond Item on that PC (issue #321 U23). Each Confirm / Dismiss writes its
+  own row's status, one write at a time per card, on the live card
+  (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
+  meanwhile — and Confirm creates nothing when an entity of that name and
+  type already exists (`entityExistsForName`; issue #321 U25).
+  Placeholder-name reveals rename in place rather than duplicating; a reveal
+  whose `from` names no recorded placeholder connection drafts the newly
+  named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
+  U27).
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
-  the connection and stamps `linkedConnectionName` on the shared vow items).
+  the connection, a bond Item on every PC who swore the vow — issue #321 U23 —
+  and stamps `linkedConnectionName` on the shared vow items).
 - **Manual sidebar creation** — `createActor` hook + `autoSeedConnection`
   setting → `seedConnectionActor` rolls role/goal/first-look/disposition,
   writes biography/notes/pronouns, fires a silent portrait.
+
+`registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
+bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
+when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it
+used to go to the first PC whoever rolled (issue #321 U23). One portrait per
+new card: with Auto-Seed NPC on, the `createActor` seed hook owns a new
+connection card's portrait (from the creator's `portraitSourceDescription`)
+and the creator's `postCreationEnrichment` skips it (`seedHookOwnsPortrait`);
+with it off, the creator generates it — both used to, billing OpenRouter twice
+(issue #321 U29). Portraits are generated on a GM's client only (`decisions.md`
+→ "Portrait generation").
 
 ## 2. Develop (relationship progress)
 
@@ -70,7 +93,11 @@ final `storeSector` write.
   / weak 1) and a match-on-hit raises the connection's rank (`nextRank`,
   clamped at epic), mirrored onto the bond Items by the record's `_id`
   (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
-  silently no-ops.
+  silently no-ops. `selectConnection`'s `strict` option is for an
+  irreversible write (`!sever`): a name that matches no connection exactly or
+  by substring resolves nothing, and an unnamed target resolves only when
+  exactly one connection is active — never the sole-bonded fallback (issue
+  #321 U14).
 - **`!bond [rank] [name]`** — the bonded develop roll
   (`src/moves/bondCommand.js`). `handleBondCommand` runs once, on the
   typist's client (chat routing `RUN_ON.AUTHOR`): it resolves the **named**
@@ -129,7 +156,12 @@ their request in the fiction) the pipeline branch flips the record
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
-BOND-NATIVE-FORGE fix). There the bonds legacy is written at once
+BOND-NATIVE-FORGE fix), and is narrated by the native progress-roll hook where
+a Claude key lives (`vow-flow.md` §4, issue #321 U11). Both hooks classify the
+sheet roll through one subtype lookup (`nativeProgressSubtypeLookup`,
+`src/index.js`), which takes the vendor's `bond` subtype as a connection — the
+narration hook accepted only `connection`, so a forge rolled on the sheet's
+Connections tab was paid but never narrated (issue #321 U21). There the bonds legacy is written at once
 (`writeLegacyTicks`, its box XP only after the write lands); a refused write
 leaves the forge card saying the legacy is "not yet marked" and whispers the
 GMs a payoff failure card with a Retry (issue #306 R04). A PC's box XP that
@@ -168,7 +200,8 @@ Live surfaces: **entity cards** ("ENTITIES IN SCENE" — the record via
 (C5) the card shows the rolled `goal` beside the `motivation`, a lost
 (`active:false`) or forged (`bonded`) bond, and the last three `history`
 events (`forgeBond`, `loseConnection`); CHARACTER STATE shows each bond's
-progress. `background` and `secrets` have no production writer, so neither
+progress and its rank by name (`readConnections` maps the vendor's numeric
+rank through `rankName` — issue #321 U62). `background` and `secrets` have no production writer, so neither
 renders. The legacy
 "ACTIVE CONNECTIONS" assembler section still reads `game.journal.get(id)` and
 finds nothing for actor-hosted connections (kept for backwards
@@ -209,7 +242,11 @@ summary lives in the `known-issues.md` table and the code.
   lives on `relationshipTicks`, mirrored to bond Items).
 - ~~No severance flow / dead flag togglers~~ — **addressed**: new GM
   **`!sever <name>`** command routes through `loseConnection` (record kept
-  inactive, history entry, table card); the uncalled `setAllyFlag` /
+  inactive, history entry, table card). It resolves strictly
+  (`selectConnection(…, { strict: true })`: exact or substring name; bare
+  only while one connection is active) — a misspelled name, or a bare
+  `!sever` with several active, severed the table's sole bonded connection
+  (issue #321 U14). The uncalled `setAllyFlag` /
   `setSceneRelevant` / `clearAllSceneFlags` were removed (superseded by the
   relevance resolver).
 - ~~`relationshipTicks` undeclared~~ — **declared** in `ConnectionSchema`.

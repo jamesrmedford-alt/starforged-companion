@@ -45,8 +45,12 @@ Two reveal paths, both funnelling through `revealSectorSite`
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
    creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
    (`selectSectorSite`: exact → substring → type-keyword-when-unique →
-   sole-undiscovered, each rung over every sector before the next, the
-   guesses scoped to the active sector first — issue #300 F07). The reveal mutates the in-memory campaignState so the
+   sole-undiscovered, each rung over every sector before the next — issue
+   #300 F07 — the active sector first on every rung, since generated names
+   repeat across sectors — issue #321 U48). The link, or an exact name,
+   resolves to that site or to nothing once it no longer qualifies (charted
+   / cleared), never a sibling a looser rung finds ("…II" contains "…I"); a
+   link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
    keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
 2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder.
@@ -54,7 +58,11 @@ Two reveal paths, both funnelling through `revealSectorSite`
 Revealing flips `discovered`, sets the location Actor `status: "visited"`,
 restyles the scene pin + passage to charted appearance, persists, and posts
 the **◈ Site Discovered** card ("undertake an expedition there, or Explore
-a Waypoint to move through its zones").
+a Waypoint to move through its zones"). The persist (`persistSiteFlag`) sets
+the flag on a copy of the state as it is after the Actor and scene awaits —
+`!reveal-site` and `!clear-site` used to write back the state read before
+them, reverting an X-Card, Take a Break or `!bond` relayed meanwhile (issue
+#321 U06c); a site no longer stored writes nothing.
 
 ## 3. Audit defects — all resolved (v1.7.30 cycle)
 
