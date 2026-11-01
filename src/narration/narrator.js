@@ -708,7 +708,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
-    await runPostNarrationPasses(narration, resolution, relevance, campaignState);
+    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null });
     scheduleChronicleEntry({
       narrationText: narration,
       campaignState,
@@ -739,7 +739,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
-          await runPostNarrationPasses(narration, resolution, relevance, campaignState);
+          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null });
           scheduleChronicleEntry({
             narrationText: narration,
             campaignState,
@@ -780,9 +780,13 @@ const ASYNC_DETECTION_DELAY_MS = 2000;
  *       → ASYNCHRONOUS generative-tier update
  *   - embellishment / no relevant outcome
  *       → no pass
+ *
+ * `actorId` is the PC the narration was for (the roller): a connection it
+ * creates — or a draft card's Confirm — puts the bond Item on their sheet,
+ * not the first PC's (issue #321 U23).
  */
 export function runPostNarrationPasses(
-  narrationText, resolution, relevance, campaignState,
+  narrationText, resolution, relevance, campaignState, { actorId = null } = {},
 ) {
   if (!resolution || !relevance) return Promise.resolve();
 
@@ -817,13 +821,14 @@ export function runPostNarrationPasses(
         {
           autoCreateConnection: true,
           connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
+          actorId,
         },
       );
     }
 
     // Other discovery-class moves — async ~2 s, fire and forget.
     setTimeout(() => {
-      runDiscoveryDetection(narrationText, resolution, campaignState, {})
+      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId })
         .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
     }, ASYNC_DETECTION_DELAY_MS);
     return Promise.resolve();
@@ -835,7 +840,7 @@ export function runPostNarrationPasses(
   // auto-created).
   if (cls === 'interaction') {
     setTimeout(() => {
-      runDiscoveryDetection(narrationText, resolution, campaignState, {})
+      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId })
         .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
     }, ASYNC_DETECTION_DELAY_MS);
   }
@@ -875,6 +880,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
+      actorId:              options.actorId ?? null,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runDiscoveryDetection failed:`, err);
@@ -1554,7 +1560,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     }
 
     await postSceneCard(question, response, sessionId, character?.name ?? null);
-    scheduleSceneAnswerCapture(response, extras, campaignState);
+    scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
     return response;
 
   } catch (err) {
@@ -1576,7 +1582,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
         });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId, character?.name ?? null);
-          scheduleSceneAnswerCapture(response, extras, campaignState);
+          scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
           return response;
         }
       } catch (retryErr) {
@@ -1607,10 +1613,11 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * @param {string} response — the answer's prose
  * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
  * @param {Object} campaignState
+ * @param {string|null} [actorId] — the asking PC, stamped on any draft card (issue #321 U23)
  */
-function scheduleSceneAnswerCapture(response, extras, campaignState) {
+function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null) {
   if (!isCanonicalGM()) return;
-  schedulePacedDetection(response, campaignState);
+  schedulePacedDetection(response, campaignState, { actorId });
   schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
 }
 
@@ -1698,7 +1705,7 @@ export async function narrateOracleFollowup({
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId });
     // The narration of a roll the table made — discovery by nature (#286 D4).
-    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup' });
+    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -1714,7 +1721,7 @@ export async function narrateOracleFollowup({
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId });
-          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup' });
+          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
           return text;
         }
       } catch (retryErr) {
@@ -1944,10 +1951,14 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
  * caller; returns null (silently) when narration or the vow-scene toggle is off,
  * no API key, X-Card active, or the call fails. Never blocks vow creation.
  *
- * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object }} args
+ * The scene is written for the PC who swore (`speakerActorId`, the roller —
+ * issue #321 U23), as the move narration before it is.
+ *
+ * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object,
+ *           speakerActorId?: string|null }} args
  * @returns {Promise<string|null>}
  */
-export async function narrateVowSwearing({ vow, campaignState }) {
+export async function narrateVowSwearing({ vow, campaignState, speakerActorId = null }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   let vowSceneOn = true;
@@ -1960,7 +1971,7 @@ export async function narrateVowSwearing({ vow, campaignState }) {
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
-  const character    = getActiveCharacter(campaignState);
+  const character    = getActiveCharacter(campaignState, speakerActorId);
   const ironTruth    = getTruth(campaignState, 'iron');
   const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
@@ -1996,11 +2007,12 @@ export async function narrateVowSwearing({ vow, campaignState }) {
  * the Swear an Iron Vow move). Safe to call from any client — narrateVowSwearing
  * only produces text on the canonical GM path with a key; callers are GM-gated.
  *
- * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object }} args
+ * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object,
+ *           speakerActorId?: string|null }} args — `speakerActorId`: the PC who swore
  * @returns {Promise<string|null>}
  */
-export async function narrateAndPostVowSwearing({ vow, campaignState }) {
-  const text = await narrateVowSwearing({ vow, campaignState });
+export async function narrateAndPostVowSwearing({ vow, campaignState, speakerActorId = null }) {
+  const text = await narrateVowSwearing({ vow, campaignState, speakerActorId });
   if (!text) return null;
   const clean = stripMarkup(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2165,7 +2177,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove);
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null);
-    schedulePacedDetection(text, campaignState);
+    schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
       narrationText: text,
@@ -2190,7 +2202,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         if (text?.trim()) {
           const buttonMove = reconcileSuggestedMove(text, suggestedMove);
           await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null);
-          schedulePacedDetection(text, campaignState);
+          schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
             narrationText: text,
@@ -2216,10 +2228,12 @@ export async function narratePacedInput(playerText, campaignState, options = {})
  *
  * @param {string} narrationText
  * @param {Object} campaignState
+ * @param {{ actorId?: string|null }} [options] — the PC the narration was for;
+ *   the draft card carries it, so Confirm puts a connection's bond Item on them
  */
-export function schedulePacedDetection(narrationText, campaignState) {
+export function schedulePacedDetection(narrationText, campaignState, { actorId = null } = {}) {
   setTimeout(() => {
-    runPacedDetection(narrationText, campaignState)
+    runPacedDetection(narrationText, campaignState, { actorId })
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
@@ -2262,7 +2276,8 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ skipLore?: boolean, source?: string }} [options] — `source` labels the draft card (default "paced_narrative")
+ * @param {{ skipLore?: boolean, source?: string, actorId?: string|null }} [options] — `source` labels the draft card
+ *   (default "paced_narrative"); `actorId`, the PC the narration was for, rides it to Confirm
  * @returns {Promise<void>}
  */
 export async function runPacedDetection(narrationText, campaignState, options = {}) {
@@ -2288,6 +2303,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
       autoCreateConnection: false,
       sessionId:            campaignState?.currentSessionId ?? '',
       source:               options.source ?? 'paced_narrative',
+      actorId:              options.actorId ?? null,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runPacedDetection failed:`, err);
@@ -2306,12 +2322,12 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ detect?: boolean, source?: string }} [opts]
+ * @param {{ detect?: boolean, source?: string, actorId?: string|null }} [opts]
  */
-function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source } = {}) {
+function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source, actorId = null } = {}) {
   if (!narrationText?.trim() || !isCanonicalGM()) return;
   setTimeout(() => {
-    if (detect) runPacedDetection(narrationText, campaignState, { source });
+    if (detect) runPacedDetection(narrationText, campaignState, { source, actorId });
     runNarrationTierUpdate(narrationText, campaignState);
   }, ASYNC_DETECTION_DELAY_MS);
 }

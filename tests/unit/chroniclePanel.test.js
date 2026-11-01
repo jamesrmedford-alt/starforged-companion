@@ -12,9 +12,9 @@
  * tests/helpers/cardDom.js) and its action handlers.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { addChronicleEntry, getChronicleEntries } from '../../src/character/chronicle.js';
-import { ChroniclePanelApp } from '../../src/character/chroniclePanel.js';
+import { ChroniclePanelApp, openChroniclePanel } from '../../src/character/chroniclePanel.js';
 import { StubElement, StubEvent, setListenerResultSink } from '../helpers/cardDom.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -125,5 +125,38 @@ describe('Chronicle panel actions keep entries written after the panel opened (i
     await action('deleteEntry', panel, original.id);
     await action('togglePin', panel, original.id);
     expect(await texts()).toEqual(['New automatic beat.']);
+  });
+});
+
+// Issue #321 U23 — the toolbar opened the first PC's Chronicle for every
+// player not bound to a character (`game.user.character ?? getPlayerActors()[0]`).
+describe("the toolbar opens the viewer's own PC's Chronicle", () => {
+  let opened;
+  beforeEach(() => {
+    opened = [];
+    vi.spyOn(ChroniclePanelApp.prototype, 'render').mockImplementation(function () { opened.push(this.actorId); });
+    game.actors._setAll([
+      makeTestActor({ id: 'pc-1',   name: 'Kira', ownership: { 'pl-2': 3 } }),   // the first PC
+      makeTestActor({ id: 'pc-ren', name: 'Ren',  ownership: { 'pl-1': 3 } }),
+    ]);
+  });
+
+  it("an unbound player who owns Ren opens Ren's, not the first PC's", () => {
+    game.user = { id: 'pl-1', isGM: false, active: true, character: null };
+    openChroniclePanel();
+    expect(opened).toEqual(['pc-ren']);
+  });
+
+  it("a player with no PC of their own is told so, and opens no one else's", () => {
+    game.user = { id: 'pl-9', isGM: false, active: true, character: null };
+    const warn = vi.spyOn(ui.notifications, 'warn');
+    openChroniclePanel();
+    expect(opened).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/No player character found/));
+  });
+
+  it("control: the GM with no bound PC opens the first PC's", () => {
+    openChroniclePanel();   // game.user is the setup's GM
+    expect(opened).toEqual(['pc-1']);
   });
 });

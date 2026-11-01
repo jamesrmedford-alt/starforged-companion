@@ -34,7 +34,8 @@ import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
 import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
-import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
 import { getShip,       createShip }       from "./ship.js";
@@ -521,6 +522,9 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
  *   anything else / omitted is treated as "move_resolution" (default).
+ * @param {string|null} [options.actorId] — the PC the narration was for (the
+ *   roller): an auto-created connection's bond Item goes to them, and the
+ *   draft card carries it so Confirm does too (issue #321 U23).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
@@ -558,7 +562,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           firstAppearance:           options.sessionId ?? "",
         }, campaignState);
         await postCreationEnrichment("connection", record, campaignState);
-        await registerConnectionOnActiveCharacter(record).catch(err =>
+        await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
@@ -592,7 +596,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source });
+    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId });
   }
 
   return { created, queued };
@@ -1554,6 +1558,9 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // detection is firing and what the GM does with those drafts without
   // adding an explicit UI.
   const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
+  // The PC the narration was for: a confirmed connection's bond Item goes to
+  // them (confirmDraft), not the first PC (issue #321 U23).
+  const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
 
   try {
     return await ChatMessage.create({
@@ -1564,6 +1571,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           draftEntityCard: true,
           drafts,
           source,
+          ...(actorId ? { actorId } : {}),
         },
       },
     });
@@ -1737,7 +1745,9 @@ async function confirmDraft(message, draftIndex) {
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
-      await registerConnectionOnActiveCharacter(record).catch(err =>
+      await registerConnectionOnActiveCharacter(record, {
+        actorId: message?.flags?.[MODULE_ID]?.actorId ?? null,
+      }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
@@ -2128,22 +2138,46 @@ function escapeHtml(s) {
 }
 
 /**
- * Register a confirmed Connection on the active character Actor as an
- * ironsworn `progress` Item with subtype "bond". This is what makes the
- * Connection appear under the character sheet's Connections tab with its
- * own progress track — mirroring what the system's built-in "+ Connection"
- * button does. With no active character (sector seeding, multi-PC setups
- * with no obvious target), this is a no-op.
+ * Register a confirmed Connection on a character Actor as an ironsworn
+ * `progress` Item with subtype "bond". This is what makes the Connection
+ * appear under the character sheet's Connections tab with its own progress
+ * track — mirroring what the system's built-in "+ Connection" button does.
+ *
+ * The bond goes to the roller / owner, never simply the first PC (issue #321
+ * U23 — Ren's new connection used to land on Kira's sheet):
+ *   - `actors`  — each of these PCs (the shared inciting vow's target: the
+ *                 whole crew swore the vow, so each holds the connection);
+ *   - `actorId` — the PC the narration was for (the roller), when it is a PC;
+ *   - otherwise the acting user's own PC (resolveUserActorId: User#character
+ *     → an owned PC → the first PC only for a GM or in solo play).
+ * With no PC to hold it, this is a no-op. Idempotent per actor and
+ * connection (createCharacterBondItem).
+ *
+ * @param {Object} record — the connection record (`_id`, `name`, `rank`)
+ * @param {{ actorId?: string|null, actors?: Actor[]|null }} [target]
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null } = {}) {
   if (!record?._id) return;
-  const actors = getPlayerActors();
-  const actor = actors?.[0];
-  if (!actor) return;
-  await createCharacterBondItem(actor, {
-    name:         record.name,
-    rank:         record.rank,
-    connectionId: record._id,
-  });
+  const holders = Array.isArray(actors)
+    ? actors.filter(isPlayerCharacterActor)
+    : [bondHolderActor(actorId)].filter(Boolean);
+  for (const actor of holders) {
+    await createCharacterBondItem(actor, {
+      name:         record.name,
+      rank:         record.rank,
+      connectionId: record._id,
+    });
+  }
+}
+
+/** The PC a new connection's bond Item goes to: `actorId` when it is a PC, else the acting user's own. */
+function bondHolderActor(actorId) {
+  const named = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (isPlayerCharacterActor(named)) return named;
+  let campaignState = null;
+  try { campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null; }
+  catch (err) { console.debug(`${MODULE_ID} | bond item: campaignState read failed:`, err?.message ?? err); }
+  const ownId = resolveUserActorId(globalThis.game?.user ?? null, campaignState);
+  return ownId ? (globalThis.game?.actors?.get?.(ownId) ?? null) : null;
 }

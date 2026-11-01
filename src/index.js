@@ -1172,13 +1172,15 @@ export function registerChatHook() {
         if (incitingSwearId && !incitingMsg) {
           console.warn(`${MODULE_ID} | inciting swear: original card ${incitingSwearId} not found — no vow created`);
         }
+        // The oath scene is the roller's, as the move narration is.
         if (incitingMsg) {
-          await swearSharedVowForAll(incitingMsg).catch(err =>
+          await swearSharedVowForAll(incitingMsg, { speakerActorId: rollerActor?.id ?? null }).catch(err =>
             console.warn(`${MODULE_ID} | inciting swear creation failed:`, err?.message ?? err));
         } else {
           await narrateAndPostVowSwearing({
             vow: { name: interpretation.moveTarget ?? null, rank: null },
             campaignState,
+            speakerActorId: rollerActor?.id ?? null,
           }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
         }
       }
@@ -6959,9 +6961,10 @@ export function wireConnectionPickerButtons(message, root) {
 }
 
 // The PC a card-button click on THIS client acts for — the same ladder as a
-// typed message (selected token → bound character → owned PC → first PC).
-// A player who owns none of those (an observer) sends null rather than the
-// first PC, which the GM-side handler would refuse as not theirs.
+// typed message (selected token → bound character → owned PC → the first PC
+// only for a GM or in solo play). A player who owns none of those (an
+// observer) sends null rather than another player's PC, which the GM-side
+// handler would refuse as not theirs.
 function clickerActorId() {
   let speakerActor = null;
   try {
@@ -6973,9 +6976,9 @@ function clickerActorId() {
     { author: game.user ?? null, speaker: { actor: speakerActor } },
     game.settings.get(MODULE_ID, "campaignState"),
   );
-  if (!actorId || game.user?.isGM) return actorId;
-  const actor = game.actors?.get?.(actorId) ?? null;
-  if (userOwnsActor(actor, game.user)) return actorId;
+  if (game.user?.isGM) return actorId;
+  const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  if (actor && userOwnsActor(actor, game.user)) return actorId;
   console.debug(`${MODULE_ID} | card click: this user owns no player character — the GM resolves the speaker.`);
   return null;
 }

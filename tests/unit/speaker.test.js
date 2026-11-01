@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resolveSpeakerActorId, isAuthoringClient, messageAuthorId } from '../../src/multiplayer/speaker.js';
+import { resolveSpeakerActorId, resolveUserActorId, isAuthoringClient, messageAuthorId } from '../../src/multiplayer/speaker.js';
 
 beforeEach(() => {
   global.game.actors?._reset?.();
@@ -175,6 +175,53 @@ describe('resolveSpeakerActorId — a user whose assigned character is not a PC'
     global.game.actors._setAll([other, pc]);   // the ownership scan would find Ren first
     const msg = { speaker: { actor: null }, author: { id: 'pl-1', character: pc } };
     expect(resolveSpeakerActorId(msg, {})).toBe('pc-pat');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveUserActorId — "whose PC is this user?" (issue #321 U23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play', () => {
+  const kira = () => ({ id: 'pc-kira', type: 'character', name: 'Kira', flags: {}, ownership: { 'pl-2': 3 } });
+  const dax  = () => ({ id: 'pc-dax',  type: 'character', name: 'Dax',  flags: {}, ownership: { 'pl-1': 3 } });
+  const cs   = { characterIds: ['pc-kira', 'pc-dax'] };
+
+  it("an unbound player who owns a PC gets theirs, not the campaign's first", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-1', isGM: false, character: null }, cs)).toBe('pc-dax');
+  });
+
+  it('a bound PC wins over an owned one', () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-1', isGM: false, character: kira() }, cs)).toBe('pc-kira');
+  });
+
+  it("a player with no PC of their own is never handed another player's", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-9', isGM: false, character: null }, cs)).toBeNull();
+    expect(resolveUserActorId(null, cs)).toBeNull();
+  });
+
+  it("a GM with no PC of their own gets the campaign's first PC", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'gm-1', isGM: true, character: null }, cs)).toBe('pc-kira');
+  });
+
+  it("solo play: the one PC in the world is anyone's", () => {
+    global.game.actors._setAll([kira()]);
+    expect(resolveUserActorId({ id: 'pl-9', isGM: false, character: null }, { characterIds: [] })).toBe('pc-kira');
+  });
+
+  it("a message from a player with no PC resolves to no one, not the campaign's first PC", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    const msg = { speaker: { actor: null }, author: { id: 'pl-9', isGM: false } };
+    expect(resolveSpeakerActorId(msg, cs)).toBeNull();
+  });
+
+  it("control: a message carrying only its author's id is resolved through game.users, so a GM author keeps the first-PC fallback", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveSpeakerActorId({ author: 'test-user-gm' }, cs)).toBe('pc-kira');   // the setup's GM user
   });
 });
 

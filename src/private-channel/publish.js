@@ -16,6 +16,7 @@
  */
 
 import { getActiveCharacter } from "../narration/narrator.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -44,9 +45,11 @@ export async function publishToMainChat({ userId, content }) {
   let sessionId     = null;
   try {
     const cs      = game.settings?.get?.(MODULE_ID, "campaignState");
-    const actorId = game.users?.get?.(userId)?.character?.id ?? null;
+    // The publisher's own PC (issue #321 U23) — an unbound player who owns
+    // one was published as the campaign's first PC, another player's.
+    const actorId = resolveUserActorId(game.users?.get?.(userId) ?? null, cs);
     sessionId     = cs?.currentSessionId ?? null;
-    characterName = getActiveCharacter(cs, actorId)?.name || characterName;
+    characterName = (actorId ? getActiveCharacter(cs, actorId)?.name : null) || characterName;
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: publish alias resolve failed:`, err?.message ?? err);
   }

@@ -10,6 +10,7 @@
 
 import { requestPrivateNarration } from "./narrate.js";
 import { publishToMainChat } from "./publish.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 import {
   appendToBuffer,
   scheduleDebouncedWrite,
@@ -158,8 +159,13 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     return this.element?.querySelector("[data-pc-input]")?.value ?? "";
   }
 
+  /**
+   * This player's own PC (issue #321 U23): User#character → an owned PC → the
+   * first PC only for a GM or in solo play — never another player's.
+   */
   #resolveActorId() {
-    return game.users?.get?.(this.userId)?.character?.id ?? null;
+    const campaignState = game.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    return resolveUserActorId(game.users?.get?.(this.userId) ?? null, campaignState);
   }
 
   static async #onSend(_event, _target) {
@@ -167,7 +173,8 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const message = this.#inputValue().trim();
     if (!message) return;
 
-    const characterName = game.users?.get?.(this.userId)?.character?.name ?? "You";
+    const actorId       = this.#resolveActorId();
+    const characterName = (actorId ? game.actors?.get?.(actorId)?.name : null) ?? "You";
     this.initialMessage = "";
     this.errorBanner    = "";
 
@@ -183,7 +190,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       const result = await requestPrivateNarration({
         campaignState,
         userId:          this.userId,
-        actorId:         this.#resolveActorId(),
+        actorId,
         transcriptTurns: this.turns.map(t => `${t.name}: ${t.text}`),
         playerMessage:   message,
       });

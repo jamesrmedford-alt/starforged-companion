@@ -27,6 +27,7 @@
 import { formatSafetyContext } from "../context/safety.js";
 import { buildCampaignTruthsBlock } from "../system/campaignTruths.js";
 import { getActiveCharacter, getRecentNarrationContext, currentLocationName, buildPrivateChannelStory } from "../narration/narrator.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 
 const ROLE = [
   "## ROLE",
@@ -88,14 +89,20 @@ function formatTranscriptBlock(transcriptTurns) {
  * @param {object} args
  * @param {object} args.campaignState
  * @param {string} args.userId
- * @param {string} [args.actorId]            — resolved upstream; getActiveCharacter falls back
+ * @param {string} [args.actorId]            — the player's own PC, resolved upstream; when absent
+ *                                            it is resolved here from `userId` (resolveUserActorId)
  * @param {string[]} [args.transcriptTurns]  — verbatim prior turns this session
  * @param {string} args.playerMessage
  * @returns {Promise<{ system: string, user: string, cacheBreakpoint: number }>}
  * @throws if no active character can be resolved
  */
 export async function buildPrivateContext({ campaignState, userId, actorId, transcriptTurns, playerMessage }) {
-  const character = getActiveCharacter(campaignState, actorId);
+  // The player's own PC only (issue #321 U23): User#character → an owned PC →
+  // the first PC only for a GM or in solo play. A player with none gets no
+  // character — getActiveCharacter would hand them the campaign's first PC,
+  // another player's.
+  const ownId = actorId ?? resolveUserActorId(globalThis.game?.users?.get?.(userId) ?? null, campaignState);
+  const character = ownId ? getActiveCharacter(campaignState, ownId) : null;
   if (!character) throw new Error("Private channel: no active character resolvable");
 
   const safety = formatSafetyContext(campaignState, null, userId);

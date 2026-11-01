@@ -512,6 +512,10 @@ describe("debounced write", () => {
 
 describe("buildPrivateContext", () => {
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     getActiveCharacter.mockReset().mockReturnValue({
       name: "Kira", description: "A wry pilot.", meters: { health: 4, spirit: 3 }, narratorNotes: "",
     });
@@ -587,6 +591,31 @@ describe("buildPrivateContext", () => {
       buildPrivateContext({ campaignState: {}, userId: "u1", playerMessage: "x" }),
     ).rejects.toThrow(/no active character/i);
   });
+
+  describe("speaks as the player's own PC (issue #321 U23)", () => {
+    beforeEach(() => {
+      game.actors._setAll([
+        makeTestActor({ id: "pc-kira", name: "Kira", ownership: { "player-2": 3 } }),
+        makeTestActor({ id: "pc-dax",  name: "Dax",  ownership: { "u2": 3 } }),
+      ]);
+    });
+    afterEach(() => game.actors._reset());
+
+    it("an unbound player who owns a PC is given theirs, not the campaign's first", async () => {
+      _users.set("u2", { id: "u2", name: "Sam", isGM: false, active: true, character: null });
+      const campaignState = { currentSessionId: "s1", characterIds: ["pc-kira", "pc-dax"] };
+      await buildPrivateContext({ campaignState, userId: "u2", playerMessage: "x" });
+      expect(getActiveCharacter).toHaveBeenCalledWith(campaignState, "pc-dax");
+    });
+
+    it("a player with no PC of their own gets none — never another player's", async () => {
+      _users.set("u3", { id: "u3", name: "Lee", isGM: false, active: true, character: null });
+      await expect(buildPrivateContext({
+        campaignState: { currentSessionId: "s1", characterIds: ["pc-kira", "pc-dax"] }, userId: "u3", playerMessage: "x",
+      })).rejects.toThrow(/no active character/i);
+      expect(getActiveCharacter).not.toHaveBeenCalled();
+    });
+  });
 });
 
 
@@ -597,6 +626,10 @@ describe("buildPrivateContext", () => {
 describe("publishToMainChat", () => {
   let createSpy;
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     getActiveCharacter.mockReset().mockReturnValue({ name: "Kira" });
     createSpy = vi.spyOn(global.ChatMessage, "create").mockResolvedValue({ id: "msg-1" });
   });
@@ -648,6 +681,10 @@ describe("publishToMainChat", () => {
 
 describe("requestPrivateNarration", () => {
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     apiPost.mockReset();
     getActiveCharacter.mockReset().mockReturnValue({ name: "Kira", meters: {} });
     getRecentNarrationContext.mockReset().mockReturnValue("");

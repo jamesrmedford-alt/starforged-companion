@@ -23,7 +23,8 @@ import {
   CHRONICLE_ENTRY_TYPES,
 } from './chronicle.js';
 
-import { getPlayerActors, getActor } from './actorBridge.js';
+import { getActor } from './actorBridge.js';
+import { resolveUserActorId } from '../multiplayer/speaker.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -282,13 +283,16 @@ let _chroniclePanelInstance = null;
 
 /**
  * Open the chronicle panel for a specific actor.
- * If no actorId given, uses game.user.character or the first player actor.
+ * If no actorId given, opens the viewer's own PC's (resolveUserActorId:
+ * User#character → an owned PC → the first PC only for a GM or in solo play).
+ * The toolbar opened the first PC's for every unbound player (issue #321 U23).
  * @param {string} [actorId]
  */
 export function openChroniclePanel(actorId) {
-  const resolvedId = actorId
-    ?? game.user?.character?.id
-    ?? getPlayerActors()[0]?.id;
+  let campaignState = null;
+  try { campaignState = game.settings?.get?.(MODULE_ID, 'campaignState') ?? null; }
+  catch (err) { console.debug(`${MODULE_ID} | chronicle panel: campaignState read failed:`, err?.message ?? err); }
+  const resolvedId = actorId ?? resolveUserActorId(game.user ?? null, campaignState);
 
   if (!resolvedId) {
     ui?.notifications?.warn('Starforged Companion: No player character found.');
