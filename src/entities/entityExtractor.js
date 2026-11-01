@@ -195,15 +195,14 @@ export async function runCombinedDetectionPass(
   // A reply that holds no JSON object — cut off at max_tokens, or malformed —
   // drops every entity, lore item, threat and faction of this narration, so
   // it is never silent either (issue #321 U15; cf. NARRCHK-TRUNC-SILENT).
-  const parsed = parseDetectionJson(raw);
-  if (raw && !parsed) {
+  if (raw && !parseDetectionJson(raw)) {
     console.warn(
       `${MODULE_ID} | entityExtractor: the detection reply is not a complete JSON object — ` +
       `this narration's entities, lore and factions were not captured.`,
     );
     notifyDetectionFailure();
   }
-  return detectionFromParsed(parsed, campaignState);
+  return parseDetectionResponse(raw, campaignState);
 }
 
 
