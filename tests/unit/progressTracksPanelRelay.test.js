@@ -131,6 +131,57 @@ describe("Progress Tracks panel — a player's click lands through the canonical
     await click("gm-1", "markProgress", { trackId: "fight-1" });
     expect(stored().ticks).toBe(8);
   });
+
+  // Issue #321 U19 — a fight's position lives on its track (what the
+  // interpreter, Take Decisive Action and the narrator read), the actor's
+  // sheet and the combat tracker's badge; the toggle wrote only the track.
+  describe("the position toggle writes every store of the fight's position (issue #321 U19)", () => {
+    /** The fight's Foundry combat, with `actor` as its one combatant; returns the badge flags. */
+    function linkCombat(actor) {
+      const badge = {};
+      const combatant = {
+        id: `cmb-${actor.id}`, actorId: actor.id, actor,
+        getFlag: (m, k) => badge[`${m}.${k}`],
+        setFlag: async (m, k, v) => { badge[`${m}.${k}`] = v; },
+      };
+      table.combats.set("combat-1", {
+        id: "combat-1", combatants: [combatant],
+        getFlag: (m, k) => (m === MODULE_ID && k === "trackId" ? "fight-1" : undefined),
+      });
+      return badge;
+    }
+
+    afterEach(() => {
+      table.users.get("pl-1").character = null;
+      table.combats.delete("combat-1");
+    });
+
+    it("the clicker's own character's sheet and badge follow the track", async () => {
+      const kira = table.addActor({ id: "pc-kira", name: "Kira", type: "character", ownership: { "pl-1": 3 } });
+      const badge = linkCombat(kira);
+      table.users.get("pl-1").character = kira;
+
+      await click("pl-1", "toggleCombatState", { trackId: "fight-1" });
+      expect({ track: stored().combatState, sheet: kira.system.combatPosition, badge: badge[`${MODULE_ID}.position`] })
+        .toEqual({ track: "in_control", sheet: "inControl", badge: "inControl" });
+
+      await click("pl-1", "toggleCombatState", { trackId: "fight-1" });
+      await click("pl-1", "toggleCombatState", { trackId: "fight-1" });
+      expect({ track: stored().combatState, sheet: kira.system.combatPosition, badge: badge[`${MODULE_ID}.position`] })
+        .toEqual({ track: null, sheet: "none", badge: "none" });
+    });
+
+    it("a character the clicker does not own is left alone: only the track moves", async () => {
+      const ash = table.addActor({ id: "pc-ash", name: "Ash", type: "character", ownership: {} });
+      const badge = linkCombat(ash);
+      table.users.get("pl-1").character = ash;
+
+      await click("pl-1", "toggleCombatState", { trackId: "fight-1" });
+      expect(stored().combatState).toBe("in_control");
+      expect(ash.system.combatPosition).toBe("");
+      expect(badge[`${MODULE_ID}.position`]).toBeUndefined();
+    });
+  });
 });
 
 describe("applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05)", () => {

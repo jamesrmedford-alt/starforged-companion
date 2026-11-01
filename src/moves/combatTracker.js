@@ -53,6 +53,21 @@ export function trackPosToActorPos(pos) {
   return 'none';
 }
 
+/**
+ * The reverse: a badge / actor-sheet position as the track holds it —
+ * in_control, bad_spot, or null (neutral).
+ * @param {string|null} pos
+ * @returns {'in_control'|'bad_spot'|null}
+ */
+function actorPosToTrackPos(pos) {
+  if (pos === 'inControl')  return 'in_control';
+  if (pos === 'inABadSpot') return 'bad_spot';
+  return null;
+}
+
+// The positions a fight's track holds; null (neutral) clears it.
+const TRACK_POSITIONS = new Set(['in_control', 'bad_spot']);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMBAT DOCUMENT LIFECYCLE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,23 +159,31 @@ export async function updateCombatantPosition(combat, actor, actorPosition) {
 /**
  * Write a combat position everywhere it lives: the progress track's
  * combatState, the actor's sheet field (via actorBridge), and the Combatant
- * badge flag. Shared by the pipeline combatPosition consequence, the
- * threshold-card position carry, and the weak-hit Enter the Fray choice.
+ * badge flag. The track is canonical — the interpreter's position
+ * constraint, Take Decisive Action's bad-spot downgrade and the narrator's
+ * OPEN PROGRESS TRACKS read it; the sheet and the badge mirror it. Shared by
+ * the pipeline combatPosition consequence, the threshold-card position carry,
+ * the weak-hit Enter the Fray choice, the combat tracker's position badge and
+ * the Progress Tracks panel's position toggle (issue #321 U19: the badge
+ * wrote only the two mirrors, the toggle only the track).
  *
- * Dynamic imports avoid circular dependencies (same pattern as the badge
- * click handler in registerCombatTrackerHooks).
+ * The track is written first. When that write fails this rejects and the
+ * mirrors are left as they are, so they never show a position the track does
+ * not hold; a mirror write that fails is logged.
+ *
+ * Dynamic imports avoid circular dependencies (progressTracks.js imports this
+ * module for its position toggle).
  *
  * @param {string} trackId
- * @param {'in_control'|'bad_spot'} position — track-flavoured position
+ * @param {'in_control'|'bad_spot'|null} position — track-flavoured; null is neutral (clears it)
  * @param {Actor|null} actor — whose sheet/badge to mirror; track-only when null
  * @returns {Promise<void>}
  */
 export async function applyCombatPositionToTrack(trackId, position, actor = null) {
-  if (!trackId || !position) return;
+  if (!trackId || (position !== null && !TRACK_POSITIONS.has(position))) return;
 
   const { setCombatTrackPosition } = await import('../ui/progressTracks.js');
-  await setCombatTrackPosition(trackId, position).catch(err =>
-    console.warn(`${MODULE_ID} | combat position track write failed:`, err?.message ?? err));
+  await setCombatTrackPosition(trackId, position);
 
   if (!actor) return;
   const actorPos = trackPosToActorPos(position);
@@ -172,6 +195,25 @@ export async function applyCombatPositionToTrack(trackId, position, actor = null
   if (combat) {
     await updateCombatantPosition(combat, actor, actorPos).catch(err =>
       console.warn(`${MODULE_ID} | combat position badge write failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * A position badge click: the fight's position, written everywhere it lives
+ * (applyCombatPositionToTrack) — the track first, then the combatant's actor
+ * and badge. The clicked combatant's own flag is set too when the mirror
+ * reached another (a second token of the same actor) or there is no actor.
+ *
+ * @param {Combat} combat
+ * @param {Combatant} combatant
+ * @param {'inControl'|'inABadSpot'|'none'} actorPos
+ * @returns {Promise<void>}
+ */
+async function setBadgePosition(combat, combatant, actorPos) {
+  const trackId = combat.getFlag(MODULE_ID, 'trackId');
+  await applyCombatPositionToTrack(trackId, actorPosToTrackPos(actorPos), combatant.actor ?? null);
+  if (combatant.getFlag(MODULE_ID, 'position') !== actorPos) {
+    await combatant.setFlag(MODULE_ID, 'position', actorPos);
   }
 }
 
@@ -222,14 +264,9 @@ export function registerCombatTrackerHooks() {
         e.stopPropagation();
         if (!game.user.isGM) return;
         const next = POSITION_CYCLE[position] ?? 'inControl';
-        combatant.setFlag(MODULE_ID, 'position', next).then(() => {
-          if (combatant.actor) {
-            // Dynamic import avoids a circular-dependency chain (actorBridge
-            // does not import combatTracker; combatTracker defers the import).
-            import('../character/actorBridge.js')
-              .then(({ setCombatPosition }) => setCombatPosition(combatant.actor, next))
-              .catch(err => console.warn(`${MODULE_ID} | combatTracker: setCombatPosition failed:`, err));
-          }
+        return setBadgePosition(combat, combatant, next).catch(err => {
+          console.warn(`${MODULE_ID} | combatTracker: the position change was not saved:`, err?.message ?? err);
+          ui.notifications?.warn?.('Starforged Companion: the combat position could not be saved — try again.');
         });
       });
       badges.appendChild(posBadge);

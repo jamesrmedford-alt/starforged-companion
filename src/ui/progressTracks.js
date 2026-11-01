@@ -650,10 +650,13 @@ export class ProgressTrackApp extends ApplicationV2 {
   /**
    * Cycle a combat track's position: neutral → in_control → bad_spot → neutral.
    * Per play kit p. 5, combat moves write this automatically on resolution;
-   * the toggle here lets the player correct it manually.
+   * the toggle here lets the player correct it manually. The clicker's own
+   * character's sheet and combat-tracker badge follow the track (U19).
    */
   static #onToggleCombatState(event, target) {
-    const work = ProgressTrackApp.#requestEdit(this, { op: 'position', trackId: target.dataset.trackId });
+    const work = ProgressTrackApp.#requestEdit(this, {
+      op: 'position', trackId: target.dataset.trackId, actorId: game.user?.character?.id ?? null,
+    });
     this._lastAction = work;
     return work;
   }
@@ -1028,11 +1031,14 @@ function isOpenPanelTrack(track) {
  * (trimmed, at most 60 characters), type and rank from the panel's own lists.
  *
  * @param {{ op: "add"|"mark"|"clear"|"complete"|"position"|"remove",
- *           trackId?: string, label?: string, type?: string, rank?: string }} payload
- * @param {Object} [_ctx]  gmRelay context — no edit is restricted to a role
+ *           trackId?: string, label?: string, type?: string, rank?: string,
+ *           actorId?: string|null }} payload  `actorId` (position only): the
+ *   clicker's own character, whose sheet and badge mirror the new position
+ * @param {Object} [ctx]  gmRelay context — no edit is restricted to a role;
+ *   the position mirror needs a requester who owns `actorId`
  * @returns {Promise<{ applied: boolean, reason?: "invalid"|"no-track"|"clock", trackId?: string }>}
  */
-export async function applyProgressTrackEditFromRelay(payload = {}, _ctx = {}) {
+export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
   const trackId = typeof payload?.trackId === 'string' ? payload.trackId : '';
 
   switch (payload?.op) {
@@ -1054,11 +1060,19 @@ export async function applyProgressTrackEditFromRelay(payload = {}, _ctx = {}) {
         if (!isOpenPanelTrack(track)) return false;
         track.ticks = Math.max(track.ticks - TICKS_PER_BOX, 0);
       }), payload);
-    case 'position':
-      return editOutcome(await updateTrack(trackId, (track) => {
-        if (!isOpenPanelTrack(track) || track.type !== 'combat') return false;
-        track.combatState = NEXT_POSITION[track.combatState ?? 'null'] ?? null;
-      }), payload);
+    case 'position': {
+      // Cycled from the stored position, read once every earlier write has
+      // landed, then written everywhere a fight's position lives: the track,
+      // and the clicker's own character's sheet and combat-tracker badge
+      // (issue #321 U19 — the toggle wrote only the track, so the badge and
+      // the sheet disagreed with it).
+      const fight = await readTrackAfterWrites(trackId);
+      if (!isOpenPanelTrack(fight) || fight.type !== 'combat') return refusedEdit('no-track', payload);
+      const next = NEXT_POSITION[fight.combatState ?? 'null'] ?? null;
+      const { applyCombatPositionToTrack } = await import('../moves/combatTracker.js');
+      await applyCombatPositionToTrack(trackId, next, await positionMirrorActor(payload.actorId, ctx));
+      return { applied: true, trackId };
+    }
     case 'complete': {
       // The paired clock is retired before the track changes; refused, the
       // track stays open and the press is the retry (issue #316 T03).
@@ -1108,6 +1122,40 @@ export async function applyProgressTrackEditFromRelay(payload = {}, _ctx = {}) {
 
 function editOutcome(track, payload) {
   return track ? { applied: true, trackId: track.id } : refusedEdit('no-track', payload);
+}
+
+/**
+ * One track as stored, read once every earlier write on this client has
+ * landed; null when there is none. For a change another writer saves (the
+ * position toggle goes through applyCombatPositionToTrack).
+ */
+async function readTrackAfterWrites(trackId) {
+  let found = null;
+  await writeTracks((tracks) => {
+    found = tracks.find(t => t.id === trackId) ?? null;
+    return null;
+  });
+  return found;
+}
+
+/**
+ * Whose sheet and combat-tracker badge mirror a panel position change: the
+ * clicker's own character, named by their client, when it is a player
+ * character they own — otherwise none, and only the track changes (a GM with
+ * no character of their own).
+ *
+ * @param {string|null|undefined} actorId
+ * @param {Object} ctx  gmRelay context
+ * @returns {Promise<Actor|null>}
+ */
+async function positionMirrorActor(actorId, ctx) {
+  if (typeof actorId !== 'string' || !actorId) return null;
+  const [{ getActor, isPlayerCharacterActor }, { requesterOwnsActor }] = await Promise.all([
+    import('../character/actorBridge.js'),
+    import('../moves/burnMomentum.js'),
+  ]);
+  const actor = getActor(actorId);
+  return actor && isPlayerCharacterActor(actor) && requesterOwnsActor(actor, ctx) ? actor : null;
 }
 
 function refusedEdit(reason, payload) {
