@@ -54,7 +54,7 @@ import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
-import { MOVES } from '../schemas.js';
+import { MOVES, toMoveId } from '../schemas.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -2502,17 +2502,20 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
 
 /**
  * Drop a social-move nomination that targets a fellow player character
- * (finding G); pass any other move through unchanged.
+ * (finding G); pass any other move through. The nomination is read as a move
+ * id whatever its case or form ("Compel" is compel — issue #321 U45), and one
+ * that names no move is dropped, since it becomes the card's Roll button.
  *
  * @param {string|null} suggestedMove
  * @param {string} playerText
  * @param {string|null} speakerName
  * @param {Array<{name?: string}>} [pcActors] — injectable for tests
- * @returns {string|null}
+ * @returns {string|null} the nominated move's id, or null
  */
 export function suppressPcDirectedSocialMove(suggestedMove, playerText, speakerName, pcActors) {
-  if (!suggestedMove || !PC_DIRECTED_SOCIAL_MOVES.has(suggestedMove)) return suggestedMove ?? null;
-  return inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) ? null : suggestedMove;
+  const moveId = toMoveId(suggestedMove);
+  if (!moveId || !PC_DIRECTED_SOCIAL_MOVES.has(moveId)) return moveId;
+  return inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors) ? null : moveId;
 }
 
 // ---------------------------------------------------------------------------

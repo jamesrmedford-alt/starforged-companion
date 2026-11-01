@@ -14,6 +14,7 @@
 
 import { apiPost } from "../api-proxy.js";
 import { getConnection } from "../entities/connection.js";
+import { toMoveId } from "../schemas.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
@@ -71,7 +72,7 @@ Return ONLY a valid JSON object — no preamble, no markdown, no text outside th
 
 {
   "decision":      "MOVE" | "NARRATIVE" | "NARRATIVE_WITH_MOVE_AVAILABLE",
-  "suggestedMove": "<move name or move id>" | null,
+  "suggestedMove": "<move id from the MOVE CATALOG>" | null,
   "category":      "combat" | "investigation" | "exploration" | "social" | "downtime",
   "confidence":    <number between 0.0 and 1.0>,
   "reasoning":     "<one short sentence — internal, not shown to the player>"
@@ -402,8 +403,12 @@ function parseDecision(rawText) {
   const category = String(parsed.category ?? "").toLowerCase();
   const safeCategory = PACING_CATEGORY_VALUES.has(category) ? category : "exploration";
 
+  // The suggestion becomes a move id downstream (the NWMA card's Roll button
+  // posts it as forcedMoveId; the PC-directed social-move check keys on it), so
+  // a display name maps to its MOVES key and anything that names no move is
+  // dropped (issue #321 U45).
   const suggestedMove = decision === PACING_DECISION.MOVE || decision === PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE
-    ? (typeof parsed.suggestedMove === "string" ? parsed.suggestedMove.trim() : null) || null
+    ? toMoveId(parsed.suggestedMove)
     : null;
 
   const confidence = clampConfidence(parsed.confidence);

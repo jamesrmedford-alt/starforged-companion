@@ -343,6 +343,41 @@ describe('classifyInput()', () => {
     expect(result.suggestedMove).toBe('compel');
   });
 
+  // Issue #321 U45: the suggestion is used as a move id downstream (the NWMA
+  // card's Roll button posts it as forcedMoveId), and the schema invited a
+  // move name — "Gather Information" made the Roll button throw "Unknown move".
+  it.each([
+    ['Gather Information', 'gather_information'],
+    ['gather information',  'gather_information'],
+    ['Face-Danger',         'face_danger'],
+    ['  Compel  ',          'compel'],
+    ['Swear an Iron Vow',   'swear_an_iron_vow'],
+  ])('maps the suggestion %j to the move id %j', async (suggestion, moveId) => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: suggestion,
+      category: 'investigation', confidence: 0.7, reasoning: 'probing for clues',
+    }));
+    expect((await classifyInput(baseArgs())).suggestedMove).toBe(moveId);
+  });
+
+  it.each([
+    ['a phrase that names no move', 'Dance Wildly'],
+    ['a non-string',                42],
+    ['an inherited property name',  'constructor'],
+  ])('drops a suggestion that is %s', async (_label, suggestion) => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: suggestion, category: 'social', confidence: 0.7, reasoning: 'x',
+    }));
+    const result = await classifyInput(baseArgs());
+    expect(result.decision).toBe(PACING_DECISION.MOVE);
+    expect(result.suggestedMove).toBeNull();
+  });
+
+  it('asks the model for a catalog move id, not a move name', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toContain('"suggestedMove": "<move id from the MOVE CATALOG>" | null');
+  });
+
   it('strips ``` fences from JSON responses', async () => {
     apiPost.mockResolvedValue({
       content: [{ type: 'text', text: '```json\n{"decision":"NARRATIVE","suggestedMove":null,"category":"downtime","confidence":0.5,"reasoning":"x"}\n```' }],

@@ -204,6 +204,26 @@ export function moveRollKind(moveId) {
 }
 
 /**
+ * The MOVES key a model-named move refers to, or null: the key itself
+ * ("gather_information") or its display name in any case or separator
+ * ("Gather Information", "gather-information"). A move a model names is
+ * mapped through this before it is used as a move id (issue #321 U45: the
+ * pacing classifier's "Gather Information" became the Roll button's
+ * forcedMoveId, and the move pipeline threw "Unknown move").
+ *
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+export function toMoveId(value) {
+  if (typeof value !== "string") return null;
+  const key = value.trim().toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return key && Object.prototype.hasOwnProperty.call(MOVES, key) ? key : null;
+}
+
+/**
  * Valid narratorClass values for the MOVES taxonomy.
  *   "discovery"     — narrator may introduce new named entities
  *   "interaction"   — narrator must use established entities; may add generative detail
