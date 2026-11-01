@@ -36,6 +36,7 @@
 import { apiPost } from "../api-proxy.js";
 import {
   updateShip,
+  isLoneShipCandidate,
 } from "./ship.js";
 
 const MODULE_ID     = "starforged-companion";
@@ -547,11 +548,13 @@ function resolveShipActor(targetText, campaignState) {
 
   const trimmed = String(targetText ?? "").trim();
 
-  // No target: prefer command vehicle, else lone ship.
+  // No target: prefer command vehicle, else lone ship — never a confirmed NPC
+  // ship (issue #321 U26).
   if (!trimmed) {
     const cv = trackedActors.find(a => !!a.flags?.[MODULE_ID]?.ship?.isCommandVehicle);
     if (cv) return { actor: cv };
-    if (trackedActors.length === 1) return { actor: trackedActors[0] };
+    const lone = trackedActors.filter(a => isLoneShipCandidate(a.flags?.[MODULE_ID]?.ship));
+    if (lone.length === 1) return { actor: lone[0] };
     return { actor: null, error: "No ship specified; no command vehicle or lone ship found." };
   }
 

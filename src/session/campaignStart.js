@@ -35,6 +35,7 @@ import { runPlaytestQuickstart }                                  from "./quicks
 import { beginSession }                                           from "./lifecycle.js";
 import { finalizeEntity }                                         from "../entities/finalize.js";
 import { envisionShip, renderEnvisionHtml, appendNotesSection }  from "../entities/shipEnvision.js";
+import { isLoneShipCandidate }                                    from "../entities/ship.js";
 import { runIncitingIncident }                                    from "./incitingIncident.js";
 
 const MODULE_ID = "starforged-companion";
@@ -253,7 +254,8 @@ function findCommandVehicle(campaignState) {
 
   const cv = actors.find(a => !!a.flags?.[MODULE_ID]?.ship?.isCommandVehicle);
   if (cv) return cv;
-  return actors[0] ?? null;
+  // Never a confirmed NPC ship (issue #321 U26).
+  return actors.find(a => isLoneShipCandidate(a.flags?.[MODULE_ID]?.ship)) ?? null;
 }
 
 function escapeHtml(s) {

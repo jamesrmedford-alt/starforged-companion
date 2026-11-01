@@ -9,6 +9,7 @@ import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById } from '../entities/registry.js';
+import { isLoneShipCandidate } from '../entities/ship.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -455,11 +456,12 @@ export function buildShipPositionLine(campaignState) {
       if (p?.isCommandVehicle) { payload = p; actor = a; break; }
     }
     // Lone-ship fallback: a single tracked starship is the command vehicle
-    // even when nothing has set the isCommandVehicle flag yet.
+    // even when nothing has set the isCommandVehicle flag yet. A confirmed
+    // NPC ship is never a candidate (issue #321 U26).
     if (!actor) {
       const starships = ids
         .map(id => globalThis.game?.actors?.get?.(id))
-        .filter(a => a?.type === 'starship');
+        .filter(a => a?.type === 'starship' && isLoneShipCandidate(a.flags?.[MID]?.ship));
       if (starships.length === 1) {
         actor   = starships[0];
         payload = actor.flags?.[MID]?.ship ?? null;

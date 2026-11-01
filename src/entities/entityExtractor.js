@@ -1704,6 +1704,9 @@ async function confirmDraft(message, draftIndex) {
         type:                      seedData.type,
         firstLook:                 seedData.firstLook,
         portraitSourceDescription: seedData.portraitSource,
+        // A ship the narration introduced is someone else's: it never becomes
+        // the players' ship by the lone-ship fallback (issue #321 U26).
+        npcShip:                   true,
       }, campaignState);
     } else if (draft.type === "faction") {
       // Faction confirm (faction-lifecycle audit 2026-07): reconcile any
