@@ -45,7 +45,10 @@ let _gestureOverlayShown = false;
 // timeout; the GM signals completion over the socket.
 const SYNTH_REQUEST_TIMEOUT_MS = 30_000;
 const _pendingSynth  = new Map();   // hash -> Set<resolve>
-const _synthInFlight = new Set();   // hashes the GM is currently synthesising
+// Canonical GM: hash -> the one synthesis + cache write of that clip, awaited by
+// this client's own playback and by every keyless player's request for it
+// (synthesiseToCacheOnce).
+const _synthInFlight = new Map();
 
 /** Test-only — clear the keyless-synthesis wait/in-flight state. */
 export function _resetSynthStateForTests() { _pendingSynth.clear(); _synthInFlight.clear(); }
@@ -219,7 +222,13 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
     });
     let src = await cacheLookup(hash);
     if (!src) {
-      if (hasElevenLabsKey()) {
+      if (hasElevenLabsKey() && isCanonicalGM()) {
+        // The canonical GM writes the cache itself, and shares the synthesis
+        // with any player's request for the same clip.
+        const spec = { voiceId, modelId: voices.modelId, text: p.text, speed: voices.speed };
+        const made = await synthesiseToCacheOnce(hash, spec, getSetting("elevenLabsApiKey", ""));
+        src = made.path ?? blobUrlOf(made.bytes);
+      } else if (hasElevenLabsKey()) {
         const bytes = await synthesise({
           apiKey:  getSetting("elevenLabsApiKey", ""),
           voiceId,
@@ -249,41 +258,79 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
 }
 
 /**
- * Commit synthesized bytes to the cache. On the canonical GM client we
- * write directly; on other clients we serialize and emit to the GM via
- * Foundry's socket layer, then resolve to the blob URL of the in-memory
- * bytes so playback can begin without waiting for the GM-side write.
+ * Canonical GM: synthesise one clip and write it to the cache, once per hash.
+ * This client's own playback and every keyless player's request for the same
+ * clip await the same promise, so the clip is synthesised — and billed by
+ * ElevenLabs — and uploaded once. The two paths used to run side by side: a
+ * narrator card renders on every client at once, so with Auto-play on (or the
+ * GM and a player both pressing Play) each segment was made twice (issue #321
+ * U59).
+ *
+ * @param {string} hash
+ * @param {{ voiceId: string, modelId: string, text: string, speed: number }} spec
+ * @param {string} apiKey
+ * @returns {Promise<{ bytes: ArrayBuffer|Uint8Array|Blob, path: string|null }>}
+ *   the clip, and its cache path (null when the write failed)
+ */
+function synthesiseToCacheOnce(hash, spec, apiKey) {
+  let pending = _synthInFlight.get(hash);
+  if (!pending) {
+    pending = (async () => {
+      const bytes = await synthesise({
+        apiKey,
+        voiceId: spec.voiceId,
+        modelId: spec.modelId,
+        text:    spec.text,
+        speed:   spec.speed,
+        stream:  false,
+      });
+      return { bytes, path: await writeToCache(hash, bytes) };
+    })().finally(() => _synthInFlight.delete(hash));
+    _synthInFlight.set(hash, pending);
+  }
+  return pending;
+}
+
+/** Canonical GM: write a clip to the cache (+ an eviction sweep); the path, or null when the write failed. */
+async function writeToCache(hash, bytes) {
+  try {
+    const path = await cacheWrite(hash, bytes);
+    const cap  = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
+    if (cap > 0) {
+      evictIfOverflow(cap).catch(err =>
+        console.warn(`${MODULE_ID} | audio cache eviction sweep failed:`, err),
+      );
+    }
+    return path;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * A keyed client that is not the canonical GM: relay the synthesised bytes to
+ * the canonical GM, which writes them to the cache (fire-and-forget), and
+ * resolve to the blob URL of the in-memory bytes so playback can begin without
+ * waiting for the GM-side write.
  */
 async function commitToCache(hash, bytes) {
-  if (isCanonicalGM()) {
-    try {
-      const path = await cacheWrite(hash, bytes);
-      const cap  = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-      if (cap > 0) {
-        evictIfOverflow(cap).catch(err =>
-          console.warn(`${MODULE_ID} | audio cache eviction sweep failed:`, err),
-        );
-      }
-      return path;
-    } catch (err) {
-      console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
-    }
-  } else {
-    // Non-GM client: kick a fire-and-forget GM relay. Playback uses the
-    // local blob URL in the meantime.
-    try {
-      const b64 = await bytesToBase64(bytes);
-      game.socket?.emit?.(AUDIO_SOCKET_NAME, {
-        kind: "audio.cache.write",
-        hash,
-        mime: "audio/mpeg",
-        b64,
-      });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | audio cache GM relay emit failed:`, err);
-    }
+  try {
+    const b64 = await bytesToBase64(bytes);
+    game.socket?.emit?.(AUDIO_SOCKET_NAME, {
+      kind: "audio.cache.write",
+      hash,
+      mime: "audio/mpeg",
+      b64,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio cache GM relay emit failed:`, err);
   }
-  // Fall back to an in-memory blob URL.
+  return blobUrlOf(bytes);
+}
+
+/** An in-memory blob URL for synthesised bytes. */
+function blobUrlOf(bytes) {
   const blob = bytes instanceof Blob
     ? bytes
     : new Blob([bytes instanceof ArrayBuffer ? bytes : bytes.buffer], { type: "audio/mpeg" });
@@ -346,8 +393,10 @@ async function handleCacheWrite(payload) {
 }
 
 // GM-side: a keyless client asked us to synthesise + cache a clip it can't make
-// itself. Dedupe against the cache and the in-flight set, then signal done so
-// the requester (and any other waiters) can play the cached file.
+// itself. Dedupe against the cache and the clip's in-flight synthesis — this
+// client's own playback's or an earlier request's (synthesiseToCacheOnce) —
+// then signal done so the requester (and any other waiters) can play the
+// cached file.
 async function handleSynthRequest(payload) {
   if (!isCanonicalGM()) return;
   const hash = typeof payload.hash === "string" ? payload.hash : "";
@@ -356,29 +405,9 @@ async function handleSynthRequest(payload) {
   const signalDone = () => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash });
   try {
     if (await cacheLookup(hash)) { signalDone(); return; }   // already cached
-    if (_synthInFlight.has(hash)) return;                     // a prior request is making it; its done covers us
-    _synthInFlight.add(hash);
-    try {
-      const apiKey = getSetting("elevenLabsApiKey", "");
-      if (apiKey && String(apiKey).trim() && spec) {
-        const bytes = await synthesise({
-          apiKey,
-          voiceId: spec.voiceId,
-          modelId: spec.modelId,
-          text:    spec.text,
-          speed:   spec.speed,
-          stream:  false,
-        });
-        await cacheWrite(hash, bytes);
-        const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-        if (cap > 0) {
-          evictIfOverflow(cap).catch(err =>
-            console.warn(`${MODULE_ID} | audio cache eviction (keyless synth) failed:`, err),
-          );
-        }
-      }
-    } finally {
-      _synthInFlight.delete(hash);
+    const apiKey = getSetting("elevenLabsApiKey", "");
+    if (_synthInFlight.has(hash) || (apiKey && String(apiKey).trim() && spec)) {
+      await synthesiseToCacheOnce(hash, spec, apiKey);
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | audio GM-synthesis (keyless request) failed:`, err);
